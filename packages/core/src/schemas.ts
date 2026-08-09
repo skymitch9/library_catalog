@@ -89,6 +89,8 @@ export const createEditionSchema = z.object({
   coverUrl: optionalText,
   source: editionSourceSchema.default('manual'),
   sourceUrl: optionalText,
+  /** The Calibre book id in the CWA library. Stable; a filesystem path is not. */
+  cwaBookId: z.number().int().positive().nullable().optional(),
 });
 export type CreateEdition = z.infer<typeof createEditionSchema>;
 

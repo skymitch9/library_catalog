@@ -75,4 +75,21 @@ The system design lives outside this repo and is not duplicated here:
   ⚠️ Its §1 and §7 were *knowledge, not measurement*; `docs/info/isbn-ladder.md`
   is the measurement, and it contradicts the design in two places.
 - [`catalog-platform/docs/PLATFORM.md`](../../catalog-platform/docs/PLATFORM.md)
-  — how three catalogs are presented as one site without merging any of them.
+  — how the three catalogs are presented as one site *without merging any of them*.
+- [`docs/EBOOK_PIPELINE.md`](docs/EBOOK_PIPELINE.md)
+  — the 2026-08-09 implementation decision for ebooks: use Calibre-Web Automated
+  as the Docker-first ebook processing/library engine, keep `library_catalog` as
+  the canonical physical+ebook domain catalog, parallel the existing
+  `audiobook_catalog` automation, and leave ebook acquisition as a source-specific
+  stage in front of CWA.
+
+`catalog-platform` holds **no application code** and never will. It is the
+wrapper/plan that governs three codebases and belongs inside none of them.
+
+## Why it lives here and not under catalog-platform
+
+Owner's decision, 2026-08-08: separation. `library_catalog` sits beside
+`audiobook_catalog` under `bookbuddy/` — the two book-shaped catalogs as
+siblings. `bookbuddy` is the umbrella folder, not a catalog itself.
+
+The name is deliberate: **not** "physical catalog", because ebooks are in scope.

@@ -23,17 +23,20 @@ export interface EditionRow {
   cover_url: string | null;
   source: string;
   source_url: string | null;
+  cwa_book_id: number | null;
 }
 
 const EDITION_COLS = `id, work_id, isbn13, isbn10, asin, format, edition_name, publisher,
-                      published_year, pages, language, cover_url, source, source_url`;
+                      published_year, pages, language, cover_url, source, source_url,
+                      cwa_book_id`;
 
 export async function createEdition(db: D1Database, input: CreateEdition): Promise<EditionRow> {
   const row = await db
     .prepare(
       `INSERT INTO edition (work_id, isbn13, isbn10, asin, format, edition_name, publisher,
-                            published_year, pages, language, cover_url, source, source_url)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            published_year, pages, language, cover_url, source, source_url,
+                            cwa_book_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        RETURNING ${EDITION_COLS}`,
     )
     .bind(
@@ -50,6 +53,7 @@ export async function createEdition(db: D1Database, input: CreateEdition): Promi
       input.coverUrl ?? null,
       input.source,
       input.sourceUrl ?? null,
+      input.cwaBookId ?? null,
     )
     .first<EditionRow>();
   if (!row) throw new Error('insert returned no row');

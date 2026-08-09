@@ -26,9 +26,20 @@ export const EDITION_FORMATS = [
   'hardcover',
   'paperback',
   'mass_market',
+  // The five file formats Calibre-Web Automated converts to and manages. See
+  // docs/EBOOK_PIPELINE.md — CWA is the ebook storage and conversion engine
+  // underneath this catalog, and an edition it holds has to be nameable here.
   'ebook_epub',
-  'ebook_kindle',
+  'ebook_mobi',
+  'ebook_azw3',
+  'ebook_kepub',
   'ebook_pdf',
+  // ⚠️ A LICENCE, not a file. A book in the Amazon library with an ASIN and no
+  // bytes we hold. Phase 0 measured this population as large — 16 of 30 sampled
+  // titles have no Open Library record and are overwhelmingly Kindle Unlimited
+  // or Audible-native. They are real editions and must be catalogable without
+  // pretending a file exists, because nothing can send one to a device.
+  'ebook_kindle',
 ] as const;
 export type EditionFormat = (typeof EDITION_FORMATS)[number];
 
@@ -37,6 +48,21 @@ export const PHYSICAL_FORMATS: readonly EditionFormat[] = [
   'hardcover',
   'paperback',
   'mass_market',
+];
+
+/**
+ * Formats that are a file CWA can hold, convert and send to a device.
+ *
+ * ⚠️ `ebook_kindle` is deliberately absent: it is an Amazon licence with no
+ * bytes on our side. Anything that offers "send to my reader" must gate on this
+ * list, or it will offer to send a file that does not exist.
+ */
+export const EBOOK_FILE_FORMATS: readonly EditionFormat[] = [
+  'ebook_epub',
+  'ebook_mobi',
+  'ebook_azw3',
+  'ebook_kepub',
+  'ebook_pdf',
 ];
 
 export const COPY_STATUSES = [
@@ -74,6 +100,8 @@ export const EDITION_SOURCES = [
   'kindle',
   'file',
   'research',
+  /** Ingested from the Calibre-Web Automated library. */
+  'cwa',
 ] as const;
 export type EditionSource = (typeof EDITION_SOURCES)[number];
 
