@@ -1,60 +1,59 @@
 # Deploy & Provisioning — Access Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED (contains no secret values).
-> Last verified: **2026-08-09**.
-> ⚠️ **Nothing in the Cloudflare account has been created yet.** Every command
-> below is unrun. `wrangler.toml` carries a placeholder `database_id` and the
-> app cannot deploy until step 1 replaces it.
+> Last verified: **2026-08-09** — deployed and curled on that date.
 
-## What exists and what does not
+## Live
+
+**https://library-catalog.bgc-worker.workers.dev**
+
+➡️ **For anything Cloudflare-side — resource ids, redeploy, rollback, logs,
+custom domains, troubleshooting — see [`cloudflare.md`](cloudflare.md).** This
+file is the shorter "what order do I do things in" version.
 
 | | State |
 |---|---|
-| Repo, schema, Worker, web app | ✅ built, typechecks, tested, runs locally |
-| Local D1 (`.wrangler/state`) | ✅ migrated, 39 statements applied |
-| **Remote D1 database** | ❌ not created |
-| **Worker deployment** | ❌ never deployed |
-| Firebase project | ✅ exists — `audiobook-catalog`, shared with the audiobook site. Nothing new to create. |
+| Remote D1 | ✅ `library-catalog`, WNAM, `6022ea5e-2510-450e-81ce-7d847fa31379`, both migrations applied |
+| Worker | ✅ deployed, version `6915f005-a660-4553-8312-8d1d20174fd3` |
+| Firebase project | ✅ `audiobook-catalog` — **shared. Do not create a second one.** |
+| **Firebase authorised domain** | ❌ **the one thing left.** Step 3. |
 | Google Books API key | ❌ not obtained (rung skipped without it) |
+| `EBOOK_INGEST_TOKEN` | ❌ not set, so `/api/ingest/*` 404s |
 
-## 1. Create the D1 database
-
-```bash
-npm run db:create          # wrangler d1 create library-catalog
-```
-
-Paste the printed `database_id` into `apps/worker/wrangler.toml`, replacing
-`REPLACE_ME_AFTER_db:create`.
-
-## 2. Migrate, then deploy — in that order
+## 1–2. Create, migrate, deploy — done
 
 ```bash
-npm run db:migrate         # --remote
-npm run deploy             # builds the web app, then wrangler deploy
+npm run db:create          # done → 6022ea5e-2510-450e-81ce-7d847fa31379
+npm run db:migrate         # done → 0001 and 0002 applied remotely
+npm run deploy             # done
 ```
 
-`predeploy` refuses a dirty tree. Migrate first so new code never meets an old
-schema.
+A redeploy from now on is just `npm run deploy`. `predeploy` refuses a dirty
+tree. **Migrate before deploying**, so new code never meets an old schema.
 
-## 3. Firebase — authorise the new domain
+## 3. ⚠️ Firebase authorised domain — THE REMAINING STEP
 
-The Worker verifies Firebase ID tokens from project `audiobook-catalog`; that
-needs no setup. What **does** need one manual step: the Worker's URL must be
-added to Firebase Auth's authorised domains, or Google sign-in fails in the
-browser with `auth/unauthorized-domain`.
+**Google sign-in fails until the Worker's host is on Firebase's allow-list.** The
+browser reports `auth/unauthorized-domain` and the app sits on its sign-in
+screen. This cannot be scripted — the list is Identity Platform admin config and
+`firebase-tools` has no command for it.
 
-> Firebase console → Authentication → Settings → Authorised domains → Add
-> `library-catalog.<your-subdomain>.workers.dev`
+> Firebase console → project **audiobook-catalog** → Authentication → Settings →
+> **Authorised domains** → Add domain →
+> `library-catalog.bgc-worker.workers.dev`
 
-⚠️ Do **not** create a second Firebase project. `FIREBASE_PROJECT_ID` in
-wrangler.toml must stay `audiobook-catalog` — it is the entire mechanism by
-which one Google account is one person across both catalogs.
+⚠️ Do **not** create a second Firebase project or Firestore database, and do not
+change `FIREBASE_PROJECT_ID`. Sharing `audiobook-catalog` is the entire mechanism
+by which one Google account is one person across both catalogs — a second project
+mints different tokens for the same human and silently forks every user. Reviews
+go to the *same* `reviews` collection, which is why one review shows on both
+sites with no sync job.
 
-## 4. Claim ownership
+## 4. Claim ownership — immediately after step 3, before sharing the URL
 
-The first person to sign in against an empty `app_user` table becomes `owner`.
-Sign in immediately after deploying. `OWNER_EMAILS` stays empty; it is a
-lock-out recovery hatch only.
+The first person to sign in against an empty `app_user` table becomes `owner`;
+everyone after lands as `pending`. `OWNER_EMAILS` stays empty; it is a lock-out
+recovery hatch only.
 
 ## 5. Optional — Google Books
 

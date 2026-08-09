@@ -1,7 +1,8 @@
 # Handoff
 
 > Rewritten **2026-08-09**, replacing the 2026-08-08 "nothing is built" version.
-> Six commits on `main`, all pushed. **Nothing is deployed.**
+> **Deployed** 2026-08-09 to https://library-catalog.bgc-worker.workers.dev
+> One console click remains before anyone can sign in — see below.
 
 ## State in one paragraph
 
@@ -10,9 +11,13 @@ and the whole thing has been driven end to end in a browser: sign in, browse the
 collection, open a book, set read-state, scan or type an ISBN and resolve it
 against live Open Library, enrich a hand-added book, and write a review that
 lands in the same Firestore collection the audiobook site uses. **What has not
-happened: no Cloudflare resource exists, nothing is deployed, no ebook container
-has ever run, and the review backfill has not been committed.** Those four are
-deliberately left for the owner.
+happened: nobody has signed in yet, no ebook container has ever run, and the
+review backfill has not been committed.**
+
+⚠️ **Sign-in fails until `library-catalog.bgc-worker.workers.dev` is added to
+Firebase → Authentication → Settings → Authorised domains** on the
+`audiobook-catalog` project. No CLI can do it. Once added, **the first person to
+sign in becomes owner** — do it before sharing the URL.
 
 ## Done
 
@@ -37,17 +42,15 @@ deliberately left for the owner.
   from its README; `index_cwa_library.py` has never met a real Calibre
   `metadata.db`. Run it with `--audit` first; `EBOOK_SYNC_DRY_RUN` defaults on.
 
-## ⚠️ Commands only the owner can run
+## ⚠️ What is left
 
-```bash
-npm run db:create        # then paste the id into apps/worker/wrangler.toml
-npm run db:migrate
-npm run deploy
-```
+**One console click**, which no CLI can do: Firebase console → project
+`audiobook-catalog` → Authentication → Settings → Authorised domains → add
+`library-catalog.bgc-worker.workers.dev`. Then sign in to claim ownership.
 
-Then in the Firebase console: **Authentication → Settings → Authorised domains →
-add the Worker's URL**, or Google sign-in fails with `auth/unauthorized-domain`.
-Detail in `docs/access/deploy.md`.
+Cloudflare is done — D1 `6022ea5e-2510-450e-81ce-7d847fa31379` in WNAM, both
+migrations applied, Worker deployed. Redeploying is just `npm run deploy`.
+Full runbook in `docs/access/cloudflare.md`.
 
 Then the backfill, which is what makes the 860 existing audiobook reviews visible
 here:
