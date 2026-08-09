@@ -1,0 +1,36 @@
+{
+  "name": "library-catalog",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Private catalog of our physical books and ebooks — works, editions, copies, read-state. Sibling to audiobook_catalog; shares its Google identity and reviews.",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n worker,web -c blue,green \"npm:dev:worker\" \"npm:dev:web\"",
+    "dev:worker": "npm run dev --workspace @lc/worker",
+    "dev:web": "npm run dev --workspace @lc/web",
+    "build": "npm run build --workspace @lc/web",
+    "predeploy": "node scripts/check-clean.mjs",
+    "deploy": "npm run build && npm run deploy --workspace @lc/worker",
+    "secret": "wrangler secret put --config apps/worker/wrangler.toml",
+    "secret:list": "wrangler secret list --config apps/worker/wrangler.toml",
+    "db:create": "wrangler d1 create library-catalog",
+    "db:migrate:local": "npm run db:migrate:local --workspace @lc/worker",
+    "db:migrate": "npm run db:migrate --workspace @lc/worker",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "tsx --test packages/core/test/*.test.ts",
+    "backfill:reviews": "tsx scripts/backfill-review-keys.mjs"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "tsx": "^4.23.11",
+    "typescript": "^5.7.2",
+    "wrangler": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,34 @@
+# Copy to `.dev.vars` (gitignored) for local development.
+#
+# wrangler's equivalent of a .env — loaded automatically by `wrangler dev`.
+# Production secrets are set separately with `npx wrangler secret put NAME` and
+# are never read from this file.
+
+# Must not be "production", or DEV_EMAIL is ignored. That guard is what stops a
+# stray value from bypassing sign-in on the real site. It ALSO switches the
+# review bridge to the `reviews_dev` Firestore collection, mirroring the
+# audiobook site's own dev lane — so local experiments never write into the
+# reviews the live site reads.
+ENVIRONMENT = "development"
+
+# Stands in for the Google identity Firebase would supply. The first identity to
+# hit an empty database becomes owner.
+#
+# ⚠️ Use your REAL Google address here, not a placeholder. `email` is the join
+# key to the audiobook catalog, so a made-up one creates a local account that
+# will not be you when you deploy.
+DEV_EMAIL = "you@example.com"
+DEV_NAME = "Your Name"
+
+# Google Books API key — free, from https://console.cloud.google.com/apis/credentials
+# with the Books API enabled.
+#
+# ⚠️ Not optional in the way it looks. Anonymous Google Books returned HTTP 429
+# on 40 of 40 calls on 2026-08-09: the shared unauthenticated quota is exhausted,
+# so without a key that rung does not degrade, it simply never answers. With the
+# key blank the ladder skips it rather than burning a subrequest to be refused.
+GOOGLE_BOOKS_API_KEY = ""
+
+# Anthropic API key for the research pipeline (phase 5).
+# https://platform.claude.com/settings/keys
+ANTHROPIC_API_KEY = ""

@@ -1,0 +1,10 @@
+{
+  "name": "@lc/isbn",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The ISBN ladder: Open Library, then Google Books. Replaces the board game catalog's packages/barcode.",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc --noEmit" },
+  "dependencies": { "@lc/core": "*" }
+}

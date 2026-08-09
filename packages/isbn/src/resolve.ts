@@ -1,0 +1,266 @@
+/**
+ * The ISBN ladder.
+ *
+ * Replaces the Board Game Catalog's `packages/barcode/src/resolve.ts`. The
+ * *shape* is ported and the rungs are not:
+ *
+ *   - one answer shape, whichever rung produced it
+ *   - each rung in its own try/catch, appending to a `trace`
+ *   - degrade, never break: a rung that throws is a rung that answered nothing
+ *   - nothing writes without a human
+ *
+ * ## Rung order is measured, not assumed
+ *
+ * `catalog-platform/docs/LIBRARY_CATALOG.md` said its own claims about book APIs
+ * were "knowledge, not measurement" and required a phase 0 to replace them. That
+ * ran on 2026-08-09 and the numbers are in `docs/info/isbn-ladder.md`. The two
+ * findings that set this file's order:
+ *
+ * | | |
+ * |---|---|
+ * | Open Library by ISBN-13 | **9 / 10**, with publisher, year, page count and a cover |
+ * | Google Books, anonymous | **0 / 40 — HTTP 429 on every single call** |
+ *
+ * Google Books is not a free anonymous rung. The shared unauthenticated project
+ * quota is exhausted, so it answers 429 regardless of what you ask. It is
+ * therefore rung 2 **and gated on an API key**: with no key set it is skipped
+ * silently rather than burning a subrequest to be refused.
+ *
+ * ## The trap this ladder cannot detect, and must not pretend to
+ *
+ * ⚠️ A wrong ISBN returns a *confident, well-formed, wrong book*. Measured: of
+ * ten ISBNs typed from memory, three resolved to entirely different books
+ * (Circe, Cloud Cuckoo Land, One Piece Vol. 93) with full metadata and a cover.
+ * Nothing in the response marks them. The checksum passes, the database is
+ * right, and the answer is wrong because the question was.
+ *
+ * The only defence is that a scan is a *proposal* — the review screen shows the
+ * cover and the title and a person confirms. That is why `scan_job` exists and
+ * why no rung here writes to the catalog.
+ */
+
+import type { EditionFormat } from '@lc/core';
+
+/** One answer, whichever rung produced it. */
+export interface BookCandidate {
+  isbn13: string | null;
+  title: string;
+  /** As printed, in the order printed — `splitAuthors` owns any splitting. */
+  authors: string;
+  publisher: string | null;
+  publishedYear: number | null;
+  pages: number | null;
+  language: string | null;
+  coverUrl: string | null;
+  /** Open Library's work id, when the rung knows it. Hardens the join later. */
+  openlibraryWorkId: string | null;
+  format: EditionFormat | null;
+  source: 'openlibrary' | 'googlebooks';
+  sourceUrl: string | null;
+}
+
+export interface RungTrace {
+  rung: string;
+  ok: boolean;
+  found: number;
+  ms: number;
+  /** HTTP status or error message. 429 here means "quota", not "not found". */
+  detail?: string;
+}
+
+export interface ResolveResult {
+  candidates: BookCandidate[];
+  trace: RungTrace[];
+}
+
+export interface ResolveOptions {
+  /**
+   * Google Books API key. **Without it rung 2 is skipped entirely.**
+   * Anonymous calls returned 429 on 40 of 40 attempts on 2026-08-09.
+   */
+  googleBooksKey?: string | undefined;
+  /** Identifies us to Open Library, which asks for one. Not authentication. */
+  userAgent?: string;
+  fetchImpl?: typeof fetch;
+}
+
+const DEFAULT_UA = 'library_catalog (+https://github.com/private)';
+
+async function timed<T>(
+  rung: string,
+  trace: RungTrace[],
+  fn: () => Promise<T[]>,
+): Promise<T[]> {
+  const started = Date.now();
+  try {
+    const out = await fn();
+    trace.push({ rung, ok: true, found: out.length, ms: Date.now() - started });
+    return out;
+  } catch (err) {
+    trace.push({
+      rung,
+      ok: false,
+      found: 0,
+      ms: Date.now() - started,
+      detail: err instanceof Error ? err.message : String(err),
+    });
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Rung 1 — Open Library
+// ---------------------------------------------------------------------------
+
+interface OlAuthor {
+  name?: string;
+}
+interface OlNamed {
+  name?: string;
+}
+interface OlBook {
+  title?: string;
+  subtitle?: string;
+  authors?: OlAuthor[];
+  publishers?: OlNamed[];
+  publish_date?: string;
+  number_of_pages?: number;
+  url?: string;
+  cover?: { small?: string; medium?: string; large?: string };
+  identifiers?: { isbn_13?: string[]; openlibrary?: string[] };
+}
+
+/** "August 31st 2010" and "2005" both appear in real responses. Take the year. */
+function yearFrom(raw: string | undefined): number | null {
+  if (!raw) return null;
+  const m = /\b(1[0-9]{3}|20[0-9]{2}|21[0-9]{2})\b/.exec(raw);
+  return m ? Number(m[1]) : null;
+}
+
+export async function lookupOpenLibraryByIsbn(
+  isbn13: string,
+  opts: ResolveOptions = {},
+): Promise<BookCandidate[]> {
+  const doFetch = opts.fetchImpl ?? fetch;
+  const res = await doFetch(
+    `https://openlibrary.org/api/books?bibkeys=ISBN:${isbn13}&format=json&jscmd=data`,
+    { headers: { 'User-Agent': opts.userAgent ?? DEFAULT_UA } },
+  );
+  if (!res.ok) throw new Error(`openlibrary ${res.status}`);
+
+  const body = (await res.json()) as Record<string, OlBook>;
+  const rec = body[`ISBN:${isbn13}`];
+  if (!rec) return [];
+
+  const title = rec.subtitle ? `${rec.title ?? ''}` : (rec.title ?? '');
+  if (!title) return [];
+
+  return [
+    {
+      isbn13,
+      title,
+      authors: (rec.authors ?? []).map((a) => a.name ?? '').filter(Boolean).join(', '),
+      publisher: (rec.publishers ?? []).map((p) => p.name ?? '').filter(Boolean).join(', ') || null,
+      publishedYear: yearFrom(rec.publish_date),
+      pages: rec.number_of_pages ?? null,
+      language: null,
+      coverUrl: rec.cover?.large ?? rec.cover?.medium ?? null,
+      // The /api/books endpoint returns an *edition* key (OL…M), not a work key
+      // (OL…W). Left null rather than storing the wrong kind of id in a column
+      // whose whole purpose is to be the stable work identifier later.
+      openlibraryWorkId: null,
+      format: null,
+      source: 'openlibrary',
+      sourceUrl: rec.url ?? `https://openlibrary.org/isbn/${isbn13}`,
+    },
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// Rung 2 — Google Books (key required)
+// ---------------------------------------------------------------------------
+
+interface GbVolume {
+  volumeInfo?: {
+    title?: string;
+    subtitle?: string;
+    authors?: string[];
+    publisher?: string;
+    publishedDate?: string;
+    pageCount?: number;
+    language?: string;
+    imageLinks?: { thumbnail?: string; smallThumbnail?: string };
+    infoLink?: string;
+    industryIdentifiers?: { type?: string; identifier?: string }[];
+  };
+}
+
+export async function lookupGoogleBooksByIsbn(
+  isbn13: string,
+  opts: ResolveOptions = {},
+): Promise<BookCandidate[]> {
+  if (!opts.googleBooksKey) return [];
+  const doFetch = opts.fetchImpl ?? fetch;
+  const url = `https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn13}&key=${opts.googleBooksKey}`;
+  const res = await doFetch(url);
+  if (!res.ok) throw new Error(`googlebooks ${res.status}`);
+
+  const body = (await res.json()) as { items?: GbVolume[] };
+  const vi = body.items?.[0]?.volumeInfo;
+  if (!vi?.title) return [];
+
+  const ids = vi.industryIdentifiers ?? [];
+  return [
+    {
+      isbn13: ids.find((i) => i.type === 'ISBN_13')?.identifier ?? isbn13,
+      title: vi.subtitle ? `${vi.title}: ${vi.subtitle}` : vi.title,
+      authors: (vi.authors ?? []).join(', '),
+      publisher: vi.publisher ?? null,
+      publishedYear: yearFrom(vi.publishedDate),
+      pages: vi.pageCount ?? null,
+      language: vi.language ?? null,
+      // Google's thumbnails are http:// in the raw response often enough to be
+      // worth forcing — a mixed-content image is a silently broken cover.
+      coverUrl: (vi.imageLinks?.thumbnail ?? null)?.replace(/^http:/, 'https:') ?? null,
+      openlibraryWorkId: null,
+      format: null,
+      source: 'googlebooks',
+      sourceUrl: vi.infoLink ?? null,
+    },
+  ];
+}
+
+/**
+ * Ask every rung that can answer, in order, and return everything found.
+ *
+ * Does **not** stop at the first hit. Two rungs disagreeing about a publisher is
+ * information for the review screen; silently taking rung 1's answer throws it
+ * away. Ranking is the caller's job.
+ */
+export async function resolveIsbn(
+  isbn13: string,
+  opts: ResolveOptions = {},
+): Promise<ResolveResult> {
+  const trace: RungTrace[] = [];
+  const candidates: BookCandidate[] = [];
+
+  candidates.push(
+    ...(await timed('openlibrary', trace, () => lookupOpenLibraryByIsbn(isbn13, opts))),
+  );
+
+  if (opts.googleBooksKey) {
+    candidates.push(
+      ...(await timed('googlebooks', trace, () => lookupGoogleBooksByIsbn(isbn13, opts))),
+    );
+  } else {
+    trace.push({
+      rung: 'googlebooks',
+      ok: true,
+      found: 0,
+      ms: 0,
+      detail: 'skipped: no GOOGLE_BOOKS_API_KEY (anonymous calls return 429)',
+    });
+  }
+
+  return { candidates, trace };
+}

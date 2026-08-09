@@ -1,0 +1,48 @@
+name = "library-catalog"
+main = "src/index.ts"
+compatibility_date = "2025-01-15"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+# The built React PWA. Static files are served directly; anything that is not a
+# file falls through to the Worker, which serves index.html for SPA routes.
+# Run `npm run build` at the repo root before `wrangler dev` or `deploy`.
+[assets]
+directory = "../web/dist"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "library-catalog"
+# ⚠️ PLACEHOLDER. Run `npm run db:create` and paste the id it prints here before
+# the first migrate or deploy. Nothing was created in the Cloudflare account by
+# the session that wrote this file — see docs/access/deploy.md.
+database_id = "REPLACE_ME_AFTER_db:create"
+# Migrations live at the repo root so the CLI can reach them too.
+migrations_dir = "../../migrations"
+
+# No R2 binding, deliberately. Scan photos are never stored: they go from the
+# upload request straight into the vision call and are gone. The sibling project
+# removed its bucket for exactly this reason — it was write-only, nothing ever
+# read an object back, so its whole purpose was to be deleted later, and one code
+# path forgetting to delete was all it would have taken to keep photos forever.
+
+# No cron triggers yet. Phase 5 adds the cover-health sweep; when it does, read
+# the sibling project's wrangler.toml note first — its rule is that **a cron is
+# not working until something it writes has rows**, learned from weeks of
+# `wrangler deploy` reporting registered triggers that never fired.
+
+[vars]
+APP_VERSION = "0.1.0"
+ENVIRONMENT = "production"
+
+# ⚠️ THE SHARED-IDENTITY SETTING. Must stay `audiobook-catalog` — the same
+# Firebase project the audiobook site signs into. This is the entire mechanism by
+# which one Google account is one person across both catalogs. Changing it does
+# not "switch projects", it silently forks every user into a second account.
+FIREBASE_PROJECT_ID = "audiobook-catalog"
+
+# Leave empty. Ownership is claimed by whoever signs in first, which is you right
+# after deploying. This is only a recovery hatch: if you ever lock yourself out,
+# put an email here and redeploy to force it back to `owner`.
+OWNER_EMAILS = ""

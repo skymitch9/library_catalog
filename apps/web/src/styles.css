@@ -1,0 +1,103 @@
+/*
+ * Phone first — this app is used standing in front of a bookshelf, one-handed,
+ * with the other hand holding a book. Everything tappable is at least 44px.
+ */
+
+:root {
+  --bg: #fbfaf7;
+  --fg: #1b1a17;
+  --muted: #6b6862;
+  --line: #e2ded4;
+  --accent: #3a5a40;
+  --panel: #fff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16150f;
+    --fg: #ece8de;
+    --muted: #98938a;
+    --line: #322f27;
+    --accent: #8fbc8f;
+    --panel: #1e1c16;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Home-screen PWA on iOS: keep content clear of the notch and the home bar. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+           env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+main { padding: 1rem; max-width: 46rem; margin: 0 auto; }
+
+.centre {
+  min-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--line);
+}
+.topbar strong { flex: 1; }
+
+.muted { color: var(--muted); }
+.small { font-size: 0.85rem; }
+
+button, input {
+  font: inherit;
+  min-height: 44px;
+  padding: 0 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--fg);
+}
+button { cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+button:disabled { opacity: 0.5; cursor: default; }
+
+.toolbar, .row { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+.toolbar input, .row input { flex: 1; min-width: 0; }
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+ul.works { list-style: none; margin: 0; padding: 0; }
+ul.works li {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--line);
+}
+ul.works img, .cover-placeholder {
+  width: 44px;
+  height: 66px;
+  flex: none;
+  object-fit: cover;
+  border-radius: 3px;
+  background: var(--line);
+}

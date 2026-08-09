@@ -1,82 +1,97 @@
 # Handoff
 
-> Created 2026-08-08. **Nothing is built.** This file exists so the first real
-> session starts with context instead of rediscovering it.
+> Rewritten **2026-08-09**, replacing the 2026-08-08 "nothing is built" version.
+> Phase 0 and phase 1 are done. Nothing is deployed.
 
-## What this is
+## State in one paragraph
 
-A clone-in-spirit of `boardbuddy/Board_Game_Catalog` — Cloudflare Worker + D1 +
-Access, scanning-first — for physical books and ebooks.
+The monorepo exists and works: five workspaces, all typechecking, 26 passing
+tests, a migrated local D1, and a Worker exercised end to end against live Open
+Library. You can sign in, add books, browse them, scan an ISBN and draft a
+review. **Nothing has been created in Cloudflare and the review backfill has not
+been committed** — both are deliberately left for the owner.
 
-## Start here, in this order
+## Done
 
-1. **Read `catalog-platform/docs/LIBRARY_CATALOG.md` end to end.** It is a full
-   system design, not notes. Do not re-derive it.
-2. **Do its phase 0 first.** ⚠️ Everything that document says about external
-   book APIs is **knowledge, not measurement** — its own header says so. Phase 0
-   exists to replace that with live calls to Open Library and Google Books
-   before anything is built on it.
-3. **Copy `CLAUDE.md`'s Windows section** from the Board Game Catalog before the
-   first commit: `git commit -F <file>` never `-m`; PowerShell has no heredocs;
-   sweep for UTF-8 corruption with `grep -rn 'â€\|Â·\|Ã' --exclude-dir=dist`.
-   Each of those bit that project repeatedly.
+| | |
+|---|---|
+| **Phase 0 — verify** | ✅ Live calls to Open Library and Google Books. Findings in `docs/info/isbn-ladder.md`. Two of the design's assumptions were wrong. |
+| **Phase 1 — scaffold + manual** | ✅ Worker + D1 + Firebase auth + React shell. Add/browse works, editions, copies, read-state. |
+| **Shared identity** | ✅ Firebase Google SSO on the `audiobook-catalog` project, joined on email. Design in `docs/info/identity-and-reviews.md`. |
+| **Review bridge** | ✅ `workKey`, the draft endpoint, the client Firestore path, and the backfill script. Backfill **dry-run only**. |
+| **Phase 2 — ISBN scan** | 🟡 Partly. The ladder, the gate and `GET /api/isbn/:code` work. The camera UI and `scan_job` queue are not wired. |
 
-## The single most important design fact
+## Not done
 
-**Barcodes invert.** In board games they are a weak primitive — GameUPC resolved
-2 of 4 real games, and crowdfunded editions often carry no retail barcode at all.
-For books that reverses: near-universal ISBN-13 since ~2007, and far deeper free
-databases. So **barcode-first is the strategy here**, and vision is the fallback
-for pre-ISBN books, ebooks and bulk shelf intake.
+- Phases 3 (ebook ingest), 4 (shelf photo), 5 (research + index).
+- `scan_job` is in the schema but no route reads or writes it.
+- `camera.ts` / `scanner.ts` are ported and rewired to the book gate, but no page
+  uses them yet.
+- No cover images, no series browse page, no work detail page in the UI.
 
-## What ports verbatim, per the design
+## ⚠️ Commands the owner must run — nothing else can proceed without these
 
-`camera.ts` and `scanner.ts` (every line is a WebKit constraint, not a
-preference) · `docs/info/ios-camera.md` · the `scan_job` queue with
-`scan-ownership.ts` and `withFreshView` · the ladder *shape* · the photo
-dimension constants · `packages/research` including `tiers.ts`.
+```bash
+npm run db:create        # then paste the id into apps/worker/wrangler.toml
+npm run db:migrate
+npm run deploy
+```
 
-## What must change
+Then, in the Firebase console: **Authentication → Settings → Authorised domains
+→ add the Worker's URL**, or Google sign-in fails with
+`auth/unauthorized-domain`. Full detail in `docs/access/deploy.md`.
 
-- **`matchIndexedTitle`** — matching on title alone is unsafe for books. Titles
-  collide across authors constantly, and Kindle rows carry `B0…` ASINs no ISBN
-  database knows, so they can only reach a work by name.
-- **`classifyShelfResults`** — rewrite as *series* detection. "Mistborn: The
-  Final Empire" is a volume, not an expansion. `audiobook_catalog` already
-  models series properly; reuse that shape.
-- **`SHELF_SYSTEM`** — book spines are rotated 90° and carry author and
-  publisher colophon. It must return **title and author** per spine.
+Optional but strongly worth it — the backfill that makes existing audiobook
+reviews visible here:
 
-⚠️ **Do not write a second similarity function.** `isConfidentMatch` carries the
-0.7 spine floor and the fragment rule.
+```bash
+npm run backfill:reviews                # dry run: 860 documents, 860 matched, 0 unmatched
+npm run backfill:reviews -- --commit    # writes to the LIVE reviews collection
+```
 
-## ⚠️ The stated blocker, and how much of it is left
+## The five things that cost real time, and what they cost
 
-The design says this is *"blocked on finishing the Board Game Catalog"*, for one
-specific reason: fix the matcher **there** so this fork inherits a correct one.
-It cites `BOSS MONSTER` → `Super Boss Monster 2` as the failure.
+1. **Anonymous Google Books is dead.** 40 calls, 40 × HTTP 429 — the shared
+   unauthenticated quota is exhausted. It needs a free API key or it is not a
+   rung at all. The design listed it as a free second rung.
+2. **A wrong ISBN returns a confident wrong book.** Three of ten ISBNs typed
+   from memory resolved to *Circe*, *Cloud Cuckoo Land* and *One Piece Vol. 93* —
+   full metadata, correct covers, nothing marking them. Never seed a fixture
+   with a remembered ISBN.
+3. **Half this library is not in Open Library.** 14/30 by title, and the misses
+   are the Kindle Unlimited / Audible-native indie half. The design budgeted
+   research to fire on ~5% of rows; that number is wrong for this collection.
+4. **The audiobook site's review key has no author in it**, and its Google
+   session is thrown away immediately after sign-in. Both facts shaped the whole
+   identity design. Read `docs/info/identity-and-reviews.md` §1 before touching
+   anything near auth.
+5. **Reading the backfill's dry-run output caught a defect the counts hid.**
+   860/860 matched looked perfect; the keys it *would* have written were
+   `court of mist and fury part 1 of 2 dramatized adaptation …`, which no
+   paperback could match. Fixed by using the `series` column. Read the keys, not
+   just the totals.
 
-**Re-read that section against the matcher as it stands now, not as it was on
-2026-08-07.** On 2026-08-08 the Board Game Catalog gained an `item_alias` table
-(migration 0021) backfilled from BoardGameGeek's alternate names, a punctuation
-fold on the search path, and the 0.7 fragment guard was re-confirmed rather than
-loosened. That blocker may be partly or wholly discharged. Measure before
-assuming either way.
+## Gotchas that will bite the next session
 
-## Open question to settle early
+- **`git commit -F`, never `-m`.** See `CLAUDE.md`.
+- **`packages/core` import order is load-bearing** and typecheck does not catch a
+  violation. `constants.ts` → `schemas.ts` → `index.ts`, and nothing under
+  `src/` may import `index.ts`.
+- **`bookIdFromTitle` ≠ `normaliseTitle`.** The first keeps the leading article
+  and builds Firestore document ids; the second strips it and builds `work_key`.
+  Swapping them writes a duplicate review instead of updating one.
+- **`npm test` needs tsx** (a devDependency). Node's type stripping cannot
+  resolve the `.js` specifiers the source uses.
+- **`.dev.vars` is gitignored** and currently holds a real Google address so the
+  dev bypass produces the right `app_user` row. Recreate from `.dev.vars.example`.
+- Local D1 lives in `apps/worker/.wrangler/state` and already has two test works
+  in it.
 
-From the design: **should read-state and ratings live here, or in Firestore
-beside the audiobook reviews?** It is the one thing that genuinely spans all
-three formats, and it is cheaper to decide before the schema than after.
+## Open questions
 
-## Not merging with audiobook_catalog — decided
-
-`PLATFORM.md` §2.2: each catalog keeps its own database; a shared index holds a
-projection for cross-cutting queries; nothing is merged. Audiobooks are
-read-only because they are pipeline-fed 3×/day; books and games are added by
-hand, which is what the scanning is for.
-
-"I own this in audio and paperback" is answered by a **format column plus the
-index**, joined on a key the index normalises **once, on write** — because this
-household has already shipped the bug where Python and JS both split author
-strings, drifted, and failed a promote silently.
+| # | Question | Blocks | State |
+|---|---|---|---|
+| 1 | Kindle metadata cache on this machine? | Phase 3 | `My Kindle Content` does not exist at either default path. A wider sweep timed out at 2 minutes without finishing, so "no Kindle for PC" is likely but **not proven**. |
+| 2 | Amazon "Request My Data" export | Phase 3 | Not started. Needs the owner's Amazon login; takes days to arrive, so kick it off early. |
+| 3 | Where do loose ebook files live — disk, Drive, or both? | Phase 3 | Not investigated. |
+| 4 | Do the legacy passphrase users need Google accounts? | UX | Their reviews show up fine; they just cannot sign in here. A conversation, not a code change. |
