@@ -14,10 +14,13 @@ binding = "ASSETS"
 [[d1_databases]]
 binding = "DB"
 database_name = "library-catalog"
-# ⚠️ PLACEHOLDER. Run `npm run db:create` and paste the id it prints here before
-# the first migrate or deploy. Nothing was created in the Cloudflare account by
-# the session that wrote this file — see docs/access/deploy.md.
-database_id = "REPLACE_ME_AFTER_db:create"
+# Created 2026-08-09 in region WNAM, account nbaslamking@gmail.com.
+#
+# ⚠️ The binding stays `DB`, not the `library_catalog` that `wrangler d1 create`
+# suggests in its copy-paste snippet. `env.ts` and every query in `packages/db`
+# take `c.env.DB`; renaming the binding to match the snippet would break all of
+# them for no gain.
+database_id = "6022ea5e-2510-450e-81ce-7d847fa31379"
 # Migrations live at the repo root so the CLI can reach them too.
 migrations_dir = "../../migrations"
 
