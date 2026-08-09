@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, type Me, type WorkSummary } from '../api.js';
 import { AddWork } from '../components/AddWork.js';
+import { formatLabel } from '../lib/formats.js';
 
 /**
  * The collection.
@@ -9,7 +10,7 @@ import { AddWork } from '../components/AddWork.js';
  * not from the client — the sibling project's migration 0019 concluded that a
  * line belongs in a column, and this is the read side of that decision.
  */
-export function CollectionPage({ me }: { me: Me }) {
+export function CollectionPage({ me, onOpen }: { me: Me; onOpen: (id: number) => void }) {
   const [q, setQ] = useState('');
   const [rows, setRows] = useState<WorkSummary[]>([]);
   const [total, setTotal] = useState(0);
@@ -75,6 +76,7 @@ export function CollectionPage({ me }: { me: Me }) {
           <ul className="works">
             {rows.map((w) => (
               <li key={w.id}>
+                <button className="row-open" onClick={() => onOpen(w.id)} aria-label={`Open ${w.title}`}>
                 {w.coverUrl ? (
                   <img src={w.coverUrl} alt="" width={44} height={66} loading="lazy" />
                 ) : (
@@ -94,9 +96,12 @@ export function CollectionPage({ me }: { me: Me }) {
                     {/* Formats are what makes "in audio and paperback but not ebook" a
                         query. Shown here because it is the question the shelf cannot
                         answer by being looked at. */}
-                    {w.formats ? w.formats.split(',').join(' · ') : 'no edition recorded'}
+                    {w.formats
+                      ? w.formats.split(',').map(formatLabel).join(' · ')
+                      : 'no edition recorded'}
                   </div>
                 </div>
+                </button>
               </li>
             ))}
           </ul>

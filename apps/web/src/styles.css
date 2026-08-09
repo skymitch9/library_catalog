@@ -101,3 +101,77 @@ ul.works img, .cover-placeholder {
   border-radius: 3px;
   background: var(--line);
 }
+
+/* --- work page & reviews ------------------------------------------------- */
+
+/* The whole collection row is the tap target. A 44px-tall link inside a row is
+   a miss on a phone; the row is ~66px and the entire thing opens the book. */
+button.row-open {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  text-align: left;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+}
+
+.work-head { display: flex; gap: 1rem; margin: 1rem 0; }
+.work-head h2 { margin: 0 0 0.25rem; }
+.work-head p { margin: 0 0 0.25rem; }
+.cover-placeholder.large { width: 96px; height: 144px; }
+
+h3 { margin: 0 0 0.5rem; font-size: 1rem; }
+
+ul.plain, ul.reviews { list-style: none; margin: 0 0 0.5rem; padding: 0; }
+ul.plain li, ul.reviews li { padding: 0.4rem 0; border-bottom: 1px solid var(--line); }
+ul.plain li:last-child, ul.reviews li:last-child { border-bottom: 0; }
+ul.plain li strong { margin-right: 0.5rem; }
+
+.row-tight { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
+
+/* Rating chips: ten of them have to fit a phone's width without wrapping into
+   an unreadable block, so they drop the 44px minimum and gain it back in width
+   by sitting in a row you aim at rather than tap precisely. */
+button.chip { min-height: 36px; padding: 0 0.5rem; font-size: 0.9rem; }
+
+textarea {
+  font: inherit;
+  width: 100%;
+  padding: 0.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--fg);
+  resize: vertical;
+}
+
+.stars { letter-spacing: 1px; }
+.star { position: relative; }
+.star.full { color: #d9a441; }
+.star.empty { color: var(--line); }
+
+/* ⚠️ A half star must LOOK half.
+ *
+ * The first version styled `.star.half` identically to `.star.full`, so 4.5
+ * rendered as five filled stars and there was no way to tell it from a 5. The
+ * scale is half-stars precisely because the audiobook site's is (see RATING_STEP
+ * in packages/core) — a display that silently rounds up makes the shared review
+ * store show two different numbers on two sites for the same review.
+ *
+ * The overlay technique is the audiobook site's: an empty star underneath, and a
+ * filled one clipped to its left half on top. */
+.star.half { color: var(--line); }
+.star.half::after {
+  content: '★';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 50%;
+  overflow: hidden;
+  color: #d9a441;
+}

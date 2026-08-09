@@ -79,6 +79,25 @@ export const api = {
 
   work: (id: number) => request<Record<string, unknown>>(`/api/works/${id}`),
 
+  /**
+   * ⚠️ A PUT, so it REPLACES the whole read-state row. Send the dates back with
+   * it or they are cleared — the endpoint is `.strict()` and will also reject any
+   * key it does not know, including `rating` (ratings go through reviewDraft).
+   */
+  setReading: (
+    id: number,
+    body: {
+      readState: string;
+      startedOn?: string | null;
+      finishedOn?: string | null;
+      readFormat?: string | null;
+      notes?: string | null;
+    },
+  ) => request<Record<string, unknown>>(`/api/works/${id}/reading`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  }),
+
   createWork: (body: unknown) =>
     request<{ work: WorkSummary }>('/api/works', { method: 'POST', body: JSON.stringify(body) }),
 
