@@ -19,6 +19,13 @@ Calibre's own `metadata.db`, read-only, directly. Not the CWA web API, because:
 writing to this database while we read, and an accidental write from a second
 process is how a SQLite library gets corrupted.
 
+⚠️ Calibre runs this database in **WAL mode**, so the newest rows live in
+`metadata.db-wal` until a checkpoint. Reading the file *in place* is fine —
+`mode=ro` sees the WAL because it sits alongside. **Copying `metadata.db`
+somewhere else to inspect it does not**: the copy silently reports an empty or
+stale library. That cost time during the first run and looked exactly like a
+failed ingest.
+
 ## What it does NOT do
 
 - It does not move, convert or delete files. CWA owns the library.
@@ -39,13 +46,21 @@ GITHUB_TOKEN in its environment.
 
 ## Dry run is the default
 
-`DRY_RUN=1` unless explicitly unset, matching the discipline used for the review
-backfill. Set `EBOOK_SYNC_DRY_RUN=0` in `.env` to publish for real.
+On unless explicitly turned off, matching the discipline used for the review
+backfill. `EBOOK_SYNC_DRY_RUN=0` publishes for real — the same name in `.env`, in
+the compose file and inside the container, so a one-off override actually works:
 
-⚠️ NEVER RUN. Written 2026-08-09; no CWA library exists on this machine yet, so
-every field mapping below is from Calibre's documented schema and has not been
-checked against real rows. **Run it with --audit first and read the output
-before you ever set DRY_RUN=0.**
+    docker compose -f docker-compose.ebooks.yml run --rm --no-deps       -e EBOOK_SYNC_DRY_RUN=0 ebook-sync python scripts/index_cwa_library.py
+
+✅ Verified against a real CWA library 2026-08-09: read one book, produced
+`ingest smoke test|testworth pemberton`, published it, and reported
+`unchanged: 1` on the next run. Series and volume survived the trip
+(`Pipeline Trials` / `Book 2` from Calibre's `series_index` 2.0 — the trailing
+`.0` is stripped, because "Book 2.0" is not what a cover says).
+
+**Still run `--audit` first on any library you care about** and read the keys it
+would write. The review backfill looked perfect at 860/860 matched and was
+producing keys no paperback could ever match; only reading them caught it.
 """
 
 from __future__ import annotations
@@ -66,7 +81,7 @@ CALIBRE_LIBRARY = Path(os.environ.get("CALIBRE_LIBRARY", "/calibre-library"))
 API_BASE = os.environ.get("LIBRARY_API_BASE", "").rstrip("/")
 API_TOKEN = os.environ.get("LIBRARY_API_TOKEN", "")
 DATA_DIR = Path(os.environ.get("SYNC_DATA_DIR", "/app/data"))
-DRY_RUN = os.environ.get("DRY_RUN", "1") != "0"
+DRY_RUN = os.environ.get("EBOOK_SYNC_DRY_RUN", "1") != "0"
 
 # Calibre format name -> our `edition.format`. See migration 0002.
 FORMAT_MAP = {

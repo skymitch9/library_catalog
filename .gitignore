@@ -10,3 +10,17 @@ dist/
 *.log
 .vscode/
 !.vscode/extensions.json
+
+# ⚠️ The Calibre-Web Automated data root — the Calibre library, its metadata.db,
+# CWA's config, and the ebook files themselves.
+#
+# NEVER commit this. It is gigabytes of book files, it is the one directory in
+# this repo that grows without bound, and this household has already had a
+# repo-size incident (377MB .git) force a hosting migration. CWA owns these
+# files; git has no business with them.
+#
+# Note this is the OPPOSITE of the rule in audiobook_catalog, where site/ and the
+# covers are deliberately tracked because the deploy ships them from git. That
+# repo publishes its outputs; this one serves from D1 and Workers assets, so
+# nothing here needs a file to survive in a commit.
+runtime/

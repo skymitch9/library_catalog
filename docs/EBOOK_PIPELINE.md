@@ -351,9 +351,9 @@ Re-verify CWA details before implementation if this document is materially old; 
 > the audiobook process**, added because the owner asked for the two pipelines to
 > operate the same way rather than merely to resemble each other on a diagram.
 >
-> ⚠️ **Status: written, typechecked, and NEVER RUN.** No image has been pulled,
-> no container started, and no CWA library exists on this machine. The Worker
-> half *is* exercised — see "What was verified" below.
+> ✅ **Status: RUN AND VERIFIED end to end on 2026-08-09.** See "What the first
+> real run found" below — it turned up four defects, three of them in code that
+> typechecked and read correctly.
 
 ## The 1:1 mapping
 
@@ -427,7 +427,7 @@ interpreter. Currently passing: 10/10 identical.
 
 ## What was verified, and what was not
 
-✅ Verified by running it:
+✅ Verified by running it (Worker half):
 
 - `POST /api/ingest/ebook` rejects a missing token (401), a wrong token (401),
   and is disabled entirely (404) when `EBOOK_INGEST_TOKEN` is unset.
@@ -441,18 +441,51 @@ interpreter. Currently passing: 10/10 identical.
   middleware.
 - Python and TypeScript folds agree on all 10 fixture cases.
 
-❌ Not verified — nothing here has run:
+✅ Also verified, by running the whole chain with a synthetic EPUB:
 
-- The CWA image, its environment variables, and the directory names
-  `/config`, `/calibre-library`, `/cwa-book-ingest`. Taken from CWA's README,
-  **not** from a running container.
-- `scripts/index_cwa_library.py` against a real Calibre `metadata.db`. The
-  column and identifier mappings are from Calibre's documented schema and have
-  never met real rows. **Run it with `--audit` and read the output before ever
-  setting `EBOOK_SYNC_DRY_RUN=0`.**
-- `scripts/ebook_ingest_watcher.py`. The cross-device atomic-move path in
-  particular (stage under a dotfile, then rename within the destination
-  filesystem) is written from first principles and untested.
+- The CWA image, its env vars, and `/config`, `/calibre-library`,
+  `/cwa-book-ingest` — all as written.
+- `ebook_ingest_watcher.py`, including the cross-device atomic move: the file
+  settled, moved on the second sweep, and `incoming/` emptied.
+- CWA ingested it, filed it under `Testworth Pemberton/`, and wrote `metadata.db`.
+- `index_cwa_library.py` read it, produced `ingest smoke test|testworth
+  pemberton`, published to production D1 with series `Pipeline Trials` /
+  `Book 2` and `cwa_book_id`, and reported `unchanged: 1` on the second run.
+- Both ends cleaned up afterwards; `calibredb remove` emptied the library and the
+  work was deleted from D1.
+
+## ⚠️ What the first real run found
+
+Four defects. Three were in code that typechecked, read correctly, and would have
+failed silently in service.
+
+**1. The entrypoint swallowed its arguments.** `docker compose run … ebook-sync
+python scripts/index_cwa_library.py --audit` ran the *entrypoint*, which ignored
+the command and started cron — so the documented "audit before you automate" step
+was quietly impossible, and you got a container sitting `Up` instead of a report.
+Fixed with `exec "$@"` when arguments are present, placed *after* the config
+checks so a one-shot fails the same way a scheduled run would.
+
+**2. The dry-run flag had two different names.** `EBOOK_SYNC_DRY_RUN` outside the
+container, `DRY_RUN` inside. Overriding it for one run with
+`-e EBOOK_SYNC_DRY_RUN=0` set a variable nothing read: the run announced DRY RUN
+and wrote nothing **while looking like it had been told to publish**. Now one
+name throughout.
+
+**3. Calibre's `metadata.db` is in WAL mode.** Reading it in place with `mode=ro`
+works. *Copying it elsewhere to inspect* does not — the copy leaves the `-wal`
+behind and reports an empty library, which is indistinguishable from a failed
+ingest. Cost real time before the cause was obvious.
+
+**4. `runtime/` was not gitignored.** A Calibre library of ebook files was about
+to land in the working tree of a repo whose sibling already had a 377MB `.git`
+force a hosting migration. Caught before the first container started.
+
+### Windows note
+
+`docker exec calibre-web-automated /app/calibre/calibredb …` fails under Git
+Bash: MSYS rewrites the container path to `C:/Program Files/Git/app/...`. Prefix
+with `MSYS_NO_PATHCONV=1`.
 
 ## First run, in order
 

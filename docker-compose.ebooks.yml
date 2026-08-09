@@ -16,11 +16,15 @@
 #   docker compose -f docker-compose.ebooks.yml logs -f
 #   docker compose -f docker-compose.ebooks.yml down
 #
-# ⚠️ STATUS: written 2026-08-09, NEVER RUN. No image has been pulled, no volume
-# created, and `scripts/index_cwa_library.py` has not executed against a real
-# CWA library. Treat every path below as proposed until one `docker compose up`
-# has happened. In particular the CWA container's expected directory names are
-# taken from its README, not from a running instance.
+# STATUS: ✅ RUN AND VERIFIED end to end 2026-08-09 — a real EPUB went
+# incoming/ -> watcher -> /cwa-book-ingest -> CWA ingest -> Calibre library ->
+# indexer -> Worker -> production D1, carrying its series and volume, and a
+# second run correctly published nothing. The paths and env names below are
+# observed from a running instance, not taken from a README.
+#
+# CWA confirmed the prediction in the watcher's comment on first boot:
+#   [cwa-ingest-service] Docker Desktop detected -> using fallback watcher
+#   [metadata-change-detector] inotify unavailable or out of watches
 
 services:
   # The library engine. OpenAudible's counterpart: it owns the files, we do not.
@@ -133,7 +137,12 @@ services:
       - LIBRARY_API_TOKEN=${LIBRARY_API_TOKEN}
       - CALIBRE_LIBRARY=/calibre-library
       - SYNC_DATA_DIR=/app/data
-      - DRY_RUN=${EBOOK_SYNC_DRY_RUN:-1}
+      # ⚠️ Same name inside and outside the container, deliberately. It was
+      # DRY_RUN inside and EBOOK_SYNC_DRY_RUN outside, and the first attempt to
+      # override it for one run with `-e EBOOK_SYNC_DRY_RUN=0` silently set a
+      # variable nothing read — the run reported DRY RUN and wrote nothing while
+      # looking like it had been told to publish. One name, no trap.
+      - EBOOK_SYNC_DRY_RUN=${EBOOK_SYNC_DRY_RUN:-1}
     volumes:
       # Read-only. The indexer reads Calibre's metadata.db and never writes to
       # the library — CWA owns those files. The audiobook equivalent is mounted
