@@ -16,7 +16,8 @@ file is the shorter "what order do I do things in" version.
 | Remote D1 | ✅ `library-catalog`, WNAM, `6022ea5e-2510-450e-81ce-7d847fa31379`, both migrations applied |
 | Worker | ✅ deployed, version `6915f005-a660-4553-8312-8d1d20174fd3` |
 | Firebase project | ✅ `audiobook-catalog` — **shared. Do not create a second one.** |
-| **Firebase authorised domain** | ❌ **the one thing left.** Step 3. |
+| Firebase authorised domain | ✅ added 2026-08-09 |
+| Ownership | ✅ claimed by `nbaslamking@gmail.com` |
 | Google Books API key | ❌ not obtained (rung skipped without it) |
 | `EBOOK_INGEST_TOKEN` | ❌ not set, so `/api/ingest/*` 404s |
 
@@ -31,11 +32,16 @@ npm run deploy             # done
 A redeploy from now on is just `npm run deploy`. `predeploy` refuses a dirty
 tree. **Migrate before deploying**, so new code never meets an old schema.
 
-## 3. ⚠️ Firebase authorised domain — THE REMAINING STEP
+## 3. Firebase authorised domain — done 2026-08-09
 
-**Google sign-in fails until the Worker's host is on Firebase's allow-list.** The
-browser reports `auth/unauthorized-domain` and the app sits on its sign-in
-screen. This cannot be scripted — the list is Identity Platform admin config and
+`library-catalog.bgc-worker.workers.dev` is on the allow-list and **sign-in is
+verified working in production**: a real Google ID token was minted, sent as a
+bearer token, verified by the Worker against Google's public keys with issuer and
+audience asserted, and `app_user` id 1 was created as `owner`.
+
+Repeat this for any additional host (a custom domain). Until a host is on the
+list, Google returns `auth/unauthorized-domain` and the app sits on its sign-in
+screen. It cannot be scripted — the list is Identity Platform admin config and
 `firebase-tools` has no command for it.
 
 > Firebase console → project **audiobook-catalog** → Authentication → Settings →
@@ -49,11 +55,22 @@ mints different tokens for the same human and silently forks every user. Reviews
 go to the *same* `reviews` collection, which is why one review shows on both
 sites with no sync job.
 
-## 4. Claim ownership — immediately after step 3, before sharing the URL
+## 4. Claim ownership — done 2026-08-09
 
-The first person to sign in against an empty `app_user` table becomes `owner`;
-everyone after lands as `pending`. `OWNER_EMAILS` stays empty; it is a lock-out
-recovery hatch only.
+```
+id 1  nbaslamking@gmail.com  firebase_uid set  display_name "Skylar"
+      review_name "Skylar"   role owner
+```
+
+⚠️ `review_name` is the load-bearing field. Review document ids are
+`{bookId}_{displayNameLower}`, and the existing audiobook reviews are filed under
+`…_skylar` — so this account's reviews on both sites are **the same documents**,
+which is the whole point of the bridge. Changing a Google display name would
+split them; that is why the value is stored here rather than read live.
+
+The bootstrap rule has now fired and can never fire again: everyone signing in
+from here lands as `pending` until an owner approves them. `OWNER_EMAILS` stays
+empty; it is a lock-out recovery hatch only.
 
 ## 5. Optional — Google Books
 

@@ -1,8 +1,8 @@
 # Handoff
 
 > Rewritten **2026-08-09**, replacing the 2026-08-08 "nothing is built" version.
-> **Deployed** 2026-08-09 to https://library-catalog.bgc-worker.workers.dev
-> One console click remains before anyone can sign in — see below.
+> **Live** at https://library-catalog.bgc-worker.workers.dev — deployed, Firebase
+> domain authorised, and Google sign-in verified in production 2026-08-09.
 
 ## State in one paragraph
 
@@ -11,13 +11,14 @@ and the whole thing has been driven end to end in a browser: sign in, browse the
 collection, open a book, set read-state, scan or type an ISBN and resolve it
 against live Open Library, enrich a hand-added book, and write a review that
 lands in the same Firestore collection the audiobook site uses. **What has not
-happened: nobody has signed in yet, no ebook container has ever run, and the
-review backfill has not been committed.**
+happened: no ebook container has ever run, and the review backfill has not been
+committed.**
 
-⚠️ **Sign-in fails until `library-catalog.bgc-worker.workers.dev` is added to
-Firebase → Authentication → Settings → Authorised domains** on the
-`audiobook-catalog` project. No CLI can do it. Once added, **the first person to
-sign in becomes owner** — do it before sharing the URL.
+Sign-in is verified in production against a real Google token, and ownership is
+claimed: `app_user` id 1, `nbaslamking@gmail.com`, `review_name` "Skylar" —
+which matches the `…_skylar` document ids the existing audiobook reviews already
+use, so the two sites' reviews are the same documents. The production collection
+is empty; the four test works are local only.
 
 ## Done
 
@@ -44,15 +45,10 @@ sign in becomes owner** — do it before sharing the URL.
 
 ## ⚠️ What is left
 
-**One console click**, which no CLI can do: Firebase console → project
-`audiobook-catalog` → Authentication → Settings → Authorised domains → add
-`library-catalog.bgc-worker.workers.dev`. Then sign in to claim ownership.
+Provisioning, deployment, the Firebase domain and ownership are all done. Full
+runbook in `docs/access/cloudflare.md`; redeploying is `npm run deploy`.
 
-Cloudflare is done — D1 `6022ea5e-2510-450e-81ce-7d847fa31379` in WNAM, both
-migrations applied, Worker deployed. Redeploying is just `npm run deploy`.
-Full runbook in `docs/access/cloudflare.md`.
-
-Then the backfill, which is what makes the 860 existing audiobook reviews visible
+The one outstanding action is the backfill, which is what makes the 860 existing audiobook reviews visible
 here:
 
 ```bash
