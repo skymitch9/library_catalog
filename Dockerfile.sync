@@ -1,0 +1,37 @@
+# Ebook indexer — the counterpart of audiobook_catalog/Dockerfile.sync.
+#
+# Runs on a cron inside the container, exactly as the audiobook pipeline does:
+#   :15  index  — read CWA's Calibre library, publish new/changed books
+#   :45  audit  — report drift between the Calibre library and the catalog
+#
+# ⚠️ The times are offset from the audiobook pipeline's :00 and :30 on purpose.
+# Both containers run on the same machine and both walk large directory trees;
+# overlapping them competes for the same disk for no reason. This is the same
+# reasoning the Board Game Catalog used to keep its two crons off :00 and :30.
+FROM python:3.12-slim
+
+# ⚠️ No git, and no GITHUB_TOKEN anywhere in this image. The audiobook sync
+# needs both because it publishes by committing to a repo; this one publishes
+# through an authenticated API call to the Worker. Copying the git setup across
+# would hand a background container push rights it has no use for.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    cron \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY scripts/requirements-sync.txt .
+RUN pip install --no-cache-dir -r requirements-sync.txt
+
+COPY scripts/ ./scripts/
+
+RUN mkdir -p /var/log/ebook-sync /app/data
+
+RUN printf "15 * * * * cd /app && /usr/local/bin/python scripts/index_cwa_library.py >> /var/log/ebook-sync/index.log 2>&1\n45 * * * * cd /app && /usr/local/bin/python scripts/index_cwa_library.py --audit >> /var/log/ebook-sync/audit.log 2>&1\n" > /etc/cron.d/ebook-sync \
+    && chmod 0644 /etc/cron.d/ebook-sync \
+    && crontab /etc/cron.d/ebook-sync
+
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
+ENTRYPOINT ["/docker-entrypoint.sh"]

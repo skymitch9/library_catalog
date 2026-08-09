@@ -1,0 +1,156 @@
+# Docker Compose for the Calibre-Web Automated + ebook indexer pipeline.
+#
+# The direct parallel of `audiobook_catalog/docker-compose.sync.yml`, which is
+# the operating pattern this household already runs and trusts. Same three-part
+# shape, same profiles, same log rotation, same bind-mount-the-library approach:
+#
+#   audiobook_catalog            library_catalog
+#   ─────────────────            ───────────────
+#   openaudible                  calibre-web-automated   the library engine
+#   openaudible-scheduler        ebook-ingest-watcher    keeps it fed
+#   audiobook-sync               ebook-sync              publishes to the catalog
+#
+# Usage:
+#   docker compose -f docker-compose.ebooks.yml up -d calibre-web-automated
+#   docker compose -f docker-compose.ebooks.yml --profile automation up -d
+#   docker compose -f docker-compose.ebooks.yml logs -f
+#   docker compose -f docker-compose.ebooks.yml down
+#
+# ⚠️ STATUS: written 2026-08-09, NEVER RUN. No image has been pulled, no volume
+# created, and `scripts/index_cwa_library.py` has not executed against a real
+# CWA library. Treat every path below as proposed until one `docker compose up`
+# has happened. In particular the CWA container's expected directory names are
+# taken from its README, not from a running instance.
+
+services:
+  # The library engine. OpenAudible's counterpart: it owns the files, we do not.
+  calibre-web-automated:
+    image: crocodilestick/calibre-web-automated:latest
+    container_name: calibre-web-automated
+    restart: unless-stopped
+    ports:
+      # Localhost-only by design, exactly as the OpenAudible service is. This is
+      # a reader and an admin UI over the whole library; it does not go on the
+      # LAN without a deliberate decision.
+      - "127.0.0.1:${CWA_PORT:-8083}:8083"
+    environment:
+      - TZ=${TZ:-America/Phoenix}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      # ⚠️ Set this to `true` only if the library lives on NFS/SMB. It changes
+      # SQLite and file-watching behaviour, and CWA's own docs are explicit that
+      # the wrong setting here produces a library that appears to work and
+      # silently misses ingests.
+      - NETWORK_SHARE_MODE=${CWA_NETWORK_SHARE_MODE:-false}
+    volumes:
+      # CWA's own config and the Calibre metadata.db.
+      - type: bind
+        source: ${EBOOK_DATA_DIR:-./runtime/ebooks}/config
+        target: /config
+      # The Calibre library itself. This is what the indexer reads.
+      - type: bind
+        source: ${EBOOK_DATA_DIR:-./runtime/ebooks}/library
+        target: /calibre-library
+      # ⚠️ The watched ingest folder. Acquisition jobs must NEVER write a
+      # partially-downloaded file here — finish it in `incoming/` and move it
+      # across, so the watcher only ever sees a complete file. Same class of
+      # guard as MIN_FILE_AGE_SECONDS in the audiobook pipeline.
+      - type: bind
+        source: ${EBOOK_DATA_DIR:-./runtime/ebooks}/cwa-book-ingest
+        target: /cwa-book-ingest
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Moves finished files from the acquisition work area into CWA's watched
+  # folder. OpenAudible's scheduler counterpart.
+  #
+  # CWA watches `/cwa-book-ingest` itself, so this container exists only for the
+  # atomic handoff — and for the case CWA documents where `inotify` is
+  # unreliable (Docker Desktop, host-mounted filesystems), where polling is the
+  # only thing that works.
+  ebook-ingest-watcher:
+    image: python:3.12-alpine
+    container_name: ebook-ingest-watcher
+    profiles: ["automation"]
+    restart: unless-stopped
+    depends_on:
+      - calibre-web-automated
+    environment:
+      - TZ=${TZ:-America/Phoenix}
+      - INCOMING_DIR=/incoming
+      - INGEST_DIR=/cwa-book-ingest
+      # A file must be this old and unchanged before it is considered finished.
+      # Lifted straight from the audiobook pipeline's MIN_FILE_AGE_SECONDS,
+      # which exists because a downloader that is still writing looks exactly
+      # like a downloader that has stopped.
+      - MIN_FILE_AGE_SECONDS=${MIN_FILE_AGE_SECONDS:-300}
+      - POLL_INTERVAL_SECONDS=${EBOOK_POLL_INTERVAL_SECONDS:-60}
+    volumes:
+      - type: bind
+        source: ${EBOOK_DATA_DIR:-./runtime/ebooks}/incoming
+        target: /incoming
+      - type: bind
+        source: ${EBOOK_DATA_DIR:-./runtime/ebooks}/cwa-book-ingest
+        target: /cwa-book-ingest
+      - ./scripts/ebook_ingest_watcher.py:/app/ebook_ingest_watcher.py:ro
+    command: ["python", "/app/ebook_ingest_watcher.py"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Reads CWA's Calibre library and publishes it into library_catalog.
+  # `audiobook-sync`'s counterpart.
+  #
+  # ⚠️ THE ONE PLACE THE TWO PIPELINES GENUINELY DIVERGE, and it must not be
+  # copied across by reflex. The audiobook pipeline's publish step is a **git
+  # commit and push**, because that site is static and built from the repo. This
+  # catalog is a Worker over D1: its publish step is an **authenticated API
+  # call**. There is no GITHUB_TOKEN here and no git in the image, deliberately —
+  # a sync container with push rights to a repo it does not need is a standing
+  # risk for no benefit.
+  ebook-sync:
+    build:
+      context: .
+      dockerfile: Dockerfile.sync
+    container_name: ebook-sync
+    profiles: ["automation"]
+    restart: unless-stopped
+    depends_on:
+      - calibre-web-automated
+    env_file:
+      - .env
+    environment:
+      - TZ=${TZ:-America/Phoenix}
+      # Where the Worker lives, and the token to talk to it. See
+      # docs/access/deploy.md — the indexer authenticates as a service identity,
+      # not as a person.
+      - LIBRARY_API_BASE=${LIBRARY_API_BASE}
+      - LIBRARY_API_TOKEN=${LIBRARY_API_TOKEN}
+      - CALIBRE_LIBRARY=/calibre-library
+      - SYNC_DATA_DIR=/app/data
+      - DRY_RUN=${EBOOK_SYNC_DRY_RUN:-1}
+    volumes:
+      # Read-only. The indexer reads Calibre's metadata.db and never writes to
+      # the library — CWA owns those files. The audiobook equivalent is mounted
+      # read-write because its audit script restores missing files from Drive;
+      # nothing here needs that, so nothing here gets it.
+      - type: bind
+        source: ${EBOOK_DATA_DIR:-./runtime/ebooks}/library
+        target: /calibre-library
+        read_only: true
+      # Persist the "what have we already published" manifest across restarts,
+      # the same way the audiobook pipeline persists its upload manifest.
+      - ebook-sync-data:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  ebook-sync-data:

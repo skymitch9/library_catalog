@@ -342,3 +342,136 @@ Verified 2026-08-09 against:
 - <https://github.com/skymitch9/catalog-platform/blob/main/docs/LIBRARY_CATALOG.md>
 
 Re-verify CWA details before implementation if this document is materially old; it is an actively developed external project.
+
+---
+
+# Operating layer — built 2026-08-09
+
+> The sections above are the decision. This section is the **concrete parallel of
+> the audiobook process**, added because the owner asked for the two pipelines to
+> operate the same way rather than merely to resemble each other on a diagram.
+>
+> ⚠️ **Status: written, typechecked, and NEVER RUN.** No image has been pulled,
+> no container started, and no CWA library exists on this machine. The Worker
+> half *is* exercised — see "What was verified" below.
+
+## The 1:1 mapping
+
+| `audiobook_catalog` | `library_catalog` | Role |
+|---|---|---|
+| `openaudible` | `calibre-web-automated` | the library engine; owns the files |
+| `openaudible-scheduler` | `ebook-ingest-watcher` | keeps it fed |
+| `audiobook-sync` | `ebook-sync` | publishes into the catalog |
+| `docker-compose.sync.yml` | `docker-compose.ebooks.yml` | same profiles, same log rotation |
+| `Dockerfile.sync` | `Dockerfile.sync` | cron in the container |
+| `docker-entrypoint.sh` | `docker-entrypoint.sh` | validate config, run once, then cron |
+| `scripts/sync_to_drive.py` | `scripts/index_cwa_library.py` | the publish step |
+| `MIN_FILE_AGE_SECONDS` | `MIN_FILE_AGE_SECONDS` | "is the producer finished?" |
+| upload manifest in a named volume | `cwa_manifest.json` in a named volume | idempotent re-runs |
+| cron at `:00` and `:30` | cron at `:15` and `:45` | offset on purpose — same disk |
+
+Everything carried across was carried across because it already earns its keep in
+the audiobook pipeline, not because symmetry is pretty.
+
+## ⚠️ The three places the parallel deliberately breaks
+
+**1. Publishing is an API call, not a git push.** The audiobook site is static and
+built from its repo, so its sync container holds a `GITHUB_TOKEN` and commits.
+This catalog is a Worker over D1. `Dockerfile.sync` here installs **no git** and
+the container is given **no GitHub credentials** — a background process with push
+rights to a repo it never needs is a standing risk for no benefit.
+
+**2. The library mount is read-only.** The audiobook sync mounts its library
+read-write because `audit_drive_vs_local.py` restores missing files from Drive.
+Nothing in the ebook pipeline needs to write to the library — CWA owns those
+files — so nothing in it gets permission to.
+
+**3. Authentication is a scoped shared secret, not a user identity.** The indexer
+is a cron with no browser and no Google session; it cannot hold a Firebase ID
+token. `EBOOK_INGEST_TOKEN` unlocks exactly one route. See below.
+
+## `POST /api/ingest/ebook`
+
+The one endpoint mounted **outside** the Firebase auth middleware. Everything
+about it is narrowed to make that acceptable:
+
+| Property | Why |
+|---|---|
+| Unset token ⇒ the route **404s**, not 401s | the failure direction matters more than the feature; a 404 also invites less guessing |
+| Constant-time secret comparison | `===` on a secret leaks its length, and eventually its content |
+| Creates a work and an **ebook** edition. Nothing else | no reads, no copies, no reviews, no users — a leaked token cannot exfiltrate the collection because nothing here returns it |
+| Physical formats refused at the schema | a cron that can silently add hardcovers is a worse thing to leak |
+| **`work_key` is recomputed server-side** | the indexer sends its own so drift is *visible*, but a drifted Python port must never be able to write keys the rest of the system cannot find |
+| It does **not** create a `copy` | a file existing is evidence of a licence; *"we own this"* is a claim about us, and migration 0001's catalog/collection split says a machine does not make those unasked |
+
+## ⚠️ `work_key` is now computed in two languages
+
+`packages/core/src/titles.ts` (TypeScript, authoritative) and
+`scripts/index_cwa_library.py` (a port, because the indexer runs in a container
+with no Node).
+
+This is the exact shape that has already bitten this household — `audiobook_catalog`
+has four author-splitters and two disagree. Here a drift does not throw: it
+writes a work whose reviews are invisible and a review whose book cannot be
+found, and both look completely normal.
+
+So there is a guard:
+
+```bash
+npm run check:fold      # 10 cases, both languages, must be byte-identical
+```
+
+**Run it after any change to `normaliseTitle`, `splitAuthors`, `primaryAuthor` or
+`workKeyFor`.** `npm test` cannot cover it — that would need a Python
+interpreter. Currently passing: 10/10 identical.
+
+## What was verified, and what was not
+
+✅ Verified by running it:
+
+- `POST /api/ingest/ebook` rejects a missing token (401), a wrong token (401),
+  and is disabled entirely (404) when `EBOOK_INGEST_TOKEN` is unset.
+- It matches an **existing** work by `work_key` rather than duplicating it
+  (`createdWork: false` for a book already in the catalog).
+- It creates a new work with series data when the book is unknown.
+- It refuses a physical format with a 400.
+- It surfaces `work_key_mismatch` when the caller's key disagrees with the
+  server's.
+- The rest of the API is unaffected by mounting a route ahead of the auth
+  middleware.
+- Python and TypeScript folds agree on all 10 fixture cases.
+
+❌ Not verified — nothing here has run:
+
+- The CWA image, its environment variables, and the directory names
+  `/config`, `/calibre-library`, `/cwa-book-ingest`. Taken from CWA's README,
+  **not** from a running container.
+- `scripts/index_cwa_library.py` against a real Calibre `metadata.db`. The
+  column and identifier mappings are from Calibre's documented schema and have
+  never met real rows. **Run it with `--audit` and read the output before ever
+  setting `EBOOK_SYNC_DRY_RUN=0`.**
+- `scripts/ebook_ingest_watcher.py`. The cross-device atomic-move path in
+  particular (stage under a dotfile, then rename within the destination
+  filesystem) is written from first principles and untested.
+
+## First run, in order
+
+```bash
+# 1. Directories the compose file bind-mounts
+mkdir -p runtime/ebooks/{config,library,incoming,cwa-book-ingest}
+
+# 2. The library engine alone, and confirm it comes up on 127.0.0.1:8083
+docker compose -f docker-compose.ebooks.yml up -d calibre-web-automated
+
+# 3. Ingest one book by hand through the CWA UI, so metadata.db exists
+
+# 4. Set the ingest secret on the Worker and in .env
+wrangler secret put EBOOK_INGEST_TOKEN --config apps/worker/wrangler.toml
+
+# 5. Audit BEFORE automating anything
+docker compose -f docker-compose.ebooks.yml run --rm ebook-sync \
+  python scripts/index_cwa_library.py --audit
+
+# 6. Only once the audit output looks right
+docker compose -f docker-compose.ebooks.yml --profile automation up -d
+```

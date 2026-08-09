@@ -38,6 +38,27 @@ export interface Env {
   ANTHROPIC_API_KEY?: string;
 
   /**
+   * Shared secret for the ebook indexer running in Docker.
+   *
+   * ⚠️ Why a static token at all, when everything else here verifies a Firebase
+   * ID token: **the indexer is not a person and cannot hold one.** It is a cron
+   * inside a container with no browser, no Google session and no way to refresh.
+   * Firebase does offer service accounts, but a service-account private key
+   * bypasses `firestore.rules` outright, and this process has no business
+   * anywhere near Firestore — it writes to D1 and nothing else.
+   *
+   * So it gets a token that can do exactly one thing, and the route it unlocks
+   * (`/api/ingest/*`) is the narrowest in the app: it can create works and
+   * ebook editions. It cannot read the collection, cannot touch copies, cannot
+   * write a review, and cannot manage users.
+   *
+   * Unset means the ingest route is **disabled entirely** rather than open. Set
+   * it with `wrangler secret put EBOOK_INGEST_TOKEN` and generate it with
+   * something like `openssl rand -hex 32`.
+   */
+  EBOOK_INGEST_TOKEN?: string;
+
+  /**
    * Local development only. Ignored unless ENVIRONMENT is not "production", so a
    * stray value in production vars can never bypass sign-in.
    */

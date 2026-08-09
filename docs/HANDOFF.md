@@ -20,10 +20,16 @@ been committed** — both are deliberately left for the owner.
 | **Shared identity** | ✅ Firebase Google SSO on the `audiobook-catalog` project, joined on email. Design in `docs/info/identity-and-reviews.md`. |
 | **Review bridge** | ✅ `workKey`, the draft endpoint, the client Firestore path, and the backfill script. Backfill **dry-run only**. |
 | **Phase 2 — ISBN scan** | 🟡 Partly. The ladder, the gate and `GET /api/isbn/:code` work. The camera UI and `scan_job` queue are not wired. |
+| **Phase 3 — ebook pipeline** | 🟡 The operating layer is written and the Worker half is verified; **no container has ever run**. See `docs/EBOOK_PIPELINE.md` "Operating layer". |
 
 ## Not done
 
-- Phases 3 (ebook ingest), 4 (shelf photo), 5 (research + index).
+- Phases 4 (shelf photo) and 5 (research + index).
+- **Nothing in the ebook pipeline has been executed.** The compose file,
+  Dockerfile, entrypoint, ingest watcher and indexer are all written and
+  unrun — CWA's directory names come from its README, and
+  `index_cwa_library.py` has never met a real Calibre `metadata.db`. Run it
+  with `--audit` first; `EBOOK_SYNC_DRY_RUN` defaults to on.
 - `scan_job` is in the schema but no route reads or writes it.
 - `camera.ts` / `scanner.ts` are ported and rewired to the book gate, but no page
   uses them yet.
@@ -65,7 +71,13 @@ npm run backfill:reviews -- --commit    # writes to the LIVE reviews collection
    session is thrown away immediately after sign-in. Both facts shaped the whole
    identity design. Read `docs/info/identity-and-reviews.md` §1 before touching
    anything near auth.
-5. **Reading the backfill's dry-run output caught a defect the counts hid.**
+5. **`work_key` is now computed in TWO languages** — TypeScript (authoritative)
+   and Python (the indexer, which runs in a container with no Node). This is the
+   shape that has already bitten this household. `npm run check:fold` proves the
+   two agree on 10 fixture cases and **must be run after any change to
+   `normaliseTitle`, `splitAuthors`, `primaryAuthor` or `workKeyFor`.** `npm test`
+   cannot cover it.
+6. **Reading the backfill's dry-run output caught a defect the counts hid.**
    860/860 matched looked perfect; the keys it *would* have written were
    `court of mist and fury part 1 of 2 dramatized adaptation …`, which no
    paperback could match. Fixed by using the `series` column. Read the keys, not
