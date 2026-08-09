@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type Me } from '../api.js';
+import { Enrich } from '../components/Enrich.js';
 import { Reviews } from '../components/Reviews.js';
 import { formatLabel } from '../lib/formats.js';
 
@@ -202,6 +203,10 @@ export function WorkPage({
           </ul>
         )}
       </section>
+
+      {me.capabilities.includes('editCatalog') && (
+        <Enrich workId={workId} hasCover={!!work.coverUrl} onApplied={load} />
+      )}
 
       <Reviews workId={workId} me={me} />
     </main>

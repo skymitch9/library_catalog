@@ -127,12 +127,42 @@ this catalog can have: it files a book you do not own as one you do.
 Fielded search is the default. Free text is a second rung whose results must
 clear the same similarity gate as a spine read.
 
-### 4.4 Even the fielded query returns confident wrong answers
+### 4.4 ⚠️ The similarity gate cannot catch the worst case
 
-"Firefight" + "Brandon Sanderson" returned a **different 2001 book called
-Firefight**. The right answer exists in Open Library; it was not first. This is
-why `searchOpenLibrary` asks for 5 results rather than 1, and why every result
-goes through `matchIndexedWork`.
+"Firefight" + "Brandon Sanderson" returns a **different book called Firefight**.
+Captured verbatim from `/api/enrich/works/1/candidates` on 2026-08-09:
+
+```json
+{
+  "title": "Firefight",
+  "authors": "Brandon Sanderson",
+  "publisher": "Random House Books for Young Readers",
+  "publishedYear": 2001,
+  "pages": 452,
+  "similarity": 1,
+  "authorSimilarity": 1
+}
+```
+
+Sanderson's *Firefight* is Delacorte, 2015. This record is **not** it.
+
+**Both similarity scores are 1.0**, because the title string and the author
+string are exactly right. No threshold separates this from a correct answer —
+there is nothing textual to separate. It is the same shape as the Catan problem
+that forced the Board Game Catalog to add an alias table: *a fact about the
+world, which has to be recorded rather than computed.*
+
+Three consequences, and all three are already built in:
+
+1. **`searchOpenLibrary` asks for 5 results, not 1.** The right answer is not
+   reliably first.
+2. **Nothing auto-applies.** `/api/enrich` proposes; a person presses Use.
+3. **The year and publisher are rendered beside every candidate**, because they
+   are the only discriminator that exists. A UI showing just title and author
+   would make this record indistinguishable from the truth.
+
+Do not "improve" the enrichment flow by auto-selecting the top candidate. The
+top candidate here scores a perfect 1.0 and is wrong.
 
 ---
 

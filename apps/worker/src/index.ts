@@ -9,6 +9,7 @@ import { Hono } from 'hono';
 import type { AppBindings, Env } from './env.js';
 import { requireAuth } from './middleware/auth.js';
 import { catalogRoutes } from './routes/catalog.js';
+import { enrichRoutes } from './routes/enrich.js';
 import { healthRoutes } from './routes/health.js';
 import { ingestRoutes } from './routes/ingest.js';
 import { isbnRoutes } from './routes/isbn.js';
@@ -33,6 +34,7 @@ app.use('/api/*', requireAuth());
 app.route('/api', userRoutes);
 app.route('/api', catalogRoutes);
 app.route('/api/isbn', isbnRoutes);
+app.route('/api/enrich', enrichRoutes);
 app.route('/api/reviews', reviewRoutes);
 
 app.notFound(async (c) => {

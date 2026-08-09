@@ -116,6 +116,28 @@ export const api = {
 
   scan: (code: string) => request<Record<string, unknown>>(`/api/isbn/${encodeURIComponent(code)}`),
 
+  /** Proposals only — see apps/worker/src/routes/enrich.ts. */
+  enrichCandidates: (workId: number) =>
+    request<{
+      candidates: {
+        title: string;
+        authors: string;
+        publisher: string | null;
+        publishedYear: number | null;
+        coverUrl: string | null;
+        openlibraryWorkId: string | null;
+        similarity: number;
+        authorSimilarity: number;
+      }[];
+      note: string | null;
+    }>(`/api/enrich/works/${workId}/candidates`),
+
+  updateWork: (id: number, body: unknown) =>
+    request<Record<string, unknown>>(`/api/works/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+
   /** The Worker builds the review document; the browser writes it. See routes/reviews.ts. */
   reviewDraft: (workId: number, body: { rating: number; text: string; editionLabel?: string }) =>
     request<{ collection: string; docId: string; doc: Record<string, unknown> }>(
