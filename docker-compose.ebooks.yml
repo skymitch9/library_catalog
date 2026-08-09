@@ -107,6 +107,53 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # The acquisition stage for the books you already own: the ebooks sitting
+  # beside the audiobooks. Measured 2026-08-09 — 83 EPUB and 30 PDF files across
+  # 7 author directories, none of them catalogued anywhere.
+  #
+  # ⚠️ The audiobook library is mounted **read-only**, and the script copies
+  # rather than moves. Those files belong to that catalog:
+  # `audiobook_catalog/app/metadata.py` scans for them beside each audiobook and
+  # writes them into the `companion_files` CSV column, so moving one out silently
+  # changes that site's output. The `:ro` means a later edit to the script cannot
+  # make the mistake either.
+  #
+  # Profile `companions` rather than `automation`, so it is an explicit opt-in.
+  # It reads a directory outside this project.
+  ebook-companions:
+    build:
+      context: .
+      dockerfile: Dockerfile.sync
+    container_name: ebook-companions
+    profiles: ["companions"]
+    restart: "no"
+    environment:
+      - TZ=${TZ:-America/Phoenix}
+      - AUDIOBOOK_LIBRARY=/audiobooks
+      - INGEST_DIR=/cwa-book-ingest
+      - SYNC_DATA_DIR=/app/data
+    volumes:
+      - type: bind
+        source: ${AUDIOBOOK_LIBRARY:-C:/Users/nbasl/OpenAudible/books}
+        target: /audiobooks
+        read_only: true
+      - type: bind
+        source: ${EBOOK_DATA_DIR:-./runtime/ebooks}/cwa-book-ingest
+        target: /cwa-book-ingest
+      - ebook-sync-data:/app/data
+      # Bind-mounted over the copy baked into the image, so editing the title
+      # rules and re-running is one command instead of a rebuild. This script is
+      # the one most likely to need tuning against a real shelf — a filename is
+      # not a schema, and every library's are differently untidy.
+      - ./scripts/scan_audiobook_companions.py:/app/scripts/scan_audiobook_companions.py:ro
+    entrypoint: ["python"]
+    command: ["scripts/scan_audiobook_companions.py"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   # Reads CWA's Calibre library and publishes it into library_catalog.
   # `audiobook-sync`'s counterpart.
   #
