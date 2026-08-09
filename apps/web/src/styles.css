@@ -175,3 +175,22 @@ textarea {
   overflow: hidden;
   color: #d9a441;
 }
+
+/* --- scanning ------------------------------------------------------------ */
+
+.camera-stage {
+  position: relative;
+  margin: 0.5rem 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #000;
+}
+.camera-stage.hidden { display: none; }
+.camera-stage video {
+  display: block;
+  width: 100%;
+  /* Cap the height so the results list stays on screen on a phone — the whole
+     point of continuous scanning is watching the list grow while you sweep. */
+  max-height: 45vh;
+  object-fit: cover;
+}

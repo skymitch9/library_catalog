@@ -101,6 +101,19 @@ export const api = {
   createWork: (body: unknown) =>
     request<{ work: WorkSummary }>('/api/works', { method: 'POST', body: JSON.stringify(body) }),
 
+
+  createEdition: (body: unknown) =>
+    request<{ edition: { id: number } }>('/api/editions', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  createCopy: (body: unknown) =>
+    request<{ copy: { id: number } }>('/api/copies', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
   scan: (code: string) => request<Record<string, unknown>>(`/api/isbn/${encodeURIComponent(code)}`),
 
   /** The Worker builds the review document; the browser writes it. See routes/reviews.ts. */

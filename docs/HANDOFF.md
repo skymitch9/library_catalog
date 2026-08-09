@@ -19,7 +19,7 @@ been committed** — both are deliberately left for the owner.
 | **Phase 1 — scaffold + manual** | ✅ Worker + D1 + Firebase auth + React shell. Add/browse works, editions, copies, read-state. |
 | **Shared identity** | ✅ Firebase Google SSO on the `audiobook-catalog` project, joined on email. Design in `docs/info/identity-and-reviews.md`. |
 | **Review bridge** | ✅ `workKey`, the draft endpoint, the client Firestore path, and the backfill script. Backfill **dry-run only**. |
-| **Phase 2 — ISBN scan** | 🟡 Partly. The ladder, the gate and `GET /api/isbn/:code` work. The camera UI and `scan_job` queue are not wired. |
+| **Phase 2 — ISBN scan** | ✅ for the parts that matter. Ladder, gate, `GET /api/isbn/:code`, and a continuous-scan screen with manual entry, per-row Add, and cover images. The `scan_job` queue table is still unused — see below. |
 | **Phase 3 — ebook pipeline** | 🟡 The operating layer is written and the Worker half is verified; **no container has ever run**. See `docs/EBOOK_PIPELINE.md` "Operating layer". |
 
 ## Not done
@@ -30,10 +30,27 @@ been committed** — both are deliberately left for the owner.
   unrun — CWA's directory names come from its README, and
   `index_cwa_library.py` has never met a real Calibre `metadata.db`. Run it
   with `--audit` first; `EBOOK_SYNC_DRY_RUN` defaults to on.
-- `scan_job` is in the schema but no route reads or writes it.
-- `camera.ts` / `scanner.ts` are ported and rewired to the book gate, but no page
-  uses them yet.
-- No cover images, no series browse page, no work detail page in the UI.
+- `scan_job` is in the schema but no route reads or writes it. The scan screen
+  holds its results in React state, so a phone locking mid-sweep loses them.
+  That is the gap the queue exists to close, and it matters more for phase 4
+  (shelf photos, which cost money per photo) than for ISBNs, which are free to
+  re-scan.
+- Phase 4 (shelf photo) and phase 5 (research + index).
+- No series browse page; the collection is one flat list ordered by series.
+
+## ⚠️ A local gotcha that reads like a build failure
+
+**`wrangler dev` will not tell you the port was already taken.** Port 8792 was
+already bound by the Board Game Catalog's own `wrangler dev`, so the library
+catalog silently failed to bind and the browser served **that app instead** —
+title, data and all. The symptom is a completely different working application
+on your own localhost, which reads like a catastrophic build problem and is not
+one. Check `curl -s localhost:PORT/ | grep title` before debugging anything else.
+
+**A `<video>` element makes Chrome's screenshot capture hang**, not the page.
+The scan screen appears frozen to browser automation for 10–30 seconds after it
+mounts; the page itself is responsive throughout and a person sees nothing wrong.
+Do not go looking for a render loop, as this session did for a while.
 
 ## ⚠️ Commands the owner must run — nothing else can proceed without these
 

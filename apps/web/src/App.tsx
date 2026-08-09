@@ -34,6 +34,7 @@ import type { User } from 'firebase/auth';
 import { api, ApiError, type Me } from './api.js';
 import { signIn, signOutNow, watchAuth } from './lib/firebase.js';
 import { CollectionPage } from './pages/CollectionPage.js';
+import { ScanPage } from './pages/ScanPage.js';
 import { WorkPage } from './pages/WorkPage.js';
 
 type Status = 'checking' | 'signed-out' | 'pending-approval' | 'ready' | 'error';
@@ -51,6 +52,7 @@ export function App() {
    * a URL scheme and back-button semantics up front for what is one useState.
    */
   const [openWorkId, setOpenWorkId] = useState<number | null>(null);
+  const [scanning, setScanning] = useState(false);
 
   const check = useCallback(async () => {
     try {
@@ -129,9 +131,14 @@ export function App() {
         <span className="muted small">
           {me.displayName ?? me.email} · {me.role}
         </span>
+        {me.capabilities.includes('scan') && !scanning && (
+          <button onClick={() => setScanning(true)}>Scan</button>
+        )}
         <button onClick={() => void signOutNow()}>Sign out</button>
       </header>
-      {openWorkId === null ? (
+      {scanning ? (
+        <ScanPage onDone={() => setScanning(false)} />
+      ) : openWorkId === null ? (
         <CollectionPage me={me} onOpen={setOpenWorkId} />
       ) : (
         <WorkPage workId={openWorkId} me={me} onBack={() => setOpenWorkId(null)} />
