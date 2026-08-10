@@ -201,6 +201,7 @@ async function api(method, endpoint, body) {
 let createdWorks = 0;
 let attachedWorks = 0;
 let createdEditions = 0;
+let skippedEditions = 0;
 let failed = 0;
 
 for (const w of byWork.values()) {
@@ -225,7 +226,14 @@ for (const w of byWork.values()) {
       if (res.warning === 'work_key_mismatch') {
         console.warn(`  key mismatch on "${w.title}": sent ${res.sent}, server computed ${res.workKey}`);
       }
-      createdEditions++;
+      // ⚠️ Trust the server's answer, not the fact that a call was made. The
+      // first version counted every response as a creation, so an idempotent
+      // re-run reported "118 editions created" while the database correctly
+      // stayed at 119 rows. A counter that lies about a no-op is worse than no
+      // counter: it looks exactly like the duplicate bug it was meant to prove
+      // was fixed.
+      if (res.createdEdition === false) skippedEditions++;
+      else createdEditions++;
     }
   } catch (err) {
     // One bad row must not stop the run — the same rule the audiobook pipeline
@@ -237,6 +245,6 @@ for (const w of byWork.values()) {
 
 console.log(
   `\nworks: ${createdWorks} created, ${attachedWorks} attached to existing` +
-    `\neditions: ${createdEditions} created` +
+    `\neditions: ${createdEditions} created, ${skippedEditions} already present` +
     (failed ? `\nfailed: ${failed}` : ''),
 );
