@@ -74,9 +74,12 @@ function runSql(sql, { remote }) {
       '--file', file,
       '--json',
     ]);
-    const start = out.indexOf('[');
-    if (start < 0) throw new Error(`no JSON in wrangler output:\n${out}`);
-    return JSON.parse(out.slice(start));
+    // Same extractor as the read path. This line was left on the naive
+    // `slice(indexOf('['))` when query() was hardened, and it failed the first
+    // time a write's output carried anything after the JSON — with a bare
+    // "Unexpected non-whitespace character after JSON at position 76". Fixing
+    // one of two identical parsers is not fixing the bug.
+    return extractJsonArray(out);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -127,9 +130,7 @@ export function query(sql, { remote }) {
     '--command', oneLine,
     '--json',
   ]);
-  const start = out.indexOf('[');
-  if (start < 0) throw new Error(`no JSON in wrangler output:\n${out}`);
-  const rows = JSON.parse(out.slice(start))[0]?.results ?? [];
+  const rows = extractResults(out);
 
   // Belt and braces: if a summary ever comes back from a read, say so instead of
   // handing the caller a row whose every column is undefined.
@@ -140,6 +141,61 @@ export function query(sql, { remote }) {
     );
   }
   return rows;
+}
+
+/**
+ * Pull the results array out of wrangler's `--json` output.
+ *
+ * ⚠️ Written the careful way because the obvious way is wrong twice over.
+ * It used to be `JSON.parse(out.slice(out.indexOf('[')))`:
+ *
+ *   1. **Slicing to the END of the string** means any byte wrangler prints
+ *      *after* the JSON — a deprecation notice, a stray newline from a shell —
+ *      makes `JSON.parse` fail with "Unexpected non-whitespace character after
+ *      JSON". The array itself was perfectly good.
+ *   2. **The first `[` is not reliably the start of the JSON.** A warning that
+ *      happens to contain a bracket wins, and then the parse fails somewhere in
+ *      the middle of a line of prose.
+ *
+ * So: find a `[`, walk it with a string-aware bracket counter to its true match,
+ * and parse exactly that. If it does not parse, try the next `[`. And if nothing
+ * parses, say what came back instead of throwing a bare SyntaxError — the
+ * failure that prompted this printed a position offset and nothing else, which
+ * is the least useful thing a parser can tell you.
+ */
+function extractJsonArray(out) {
+  for (let i = out.indexOf('['); i >= 0; i = out.indexOf('[', i + 1)) {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let j = i; j < out.length; j++) {
+      const ch = out[j];
+      if (escaped) { escaped = false; continue; }
+      if (ch === '\\' && inString) { escaped = true; continue; }
+      if (ch === '"') { inString = !inString; continue; }
+      if (inString) continue;
+      if (ch === '[') depth++;
+      else if (ch === ']') {
+        depth--;
+        if (depth === 0) {
+          try {
+            return JSON.parse(out.slice(i, j + 1));
+          } catch {
+            break; // not the array we wanted — try the next '['
+          }
+        }
+      }
+    }
+  }
+  throw new Error(
+    'could not find a JSON array in wrangler output. First 500 chars:\n' +
+      out.slice(0, 500),
+  );
+}
+
+/** The rows of the first statement, for a read. */
+function extractResults(out) {
+  return extractJsonArray(out)[0]?.results ?? [];
 }
 
 /** A SQL string literal. Doubling the quote is the whole of SQLite's escaping. */

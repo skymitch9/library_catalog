@@ -45,23 +45,26 @@
     "searched_at": "2026-08-10"
   },
   "beautiful exiles|meg waite clayton": {
-    "olid": null,
+    "olid": "OL19753291W",
     "candidate": "OL19753291W",
-    "verdict": "needs_review",
+    "verdict": "matched",
     "confidence": "medium",
     "via": "search",
     "corroboration": [
-      "year"
+      "year",
+      "publisher"
     ],
     "evidence": [
       "fielded search matched \"Beautiful exiles\" by Meg Waite Clayton (title 1.00, author 1.00)",
-      "our file says 2018; Open Library has an edition from 2018"
+      "our file says 2018; Open Library has an edition from 2018",
+      "PUBLISHER VERIFIED BY HAND 2026-08-10: Lake Union Publishing is an Amazon Publishing imprint; OL lists Amazon Publishing — same publisher, different level of the same name"
     ],
     "source": [
       "https://openlibrary.org/works/OL19753291W"
     ],
     "searched_at": "2026-08-10",
-    "note": "One weak corroborator only. Not enough to write unattended."
+    "note": "One weak corroborator only. Not enough to write unattended.",
+    "manual": true
   },
   "beyond the wall mm|selkie myth": {
     "olid": null,
@@ -667,23 +670,26 @@
     "searched_at": "2026-08-10"
   },
   "john|navigators": {
-    "olid": null,
+    "olid": "OL25183827W",
     "candidate": "OL25183827W",
-    "verdict": "needs_review",
+    "verdict": "matched",
     "confidence": "medium",
     "via": "search",
     "corroboration": [
-      "year"
+      "year",
+      "publisher"
     ],
     "evidence": [
       "fielded search matched \"John\" by The Navigators (title 1.00, author 1.00)",
-      "our file says 2018; Open Library has an edition from 2018"
+      "our file says 2018; Open Library has an edition from 2018",
+      "PUBLISHER VERIFIED BY HAND 2026-08-10: NavPress Publishing Group is The Navigators own publishing arm, and LifeChange is a NavPress series"
     ],
     "source": [
       "https://openlibrary.org/works/OL25183827W"
     ],
     "searched_at": "2026-08-10",
-    "note": "One weak corroborator only. Not enough to write unattended."
+    "note": "One weak corroborator only. Not enough to write unattended.",
+    "manual": true
   },
   "killer s mind|mike omer": {
     "olid": "OL20162119W",
@@ -1122,22 +1128,24 @@
     "searched_at": "2026-08-10"
   },
   "seirei tsukai no blade dance volume 05 demon slayer|shimizu yuu": {
-    "olid": null,
+    "olid": "OL32816144W",
     "candidate": "OL32816144W",
-    "verdict": "needs_review",
+    "verdict": "matched",
     "confidence": "none",
     "via": "isbn",
     "corroboration": [],
     "evidence": [
       "ISBN 9784840142991 read from the EPUB's <dc:identifier> resolves to edition OL44642644M",
-      "⚠️ nothing textual agrees: Open Library calls it \"精霊使いの剣舞 5　魔王殺しの聖剣\""
+      "⚠️ nothing textual agrees: Open Library calls it \"精霊使いの剣舞 5　魔王殺しの聖剣\"",
+      "OWNER DECISION 2026-08-10: the English fan translation is treated as the same work as the Japanese original, so its ISBN identifies it. Applied to all volumes held back for this reason."
     ],
     "source": [
       "https://openlibrary.org/works/OL32816144W",
       "EPUB <dc:identifier> ISBN 9784840142991"
     ],
     "searched_at": "2026-08-10",
-    "note": "The ISBN resolved, but nothing we hold independently agrees with what it resolved to."
+    "note": "The ISBN resolved, but nothing we hold independently agrees with what it resolved to.",
+    "manual": true
   },
   "seirei tsukai no blade dance volume 06 the reminisced darkness spirit|shimizu yuu": {
     "olid": "OL32816150W",
@@ -1176,40 +1184,44 @@
     "searched_at": "2026-08-10"
   },
   "seirei tsukai no blade dance volume 08 the night before the finale|shimizu yuu": {
-    "olid": null,
+    "olid": "OL32816119W",
     "candidate": "OL32816119W",
-    "verdict": "needs_review",
+    "verdict": "matched",
     "confidence": "none",
     "via": "isbn",
     "corroboration": [],
     "evidence": [
       "ISBN 9784840146845 read from the EPUB's <dc:identifier> resolves to edition OL44642619M",
-      "⚠️ nothing textual agrees: Open Library calls it \"決戦前夜 / Kessen Zen'ya [The Night Before the Decisive Battle ]\""
+      "⚠️ nothing textual agrees: Open Library calls it \"決戦前夜 / Kessen Zen'ya [The Night Before the Decisive Battle ]\"",
+      "OWNER DECISION 2026-08-10: the English fan translation is treated as the same work as the Japanese original, so its ISBN identifies it. Applied to all volumes held back for this reason."
     ],
     "source": [
       "https://openlibrary.org/works/OL32816119W",
       "EPUB <dc:identifier> ISBN 9784840146845"
     ],
     "searched_at": "2026-08-10",
-    "note": "The ISBN resolved, but nothing we hold independently agrees with what it resolved to."
+    "note": "The ISBN resolved, but nothing we hold independently agrees with what it resolved to.",
+    "manual": true
   },
   "seirei tsukai no blade dance volume 09 cross fire|shimizu yuu": {
-    "olid": null,
+    "olid": "OL32816116W",
     "candidate": "OL32816116W",
-    "verdict": "needs_review",
+    "verdict": "matched",
     "confidence": "none",
     "via": "isbn",
     "corroboration": [],
     "evidence": [
       "ISBN 9784840148740 read from the EPUB's <dc:identifier> resolves to edition OL44642614M",
-      "⚠️ nothing textual agrees: Open Library calls it \"クロス・ファイア / Kurosu Faia [Cross Fire]\""
+      "⚠️ nothing textual agrees: Open Library calls it \"クロス・ファイア / Kurosu Faia [Cross Fire]\"",
+      "OWNER DECISION 2026-08-10: the English fan translation is treated as the same work as the Japanese original, so its ISBN identifies it. Applied to all volumes held back for this reason."
     ],
     "source": [
       "https://openlibrary.org/works/OL32816116W",
       "EPUB <dc:identifier> ISBN 9784840148740"
     ],
     "searched_at": "2026-08-10",
-    "note": "The ISBN resolved, but nothing we hold independently agrees with what it resolved to."
+    "note": "The ISBN resolved, but nothing we hold independently agrees with what it resolved to.",
+    "manual": true
   },
   "seirei tsukai no blade dance volume 10 the awakening of the demon king|shimizu yuu": {
     "olid": "OL32816106W",
@@ -1230,76 +1242,84 @@
     "searched_at": "2026-08-10"
   },
   "seirei tsukai no blade dance volume 11 elemental lord assassination|shimizu yuu": {
-    "olid": null,
+    "olid": "OL29316679W",
     "candidate": "OL29316679W",
-    "verdict": "needs_review",
+    "verdict": "matched",
     "confidence": "none",
     "via": "isbn",
     "corroboration": [],
     "evidence": [
       "ISBN 9784840152259 read from the EPUB's <dc:identifier> resolves to edition OL40296044M",
-      "⚠️ nothing textual agrees: Open Library calls it \"精霊使いの剣舞11 精霊王暗殺\""
+      "⚠️ nothing textual agrees: Open Library calls it \"精霊使いの剣舞11 精霊王暗殺\"",
+      "OWNER DECISION 2026-08-10: the English fan translation is treated as the same work as the Japanese original, so its ISBN identifies it. Applied to all volumes held back for this reason."
     ],
     "source": [
       "https://openlibrary.org/works/OL29316679W",
       "EPUB <dc:identifier> ISBN 9784840152259"
     ],
     "searched_at": "2026-08-10",
-    "note": "The ISBN resolved, but nothing we hold independently agrees with what it resolved to."
+    "note": "The ISBN resolved, but nothing we hold independently agrees with what it resolved to.",
+    "manual": true
   },
   "seirei tsukai no blade dance volume 12 releasing the sealed sword|shimizu yuu": {
-    "olid": null,
+    "olid": "OL32816095W",
     "candidate": "OL32816095W",
-    "verdict": "needs_review",
+    "verdict": "matched",
     "confidence": "none",
     "via": "isbn",
     "corroboration": [],
     "evidence": [
       "ISBN 9784040660752 read from the EPUB's <dc:identifier> resolves to edition OL44642590M",
-      "⚠️ nothing textual agrees: Open Library calls it \"SEIREIDUKAINOKENBU12 HUUKENKAIHOU iMFBUNKOJj¸—ìŽg‚¢‚ÌŒ••‘12 ••Œ•‰ð•ú\""
+      "⚠️ nothing textual agrees: Open Library calls it \"SEIREIDUKAINOKENBU12 HUUKENKAIHOU iMFBUNKOJj¸—ìŽg‚¢‚ÌŒ••‘12 ••Œ•‰ð•ú\"",
+      "OWNER DECISION 2026-08-10: the English fan translation is treated as the same work as the Japanese original, so its ISBN identifies it. Applied to all volumes held back for this reason."
     ],
     "source": [
       "https://openlibrary.org/works/OL32816095W",
       "EPUB <dc:identifier> ISBN 9784040660752"
     ],
     "searched_at": "2026-08-10",
-    "note": "The ISBN resolved, but nothing we hold independently agrees with what it resolved to."
+    "note": "The ISBN resolved, but nothing we hold independently agrees with what it resolved to.",
+    "manual": true
   },
   "seirei tsukai no blade dance volume 13 queen of ice blossoms|shimizu yuu": {
-    "olid": null,
+    "olid": "OL32816088W",
     "candidate": "OL32816088W",
-    "verdict": "needs_review",
+    "verdict": "matched",
     "confidence": "none",
     "via": "isbn",
     "corroboration": [],
     "evidence": [
       "ISBN 9784040663838 read from the EPUB's <dc:identifier> resolves to edition OL44642584M",
-      "⚠️ nothing textual agrees: Open Library calls it \"精霊使いの剣舞13 氷華の女王\""
+      "⚠️ nothing textual agrees: Open Library calls it \"精霊使いの剣舞13 氷華の女王\"",
+      "OWNER DECISION 2026-08-10: the English fan translation is treated as the same work as the Japanese original, so its ISBN identifies it. Applied to all volumes held back for this reason."
     ],
     "source": [
       "https://openlibrary.org/works/OL32816088W",
       "EPUB <dc:identifier> ISBN 9784040663838"
     ],
     "searched_at": "2026-08-10",
-    "note": "The ISBN resolved, but nothing we hold independently agrees with what it resolved to."
+    "note": "The ISBN resolved, but nothing we hold independently agrees with what it resolved to.",
+    "manual": true
   },
   "seirei tsukai no blade dance volume 14 upheaval in the imperial capital|shimizu yuu": {
-    "olid": null,
+    "olid": "OL28615992W",
     "candidate": "OL28615992W",
-    "verdict": "needs_review",
+    "verdict": "matched",
     "confidence": "none",
     "via": "isbn",
     "corroboration": [],
     "evidence": [
       "ISBN 9784040669151 read from the EPUB's <dc:identifier> resolves to edition OL39240192M",
-      "⚠️ nothing textual agrees: Open Library calls it \"精霊使いの剣舞14　帝都動乱\""
+      "⚠️ nothing textual agrees: Open Library calls it \"精霊使いの剣舞14　帝都動乱\"",
+      "OWNER DECISION 2026-08-10: the English fan translation is treated as the same work as the Japanese original, so its ISBN identifies it. Applied to all volumes held back for this reason."
     ],
     "source": [
       "https://openlibrary.org/works/OL28615992W",
       "EPUB <dc:identifier> ISBN 9784040669151"
     ],
     "searched_at": "2026-08-10",
-    "note": "The ISBN resolved, but nothing we hold independently agrees with what it resolved to."
+    "note": "The ISBN resolved, but nothing we hold independently agrees with what it resolved to.",
+    "manual": true
   },
   "seirei tsukai no blade dance volume 15 the dragon king of dracunia|shimizu yuu": {
     "olid": null,
@@ -1368,8 +1388,8 @@
     "searched_at": "2026-08-10"
   },
   "skysworn|will wight": {
-    "olid": null,
-    "verdict": "ambiguous",
+    "olid": "OL36391047W",
+    "verdict": "matched",
     "confidence": "none",
     "via": "search",
     "candidates": [
@@ -1396,14 +1416,18 @@
       "an edition is labelled \"Cradle, Volume Four\" — our series AND volume 4",
       "fielded search matched \"Skysworn\" by Will Wight (title 1.00, author 1.00)",
       "publisher \"Hidden Gnome Publishing\" matches Open Library's \"Hidden Gnome Publishing\"",
-      "an edition is labelled \"Cradle, Volume Four\" — our series AND volume 4"
+      "an edition is labelled \"Cradle, Volume Four\" — our series AND volume 4",
+      "TIE BROKEN BY OWNER 2026-08-10, on record quality rather than match strength - the two candidates were genuinely equal on title, author, publisher and series+volume.",
+      "OL36391047W: work record created 2023-07-18, TWO editions (Hidden Gnome 2023, ISBNs 9781959001010 and 9781959001195 incl. the 5x8).",
+      "OL44618311W (rejected): created 2025-12-13, ONE edition (Hidden Gnome 2024, 9781959001836) - the shape of a duplicate work record made later."
     ],
     "source": [
       "https://openlibrary.org/works/OL36391047W",
       "https://openlibrary.org/works/OL44618311W"
     ],
     "searched_at": "2026-08-10",
-    "note": "Two or more candidates corroborated with exactly the same weight of evidence. Nothing here distinguishes them, so picking one would be a coin toss dressed as a match."
+    "note": "Was ambiguous. Nothing in the MATCHING evidence separated them; the older, richer record was chosen deliberately.",
+    "manual": true
   },
   "snapshot|brandon sanderson": {
     "olid": "OL19631813W",
