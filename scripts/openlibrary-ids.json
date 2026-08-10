@@ -1,0 +1,1866 @@
+{
+  "_doc": "What Open Library was asked about each work, and what it answered. Keyed on work.work_key, the same key scripts/series-overrides.json uses. Written by scripts/backfill-openlibrary-ids.mjs.",
+  "_why": "A miss is a result. docs/info/isbn-ladder.md §4.2 measured that roughly half this library is simply not in Open Library — Kindle Unlimited and Audible-native indie titles with no ISBN and no library record anywhere — so most of this file is misses and that is the expected outcome, not a shortfall. Absence from this file means nobody has looked; a \"not_found\" entry means somebody did. Only the second one is a reason to stop looking.",
+  "_verdict": "matched — an Open Library work key, corroborated beyond title+author, written to work.openlibrary_work_id. needs_review — a candidate exists and is recorded in `candidate`, but nothing about the printing agreed, so NOTHING is written and a person should look. not_found — searched, and no candidate cleared the title/author gate at all. ambiguous — two candidates corroborated and picking either would be a coin toss.",
+  "_bar": "⚠️ Title and author agreement is the entry ticket, never the verdict. isbn-ladder.md §4.4: a wrong book scored 1.0 on BOTH and only the publisher and year discriminated. Every \"matched\" entry therefore carries at least one strong corroborator, or two weak ones — see the table in packages/core/src/corroboration.ts.",
+  "_manual": "Set \"manual\": true on an entry a person settled by hand. Like series-overrides.json, a person's answer outranks every rung and is never overwritten by a re-run, not even by --refresh.",
+  "_rerun": "A second run reads this file, makes zero network calls and writes nothing. --refresh re-asks about everything; --retry-misses re-asks only the not_found rows, which is the one worth repeating occasionally because Open Library gains records over time.",
+  "adventures in the argo mm|selkie myth": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Adventures%20in%20the%20Argo%20-%20MM&author=Selkie%20Myth"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "all the skills 5|honour rae": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=All%20The%20Skills%20-%205&author=Honour%20Rae"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "arcane pathfinder book 5 daunting|mashton xx": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Arcane%20Pathfinder%20Book%205%3A%20Daunting&author=Mashton%20XX"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "beautiful exiles|meg waite clayton": {
+    "olid": null,
+    "candidate": "OL19753291W",
+    "verdict": "needs_review",
+    "confidence": "medium",
+    "via": "search",
+    "corroboration": [
+      "year"
+    ],
+    "evidence": [
+      "fielded search matched \"Beautiful exiles\" by Meg Waite Clayton (title 1.00, author 1.00)",
+      "our file says 2018; Open Library has an edition from 2018"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL19753291W"
+    ],
+    "searched_at": "2026-08-10",
+    "note": "One weak corroborator only. Not enough to write unattended."
+  },
+  "beyond the wall mm|selkie myth": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Beyond%20the%20Wall%20-%20MM&author=Selkie%20Myth"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "blackflame|will wight": {
+    "olid": "OL39444044W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "search",
+    "corroboration": [
+      "publisher",
+      "series+volume"
+    ],
+    "evidence": [
+      "fielded search matched \"Blackflame\" by Will Wight (title 1.00, author 1.00)",
+      "publisher \"Hidden Gnome Publishing\" matches Open Library's \"Hidden Gnome Publishing\"",
+      "an edition is labelled \"Cradle, Volume Three\" — our series AND volume 3",
+      "chosen over 1 other corroborating record(s) — OL22094140W [publisher, year] — on strictly more agreeing evidence"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL39444044W"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "bloodline|will wight": {
+    "olid": "OL44616774W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "search",
+    "corroboration": [
+      "publisher",
+      "series+volume"
+    ],
+    "evidence": [
+      "fielded search matched \"Bloodline\" by Will Wight (title 1.00, author 1.00)",
+      "publisher \"Hidden Gnome Publishing\" matches Open Library's \"Hidden Gnome Publishing\"",
+      "an edition is labelled \"Cradle, Volume Nine\" — our series AND volume 9",
+      "chosen over 1 other corroborating record(s) — OL24362248W [publisher, year] — on strictly more agreeing evidence"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL44616774W"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "board and conquest a kingdom building litrpg|maxime j durand": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Board%20%26%20Conquest%3A%20%5BA%20Kingdom%20Building%20LitRPG%5D&author=Maxime%20J.%20Durand"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "captain|will wight": {
+    "olid": "OL33661586W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "search",
+    "corroboration": [
+      "publisher",
+      "series",
+      "year"
+    ],
+    "evidence": [
+      "fielded search matched \"The Captain\" by Will Wight (title 1.00, author 1.00)",
+      "publisher \"Hidden Gnome Publishing\" matches Open Library's \"Hidden Gnome Publishing\"",
+      "an edition is labelled \"The Last Horizon\" — our series, volume unconfirmed",
+      "our file says 2023; Open Library has an edition from 2023"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL33661586W"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "divine dungeon complete series dungeon core gamelit fantasy|dakota krout": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=The%20Divine%20Dungeon%20Complete%20Series%3A%20Dungeon%20Core%20GameLit%20Fantasy&author=Dakota%20Krout"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "dragonsteel prime|brandon sanderson": {
+    "olid": "OL42462030W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "search",
+    "corroboration": [
+      "publisher",
+      "year"
+    ],
+    "evidence": [
+      "fielded search matched \"Dragonsteel Prime\" by Brandon Sanderson (title 1.00, author 1.00)",
+      "publisher \"Dragonsteel, LLC\" matches Open Library's \"Dragonsteel Entertainment\"",
+      "our file says 2024; Open Library has an edition from 2024"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL42462030W"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "dreadgod|will wight": {
+    "olid": "OL28158998W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "search",
+    "corroboration": [
+      "publisher",
+      "series+volume",
+      "year"
+    ],
+    "evidence": [
+      "fielded search matched \"Dreadgod\" by Will Wight (title 1.00, author 1.00)",
+      "publisher \"Hidden Gnome Publishing\" matches Open Library's \"Hidden Gnome Publishing\"",
+      "an edition is labelled \"Cradle Volume Eleven\" — our series AND volume 11",
+      "our file says 2022; Open Library has an edition from 2023",
+      "chosen over 1 other corroborating record(s) — OL44581456W [publisher, series+volume] — on strictly more agreeing evidence"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL28158998W"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "dreamer|brandon sanderson": {
+    "olid": "OL36671292W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "isbn",
+    "corroboration": [
+      "publisher",
+      "year",
+      "title"
+    ],
+    "evidence": [
+      "ISBN 9781938570162 read from the EPUB's <dc:identifier> resolves to edition OL49532750M",
+      "publisher \"Dragonsteel Entertainment, LLC\" matches Open Library's \"Dragonsteel Entertainment\"",
+      "our file says 2017; Open Library has an edition from 2017",
+      "Open Library calls it \"Dreamer\" (title similarity 1.00)"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL36671292W",
+      "EPUB <dc:identifier> ISBN 9781938570162"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "dungeon born|dakota krout": {
+    "olid": "OL24344465W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "search",
+    "corroboration": [
+      "publisher"
+    ],
+    "evidence": [
+      "fielded search matched \"Dungeon Born\" by Dakota Krout (title 1.00, author 1.00)",
+      "publisher \"Mountaindale Press\" matches Open Library's \"Mountaindale Press\""
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL24344465W"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "emperor s soul|brandon sanderson": {
+    "olid": "OL19960448W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "search",
+    "corroboration": [
+      "publisher",
+      "year"
+    ],
+    "evidence": [
+      "fielded search matched \"The Emperor's Soul\" by Brandon Sanderson (title 1.00, author 1.00)",
+      "publisher \"Dragonsteel Entertainment, LLC\" matches Open Library's \"Dragonsteel, LLC\"",
+      "our file says 2012; Open Library has an edition from 2012"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL19960448W"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "engineer|will wight": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=The%20Engineer&author=Will%20Wight"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "firstborn defending elysium|brandon sanderson": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 1 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Firstborn%20%2F%20Defending%20Elysium&author=Brandon%20Sanderson"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "frugal wizard s handbook for surviving medieval england|brandon sanderson": {
+    "olid": "OL29190967W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "isbn",
+    "corroboration": [
+      "publisher",
+      "series+volume",
+      "year",
+      "title"
+    ],
+    "evidence": [
+      "ISBN 9781938570384 read from the EPUB's <dc:identifier> resolves to edition OL46124205M",
+      "publisher \"Dragonsteel Entertainment, LLC\" matches Open Library's \"Dragonsteel\"",
+      "an edition is labelled \"Secret Projects, Book #2\" — our series AND volume 2",
+      "our file says 2023; Open Library has an edition from 2024",
+      "Open Library calls it \"The Frugal Wizard’s Handbook for Surviving Medieval England\" (title similarity 1.00)"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL29190967W",
+      "EPUB <dc:identifier> ISBN 9781938570384"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "ghostwater|will wight": {
+    "olid": "OL44618308W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "search",
+    "corroboration": [
+      "publisher",
+      "series+volume"
+    ],
+    "evidence": [
+      "fielded search matched \"Ghostwater\" by Will Wight (title 1.00, author 1.00)",
+      "publisher \"Hidden Gnome Publishing\" matches Open Library's \"Hidden Gnome Publishing\"",
+      "an edition is labelled \"Cradle, Volume Five\" — our series AND volume 5",
+      "chosen over 1 other corroborating record(s) — OL35275908W [publisher] — on strictly more agreeing evidence"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL44618308W"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "gladiator gauntlet|selkie myth": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=The%20Gladiator%20Gauntlet&author=Selkie%20Myth"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "guild mage apprentice|david niemitz": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Guild%20Mage%3A%20Apprentice&author=David%20Niemitz"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "he who fights with monsters 10 a litrpg adventure|travis deverell": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=He%20Who%20Fights%20with%20Monsters%2010%3A%20A%20LitRPG%20Adventure&author=Travis%20Deverell"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "he who fights with monsters 2 a litrpg adventure|travis deverell": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=He%20Who%20Fights%20with%20Monsters%202%3A%20A%20LitRPG%20Adventure&author=Travis%20Deverell"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "he who fights with monsters 3 a litrpg adventure|travis deverell": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=He%20Who%20Fights%20with%20Monsters%203%3A%20A%20LitRPG%20Adventure&author=Travis%20Deverell"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "he who fights with monsters 5 a litrpg adventure|travis deverell": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=He%20Who%20Fights%20with%20Monsters%205%3A%20A%20LitRPG%20Adventure&author=Travis%20Deverell"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "he who fights with monsters 6 a litrpg adventure|travis deverell": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=He%20Who%20Fights%20with%20Monsters%206%3A%20A%20LitRPG%20Adventure&author=Travis%20Deverell"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "high school dxd volume 07 ragnarok after the school|ichiei ishibumi": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=High%20School%20DxD%20-%20Volume%2007%20-%20Ragnarok%20After%20the%20School&author=Ichiei%20Ishibumi"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "high school dxd volume 08 devil s job|ichiei ishibumi": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=High%20School%20DxD%20-%20Volume%2008%20-%20Devil's%20Job&author=Ichiei%20Ishibumi"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "high school dxd volume 09 pandemonium at the school trip|ichiei ishibumi": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=High%20School%20DxD%20-%20Volume%2009%20-%20Pandemonium%20at%20the%20School%20Trip&author=Ichiei%20Ishibumi"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "high school dxd volume 10 lion heart of the school festival|ichiei ishibumi": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=High%20School%20DxD%20-%20Volume%2010%20-%20Lion%20Heart%20of%20the%20School%20Festival&author=Ichiei%20Ishibumi"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "high school dxd volume 11 uroboros and the promotion test|ichiei ishibumi": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=High%20School%20DxD%20-%20Volume%2011%20-%20Uroboros%20and%20the%20Promotion%20Test&author=Ichiei%20Ishibumi"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "high school dxd volume 12 heroes of supplementary lessons|ichiei ishibumi": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=High%20School%20DxD%20-%20Volume%2012%20-%20Heroes%20of%20Supplementary%20Lessons&author=Ichiei%20Ishibumi"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "high school dxd volume 13 ise sos|ichiei ishibumi": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=High%20School%20DxD%20-%20Volume%2013%20-%20Ise%20SOS&author=Ichiei%20Ishibumi"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "high school dxd volume 14 wizards of career counseling|ichiei ishibumi": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=High%20School%20DxD%20-%20Volume%2014%20-%20Wizards%20of%20Career%20Counseling&author=Ichiei%20Ishibumi"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "high school dxd volume 15 dark knight of the sunny spot|ichiei ishibumi": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=High%20School%20DxD%20-%20Volume%2015%20-%20Dark%20Knight%20of%20the%20Sunny-spot&author=Ichiei%20Ishibumi"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "high school dxd volume 16 daywalker of the extracurricular lesson|ichiei ishibumi": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=High%20School%20DxD%20-%20Volume%2016%20-%20Daywalker%20of%20the%20Extracurricular%20Lesson&author=Ichiei%20Ishibumi"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "high school dxd volume 17 valkyrie of the teacher training|ichiei ishibumi": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=High%20School%20DxD%20-%20Volume%2017%20-%20Valkyrie%20of%20the%20Teacher%20Training&author=Ichiei%20Ishibumi"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "high school dxd volume 18 funny angel of the christmas day|ichiei ishibumi": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=High%20School%20DxD%20-%20Volume%2018%20-%20Funny%20Angel%20of%20the%20Christmas%20Day&author=Ichiei%20Ishibumi"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "high school dxd volume 19 durandal of the general election|ichiei ishibumi": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=High%20School%20DxD%20-%20Volume%2019%20-%20Durandal%20of%20the%20General%20Election&author=Ichiei%20Ishibumi"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "high school dxd volume 20 belial of career consultation|ichiei ishibumi": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=High%20School%20DxD%20-%20Volume%2020%20-%20Belial%20of%20Career%20Consultation&author=Ichiei%20Ishibumi"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "high school dxd volume 21 lucifer of the optional attendance|ichiei ishibumi": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=High%20School%20DxD%20-%20Volume%2021%20-%20Lucifer%20of%20the%20Optional%20Attendance&author=Ichiei%20Ishibumi"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "immortal moments mm|selkie myth": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Immortal%20Moments%20-%20MM&author=Selkie%20Myth"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "invent short story|dakota krout": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Invent%20Short%20Story&author=Dakota%20Krout"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "isles of the emberdark|brandon sanderson": {
+    "olid": "OL43650021W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "isbn",
+    "corroboration": [
+      "publisher",
+      "year",
+      "title"
+    ],
+    "evidence": [
+      "ISBN 9781938570513 read from the EPUB's <dc:identifier> resolves to edition OL59502014M",
+      "publisher \"Dragonsteel, LLC\" matches Open Library's \"Dragonsteel, LLC\"",
+      "our file says 2025; Open Library has an edition from 2025",
+      "Open Library calls it \"Isles of the Emberdark\" (title similarity 1.00)"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL43650021W",
+      "EPUB <dc:identifier> ISBN 9781938570513"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "john|navigators": {
+    "olid": null,
+    "candidate": "OL25183827W",
+    "verdict": "needs_review",
+    "confidence": "medium",
+    "via": "search",
+    "corroboration": [
+      "year"
+    ],
+    "evidence": [
+      "fielded search matched \"John\" by The Navigators (title 1.00, author 1.00)",
+      "our file says 2018; Open Library has an edition from 2018"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL25183827W"
+    ],
+    "searched_at": "2026-08-10",
+    "note": "One weak corroborator only. Not enough to write unattended."
+  },
+  "killer s mind|mike omer": {
+    "olid": "OL20162119W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "search",
+    "corroboration": [
+      "publisher",
+      "year"
+    ],
+    "evidence": [
+      "fielded search matched \"A Killer's Mind\" by Mike Omer (title 1.00, author 1.00)",
+      "publisher \"Thomas & Mercer\" matches Open Library's \"Thomas & Mercer\"",
+      "our file says 2018; Open Library has an edition from 2018"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL20162119W"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "king tides|james swain": {
+    "olid": null,
+    "candidate": "OL19751912W",
+    "verdict": "needs_review",
+    "confidence": "medium",
+    "via": "search",
+    "corroboration": [
+      "year"
+    ],
+    "evidence": [
+      "fielded search matched \"The king tides\" by James Swain (title 1.00, author 1.00)",
+      "our file says 2018; Open Library has an edition from 2018"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL19751912W"
+    ],
+    "searched_at": "2026-08-10",
+    "note": "One weak corroborator only. Not enough to write unattended."
+  },
+  "knight|will wight": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=The%20Knight&author=Will%20Wight"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "legion skin deep|brandon sanderson": {
+    "olid": "OL19913853W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "isbn",
+    "corroboration": [
+      "publisher",
+      "year",
+      "title"
+    ],
+    "evidence": [
+      "ISBN 9781938570056 read from the EPUB's <dc:identifier> resolves to edition OL49551816M",
+      "publisher \"Dragonsteel Entertainment, LLC\" matches Open Library's \"Dragonsteel, LLC\"",
+      "our file says 2014; Open Library has an edition from 2014",
+      "Open Library calls it \"Legion\" (title similarity 1.00)"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL19913853W",
+      "EPUB <dc:identifier> ISBN 9781938570056"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "legion|brandon sanderson": {
+    "olid": "OL17929839W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "isbn",
+    "corroboration": [
+      "publisher",
+      "year",
+      "title"
+    ],
+    "evidence": [
+      "ISBN 9781938570018 read from the EPUB's <dc:identifier> resolves to edition OL49519971M",
+      "publisher \"Dragonsteel Entertainment, LLC\" matches Open Library's \"Dragonsteel, LLC\"",
+      "our file says 2012; Open Library has an edition from 2012",
+      "Open Library calls it \"Legion\" (title similarity 1.00)"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL17929839W",
+      "EPUB <dc:identifier> ISBN 9781938570018"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "long chills and case dough|brandon sanderson": {
+    "olid": "OL36717601W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "search",
+    "corroboration": [
+      "publisher",
+      "year"
+    ],
+    "evidence": [
+      "fielded search matched \"Long Chills and Case Dough\" by Brandon Sanderson (title 1.00, author 1.00)",
+      "publisher \"Dragonsteel, LLC\" matches Open Library's \"Dragonsteel, LLC\"",
+      "our file says 2023; Open Library has an edition from 2023"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL36717601W"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "monster empire book 2|michael scott earle": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Monster%20Empire%20Book%202&author=Michael-Scott%20Earle"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "moonfall|selkie myth": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Moonfall&author=Selkie%20Myth"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "moonveiled journeys mm|selkie myth": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Moonveiled%20Journeys%20-%20MM&author=Selkie%20Myth"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "oathbound healer mm|selkie myth": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Oathbound%20Healer%20-%20MM&author=Selkie%20Myth"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "of gods and dragons|selkie myth": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Of%20Gods%20and%20Dragons&author=Selkie%20Myth"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "onyx storm the empyrean|rebecca yarros": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Onyx%20Storm%20(The%20Empyrean)&author=Rebecca%20Yarros"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "perfect state|brandon sanderson": {
+    "olid": "OL19920327W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "isbn",
+    "corroboration": [
+      "publisher",
+      "year",
+      "title"
+    ],
+    "evidence": [
+      "ISBN 9781938570094 read from the EPUB's <dc:identifier> resolves to edition OL60740674M",
+      "publisher \"Dragonsteel Entertainment, LLC\" matches Open Library's \"Dragonsteel Entertainment\"",
+      "our file says 2015; Open Library has an edition from 2015",
+      "Open Library calls it \"Perfect State\" (title similarity 1.00)"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL19920327W",
+      "EPUB <dc:identifier> ISBN 9781938570094"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "phoenix peaks mm|selkie myth": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Phoenix%20Peaks%20-%20MM&author=Selkie%20Myth"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "ranger s dawn mm|selkie myth": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Ranger's%20Dawn%20-%20MM&author=Selkie%20Myth"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "reaper|will wight": {
+    "olid": "OL26049630W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "search",
+    "corroboration": [
+      "publisher",
+      "series+volume",
+      "year"
+    ],
+    "evidence": [
+      "fielded search matched \"Reaper\" by Will Wight (title 1.00, author 1.00)",
+      "publisher \"Hidden Gnome Publishing\" matches Open Library's \"Hidden Gnome Publishing\"",
+      "an edition is labelled \"Cradle Volume Ten\" — our series AND volume 10",
+      "our file says 2021; Open Library has an edition from 2022",
+      "chosen over 1 other corroborating record(s) — OL44579905W [publisher, series+volume] — on strictly more agreeing evidence"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL26049630W"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "rise from the ashes|selkie myth": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Rise%20from%20the%20Ashes&author=Selkie%20Myth"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "rise of the weakest summoner volume xi|j r saileri": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Rise%20of%20the%20Weakest%20Summoner%3A%20Volume%20XI&author=J.%20R.%20Saileri"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "seirei tsukai no blade dance br ss compilation|shimizu yuu": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Seirei%20Tsukai%20no%20Blade%20Dance%20-%20BR%20SS%20Compilation&author=Shimizu%20Yuu"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "seirei tsukai no blade dance extra 1 great festival of the spirits at the imperial capital|shimizu yuu": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Seirei%20Tsukai%20no%20Blade%20Dance%20-%20Extra.1%20-%20Great%20Festival%20of%20the%20Spirits%20at%20the%20Imperial%20Capital&author=Shimizu%20Yuu"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "seirei tsukai no blade dance extra 2 est looking after the sick|shimizu yuu": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Seirei%20Tsukai%20no%20Blade%20Dance%20-%20Extra.2%20-%20Est%20Looking%20After%20the%20Sick&author=Shimizu%20Yuu"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "seirei tsukai no blade dance extra 3 the princess confidential part time job|shimizu yuu": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Seirei%20Tsukai%20no%20Blade%20Dance%20-%20Extra.3%20-%20The%20Princess'%20Confidential%20Part-time%20Job&author=Shimizu%20Yuu"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "seirei tsukai no blade dance extra 4 hunting the legendary giant bust spirit|shimizu yuu": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Seirei%20Tsukai%20no%20Blade%20Dance%20-%20Extra.4%20-%20Hunting%20the%20Legendary%20Giant%20Bust%20Spirit!&author=Shimizu%20Yuu"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "seirei tsukai no blade dance extra 5 the terrifying mystery hotpot battle|shimizu yuu": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Seirei%20Tsukai%20no%20Blade%20Dance%20-%20Extra.5%20-%20The%20Terrifying%20Mystery%20Hotpot%20Battle&author=Shimizu%20Yuu"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "seirei tsukai no blade dance extra 6 elementalists on break|shimizu yuu": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Seirei%20Tsukai%20no%20Blade%20Dance%20-%20Extra.6%20-%20Elementalists%20on%20Break&author=Shimizu%20Yuu"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "seirei tsukai no blade dance volume 01 the sword the academy and the hell cat girl|shimizu yuu": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Seirei%20Tsukai%20no%20Blade%20Dance%20-%20Volume%2001%20-%20The%20Sword%2C%20The%20Academy%20and%20The%20Hell%20Cat%20Girl&author=Shimizu%20Yuu"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "seirei tsukai no blade dance volume 02 the lost queen|shimizu yuu": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Seirei%20Tsukai%20no%20Blade%20Dance%20-%20Volume%2002%20-%20The%20Lost%20Queen&author=Shimizu%20Yuu"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "seirei tsukai no blade dance volume 03 pledge of the wind|shimizu yuu": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Seirei%20Tsukai%20no%20Blade%20Dance%20-%20Volume%2003%20-%20Pledge%20of%20the%20Wind&author=Shimizu%20Yuu"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "seirei tsukai no blade dance volume 04 the blade dance|shimizu yuu": {
+    "olid": "OL20912235W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "isbn",
+    "corroboration": [
+      "title"
+    ],
+    "evidence": [
+      "ISBN 9784840142021 read from the EPUB's <dc:identifier> resolves to edition OL28329023M",
+      "Open Library calls it \"精霊剣舞祭 / Bureido Dansu [The Blade Dance]\" (title similarity 0.46)"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL20912235W",
+      "EPUB <dc:identifier> ISBN 9784840142021"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "seirei tsukai no blade dance volume 05 demon slayer|shimizu yuu": {
+    "olid": null,
+    "candidate": "OL32816144W",
+    "verdict": "needs_review",
+    "confidence": "none",
+    "via": "isbn",
+    "corroboration": [],
+    "evidence": [
+      "ISBN 9784840142991 read from the EPUB's <dc:identifier> resolves to edition OL44642644M",
+      "⚠️ nothing textual agrees: Open Library calls it \"精霊使いの剣舞 5　魔王殺しの聖剣\""
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL32816144W",
+      "EPUB <dc:identifier> ISBN 9784840142991"
+    ],
+    "searched_at": "2026-08-10",
+    "note": "The ISBN resolved, but nothing we hold independently agrees with what it resolved to."
+  },
+  "seirei tsukai no blade dance volume 06 the reminisced darkness spirit|shimizu yuu": {
+    "olid": "OL32816150W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "isbn",
+    "corroboration": [
+      "title"
+    ],
+    "evidence": [
+      "ISBN 9784840143868 read from the EPUB's <dc:identifier> resolves to edition OL44642650M",
+      "Open Library calls it \"追憶の闇精霊 / Tsuioku no Yamiseirei [The Reminisced Darkness Spirit]\" (title similarity 0.56)"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL32816150W",
+      "EPUB <dc:identifier> ISBN 9784840143868"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "seirei tsukai no blade dance volume 07 the strongest blade dancer|shimizu yuu": {
+    "olid": "OL32816138W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "isbn",
+    "corroboration": [
+      "title"
+    ],
+    "evidence": [
+      "ISBN 9784840145800 read from the EPUB's <dc:identifier> resolves to edition OL44642638M",
+      "Open Library calls it \"最強の剣舞姬 / Saikyo no Kenbuhime [The Strongest Blade Dancer]\" (title similarity 0.59)"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL32816138W",
+      "EPUB <dc:identifier> ISBN 9784840145800"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "seirei tsukai no blade dance volume 08 the night before the finale|shimizu yuu": {
+    "olid": null,
+    "candidate": "OL32816119W",
+    "verdict": "needs_review",
+    "confidence": "none",
+    "via": "isbn",
+    "corroboration": [],
+    "evidence": [
+      "ISBN 9784840146845 read from the EPUB's <dc:identifier> resolves to edition OL44642619M",
+      "⚠️ nothing textual agrees: Open Library calls it \"決戦前夜 / Kessen Zen'ya [The Night Before the Decisive Battle ]\""
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL32816119W",
+      "EPUB <dc:identifier> ISBN 9784840146845"
+    ],
+    "searched_at": "2026-08-10",
+    "note": "The ISBN resolved, but nothing we hold independently agrees with what it resolved to."
+  },
+  "seirei tsukai no blade dance volume 09 cross fire|shimizu yuu": {
+    "olid": null,
+    "candidate": "OL32816116W",
+    "verdict": "needs_review",
+    "confidence": "none",
+    "via": "isbn",
+    "corroboration": [],
+    "evidence": [
+      "ISBN 9784840148740 read from the EPUB's <dc:identifier> resolves to edition OL44642614M",
+      "⚠️ nothing textual agrees: Open Library calls it \"クロス・ファイア / Kurosu Faia [Cross Fire]\""
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL32816116W",
+      "EPUB <dc:identifier> ISBN 9784840148740"
+    ],
+    "searched_at": "2026-08-10",
+    "note": "The ISBN resolved, but nothing we hold independently agrees with what it resolved to."
+  },
+  "seirei tsukai no blade dance volume 10 the awakening of the demon king|shimizu yuu": {
+    "olid": "OL32816106W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "isbn",
+    "corroboration": [
+      "title"
+    ],
+    "evidence": [
+      "ISBN 9784840149839 read from the EPUB's <dc:identifier> resolves to edition OL44642601M",
+      "Open Library calls it \"魔王覚醒 / Mao Kakusei [The Awakening of the Demon King]\" (title similarity 0.53)"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL32816106W",
+      "EPUB <dc:identifier> ISBN 9784840149839"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "seirei tsukai no blade dance volume 11 elemental lord assassination|shimizu yuu": {
+    "olid": null,
+    "candidate": "OL29316679W",
+    "verdict": "needs_review",
+    "confidence": "none",
+    "via": "isbn",
+    "corroboration": [],
+    "evidence": [
+      "ISBN 9784840152259 read from the EPUB's <dc:identifier> resolves to edition OL40296044M",
+      "⚠️ nothing textual agrees: Open Library calls it \"精霊使いの剣舞11 精霊王暗殺\""
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL29316679W",
+      "EPUB <dc:identifier> ISBN 9784840152259"
+    ],
+    "searched_at": "2026-08-10",
+    "note": "The ISBN resolved, but nothing we hold independently agrees with what it resolved to."
+  },
+  "seirei tsukai no blade dance volume 12 releasing the sealed sword|shimizu yuu": {
+    "olid": null,
+    "candidate": "OL32816095W",
+    "verdict": "needs_review",
+    "confidence": "none",
+    "via": "isbn",
+    "corroboration": [],
+    "evidence": [
+      "ISBN 9784040660752 read from the EPUB's <dc:identifier> resolves to edition OL44642590M",
+      "⚠️ nothing textual agrees: Open Library calls it \"SEIREIDUKAINOKENBU12 HUUKENKAIHOU iMFBUNKOJj¸—ìŽg‚¢‚ÌŒ••‘12 ••Œ•‰ð•ú\""
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL32816095W",
+      "EPUB <dc:identifier> ISBN 9784040660752"
+    ],
+    "searched_at": "2026-08-10",
+    "note": "The ISBN resolved, but nothing we hold independently agrees with what it resolved to."
+  },
+  "seirei tsukai no blade dance volume 13 queen of ice blossoms|shimizu yuu": {
+    "olid": null,
+    "candidate": "OL32816088W",
+    "verdict": "needs_review",
+    "confidence": "none",
+    "via": "isbn",
+    "corroboration": [],
+    "evidence": [
+      "ISBN 9784040663838 read from the EPUB's <dc:identifier> resolves to edition OL44642584M",
+      "⚠️ nothing textual agrees: Open Library calls it \"精霊使いの剣舞13 氷華の女王\""
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL32816088W",
+      "EPUB <dc:identifier> ISBN 9784040663838"
+    ],
+    "searched_at": "2026-08-10",
+    "note": "The ISBN resolved, but nothing we hold independently agrees with what it resolved to."
+  },
+  "seirei tsukai no blade dance volume 14 upheaval in the imperial capital|shimizu yuu": {
+    "olid": null,
+    "candidate": "OL28615992W",
+    "verdict": "needs_review",
+    "confidence": "none",
+    "via": "isbn",
+    "corroboration": [],
+    "evidence": [
+      "ISBN 9784040669151 read from the EPUB's <dc:identifier> resolves to edition OL39240192M",
+      "⚠️ nothing textual agrees: Open Library calls it \"精霊使いの剣舞14　帝都動乱\""
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL28615992W",
+      "EPUB <dc:identifier> ISBN 9784040669151"
+    ],
+    "searched_at": "2026-08-10",
+    "note": "The ISBN resolved, but nothing we hold independently agrees with what it resolved to."
+  },
+  "seirei tsukai no blade dance volume 15 the dragon king of dracunia|shimizu yuu": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Seirei%20Tsukai%20no%20Blade%20Dance%20-%20Volume%2015%20-%20The%20Dragon%20King%20of%20Dracunia&author=Shimizu%20Yuu"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "seirei tsukai no blade dance volume 16 the demon king returns in triumph|shimizu yuu": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Seirei%20Tsukai%20no%20Blade%20Dance%20-%20Volume%2016%20-%20The%20Demon%20King%20Returns%20in%20Triumph&author=Shimizu%20Yuu"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "shadows for silence in the forests of hell|brandon sanderson": {
+    "olid": "OL24714505W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "isbn",
+    "corroboration": [
+      "publisher",
+      "year",
+      "title"
+    ],
+    "evidence": [
+      "ISBN 9781938570087 read from the EPUB's <dc:identifier> resolves to edition OL49551879M",
+      "publisher \"Dragonsteel Entertainment, LLC\" matches Open Library's \"Dragonsteel, LLC\"",
+      "our file says 2015; Open Library has an edition from 2015",
+      "Open Library calls it \"Shadows for Silence in the Forests of Hell\" (title similarity 1.00)"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL24714505W",
+      "EPUB <dc:identifier> ISBN 9781938570087"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "sixth of the dusk|brandon sanderson": {
+    "olid": "OL45586649W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "isbn",
+    "corroboration": [
+      "title"
+    ],
+    "evidence": [
+      "ISBN 9781938570070 read from the EPUB's <dc:identifier> resolves to edition OL62083105M",
+      "Open Library calls it \"Sixth of the Dusk\" (title similarity 1.00)"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL45586649W",
+      "EPUB <dc:identifier> ISBN 9781938570070"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "skysworn|will wight": {
+    "olid": null,
+    "verdict": "ambiguous",
+    "confidence": "none",
+    "via": "search",
+    "candidates": [
+      {
+        "olid": "OL36391047W",
+        "title": "Skysworn",
+        "corroboration": [
+          "publisher",
+          "series+volume"
+        ]
+      },
+      {
+        "olid": "OL44618311W",
+        "title": "Skysworn",
+        "corroboration": [
+          "publisher",
+          "series+volume"
+        ]
+      }
+    ],
+    "evidence": [
+      "fielded search matched \"Skysworn\" by Will Wight (title 1.00, author 1.00)",
+      "publisher \"Hidden Gnome Publishing\" matches Open Library's \"Hidden Gnome Publishing\"",
+      "an edition is labelled \"Cradle, Volume Four\" — our series AND volume 4",
+      "fielded search matched \"Skysworn\" by Will Wight (title 1.00, author 1.00)",
+      "publisher \"Hidden Gnome Publishing\" matches Open Library's \"Hidden Gnome Publishing\"",
+      "an edition is labelled \"Cradle, Volume Four\" — our series AND volume 4"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL36391047W",
+      "https://openlibrary.org/works/OL44618311W"
+    ],
+    "searched_at": "2026-08-10",
+    "note": "Two or more candidates corroborated with exactly the same weight of evidence. Nothing here distinguishes them, so picking one would be a coin toss dressed as a match."
+  },
+  "snapshot|brandon sanderson": {
+    "olid": "OL19631813W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "isbn",
+    "corroboration": [
+      "publisher",
+      "year",
+      "title"
+    ],
+    "evidence": [
+      "ISBN 9781938570155 read from the EPUB's <dc:identifier> resolves to edition OL49554337M",
+      "publisher \"Dragonsteel Entertainment, LLC\" matches Open Library's \"Dragonsteel Entertainment\"",
+      "our file says 2017; Open Library has an edition from 2017",
+      "Open Library calls it \"Snapshot\" (title similarity 1.00)"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL19631813W",
+      "EPUB <dc:identifier> ISBN 9781938570155"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "soulsmith|will wight": {
+    "olid": "OL44611910W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "search",
+    "corroboration": [
+      "publisher",
+      "series+volume"
+    ],
+    "evidence": [
+      "fielded search matched \"Soulsmith\" by Will Wight (title 1.00, author 1.00)",
+      "publisher \"Hidden Gnome Publishing\" matches Open Library's \"Hidden Gnome Publishing\"",
+      "an edition is labelled \"Cradle, Volume Two\" — our series AND volume 2"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL44611910W"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "space knight book 5|michael scott earle": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Space%20Knight%20Book%205&author=Michael-Scott%20Earle"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "space knight book 6|michael scott earle": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Space%20Knight%20Book%206&author=Michael-Scott%20Earle"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "sunlit man|brandon sanderson": {
+    "olid": "OL31181973W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "isbn",
+    "corroboration": [
+      "publisher",
+      "year",
+      "title"
+    ],
+    "evidence": [
+      "ISBN 9781938570414 read from the EPUB's <dc:identifier> resolves to edition OL46111880M",
+      "publisher \"Dragonsteel, LLC\" matches Open Library's \"Dragonsteel Entertainment\"",
+      "our file says 2023; Open Library has an edition from 2023",
+      "Open Library calls it \"The Sunlit Man\" (title similarity 1.00)"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL31181973W",
+      "EPUB <dc:identifier> ISBN 9781938570414"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "tamer king of dinosaurs book 10|michael scott earle": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Tamer%3A%20King%20of%20Dinosaurs%20Book%2010&author=Michael-Scott%20Earle"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "tamer king of dinosaurs book 11|michael scott earle": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Tamer%3A%20King%20of%20Dinosaurs%20Book%2011&author=Michael-Scott%20Earle"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "tamer king of dinosaurs book 7|michael scott earle": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Tamer%3A%20King%20of%20Dinosaurs%20Book%207&author=Michael-Scott%20Earle"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "tamer king of dinosaurs book 8|michael scott earle": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Tamer%3A%20King%20of%20Dinosaurs%20Book%208&author=Michael-Scott%20Earle"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "tamer king of dinosaurs book 9|michael scott earle": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Tamer%3A%20King%20of%20Dinosaurs%20Book%209&author=Michael-Scott%20Earle"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "tenth island finding joy beauty and unexpected love in the azores|diana marcum": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=The%20Tenth%20Island%3A%20Finding%20Joy%2C%20Beauty%2C%20and%20Unexpected%20Love%20in%20the%20Azores&author=Diana%20Marcum"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "tress of the emerald sea|brandon sanderson": {
+    "olid": "OL28687656W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "isbn",
+    "corroboration": [
+      "publisher",
+      "series",
+      "year",
+      "title"
+    ],
+    "evidence": [
+      "ISBN 9781938570346 read from the EPUB's <dc:identifier> resolves to edition OL46007966M",
+      "publisher \"Dragonsteel Entertainment, LLC\" matches Open Library's \"Dragonsteel Entertainment\"",
+      "an edition is labelled \"Secret Projects\" — our series, volume unconfirmed",
+      "our file says 2023; Open Library has an edition from 2023",
+      "Open Library calls it \"Tress of the Emerald Sea\" (title similarity 1.00)"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL28687656W",
+      "EPUB <dc:identifier> ISBN 9781938570346"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "uncapped|dakota krout": {
+    "olid": "OL45154697W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "search",
+    "corroboration": [
+      "publisher"
+    ],
+    "evidence": [
+      "fielded search matched \"Uncapped\" by Dakota Krout (title 1.00, author 1.00)",
+      "publisher \"Mountaindale Press\" matches Open Library's \"Mountaindale Press\""
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL45154697W"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "uncrowned|will wight": {
+    "olid": "OL42428652W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "search",
+    "corroboration": [
+      "publisher",
+      "series+volume"
+    ],
+    "evidence": [
+      "fielded search matched \"Uncrowned\" by Will Wight (title 1.00, author 1.00)",
+      "publisher \"Hidden Gnome Publishing\" matches Open Library's \"Hidden Gnome Publishing\"",
+      "an edition is labelled \"Cradle, Volume Seven\" — our series AND volume 7",
+      "chosen over 1 other corroborating record(s) — OL20857119W [publisher, year] — on strictly more agreeing evidence"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL42428652W"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "undead knight|erik colombe": {
+    "olid": null,
+    "candidate": "OL29904548W",
+    "verdict": "needs_review",
+    "confidence": "medium",
+    "via": "search",
+    "corroboration": [
+      "year"
+    ],
+    "evidence": [
+      "fielded search matched \"Undead Knight\" by Erik Colombe (title 1.00, author 1.00)",
+      "our file says 2019; Open Library has an edition from 2019"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL29904548W"
+    ],
+    "searched_at": "2026-08-10",
+    "note": "One weak corroborator only. Not enough to write unattended."
+  },
+  "under ashen skies mm|selkie myth": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Under%20Ashen%20Skies-%20MM&author=Selkie%20Myth"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "underlord|will wight": {
+    "olid": "OL44605793W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "search",
+    "corroboration": [
+      "publisher",
+      "series+volume"
+    ],
+    "evidence": [
+      "fielded search matched \"Underlord\" by Will Wight (title 1.00, author 1.00)",
+      "publisher \"Hidden Gnome Publishing\" matches Open Library's \"Hidden Gnome Publishing\"",
+      "an edition is labelled \"Cradle, Volume Six\" — our series AND volume 6",
+      "chosen over 1 other corroborating record(s) — OL20857118W [publisher, year] — on strictly more agreeing evidence"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL44605793W"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "unmapped|dakota krout": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Unmapped&author=Dakota%20Krout"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "unsouled|will wight": {
+    "olid": "OL20781727W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "search",
+    "corroboration": [
+      "publisher",
+      "series+volume",
+      "year"
+    ],
+    "evidence": [
+      "fielded search matched \"Unsouled\" by Will Wight (title 1.00, author 1.00)",
+      "publisher \"Hidden Gnome Publishing\" matches Open Library's \"Hidden Gnome Publishing\"",
+      "an edition is labelled \"Cradle, Volume 1\" — our series AND volume 1",
+      "our file says 2016; Open Library has an edition from 2017",
+      "chosen over 1 other corroborating record(s) — OL36392741W [publisher, series+volume] — on strictly more agreeing evidence"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL20781727W"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "untapped|dakota krout": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=Untapped&author=Dakota%20Krout"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "waybound|will wight": {
+    "olid": "OL35801131W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "search",
+    "corroboration": [
+      "publisher",
+      "series+volume",
+      "year"
+    ],
+    "evidence": [
+      "fielded search matched \"Waybound\" by Will Wight (title 1.00, author 1.00)",
+      "publisher \"Hidden Gnome Publishing\" matches Open Library's \"Hidden Gnome Publishing\"",
+      "an edition is labelled \"Cradle, Volume Twelve\" — our series AND volume 12",
+      "our file says 2023; Open Library has an edition from 2023",
+      "chosen over 1 other corroborating record(s) — OL44618315W [publisher, series+volume] — on strictly more agreeing evidence"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL35801131W"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "what if everybody said that what if everybody|ellen javernick": {
+    "olid": null,
+    "candidate": "OL19749952W",
+    "verdict": "needs_review",
+    "confidence": "medium",
+    "via": "search",
+    "corroboration": [
+      "year"
+    ],
+    "evidence": [
+      "fielded search matched \"What if everybody said that?\" by Ellen Javernick (title 1.00, author 1.00)",
+      "our file says 2018; Open Library has an edition from 2018"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL19749952W"
+    ],
+    "searched_at": "2026-08-10",
+    "note": "One weak corroborator only. Not enough to write unattended."
+  },
+  "whisper me this|kerry anne king": {
+    "olid": "OL20162118W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "search",
+    "corroboration": [
+      "publisher",
+      "year"
+    ],
+    "evidence": [
+      "fielded search matched \"Whisper Me This\" by Kerry Anne King (title 1.00, author 1.00)",
+      "publisher \"Lake Union Publishing\" matches Open Library's \"Lake Union Publishing\"",
+      "our file says 2018; Open Library has an edition from 2018"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL20162118W"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "white sand|julius gopez rik hoskin": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 3 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=White%20Sand&author=Julius%20Gopez%20Rik%20Hoskin"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "wintersteel|will wight": {
+    "olid": "OL37937356W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "search",
+    "corroboration": [
+      "publisher",
+      "series+volume"
+    ],
+    "evidence": [
+      "fielded search matched \"Wintersteel\" by Will Wight (title 1.00, author 1.00)",
+      "publisher \"Hidden Gnome Publishing\" matches Open Library's \"Hidden Gnome Publishing\"",
+      "an edition is labelled \"Cradle, Volume Eight\" — our series AND volume 8",
+      "chosen over 1 other corroborating record(s) — OL22479475W [publisher, year] — on strictly more agreeing evidence"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL37937356W"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "world s only hero|dakota krout": {
+    "olid": null,
+    "verdict": "not_found",
+    "confidence": null,
+    "via": "search",
+    "evidence": [
+      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+    ],
+    "source": [
+      "https://openlibrary.org/search.json?title=World's%20Only%20Hero&author=Dakota%20Krout"
+    ],
+    "searched_at": "2026-08-10"
+  },
+  "yumi and the nightmare painter|brandon sanderson": {
+    "olid": "OL31146657W",
+    "verdict": "matched",
+    "confidence": "high",
+    "via": "isbn",
+    "corroboration": [
+      "publisher",
+      "series",
+      "year",
+      "title"
+    ],
+    "evidence": [
+      "ISBN 9781938570407 read from the EPUB's <dc:identifier> resolves to edition OL46114376M",
+      "publisher \"Dragonsteel Entertainment, LLC\" matches Open Library's \"Dragonsteel\"",
+      "an edition is labelled \"Secret Projects\" — our series, volume unconfirmed",
+      "our file says 2023; Open Library has an edition from 2023",
+      "Open Library calls it \"Yumi and the Nightmare Painter\" (title similarity 1.00)"
+    ],
+    "source": [
+      "https://openlibrary.org/works/OL31146657W",
+      "EPUB <dc:identifier> ISBN 9781938570407"
+    ],
+    "searched_at": "2026-08-10"
+  }
+}

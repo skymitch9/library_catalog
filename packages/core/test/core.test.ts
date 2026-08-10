@@ -26,6 +26,12 @@ import {
 } from '../src/titles.ts';
 import { buildWorkIndex, matchIndexedWork, titleSimilarity } from '../src/matching.ts';
 import {
+  corroborate,
+  samePublisher,
+  seriesMentioned,
+  volumeMentioned,
+} from '../src/corroboration.ts';
+import {
   completenessSentence,
   gapEvidenceLabel,
   seriesCompleteness,
@@ -539,5 +545,89 @@ describe('work relations — direction is the meaning', () => {
     for (const s of WISHLIST_STATUSES) assert.ok(!HELD_STATUSES.includes(s));
     assert.ok(HELD_STATUSES.includes('lent'));
     assert.ok(!HELD_STATUSES.includes('sold'));
+  });
+});
+
+describe('corroboration — the Firefight rule', () => {
+  // docs/info/isbn-ladder.md §4.4, verbatim: Open Library answered "Firefight" +
+  // "Brandon Sanderson" with a DIFFERENT 2001 book called Firefight, scoring 1.0
+  // on title and 1.0 on author. Only the publisher and the year separated them.
+  // These are that measurement turned into a test.
+  const sandersonsFirefight = {
+    series: 'The Reckoners',
+    volume: 2,
+    publisher: 'Delacorte Press',
+    year: 2015,
+  };
+
+  it('refuses the wrong Firefight, which title and author cannot', () => {
+    const wrong = corroborate(sandersonsFirefight, {
+      publishers: ['Random House Books for Young Readers'],
+      years: [2001],
+      seriesStrings: ['Firefight'],
+    });
+    assert.equal(wrong.confidence, 'none');
+    assert.deepEqual(wrong.strong, []);
+  });
+
+  it('accepts the right one on the publisher and the year', () => {
+    const right = corroborate(sandersonsFirefight, {
+      publishers: ['Delacorte Press'],
+      years: [2015],
+      seriesStrings: ['Firefight', 'The Reckoners, Book 2'],
+    });
+    assert.equal(right.confidence, 'high');
+    assert.ok(right.strong.includes('publisher'));
+    assert.ok(right.strong.includes('series+volume'));
+  });
+
+  it('holds one weak corroborator below the bar, and two at it', () => {
+    const one = corroborate({ year: 2015 }, { years: [2015] });
+    assert.equal(one.confidence, 'medium');
+
+    const two = corroborate({ year: 2015, series: 'Cradle' }, { years: [2015], seriesStrings: ['Cradle'] });
+    assert.equal(two.confidence, 'high');
+  });
+});
+
+describe('corroboration — publisher folding', () => {
+  it('folds the corporate furniture this library actually contains', () => {
+    // Three spellings of one publisher, all present in these EPUBs and in OL.
+    assert.ok(samePublisher('Dragonsteel Entertainment, LLC', 'Dragonsteel Entertainment'));
+    assert.ok(samePublisher('Dragonsteel, LLC', 'Dragonsteel'));
+    assert.ok(samePublisher('Thomas & Mercer', 'Thomas and Mercer'));
+    assert.ok(samePublisher('Delacorte', 'Delacorte Press'));
+  });
+
+  it('does not fold two different houses together', () => {
+    // The whole value of the discriminator is this line failing to fire.
+    assert.ok(!samePublisher('Delacorte Press', 'Random House Books for Young Readers'));
+    assert.ok(!samePublisher('Hidden Gnome Publishing', 'Brilliance Audio'));
+    // Lake Union really is an Amazon imprint, and folding on that would need a
+    // table of imprints — which nobody has written, so the honest answer is no.
+    assert.ok(!samePublisher('Lake Union Publishing', 'Amazon Publishing'));
+  });
+});
+
+describe('corroboration — series and volume in an edition label', () => {
+  it('reads the volume Hidden Gnome files in the subtitle', () => {
+    // covers-and-series.md §3.1: "Ghostwater" :: "Cradle, Volume Five".
+    assert.ok(seriesMentioned('Cradle, Volume Five', 'Cradle'));
+    assert.ok(volumeMentioned('Cradle, Volume Five', 5));
+    assert.ok(volumeMentioned('Cradle, Volume 5', 5));
+    assert.ok(volumeMentioned('Cradle Book 5', 5));
+  });
+
+  it('does not read a bare trailing number as a volume', () => {
+    // cleanAudiobookTitle's rule: Eric Vall's books really are called
+    // "Summoner 6", and a digit with no marker word in front of it is not a
+    // volume claim. This is the same trap one layer up.
+    assert.ok(!volumeMentioned('Summoner 6', 6));
+    assert.ok(!volumeMentioned('Cradle 5', 5));
+  });
+
+  it('requires every word of our series name to be present', () => {
+    assert.ok(!seriesMentioned('Skyward Flight', 'Skyward Legacy'));
+    assert.ok(seriesMentioned('The Reckoners, Book 2', 'The Reckoners'));
   });
 });

@@ -14,10 +14,15 @@
 |---|---|
 | `npm run backfill:covers [-- --remote] [-- --commit]` | Extracts covers from the EPUBs into `apps/web/public/covers` and sets `work.cover_url`. Dry-run, local, by default. |
 | `npm run backfill:series [-- --remote] [-- --commit]` | Fills `work.series` / `series_index_*`. Same defaults. |
+| `npm run backfill:openlibrary-ids [-- --remote] [-- --commit]` | Fills `work.openlibrary_work_id`. Dry-run, local, by default. Talks to openlibrary.org (~300 calls on a cold run, ~1/sec, no key needed); a warm run makes **zero** calls because `scripts/openlibrary-ids.json` caches every answer including the misses. |
 | `npm run sync:drive-map` | Copies `author_drive_map.json` from the audiobook repo into `apps/web/public/`. Needs no credentials. |
 
 ⚠️ `backfill:covers --remote --commit` writes URLs that only resolve after
 `npm run deploy`. Do the two together — see `docs/HANDOFF.md`.
+
+⚠️ `backfill:openlibrary-ids` needs **no** deploy and **no** migration — the
+column has existed since migration 0001 and nothing serves it yet. Read its
+outlier list before `--commit`; see [`../info/openlibrary-ids.md`](../info/openlibrary-ids.md).
 
 Nothing here contains a secret value. Credentials are named, and the command to
 set them is given; the values live in `wrangler secret` and in

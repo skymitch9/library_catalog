@@ -23,7 +23,7 @@ than "we have it".
 ### To finish it
 
 ```bash
-npm test                                            # 55
+npm test                                            # 63
 npm run typecheck                                   # five workspaces
 npm run db:migrate                                  # ⚠️ REMOTE — 0003 + 0004, BEFORE deploying
 npm run deploy
@@ -40,12 +40,52 @@ does not have; deploying first makes every series request a 500.
   (`/works/<key>/editions.json`, §3.1 of `covers-and-series.md`) and
   `series_volume.source` already allows `'openlibrary'` — but **no work here has
   an `openlibrary_work_id`**, so the rung has nothing to call with.
+  **↳ Unblocked on `feature/openlibrary-ids`**, measured but not written: 35 of
+  116 works now have a corroborated id, including **11 of 12 Cradle volumes**,
+  the series the sibling catalog has never heard of. See the section below.
 - **No "% complete" bar.** A percentage needs a denominator, and 24 of 25 series
   have none. It would be inventing the number it displays.
 - **No bulk relation seeding.** Three Cosmere links and one omnibus link were
   entered by hand while testing; the rest is the owner's to enter.
 - **The wanted→owned promotion does not create an edition.** Deliberate, and
   load-bearing — see §2.3.
+
+## 🟡 In flight — `feature/openlibrary-ids`
+
+`work.openlibrary_work_id` was **0 of 116**. A dry run against **production,
+read-only** on 2026-08-10 resolved **35** of them with corroboration beyond
+title+author. **Nothing has been written to any database, local or remote** —
+the owner gates it.
+
+| | |
+|---|---|
+| matched, corroborated | **35 (30%)** — 16 via an ISBN inside the EPUB, 19 via fielded search |
+| searched, **not found** | **68 (59%)** — 66 of them returned zero results; the light-novel and Kindle-native half |
+| **outliers for hand review** | **13** — all named, each with a candidate id, in `scripts/openlibrary-ids.json` |
+
+Everything measured, including the ten Open Library duplicate-record cases and
+the matches refused despite a **1.0 title and 1.0 author** score, is in
+[`docs/info/openlibrary-ids.md`](info/openlibrary-ids.md). **Read §6 before
+touching the outliers** — seven of the thirteen are one question about
+fan-translated light novels, not seven questions.
+
+### To finish it
+
+```bash
+npm test                                                   # 63
+npm run typecheck                                          # five workspaces
+npm run backfill:openlibrary-ids -- --remote               # dry run; READ THE OUTLIER LIST
+npm run backfill:openlibrary-ids -- --remote --commit      # ⚠️ owner gates this
+```
+
+No migration and no deploy are needed: the column, its unique partial index and
+`series_volume.source = 'openlibrary'` have all existed since migrations 0001 and
+0003. Nothing in the Worker or the web app reads the column yet.
+
+⚠️ **`scripts/openlibrary-ids.json` is the ledger and it is tracked.** It records
+"searched, Open Library has nothing" separately from "nobody has looked", so a
+re-run makes **zero** network calls. Delete it and the next run re-asks
+openlibrary.org ~300 times for answers it already had.
 
 ## ✅ Shipped and live — covers, series, sorting, filters, Drive links
 

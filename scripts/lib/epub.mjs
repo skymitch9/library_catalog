@@ -107,6 +107,37 @@ function textOf(opf, tagName) {
   return m ? decodeEntities(m[1].replace(/<[^>]*>/g, '')).trim() : null;
 }
 
+/** Every occurrence of a Dublin Core element, with its raw tag, in document order. */
+function allOf(opf, tagName) {
+  const re = new RegExp(
+    `<((?:\\w+:)?${tagName})\\b([^>]*)>([\\s\\S]*?)</(?:\\w+:)?${tagName}>`,
+    'gi',
+  );
+  const out = [];
+  for (const m of opf.matchAll(re)) {
+    const text = decodeEntities(m[3].replace(/<[^>]*>/g, '')).trim();
+    if (text) out.push({ attrs: m[2] ?? '', text });
+  }
+  return out;
+}
+
+/**
+ * The 13 digits of an ISBN-13, or null.
+ *
+ * ⚠️ Checksum-validated, not merely shaped. `docs/info/isbn-ladder.md` §2 records
+ * three ISBNs typed from memory that all passed the checksum and all resolved to
+ * confidently wrong books — so a valid checksum is not evidence the number is the
+ * right book's. It is only evidence the string is an ISBN at all, which is the
+ * one thing this function claims.
+ */
+function isbn13Of(raw) {
+  const digits = String(raw).replace(/[^0-9Xx]/g, '');
+  if (digits.length !== 13 || !/^\d{13}$/.test(digits)) return null;
+  let sum = 0;
+  for (let i = 0; i < 12; i++) sum += Number(digits[i]) * (i % 2 ? 3 : 1);
+  return (10 - (sum % 10)) % 10 === Number(digits[12]) ? digits : null;
+}
+
 const IMAGE_EXT = /\.(jpe?g|png|gif|webp)$/i;
 
 /**
@@ -194,11 +225,38 @@ export function readEpub(filePath, { cover: wantCover = true } = {}) {
       }
     }
 
+    // ⚠️ Publisher and date are here for ONE reason and it is worth stating.
+    // `docs/info/isbn-ladder.md` §4.4 measured an Open Library answer that scored
+    // 1.0 on title AND 1.0 on author and was a different book — "Firefight", a
+    // Random House 2001 title, returned for Sanderson's 2015 Delacorte novel.
+    // Nothing textual separated them; only the publisher and the year did. This
+    // catalog holds neither on `work` (0 of 116 rows carry `first_published`), so
+    // the file on disk is the only place they exist. Same lesson as §1 of
+    // covers-and-series.md: the file knows more than the catalog does.
+    const dates = allOf(opf, 'date');
+    const year = (() => {
+      for (const d of dates) {
+        const m = /\b(1[5-9]\d{2}|20\d{2})\b/.exec(d.text);
+        if (m) return Number(m[1]);
+      }
+      return null;
+    })();
+
+    const identifiers = allOf(opf, 'identifier').map((d) => d.text);
+    const isbn13 = identifiers.map(isbn13Of).find(Boolean) ?? null;
+
     return {
       title: textOf(opf, 'title'),
       author: textOf(opf, 'creator'),
       language: textOf(opf, 'language'),
       description: textOf(opf, 'description'),
+      publisher: textOf(opf, 'publisher'),
+      /** First four-digit year in any `<dc:date>`, or null. */
+      year,
+      /** Every `<dc:identifier>` verbatim — mostly uuids and Calibre ids. */
+      identifiers,
+      /** The first identifier that is a checksum-valid ISBN-13, or null. */
+      isbn13,
       series,
       seriesIndex,
       cover,

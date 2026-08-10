@@ -37,6 +37,12 @@ Anything reaching for the ISBN ladder to fix covers here is solving the wrong
 problem. What these rows have is a **file on disk**, and the file knows more than
 the catalog does.
 
+⚠️ **Updated 2026-08-10 — the second half of that sentence went further than
+anybody checked.** The files also carry **24 checksum-valid ISBN-13s**, 111
+publishers and 108 years in their OPF metadata, none of which is in the database.
+23 of the 24 ISBNs resolved against Open Library. The claim "0 ISBNs" is true of
+`edition.isbn13` and false of the files. See [`openlibrary-ids.md`](openlibrary-ids.md) §3.1.
+
 ---
 
 ## 2. Covers — `npm run backfill:covers`
@@ -183,6 +189,13 @@ That one endpoint is where 12 of the 24 came from, including all six Cradle
 volumes and three of the four Secret Projects. Anything that concludes "Open
 Library does not know" from `search.json` alone is reading the wrong endpoint —
 this is the same shape of mistake as §1's, reaching for a rung that cannot fire.
+
+**Confirmed again 2026-08-10** while filling `work.openlibrary_work_id`:
+`search.json` still returns `series: null` for everything, and every series
+corroborator in that run came from `editions.json`'s `series` and `subtitle`.
+That backfill also reached the endpoint *by id* for the first time — the twelve
+above were reached by hand, one at a time, because there was no id to call with.
+See [`openlibrary-ids.md`](openlibrary-ids.md).
 
 `subtitle` matters as much as `series`: Hidden Gnome files the volume number
 there (`"Ghostwater" :: "Cradle, Volume Five"`) on more editions than it uses the
