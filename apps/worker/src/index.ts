@@ -16,6 +16,7 @@ import { healthRoutes } from './routes/health.js';
 import { ingestRoutes } from './routes/ingest.js';
 import { isbnRoutes } from './routes/isbn.js';
 import { relationRoutes } from './routes/relations.js';
+import { researchRoutes } from './routes/research.js';
 import { reviewRoutes } from './routes/reviews.js';
 import { scanJobRoutes } from './routes/scan-jobs.js';
 import { seriesRoutes } from './routes/series.js';
@@ -48,6 +49,7 @@ app.route('/api', exportRoutes);
 app.route('/api/series', seriesRoutes);
 app.route('/api/isbn', isbnRoutes);
 app.route('/api/enrich', enrichRoutes);
+app.route('/api/research', researchRoutes);
 app.route('/api/reviews', reviewRoutes);
 // The intake queue: barcode sweeps and shelf photographs, both persisted so a
 // locked phone does not lose the sweep. See routes/scan-jobs.ts.

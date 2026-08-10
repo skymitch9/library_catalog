@@ -1,0 +1,14 @@
+{
+  "name": "@lc/research",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Claude-backed research: one cheap open-web pass per book, proposing facts a person then accepts.",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc --noEmit" },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.115.0",
+    "@lc/core": "*"
+  },
+  "devDependencies": { "@cloudflare/workers-types": "^4.20250109.0" }
+}

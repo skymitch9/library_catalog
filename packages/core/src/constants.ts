@@ -218,6 +218,49 @@ export type SourceTier = (typeof SOURCE_TIERS)[number];
 export const RUN_TIERS = ['official', 'crowdfunding', 'retail', 'details'] as const;
 export type RunTier = (typeof RUN_TIERS)[number];
 
+/**
+ * The facts the details queue asks a book for.
+ *
+ * ⚠️ A closed, short list, and the shortness is the feature. Measured against
+ * production on 2026-08-10, **every** column on `work` and `edition` is null on
+ * almost every row — 116 of 116 works have no `first_published`, 117 of 117
+ * editions have no ISBN. A queue built from "which columns are null" would
+ * therefore list the whole catalog against every column and tell nobody
+ * anything. `packages/core/src/gaps.ts` carries the field-by-field reasoning for
+ * what is on this list and, more importantly, what is refused.
+ */
+export const DETAIL_FIELDS = [
+  'firstPublished',
+  'series',
+  'seriesIndex',
+  'description',
+] as const;
+export type DetailField = (typeof DETAIL_FIELDS)[number];
+
+/**
+ * What a `gap_verdict` row says (migration 0005).
+ *
+ * Both values mean *asked and answered*, which is the distinction the whole
+ * table exists to draw. There is deliberately no `found` — a found value is
+ * written into the column it belongs in, and a verdict row beside it would be a
+ * second copy of the same fact.
+ *
+ * Modelled on `scripts/series-overrides.json`, whose `verdict` of
+ * `series` / `standalone` / `unknown` is the same three-way distinction: the
+ * value goes in the column, and the other two go here.
+ */
+export const GAP_VERDICTS = [
+  /** This book genuinely has no such thing. A true standalone has no series. */
+  'none',
+  /** Somebody looked and nobody knows. Distinct from nobody having looked. */
+  'unknown',
+] as const;
+export type GapVerdict = (typeof GAP_VERDICTS)[number];
+
+/** Where a `research_finding` stands. Must match the CHECK in migration 0001. */
+export const FINDING_REVIEW_STATES = ['pending', 'accepted', 'rejected'] as const;
+export type FindingReviewState = (typeof FINDING_REVIEW_STATES)[number];
+
 export const SCAN_MODES = ['shelf', 'single', 'isbn', 'file'] as const;
 export type ScanMode = (typeof SCAN_MODES)[number];
 

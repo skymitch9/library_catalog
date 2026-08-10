@@ -81,6 +81,11 @@ export type Route =
   | { name: 'series' }
   | { name: 'seriesDetail'; series: string }
   | { name: 'wishlist' }
+  // `?field=` narrows the worklist to one question. A query parameter and not a
+  // segment, for the same reason the collection's filters are: it is what the
+  // page is *showing*, not which page it is, and switching it must not put an
+  // entry in the history for every click.
+  | { name: 'queue'; field: string | null }
   // `?mode=` lets a caller land on the right tab of the add screen rather than
   // on the right screen and the wrong tab. Optional, and an unrecognised value
   // falls back to the screen's own default, so junk is harmless.
@@ -208,6 +213,10 @@ export function addPath(mode?: AddMode, job?: number | null): string {
 }
 
 export const scansPath = '/scans';
+/** The details queue, optionally narrowed to one question. */
+export function queuePath(field?: string | null): string {
+  return field ? `/queue?field=${encodeURIComponent(field)}` : '/queue';
+}
 
 function parse(pathname: string, search: string): Route {
   const parts = pathname.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
@@ -228,6 +237,13 @@ function parse(pathname: string, search: string): Route {
   }
 
   if (parts[0] === 'wishlist' && parts.length === 1) return { name: 'wishlist' };
+
+  if (parts[0] === 'queue' && parts.length === 1) {
+    // Open-ended rather than checked against a list: the field set lives in
+    // `@lc/core` and grows, and a name matching nothing simply shows an empty
+    // worklist — which is the honest answer, not an error.
+    return { name: 'queue', field: new URLSearchParams(search).get('field') };
+  }
 
   // ⚠️ One flat route, no segment per tab. A standalone PWA on iOS re-prompts
   // for camera permission on every route change (WebKit #215884), and this is
@@ -322,6 +338,7 @@ export function labelFor(path: string): string {
   if (p === '/' || p === '') return 'Collection';
   if (p === '/series') return 'Series';
   if (p === '/wishlist') return 'Wishlist';
+  if (p === '/queue') return 'What is missing';
   if (p === '/add') return 'Add books';
   if (p === '/scans') return 'Sweeps';
   if (p === '/export') return 'Export';

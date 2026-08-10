@@ -837,4 +837,43 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
   flex: none;
   border: 1px dashed var(--line-strong);
   border-radius: 3px;
+/* --- the details queue ---------------------------------------------------- */
+
+/* The tally, not the list, is what this page is for — so it gets to look like a
+   table rather than another stack of cards. Scrolls inside itself on a phone;
+   the page body must never scroll sideways. */
+.gap-summary {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.gap-summary th,
+.gap-summary td {
+  padding: 0.35rem 0.5rem;
+  text-align: right;
+  border-bottom: 1px solid var(--line);
+}
+.gap-summary thead th {
+  font-weight: 500;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.gap-summary th[scope='row'] {
+  text-align: left;
+  font-weight: 400;
+}
+.gap-summary tbody tr:last-child th,
+.gap-summary tbody tr:last-child td { border-bottom: 0; }
+.gap-summary tr.is-current { background: var(--panel); }
+
+/* One proposal. The value is the loud part; the source sits under it in the
+   muted type every other provenance line in this app uses. */
+.proposal {
+  border-left: 3px solid var(--line);
+  padding: 0.4rem 0 0.4rem 0.6rem;
+}
+.proposal__value {
+  font-family: var(--serif);
+  font-size: 1rem;
+  margin: 0.15rem 0;
 }

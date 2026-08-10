@@ -48,6 +48,7 @@ import { CollectionPage } from './pages/CollectionPage.js';
 import { ScanJobsPage } from './pages/ScanJobsPage.js';
 import { ExportPage } from './pages/ExportPage.js';
 import { PeoplePage } from './pages/PeoplePage.js';
+import { DetailsQueuePage } from './pages/DetailsQueuePage.js';
 import { ScanPage } from './pages/ScanPage.js';
 import { SeriesDetailPage } from './pages/SeriesDetailPage.js';
 import { SeriesPage } from './pages/SeriesPage.js';
@@ -190,6 +191,13 @@ export function App() {
               Export
             </Link>
           )}
+          {/* A place, like the other two: "what is missing" is a view of the
+              catalog, not an action performed on it. Shown to readers as well as
+              owners — seeing what the shelf does not know costs nothing; the
+              buttons that spend money are gated on the page itself. */}
+          <Link to="/queue" className={route.name === 'queue' ? 'primary chip' : 'chip'}>
+            Missing
+          </Link>
         </nav>
         <button onClick={() => void signOutNow()}>Sign out</button>
       </header>
@@ -269,6 +277,11 @@ function Screens({
 
     case 'wishlist':
       return <WishlistPage me={me} onOpen={openWork} />;
+
+    case 'queue':
+      // Keyed on the field so switching question remounts rather than keeping
+      // the previous list's expanded rows and half-typed verdict forms.
+      return <DetailsQueuePage key={route.field ?? 'all'} me={me} field={route.field} />;
 
     case 'add': {
       // Gated the same way the "+ Add books" button is. Without this, a reader

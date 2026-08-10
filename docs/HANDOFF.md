@@ -66,6 +66,44 @@ the number that matters.
 | Photos | **Never stored.** No R2 binding, and there must not be one |
 | Writes | **None.** Every line is a proposal; `addedWorkId` records that a person pressed Add |
 | Gate | `runResearch`, not `scan` — the tab is hidden from anyone who cannot spend |
+## 🟡 In flight — `feature/research-details`
+
+Phase 5's **research** half, plus the details queue that decides what research is
+for. Branched from `feature/router`, committed and pushed, **not deployed, not
+merged, and migration 0005 has NOT been applied to production.**
+
+⚠️ **The index half of phase 5 is a different project.** `index.heygabi.ai` is a
+cross-format view over three catalogues with its own host; nothing here touches
+it.
+
+Everything measured is in
+[`docs/info/research-and-gaps.md`](info/research-and-gaps.md). The four things
+worth knowing without opening it:
+
+- **The queue is a tally first and a list second.** Against production, *every*
+  work is missing its year and its description, so a list of 116 rows saying the
+  same two words carries no information. The per-field tally does, and it is
+  where the thirteen answered series show up as work already done:
+
+  | Question | To ask | Answered | Recorded | N/A |
+  |---|---|---|---|---|
+  | first published | **116** | — | — | — |
+  | series | **0** | **13** (11 none, 2 unknown) | 103 | — |
+  | volume number | **10** | — | 93 | 13 |
+  | description | **116** | — | — | — |
+
+- **`gap_verdict` (migration 0005) is the point of the feature.** A blank column
+  means "nobody looked", "there is genuinely none", or "nobody knows", and only
+  the first is a gap. The 13 series answers researched by hand on 2026-08-10 come
+  across from `series-overrides.json` with `npm run seed:verdicts`.
+- **Nothing auto-applies, and there is no confidence score anywhere.** The
+  finding shows its value, its source and a one-sentence basis, and a person
+  presses Use. §4.4/§4.5 of `isbn-ladder.md` is why: a wrong book scored 1.00 on
+  title *and* author, twice.
+- ⚠️ **The paid call has never run.** No `ANTHROPIC_API_KEY` exists on this
+  machine, so `research_run` still holds 0 rows and every cost figure is an
+  estimate from list pricing. Everything else — review, accept, reject, verdicts,
+  the 503 with no key — was driven in a browser.
 
 ### To finish it
 
@@ -121,6 +159,28 @@ lighting.
   info doc as the fix if anyone wants it.
 - **iOS untested**, and every measured photo went through the file picker rather
   than a live camera frame.
+npm test                            # 77
+npm run typecheck                   # ⚠️ SIX workspaces now — packages/research is new
+npm run db:migrate:local
+npm run seed:verdicts               # dry run, local
+npm run seed:verdicts -- --commit
+
+# production, owner-gated, in this order:
+npm run db:migrate                  # ⚠️ REMOTE — 0005, BEFORE deploying
+npm run deploy
+npm run seed:verdicts -- --remote            # dry run: expect 13 matched
+npm run seed:verdicts -- --remote --commit
+npm run secret ANTHROPIC_API_KEY             # or put it in .dev.vars + npm run secrets:push
+```
+
+⚠️ **Migrate before deploying.** `/api/research/queue` reads `gap_verdict`;
+deploying first makes every request to it a 500.
+
+⚠️ **Do the free rung before paying for years.** The EPUB files already carry
+**108 four-digit `dc:date` years** and `scripts/lib/epub.mjs` already returns
+them — see `research-and-gaps.md` §6. Buying a model's answer for a year sitting
+in a file on disk is the most expensive way to learn it. That rung is *not* built
+here; it is the obvious next piece of work.
 
 ## 🟡 In flight — `feature/router`
 
@@ -304,6 +364,7 @@ holds 117 works and 117 editions, all ebooks imported from
 | **Shared identity** | ✅ Firebase Google SSO on the `audiobook-catalog` project, joined on email. |
 | **Review bridge** | ✅ `workKey`, draft endpoint, Firestore client, review UI, backfill script. **Backfill dry-run only.** |
 | **Open Library enrichment** | ✅ Proposes candidates with match scores; never auto-applies. |
+| **Phase 5 — research** | 🟡 **Built on `feature/research-details`, not deployed and not migrated remotely.** Details queue, `gap_verdict`, one Claude call per book, propose/accept. The paid call has never run. `info/research-and-gaps.md`. |
 | **Covers, series, sorting, Drive** | 🟡 **Built on `feature/library-parity`, not deployed.** 114/115 covers, 101/115 series (78 automatic + 23 from series-overrides.json, local only), server-side sort and filters, Drive flip-out. `docs/info/covers-and-series.md`. |
 | **Phase 3 — ebook pipeline** | ⏸️ **Built, run, then paused 2026-08-09.** The books it catalogued are kept. See below. |
 
@@ -311,6 +372,13 @@ holds 117 works and 117 editions, all ebooks imported from
 
 - Phase 5 (research + index). **Phase 4 (shelf photo) is built** — see
   `feature/scanjobs-vision` above.
+- Phase 4 (shelf photo), and the **index** half of phase 5 — `index.heygabi.ai`,
+  a cross-format view over three catalogues, which is a separate project with its
+  own host. The **research** half is on `feature/research-details`; see the top
+  of this file.
+- `scan_job` is in the schema but no route touches it. The scan screen keeps
+  results in React state, so a phone locking mid-sweep loses them. That matters
+  much more for phase 4 — a shelf photo costs money, an ISBN is free to re-scan.
 - No series browse page. The collection can be *filtered* to one series and
   sorted series-first, which covers most of what a browse page would, but there
   is no page that lists the 25 series with their volume counts.
@@ -442,6 +510,17 @@ npm run backfill:reviews -- --commit    # writes to the LIVE reviews collection
   `apps/web/public/_headers` ever appears to be ignored, check that first;
   `*.pages.dev` is outside the zone and will keep obeying `_headers`, which makes
   the discrepancy read as a routing problem when it is not.
+- **A long checkout breaks the LOCAL D1 outright.** miniflare keeps it under
+  `apps/worker/.wrangler/state`, and on Windows a deep enough path pushes that
+  past the limit. Every local `d1 execute` then fails with a bare
+  `internal error; reference = …` — **including a plain `SELECT 1`**, which is
+  how you tell it apart from a SQL problem. Seen 2026-08-10 in a git worktree
+  under `AppData\Local\Temp\…`. Set `LC_D1_PERSIST_TO=C:/lcw` for the scripts and
+  pass `--persist-to C:/lcw` to `wrangler dev` and `d1 migrations apply`. The
+  main checkout needs neither; remote is unaffected.
+- **A backtick inside a SQL comment in `packages/db` ends the string.** The
+  queries are JavaScript template literals. It broke the Worker build once, with
+  an esbuild error pointing at the SQL rather than at the quote.
 - **`git commit -F`, never `-m`.** See `CLAUDE.md`.
 - **⚠️ `wrangler d1` dies with an opaque `internal error` when the repo path is
   long.** A git worktree under `%TEMP%\claude\...` put the local D1 file at
