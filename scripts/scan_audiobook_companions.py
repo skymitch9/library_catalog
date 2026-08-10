@@ -91,7 +91,20 @@ def title_from_filename(path: Path, author: str = "") -> str:
     confident nonsense. They come out as "Legion Skindeep", which is wrong but
     *visibly* wrong and fixable in CWA, rather than silently wrong.
 
-    ⚠️ Three things are deliberately NOT fixed, because every rule for them
+    ## ⚠️ Measured 2026-08-09: these rules matter LESS than they look
+
+    All 83 files went through CWA, and **CWA overrode almost every title here
+    from the EPUB's own embedded metadata**. Zero `BtDEM ...` titles survived
+    into the catalog — they came out as "Oathbound Healer", "Ranger's Dawn",
+    "Adventures in the Argo". The filename is a *fallback*, used only where the
+    embedded metadata is empty or junk.
+
+    So resist elaborating the rules below. A filename heuristic that fights CWA's
+    metadata step is effort spent on a value that gets replaced, and every extra
+    rule is another chance to be confidently wrong on the minority of files where
+    the fallback actually applies.
+
+    Three things are deliberately NOT fixed, because every rule for them
     guesses:
 
     - **Series abbreviations.** `BtDEM 1 Oathbound Healer` is Beneath the

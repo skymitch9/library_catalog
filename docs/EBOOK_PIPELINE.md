@@ -454,6 +454,48 @@ interpreter. Currently passing: 10/10 identical.
 - Both ends cleaned up afterwards; `calibredb remove` emptied the library and the
   work was deleted from D1.
 
+## The first real library: 83 books, 2026-08-09
+
+The companions scanner copied 83 EPUBs out of the OpenAudible library, CWA
+ingested all 83 in about 6½ minutes, and the indexer published them:
+**81 works, 83 editions, 8 authors** in production D1.
+
+81 rather than 83 is the `work_key` dedup doing its job — two files folded onto
+works that already existed, including the `Copy Of ...` duplicate. Same work,
+two editions, which is exactly the model.
+
+### ⚠️ What that run corrected about our own reasoning
+
+**CWA's metadata step is the quality gate, not the filename rules.** Before
+ingesting, 13 files looked like they would land as `BtDEM 1 Oathbound Healer`.
+**Zero** did: CWA read each EPUB's embedded metadata and replaced the
+filename-derived title with the real one — "Oathbound Healer", "Ranger's Dawn",
+"Adventures in the Argo".
+
+The filename heuristics in `scan_audiobook_companions.py` are a *fallback* for
+files whose embedded metadata is empty or junk, and nothing more. Do not
+elaborate them: effort spent there is spent on a value CWA replaces, and each
+extra rule is another chance to be confidently wrong on the minority where the
+fallback does apply.
+
+### What CWA is actually for
+
+Five distinct jobs, all observed in that run: metadata repair, format
+conversion, cover extraction, duplicate detection, and reader/OPDS/Kobo
+delivery.
+
+The division of labour: **CWA owns the files, `library_catalog` owns the
+catalog.** CWA knows a book is an EPUB with a cover. It does not know you own
+the paperback, where it is shelved, whether you have read it, or that the
+audiobook exists. That is D1's job, and the indexer is the one-way bridge —
+read-only mount, so the catalog can never corrupt the library.
+
+### One benign error in the logs
+
+`Failed to store checksum for book N: no such table: book_format_checksums`.
+That is CWA's own `cwa.db`, not the Calibre library, and the book is added
+correctly regardless. Ignore it.
+
 ## ⚠️ What the first real run found
 
 Four defects. Three were in code that typechecked, read correctly, and would have
