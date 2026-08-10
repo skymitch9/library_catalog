@@ -23,7 +23,8 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "tsx --test packages/core/test/*.test.ts",
     "backfill:reviews": "tsx scripts/backfill-review-keys.mjs",
-    "secrets:push": "node scripts/push-secrets.mjs"
+    "secrets:push": "node scripts/push-secrets.mjs",
+    "import:ebooks": "tsx scripts/import-ebooks.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",
