@@ -82,9 +82,64 @@ function runSql(sql, { remote }) {
   }
 }
 
-/** Rows from one SELECT. `remote` false is the local dev database. */
+/**
+ * Rows from one SELECT. `remote` false is the local dev database.
+ *
+ * ⚠️ Reads go through `--command`, NOT `--file`, and the difference is not
+ * stylistic — it decides whether you get your rows at all.
+ *
+ * Against `--remote`, wrangler uploads a `--file` to the D1 HTTP API and hands
+ * back a **summary** instead of the result set:
+ *
+ *     [{ "results": [{ "Total queries executed": 1, "Rows read": 2, ... }] }]
+ *
+ * That is a well-formed array with a `results` array in it, so nothing throws.
+ * The caller just sees one row with none of its columns. The first remote run of
+ * the cover backfill printed "1 work(s) in the REMOTE database" against a
+ * catalog of 117 and then died on `work_key` being undefined.
+ *
+ * Locally the same `--file` returns the real rows, which is why this survived
+ * being developed and measured end to end — every one of those measurements was
+ * local.
+ *
+ * `--command` returns real rows in both modes. The reason `runSql` prefers a
+ * file — that a shell cannot carry 117 UPDATEs full of apostrophes — applies to
+ * writes, not to the short SELECTs here, so reads collapse to one line and go
+ * through the argument instead. `execFileSync` passes the SQL as a single argv
+ * entry, so nothing re-splits it.
+ */
 export function query(sql, { remote }) {
-  return runSql(sql, { remote })[0]?.results ?? [];
+  const oneLine = sql.replace(/\s+/g, ' ').trim();
+  // cmd.exe truncates a command line near 8k. Long enough to be a real risk only
+  // if someone builds a SELECT with a huge IN (...) list — fail loudly rather
+  // than silently returning a summary again.
+  if (oneLine.length > 6000) {
+    throw new Error(
+      `query() SQL is ${oneLine.length} chars, too long to pass as --command. ` +
+        'Narrow the query, or page it — do not switch it to --file, which returns ' +
+        'a summary instead of rows on --remote.',
+    );
+  }
+  const out = runWrangler([
+    'd1', 'execute', DB_NAME,
+    '--config', CONFIG,
+    remote ? '--remote' : '--local',
+    '--command', oneLine,
+    '--json',
+  ]);
+  const start = out.indexOf('[');
+  if (start < 0) throw new Error(`no JSON in wrangler output:\n${out}`);
+  const rows = JSON.parse(out.slice(start))[0]?.results ?? [];
+
+  // Belt and braces: if a summary ever comes back from a read, say so instead of
+  // handing the caller a row whose every column is undefined.
+  if (rows.length === 1 && Object.hasOwn(rows[0], 'Total queries executed')) {
+    throw new Error(
+      'wrangler returned an execution summary instead of rows. The query ran, but ' +
+        'its results were not returned — see the comment on query().',
+    );
+  }
+  return rows;
 }
 
 /** A SQL string literal. Doubling the quote is the whole of SQLite's escaping. */
