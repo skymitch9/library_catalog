@@ -3,36 +3,44 @@
 > Updated **2026-08-10**. **Live** at https://library.heygabi.ai — deployed,
 > Firebase domain authorised, Google sign-in verified in production 2026-08-09.
 
-## ⚠️ Read this first: work is finished on a branch and NOT deployed
+## ✅ Shipped and live — covers, series, sorting, filters, Drive links
 
-`feature/library-parity` carries the covers, series, sorting, filters and Drive
-links described in `docs/info/covers-and-series.md`. It is committed, typechecks,
-passes 40 tests, builds, and has been driven in a browser against a local worker
-with production's own data.
+All merged to `main`, deployed, and **applied to production D1 on 2026-08-10**.
+Measured against the remote database after the run, not assumed:
 
-**Production has none of it.** Production D1 still reports 117 works with **0**
-covers and **0** series, and the live site still serves the old flat list. Two
-things are outstanding and they must happen in this order:
+| | |
+|---|---|
+| Works | **117** |
+| With a cover | **115** (2 have none: *White Sand*, whose EPUB carries no cover, and a picture book) |
+| With a series | **104**, across **25** distinct series |
+| Left without a series **on purpose** | **13** — 11 researched true standalones and 2 genuinely unknown. See `info/covers-and-series.md` §3.1 |
+
+Series arrived in two passes: 80 from the automatic ladder (65 from the book's
+own `dc:title`, 15 from the audiobook catalog), then 24 from
+`scripts/series-overrides.json`.
+
+### ⚠️ Deploy order — the handoff used to say the opposite, and it was wrong
+
+The original instruction here was backfill first, then deploy. **Do it the other
+way round.** Cover URLs point at `/covers/*.jpg`, which exist only in the
+deployed assets, so backfilling first opens a window where every cover is a
+broken image. Deploying first is a strict improvement: the images sit there with
+nothing referencing them and the page looks exactly as it did, then the backfill
+makes them appear at once. **Zero gap, rather than a managed one.**
 
 ```bash
-# 1. Write the columns. Dry-run first and READ THE OUTPUT, not the totals.
-npm run backfill:covers -- --remote
+npm run deploy                                   # 1. images + UI first
+npm run backfill:covers -- --remote              # 2. dry run, READ THE OUTPUT
 npm run backfill:covers -- --remote --commit
 npm run backfill:series -- --remote
 npm run backfill:series -- --remote --commit
-
-# 2. Ship the images and the UI. Do NOT leave a gap between 1 and 2.
-npm run deploy
 ```
 
-⚠️ **Between step 1 and step 2 production is worse than it is now.** The cover
-URLs point at `/covers/*.jpg`, which only exist in the deployed assets. Until the
-deploy lands, every cover is a broken image where today it is a placeholder. The
-UI's `<img onError>` falls back to the title placeholder, so the damage is
-cosmetic and self-healing — but do them together.
-
-Nothing else about the branch needs production. Merging it and deploying without
-running the backfills is safe and simply leaves the columns empty.
+⚠️ A cover filename is a hash of `work_key`, **not** of the image bytes, so
+correcting a title mints a new filename. Two BtDEM books hit this — their images
+were extracted after the deploy and had to be committed and shipped in a second
+pass. If a cover renders as a title card, check the file exists in
+`apps/web/public/covers` before suspecting the database.
 
 ## State in one paragraph
 
@@ -73,13 +81,15 @@ holds 117 works and 117 editions, all ebooks imported from
 - No series browse page. The collection can be *filtered* to one series and
   sorted series-first, which covers most of what a browse page would, but there
   is no page that lists the 25 series with their volume counts.
-- **14 of 115 works have no series** and 1 has no cover — see
-  `docs/info/covers-and-series.md` §3 and §3.1. It was 37; all 37 were researched
-  on 2026-08-10 and the answers are in `scripts/series-overrides.json` with a
-  source each — 24 got a series, 11 are true standalones, 2 are genuinely
-  unknown. **The overrides have only been applied LOCALLY.** Production still
-  reads 80 of 117; `npm run backfill:series -- --remote --commit` is the pending
-  command, on `feature/series-overrides`.
+- **13 of 117 works have no series, and that is the finished answer, not a gap.**
+  It was 37; all 37 were researched on 2026-08-10 and every answer is in
+  `scripts/series-overrides.json` with a source — 24 got a series, **11 are true
+  standalones**, 2 are genuinely unknown (*Firstborn / Defending Elysium*, a
+  bind-up whose halves belong in different places, and *Undead Knight*, which has
+  essentially no metadata anywhere). The file records all 37, because "researched,
+  no series" and "nobody has looked" are different facts and only one of them is
+  worth re-researching. See `info/covers-and-series.md` §3.1.
+  **Applied to production 2026-08-10** — 104 of 117 across 25 series.
 - **The book page is a page, not a modal.** The audiobook site opens a book in a
   modal over the grid; this one swaps the whole screen and offers a back button.
   Left as-is deliberately: `App.tsx` has no router, and a modal that cannot be
@@ -173,6 +183,31 @@ npm run backfill:reviews -- --commit    # writes to the LIVE reviews collection
 
 ## Gotchas that will bite the next session
 
+- **⚠️ `wrangler d1 execute --file` returns a SUMMARY, not rows, on `--remote`.**
+  It hands back
+  `[{results:[{"Total queries executed":1,"Rows read":2,…}]}]` — a well-formed
+  array with a `results` array in it, so nothing throws and the caller just gets
+  one row with none of its columns. The first remote cover backfill printed
+  *"1 work(s) in the REMOTE database"* against a catalog of 117 and then died on
+  `work_key` being undefined. **Locally the same `--file` returns real rows**,
+  which is exactly why it survived a whole feature's worth of local measurement.
+  Reads go through `--command` now; `scripts/lib/d1.mjs` `query()` refuses SQL
+  over 6000 chars and throws if it ever sees a summary again. Writes still use a
+  file, correctly — a shell cannot carry 117 UPDATEs full of apostrophes.
+- **A destructive flag whose dry run does nothing looks exactly like success.**
+  `--prune` was added to `scripts/import-ebooks.mjs` and, on the first run,
+  silently did nothing without `--commit`: the import dry-run `process.exit(0)`s
+  before the prune block was reached, so it printed "DRY RUN" and skipped the
+  entire feature. Prune is a function called from both paths now. **When adding a
+  flag, run it in the mode people will try first.**
+- **Cache headers here are governed by a Cloudflare setting outside the repo.**
+  `heygabi.ai` → Caching → Configuration → **Browser Cache TTL** was `4 hours`
+  and overrode origin `Cache-Control` for every host in the zone — including
+  this one, whose hashed `/assets/*` bundles are declared `immutable` for a year
+  and were being silently cut to four hours. Now **Respect Existing Headers**. If
+  `apps/web/public/_headers` ever appears to be ignored, check that first;
+  `*.pages.dev` is outside the zone and will keep obeying `_headers`, which makes
+  the discrepancy read as a routing problem when it is not.
 - **`git commit -F`, never `-m`.** See `CLAUDE.md`.
 - **`wrangler dev` does not tell you the port was already taken.** Port 8792 was
   bound by the Board Game Catalog's own dev server, so this app silently failed
