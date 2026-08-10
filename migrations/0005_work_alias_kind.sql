@@ -1,0 +1,49 @@
+-- `work_alias` grows a `kind`, because half the aliases this catalog actually
+-- needs are not titles.
+--
+-- The table has existed since migration 0001 and its comment describes one case:
+-- a book printed under two names ("Northern Lights" / "The Golden Compass").
+-- That case is real and unchanged. But the case that finally forced a write path
+-- is the other one, measured on 2026-08-10 and written up in
+-- `docs/info/openlibrary-ids.md` §5:
+--
+--   * **He Who Fights with Monsters**, five works. This catalog files them under
+--     **Travis Deverell**; Open Library files the series under the pen name
+--     **Shirtaloon**. `matching.ts`'s author gate refused every candidate, and it
+--     was right to — nothing in "travis deverell" resembles "shirtaloon".
+--   * **White Sand**, whose `work.authors` is "Julius Gopez Rik Hoskin" — the
+--     artist and the scriptwriter. Brandon Sanderson is not in the field at all,
+--     so every Open Library candidate was refused, also correctly.
+--
+-- ⚠️ Neither is fixable by editing `work.authors`. That column feeds
+-- `work_key`, which is the join to the shared Firestore reviews — see the header
+-- of `packages/db/src/works.ts`. An alias is an **addition**; rewriting the
+-- author is a migration with 860 review documents downstream of it.
+--
+-- ## Why a `kind` and not two tables, or one untyped string
+--
+-- Untyped was the tempting option: `work_alias` already stores a bare string, and
+-- the matcher could try every alias against both the title and the author. That
+-- is a rubber stamp. An alias asserted as an alternate *title* would silently
+-- widen the *author* gate, and the author gate is the single check that stopped
+-- five wrong books entering this catalog in the first place. A string has to say
+-- which question it answers.
+--
+-- Two tables would work and buys nothing: the columns, the index, the source
+-- provenance and the UNIQUE are identical, and every reader wants both lists at
+-- once.
+--
+-- ## Additive, and safe on a populated table
+--
+-- `ALTER TABLE ... ADD COLUMN` with a non-NULL default rewrites no rows and drops
+-- no data, so this applies to a database with alias rows in it (production has
+-- none today) without touching them. Existing rows become `'title'`, which is
+-- exactly what migration 0001 meant by them.
+--
+-- ⚠️ The pre-existing `UNIQUE (work_id, alias)` is deliberately NOT widened to
+-- include `kind`. One work answering to one string in two different senses is not
+-- a case anyone has; letting it happen would mean the matcher could treat the
+-- same string as evidence twice.
+ALTER TABLE work_alias
+  ADD COLUMN kind TEXT NOT NULL DEFAULT 'title'
+             CHECK (kind IN ('title', 'author'));

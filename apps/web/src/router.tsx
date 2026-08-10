@@ -78,6 +78,13 @@ export type Route =
   // on the right screen and the wrong tab. Optional, and an unrecognised value
   // falls back to the screen's own default, so junk is harmless.
   | { name: 'add'; mode: AddMode | null }
+  // Two owner-only screens. They are routes rather than modals for the same
+  // reason every other screen is: a URL you can bookmark, and a Back button that
+  // leaves rather than dismissing something invisible. `App.tsx` gates both on a
+  // capability, exactly as it gates `/add` — a screen with an address is a screen
+  // a reader can type.
+  | { name: 'export' }
+  | { name: 'people' }
   | { name: 'notFound' };
 
 /* -- reading the URL ------------------------------------------------------- */
@@ -205,6 +212,9 @@ function parse(pathname: string, search: string): Route {
     return { name: 'add', mode: pick(search, 'mode', ADD_MODES) };
   }
 
+  if (parts[0] === 'export' && parts.length === 1) return { name: 'export' };
+  if (parts[0] === 'people' && parts.length === 1) return { name: 'people' };
+
   return { name: 'notFound' };
 }
 
@@ -281,6 +291,8 @@ export function labelFor(path: string): string {
   if (p === '/series') return 'Series';
   if (p === '/wishlist') return 'Wishlist';
   if (p === '/add') return 'Add books';
+  if (p === '/export') return 'Export';
+  if (p === '/people') return 'People';
   if (p.startsWith('/series/')) return decodeSegment(p.slice('/series/'.length)) || 'Series';
   // A book, and the path does not carry its title. "Back" is honest; inventing
   // "the last book" would be worse than saying less.

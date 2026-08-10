@@ -193,15 +193,6 @@ export async function listWorksForMatching(
   return results;
 }
 
-export async function listWorkAliases(
-  db: D1Database,
-): Promise<{ workId: number; alias: string }[]> {
-  const { results } = await db
-    .prepare('SELECT work_id AS workId, alias FROM work_alias')
-    .all<{ workId: number; alias: string }>();
-  return results;
-}
-
 /** Exact key lookup — the audiobook bridge's entry point. */
 export async function findWorkByKey(db: D1Database, workKey: string): Promise<Work | null> {
   const row = await db

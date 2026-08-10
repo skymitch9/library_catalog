@@ -35,7 +35,15 @@ the same file without needing one.
 | `/series/:name` | One series ladder | `encodeURIComponent`, always — `Tamer%3A%20King%20of%20Dinosaurs` |
 | `/wishlist` | Wishlist | |
 | `/add` | Add books | `?mode=scan\|type` picks the tab. **One flat path** — see below |
+| `/export` | Download the catalog | Owner only (`editCatalog`). A reader gets "Not a page" |
+| `/people` | Who is in, and what they may do | Owner only (`manageUsers`). A reader gets "Not a page" |
 | anything else | "Not a page" | |
+
+⚠️ **A gated screen is gated in `Screens`, not only in the nav.** Hiding a link
+is not access control — a screen with an address is a screen anybody can type.
+`/add` already worked this way and the two new ones follow it. They answer "Not a
+page" rather than a permission notice, because for a reader they genuinely are
+not pages.
 
 Collection query parameters, all optional, all forgiving of junk:
 

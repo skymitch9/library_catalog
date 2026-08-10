@@ -139,6 +139,34 @@ export function isDirectionalRelation(relation: WorkRelation): boolean {
 export const SERIES_VOLUME_SOURCES = ['audiobook_catalog', 'openlibrary', 'manual'] as const;
 export type SeriesVolumeSource = (typeof SERIES_VOLUME_SOURCES)[number];
 
+/**
+ * What an alias in `work_alias` is an alias *of*.
+ *
+ * ⚠️ Two values and not one free-form string, and the reason is the author gate.
+ * `matching.ts` refuses a title match whose author contradicts, and that refusal
+ * is the check that keeps a differently-titled book by somebody else out of this
+ * catalog. An untyped alias tried against both fields would let an alternate
+ * *title* widen the *author* gate, which is the one thing that must not happen.
+ *
+ * - `title` — the book is printed under another name. *Northern Lights* / *The
+ *   Golden Compass*. This is what migration 0001 built the table for.
+ * - `author` — the book is filed elsewhere under another name. *He Who Fights
+ *   with Monsters* is **Travis Deverell** here and **Shirtaloon** on Open
+ *   Library; *White Sand*'s `authors` names the artist and the scriptwriter and
+ *   omits Brandon Sanderson entirely.
+ *
+ * See migration 0005 for the measured cases behind each.
+ */
+export const WORK_ALIAS_KINDS = ['title', 'author'] as const;
+export type WorkAliasKind = (typeof WORK_ALIAS_KINDS)[number];
+
+/**
+ * Who said so. `manual` is a person's answer and no importer may overwrite it —
+ * the same rule `scripts/series-overrides.json` follows.
+ */
+export const WORK_ALIAS_SOURCES = ['openlibrary', 'manual'] as const;
+export type WorkAliasSource = (typeof WORK_ALIAS_SOURCES)[number];
+
 export const CONDITIONS = ['new', 'like_new', 'good', 'fair', 'poor'] as const;
 export type Condition = (typeof CONDITIONS)[number];
 

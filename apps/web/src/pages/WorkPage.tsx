@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type Me } from '../api.js';
+import { Aliases } from '../components/Aliases.js';
 import { Copies, type CopyView } from '../components/Copies.js';
 import { Cover } from '../components/Cover.js';
 import { DriveLinks } from '../components/DriveLinks.js';
@@ -219,6 +220,13 @@ export function WorkPage({
         canEdit={me.capabilities.includes('editCatalog')}
         onChanged={load}
       />
+
+      {/* Above Related and below Copies deliberately: an alias is a fact about
+          THIS book's identity, like its editions, whereas a relation points at a
+          different row. It also sits directly above Enrich, which is the panel
+          an alias exists to unblock — add the pen name, then ask Open Library
+          again. */}
+      <Aliases workId={workId} canEdit={me.capabilities.includes('editCatalog')} />
 
       <Related
         workId={workId}
