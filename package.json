@@ -28,6 +28,7 @@
     "backfill:covers": "tsx scripts/backfill-covers.mjs",
     "backfill:series": "tsx scripts/backfill-series.mjs",
     "backfill:series-volumes": "tsx scripts/backfill-series-volumes.mjs",
+    "backfill:openlibrary-ids": "tsx scripts/backfill-openlibrary-ids.mjs",
     "sync:drive-map": "node scripts/sync-drive-map.mjs"
   },
   "devDependencies": {

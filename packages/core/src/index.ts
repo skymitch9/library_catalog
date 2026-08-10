@@ -23,6 +23,7 @@ export * from './completeness.js';
 export * from './isbn.js';
 export * from './titles.js';
 export * from './matching.js';
+export * from './corroboration.js';
 export * from './reviews.js';
 export * from './vision.js';
 export * from './schemas.js';

@@ -164,6 +164,19 @@ Three consequences, and all three are already built in:
 Do not "improve" the enrichment flow by auto-selecting the top candidate. The
 top candidate here scores a perfect 1.0 and is wrong.
 
+### 4.5 It happened again, and only the publisher caught it — 2026-08-10
+
+Filling `work.openlibrary_work_id` over all 116 works turned up a second
+independent instance, in a different series: a fielded search for *Unsouled* by
+Will Wight (Hidden Gnome Publishing, 2016) returned `OL32733864W` — a **different
+2023 book also called Unsouled**, published by Riyria Enterprises LLC — with
+**title 1.0 and author 1.0**.
+
+The corroboration rule in `packages/core/src/corroboration.ts` refused it, on
+exactly the discriminator this section names. That run's full numbers, the other
+nine refusals, and what "corroborated" is allowed to mean are in
+[`openlibrary-ids.md`](openlibrary-ids.md).
+
 ---
 
 ## 5. What this settles for the build
