@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { COLLECTION_PAGE_SIZES, READ_STATES } from '@lc/core';
+import { COLLECTION_PAGE_SIZES, COPY_STATUSES, READ_STATES } from '@lc/core';
 import { api, type CollectionFacets, type Me, type Stats, type WorkSummary } from '../api.js';
 import { AddWork } from '../components/AddWork.js';
 import { Pager } from '../components/Pager.js';
@@ -32,6 +32,7 @@ export function CollectionPage({ me, onOpen }: { me: Me; onOpen: (id: number) =>
   const [q, setQ] = useState('');
   const [series, setSeries] = useState('');
   const [format, setFormat] = useState('');
+  const [status, setStatus] = useState('');
   const [readState, setReadState] = useState('');
   const [sort, setSort] = useState(prefs.sort);
   const [dir, setDir] = useState<'asc' | 'desc'>(prefs.dir);
@@ -50,13 +51,13 @@ export function CollectionPage({ me, onOpen }: { me: Me; onOpen: (id: number) =>
   const [error, setError] = useState<string | null>(null);
 
   const canEdit = me.capabilities.includes('editCatalog');
-  const filtered = Boolean(q || series || format || readState);
+  const filtered = Boolean(q || series || format || status || readState);
 
   useEffect(() => savePrefs({ sort, dir, pageSize, view }), [sort, dir, pageSize, view]);
 
   const params = useMemo(
-    () => ({ q, series, format, readState, sort, dir, page, pageSize }),
-    [q, series, format, readState, sort, dir, page, pageSize],
+    () => ({ q, series, format, status, readState, sort, dir, page, pageSize }),
+    [q, series, format, status, readState, sort, dir, page, pageSize],
   );
 
   const reload = useCallback(() => {
@@ -83,11 +84,11 @@ export function CollectionPage({ me, onOpen }: { me: Me; onOpen: (id: number) =>
   // list that now has one page shows an empty screen that looks like a failure.
   useEffect(() => {
     setPage(0);
-  }, [q, series, format, readState, sort, dir, pageSize]);
+  }, [q, series, format, status, readState, sort, dir, pageSize]);
 
   useEffect(() => {
-    api.facets({ q, format, readState }).then(setFacets).catch(() => setFacets(null));
-  }, [q, format, readState]);
+    api.facets({ q, format, status, readState }).then(setFacets).catch(() => setFacets(null));
+  }, [q, format, status, readState]);
 
   const loadHeader = useCallback(() => {
     api.stats().then(setStats).catch(() => setStats(null));
@@ -116,6 +117,7 @@ export function CollectionPage({ me, onOpen }: { me: Me; onOpen: (id: number) =>
           <Stat n={stats.series} label="series" />
           <Stat n={stats.authors} label="authors" />
           <Stat n={stats.editions} label="editions" />
+          {stats.wanted > 0 && <Stat n={stats.wanted} label="wanted" />}
           {stats.readStates
             .filter((r) => r.readState === 'read')
             .map((r) => (
@@ -211,6 +213,27 @@ export function CollectionPage({ me, onOpen }: { me: Me; onOpen: (id: number) =>
             </select>
           </label>
 
+          {/* ⚠️ Filters WORKS by whether any copy has this status — which is
+              why the wishlist is its own screen and not this control. A wanted
+              hardcover of a book already held as an EPUB is invisible here; the
+              work is in the collection either way. Kept because "show me the
+              books with something lent out" is a real question this answers. */}
+          <label className="field">
+            <span className="field__label">Copies</span>
+            <select value={status} onChange={(e) => setStatus(e.target.value)}>
+              <option value="">Any status</option>
+              {COPY_STATUSES.map((s) => {
+                const facet = facets?.statuses.find((f) => f.status === s);
+                return (
+                  <option key={s} value={s} disabled={!facet}>
+                    {s[0]?.toUpperCase() + s.slice(1)}
+                    {facet ? ` (${facet.count})` : ''}
+                  </option>
+                );
+              })}
+            </select>
+          </label>
+
           <label className="field">
             <span className="field__label">Read</span>
             <select value={readState} onChange={(e) => setReadState(e.target.value)}>
@@ -229,6 +252,7 @@ export function CollectionPage({ me, onOpen }: { me: Me; onOpen: (id: number) =>
                 setQ('');
                 setSeries('');
                 setFormat('');
+                setStatus('');
                 setReadState('');
               }}
             >

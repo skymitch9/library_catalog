@@ -81,6 +81,64 @@ export const COPY_STATUSES = [
 ] as const;
 export type CopyStatus = (typeof COPY_STATUSES)[number];
 
+/**
+ * The statuses that mean "we do not have this yet, and we mean to".
+ *
+ * ⚠️ Two values, not one. A pre-order is a wishlist entry that has already been
+ * paid for, and collapsing it into `wanted` would make the wishlist offer to buy
+ * a book that is on its way. `sold`, `lent` and `borrowed` are deliberately not
+ * here: they describe a book that exists in this house's orbit.
+ */
+export const WISHLIST_STATUSES: readonly CopyStatus[] = ['wanted', 'preordered'];
+
+/**
+ * Statuses that mean a copy is on the shelf right now.
+ *
+ * `lent` counts: the book is ours, it is just in someone else's hands. `sold` and
+ * `borrowed` do not — one has left and the other never arrived.
+ */
+export const HELD_STATUSES: readonly CopyStatus[] = ['owned', 'lent'];
+
+/**
+ * How two books can be connected without sharing a series.
+ *
+ * See migration 0004 for the case behind each one; every value was chosen from a
+ * pair of works actually in this catalog, not from a taxonomy.
+ */
+export const WORK_RELATIONS = [
+  /** Same fictional world, no reading order implied. The Cosmere. */
+  'same_universe',
+  /** A guide, a sampler, an art book, a side story. */
+  'companion',
+  /** An omnibus or a bind-up, and the books printed inside it. */
+  'contains',
+  /** Reading order across a series boundary — prequel to sequel. */
+  'precedes',
+] as const;
+export type WorkRelation = (typeof WORK_RELATIONS)[number];
+
+/**
+ * ⚠️ The relations where which end is which is the entire meaning.
+ *
+ * A symmetric relation is stored with the lower id first so A↔B and B↔A collapse
+ * onto one row. Doing that to a directional one turns a true statement into a
+ * false one — see the comment on `work_relation.relation` in migration 0004.
+ */
+export const DIRECTIONAL_WORK_RELATIONS: readonly WorkRelation[] = ['contains', 'precedes'];
+
+export function isDirectionalRelation(relation: WorkRelation): boolean {
+  return DIRECTIONAL_WORK_RELATIONS.includes(relation);
+}
+
+/**
+ * Who said a volume of a series exists.
+ *
+ * There is deliberately no 'inferred' and no 'guess'. A volume with no source has
+ * no business being a row — see the head of migration 0003.
+ */
+export const SERIES_VOLUME_SOURCES = ['audiobook_catalog', 'openlibrary', 'manual'] as const;
+export type SeriesVolumeSource = (typeof SERIES_VOLUME_SOURCES)[number];
+
 export const CONDITIONS = ['new', 'like_new', 'good', 'fair', 'poor'] as const;
 export type Condition = (typeof CONDITIONS)[number];
 

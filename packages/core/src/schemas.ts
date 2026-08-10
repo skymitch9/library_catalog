@@ -19,7 +19,9 @@ import {
   READ_STATES,
   ROLES,
   RUN_TIERS,
+  SERIES_VOLUME_SOURCES,
   SOURCE_TIERS,
+  WORK_RELATIONS,
 } from './constants.js';
 
 export const roleSchema = z.enum(ROLES);
@@ -31,6 +33,8 @@ export const readFormatSchema = z.enum(READ_FORMATS);
 export const editionSourceSchema = z.enum(EDITION_SOURCES);
 export const sourceTierSchema = z.enum(SOURCE_TIERS);
 export const runTierSchema = z.enum(RUN_TIERS);
+export const workRelationSchema = z.enum(WORK_RELATIONS);
+export const seriesVolumeSourceSchema = z.enum(SERIES_VOLUME_SOURCES);
 
 /** Trim, and treat an empty string as absent — a blank form field is not a value. */
 const optionalText = z
@@ -113,7 +117,17 @@ export const createCopySchema = z.object({
 });
 export type CreateCopy = z.infer<typeof createCopySchema>;
 
+/**
+ * Change a copy — which is how a wishlist entry becomes a book on the shelf.
+ *
+ * `.partial()`, so a PATCH that sends only `{ status: 'owned' }` promotes a
+ * wanted copy without clearing the shop it was going to be bought from. That is
+ * deliberately unlike `setReadStateSchema`, which is a PUT and replaces: a copy
+ * accumulates facts over its life (price, vendor, condition, where it ended up)
+ * and a promotion must not be a way to lose them.
+ */
 export const updateCopySchema = createCopySchema.omit({ workId: true }).partial();
+export type UpdateCopy = z.infer<typeof updateCopySchema>;
 
 /**
  * Read-state only. There is no `rating` field here on purpose.
@@ -160,6 +174,68 @@ export const submitReviewSchema = z.object({
 });
 
 export const updateRoleSchema = z.object({ role: roleSchema });
+
+// ---------------------------------------------------------------------------
+// Relations between works
+// ---------------------------------------------------------------------------
+
+/**
+ * Link two books that belong together without sharing a series.
+ *
+ * `toWorkId` and not a title: a relation is between two catalog rows, and
+ * resolving a typed name to a row is the picker's job on the way in. Accepting a
+ * string here would let a typo create a link to a book that does not exist.
+ */
+export const createWorkRelationSchema = z.object({
+  toWorkId: z.number().int().positive(),
+  relation: workRelationSchema,
+  note: z.string().trim().max(200).nullish(),
+});
+export type CreateWorkRelation = z.infer<typeof createWorkRelationSchema>;
+
+// ---------------------------------------------------------------------------
+// Series completeness
+// ---------------------------------------------------------------------------
+
+/**
+ * A volume of a series that some source says exists.
+ *
+ * ⚠️ `source` has no default. Every other create schema here defaults to
+ * `'manual'`, and that would be exactly wrong: the value of this table is that
+ * every row can name who said so, and a default is how a row acquires a source
+ * it never had. The importer sends `audiobook_catalog`; the hand-entry form
+ * sends `manual` and is the only caller that may.
+ */
+export const createSeriesVolumeSchema = z.object({
+  indexSort: z.number(),
+  indexDisplay: optionalText,
+  title: optionalText,
+  authors: optionalText,
+  source: seriesVolumeSourceSchema,
+  sourceUrl: optionalText,
+  note: optionalText,
+});
+export type CreateSeriesVolume = z.infer<typeof createSeriesVolumeSchema>;
+
+/**
+ * A person asserting how long a series is.
+ *
+ * ⚠️ `.refine()` and not two optional fields. A total with no source is the one
+ * write this whole feature exists to refuse — it is indistinguishable from data
+ * once stored, and there is no later pass that could tell them apart. Clearing
+ * it is `knownTotal: null`, which is why both are nullable rather than optional.
+ */
+export const setSeriesTotalSchema = z
+  .object({
+    knownTotal: z.number().int().positive().nullable(),
+    knownTotalSource: optionalText,
+    note: optionalText,
+  })
+  .refine((v) => v.knownTotal == null || Boolean(v.knownTotalSource), {
+    message: 'a series length needs a source — where does the number come from?',
+    path: ['knownTotalSource'],
+  });
+export type SetSeriesTotal = z.infer<typeof setSeriesTotalSchema>;
 
 // ---------------------------------------------------------------------------
 // API contracts for identity

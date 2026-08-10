@@ -25,6 +25,16 @@ import {
   workKeyFor,
 } from '../src/titles.ts';
 import { buildWorkIndex, matchIndexedWork, titleSimilarity } from '../src/matching.ts';
+import {
+  completenessSentence,
+  gapEvidenceLabel,
+  seriesCompleteness,
+} from '../src/completeness.ts';
+import {
+  HELD_STATUSES,
+  WISHLIST_STATUSES,
+  isDirectionalRelation,
+} from '../src/constants.ts';
 import { bookIdFromTitle, reviewDocFor, workKeyForAudiobookRow } from '../src/reviews.ts';
 
 describe('isbn — the scanner gate', () => {
@@ -327,5 +337,207 @@ describe('matching — the load-bearing change from the board game catalog', () 
     );
     assert.equal(matchIndexedWork(aliased, 'The Golden Compass', 'Philip Pullman')?.work.id, 3);
     assert.equal(matchIndexedWork(aliased, 'The Golden Compass', 'Someone Else'), null);
+  });
+});
+
+describe('series completeness — what we may and may not claim', () => {
+  const own = (index: number, id = index) => ({ index, workId: id });
+  const said = (index: number, extra: Record<string, unknown> = {}) => ({
+    index,
+    workId: null,
+    source: 'audiobook_catalog',
+    ...extra,
+  });
+
+  it('finds a hole between two books we own, and calls it certain', () => {
+    // Cradle if we had skipped one. Nothing external is consulted and nothing
+    // can make this wrong: a book 4 and a book 2 have a book 3 between them.
+    const c = seriesCompleteness('Cradle', [own(1), own(2), own(4)]);
+    assert.deepEqual(c.gaps.map((g) => g.index), [3]);
+    assert.equal(c.gaps[0]?.evidence, 'interior');
+    assert.equal(c.certainGaps, 1);
+    assert.equal(c.attestedGaps, 0);
+  });
+
+  it('⚠️ does NOT claim a book above the highest we own', () => {
+    // THE test. We own Cradle 1–12; the series may or may not have a 13, and
+    // nothing in this catalog knows which. Inventing one is the failure this
+    // whole module is shaped to prevent.
+    const c = seriesCompleteness('Cradle', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => own(n)));
+    assert.deepEqual(c.gaps, []);
+    assert.equal(c.highestKnown, 12);
+    assert.equal(c.openEnded, true);
+    assert.match(completenessSentence(c), /Nothing says whether the series goes further/);
+  });
+
+  it('infers the volumes below the lowest we own, because a book 7 implies a book 1', () => {
+    // Real: this library holds High School DxD volumes 7–21 and none before.
+    const c = seriesCompleteness('High School DxD', [7, 8, 9].map((n) => own(n)));
+    assert.deepEqual(c.gaps.map((g) => g.index), [1, 2, 3, 4, 5, 6]);
+    assert.ok(c.gaps.every((g) => g.evidence === 'earlier'));
+    assert.equal(c.certainGaps, 6);
+  });
+
+  it('goes above the top only when a source said so, and names the source', () => {
+    // Real: Beneath the Dragoneye Moons. We hold 1–6, 9, 10, 12, 13; the
+    // audiobook catalog lists 1–16. 7, 8 and 11 are holes; 14–16 are attested.
+    const owned = [1, 2, 3, 4, 5, 6, 9, 10, 12, 13].map((n) => own(n));
+    const attested = [7, 8, 11, 14, 15, 16].map((n) => said(n, { title: `Book ${n}` }));
+    const c = seriesCompleteness('Beneath the Dragoneye Moons', [...owned, ...attested]);
+
+    assert.deepEqual(c.gaps.map((g) => g.index), [7, 8, 11, 14, 15, 16]);
+    // 7, 8 and 11 sit between books we own, so they are certain regardless of
+    // what any CSV says. 14–16 rest entirely on the source.
+    assert.deepEqual(
+      c.gaps.filter((g) => g.evidence === 'interior').map((g) => g.index),
+      [7, 8, 11],
+    );
+    assert.equal(c.attestedGaps, 3);
+    assert.equal(c.highestKnown, 16);
+    assert.match(completenessSentence(c), /at least 16/);
+    assert.equal(gapEvidenceLabel(c.gaps[3]!), 'listed in the audiobook catalog');
+  });
+
+  it('fills the run up to an attested volume, and says which step is which', () => {
+    // Real, and it is why `implied` exists as a separate verdict. We own Legion
+    // 1 and 2. The audiobook catalog lists a Legion **4** — the omnibus, "The
+    // Many Lives of Stephen Leeds" — and says nothing whatever about 3.
+    //
+    // Reporting 4 and silently skipping 3 would be absurd: a book numbered 4
+    // implies a book 3. But 3's existence rests on the source being right about
+    // 4, and unlike 4 we cannot even name it. Two verdicts, not one.
+    const c = seriesCompleteness('Legion', [
+      own(1),
+      own(2),
+      said(4, { title: 'Legion: The Many Lives of Stephen Leeds' }),
+    ]);
+    assert.deepEqual(c.gaps.map((g) => [g.index, g.evidence]), [
+      [3, 'implied'],
+      [4, 'attested'],
+    ]);
+    assert.equal(c.gaps[0]?.title, null);
+    assert.equal(c.certainGaps, 0);
+    assert.equal(c.attestedGaps, 2);
+  });
+
+  it('⚠️ wishing for a volume does not fill the gap', () => {
+    // Found in a browser, not in a test. Putting an attested volume on the
+    // wishlist creates a `work` row for it, and the first version treated any
+    // work with a volume number as owned — so the moment you said you wanted
+    // book 14, the series reported that you had it.
+    //
+    // A work with NO copies still counts as held: that is what all 115 imported
+    // ebook rows look like, and the opposite rule would empty the whole shelf.
+    const c = seriesCompleteness('Beneath the Dragoneye Moons', [
+      ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].map((n) => own(n)),
+      { index: 14, workId: 900, wanted: true, title: 'Immortal War' },
+    ]);
+    assert.deepEqual(c.gaps.map((g) => g.index), [14]);
+    assert.equal(c.gaps[0]?.wanted, true);
+    assert.equal(c.gaps[0]?.workId, 900);
+    assert.equal(c.owned, 13);
+    assert.equal(c.wanted, 1);
+    // Still 14 — a wish is evidence the volume exists, which it already was.
+    assert.equal(c.highestKnown, 14);
+  });
+
+  it('⚠️ wanting a second FORMAT of a book we hold does not make it missing', () => {
+    // The other half of the same bug, and the one that reached a screen. Cradle
+    // 1–12 are all held as EPUBs; wanting a hardcover of book 1 made the series
+    // read "11 of 12, 1 to go". The caller decides `wanted`, and its rule is
+    // narrow enough that a work with an edition is never a wish — see the note
+    // on `SeriesVolumeInput.wanted`.
+    const c = seriesCompleteness(
+      'Cradle',
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => ({ index: n, workId: n, wanted: false })),
+      { knownTotal: 12, knownTotalSource: "the author's site" },
+    );
+    assert.deepEqual(c.gaps, []);
+    assert.equal(c.owned, 12);
+    assert.match(completenessSentence(c), /^All 12\. Complete/);
+  });
+
+  it('carries the attested volume’s title so it can be wished for', () => {
+    const c = seriesCompleteness('The Divine Dungeon', [own(1), said(2, { title: 'Dungeon Madness', authors: 'Dakota Krout' })]);
+    assert.equal(c.gaps[0]?.title, 'Dungeon Madness');
+    assert.equal(c.gaps[0]?.authors, 'Dakota Krout');
+  });
+
+  it('counts unnumbered volumes without letting them near the arithmetic', () => {
+    // The six Blade Dance "Extra" side stories, and the Divine Dungeon omnibus.
+    // `parseVolumeNumber` returns null for them on purpose; NaN must not poison
+    // Math.min or invent a gap at every integer.
+    const c = seriesCompleteness('Seirei Tsukai no Blade Dance', [
+      own(1),
+      own(2),
+      { index: Number.NaN, workId: 99 },
+      { index: Number.NaN, workId: 98 },
+    ]);
+    assert.equal(c.owned, 4);
+    assert.equal(c.unnumbered, 2);
+    assert.deepEqual(c.gaps, []);
+    assert.equal(c.highestKnown, 2);
+  });
+
+  it('treats a fractional volume as real but not as a hole', () => {
+    // Owning 2.5 must not create a gap at 3, and an attested 2.5 we lack must
+    // still be reported — it is missing, it is simply not on the integer line.
+    const owning = seriesCompleteness('S', [own(1), own(2), { index: 2.5, workId: 7 }, own(3)]);
+    assert.deepEqual(owning.gaps, []);
+
+    const lacking = seriesCompleteness('S', [own(1), own(2), said(2.5), own(3)]);
+    assert.deepEqual(lacking.gaps.map((g) => g.index), [2.5]);
+    assert.equal(lacking.gaps[0]?.evidence, 'attested');
+  });
+
+  it('says nothing at all about a series with no numbered volumes', () => {
+    const c = seriesCompleteness('White Sand', [{ index: Number.NaN, workId: 22 }]);
+    assert.deepEqual(c.gaps, []);
+    assert.equal(c.highestKnown, null);
+    assert.match(completenessSentence(c), /none of them numbered/);
+  });
+
+  it('only says "complete" when a person typed a total with a source', () => {
+    const volumes = [1, 2, 3].map((n) => own(n));
+    const bare = seriesCompleteness('The Last Horizon', volumes);
+    assert.equal(bare.openEnded, true);
+    assert.doesNotMatch(completenessSentence(bare), /Complete/);
+
+    const told = seriesCompleteness('The Last Horizon', volumes, {
+      knownTotal: 3,
+      knownTotalSource: "the author's own site",
+    });
+    assert.equal(told.openEnded, false);
+    assert.match(completenessSentence(told), /Complete, per the author's own site/);
+  });
+
+  it('distinguishes never-checked from checked-and-nothing-found', () => {
+    const never = seriesCompleteness('Cradle', [own(1)]);
+    assert.equal(never.checked, false);
+    assert.equal(never.checkOutcome, null);
+
+    const looked = seriesCompleteness('Cradle', [own(1)], {
+      outcome: 'not_found',
+      source: 'audiobook_catalog',
+    });
+    assert.equal(looked.checked, true);
+    assert.equal(looked.checkOutcome, 'not_found');
+  });
+});
+
+describe('work relations — direction is the meaning', () => {
+  it('marks exactly the two relations whose ends are not interchangeable', () => {
+    assert.equal(isDirectionalRelation('contains'), true);
+    assert.equal(isDirectionalRelation('precedes'), true);
+    assert.equal(isDirectionalRelation('same_universe'), false);
+    assert.equal(isDirectionalRelation('companion'), false);
+  });
+
+  it('keeps the wishlist statuses out of the held ones', () => {
+    // A book cannot be both wanted and on the shelf, and `lent` is on the shelf
+    // — it is ours, it is just elsewhere.
+    for (const s of WISHLIST_STATUSES) assert.ok(!HELD_STATUSES.includes(s));
+    assert.ok(HELD_STATUSES.includes('lent'));
+    assert.ok(!HELD_STATUSES.includes('sold'));
   });
 });

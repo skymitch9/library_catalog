@@ -3,6 +3,50 @@
 > Updated **2026-08-10**. **Live** at https://library.heygabi.ai — deployed,
 > Firebase domain authorised, Google sign-in verified in production 2026-08-09.
 
+## 🟡 In flight — `feature/completeness-wishlist-relations`
+
+Three features, built and driven in a browser against a local worker, **not
+deployed and not migrated against `--remote`**. The owner gates production.
+
+| | |
+|---|---|
+| **Series completeness** | `/api/series`, a Series screen and a per-series ladder. 15 of 25 series have a gap: **7 interior**, **69 earlier**, **12 on a source's word**. |
+| **Wishlist** | `copy.status = 'wanted'` is reachable at last — it was an unusable column with 0 rows. A Wishlist screen, a Copies panel, promotion by PATCH. |
+| **Related books** | `work_relation`: same universe / companion / contains / precedes. Hand-entered; two of the four are directional. |
+
+Everything measured is in
+[`docs/info/completeness-wishlist-relations.md`](info/completeness-wishlist-relations.md).
+**Read §2.3 before touching the wishlist** — two bugs there were found only by
+clicking, and both come from `work` meaning "the catalog knows this book" rather
+than "we have it".
+
+### To finish it
+
+```bash
+npm test                                            # 55
+npm run typecheck                                   # five workspaces
+npm run db:migrate                                  # ⚠️ REMOTE — 0003 + 0004, BEFORE deploying
+npm run deploy
+npm run backfill:series-volumes -- --remote         # dry run, READ THE PER-SERIES LINES
+npm run backfill:series-volumes -- --remote --commit
+```
+
+⚠️ **Migrate before deploying.** `/api/series` queries three tables production
+does not have; deploying first makes every series request a 500.
+
+### What was deliberately left out
+
+- **No Open Library rung for series volumes.** The right endpoint is known
+  (`/works/<key>/editions.json`, §3.1 of `covers-and-series.md`) and
+  `series_volume.source` already allows `'openlibrary'` — but **no work here has
+  an `openlibrary_work_id`**, so the rung has nothing to call with.
+- **No "% complete" bar.** A percentage needs a denominator, and 24 of 25 series
+  have none. It would be inventing the number it displays.
+- **No bulk relation seeding.** Three Cosmere links and one omnibus link were
+  entered by hand while testing; the rest is the owner's to enter.
+- **The wanted→owned promotion does not create an edition.** Deliberate, and
+  load-bearing — see §2.3.
+
 ## ✅ Shipped and live — covers, series, sorting, filters, Drive links
 
 All merged to `main`, deployed, and **applied to production D1 on 2026-08-10**.
