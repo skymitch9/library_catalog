@@ -1,0 +1,8 @@
+{
+  "_doc": "Series the automatic ladder cannot see. Keyed on work.work_key.",
+  "_why": "A series is a fact about the world, not something to compute. docs/info/isbn-ladder.md §4.4 records the shape of the mistake this file prevents: a wrong answer that scores 1.0 and has nothing textual to distinguish it from a right one. When the ladder in scripts/backfill-series.mjs cannot see a series and you know it, record it here rather than widening a regex until it fires.",
+  "_shape": "\"<work_key>\": { \"series\": \"Cradle\", \"index\": 1, \"display\": \"Book 1\" }  — index may be null for a volume with no place on a number line (an Extra, a compilation); display is what the cover actually says.",
+  "_key": "The work_key is normaliseTitle(title) + '|' + normaliseTitle(primaryAuthor). Read it out of the database rather than deriving it by hand: `SELECT work_key, title FROM work WHERE title LIKE '%…%'`.",
+  "_warning": "⚠️ Entries here override every other rung, including the audiobook catalog's own curated series column. That is the point, and it is also why a wrong entry here is invisible: nothing will contradict it.",
+  "_empty": "Deliberately empty. The 2026-08-10 run left 37 works with no series, and every one of them is a book whose series is knowable but is not written down anywhere in either repo. Filling them in from memory is exactly what this project's phase-0 findings say not to do — three ISBNs typed from memory all resolved successfully, to three different books."
+}

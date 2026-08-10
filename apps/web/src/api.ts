@@ -61,21 +61,78 @@ export interface WorkSummary {
   coverUrl: string | null;
   formats: string | null;
   copyCount: number;
+  createdAt: string;
+  /** This reader's state, not the household's. Null when nobody has set one. */
+  readState: string | null;
+}
+
+/**
+ * What the collection screen can ask for.
+ *
+ * ⚠️ Every one of these is *validated again on the server* — the sort key
+ * against an allowlist, the page size against a menu. This type is a
+ * convenience, not a contract: `packages/db/src/works.ts` is where an unknown
+ * value is decided about.
+ */
+export interface CollectionParams {
+  q?: string;
+  series?: string;
+  format?: string;
+  status?: string;
+  readState?: string;
+  sort?: string;
+  dir?: 'asc' | 'desc';
+  page?: number;
+  pageSize?: number;
+}
+
+export interface CollectionFacets {
+  series: { name: string; count: number }[];
+  formats: { format: string; count: number }[];
+  statuses: { status: string; count: number }[];
+}
+
+export interface Stats {
+  works: number;
+  editions: number;
+  copies: number;
+  series: number;
+  authors: number;
+  withCover: number;
+  formats: { format: string; count: number }[];
+  readStates: { readState: string; count: number }[];
+}
+
+function collectionQuery(params: CollectionParams): string {
+  const u = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    // `page: 0` and `q: ''` both mean "no opinion"; sending them adds noise to
+    // the URL and, for an empty q, an unnecessary LIKE over the whole table.
+    if (value === undefined || value === null || value === '' || value === 0) continue;
+    u.set(key, String(value));
+  }
+  return u.toString();
 }
 
 export const api = {
   me: () => request<Me>('/api/me'),
 
-  collection: (params: { q?: string; series?: string; format?: string; page?: number }) => {
-    const u = new URLSearchParams();
-    if (params.q) u.set('q', params.q);
-    if (params.series) u.set('series', params.series);
-    if (params.format) u.set('format', params.format);
-    if (params.page) u.set('page', String(params.page));
-    return request<{ rows: WorkSummary[]; total: number; page: number; pageSize: number }>(
-      `/api/collection?${u}`,
-    );
-  },
+  collection: (params: CollectionParams) =>
+    request<{
+      rows: WorkSummary[];
+      total: number;
+      page: number;
+      pageSize: number;
+      sort: string;
+      dir: 'asc' | 'desc';
+    }>(`/api/collection?${collectionQuery(params)}`),
+
+  /** Counted against the same filter the list uses, so the numbers agree. */
+  facets: (params: CollectionParams) =>
+    request<CollectionFacets>(`/api/collection/facets?${collectionQuery(params)}`),
+
+  /** ⚠️ Always from the database. No count in this app is ever a literal. */
+  stats: () => request<Stats>('/api/stats'),
 
   work: (id: number) => request<Record<string, unknown>>(`/api/works/${id}`),
 

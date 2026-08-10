@@ -266,17 +266,146 @@ export function parseSeriesFromTitle(raw: string): {
 
   const series = (m[1] ?? '').trim();
   const rawIndex = (m[2] ?? '').trim();
-  const numeric = Number(rawIndex);
 
-  // Word numerals appear often enough to be worth the eight entries: "Book One"
-  // is how several of these series are printed.
-  const words: Record<string, number> = {
-    one: 1, two: 2, three: 3, four: 4, five: 5,
-    six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  return { series: series || null, index: parseVolumeNumber(rawIndex), display: `Book ${rawIndex}` };
+}
+
+const WORD_NUMERALS: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4, five: 5,
+  six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  eleven: 11, twelve: 12,
+};
+
+const ROMAN_VALUES: Record<string, number> = { i: 1, v: 5, x: 10, l: 50, c: 100, d: 500, m: 1000 };
+
+/**
+ * A volume number as printed, turned into something that sorts.
+ *
+ * Three spellings are all in this household's own library, measured against the
+ * 117 ebook rows on 2026-08-10: Arabic ("Book 10"), word ("Book One") and Roman
+ * ("Volume XI", which is how *Rise of the Weakest Summoner* is printed).
+ * Leading zeros are ordinary too — "Volume 07" — and `Number()` handles those.
+ *
+ * ⚠️ Returns null rather than guessing. "Extra.1" and "BR SS Compilation" are
+ * real volume labels in this library that have no position on a number line, and
+ * `series_index_sort` being null is the honest answer for them — they sort to the
+ * end of their series rather than claiming to be volume 0.
+ */
+export function parseVolumeNumber(raw: string): number | null {
+  const s = raw.trim();
+  if (!s) return null;
+
+  if (/^\d+(\.\d+)?$/.test(s)) return Number(s);
+
+  const word = WORD_NUMERALS[s.toLowerCase()];
+  if (word !== undefined) return word;
+
+  if (/^[ivxlcdm]+$/i.test(s)) {
+    const chars = s.toLowerCase().split('');
+    let total = 0;
+    for (let i = 0; i < chars.length; i++) {
+      const here = ROMAN_VALUES[chars[i] as string] as number;
+      const next = i + 1 < chars.length ? (ROMAN_VALUES[chars[i + 1] as string] as number) : 0;
+      total += here < next ? -here : here;
+    }
+    return total > 0 ? total : null;
+  }
+
+  return null;
+}
+
+/**
+ * Find the series a book's own title claims, when it claims one.
+ *
+ * ## Why this exists beside `parseSeriesFromTitle`
+ *
+ * That function reads **Audible's** decoration — `Title - Series, Book 2` — and
+ * nothing else, because that is the only shape `catalog.csv` contains. Ebook
+ * files are not Audible products and say it six other ways. Measured against the
+ * 117 rows already in this catalog on 2026-08-10, `parseSeriesFromTitle` fired
+ * on **0** of them and the shapes below fire on 63.
+ *
+ * `parseSeriesFromTitle` is left exactly as it is: it feeds the review backfill,
+ * which runs over `catalog.csv`, and widening it would change keys that are
+ * already written.
+ *
+ * ## The shapes, and the one rule they all obey
+ *
+ * | Shape | Example from this library |
+ * |---|---|
+ * | trailing parenthetical | `Blackflame (Cradle Book 3)` |
+ * | infix volume | `High School DxD - Volume 07 - Ragnarok After the School` |
+ * | marker before a subtitle | `Arcane Pathfinder Book 5: Daunting` |
+ * | trailing marker | `Tamer: King of Dinosaurs Book 10` |
+ * | numeral before a subtitle | `He Who Fights with Monsters 10: A LitRPG Adventure` |
+ * | numeral after a dash | `All The Skills - 5` |
+ *
+ * ⚠️ **A bare trailing number is never a volume.** `cleanAudiobookTitle` records
+ * why in full: "Summoner 6" *is* the title, Eric Vall's books are named that way,
+ * and a rule that read it as a volume would turn six distinct works into one.
+ * Every pattern here therefore needs either an explicit marker word, or a
+ * separator that a title would not contain by accident — a spaced dash, or a
+ * colon with a subtitle after it.
+ *
+ * Returns all-nulls when the title claims nothing, which is the right answer for
+ * a standalone book and must not be filled in by guessing.
+ */
+export function detectSeriesFromTitle(raw: string): {
+  series: string | null;
+  index: number | null;
+  display: string | null;
+} {
+  const none = { series: null, index: null, display: null };
+  const title = raw.trim();
+  if (!title) return none;
+
+  const MARKER = String.raw`Book|Volume|Vol\.?|Part`;
+  const NUM = String.raw`[\dIVXLCDM]+(?:\.\d+)?|One|Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|Eleven|Twelve`;
+
+  const made = (series: string, marker: string | null, num: string) => {
+    const name = series.replace(/[\s:,–—-]+$/, '').trim();
+    if (!name) return none;
+    return {
+      series: name,
+      index: parseVolumeNumber(num),
+      display: marker ? `${marker} ${num}` : num,
+    };
   };
-  const index = Number.isFinite(numeric)
-    ? numeric
-    : (words[rawIndex.toLowerCase()] ?? null);
 
-  return { series: series || null, index, display: `Book ${rawIndex}` };
+  // 1. "Blackflame (Cradle Book 3)" / "John (LifeChange Book 20)". The comma is
+  //    optional here where `parseSeriesFromTitle` requires one.
+  let m = new RegExp(String.raw`\(\s*(.+?)\s*,?\s+(${MARKER})\s+(${NUM})\s*\)\s*$`, 'i').exec(title);
+  if (m) return made(m[1] as string, m[2] as string, m[3] as string);
+
+  // 2. "High School DxD - Volume 07 - Ragnarok After the School". Both dashes are
+  //    required: it is the second one that proves the middle segment is a volume
+  //    label and not the tail of the title.
+  m = new RegExp(String.raw`^(.+?)\s+[-–—]\s*(${MARKER})\s+(${NUM})\s*[-–—]\s+.+$`, 'i').exec(title);
+  if (m) return made(m[1] as string, m[2] as string, m[3] as string);
+
+  // 3. "Seirei Tsukai no Blade Dance - Extra.3 - The Princess' Confidential…".
+  //    An "Extra" has no position on a number line; `made` records the label and
+  //    leaves the sort index null.
+  m = /^(.+?)\s+[-–—]\s*(Extra)\.?\s*([\d.]+)\s*[-–—]\s+.+$/i.exec(title);
+  if (m) return { series: (m[1] as string).trim(), index: null, display: `Extra ${m[3] as string}` };
+
+  // 4. "Arcane Pathfinder Book 5: Daunting" — marker, number, then a subtitle.
+  m = new RegExp(String.raw`^(.+?)\s+(${MARKER})\s+(${NUM})\s*:\s*\S.*$`, 'i').exec(title);
+  if (m) return made(m[1] as string, m[2] as string, m[3] as string);
+
+  // 5. "Tamer: King of Dinosaurs Book 10" / "Rise of the Weakest Summoner: Volume XI".
+  m = new RegExp(String.raw`^(.+?)\s+(${MARKER})\s+(${NUM})\s*$`, 'i').exec(title);
+  if (m) return made(m[1] as string, m[2] as string, m[3] as string);
+
+  // 6. "He Who Fights with Monsters 10: A LitRPG Adventure". The colon and the
+  //    subtitle after it are what make the number a volume rather than a word in
+  //    the title.
+  m = /^(.+?)\s+(\d+(?:\.\d+)?)\s*:\s*\S.*$/.exec(title);
+  if (m) return made(m[1] as string, null, m[2] as string);
+
+  // 7. "All The Skills - 5". A spaced dash, which "Summoner 6" does not have.
+  m = /^(.+?)\s+[-–—]\s+(\d+(?:\.\d+)?)\s*$/.exec(title);
+  if (m) return made(m[1] as string, null, m[2] as string);
+
+  return none;
 }

@@ -127,10 +127,16 @@ export function App() {
   return (
     <>
       <header className="topbar">
-        <strong>Library</strong>
-        <span className="muted small">
-          {me.displayName ?? me.email} · {me.role}
-        </span>
+        <button
+          className="topbar__brand"
+          onClick={() => {
+            setScanning(false);
+            setOpenWorkId(null);
+          }}
+        >
+          The Library
+        </button>
+        <span className="muted small topbar__who">{me.displayName ?? me.email}</span>
         {me.capabilities.includes('scan') && !scanning && (
           <button onClick={() => setScanning(true)}>Scan</button>
         )}

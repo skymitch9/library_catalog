@@ -24,10 +24,14 @@
     "test": "tsx --test packages/core/test/*.test.ts",
     "backfill:reviews": "tsx scripts/backfill-review-keys.mjs",
     "secrets:push": "node scripts/push-secrets.mjs",
-    "import:ebooks": "tsx scripts/import-ebooks.mjs"
+    "import:ebooks": "tsx scripts/import-ebooks.mjs",
+    "backfill:covers": "tsx scripts/backfill-covers.mjs",
+    "backfill:series": "tsx scripts/backfill-series.mjs",
+    "sync:drive-map": "node scripts/sync-drive-map.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",
+    "sharp": "^0.35.3",
     "tsx": "^4.23.11",
     "typescript": "^5.7.2",
     "wrangler": "^4.0.0"
