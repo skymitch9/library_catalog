@@ -77,32 +77,75 @@ export interface ShelfBook {
 }
 
 /**
- * A shelf read once we have tried to match it against what we already hold.
+ * What one read of a whole photograph produced.
  *
- * `existingWorkId` is the point of the whole screen — re-adding books you
- * already own is the obvious failure mode of bulk intake, so it is resolved
- * before anyone is asked to tick anything. `alsoInAudio` is this catalog's
- * addition: 1,073 audiobooks are the other thing a person means by "I already
- * have that".
+ * `unreadable` is not the same as an empty `books` array and the difference is
+ * the difference between two messages: "that photo cannot be read, take another"
+ * and "that is a shelf with no books the model could name". Only the first is
+ * worth retrying, and only the first is worth paying for twice.
  */
-export interface ShelfMatch {
-  book: ShelfBook;
-  existingWorkId: number | null;
-  existingTitle: string | null;
-  /** Matched against the audiobook catalog on `workKey`. Never a write target. */
-  alsoInAudio: boolean;
-  /** Best guess from the free ISBN rungs, when one was found. */
-  isbn13: string | null;
-  resolvedTitle: string | null;
-  resolvedAuthor: string | null;
-  coverUrl: string | null;
-  /**
-   * How well the resolved title matches what was read, 0..1. Null when nothing
-   * resolved. Below `MIN_SPINE_SIMILARITY` the match is a guess and must not be
-   * acted on without a person looking at it.
-   */
-  similarity: number | null;
+export interface ShelfReading {
+  books: ShelfBook[];
+  unreadable: boolean;
+  inputTokens: number;
+  outputTokens: number;
+  /** Rough, at list price. Shown to the person who is spending it. */
+  estimatedCents: number;
 }
+
+/**
+ * ⚠️ There is deliberately no `ShelfMatch` type here.
+ *
+ * An earlier draft of this file had one — a spine read plus what the catalog
+ * made of it — and it was one of two shapes describing the same row, the other
+ * being the barcode screen's. They would have drifted, because a review screen
+ * that renders both has to reconcile them somewhere and "somewhere" is wherever
+ * the last person to touch it happened to be. `ScanLine` in `scanjobs.ts` is
+ * now the ONE shape, produced by a barcode and by a spine alike.
+ *
+ * The dropped field worth naming is `alsoInAudio`. The idea was right — 1,073
+ * audiobooks are the other thing a person means by "I already have that" — but
+ * the Worker holds no audiobook data at all. That catalog is a separate site
+ * with a separate database, and the only bridge is `work_key`. Rather than ship
+ * a field that would have answered `false` for every book in the house, it is
+ * left out until the shared index that could answer it exists.
+ */
+
+/**
+ * The output contract for a shelf read, as a JSON Schema.
+ *
+ * Structured output rather than "please reply with JSON": the model is
+ * constrained to this shape by the API, so there is no parse-and-retry loop and
+ * no half-parsed answer to reason about. Every field is `required` and
+ * `additionalProperties` is false, which is what makes a missing `author` an
+ * explicit `null` — the distinction the prompt below spends a paragraph on.
+ *
+ * Kept beside `SHELF_SYSTEM` on purpose. The prompt promises a shape; if the
+ * two live in different files one of them eventually lies.
+ */
+export const SHELF_SCHEMA = {
+  type: 'object',
+  properties: {
+    books: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          text: { type: 'string' },
+          author: { type: ['string', 'null'] },
+          position: { type: 'integer' },
+          confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
+          note: { type: ['string', 'null'] },
+        },
+        required: ['text', 'author', 'position', 'confidence', 'note'],
+        additionalProperties: false,
+      },
+    },
+    unreadable: { type: 'boolean' },
+  },
+  required: ['books', 'unreadable'],
+  additionalProperties: false,
+} as const;
 
 /**
  * The system prompt for shelf reads.
@@ -137,4 +180,9 @@ Rules:
 - If two adjacent spines are the same book (two copies), report both.
 - If you cannot read a spine at all, still report it with text as best you can
   and confidence "low", rather than omitting it — a missing book is invisible,
-  an uncertain one gets checked.`;
+  an uncertain one gets checked.
+- Set unreadable to true ONLY when the photograph itself has defeated you — too
+  dark, too blurred, too far away, or not a shelf of books at all — and return
+  an empty list with it. A shelf you could read that simply has few books on it
+  is readable; say so with unreadable false. The two answers lead to different
+  advice, and only one of them is worth paying to photograph again.`;

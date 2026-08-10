@@ -14,8 +14,9 @@
 | [`ios-camera.md`](ios-camera.md) | Copied from the Board Game Catalog. Every line is a WebKit constraint | touching `camera.ts` / `scanner.ts` |
 | [`routing.md`](routing.md) | The URL scheme, the push-vs-replace rule, how a back button knows where it goes, and why deep links need nothing from the Worker | **adding any screen**, or touching `router.tsx` / `App.tsx` |
 | [`aliases-export-people.md`](aliases-export-people.md) | `work_alias` gets a write path, a `kind` and a reader — **45 → 50 Open Library ids measured**, and why the pen name alone was not enough; the export's JSON-vs-CSV split and its paging; the People screen's two guards and the self-demotion bug | touching `work_alias`, `matching.ts`'s gates, `/api/export.*`, or role changes |
+| [`scan-jobs-and-vision.md`](scan-jobs-and-vision.md) | **Measured** shelf-photo reads on two real photographs and two synthetic ones, with costs; why persistence had to precede the camera; why lookups are one line at a time rather than chunked server-side | touching `scan-jobs.ts`, `lib/vision.ts`, `scanjobs.ts`, or anything that spends money |
 
-## The six findings worth knowing without opening a file
+## The seven findings worth knowing without opening a file
 
 1. **Open Library is excellent by ISBN (9/10) and covers about half this
    library by title (14/30).** The missing half is Kindle Unlimited and
@@ -35,7 +36,12 @@
    — none of which is in the database. That is what made an Open Library id
    reachable for 35 of 116 works, and it is the second time "the file knows more
    than the catalog does" has been the answer. See `openlibrary-ids.md`.
-6. **"You own 6 of 12" is a lie unless something said 12.** Gaps *inside* a run
+6. **A shelf photograph reads far better than expected, on an easy shelf.** 28
+   of ~30 spines correct on a real photo of an English-language manga shelf,
+   with nothing invented — and clearly poor recall on a real, cluttered,
+   part-Japanese one. Both cost 3–7¢. No photo of *this household's* shelves has
+   ever been tested. See `scan-jobs-and-vision.md`.
+7. **"You own 6 of 12" is a lie unless something said 12.** Gaps *inside* a run
    you own are arithmetic and cannot be wrong — 7 of them exist, in two series.
    Everything beyond your highest volume needs a named source, and the only one
    that fires here is the audiobook catalog, which knows 12 of our 25 series.

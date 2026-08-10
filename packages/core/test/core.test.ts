@@ -26,6 +26,14 @@ import {
 } from '../src/titles.ts';
 import { buildWorkIndex, matchIndexedWork, titleSimilarity } from '../src/matching.ts';
 import {
+  blankLine,
+  isOutstanding,
+  jobSummary,
+  outstandingCount,
+  type ScanLine,
+} from '../src/scanjobs.ts';
+import { SHELF_SCHEMA } from '../src/vision.ts';
+import {
   corroborate,
   samePublisher,
   seriesMentioned,
@@ -729,5 +737,84 @@ describe('volumeStatedIn — the extracting half of volumeMentioned', () => {
     assert.equal(volumeMentioned('Cradle, Volume Four', 4), true);
     assert.equal(volumeMentioned('Cradle, Volume Four', 5), false);
     assert.equal(volumeMentioned('Summoner 6', 6), false);
+  });
+});
+
+describe('scan-job lines — what still needs a person', () => {
+  const line = (over: Partial<ScanLine> = {}): ScanLine => ({
+    ...blankLine(1, 'spine', 'Wintersteel'),
+    ...over,
+  });
+
+  it('settles a book we already hold, and one that was not a book', () => {
+    // Neither needs a decision: the catalog already answers the first, and the
+    // second is a price code. Anything else is outstanding until someone acts.
+    assert.equal(isOutstanding(line({ state: 'owned' })), false);
+    assert.equal(isOutstanding(line({ state: 'skipped' })), false);
+  });
+
+  it('⚠️ keeps the rows that did NOT resolve cleanly', () => {
+    // The whole point. The sibling project closed a job when the *easy* rows
+    // were added and took these with it — and these are exactly the ones worth
+    // coming back to.
+    assert.equal(isOutstanding(line({ state: 'not_found' })), true);
+    assert.equal(isOutstanding(line({ state: 'error' })), true);
+    assert.equal(isOutstanding(line({ state: 'found' })), true);
+  });
+
+  it('settles only on a person having acted', () => {
+    assert.equal(isOutstanding(line({ state: 'found', dismissed: true })), false);
+    assert.equal(isOutstanding(line({ state: 'found', addedWorkId: 9 })), false);
+    assert.equal(isOutstanding(line({ state: 'found', existingWorkId: 9 })), false);
+  });
+
+  it('a fresh line is never pre-added or pre-dismissed', () => {
+    // A proposal that arrives already accepted is the one bug this whole screen
+    // exists to prevent.
+    const fresh = blankLine(3, 'barcode', '9780765326355');
+    assert.equal(fresh.addedWorkId, null);
+    assert.equal(fresh.dismissed, false);
+    assert.equal(fresh.similarity, null);
+    assert.equal(fresh.position, 3);
+  });
+
+  it('counts and summarises what is left', () => {
+    const lines = [
+      line({ state: 'owned' }),
+      line({ state: 'found' }),
+      line({ state: 'not_found' }),
+      line({ state: 'found', addedWorkId: 4 }),
+    ];
+    assert.equal(outstandingCount(lines), 2);
+    assert.equal(jobSummary({ lines, status: 'review' }), '4 books · 2 to sort');
+    assert.equal(
+      jobSummary({ lines: [line({ state: 'owned' })], status: 'review' }),
+      '1 book · all sorted',
+    );
+    assert.equal(jobSummary({ lines: [], status: 'review' }), 'nothing yet');
+  });
+});
+
+describe('the shelf-read output contract', () => {
+  it('⚠️ requires `author`, so a missing one is an explicit null', () => {
+    // Not cosmetic. If `author` fell out of `required` the model would simply
+    // omit it, `line.author` would be undefined, and matching would silently
+    // degrade to title-only — the `BOSS MONSTER` → `Super Boss Monster 2`
+    // shape that files a new book under "already yours", where it is lost.
+    const item = SHELF_SCHEMA.properties.books.items;
+    assert.ok((item.required as readonly string[]).includes('author'));
+    assert.equal(item.additionalProperties, false);
+    assert.deepEqual(item.properties.author.type, ['string', 'null']);
+  });
+
+  it('asks for a position on every book, so the shelf can be walked back along', () => {
+    const item = SHELF_SCHEMA.properties.books.items;
+    assert.ok((item.required as readonly string[]).includes('position'));
+    assert.equal(item.properties.position.type, 'integer');
+  });
+
+  it('keeps "unreadable" separate from "no books", because the advice differs', () => {
+    assert.ok((SHELF_SCHEMA.required as readonly string[]).includes('unreadable'));
+    assert.equal(SHELF_SCHEMA.properties.unreadable.type, 'boolean');
   });
 });

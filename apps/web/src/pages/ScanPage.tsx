@@ -1,82 +1,133 @@
 import { useEffect, useRef, useState } from 'react';
+import { SHELF_LONG_EDGE, type ScanJob } from '@lc/core';
 import { api } from '../api.js';
-import { CameraError, cameraPlausible, closeCamera, openRearCamera } from '../lib/camera.js';
+import {
+  CameraError,
+  cameraPlausible,
+  captureFrame,
+  closeCamera,
+  fileToPhoto,
+  openRearCamera,
+} from '../lib/camera.js';
 import { preloadDecoder, startScanLoop } from '../lib/scanner.js';
-import { formatLabel } from '../lib/formats.js';
 import { AddWork } from '../components/AddWork.js';
-import { addPath, replaceUrl, type AddMode } from '../router.js';
+import { ScanLines } from '../components/ScanLines.js';
+import { addPath, replaceUrl, scansPath, Link, type AddMode } from '../router.js';
 
 /**
- * Scan a stack of books by their ISBNs.
+ * Add books: by barcode, by photograph of a shelf, or by hand.
  *
  * ## Why this screen is a *list*, not a single result
  *
- * Because the job is a shelf, not a book. The board game catalog learned the
- * same thing: stopping the camera after every hit means a tap between every box,
- * and a tap between every box is why bulk intake does not get done. So the loop
- * runs `continuous`, results accumulate, and nothing is written until the whole
- * stack has been swept and looked over.
+ * Because the job is a shelf, not a book. Stopping the camera after every hit
+ * means a tap between every book, and a tap between every book is why bulk
+ * intake does not get done. So the loop runs `continuous`, results accumulate,
+ * and nothing is written until the whole stack has been swept and looked over.
+ *
+ * ## ⚠️ The list now lives on the server, and that is the change
+ *
+ * It used to be `useState`, which meant a phone locking mid-sweep lost every
+ * result. Tolerable for barcodes — a barcode is free to re-scan — and not
+ * tolerable for a shelf photograph, which costs an API call every time. So each
+ * scan appends a line to a `scan_job` row, the job id goes into the URL, and a
+ * reload picks the sweep up exactly where it was. The queue at `/scans` lists
+ * the ones you walked away from.
  *
  * ## ⚠️ Nothing here writes to the catalog
  *
  * Every row is a **proposal**. Phase 0 measured that a wrong ISBN returns a
  * confident, well-formed, wrong book — three of ten ISBNs typed from memory
  * resolved to entirely different titles, with covers and page counts, and
- * nothing in the response marks them. The person looking at the cover and the
- * title is the only check that exists, which is why "Add" is per row and why
- * the resolved title is shown large.
+ * nothing in the response marks them. A spine read is weaker evidence than an
+ * ISBN, not stronger: it arrives at an angle, half-occluded, with the series
+ * name usually printed larger than the volume title. The person looking at the
+ * cover and the title is the only check that exists, which is why "Add" is per
+ * row and why the resolved title is shown large next to what was read.
  *
- * ## The three answers a scan can give
+ * ## The three answers a barcode scan can give
  *
  * | | |
  * |---|---|
- * | `ignore` | not a book code — the price add-on, a retail UPC. **Silent.** Keep scanning. |
- * | `owned`  | already on our shelf, answered from D1 with no network call |
- * | `found`  | resolved from the ladder, as a proposal |
+ * | `skipped` | not a book code — the price add-on, a retail UPC. **Silent when scanned.** |
+ * | `owned`   | already on our shelf, answered from D1 with no network call |
+ * | `found`   | resolved from the ladder, as a proposal |
  *
- * The silence on `ignore` is deliberate and is most of what makes this usable: a
- * back cover carries two or three barcodes, so reading the wrong one is the
- * normal case, not an exception. Surfacing it would mean a warning per book.
+ * The silence on a scanned non-book code is deliberate and is most of what
+ * makes this usable: a back cover carries two or three barcodes, so reading the
+ * wrong one is the normal case, not an exception. Surfacing it would mean a
+ * warning per book. A *typed* one explains itself, because silence there reads
+ * as the button being broken.
  */
-
-interface Row {
-  code: string;
-  state: 'looking' | 'owned' | 'found' | 'not_found' | 'unresolvable' | 'skipped' | 'error';
-  title?: string;
-  authors?: string;
-  publisher?: string | null;
-  year?: number | null;
-  coverUrl?: string | null;
-  format?: string;
-  detail?: string;
-  added?: boolean;
-  /** Set when this scan attached to a work we already had, rather than making one. */
-  attachedTo?: string | null;
-}
 
 export function ScanPage({
   onDone,
   backLabel = 'Collection',
   initialMode = 'scan',
+  initialJobId = null,
+  canSpend,
 }: {
   onDone: () => void;
   /** Where leaving goes, named. Usually the collection; see `backTarget`. */
   backLabel?: string;
   /** 'type' when the caller knows the camera is not available to this user. */
   initialMode?: AddMode;
+  /** From `?job=`. Reopens a sweep left half-finished. */
+  initialJobId?: number | null;
+  /** `runResearch`. A photograph costs money; a barcode does not. */
+  canSpend: boolean;
 }) {
   const [mode, setMode] = useState<AddMode>(initialMode);
+  const [job, setJob] = useState<ScanJob | null>(null);
+  const [loading, setLoading] = useState(initialJobId !== null);
+
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
   // Read inside the scan loop's `ignore`, which is created once and would
-  // otherwise close over the first render's empty array forever.
+  // otherwise close over the first render's empty set forever.
   const seenRef = useRef<Set<string>>(new Set());
+  // Likewise: the loop's onScan needs the *current* job id, not the one that
+  // existed when the camera started — the first scan of a sweep mints it.
+  const jobIdRef = useRef<number | null>(initialJobId);
 
-  const [rows, setRows] = useState<Row[]>([]);
   const [running, setRunning] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
   const [manual, setManual] = useState('');
+  const [cost, setCost] = useState<string | null>(null);
+
+  /** Every server answer arrives as a whole job, so there is one way to accept it. */
+  function acceptJob(next: ScanJob) {
+    jobIdRef.current = next.id;
+    setJob(next);
+    for (const line of next.lines) if (line.code) seenRef.current.add(line.code);
+    replaceUrl(addPath(mode, next.id));
+  }
+
+  // Reopen a sweep named in the URL. This is the whole persistence feature from
+  // the user's side: close the phone, come back, the books are still there.
+  useEffect(() => {
+    if (initialJobId === null) return;
+    let live = true;
+    void api
+      .scanJob(initialJobId)
+      .then(({ job: found }) => {
+        if (!live) return;
+        setJob(found);
+        jobIdRef.current = found.id;
+        for (const line of found.lines) if (line.code) seenRef.current.add(line.code);
+      })
+      .catch(() => {
+        // A job id that no longer resolves is not worth an error screen — the
+        // sweep is gone, and the useful thing to show is an empty new one.
+        if (live) replaceUrl(addPath(mode));
+      })
+      .finally(() => live && setLoading(false));
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialJobId]);
 
   /**
    * Keep `?mode=` in step with the tab, so a refresh — or a link — reopens the
@@ -93,7 +144,14 @@ export function ScanPage({
    *   and then pressed Back is asking for.
    */
   useEffect(() => {
-    replaceUrl(addPath(mode));
+    replaceUrl(addPath(mode, jobIdRef.current));
+  }, [mode]);
+
+  // Switching tabs must let go of the camera. The barcode tab and the photo tab
+  // both want it, and iOS keeps the indicator light on until every track stops.
+  useEffect(() => {
+    stopCamera();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
   useEffect(() => {
@@ -101,122 +159,31 @@ export function ScanPage({
     // project's version of this page, which warms it on mount.
     //
     // The decoder is a 1MB WebAssembly module and compiling it blocks the main
-    // thread — and half the uses of this screen never touch it, because typing
-    // an ISBN into the box goes straight to the API. Paying a main-thread stall
-    // on every visit to buy nothing on half of them is the wrong trade, most of
-    // all on the phone this screen is actually for.
+    // thread — and most visits to this screen never touch it, because the photo
+    // tab and the typing tab do not decode barcodes at all. Paying a
+    // main-thread stall on every visit to buy nothing on two thirds of them is
+    // the wrong trade, most of all on the phone this screen is for.
     //
-    // It is warmed in `start()` instead: the first moment it is certainly
-    // needed, and one the user already expects to wait through because they are
-    // being asked for camera permission anyway.
-    return () => stop();
+    // It is warmed in `startBarcode()` instead: the first moment it is
+    // certainly needed, and one the user already expects to wait through
+    // because they are being asked for camera permission anyway.
+    return () => stopCamera();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /**
-   * @param typed true when a person entered the code by hand.
-   *
-   * ⚠️ This flag decides what happens to a non-book barcode, and the two answers
-   * are opposites for good reason. A **scanned** price add-on or retail UPC is
-   * the normal case — a back cover carries two or three codes — so the row is
-   * dropped without a word, or bulk intake becomes a warning per book. A
-   * **typed** one is a person's deliberate act, and silence would read as the
-   * button being broken, so it explains itself.
-   *
-   * The first version had neither: it did not handle `ignore` at all, so a price
-   * code fell through to "Not in Open Library", which is both wrong and the most
-   * misleading thing it could have said.
-   */
-  async function lookup(code: string, typed = false) {
-    setRows((prev) =>
-      prev.some((r) => r.code === code) ? prev : [{ code, state: 'looking' }, ...prev],
-    );
+  async function lookupCode(code: string, typed = false) {
     try {
-      const res = (await api.scan(code)) as {
-        result: string;
-        reason?: string;
-        edition?: { format: string };
-        candidates?: {
-          title: string;
-          authors: string;
-          publisher: string | null;
-          publishedYear: number | null;
-          coverUrl: string | null;
-        }[];
-      };
-
-      if (res.result === 'ignore') {
-        if (!typed) {
-          setRows((prev) => prev.filter((r) => r.code !== code));
-          // Forgotten, so a genuine barcode read a moment later on the same
-          // sweep is not suppressed by the streak guard.
-          seenRef.current.delete(code);
-          return;
-        }
-        setRows((prev) =>
-          prev.map((r) =>
-            r.code === code
-              ? {
-                  ...r,
-                  state: 'skipped',
-                  detail:
-                    res.reason === 'price_addon'
-                      ? 'That is the five-digit price code printed beside the barcode. Use the longer one.'
-                      : 'Not a book barcode. Books start 978 or 979.',
-                }
-              : r,
-          ),
-        );
-        return;
+      const res = await api.scanBarcode(code, jobIdRef.current);
+      acceptJob(res.job);
+      if (typed && res.line.state === 'skipped') {
+        setCameraError(res.line.detail ?? 'Not a book barcode.');
       }
-
-      setRows((prev) =>
-        prev.map((r) => {
-          if (r.code !== code) return r;
-          if (res.result === 'owned') {
-            return { ...r, state: 'owned', format: res.edition?.format };
-          }
-          if (res.result === 'unresolvable') {
-            return {
-              ...r,
-              state: 'unresolvable',
-              // The Kindle path. Saying which population this falls into beats
-              // "not found", because the fix is a different importer, not a
-              // retry — see docs/info/isbn-ladder.md §4.2.
-              detail: 'Kindle ASIN — no free database indexes these.',
-            };
-          }
-          const first = res.candidates?.[0];
-          if (!first) {
-            return {
-              ...r,
-              state: 'not_found',
-              detail: 'Not in Open Library. About half this library is not — add it by hand.',
-            };
-          }
-          return {
-            ...r,
-            state: 'found',
-            title: first.title,
-            authors: first.authors,
-            publisher: first.publisher,
-            year: first.publishedYear,
-            coverUrl: first.coverUrl,
-          };
-        }),
-      );
     } catch (err) {
-      setRows((prev) =>
-        prev.map((r) =>
-          r.code === code
-            ? { ...r, state: 'error', detail: err instanceof Error ? err.message : String(err) }
-            : r,
-        ),
-      );
+      setCameraError(err instanceof Error ? err.message : String(err));
     }
   }
 
-  async function start() {
+  async function startBarcode() {
     setCameraError(null);
     // Warm the decoder alongside opening the camera, so the compile overlaps
     // the permission prompt and the first frames rather than following them.
@@ -236,26 +203,38 @@ export function ScanPage({
         continuous: true,
         // A book left in front of the lens would otherwise rebuild its two
         // confirmations every few hundred milliseconds and be looked up again.
+        // The server refuses duplicates too — see the route — but the cheapest
+        // duplicate is the one that never becomes a request.
         ignore: (code) => seenRef.current.has(code),
         onScan: (scan) => {
           seenRef.current.add(scan.code);
-          void lookup(scan.code);
+          void lookupCode(scan.code);
         },
         onError: (err) => setCameraError(err instanceof Error ? err.message : String(err)),
       });
       setRunning(true);
     } catch (err) {
-      setCameraError(
-        err instanceof CameraError
-          ? cameraMessage(err)
-          : err instanceof Error
-            ? err.message
-            : String(err),
-      );
+      setCameraError(cameraMessage(err));
     }
   }
 
-  function stop() {
+  /** The photo tab's camera: a live preview, no decode loop, no scan interval. */
+  async function startPhoto() {
+    setCameraError(null);
+    try {
+      const stream = await openRearCamera();
+      streamRef.current = stream;
+      const video = videoRef.current;
+      if (!video) return;
+      video.srcObject = stream;
+      await video.play();
+      setRunning(true);
+    } catch (err) {
+      setCameraError(cameraMessage(err));
+    }
+  }
+
+  function stopCamera() {
     stopRef.current?.();
     stopRef.current = null;
     closeCamera(streamRef.current);
@@ -263,66 +242,102 @@ export function ScanPage({
     setRunning(false);
   }
 
-  async function add(row: Row) {
-    if (!row.title || !row.authors) return;
+  /**
+   * Send one photograph to be read.
+   *
+   * ⚠️ **This is the only thing in the app that costs money**, so it is one
+   * explicit tap with the price of the last one printed underneath — never
+   * automatic, never on a timer, and never retried on your behalf.
+   */
+  async function sendPhoto(get: () => Promise<{ data: string; mediaType: string }>) {
+    setBusy('photo');
+    setCameraError(null);
+    setCost(null);
     try {
-      // ⚠️ Attach to the book we already hold rather than creating a second row
-      // for it. The catalog contains works imported from ebooks, so scanning the
-      // paperback of one is the ordinary case, not the exception — and a
-      // duplicate work is the "filed under already-yours, where it is lost"
-      // failure the matcher exists to prevent, arriving through the front door.
-      const existing = await api.matchWork(row.title, row.authors);
-      const work =
-        existing.work ??
-        (await api.createWork({ title: row.title, authors: row.authors })).work;
-      const attached = existing.work !== null;
-      await api.createEdition({
-        workId: work.id,
-        isbn13: row.code,
-        format: 'paperback',
-        publisher: row.publisher ?? null,
-        publishedYear: row.year ?? null,
-        coverUrl: row.coverUrl ?? null,
-        source: 'openlibrary',
-      });
-      // A copy, because a person scanning a physical barcode is holding the
-      // book. This is the one place that inference is safe — unlike the ebook
-      // importer, where a file existing says nothing about a shelf.
-      await api.createCopy({ workId: work.id, status: 'owned' });
-      setRows((prev) =>
-        prev.map((r) =>
-          r.code === row.code ? { ...r, added: true, attachedTo: attached ? work.title : null } : r,
-        ),
+      const photo = await get();
+      const res = await api.scanShelf(photo.data, photo.mediaType);
+      acceptJob(res.job);
+      stopCamera();
+      setCost(
+        `${res.job.lines.length} read · about ${res.usage.estimatedCents.toFixed(1)}p ` +
+          `(${res.usage.inputTokens} in / ${res.usage.outputTokens} out)`,
       );
+      if (res.unreadable) {
+        setCameraError('That photo could not be read. More light, or closer, or straighter on.');
+      }
     } catch (err) {
-      setRows((prev) =>
-        prev.map((r) =>
-          r.code === row.code
-            ? { ...r, state: 'error', detail: err instanceof Error ? err.message : String(err) }
-            : r,
-        ),
-      );
+      setCameraError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
     }
   }
+
+  async function finish() {
+    const id = jobIdRef.current;
+    setBusy('finish');
+    try {
+      if (id) await api.finishScanJob(id);
+      onDone();
+    } catch (err) {
+      setCameraError(err instanceof Error ? err.message : String(err));
+      setBusy(null);
+    }
+  }
+
+  const tabs = (
+    <div className="row seg" role="tablist" aria-label="How to add">
+      <button
+        role="tab"
+        aria-selected={mode === 'scan'}
+        className={mode === 'scan' ? 'primary' : undefined}
+        onClick={() => setMode('scan')}
+      >
+        Scan a barcode
+      </button>
+      {/* Hidden rather than disabled for a reader: a control that exists and
+          refuses is worse than one that was never offered. */}
+      {canSpend && (
+        <button
+          role="tab"
+          aria-selected={mode === 'photo'}
+          className={mode === 'photo' ? 'primary' : undefined}
+          onClick={() => setMode('photo')}
+        >
+          Photograph a shelf
+        </button>
+      )}
+      <button
+        role="tab"
+        aria-selected={mode === 'type'}
+        className={mode === 'type' ? 'primary' : undefined}
+        onClick={() => setMode('type')}
+      >
+        Type it in
+      </button>
+    </div>
+  );
+
+  const header = (
+    <>
+      <div className="row-tight">
+        <button onClick={onDone}>← {backLabel}</button>
+        <Link to={scansPath} className="chip">
+          Unfinished sweeps
+        </Link>
+      </div>
+      <h2>Add a book</h2>
+      {tabs}
+    </>
+  );
 
   if (mode === 'type') {
     return (
       <main>
-        <button onClick={onDone}>← {backLabel}</button>
-        <h2>Add a book</h2>
-        <div className="row seg" role="tablist" aria-label="How to add">
-          <button role="tab" aria-selected="false" onClick={() => setMode('scan')}>
-            Scan a barcode
-          </button>
-          <button role="tab" aria-selected="true" className="primary">
-            Type it in
-          </button>
-        </div>
+        {header}
         {/* Already a plain panel rather than a dialog, so it drops onto a screen
-            unchanged — it only ever *looked* like a modal because the collection
-            page revealed it in place. `onClose` goes back to the barcode tab
-            instead of unmounting, because on this screen "cancel" means "I'll
-            scan it after all", not "leave". */}
+            unchanged. `onClose` goes back to the barcode tab instead of
+            unmounting, because on this screen "cancel" means "I'll scan it
+            after all", not "leave". */}
         <AddWork onClose={() => setMode('scan')} onAdded={onDone} />
       </main>
     );
@@ -330,33 +345,13 @@ export function ScanPage({
 
   return (
     <main>
-      <button onClick={onDone}>← {backLabel}</button>
-      <h2>Add a book</h2>
-
-      {/* ⚠️ Two ways in, one screen — not two buttons on the collection header.
-          The sibling Board Game Catalog reached five equal-weight buttons there
-          "by accretion", and its CollectionPage comment records the fix: the top
-          bar is for places, the collection header holds the single act of
-          adding, and every *way* of adding is a tab on the screen that act leads
-          to. This is that shape.
-
-          Barcode is first because it is the one that needs the hardware ready.
-          For this catalog it is also, today, the emptier path — every edition is
-          an ebook and there are no ISBNs to scan yet — so `initialMode` lets the
-          caller land on "Type it in" for anyone without the scan capability. */}
-      <div className="row seg" role="tablist" aria-label="How to add">
-        <button role="tab" aria-selected="true" className="primary">
-          Scan a barcode
-        </button>
-        <button role="tab" aria-selected="false" onClick={() => setMode('type')}>
-          Type it in
-        </button>
-      </div>
+      {header}
 
       {!cameraPlausible() && (
         <p className="muted small">
           This browser will not give a camera to this page. It needs HTTPS — see
-          docs/info/ios-camera.md for the tunnel trick. You can still type an ISBN below.
+          docs/info/ios-camera.md for the tunnel trick.{' '}
+          {mode === 'scan' ? 'You can still type an ISBN below.' : 'You can still pick a photo below.'}
         </p>
       )}
 
@@ -365,108 +360,147 @@ export function ScanPage({
         <video ref={videoRef} playsInline muted />
       </div>
 
-      <div className="row">
-        {running ? (
-          <button onClick={stop}>Stop camera</button>
-        ) : (
-          <button className="primary" onClick={() => void start()} disabled={!cameraPlausible()}>
-            Start camera
-          </button>
-        )}
-      </div>
+      {mode === 'scan' ? (
+        <>
+          <div className="row">
+            {running ? (
+              <button onClick={stopCamera}>Stop camera</button>
+            ) : (
+              <button
+                className="primary"
+                onClick={() => void startBarcode()}
+                disabled={!cameraPlausible()}
+              >
+                Start camera
+              </button>
+            )}
+          </div>
 
-      {cameraError && <p className="muted small">{cameraError}</p>}
-
-      <div className="row">
-        <input
-          value={manual}
-          onChange={(e) => setManual(e.target.value)}
-          placeholder="…or type an ISBN"
-          inputMode="numeric"
-        />
-        <button
-          onClick={() => {
-            const code = manual.trim();
-            if (!code) return;
-            seenRef.current.add(code);
-            void lookup(code, true);
-            setManual('');
-          }}
-        >
-          Look up
-        </button>
-      </div>
-
-      {rows.length === 0 ? (
-        <p className="muted small">
-          Point the camera at the barcode on the back. The five-digit price code beside
-          it is skipped automatically.
-        </p>
+          <div className="row">
+            <input
+              value={manual}
+              onChange={(e) => setManual(e.target.value)}
+              placeholder="…or type an ISBN"
+              inputMode="numeric"
+              aria-label="ISBN"
+            />
+            <button
+              onClick={() => {
+                const code = manual.trim();
+                if (!code) return;
+                seenRef.current.add(code);
+                void lookupCode(code, true);
+                setManual('');
+              }}
+            >
+              Look up
+            </button>
+          </div>
+        </>
       ) : (
-        <ul className="works">
-          {rows.map((r) => (
-            <li key={r.code}>
-              {r.coverUrl ? (
-                <img src={r.coverUrl} alt="" width={44} height={66} loading="lazy" />
-              ) : (
-                <span className="cover-placeholder" aria-hidden="true" />
-              )}
-              <div style={{ flex: 1 }}>
-                {r.state === 'looking' && <span className="muted small">Looking up {r.code}…</span>}
+        <>
+          <p className="muted small">
+            Point at one shelf, straight on, with the spines filling the frame. Each photo
+            costs about a penny to read, so it is one deliberate tap — never automatic.
+          </p>
+          <div className="row">
+            {running ? (
+              <>
+                <button
+                  className="primary"
+                  disabled={busy !== null}
+                  onClick={() =>
+                    void sendPhoto(async () => {
+                      const video = videoRef.current;
+                      if (!video) throw new Error('The camera is not ready.');
+                      // ⚠️ A live frame grab, not the photo library. It is the
+                      // one capture path on iOS that provably writes nothing to
+                      // the device — see lib/camera.ts.
+                      return captureFrame(video, SHELF_LONG_EDGE);
+                    })
+                  }
+                >
+                  {busy === 'photo' ? 'Reading…' : 'Read this shelf'}
+                </button>
+                <button onClick={stopCamera} disabled={busy !== null}>
+                  Stop camera
+                </button>
+              </>
+            ) : (
+              <button
+                className="primary"
+                onClick={() => void startPhoto()}
+                disabled={!cameraPlausible() || busy !== null}
+              >
+                Start camera
+              </button>
+            )}
+            {/* The desktop path, and the one this feature was measured with:
+                no rear camera on a laptop, and a photo taken on a phone can be
+                dropped in from anywhere. Downscaled in the browser before it is
+                sent — a 48MP upload is pure waste, since the model resizes it
+                anyway after you have paid to send it. */}
+            <label className="chip" style={{ cursor: 'pointer' }}>
+              Pick a photo
+              <input
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                disabled={busy !== null}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = '';
+                  if (!file) return;
+                  void sendPhoto(async () => fileToPhoto(file, SHELF_LONG_EDGE));
+                }}
+              />
+            </label>
+          </div>
+          {cost && <p className="muted small">{cost}</p>}
+        </>
+      )}
 
-                {r.state === 'owned' && (
-                  <>
-                    <strong>Already yours</strong>
-                    <div className="muted small">
-                      {r.code}
-                      {r.format ? ` · ${formatLabel(r.format)}` : ''}
-                    </div>
-                  </>
-                )}
+      {cameraError && <p className="notice notice--bad">{cameraError}</p>}
 
-                {r.state === 'found' && (
-                  <>
-                    <strong>{r.title}</strong>
-                    <div className="muted small">{r.authors}</div>
-                    <div className="muted small">
-                      {[r.publisher, r.year].filter(Boolean).join(' · ')} · {r.code}
-                    </div>
-                  </>
-                )}
-
-                {(r.state === 'not_found' ||
-                  r.state === 'unresolvable' ||
-                  r.state === 'skipped' ||
-                  r.state === 'error') && (
-                  <>
-                    <strong>{r.code}</strong>
-                    <div className="muted small">{r.detail}</div>
-                  </>
-                )}
-              </div>
-
-              {r.state === 'found' &&
-                (r.added ? (
-                  <span className="muted small">Added</span>
-                ) : (
-                  <button onClick={() => void add(r)}>Add</button>
-                ))}
-            </li>
-          ))}
-        </ul>
+      {loading ? (
+        <p className="muted small">Reopening that sweep…</p>
+      ) : job ? (
+        <>
+          <ScanLines
+            job={job}
+            onJob={setJob}
+            empty={
+              mode === 'scan'
+                ? 'Point the camera at the barcode on the back. The five-digit price code beside it is skipped automatically.'
+                : 'Nothing read from that photo yet.'
+            }
+          />
+          <div className="row" style={{ marginTop: '0.8rem' }}>
+            <button onClick={() => void finish()} disabled={busy !== null}>
+              {busy === 'finish' ? 'Finishing…' : 'Finish this sweep'}
+            </button>
+          </div>
+        </>
+      ) : (
+        <p className="muted small">
+          {mode === 'scan'
+            ? 'Point the camera at the barcode on the back. The five-digit price code beside it is skipped automatically.'
+            : 'Take a photo of a shelf, or pick one, and the books on it are read into a list you can check.'}
+        </p>
       )}
     </main>
   );
 }
 
-function cameraMessage(err: CameraError): string {
+function cameraMessage(err: unknown): string {
+  if (!(err instanceof CameraError)) return err instanceof Error ? err.message : String(err);
   switch (err.reason) {
     case 'insecure-context':
       return 'The camera needs HTTPS. Open the site over https, or use the cloudflared tunnel.';
     case 'denied':
       return 'Camera permission was refused. Allow it in the address bar, then try again.';
     case 'no-camera':
-      return 'No camera on this device.';
+      return 'No camera on this device. Pick a photo instead.';
     case 'in-use':
       return 'Another app is using the camera.';
     case 'unsupported':

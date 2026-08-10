@@ -818,3 +818,23 @@ ul.picker > li + li { border-top: 1px solid var(--line); }
   color: var(--accent);
 }
 .mark--role-pending { background: var(--warm); color: #fff; }
+/* --- Scan review rows -------------------------------------------------------
+   Scoped to `.scan-lines` rather than to `ul.works`, which the collection and
+   the wishlist also use with a different row shape. A cover, the reading and
+   what it resolved to, then the actions — and the actions wrap under the text
+   on a phone rather than squeezing it. */
+ul.works.scan-lines > li {
+  display: flex;
+  gap: 0.7rem;
+  align-items: flex-start;
+  padding: 0.6rem 0;
+  flex-wrap: wrap;
+}
+ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
+.scan-line__blank {
+  width: 44px;
+  height: 66px;
+  flex: none;
+  border: 1px dashed var(--line-strong);
+  border-radius: 3px;
+}

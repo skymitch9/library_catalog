@@ -45,6 +45,7 @@ import {
   type Route,
 } from './router.js';
 import { CollectionPage } from './pages/CollectionPage.js';
+import { ScanJobsPage } from './pages/ScanJobsPage.js';
 import { ExportPage } from './pages/ExportPage.js';
 import { PeoplePage } from './pages/PeoplePage.js';
 import { ScanPage } from './pages/ScanPage.js';
@@ -277,6 +278,10 @@ function Screens({
       const back = backTarget('/');
       return (
         <ScanPage
+          // ⚠️ Keyed on the job, so arriving at a *different* sweep from the
+          // queue is a new page rather than the old one holding the old lines.
+          // Same reason WorkPage is keyed on its id.
+          key={route.job ?? 'new'}
           onDone={back.go}
           backLabel={back.label}
           // The URL wins when it names a tab. Failing that: someone who may edit
@@ -284,10 +289,18 @@ function Screens({
           // camera they are not allowed to open. Same one button, same one
           // screen — it just opens on the tab that works.
           initialMode={route.mode ?? (me.capabilities.includes('scan') ? 'scan' : 'type')}
+          initialJobId={route.job}
+          // A shelf photograph is the only thing in the app that spends money,
+          // so it is gated on the spend capability rather than on `scan`.
+          canSpend={me.capabilities.includes('runResearch')}
         />
       );
     }
 
+    case 'scans': {
+      if (!me.capabilities.includes('editCatalog')) return <NotFound />;
+      return <ScanJobsPage canSpend={me.capabilities.includes('runResearch')} />;
+    }
     // Gated the same way their nav entries are, and for the reason `/add`
     // carries: a screen with an address is a screen anybody can type. Answering
     // "Not a page" rather than a permission notice is deliberate — for a reader
