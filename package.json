@@ -22,8 +22,7 @@
     "db:migrate": "npm run db:migrate --workspace @lc/worker",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "tsx --test packages/core/test/*.test.ts",
-    "backfill:reviews": "tsx scripts/backfill-review-keys.mjs",
-    "check:fold": "tsx scripts/check-fold-parity.mjs"
+    "backfill:reviews": "tsx scripts/backfill-review-keys.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",

@@ -11,7 +11,6 @@ import { requireAuth } from './middleware/auth.js';
 import { catalogRoutes } from './routes/catalog.js';
 import { enrichRoutes } from './routes/enrich.js';
 import { healthRoutes } from './routes/health.js';
-import { ingestRoutes } from './routes/ingest.js';
 import { isbnRoutes } from './routes/isbn.js';
 import { reviewRoutes } from './routes/reviews.js';
 import { userRoutes } from './routes/users.js';
@@ -21,13 +20,6 @@ const app = new Hono<AppBindings>();
 // Public — no token needed, so it can be curled to verify a deploy.
 app.route('/api/health', healthRoutes);
 
-// ⚠️ Mounted BEFORE requireAuth, deliberately. The ebook indexer is a cron in a
-// Docker container: it has no browser, no Google session and nothing to refresh
-// a Firebase ID token with. It carries a shared secret instead, and the route
-// enforces that itself — see routes/ingest.ts for why that trade is acceptable
-// and how narrow the route is kept to make it so. With EBOOK_INGEST_TOKEN unset
-// the whole thing 404s rather than opening.
-app.route('/api/ingest', ingestRoutes);
 
 // Everything else behind a verified Firebase ID token.
 app.use('/api/*', requireAuth());

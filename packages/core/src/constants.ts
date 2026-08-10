@@ -26,9 +26,15 @@ export const EDITION_FORMATS = [
   'hardcover',
   'paperback',
   'mass_market',
-  // The five file formats Calibre-Web Automated converts to and manages. See
-  // docs/EBOOK_PIPELINE.md — CWA is the ebook storage and conversion engine
-  // underneath this catalog, and an edition it holds has to be nameable here.
+  // The five ebook file formats. Added for the Calibre-Web Automated pipeline,
+  // which was built and run on 2026-08-09 and is currently PAUSED — see the
+  // "ebook pipeline" section of docs/HANDOFF.md, and the removed
+  // docs/EBOOK_PIPELINE.md in git history.
+  //
+  // Kept rather than reverted because the 81 works it catalogued are still in
+  // the collection and still hold these values, and because ebooks are expected
+  // to come back. Unused values in an enum cost nothing; a migration that has to
+  // be undone costs a table rebuild.
   'ebook_epub',
   'ebook_mobi',
   'ebook_azw3',

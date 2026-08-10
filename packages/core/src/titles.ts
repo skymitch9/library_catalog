@@ -29,6 +29,12 @@
  * matters, which is the only part `workKey` reads — that is the reason this
  * divergence is survivable, and it is why `workKey` uses the primary author
  * rather than the whole list.
+ *
+ * There was briefly a second implementation of this fold in Python, for an ebook
+ * indexer that has since been removed, plus an `npm run check:fold` that proved
+ * the two agreed. Both are gone. **If a second language ever needs these rules
+ * again, bring that parity check back with it** — it is not optional, and it
+ * caught nothing only because it existed.
  */
 
 /**

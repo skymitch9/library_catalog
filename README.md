@@ -7,9 +7,10 @@ Cloudflare Worker + D1 + Firebase Google SSO + a React PWA. A sibling to
 of `boardbuddy/Board_Game_Catalog`, whose schema, scan queue and camera code this
 inherits.
 
-> **Status:** phases 0 and 1 done, phase 2 partly. Runs locally; **nothing is
-> deployed**. See [`docs/HANDOFF.md`](docs/HANDOFF.md) for exactly what is built
-> and the commands only the owner can run.
+> **Status:** live at **https://library-catalog.bgc-worker.workers.dev** —
+> deployed, Google sign-in verified in production, 81 works in the catalog.
+> Phases 0–2 done; phase 3 (ebooks) paused. See
+> [`docs/HANDOFF.md`](docs/HANDOFF.md).
 
 ## Quick start
 
@@ -24,6 +25,13 @@ npm run dev            # worker :8787, web :5174
 npm test               # 26 core-rule tests
 npm run typecheck      # all five workspaces
 ```
+
+> **Ebook ingestion is paused, and will be picked back up.** A Calibre-Web
+> Automated pipeline was built and run on 2026-08-09, then removed to keep the
+> repo honest about what it currently does. **The ebooks it catalogued are still
+> here** — 81 works — and `edition.format` still carries the ebook values, so
+> resuming is additive rather than a migration. The pipeline itself is one
+> `git revert` away; see `docs/HANDOFF.md`.
 
 ## What is different from the Board Game Catalog
 
@@ -76,12 +84,6 @@ The system design lives outside this repo and is not duplicated here:
   is the measurement, and it contradicts the design in two places.
 - [`catalog-platform/docs/PLATFORM.md`](../../catalog-platform/docs/PLATFORM.md)
   — how the three catalogs are presented as one site *without merging any of them*.
-- [`docs/EBOOK_PIPELINE.md`](docs/EBOOK_PIPELINE.md)
-  — the 2026-08-09 implementation decision for ebooks: use Calibre-Web Automated
-  as the Docker-first ebook processing/library engine, keep `library_catalog` as
-  the canonical physical+ebook domain catalog, parallel the existing
-  `audiobook_catalog` automation, and leave ebook acquisition as a source-specific
-  stage in front of CWA.
 
 `catalog-platform` holds **no application code** and never will. It is the
 wrapper/plan that governs three codebases and belongs inside none of them.

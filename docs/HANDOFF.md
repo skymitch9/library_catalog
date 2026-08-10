@@ -30,7 +30,7 @@ is empty; the four test works are local only.
 | **Shared identity** | ✅ Firebase Google SSO on the `audiobook-catalog` project, joined on email. |
 | **Review bridge** | ✅ `workKey`, draft endpoint, Firestore client, review UI, backfill script. **Backfill dry-run only.** |
 | **Open Library enrichment** | ✅ Proposes candidates with match scores; never auto-applies. |
-| **Phase 3 — ebook pipeline** | 🟡 Written and the Worker half verified; **no container has ever run.** |
+| **Phase 3 — ebook pipeline** | ⏸️ **Built, run, then paused 2026-08-09.** The books it catalogued are kept. See below. |
 
 ## Not done
 
@@ -39,9 +39,43 @@ is empty; the four test works are local only.
   results in React state, so a phone locking mid-sweep loses them. That matters
   much more for phase 4 — a shelf photo costs money, an ISBN is free to re-scan.
 - No series browse page; the collection is one flat list ordered by series.
-- Nothing in the ebook pipeline has been executed. CWA's directory names come
-  from its README; `index_cwa_library.py` has never met a real Calibre
-  `metadata.db`. Run it with `--audit` first; `EBOOK_SYNC_DRY_RUN` defaults on.
+## ⏸️ The ebook pipeline — paused, and how to bring it back
+
+Removed 2026-08-09 on the owner's call: compose file, Dockerfile, entrypoint,
+ingest watcher, companion scanner, indexer, `/api/ingest`, the
+`EBOOK_INGEST_TOKEN` secret, and the containers, images and volume.
+
+**It worked.** 83 EPUBs from the OpenAudible folders went end to end to the live
+catalog. It was paused because file acquisition — getting the Amazon books the
+owner already paid for down as files — is not something this repo solves, and a
+pipeline fed only by ebooks already loose on disk was not the library that was
+wanted. **This is expected to resume.**
+
+### What was deliberately kept
+
+| | |
+|---|---|
+| **81 works / 83 editions** in production D1 | accurate; they are books the owner owns |
+| `edition.format` ebook values + nullable `cwa_book_id` | migration 0002 untouched, so resuming is additive |
+| `runtime/ebooks/` — the Calibre library, all 83 already ingested | gitignored, left on disk so resuming does not mean re-ingesting |
+| `OpenAudible/books` | **never touched.** That mount was read-only and the scanner copied, never moved |
+
+### Bringing it back
+
+```bash
+git revert <the "Remove the ebook pipeline" commit>
+npm run secret EBOOK_INGEST_TOKEN        # a new one; the old was deleted
+docker compose -f docker-compose.ebooks.yml up -d calibre-web-automated
+npm run deploy                            # re-mounts /api/ingest
+```
+
+Then read the removed `docs/EBOOK_PIPELINE.md` out of git history first — it
+carries the four defects the first real run found, and they will all be waiting
+again. Chief among them: the entrypoint must `exec "$@"`, and the dry-run flag
+must have one name inside and outside the container.
+
+⚠️ **If a second language ever computes `work_key` again** — the Python indexer
+did — restore `scripts/check-fold-parity.mjs` with it. It is not optional.
 
 ## ⚠️ What is left
 

@@ -109,7 +109,6 @@ None are set. Neither is required for the app to run today.
 
 ```bash
 npm run secret GOOGLE_BOOKS_API_KEY   # wrangler secret put …
-npm run secret EBOOK_INGEST_TOKEN
 npm run secret ANTHROPIC_API_KEY
 npm run secret:list
 ```
@@ -117,7 +116,6 @@ npm run secret:list
 | Name | Needed for | Consequence if unset |
 |---|---|---|
 | `GOOGLE_BOOKS_API_KEY` | ISBN ladder rung 2 | rung skipped, with the reason in the scan trace. **Not a degraded mode** — anonymous Google Books returned 429 on 40 of 40 calls, so without a key that rung never answers at all. Free, from the Google Cloud console with the Books API enabled. |
-| `EBOOK_INGEST_TOKEN` | the ebook indexer | `/api/ingest/*` returns **404**, not 401 — the route does not exist. Generate with `openssl rand -hex 32`. |
 | `ANTHROPIC_API_KEY` | research pipeline (phase 5, unbuilt) | nothing today |
 
 ---
@@ -184,6 +182,10 @@ game catalog and are wrong here.
 ---
 
 ## 8. If something looks broken
+
+> **Paused 2026-08-09:** the ebook pipeline and its `EBOOK_INGEST_TOKEN` secret
+> were removed. `/api/ingest/*` no longer exists — a request to it is an ordinary
+> 404, not a disabled feature. Expected to return; see `docs/HANDOFF.md`.
 
 | Symptom | First check |
 |---|---|

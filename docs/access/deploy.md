@@ -19,7 +19,7 @@ file is the shorter "what order do I do things in" version.
 | Firebase authorised domain | ✅ added 2026-08-09 |
 | Ownership | ✅ claimed by `nbaslamking@gmail.com` |
 | Google Books API key | ❌ not obtained (rung skipped without it) |
-| `EBOOK_INGEST_TOKEN` | ❌ not set, so `/api/ingest/*` 404s |
+
 
 ## 1–2. Create, migrate, deploy — done
 
