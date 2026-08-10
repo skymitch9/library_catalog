@@ -467,6 +467,15 @@ export interface CollectionStats {
   series: number;
   authors: number;
   withCover: number;
+  /**
+   * Copies with a wishlist status — `wanted` or `preordered`.
+   *
+   * Counted here rather than derived on the client from `formats`, for the
+   * reason the rest of this function exists: a number the page shows is a number
+   * the database just answered. Measured 2026-08-10, this is **0** in production
+   * and locally, because nothing has ever written a `copy` row.
+   */
+  wanted: number;
   formats: { format: string; count: number }[];
   readStates: { readState: string; count: number }[];
 }
@@ -491,11 +500,13 @@ export async function collectionStats(
                 (SELECT COUNT(*) FROM copy WHERE status = 'owned') AS copies,
                 (SELECT COUNT(DISTINCT series) FROM work WHERE series IS NOT NULL) AS series,
                 (SELECT COUNT(DISTINCT primary_author) FROM work) AS authors,
-                (SELECT COUNT(cover_url) FROM work) AS with_cover`,
+                (SELECT COUNT(cover_url) FROM work) AS with_cover,
+                (SELECT COUNT(*) FROM copy
+                  WHERE status IN ('wanted', 'preordered')) AS wanted`,
       )
       .first<{
         works: number; editions: number; copies: number;
-        series: number; authors: number; with_cover: number;
+        series: number; authors: number; with_cover: number; wanted: number;
       }>(),
     db
       .prepare('SELECT format, COUNT(*) AS count FROM edition GROUP BY format ORDER BY count DESC')
@@ -516,6 +527,7 @@ export async function collectionStats(
     series: totals?.series ?? 0,
     authors: totals?.authors ?? 0,
     withCover: totals?.with_cover ?? 0,
+    wanted: totals?.wanted ?? 0,
     formats: formats.results,
     readStates: readStates.results,
   };

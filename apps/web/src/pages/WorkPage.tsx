@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { api, type Me } from '../api.js';
+import { Copies, type CopyView } from '../components/Copies.js';
 import { Cover } from '../components/Cover.js';
 import { DriveLinks } from '../components/DriveLinks.js';
 import { Enrich } from '../components/Enrich.js';
+import { Related } from '../components/Related.js';
 import { Reviews } from '../components/Reviews.js';
 import { formatLabel } from '../lib/formats.js';
 
@@ -44,14 +46,7 @@ interface WorkDetail {
     source: string;
     source_url: string | null;
   }[];
-  copies: {
-    id: number;
-    status: string;
-    location: string | null;
-    condition: string | null;
-    lent_to: string | null;
-    is_signed: number;
-  }[];
+  copies: CopyView[];
   reading: {
     read_state: string;
     started_on: string | null;
@@ -72,10 +67,18 @@ export function WorkPage({
   workId,
   me,
   onBack,
+  backLabel,
+  onOpen,
+  onOpenSeries,
 }: {
   workId: number;
   me: Me;
   onBack: () => void;
+  /** Where back goes. A book opened from a series ladder returns to it. */
+  backLabel: string;
+  /** Follow a link to another book — the related-books panel needs it. */
+  onOpen: (id: number) => void;
+  onOpenSeries: (name: string) => void;
 }) {
   const [detail, setDetail] = useState<WorkDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -122,7 +125,7 @@ export function WorkPage({
   return (
     <main>
       <button className="back" onClick={onBack}>
-        ← Collection
+        ← {backLabel}
       </button>
 
       <div className="work-head">
@@ -133,8 +136,12 @@ export function WorkPage({
           <p className="work-head__authors">{work.authors}</p>
           {work.series && (
             <p className="series-tag">
-              {work.series}
-              {work.seriesIndexDisplay ? <b> {work.seriesIndexDisplay}</b> : null}
+              {/* A way into "what am I missing" from the book that prompted the
+                  question, which is where it is actually asked. */}
+              <button className="link series-tag__link" onClick={() => onOpenSeries(work.series!)}>
+                {work.series}
+                {work.seriesIndexDisplay ? <b> {work.seriesIndexDisplay}</b> : null}
+              </button>
             </p>
           )}
           {work.firstPublished && <p className="muted small">First published {work.firstPublished}</p>}
@@ -205,29 +212,20 @@ export function WorkPage({
         )}
       </section>
 
-      <section className="panel">
-        <h3>Copies</h3>
-        {copies.length === 0 ? (
-          <p className="muted small">
-            Nothing recorded as owned. An edition existing is not the same as a copy on
-            the shelf.
-          </p>
-        ) : (
-          <ul className="plain">
-            {copies.map((c) => (
-              <li key={c.id}>
-                <strong>{c.status}</strong>
-                <span className="muted small">
-                  {[c.location, c.condition, c.is_signed ? 'signed' : null]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </span>
-                {c.lent_to && <div className="muted small">Lent to {c.lent_to}</div>}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <Copies
+        workId={workId}
+        copies={copies}
+        editions={editions}
+        canEdit={me.capabilities.includes('editCatalog')}
+        onChanged={load}
+      />
+
+      <Related
+        workId={workId}
+        workTitle={work.title}
+        canEdit={me.capabilities.includes('editCatalog')}
+        onOpen={onOpen}
+      />
 
       {me.capabilities.includes('editCatalog') && (
         <Enrich workId={workId} hasCover={!!work.coverUrl} onApplied={load} />

@@ -2,11 +2,13 @@ import { Hono } from 'hono';
 import {
   COLLECTION_PAGE_SIZE,
   COLLECTION_PAGE_SIZES,
+  WISHLIST_STATUSES,
   workKeyFor,
   createCopySchema,
   createEditionSchema,
   createWorkSchema,
   setReadStateSchema,
+  updateCopySchema,
   updateWorkSchema,
 } from '@lc/core';
 import {
@@ -24,7 +26,9 @@ import {
   listCollection,
   listCopiesForWork,
   listEditionsForWork,
+  listWishlist,
   setReadState,
+  updateCopy,
   updateWork,
   type CollectionQuery,
 } from '@lc/db';
@@ -106,6 +110,31 @@ export const catalogRoutes = new Hono<AppBindings>()
   )
 
   /**
+   * The wishlist: copies we want and do not hold.
+   *
+   * ⚠️ A separate route rather than `?status=wanted` on `/collection`, and the
+   * grain is the reason. `/collection` filters *works*, so a wanted hardcover of
+   * a book we already hold as an EPUB would simply not appear — the work is in
+   * the collection, and the wish is invisible. This returns *copies*, which is
+   * what a wishlist entry actually is.
+   *
+   * `status` narrows to one of the two wishlist statuses; absent means both.
+   * Anything else is refused rather than silently widened, or the route becomes
+   * "list every copy" the first time somebody passes `?status=owned`.
+   */
+  .get('/wishlist', requireCapability('read'), async (c) => {
+    const asked = c.req.query('status');
+    if (asked && !(WISHLIST_STATUSES as readonly string[]).includes(asked)) {
+      return c.json(
+        { error: 'bad_request', detail: `status must be one of ${WISHLIST_STATUSES.join(', ')}` },
+        400,
+      );
+    }
+    const statuses = asked ? [asked] : WISHLIST_STATUSES;
+    return c.json({ rows: await listWishlist(c.env.DB, statuses), statuses });
+  })
+
+  /**
    * "Do we already hold this book?" — asked BEFORE creating a work.
    *
    * ⚠️ This exists because `POST /api/works` deliberately does not dedupe.
@@ -185,6 +214,26 @@ export const catalogRoutes = new Hono<AppBindings>()
     const parsed = createCopySchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues }, 400);
     return c.json({ copy: await createCopy(c.env.DB, parsed.data) }, 201);
+  })
+
+  /**
+   * Change a copy — and therefore how a wanted book becomes an owned one.
+   *
+   * ⚠️ A PATCH, not a PUT, and not a delete-and-recreate. `updateCopy` in
+   * `@lc/db` carries the reasoning: the row holds when it was wanted, what was
+   * going to be paid and where from, and a promotion must not throw those away.
+   * `{ "status": "owned" }` is the whole request the wishlist sends.
+   */
+  .patch('/copies/:id', requireCapability('editCatalog'), async (c) => {
+    const id = Number(c.req.param('id'));
+    if (!Number.isInteger(id)) return c.json({ error: 'bad_request' }, 400);
+
+    const parsed = updateCopySchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues }, 400);
+
+    const copy = await updateCopy(c.env.DB, id, parsed.data);
+    if (!copy) return c.json({ error: 'not_found' }, 404);
+    return c.json({ copy });
   })
 
   .delete('/copies/:id', requireCapability('editCatalog'), async (c) => {

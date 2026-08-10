@@ -13,7 +13,9 @@ import { enrichRoutes } from './routes/enrich.js';
 import { healthRoutes } from './routes/health.js';
 import { ingestRoutes } from './routes/ingest.js';
 import { isbnRoutes } from './routes/isbn.js';
+import { relationRoutes } from './routes/relations.js';
 import { reviewRoutes } from './routes/reviews.js';
+import { seriesRoutes } from './routes/series.js';
 import { userRoutes } from './routes/users.js';
 
 const app = new Hono<AppBindings>();
@@ -34,6 +36,10 @@ app.route('/api/ingest', ingestRoutes);
 app.use('/api/*', requireAuth());
 app.route('/api', userRoutes);
 app.route('/api', catalogRoutes);
+// Mounted at /api too: `/works/:id/relations` has one more segment than
+// catalogRoutes' `/works/:id`, so the two cannot shadow each other.
+app.route('/api', relationRoutes);
+app.route('/api/series', seriesRoutes);
 app.route('/api/isbn', isbnRoutes);
 app.route('/api/enrich', enrichRoutes);
 app.route('/api/reviews', reviewRoutes);

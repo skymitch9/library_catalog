@@ -519,6 +519,193 @@ textarea {
   color: #d9a441;
 }
 
+/* --- series, wishlist, relations ----------------------------------------- */
+
+/*
+ * Everything below is paper and ink like the rest — no new colour is invented,
+ * because there are only two accents in this design and they already mean
+ * something. `--accent` (cloth binding) is what we have; `--warm` (spine label)
+ * is what is outstanding. A missing volume and a wishlist entry are the same
+ * kind of fact, so they wear the same colour.
+ */
+
+.topbar__nav { display: flex; gap: 0.35rem; }
+@media (max-width: 26rem) {
+  /* On a phone the wordmark, two nav chips and Sign out do not fit. The nav is
+     what stays: it is how you reach two of the five screens. */
+  .topbar__brand { font-size: 1rem; }
+}
+
+.page-title { margin: 0.2rem 0 0.6rem; font-size: 1.5rem; }
+.series-claim { margin: 0 0 0.4rem; font-family: var(--serif); font-size: 1.05rem; }
+
+.stack { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.6rem; }
+
+button.link.series-tag__link {
+  font-size: inherit;
+  color: var(--warm);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--warm);
+}
+
+/* Two marks the collection did not need. `--gap` is a certainty and reads as
+   loudly as a Read mark; `--attested` rests on a source and is deliberately
+   quieter — an outline rather than a fill, so a glance can tell them apart
+   without reading either. */
+.mark--gap { background: var(--warm); color: #fff; }
+.mark--attested {
+  background: none;
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+}
+.mark--relation {
+  background: none;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* --- the ladder ---------------------------------------------------------- */
+
+/*
+ * A series in order, holes included. The rule down the left is the run; a gap
+ * breaks it, which is the shape of the answer and the reason this is one list
+ * rather than an owned list beside a missing list.
+ */
+ol.ladder {
+  list-style: none;
+  margin: 1rem 0;
+  padding: 0 0 0 1.6rem;
+  border-left: 2px solid var(--line);
+}
+ol.ladder > li {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.35rem 0;
+}
+ol.ladder > li::before {
+  content: '';
+  position: absolute;
+  left: -1.95rem;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+/* A hollow marker for a rung we do not have — the same "outline means we are
+   taking somebody's word for it, fill means we hold it" grammar as the marks. */
+.ladder__gap::before { background: var(--bg); border: 2px solid var(--warm); }
+.ladder__gap--attested::before,
+.ladder__gap--implied::before { border-color: var(--line-strong); }
+
+.ladder__no {
+  flex: none;
+  min-width: 4.5rem;
+  font-family: var(--serif);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.ladder__book,
+.ladder__missing {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.2rem;
+  min-height: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+.ladder__book:hover { background: var(--bg-tint); }
+.ladder__text { display: flex; flex-direction: column; min-width: 0; }
+.ladder__text strong { font-family: var(--serif); font-size: 0.95rem; }
+.ladder__gap .ladder__text strong { color: var(--muted); font-style: italic; }
+.ladder__missing { flex-wrap: wrap; }
+
+/* --- wishlist ------------------------------------------------------------ */
+
+.wish { display: flex; align-items: flex-start; gap: 0.5rem; padding: 0.4rem 0; }
+.wish__book {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: 0.75rem;
+  align-items: flex-start;
+  min-height: 0;
+  padding: 0.2rem;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+.wish__book:hover { background: var(--bg-tint); }
+.wish__book .row-open__text { display: flex; flex-direction: column; }
+.wish__actions { display: flex; flex-wrap: wrap; gap: 0.3rem; flex: none; }
+
+/* --- copies -------------------------------------------------------------- */
+
+.copy { display: flex; align-items: flex-start; gap: 0.6rem; flex-wrap: wrap; }
+.copy__text { display: flex; flex-direction: column; flex: 1; min-width: 12rem; }
+.copy__text strong { font-family: var(--serif); }
+.copy__actions { display: flex; align-items: flex-end; gap: 0.4rem; }
+.copy__actions select { min-height: 36px; max-width: 10rem; }
+
+/* --- related ------------------------------------------------------------- */
+
+.related { display: flex; align-items: flex-start; gap: 0.5rem; }
+.related__book {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: 0.7rem;
+  align-items: flex-start;
+  min-height: 0;
+  padding: 0.2rem;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+.related__book:hover { background: var(--bg-tint); }
+.related__book .row-open__text { display: flex; flex-direction: column; }
+
+/* --- the picker ---------------------------------------------------------- */
+
+ul.picker {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 16rem;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-tint);
+}
+ul.picker > li + li { border-top: 1px solid var(--line); }
+.picker__hit {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0.4rem 0.6rem;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+.picker__hit:hover { background: var(--panel); }
+.picker__hit strong { font-family: var(--serif); font-size: 0.95rem; }
+
 /* --- scanning ------------------------------------------------------------ */
 
 .camera-stage {

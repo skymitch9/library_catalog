@@ -1,4 +1,4 @@
-import type { CreateCopy, CreateEdition } from '@lc/core';
+import type { CreateCopy, CreateEdition, UpdateCopy } from '@lc/core';
 
 /**
  * Editions (printings) and copies (the ones on the shelf).
@@ -185,7 +185,121 @@ export async function listCopiesForWork(db: D1Database, workId: number): Promise
   return results;
 }
 
+export async function getCopy(db: D1Database, id: number): Promise<CopyRow | null> {
+  return db.prepare(`SELECT ${COPY_COLS} FROM copy WHERE id = ?`).bind(id).first<CopyRow>();
+}
+
+/**
+ * Change a copy in place — the wishlist's whole mechanism.
+ *
+ * ⚠️ **Wanted → owned is an UPDATE, not a delete and an insert.** A wishlist
+ * entry that becomes a purchase carries facts nothing else has: when it was
+ * wanted, what was going to be paid, which shop. Re-creating the row throws all
+ * of that away and resets `created_at` to the day it arrived rather than the day
+ * it was wanted, which quietly makes "how long was this on the list" unanswerable
+ * for every book that ever leaves the list.
+ *
+ * Every field is optional and an absent one is left alone (`COALESCE` on the
+ * bound value), so `{ status: 'owned' }` is a complete and safe request. The one
+ * asymmetry: `editionId`, `condition` and the free-text fields can be *cleared*
+ * by sending an explicit `null`, which `undefined` does not do — the caller's
+ * JSON distinguishes them and so does this.
+ */
+export async function updateCopy(
+  db: D1Database,
+  id: number,
+  patch: UpdateCopy,
+): Promise<CopyRow | null> {
+  const current = await getCopy(db, id);
+  if (!current) return null;
+
+  const pick = <T>(next: T | undefined, fallback: T): T => (next === undefined ? fallback : next);
+
+  return db
+    .prepare(
+      `UPDATE copy SET
+         edition_id = ?, status = ?, location = ?, acquired_on = ?, price_paid_cents = ?,
+         currency = ?, vendor = ?, condition = ?, is_signed = ?, edition_notes = ?,
+         lent_to = ?, notes = ?, updated_at = datetime('now')
+       WHERE id = ?
+       RETURNING ${COPY_COLS}`,
+    )
+    .bind(
+      pick(patch.editionId, current.edition_id),
+      pick(patch.status, current.status),
+      pick(patch.location, current.location),
+      pick(patch.acquiredOn, current.acquired_on),
+      pick(patch.pricePaidCents, current.price_paid_cents),
+      pick(patch.currency, current.currency),
+      pick(patch.vendor, current.vendor),
+      pick(patch.condition, current.condition),
+      patch.isSigned === undefined ? current.is_signed : patch.isSigned ? 1 : 0,
+      pick(patch.editionNotes, current.edition_notes),
+      pick(patch.lentTo, current.lent_to),
+      pick(patch.notes, current.notes),
+      id,
+    )
+    .first<CopyRow>();
+}
+
 export async function deleteCopy(db: D1Database, id: number): Promise<boolean> {
   const res = await db.prepare('DELETE FROM copy WHERE id = ?').bind(id).run();
   return (res.meta.changes ?? 0) > 0;
+}
+
+export interface WishlistRow {
+  copyId: number;
+  workId: number;
+  title: string;
+  authors: string;
+  series: string | null;
+  seriesIndexDisplay: string | null;
+  coverUrl: string | null;
+  status: string;
+  vendor: string | null;
+  pricePaidCents: number | null;
+  currency: string;
+  notes: string | null;
+  createdAt: string;
+  /** Formats already held, if any — "we have the ebook, we want it in print". */
+  formats: string | null;
+}
+
+/**
+ * The wishlist: every copy we have said we want but do not hold.
+ *
+ * ⚠️ A copy-level list, not a work-level one, and that is the point. The
+ * collection page can already filter works by copy status, but a *work* is the
+ * wrong grain for a wishlist: this catalog holds 117 ebooks and physical books
+ * are about to arrive, so "we have the EPUB and want the hardcover" is a normal
+ * wish and shows up here as a wanted copy against a book that is also owned.
+ * Filtering the collection could never express that — it would just say the book
+ * is in the collection.
+ *
+ * `formats` rides along so the page can say which forms are already held; that
+ * is the fact that makes the difference above visible instead of confusing.
+ */
+export async function listWishlist(
+  db: D1Database,
+  statuses: readonly string[],
+): Promise<WishlistRow[]> {
+  if (statuses.length === 0) return [];
+  const placeholders = statuses.map(() => '?').join(', ');
+  const { results } = await db
+    .prepare(
+      `SELECT c.id AS copyId, c.work_id AS workId, w.title, w.authors, w.series,
+              w.series_index_display AS seriesIndexDisplay, w.cover_url AS coverUrl,
+              c.status, c.vendor, c.price_paid_cents AS pricePaidCents, c.currency,
+              c.notes, c.created_at AS createdAt,
+              (SELECT group_concat(DISTINCT e.format) FROM edition e WHERE e.work_id = w.id) AS formats
+         FROM copy c
+         JOIN work w ON w.id = c.work_id
+        WHERE c.status IN (${placeholders})
+        ORDER BY COALESCE(w.series, w.sort_title) COLLATE NOCASE,
+                 w.series_index_sort IS NULL, w.series_index_sort,
+                 w.sort_title COLLATE NOCASE`,
+    )
+    .bind(...statuses)
+    .all<WishlistRow>();
+  return results;
 }

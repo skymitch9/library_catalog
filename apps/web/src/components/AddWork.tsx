@@ -18,6 +18,16 @@ export function AddWork({ onClose, onAdded }: { onClose: () => void; onAdded: ()
   const [isbn, setIsbn] = useState('');
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  /**
+   * What this book *is* to us, which the catalog previously had no way to say.
+   *
+   * ⚠️ `''` — catalogue it and record nothing — is the default and stays the
+   * default. Every one of the 117 existing rows is exactly that: a book we know
+   * about, with no `copy` row of any status. Making "owned" the default would
+   * silently assert a shelf position for every future hand-added row and make
+   * the wanted/owned distinction meaningless the first time somebody forgot.
+   */
+  const [intent, setIntent] = useState<'' | 'owned' | 'wanted'>('');
 
   async function lookup() {
     if (!isbn.trim()) return;
@@ -62,11 +72,16 @@ export function AddWork({ onClose, onAdded }: { onClose: () => void; onAdded: ()
   async function save() {
     setBusy(true);
     try {
-      await api.createWork({
+      const { work } = await api.createWork({
         title: title.trim(),
         authors: authors.trim(),
         series: series.trim() || null,
       });
+      // No edition is created here. A copy with no `edition_id` is exactly what
+      // migration 0001 made nullable for — the book is known, the printing is
+      // not, and inventing a paperback edition to hang the copy off would put a
+      // printing in the catalog that nobody has seen.
+      if (intent) await api.createCopy({ workId: work.id, status: intent });
       onAdded();
     } catch (err) {
       setNote(err instanceof Error ? err.message : String(err));
@@ -100,6 +115,15 @@ export function AddWork({ onClose, onAdded }: { onClose: () => void; onAdded: ()
         onChange={(e) => setSeries(e.target.value)}
         placeholder="Series (optional)"
       />
+
+      <label className="field">
+        <span className="field__label">And we…</span>
+        <select value={intent} onChange={(e) => setIntent(e.target.value as '' | 'owned' | 'wanted')}>
+          <option value="">just catalogue it — record no copy</option>
+          <option value="owned">have it</option>
+          <option value="wanted">want it — put it on the wishlist</option>
+        </select>
+      </label>
 
       {note && <p className="muted small">{note}</p>}
 

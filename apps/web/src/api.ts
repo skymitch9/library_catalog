@@ -99,8 +99,104 @@ export interface Stats {
   series: number;
   authors: number;
   withCover: number;
+  /** Copies with a wishlist status. Counted by the database, like everything here. */
+  wanted: number;
   formats: { format: string; count: number }[];
   readStates: { readState: string; count: number }[];
+}
+
+/**
+ * A series and what is missing from it.
+ *
+ * ⚠️ Mirrors `SeriesCompleteness` in `@lc/core`, which is where the rules live.
+ * The web app imports the *functions* — `completenessSentence`,
+ * `gapEvidenceLabel` — rather than re-wording anything here, so the sentence a
+ * page prints and the arithmetic behind it cannot drift.
+ */
+export interface SeriesGap {
+  index: number;
+  volumeId: number | null;
+  workId: number | null;
+  wanted: boolean;
+  evidence: 'interior' | 'earlier' | 'attested' | 'implied';
+  title: string | null;
+  authors: string | null;
+  display: string | null;
+  source: string | null;
+  sourceUrl: string | null;
+  note: string | null;
+  staleAt: string | null;
+}
+
+export interface SeriesCompleteness {
+  series: string;
+  owned: number;
+  unnumbered: number;
+  lowestOwned: number | null;
+  highestOwned: number | null;
+  highestKnown: number | null;
+  gaps: SeriesGap[];
+  wanted: number;
+  certainGaps: number;
+  attestedGaps: number;
+  knownTotal: number | null;
+  knownTotalSource: string | null;
+  openEnded: boolean;
+  checked: boolean;
+  checkOutcome: string | null;
+  checkSource: string | null;
+}
+
+export interface SeriesLadderEntry {
+  index: number;
+  volumeId: number | null;
+  display: string | null;
+  title: string | null;
+  authors: string | null;
+  workId: number | null;
+  wanted: boolean;
+  coverUrl: string | null;
+  readState: string | null;
+  source: string | null;
+  sourceUrl: string | null;
+  note: string | null;
+  staleAt: string | null;
+}
+
+export interface SeriesReport {
+  completeness: SeriesCompleteness;
+  ladder: SeriesLadderEntry[];
+  unnumbered: { workId: number; title: string; display: string | null }[];
+}
+
+export interface WishlistRow {
+  copyId: number;
+  workId: number;
+  title: string;
+  authors: string;
+  series: string | null;
+  seriesIndexDisplay: string | null;
+  coverUrl: string | null;
+  status: string;
+  vendor: string | null;
+  pricePaidCents: number | null;
+  currency: string;
+  notes: string | null;
+  createdAt: string;
+  formats: string | null;
+}
+
+export interface RelatedWork {
+  relationId: number;
+  workId: number;
+  title: string;
+  authors: string;
+  series: string | null;
+  seriesIndexDisplay: string | null;
+  coverUrl: string | null;
+  relation: 'same_universe' | 'companion' | 'contains' | 'precedes';
+  outgoing: boolean;
+  note: string | null;
 }
 
 function collectionQuery(params: CollectionParams): string {
@@ -218,4 +314,92 @@ export const api = {
     request<{ collection: string; workKey: string; legacyBookId: string }>(
       `/api/reviews/${workId}/keys`,
     ),
+
+  // -------------------------------------------------------------------------
+  // Series completeness
+  // -------------------------------------------------------------------------
+
+  seriesList: () =>
+    request<{ series: SeriesCompleteness[]; withoutSeries: number }>('/api/series'),
+
+  series: (name: string) =>
+    request<SeriesReport>(`/api/series/${encodeURIComponent(name)}`),
+
+  /** Hand-entered: "this series has a book 14". Always stored as `manual`. */
+  addSeriesVolume: (
+    name: string,
+    body: {
+      indexSort: number;
+      indexDisplay?: string | null;
+      title?: string | null;
+      authors?: string | null;
+      source: 'manual';
+      sourceUrl?: string | null;
+      note?: string | null;
+    },
+  ) =>
+    request<SeriesReport>(`/api/series/${encodeURIComponent(name)}/volumes`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  deleteSeriesVolume: (name: string, id: number) =>
+    request<SeriesReport>(`/api/series/${encodeURIComponent(name)}/volumes/${id}`, {
+      method: 'DELETE',
+    }),
+
+  /**
+   * ⚠️ The only way a series length enters this app, and the server refuses it
+   * without a source. `knownTotal: null` withdraws the claim.
+   */
+  setSeriesTotal: (
+    name: string,
+    body: { knownTotal: number | null; knownTotalSource?: string | null; note?: string | null },
+  ) =>
+    request<SeriesReport>(`/api/series/${encodeURIComponent(name)}/total`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+
+  // -------------------------------------------------------------------------
+  // Wishlist
+  // -------------------------------------------------------------------------
+
+  /**
+   * ⚠️ Copies, not works. A wanted hardcover of a book already held as an EPUB
+   * is a real wish and a work-level filter cannot express it — see the route.
+   */
+  wishlist: (status?: string) =>
+    request<{ rows: WishlistRow[]; statuses: string[] }>(
+      `/api/wishlist${status ? `?status=${encodeURIComponent(status)}` : ''}`,
+    ),
+
+  /** A PATCH: `{ status: 'owned' }` promotes a wish without losing the rest. */
+  updateCopy: (id: number, body: Record<string, unknown>) =>
+    request<{ copy: Record<string, unknown> }>(`/api/copies/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+
+  deleteCopy: (id: number) => request<{ ok: true }>(`/api/copies/${id}`, { method: 'DELETE' }),
+
+  // -------------------------------------------------------------------------
+  // Related books
+  // -------------------------------------------------------------------------
+
+  relations: (workId: number) =>
+    request<{ related: RelatedWork[] }>(`/api/works/${workId}/relations`),
+
+  /** Answers with the whole list, so a directional link is drawn from the end it was stored at. */
+  addRelation: (
+    workId: number,
+    body: { toWorkId: number; relation: string; note?: string | null },
+  ) =>
+    request<{ related: RelatedWork[] }>(`/api/works/${workId}/relations`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  deleteRelation: (relationId: number) =>
+    request<{ ok: true }>(`/api/relations/${relationId}`, { method: 'DELETE' }),
 };

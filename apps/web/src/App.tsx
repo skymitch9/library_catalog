@@ -35,24 +35,55 @@ import { api, ApiError, type Me } from './api.js';
 import { signIn, signOutNow, watchAuth } from './lib/firebase.js';
 import { CollectionPage } from './pages/CollectionPage.js';
 import { ScanPage } from './pages/ScanPage.js';
+import { SeriesDetailPage } from './pages/SeriesDetailPage.js';
+import { SeriesPage } from './pages/SeriesPage.js';
+import { WishlistPage } from './pages/WishlistPage.js';
 import { WorkPage } from './pages/WorkPage.js';
 
 type Status = 'checking' | 'signed-out' | 'pending-approval' | 'ready' | 'error';
+
+/**
+ * Which screen is showing.
+ *
+ * ⚠️ Still not a router, and the reason has not changed — there is no URL
+ * scheme, no dependency and no back-button contract to maintain. What HAS
+ * changed is that there are now five screens rather than two, and five booleans
+ * would let two of them be true at once. So the state that was `openWorkId` plus
+ * `scanning` becomes one tagged union: exactly one screen, by construction.
+ *
+ * The nesting is deliberate rather than a stack. A book opened from a series
+ * ladder remembers the series it came from, so "← " goes back to the ladder
+ * and not to the collection; a book opened from the collection has nowhere else
+ * to go back to.
+ */
+type Screen =
+  | { name: 'collection' }
+  | { name: 'scan' }
+  | { name: 'wishlist' }
+  | { name: 'series' }
+  | { name: 'series-detail'; series: string }
+  | { name: 'work'; workId: number; from: Screen };
+
+/** What the back button on a book page says, so it names where it goes. */
+function backLabelFor(from: Screen): string {
+  switch (from.name) {
+    case 'series-detail':
+      return from.series;
+    case 'series':
+      return 'Series';
+    case 'wishlist':
+      return 'Wishlist';
+    default:
+      return 'Collection';
+  }
+}
 
 export function App() {
   const [status, setStatus] = useState<Status>('checking');
   const [me, setMe] = useState<Me | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [error, setError] = useState<string | null>(null);
-  /**
-   * Which book is open, or null for the collection.
-   *
-   * Deliberately not a router. Two screens do not need one; the sibling project
-   * added its router when it had eight. Doing it now would buy the dependency,
-   * a URL scheme and back-button semantics up front for what is one useState.
-   */
-  const [openWorkId, setOpenWorkId] = useState<number | null>(null);
-  const [scanning, setScanning] = useState(false);
+  const [screen, setScreen] = useState<Screen>({ name: 'collection' });
 
   const check = useCallback(async () => {
     try {
@@ -124,30 +155,64 @@ export function App() {
     );
   }
 
+  /** Open a book, remembering where it was opened from. */
+  const openWork = (workId: number) =>
+    setScreen((from) => ({ name: 'work', workId, from: from.name === 'work' ? from.from : from }));
+  const openSeries = (series: string) => setScreen({ name: 'series-detail', series });
+
   return (
     <>
       <header className="topbar">
-        <button
-          className="topbar__brand"
-          onClick={() => {
-            setScanning(false);
-            setOpenWorkId(null);
-          }}
-        >
+        <button className="topbar__brand" onClick={() => setScreen({ name: 'collection' })}>
           The Library
         </button>
         <span className="muted small topbar__who">{me.displayName ?? me.email}</span>
-        {me.capabilities.includes('scan') && !scanning && (
-          <button onClick={() => setScanning(true)}>Scan</button>
-        )}
+        <nav className="topbar__nav">
+          <button
+            className={screen.name === 'series' ? 'primary chip' : 'chip'}
+            onClick={() => setScreen({ name: 'series' })}
+          >
+            Series
+          </button>
+          <button
+            className={screen.name === 'wishlist' ? 'primary chip' : 'chip'}
+            onClick={() => setScreen({ name: 'wishlist' })}
+          >
+            Wishlist
+          </button>
+          {me.capabilities.includes('scan') && screen.name !== 'scan' && (
+            <button className="chip" onClick={() => setScreen({ name: 'scan' })}>
+              Scan
+            </button>
+          )}
+        </nav>
         <button onClick={() => void signOutNow()}>Sign out</button>
       </header>
-      {scanning ? (
-        <ScanPage onDone={() => setScanning(false)} />
-      ) : openWorkId === null ? (
-        <CollectionPage me={me} onOpen={setOpenWorkId} />
+
+      {screen.name === 'scan' ? (
+        <ScanPage onDone={() => setScreen({ name: 'collection' })} />
+      ) : screen.name === 'wishlist' ? (
+        <WishlistPage me={me} onOpen={openWork} />
+      ) : screen.name === 'series' ? (
+        <SeriesPage onOpenSeries={openSeries} />
+      ) : screen.name === 'series-detail' ? (
+        <SeriesDetailPage
+          name={screen.series}
+          me={me}
+          onBack={() => setScreen({ name: 'series' })}
+          onOpen={openWork}
+        />
+      ) : screen.name === 'work' ? (
+        <WorkPage
+          workId={screen.workId}
+          me={me}
+          onBack={() => setScreen(screen.from)}
+          backLabel={backLabelFor(screen.from)}
+          onOpen={openWork}
+          onOpenSeries={openSeries}
+        />
       ) : (
-        <WorkPage workId={openWorkId} me={me} onBack={() => setOpenWorkId(null)} />
+        <CollectionPage me={me} onOpen={openWork} />
       )}
     </>
   );
