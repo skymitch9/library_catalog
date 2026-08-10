@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { COLLECTION_PAGE_SIZES, COPY_STATUSES, READ_STATES } from '@lc/core';
 import { api, type CollectionFacets, type Me, type Stats, type WorkSummary } from '../api.js';
 import { Pager } from '../components/Pager.js';
@@ -6,6 +6,7 @@ import { Shelf } from '../components/Shelf.js';
 import { WorkList } from '../components/WorkList.js';
 import { formatLabel } from '../lib/formats.js';
 import { loadPrefs, savePrefs } from '../lib/prefs.js';
+import { collectionPath, replaceUrl, type CollectionFilters } from '../router.js';
 
 /**
  * The collection.
@@ -24,31 +25,57 @@ import { loadPrefs, savePrefs } from '../lib/prefs.js';
  * The list reloads on every debounced keystroke; the facets only when a filter
  * changes. Folding them together would recompute three GROUP BYs to send bytes
  * nothing redrew — see the note on `/api/collection/facets`.
+ *
+ * ## Where the filters live
+ *
+ * In the URL, and this page is the only writer of them. `filters` is the parsed
+ * query string and seeds the state below **once**; App keys this page on that
+ * same string, so anything that changes the filters from outside — pressing Back
+ * into an earlier search — remounts the page rather than leaving two sources of
+ * truth to reconcile.
+ *
+ * Two things are layered underneath the URL and it is worth keeping them
+ * straight. `sort`, `dir` and `pageSize` fall back to the **stored prefs** when
+ * the URL is silent, so a bare `/` still opens the way this person likes it,
+ * while a link they shared carries what they were looking at. `view` is prefs
+ * only, on purpose — it is how the page looks, not what it is showing, and
+ * nothing else depends on it.
  */
 export function CollectionPage({
   me,
+  filters,
   onOpen,
   onAdd,
 }: {
   me: Me;
+  /** The query string, parsed. Read once; see the note above. */
+  filters: CollectionFilters;
   onOpen: (id: number) => void;
-  /** Goes to the scan screen — the one place all the ways of adding live. */
+  /** Goes to the add screen — the one place all the ways of adding live. */
   onAdd: () => void;
 }) {
   const prefs = useMemo(loadPrefs, []);
 
-  const [q, setQ] = useState('');
-  const [series, setSeries] = useState('');
-  const [format, setFormat] = useState('');
-  const [status, setStatus] = useState('');
-  const [readState, setReadState] = useState('');
-  const [sort, setSort] = useState(prefs.sort);
-  const [dir, setDir] = useState<'asc' | 'desc'>(prefs.dir);
-  const [pageSize, setPageSize] = useState(prefs.pageSize);
+  const [q, setQ] = useState(filters.q);
+  const [series, setSeries] = useState(filters.series);
+  const [format, setFormat] = useState(filters.format);
+  const [status, setStatus] = useState(filters.status);
+  const [readState, setReadState] = useState(filters.readState);
+  const [sort, setSort] = useState(filters.sort ?? prefs.sort);
+  const [dir, setDir] = useState<'asc' | 'desc'>(filters.dir ?? prefs.dir);
+  const [pageSize, setPageSize] = useState(filters.pageSize ?? prefs.pageSize);
   const [view, setView] = useState<'grid' | 'list'>(prefs.view);
-  const [showFilters, setShowFilters] = useState(false);
+  // Opened when a link arrives with one of them set. The collapsed panel shows
+  // only a dot beside "Filters", which is enough of a reminder for a filter you
+  // just applied and not enough of an explanation for a page somebody sent you.
+  const [showFilters, setShowFilters] = useState(
+    Boolean(filters.series || filters.format || filters.status || filters.readState),
+  );
 
-  const [page, setPage] = useState(0);
+  // 0-based here, 1-based in the URL, converted at both edges. A `?page=0` in
+  // the address bar meaning "the first page" is the kind of detail that leaks
+  // out of an implementation and never gets put back.
+  const [page, setPage] = useState(filters.page - 1);
   const [rows, setRows] = useState<WorkSummary[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -89,9 +116,33 @@ export function CollectionPage({
 
   // A filter change moves you back to the first page. Staying on page 3 of a
   // list that now has one page shows an empty screen that looks like a failure.
+  //
+  // ⚠️ On a *change*, not on arrival — which is why this compares values rather
+  // than just listing them as deps. The URL is allowed to come in with a page
+  // already on it, and `/?q=dungeon&page=2` resetting itself to page 1 before the
+  // first request went out is the shared link not working. Comparing is also
+  // what makes it survive StrictMode's deliberate double-mount in dev.
+  const filterKey = JSON.stringify([q, series, format, status, readState, sort, dir, pageSize]);
+  const lastFilterKey = useRef(filterKey);
   useEffect(() => {
+    if (lastFilterKey.current === filterKey) return;
+    lastFilterKey.current = filterKey;
     setPage(0);
-  }, [q, series, format, status, readState, sort, dir, pageSize]);
+  }, [filterKey]);
+
+  // The filters go back into the query string so that opening a book and
+  // pressing Back returns you to this search, on this page of it.
+  //
+  // ⚠️ `replaceUrl`, never `navigate` — read the comment on `replaceUrl` before
+  // changing this. The search box is live, and a history entry per keystroke
+  // would bury the Back button under ten copies of one search. The raw `q` is
+  // used rather than the debounced one, so the address bar never disagrees with
+  // the box.
+  useEffect(() => {
+    replaceUrl(
+      collectionPath({ q, series, format, status, readState, sort, dir, pageSize, page: page + 1 }),
+    );
+  }, [q, series, format, status, readState, sort, dir, pageSize, page]);
 
   useEffect(() => {
     api.facets({ q, format, status, readState }).then(setFacets).catch(() => setFacets(null));

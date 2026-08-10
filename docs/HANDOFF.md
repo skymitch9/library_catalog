@@ -3,6 +3,37 @@
 > Updated **2026-08-10**. **Live** at https://library.heygabi.ai — deployed,
 > Firebase domain authorised, Google sign-in verified in production 2026-08-09.
 
+## 🟡 In flight — `feature/router`
+
+Real URLs and a working Back button. Branched from `main`, committed and pushed,
+**not deployed and not merged** — the owner gates production, and seven more
+features land on top of this one.
+
+The problem it fixes: navigation was `useState<Screen>` with no history
+integration, so an installed PWA **exited the app** when the phone's Back button
+was pressed, and nothing was linkable. There is now a hand-rolled router at
+`apps/web/src/router.tsx` — `pushState`, one `popstate` listener, `<Link>`,
+`useRoute()`, and **no `react-router` dependency**, ported from the sibling Board
+Game Catalog.
+
+`docs/info/routing.md` has the route table, the four traps and the verification
+log. The two worth knowing without opening it:
+
+- **`navigate` pushes, `replaceUrl` replaces and fires no popstate.** Collapsing
+  them puts one history entry per keystroke of the live search box.
+- **No worker change was needed.** The `notFound` handler already served
+  `index.html` for non-`/api` paths; deep links and hard refreshes were verified
+  against the built assets, not reasoned about.
+
+Every later screen adds a case to `Screens` in `App.tsx` and a branch in
+`parse()`. Do that rather than reaching for a routing library.
+
+### To finish it
+
+- Nothing outstanding on the branch. `npm test` 66 green, typecheck clean across
+  five workspaces, driven in a browser end to end.
+- Merge and deploy are the owner's call.
+
 ## 🟡 In flight — `feature/completeness-wishlist-relations`
 
 Three features, built and driven in a browser against a local worker, **not
@@ -175,10 +206,11 @@ holds 117 works and 117 editions, all ebooks imported from
   worth re-researching. See `info/covers-and-series.md` §3.1.
   **Applied to production 2026-08-10** — 104 of 117 across 25 series.
 - **The book page is a page, not a modal.** The audiobook site opens a book in a
-  modal over the grid; this one swaps the whole screen and offers a back button.
-  Left as-is deliberately: `App.tsx` has no router, and a modal that cannot be
-  linked to or dismissed with the back button is worse on a phone than a screen
-  that can.
+  modal over the grid; this one swaps the whole screen. Settled deliberately, and
+  the reason has only got stronger: a modal that cannot be linked to or dismissed
+  with the back button is worse on a phone than a screen that can, and since
+  `feature/router` the screen has both — `/work/:id`, and Back returns to
+  wherever it was opened from.
 - **No stats page.** There is a stat strip on the collection, counted live. The
   audiobook catalog's separate `stats.html` was not ported.
 - **Light mode was checked by forcing the tokens, not by flipping the OS.** The

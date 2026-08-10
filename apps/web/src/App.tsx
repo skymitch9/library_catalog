@@ -33,6 +33,17 @@ import { useCallback, useEffect, useState } from 'react';
 import type { User } from 'firebase/auth';
 import { api, ApiError, type Me } from './api.js';
 import { signIn, signOutNow, watchAuth } from './lib/firebase.js';
+import {
+  Link,
+  addPath,
+  backTarget,
+  collectionPath,
+  navigate,
+  seriesPath,
+  useRoute,
+  workPath,
+  type Route,
+} from './router.js';
 import { CollectionPage } from './pages/CollectionPage.js';
 import { ScanPage } from './pages/ScanPage.js';
 import { SeriesDetailPage } from './pages/SeriesDetailPage.js';
@@ -43,47 +54,25 @@ import { WorkPage } from './pages/WorkPage.js';
 type Status = 'checking' | 'signed-out' | 'pending-approval' | 'ready' | 'error';
 
 /**
- * Which screen is showing.
+ * ## Which screen is showing — now the URL's answer, not this file's
  *
- * ⚠️ Still not a router, and the reason has not changed — there is no URL
- * scheme, no dependency and no back-button contract to maintain. What HAS
- * changed is that there are now five screens rather than two, and five booleans
- * would let two of them be true at once. So the state that was `openWorkId` plus
- * `scanning` becomes one tagged union: exactly one screen, by construction.
+ * This used to be a `Screen` tagged union in `useState`, with the book screen
+ * carrying a `from: Screen` so its back button could name where it came from.
+ * It worked, and it was invisible: nothing was linkable, and an installed PWA
+ * with no history entries **exits the app** when the phone's Back button is
+ * pressed. See `router.tsx`.
  *
- * The nesting is deliberate rather than a stack. A book opened from a series
- * ladder remembers the series it came from, so "← " goes back to the ladder
- * and not to the collection; a book opened from the collection has nowhere else
- * to go back to.
+ * The nesting the union did by hand now falls out of the history stack — a book
+ * opened from a series ladder goes back to the ladder because that is the
+ * previous entry — and the *label* on that button comes from `backTarget`,
+ * which reads the `from` path `navigate` recorded on the way past.
  */
-type Screen =
-  | { name: 'collection' }
-  | { name: 'scan' }
-  | { name: 'wishlist' }
-  | { name: 'series' }
-  | { name: 'series-detail'; series: string }
-  | { name: 'work'; workId: number; from: Screen };
-
-/** What the back button on a book page says, so it names where it goes. */
-function backLabelFor(from: Screen): string {
-  switch (from.name) {
-    case 'series-detail':
-      return from.series;
-    case 'series':
-      return 'Series';
-    case 'wishlist':
-      return 'Wishlist';
-    default:
-      return 'Collection';
-  }
-}
-
 export function App() {
   const [status, setStatus] = useState<Status>('checking');
   const [me, setMe] = useState<Me | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [screen, setScreen] = useState<Screen>({ name: 'collection' });
+  const route = useRoute();
 
   const check = useCallback(async () => {
     try {
@@ -155,17 +144,12 @@ export function App() {
     );
   }
 
-  /** Open a book, remembering where it was opened from. */
-  const openWork = (workId: number) =>
-    setScreen((from) => ({ name: 'work', workId, from: from.name === 'work' ? from.from : from }));
-  const openSeries = (series: string) => setScreen({ name: 'series-detail', series });
-
   return (
     <>
       <header className="topbar">
-        <button className="topbar__brand" onClick={() => setScreen({ name: 'collection' })}>
+        <Link to="/" className="topbar__brand">
           The Library
-        </button>
+        </Link>
         <span className="muted small topbar__who">{me.displayName ?? me.email}</span>
         {/* ⚠️ Places, not actions — and "Scan" used to be here, which broke that.
             Adding belongs next to the thing being added to, so it is one button
@@ -174,55 +158,129 @@ export function App() {
             second, competing menu for the same job; the sibling Board Game
             Catalog reached five equal-weight entry points that way and had to
             unpick them. Series and Wishlist stay because they are views you go
-            to, not things you do. */}
+            to, not things you do.
+
+            Real anchors rather than buttons, now that places have addresses:
+            the target shows in the status bar and a long-press or middle-click
+            opens it in its own tab. `a.chip` in styles.css keeps them looking
+            exactly like the buttons they replaced. */}
         <nav className="topbar__nav">
-          <button
-            className={screen.name === 'series' ? 'primary chip' : 'chip'}
-            onClick={() => setScreen({ name: 'series' })}
-          >
+          <Link to="/series" className={route.name === 'series' ? 'primary chip' : 'chip'}>
             Series
-          </button>
-          <button
-            className={screen.name === 'wishlist' ? 'primary chip' : 'chip'}
-            onClick={() => setScreen({ name: 'wishlist' })}
-          >
+          </Link>
+          <Link to="/wishlist" className={route.name === 'wishlist' ? 'primary chip' : 'chip'}>
             Wishlist
-          </button>
+          </Link>
         </nav>
         <button onClick={() => void signOutNow()}>Sign out</button>
       </header>
 
-      {screen.name === 'scan' ? (
-        <ScanPage
-          onDone={() => setScreen({ name: 'collection' })}
-          // Someone who may edit the catalog but has no `scan` capability would
-          // otherwise land on a camera they are not allowed to open. Same one
-          // button, same one screen — it just opens on the tab that works.
-          initialMode={me.capabilities.includes('scan') ? 'scan' : 'type'}
-        />
-      ) : screen.name === 'wishlist' ? (
-        <WishlistPage me={me} onOpen={openWork} />
-      ) : screen.name === 'series' ? (
-        <SeriesPage onOpenSeries={openSeries} />
-      ) : screen.name === 'series-detail' ? (
-        <SeriesDetailPage
-          name={screen.series}
-          me={me}
-          onBack={() => setScreen({ name: 'series' })}
-          onOpen={openWork}
-        />
-      ) : screen.name === 'work' ? (
+      <Screens route={route} me={me} />
+    </>
+  );
+}
+
+const openWork = (workId: number) => navigate(workPath(workId));
+const openSeries = (series: string) => navigate(seriesPath(series));
+
+/**
+ * The route table. Every later feature adds a case here.
+ *
+ * ⚠️ Three of these are `key`ed, and all for the same reason: the page seeds
+ * its own state from its props once, so arriving at a *different* book, series
+ * or search has to be a new page rather than the old one holding the old data.
+ * Without the key React reuses one WorkPage across every book you open, and a
+ * half-filled copy form follows you to the next.
+ */
+function Screens({ route, me }: { route: Route; me: Me }) {
+  switch (route.name) {
+    case 'work': {
+      // Reads the `from` recorded by whichever `navigate` got us here, so a
+      // book opened from a ladder still says "← Beneath the Dragoneye Moons".
+      // A pasted link has no such record and falls back to the collection.
+      const back = backTarget('/');
+      return (
         <WorkPage
-          workId={screen.workId}
+          key={route.id}
+          workId={route.id}
           me={me}
-          onBack={() => setScreen(screen.from)}
-          backLabel={backLabelFor(screen.from)}
+          onBack={back.go}
+          backLabel={back.label}
           onOpen={openWork}
           onOpenSeries={openSeries}
         />
-      ) : (
-        <CollectionPage me={me} onOpen={openWork} onAdd={() => setScreen({ name: 'scan' })} />
-      )}
-    </>
+      );
+    }
+
+    case 'series':
+      return <SeriesPage onOpenSeries={openSeries} />;
+
+    case 'seriesDetail': {
+      const back = backTarget('/series');
+      return (
+        <SeriesDetailPage
+          key={route.series}
+          name={route.series}
+          me={me}
+          onBack={back.go}
+          backLabel={back.label}
+          onOpen={openWork}
+        />
+      );
+    }
+
+    case 'wishlist':
+      return <WishlistPage me={me} onOpen={openWork} />;
+
+    case 'add': {
+      // Gated the same way the "+ Add books" button is. Without this, a reader
+      // who typed the URL would get a screen whose every button 403s — a hole
+      // that only opens once screens have addresses.
+      if (!me.capabilities.includes('editCatalog')) return <NotFound />;
+      const back = backTarget('/');
+      return (
+        <ScanPage
+          onDone={back.go}
+          backLabel={back.label}
+          // The URL wins when it names a tab. Failing that: someone who may edit
+          // the catalog but has no `scan` capability would otherwise land on a
+          // camera they are not allowed to open. Same one button, same one
+          // screen — it just opens on the tab that works.
+          initialMode={route.mode ?? (me.capabilities.includes('scan') ? 'scan' : 'type')}
+        />
+      );
+    }
+
+    case 'collection':
+      return (
+        // Keyed by the filters, for the reason above and one more: typing in the
+        // search box does NOT come through here — the page rewrites the URL with
+        // `replaceUrl`, which fires no popstate — so this key only changes when
+        // something outside the page changed the filters. Pressing Back into a
+        // different search is exactly that, and has to remount.
+        <CollectionPage
+          key={collectionPath(route.filters)}
+          me={me}
+          filters={route.filters}
+          onOpen={openWork}
+          onAdd={() => navigate(addPath())}
+        />
+      );
+
+    default:
+      return <NotFound />;
+  }
+}
+
+/** A URL that means nothing. Says so, and offers the one way out. */
+function NotFound() {
+  return (
+    <main className="centre">
+      <h1>Not a page</h1>
+      <p className="muted">There is nothing at this address.</p>
+      <Link to="/" className="chip">
+        Back to the collection
+      </Link>
+    </main>
   );
 }

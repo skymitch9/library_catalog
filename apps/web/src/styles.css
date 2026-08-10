@@ -165,6 +165,31 @@ button.link {
 
 button.back { margin-bottom: 0.5rem; }
 
+/* Controls that are real links.
+ *
+ * Since the app got a URL scheme the top bar's places are anchors, not buttons —
+ * so the target shows in the status bar, a middle click opens a tab, and a
+ * long-press on a phone offers "copy link". They must still read as the chips
+ * they replaced, and the `button, input, select, textarea` rule above cannot
+ * reach an `<a>`, so the parts that matter are restated here. */
+a.chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 0.5rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--fg);
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+a.chip:hover { border-color: var(--accent); }
+a.chip.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+/* The wordmark. `.topbar__brand` already unsets the button chrome; an anchor
+   only needs its underline taken off. */
+a.topbar__brand { text-decoration: none; }
+
 .toolbar, .row { display: flex; gap: 0.5rem; margin-bottom: 0.6rem; }
 .toolbar input, .row input { flex: 1; min-width: 0; }
 

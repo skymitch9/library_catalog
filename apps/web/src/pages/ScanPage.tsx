@@ -4,6 +4,7 @@ import { CameraError, cameraPlausible, closeCamera, openRearCamera } from '../li
 import { preloadDecoder, startScanLoop } from '../lib/scanner.js';
 import { formatLabel } from '../lib/formats.js';
 import { AddWork } from '../components/AddWork.js';
+import { addPath, replaceUrl, type AddMode } from '../router.js';
 
 /**
  * Scan a stack of books by their ISBNs.
@@ -55,13 +56,16 @@ interface Row {
 
 export function ScanPage({
   onDone,
+  backLabel = 'Collection',
   initialMode = 'scan',
 }: {
   onDone: () => void;
+  /** Where leaving goes, named. Usually the collection; see `backTarget`. */
+  backLabel?: string;
   /** 'type' when the caller knows the camera is not available to this user. */
-  initialMode?: 'scan' | 'type';
+  initialMode?: AddMode;
 }) {
-  const [mode, setMode] = useState<'scan' | 'type'>(initialMode);
+  const [mode, setMode] = useState<AddMode>(initialMode);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
@@ -73,6 +77,24 @@ export function ScanPage({
   const [running, setRunning] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [manual, setManual] = useState('');
+
+  /**
+   * Keep `?mode=` in step with the tab, so a refresh — or a link — reopens the
+   * one you were on.
+   *
+   * ⚠️ `replaceUrl`, and the path never changes. Two separate reasons, both
+   * load-bearing:
+   *
+   * - A **path** change would remount this screen, and a standalone PWA on iOS
+   *   re-prompts for camera permission on every route change (WebKit #215884).
+   *   That is why `/add` is one flat route with the tab in the query string.
+   * - A **push** would make the phone's Back button undo a tab switch rather
+   *   than leave the screen, which is not what a person who tapped "Type it in"
+   *   and then pressed Back is asking for.
+   */
+  useEffect(() => {
+    replaceUrl(addPath(mode));
+  }, [mode]);
 
   useEffect(() => {
     // ⚠️ `preloadDecoder()` is deliberately NOT called here, unlike the sibling
@@ -286,7 +308,7 @@ export function ScanPage({
   if (mode === 'type') {
     return (
       <main>
-        <button onClick={onDone}>← Collection</button>
+        <button onClick={onDone}>← {backLabel}</button>
         <h2>Add a book</h2>
         <div className="row seg" role="tablist" aria-label="How to add">
           <button role="tab" aria-selected="false" onClick={() => setMode('scan')}>
@@ -308,7 +330,7 @@ export function ScanPage({
 
   return (
     <main>
-      <button onClick={onDone}>← Collection</button>
+      <button onClick={onDone}>← {backLabel}</button>
       <h2>Add a book</h2>
 
       {/* ⚠️ Two ways in, one screen — not two buttons on the collection header.

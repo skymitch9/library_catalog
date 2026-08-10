@@ -32,11 +32,14 @@ export function SeriesDetailPage({
   name,
   me,
   onBack,
+  backLabel = 'Series',
   onOpen,
 }: {
   name: string;
   me: Me;
   onBack: () => void;
+  /** Where back goes, named. A ladder reached from a book returns to the book. */
+  backLabel?: string;
   onOpen: (workId: number) => void;
 }) {
   const [report, setReport] = useState<SeriesReport | null>(null);
@@ -78,7 +81,7 @@ export function SeriesDetailPage({
   return (
     <main>
       <button className="back" onClick={onBack}>
-        ← Series
+        ← {backLabel}
       </button>
 
       <h2 className="page-title">{name}</h2>

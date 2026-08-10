@@ -25,7 +25,14 @@ export interface Prefs {
 
 const KEY = 'lc_prefs_v1';
 
-const SORTS = ['series', 'title', 'author', 'added'];
+/**
+ * The orderings the collection offers.
+ *
+ * Exported because the router validates `?sort=` against the same list — one
+ * definition, so a value that survives the URL is a value this file will also
+ * store, and neither can drift into offering something the other refuses.
+ */
+export const SORTS = ['series', 'title', 'author', 'added'];
 
 export const DEFAULT_PREFS: Prefs = {
   // A grid by default: the covers are the reason to look, and after the
