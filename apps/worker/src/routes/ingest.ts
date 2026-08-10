@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { EDITION_FORMATS, workKeyFor } from '@lc/core';
-import { createEdition, createWork, findWorkByKey } from '@lc/db';
+import { createEdition, createWork, findEditionBySourceUrl, findWorkByKey } from '@lc/db';
 import type { AppBindings } from '../env.js';
 
 /**
@@ -144,6 +144,23 @@ export const ingestRoutes = new Hono<AppBindings>()
       createdWork = true;
     }
 
+    // ⚠️ Idempotent on the EDITION too, not just the work.
+    //
+    // The first version matched `work_key` and stopped there, so re-importing a
+    // manifest created a second edition of the same format for every book that
+    // already had one — 83 duplicates in production before this was caught. An
+    // unattended importer runs repeatedly by definition, so "runs twice" is the
+    // normal case and has to be a no-op.
+    if (input.sourcePath) {
+      const already = await findEditionBySourceUrl(c.env.DB, work.id, input.sourcePath);
+      if (already) {
+        return c.json(
+          { workId: work.id, editionId: already.id, createdWork, createdEdition: false, workKey: key },
+          200,
+        );
+      }
+    }
+
     const edition = await createEdition(c.env.DB, {
       workId: work.id,
       format: input.format as (typeof EDITION_FORMATS)[number],
@@ -160,6 +177,7 @@ export const ingestRoutes = new Hono<AppBindings>()
         workId: work.id,
         editionId: edition.id,
         createdWork,
+        createdEdition: true,
         workKey: key,
         // Surfaced rather than logged: a container log nobody reads is where
         // this class of bug goes to hide.

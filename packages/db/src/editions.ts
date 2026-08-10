@@ -90,6 +90,31 @@ export async function findEditionByIsbn13(
     .first<EditionRow>();
 }
 
+/**
+ * Has this exact file already been ingested?
+ *
+ * ⚠️ This exists because it was missing, and the absence cost 83 duplicate
+ * editions in production. The ingest route matched on `work_key` and so
+ * correctly avoided duplicate *works* — then created a second edition of the
+ * same format for every book that already had one, because nothing checked.
+ *
+ * Matched on `source_url`, which for a machine import is the file's path and is
+ * therefore the closest thing to an identity the file has. NOT on
+ * (work, format) alone: a work may legitimately hold two EPUBs from different
+ * publishers, and collapsing those would be a different bug in the other
+ * direction.
+ */
+export async function findEditionBySourceUrl(
+  db: D1Database,
+  workId: number,
+  sourceUrl: string,
+): Promise<EditionRow | null> {
+  return db
+    .prepare(`SELECT ${EDITION_COLS} FROM edition WHERE work_id = ? AND source_url = ?`)
+    .bind(workId, sourceUrl)
+    .first<EditionRow>();
+}
+
 export async function findEditionByAsin(
   db: D1Database,
   asin: string,
