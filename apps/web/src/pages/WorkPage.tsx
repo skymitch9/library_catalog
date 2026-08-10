@@ -1,16 +1,23 @@
 import { useEffect, useState } from 'react';
 import { api, type Me } from '../api.js';
+import { Cover } from '../components/Cover.js';
+import { DriveLinks } from '../components/DriveLinks.js';
 import { Enrich } from '../components/Enrich.js';
 import { Reviews } from '../components/Reviews.js';
 import { formatLabel } from '../lib/formats.js';
 
 /**
- * One book: what it is, which printings we hold, and what we thought.
+ * One book: what it is, where the file is, which printings we hold, and what we
+ * thought.
  *
- * The three sections mirror the schema's three layers deliberately —
+ * The three catalog sections mirror the schema's three layers deliberately —
  * work / edition / copy — because that split is the thing a person has to
  * understand to use this app correctly. "I own the paperback but not the ebook"
  * is only answerable if the page shows editions and copies as different things.
+ *
+ * The Drive links sit directly under the title, above all of that, because for
+ * this collection they are the *action*: 118 of 118 editions are ebook files,
+ * and what you almost always want from a book page is the book.
  */
 
 interface WorkDetail {
@@ -22,6 +29,7 @@ interface WorkDetail {
     series: string | null;
     seriesIndexDisplay: string | null;
     firstPublished: number | null;
+    description: string | null;
     coverUrl: string | null;
     workKey: string;
   };
@@ -34,6 +42,7 @@ interface WorkDetail {
     published_year: number | null;
     pages: number | null;
     source: string;
+    source_url: string | null;
   }[];
   copies: {
     id: number;
@@ -79,6 +88,7 @@ export function WorkPage({
   }
 
   useEffect(() => {
+    setDetail(null);
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workId]);
@@ -105,29 +115,43 @@ export function WorkPage({
 
   const { work, editions, copies, reading } = detail;
   const canTrack = me.capabilities.includes('trackReading');
+  // The first edition that names a file. Whichever format it is, its name is the
+  // best search term Drive will ever get for this book.
+  const fileEdition = editions.find((e) => e.source_url) ?? null;
 
   return (
     <main>
-      <button onClick={onBack}>← Collection</button>
+      <button className="back" onClick={onBack}>
+        ← Collection
+      </button>
 
       <div className="work-head">
-        {work.coverUrl ? (
-          <img src={work.coverUrl} alt="" width={96} height={144} />
-        ) : (
-          <span className="cover-placeholder large" aria-hidden="true" />
-        )}
-        <div>
+        <Cover src={work.coverUrl} title={work.title} authors={work.authors} size="large" />
+        <div className="work-head__text">
           <h2>{work.title}</h2>
           {work.subtitle && <p className="muted">{work.subtitle}</p>}
-          <p>{work.authors}</p>
+          <p className="work-head__authors">{work.authors}</p>
           {work.series && (
-            <p className="muted small">
+            <p className="series-tag">
               {work.series}
-              {work.seriesIndexDisplay ? ` · ${work.seriesIndexDisplay}` : ''}
+              {work.seriesIndexDisplay ? <b> {work.seriesIndexDisplay}</b> : null}
             </p>
           )}
+          {work.firstPublished && <p className="muted small">First published {work.firstPublished}</p>}
+          <DriveLinks
+            title={work.title}
+            authors={work.authors}
+            sourceUrl={fileEdition?.source_url ?? null}
+          />
         </div>
       </div>
+
+      {work.description && (
+        <section className="panel">
+          <h3>About</h3>
+          <p className="description">{work.description}</p>
+        </section>
+      )}
 
       {canTrack && (
         <section className="panel">
@@ -174,6 +198,7 @@ export function WorkPage({
                       imported row and must never overwrite a typed one. */}
                   <em>from {e.source}</em>
                 </div>
+                {e.source_url && <div className="path small muted">{e.source_url}</div>}
               </li>
             ))}
           </ul>
