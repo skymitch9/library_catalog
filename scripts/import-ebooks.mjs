@@ -160,7 +160,13 @@ if (!COMMIT) {
   process.exit(0);
 }
 
-if (!TOKEN) {
+// A local `wrangler dev` carries the ENVIRONMENT!=production auth bypass, so it
+// needs no token. Demanding one there made the safe rehearsal harder to run than
+// the real thing, which is exactly backwards for a script whose whole discipline
+// is "prove it locally first".
+const IS_LOCAL = /^https?:\/\/(127\.0\.0\.1|localhost)([:/]|$)/.test(API);
+
+if (!TOKEN && !IS_LOCAL) {
   console.error('\nLIBRARY_API_TOKEN is not set.');
   console.error('This importer authenticates as a person, not a service: sign in to the site,');
   console.error('copy a Firebase ID token, and export it. Or point --api at a local');
