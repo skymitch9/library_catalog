@@ -1,12 +1,42 @@
 # Handoff
 
-> Rewritten **2026-08-09**, replacing the 2026-08-08 "nothing is built" version.
-> **Live** at https://library-catalog.bgc-worker.workers.dev — deployed, Firebase
-> domain authorised, and Google sign-in verified in production 2026-08-09.
+> Updated **2026-08-10**. **Live** at https://library.heygabi.ai — deployed,
+> Firebase domain authorised, Google sign-in verified in production 2026-08-09.
+
+## ⚠️ Read this first: work is finished on a branch and NOT deployed
+
+`feature/library-parity` carries the covers, series, sorting, filters and Drive
+links described in `docs/info/covers-and-series.md`. It is committed, typechecks,
+passes 40 tests, builds, and has been driven in a browser against a local worker
+with production's own data.
+
+**Production has none of it.** Production D1 still reports 117 works with **0**
+covers and **0** series, and the live site still serves the old flat list. Two
+things are outstanding and they must happen in this order:
+
+```bash
+# 1. Write the columns. Dry-run first and READ THE OUTPUT, not the totals.
+npm run backfill:covers -- --remote
+npm run backfill:covers -- --remote --commit
+npm run backfill:series -- --remote
+npm run backfill:series -- --remote --commit
+
+# 2. Ship the images and the UI. Do NOT leave a gap between 1 and 2.
+npm run deploy
+```
+
+⚠️ **Between step 1 and step 2 production is worse than it is now.** The cover
+URLs point at `/covers/*.jpg`, which only exist in the deployed assets. Until the
+deploy lands, every cover is a broken image where today it is a placeholder. The
+UI's `<img onError>` falls back to the title placeholder, so the damage is
+cosmetic and self-healing — but do them together.
+
+Nothing else about the branch needs production. Merging it and deploying without
+running the backfills is safe and simply leaves the columns empty.
 
 ## State in one paragraph
 
-The app works. Five workspaces typecheck, 26 tests pass, both migrations apply,
+The app works. Five workspaces typecheck, 40 tests pass, both migrations apply,
 and the whole thing has been driven end to end in a browser: sign in, browse the
 collection, open a book, set read-state, scan or type an ISBN and resolve it
 against live Open Library, enrich a hand-added book, and write a review that
@@ -18,7 +48,8 @@ Sign-in is verified in production against a real Google token, and ownership is
 claimed: `app_user` id 1, `nbaslamking@gmail.com`, `review_name` "Skylar" —
 which matches the `…_skylar` document ids the existing audiobook reviews already
 use, so the two sites' reviews are the same documents. The production collection
-is empty; the four test works are local only.
+holds 117 works and 117 editions, all ebooks imported from
+`audiobook_catalog/site/ebooks.json`.
 
 ## Done
 
@@ -30,6 +61,7 @@ is empty; the four test works are local only.
 | **Shared identity** | ✅ Firebase Google SSO on the `audiobook-catalog` project, joined on email. |
 | **Review bridge** | ✅ `workKey`, draft endpoint, Firestore client, review UI, backfill script. **Backfill dry-run only.** |
 | **Open Library enrichment** | ✅ Proposes candidates with match scores; never auto-applies. |
+| **Covers, series, sorting, Drive** | 🟡 **Built on `feature/library-parity`, not deployed.** 114/115 covers, 78/115 series, server-side sort and filters, Drive flip-out. `docs/info/covers-and-series.md`. |
 | **Phase 3 — ebook pipeline** | ⏸️ **Built, run, then paused 2026-08-09.** The books it catalogued are kept. See below. |
 
 ## Not done
@@ -38,7 +70,22 @@ is empty; the four test works are local only.
 - `scan_job` is in the schema but no route touches it. The scan screen keeps
   results in React state, so a phone locking mid-sweep loses them. That matters
   much more for phase 4 — a shelf photo costs money, an ISBN is free to re-scan.
-- No series browse page; the collection is one flat list ordered by series.
+- No series browse page. The collection can be *filtered* to one series and
+  sorted series-first, which covers most of what a browse page would, but there
+  is no page that lists the 18 series with their volume counts.
+- **37 of 115 works still have no series** and 1 has no cover — see
+  `docs/info/covers-and-series.md` §3. The gap is fillable by hand through
+  `scripts/series-overrides.json`, which ships empty on purpose.
+- **The book page is a page, not a modal.** The audiobook site opens a book in a
+  modal over the grid; this one swaps the whole screen and offers a back button.
+  Left as-is deliberately: `App.tsx` has no router, and a modal that cannot be
+  linked to or dismissed with the back button is worse on a phone than a screen
+  that can.
+- **No stats page.** There is a stat strip on the collection, counted live. The
+  audiobook catalog's separate `stats.html` was not ported.
+- **Light mode was checked by forcing the tokens, not by flipping the OS.** The
+  palette renders correctly; the `prefers-color-scheme` switch itself has only
+  been exercised in dark.
 ## ⏸️ The ebook pipeline — paused, and how to bring it back
 
 Removed 2026-08-09 on the owner's call: compose file, Dockerfile, entrypoint,
@@ -128,6 +175,15 @@ npm run backfill:reviews -- --commit    # writes to the LIVE reviews collection
   to bind and the browser served **that application** — title, data and all. It
   reads like a catastrophic build failure and is a port collision. Check
   `curl -s localhost:PORT/ | grep title` first.
+- **It also silently moves on.** 2026-08-10: a killed-but-still-listening worker
+  held 8787, so the new one came up on **8791** and said so only in its startup
+  banner. Everything pointed at 8787 kept talking to the dead one. `netstat -ano
+  | grep :8787` names the process; read the "Ready on" line, do not assume 8787.
+- **The assets watcher dies on OneDrive.** `Watcher error: EPERM: operation not
+  permitted, watch` after a rebuild, and from then on `GET /` returns 404 while
+  `/api/*` keeps working — which looks exactly like a broken SPA build. Restart
+  `wrangler dev` after `npm run build`; hot reload of `apps/web/dist` cannot be
+  relied on here.
 - **A `<video>` element makes Chrome's screenshot capture hang**, not the page.
   The scan screen looks frozen to browser automation for 10–30s after it mounts
   while being completely responsive to a person. Do not hunt for a render loop.
@@ -147,13 +203,27 @@ npm run backfill:reviews -- --commit    # writes to the LIVE reviews collection
 
 ```bash
 npm run typecheck        # five workspaces
-npm test                 # 26 core-rule tests
-npm run check:fold       # TS vs Python work_key parity — 10/10
+npm test                 # 40 core-rule tests
 npm run db:migrate:local
 npm run dev              # worker :8787, web :5174
 curl -s localhost:8787/api/health
 curl -s localhost:8787/api/isbn/9780765326355   # live Open Library
+
+# The collection API, all of it new on feature/library-parity
+curl -s "localhost:8787/api/stats"
+curl -s "localhost:8787/api/collection/facets"
+curl -s "localhost:8787/api/collection?sort=author&dir=desc&pageSize=10"
+curl -s "localhost:8787/api/collection?q=cradle"      # 6 — a series-name search
+
+# Both backfills are idempotent; a second run must report nothing to write.
+npm run backfill:covers
+npm run backfill:series
 ```
+
+⚠️ `npm run check:fold` is **gone**, and correctly: the Python indexer that made
+a second `work_key` implementation was removed with the ebook pipeline. If a
+second language ever computes `work_key` again, bring the parity check back with
+it — `packages/core/src/titles.ts` says so in its header.
 
 ## Kindle: metadata only, and the mechanism is the desktop app
 
