@@ -61,7 +61,7 @@ holds 117 works and 117 editions, all ebooks imported from
 | **Shared identity** | ✅ Firebase Google SSO on the `audiobook-catalog` project, joined on email. |
 | **Review bridge** | ✅ `workKey`, draft endpoint, Firestore client, review UI, backfill script. **Backfill dry-run only.** |
 | **Open Library enrichment** | ✅ Proposes candidates with match scores; never auto-applies. |
-| **Covers, series, sorting, Drive** | 🟡 **Built on `feature/library-parity`, not deployed.** 114/115 covers, 78/115 series, server-side sort and filters, Drive flip-out. `docs/info/covers-and-series.md`. |
+| **Covers, series, sorting, Drive** | 🟡 **Built on `feature/library-parity`, not deployed.** 114/115 covers, 101/115 series (78 automatic + 23 from series-overrides.json, local only), server-side sort and filters, Drive flip-out. `docs/info/covers-and-series.md`. |
 | **Phase 3 — ebook pipeline** | ⏸️ **Built, run, then paused 2026-08-09.** The books it catalogued are kept. See below. |
 
 ## Not done
@@ -72,10 +72,14 @@ holds 117 works and 117 editions, all ebooks imported from
   much more for phase 4 — a shelf photo costs money, an ISBN is free to re-scan.
 - No series browse page. The collection can be *filtered* to one series and
   sorted series-first, which covers most of what a browse page would, but there
-  is no page that lists the 18 series with their volume counts.
-- **37 of 115 works still have no series** and 1 has no cover — see
-  `docs/info/covers-and-series.md` §3. The gap is fillable by hand through
-  `scripts/series-overrides.json`, which ships empty on purpose.
+  is no page that lists the 25 series with their volume counts.
+- **14 of 115 works have no series** and 1 has no cover — see
+  `docs/info/covers-and-series.md` §3 and §3.1. It was 37; all 37 were researched
+  on 2026-08-10 and the answers are in `scripts/series-overrides.json` with a
+  source each — 24 got a series, 11 are true standalones, 2 are genuinely
+  unknown. **The overrides have only been applied LOCALLY.** Production still
+  reads 80 of 117; `npm run backfill:series -- --remote --commit` is the pending
+  command, on `feature/series-overrides`.
 - **The book page is a page, not a modal.** The audiobook site opens a book in a
   modal over the grid; this one swaps the whole screen and offers a back button.
   Left as-is deliberately: `App.tsx` has no router, and a modal that cannot be

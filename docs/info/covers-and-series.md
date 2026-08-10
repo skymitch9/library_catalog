@@ -6,6 +6,10 @@
 > moment; the two differ by two hand-added test rows). Nothing here is an
 > estimate.
 >
+> §3.1 (the series overrides) is a **second measured run** on the same date and
+> the same database, after `scripts/series-overrides.json` was researched and
+> filled. Its per-entry sources are in that file, one `source` array each.
+>
 > **Not verified:** none of these backfills has been run against production.
 > See `docs/HANDOFF.md` for the exact pending commands.
 
@@ -78,11 +82,14 @@ re-run with `--force`, and the same URL serves different bytes. That is why
 
 | Rung | Source | Works |
 |---|---|---|
-| 1 | `scripts/series-overrides.json` — a person's answer | 0 *(ships empty)* |
+| 1 | `scripts/series-overrides.json` — a person's answer | **23** |
 | 2 | the book's own title, via `detectSeriesFromTitle` | **65** |
 | 3 | the audiobook catalog's curated `series` column, via `matchIndexedWork` | **13** |
-| — | no series found | **37** |
-| | | **78 of 115, in 18 series** |
+| — | no series found | **14** |
+| | | **101 of 115, in 25 series** |
+
+Rung 1 was 0 until 2026-08-10, when the 37 misses were researched one at a time.
+§3.1 records what that turned up and what it cost.
 
 ### ⚠️ The importer was throwing the answer away
 
@@ -127,13 +134,97 @@ returns null rather than guessing for a label with no place on a number line
 "Blackflame" to "Blackflame (Cradle Book 3)" would silently detach the book from
 its reviews on both sites. The series goes in the series columns.
 
-### The 37 misses are not a bug
+---
 
-They are books whose series is knowable and is written down **nowhere in either
-repo** — the six unnumbered Cradle volumes, the Sanderson Cosmere novellas,
-Dakota Krout's *Full Murderhobo*. `scripts/series-overrides.json` exists to hold
-them, keyed on `work_key`, and it ships empty on purpose: filling it from memory
-is precisely what `isbn-ladder.md` §2 says not to do.
+## 3.1 The 37 misses, researched — 2026-08-10
+
+They were books whose series is knowable and written down **nowhere in either
+repo**. All 37 were looked up one at a time and the answers recorded, with a
+source per entry, in `scripts/series-overrides.json`.
+
+| Verdict | Works |
+|---|---|
+| a series, named and sourced | **24** |
+| a **true standalone** — researched, belongs to no series | **11** |
+| **unknown** — researched, not settled | **2** |
+
+The overrides file carries all 37, because "researched and there is no series"
+and "nobody has looked" are different facts and only one of them is a reason to
+look again. Its `verdict` field is the distinction; `series: null` means the
+backfill writes nothing either way.
+
+⚠️ 24 of 37 filled is the *good* outcome, not a shortfall. `isbn-ladder.md` §4.2
+measured that half this library has no free metadata at all, and the standing
+rule is that an empty field is correct where a guessed one is a lie that sorts
+the shelf wrong and looks exactly like data.
+
+### The four sources, in the order they were tried
+
+| Source | Works it settled |
+|---|---|
+| the **EPUB's own metadata or text** | 4 |
+| the **audiobook catalog's** curated `series` column | 1 |
+| **Open Library edition records** | 12 |
+| the **publisher's or retailer's** own series label | 7 |
+
+The counts are "which source settled it first"; most entries carry two or three.
+
+### ⚠️ Open Library's `series` is empty in search and populated in editions
+
+`search.json` returned `series: null` for **all 37**, including *Unsouled*, whose
+first edition record says `series: ["Cradle, Volume 1"]` in as many words. The
+data is on the **edition**, not the work, and not in the solr index:
+
+```
+GET /works/<key>/editions.json?limit=50   →  entries[].series, entries[].subtitle
+```
+
+That one endpoint is where 12 of the 24 came from, including all six Cradle
+volumes and three of the four Secret Projects. Anything that concludes "Open
+Library does not know" from `search.json` alone is reading the wrong endpoint —
+this is the same shape of mistake as §1's, reaching for a rung that cannot fire.
+
+`subtitle` matters as much as `series`: Hidden Gnome files the volume number
+there (`"Ghostwater" :: "Cradle, Volume Five"`) on more editions than it uses the
+`series` field at all.
+
+### The other three things that turned up
+
+**One file in 117 carries EPUB3 `belongs-to-collection`.** *World's Only Hero*
+declares `Chance Encounter` with `group-position 1`, and `scripts/lib/epub.mjs`
+does not read it — it reads `calibre:series`, which is present in **0 of 117**.
+One file is not a rung worth building. If Vellum-produced ebooks ever arrive in
+bulk, that is the metadata to read.
+
+**Rung 3 missed one it should have caught.** The audiobook catalog knows *Onyx
+Storm* is *The Empyrean* book 3, and `matchIndexedWork` did not connect this
+library's `Onyx Storm (The Empyrean)` to the audiobook row's cleaned `Onyx
+Storm`. The override is the cheap fix, not the diagnosis; worth a look if the
+matcher is revisited.
+
+**A blank in the audiobook catalog is not "no series".** Its curated column stops
+at *Invent* (Completionist Chronicles book 7) and is empty for books 12–14, all
+three of which this library holds and all three of which Mountaindale Press
+numbers on its own store page.
+
+### What was deliberately left empty
+
+*Firstborn / Defending Elysium* — a two-novella bind-up whose halves sit in
+different places (one uncollected, one Cytoverse), so neither answer is honest.
+*Undead Knight* — a self-published 2019 GameLit title with essentially no
+metadata anywhere, which is exactly what `isbn-ladder.md` §4.2 predicts.
+
+Both are recorded as `verdict: "unknown"` with what was tried, so the next
+session spends its effort somewhere new.
+
+Two more are *partly* empty on purpose. Both *White Sand* rows get the series and
+**no volume**: all three volumes are 160pp, so the file's 162 page images cannot
+separate them (they do rule out the 496pp omnibus). *Invent Short Story* gets the
+series and no volume because it is a five-chapter sampler of book 7 — claiming 7
+would collide with the real book if it is ever imported.
+
+⚠️ **`work.title` was not touched for any of this**, and `series-overrides.json`
+cannot touch it: the backfill only ever writes the three series columns.
 
 ---
 
