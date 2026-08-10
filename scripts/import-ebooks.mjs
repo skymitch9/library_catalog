@@ -46,6 +46,25 @@
  *     npm run import:ebooks -- --commit --api http://127.0.0.1:8787
  *
  * Dry run is the default, as it is for every importer in this project.
+ *
+ * ## Pruning
+ *
+ * Import is append-only: delete or rename an EPUB and its edition lives on,
+ * pointing at a path that no longer exists.
+ *
+ *     npm run import:ebooks -- --prune --remote            # show the orphans
+ *     npm run import:ebooks -- --prune --remote --commit   # delete them
+ *
+ * `--prune` reads D1 directly and so needs a wrangler login; `--remote` picks
+ * production over the local dev database. It only ever removes editions with
+ * `source = 'file'` in one of the five ebook FILE formats — never anything
+ * physical, never `ebook_kindle` (a licence with no file to be missing), never a
+ * hand-added edition, and never a work.
+ *
+ * It refuses to delete more than 20% of them in one run. An empty or truncated
+ * manifest looks exactly like "the library was deleted", and the wrong response
+ * to a failed scan is to make the catalog match it. `--force-prune` overrides,
+ * once a person has looked.
  */
 
 import { readFileSync } from 'node:fs';
@@ -60,6 +79,9 @@ const args = process.argv.slice(2);
 const COMMIT = args.includes('--commit');
 const INCLUDE_FILENAME = args.includes('--include-filename');
 const INCLUDE_PDF = args.includes('--include-pdf');
+const PRUNE = args.includes('--prune');
+const FORCE_PRUNE = args.includes('--force-prune');
+const REMOTE = args.includes('--remote');
 
 function argValue(name, fallback) {
   const i = args.indexOf(name);
@@ -169,6 +191,11 @@ if (!COMMIT) {
   }
   if (byWork.size > 15) console.log(`  … and ${byWork.size - 15} more`);
   console.log('\nDRY RUN. Nothing written. Re-run with --commit.');
+  // ⚠️ Prune has to be reached here too, or `--prune` without `--commit` — the
+  // safe rehearsal, and the way anyone will first try it — exits above and
+  // silently does nothing. It reports "DRY RUN" either way, so the failure looks
+  // exactly like success.
+  if (PRUNE) await runPrune();
   process.exit(0);
 }
 
@@ -248,3 +275,100 @@ console.log(
     `\neditions: ${createdEditions} created, ${skippedEditions} already present` +
     (failed ? `\nfailed: ${failed}` : ''),
 );
+
+// ---------------------------------------------------------------------------
+// --prune: drop editions whose file is gone from the manifest
+// ---------------------------------------------------------------------------
+//
+// Import alone is append-only, so deleting or renaming an EPUB leaves its
+// edition behind for ever, pointing at a path that no longer exists. Two files
+// were removed as verified duplicates on 2026-08-10 and their rows outlived
+// them.
+//
+// ## ⚠️ Why this goes straight to D1 instead of through /api/ingest
+//
+// The ingest route can create a work and an ebook edition, and NOTHING else —
+// no reads, no deletes — precisely so a leaked machine token cannot destroy or
+// exfiltrate the collection. Adding a delete endpoint would hand exactly that
+// power to the credential the route was narrowed to protect against. Pruning is
+// rare, runs from the machine that holds the library, and already needs the
+// files themselves, so it can afford to want a wrangler login instead.
+//
+// ## What it will not touch, by construction
+//
+//   - **Anything physical.** hardcover, paperback, mass_market are excluded at
+//     the query. Physical books are being added to this catalog shortly and a
+//     prune that could reach them would be a data-loss bug waiting for them.
+//   - **`ebook_kindle`.** A licence with no bytes — it has no file to be
+//     missing, so its absence from a file manifest means nothing.
+//   - **Anything not `source = 'file'`.** A hand-added or research-sourced
+//     edition is somebody's judgement, not this script's output.
+//   - **Works.** Only editions are removed. A work left with no editions keeps
+//     its copies, its read-state and its reviews, and is a visible thing to fix
+//     rather than a silent deletion.
+async function runPrune() {
+  const { query, execute, lit } = await import('./lib/d1.mjs');
+
+  const FILE_FORMATS = Object.values(FORMAT_MAP);
+  const flags = { remote: REMOTE };
+
+  // "An edition this script owns" — spelled out once per alias rather than
+  // derived from the other by string surgery, because the two differ only by a
+  // prefix and a regex that rewrites SQL is a worse thing to debug than a
+  // duplicated WHERE clause.
+  const formatList = FILE_FORMATS.map((f) => `'${f}'`).join(', ');
+  const ownedE = `e.source = 'file' AND e.source_url IS NOT NULL AND e.format IN (${formatList})`;
+  const owned = `source = 'file' AND source_url IS NOT NULL AND format IN (${formatList})`;
+
+  const existing = query(
+    `SELECT e.id, e.source_url, e.format, w.title
+       FROM edition e JOIN work w ON w.id = e.work_id
+      WHERE ${ownedE}`,
+    flags,
+  );
+
+  const onDisk = new Set(manifest.ebooks.map((r) => r.path));
+  const orphans = existing.filter((row) => !onDisk.has(row.source_url));
+
+  console.log(
+    `\nprune: ${existing.length} file edition(s) in the ${REMOTE ? 'REMOTE' : 'local'} database, ` +
+      `${manifest.count} file(s) in the manifest, ${orphans.length} orphan(s)`,
+  );
+
+  // ⚠️ The guard that matters. `build_ebook_manifest.py` producing an empty or
+  // truncated manifest — an unmounted drive, a crashed walk — is indistinguishable
+  // from "the user deleted their whole library", and without this the response to
+  // a failed scan would be to delete the catalog to match it. Refuse and make a
+  // person look.
+  const ceiling = Math.max(5, Math.floor(existing.length * 0.2));
+  if (orphans.length > ceiling && !FORCE_PRUNE) {
+    console.error(
+      `\nREFUSING to prune ${orphans.length} of ${existing.length} edition(s) — over the ${ceiling} ceiling.` +
+        '\nThat usually means the manifest is short, not that the library shrank.' +
+        '\nCheck `python scripts/build_ebook_manifest.py` output first; override with --force-prune.',
+    );
+    process.exit(1);
+  }
+
+  for (const o of orphans.slice(0, 20)) {
+    console.log(`  ${o.title}  [${o.format}]  ${o.source_url}`);
+  }
+  if (orphans.length > 20) console.log(`  … and ${orphans.length - 20} more`);
+
+  if (!orphans.length) {
+    console.log('Nothing to prune.');
+  } else if (!COMMIT) {
+    console.log('\nDRY RUN. Nothing deleted. Re-run with --commit.');
+  } else {
+    execute(
+      orphans.map((o) => `DELETE FROM edition WHERE id = ${lit(o.id)};`),
+      flags,
+    );
+    // Confirm by re-reading. `execute` returns statements run, not rows changed —
+    // the local D1 omits meta.changes entirely, so a count from it would lie.
+    const left = query(`SELECT COUNT(*) AS n FROM edition WHERE ${owned}`, flags)[0];
+    console.log(`\n${orphans.length} edition(s) deleted. ${left.n} file edition(s) remain.`);
+  }
+}
+
+if (PRUNE) await runPrune();
