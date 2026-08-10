@@ -3,6 +3,66 @@
 > Updated **2026-08-10**. **Live** at https://library.heygabi.ai — deployed,
 > Firebase domain authorised, Google sign-in verified in production 2026-08-09.
 
+## 🟡 In flight — `feature/scanjobs-vision`
+
+Two features, in the order they had to be built. Branched from `feature/router`,
+committed and pushed, **not deployed, not merged, and not migrated against
+`--remote`.**
+
+**`scan_job` persistence.** The table shipped in migration 0001 with 0 rows and
+no route touching it; `ScanPage` kept results in React state, so a phone locking
+mid-sweep lost the sweep. There is now `/api/scan-jobs`, a `ScanLine` shape both
+producers share, `?job=<id>` in the URL, and a `/scans` queue of what you left
+half-finished. A barcode sweep is **one** job with N lines.
+
+**Phase 4 — the shelf photograph.** `POST /api/scan-jobs/shelf` sends one frame
+to `claude-opus-5` at low effort with a JSON-schema output contract, matches the
+result against the catalog for free, and lands the job at `review`. Persistence
+went first deliberately: a barcode is free to re-scan and a photograph is not.
+
+⚠️ **Read [`docs/info/scan-jobs-and-vision.md`](info/scan-jobs-and-vision.md)
+before quoting any hit rate.** The headline — 28 of ~30 spines correct with
+nothing invented — is from a real photograph of an *easy* shelf (English-
+language manga, straight on, well lit). A real cluttered shelf did much worse.
+**No photo of this household's own shelves has ever been tested**, and that is
+the number that matters.
+
+| | |
+|---|---|
+| Cost | **3–7¢** per shelf, shown on screen. The unreadable path costs 1¢ |
+| Photos | **Never stored.** No R2 binding, and there must not be one |
+| Writes | **None.** Every line is a proposal; `addedWorkId` records that a person pressed Add |
+| Gate | `runResearch`, not `scan` — the tab is hidden from anyone who cannot spend |
+
+### To finish it
+
+```bash
+npm test                       # 74
+npm run typecheck              # five workspaces
+npm run db:migrate             # ⚠️ REMOTE — 0007, BEFORE deploying
+npm run secrets:push           # ANTHROPIC_API_KEY must be in production
+npm run deploy
+```
+
+⚠️ **Migrate before deploying.** `/api/scan-jobs` writes `created_by` and
+`updated_at`, which production does not have; deploying first makes every scan a
+500. ⚠️ **`ANTHROPIC_API_KEY` must be pushed**, or the photo tab answers with a
+configuration message — deliberately worded so nobody goes looking at their
+lighting.
+
+### What was deliberately left out
+
+- **No server-side chunked enrichment.** The sibling project's `waitUntil`
+  machinery is not copied; lookups are one line at a time, client-driven. §3 of
+  the info doc has the two book-specific reasons.
+- **No `alsoInAudio`.** The Worker holds no audiobook data, so the field would
+  have answered `false` for every book in the house. Waiting on the shared index.
+- **No retry-without-volume-number lookup rung.** Measured: `Nodame Cantabile
+  12` finds nothing usable where the bare series name likely would. Named in the
+  info doc as the fix if anyone wants it.
+- **iOS untested**, and every measured photo went through the file picker rather
+  than a live camera frame.
+
 ## 🟡 In flight — `feature/router`
 
 Real URLs and a working Back button. Branched from `main`, committed and pushed,
@@ -180,7 +240,8 @@ holds 117 works and 117 editions, all ebooks imported from
 |---|---|
 | **Phase 0 — verify** | ✅ Live calls. `docs/info/isbn-ladder.md`. Two of the design's assumptions were wrong. |
 | **Phase 1 — scaffold + manual** | ✅ Worker + D1 + Firebase auth + React PWA. Works, editions, copies, read-state, collection, work page. |
-| **Phase 2 — ISBN scan** | ✅ Ladder, book-barcode gate, continuous-scan screen, manual entry, per-row Add, covers. `scan_job` table unused. |
+| **Phase 2 — ISBN scan** | ✅ Ladder, book-barcode gate, continuous-scan screen, manual entry, per-row Add, covers. **Now persisted** — see `feature/scanjobs-vision`. |
+| **Phase 4 — shelf photo** | 🟡 **Built on `feature/scanjobs-vision`, not deployed.** Vision read + catalog match + per-line lookup, 3–7¢ a shelf. `docs/info/scan-jobs-and-vision.md`. |
 | **Shared identity** | ✅ Firebase Google SSO on the `audiobook-catalog` project, joined on email. |
 | **Review bridge** | ✅ `workKey`, draft endpoint, Firestore client, review UI, backfill script. **Backfill dry-run only.** |
 | **Open Library enrichment** | ✅ Proposes candidates with match scores; never auto-applies. |
@@ -189,10 +250,8 @@ holds 117 works and 117 editions, all ebooks imported from
 
 ## Not done
 
-- Phase 4 (shelf photo) and phase 5 (research + index).
-- `scan_job` is in the schema but no route touches it. The scan screen keeps
-  results in React state, so a phone locking mid-sweep loses them. That matters
-  much more for phase 4 — a shelf photo costs money, an ISBN is free to re-scan.
+- Phase 5 (research + index). **Phase 4 (shelf photo) is built** — see
+  `feature/scanjobs-vision` above.
 - No series browse page. The collection can be *filtered* to one series and
   sorted series-first, which covers most of what a browse page would, but there
   is no page that lists the 25 series with their volume counts.
@@ -325,6 +384,13 @@ npm run backfill:reviews -- --commit    # writes to the LIVE reviews collection
   `*.pages.dev` is outside the zone and will keep obeying `_headers`, which makes
   the discrepancy read as a routing problem when it is not.
 - **`git commit -F`, never `-m`.** See `CLAUDE.md`.
+- **⚠️ `wrangler d1` dies with an opaque `internal error` when the repo path is
+  long.** A git worktree under `%TEMP%\claude\...` put the local D1 file at
+  **283 characters**, past Windows' 260-char `MAX_PATH`. `wrangler dev` is
+  unaffected — workerd is long-path-aware — so it looks like "the app runs but
+  no query or migration will ever apply", with a reference id and nothing in the
+  log. Fix: `--persist-to C:/<something short>` on `dev` **and** on
+  `d1 migrations apply`, or work from a shorter path.
 - **`wrangler dev` does not tell you the port was already taken.** Port 8792 was
   bound by the Board Game Catalog's own dev server, so this app silently failed
   to bind and the browser served **that application** — title, data and all. It

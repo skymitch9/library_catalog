@@ -3,6 +3,7 @@
  * nothing else has to.
  */
 
+import type { ScanJob, ScanLine } from '@lc/core';
 import { getIdToken } from './lib/firebase.js';
 
 export class ApiError extends Error {
@@ -402,4 +403,64 @@ export const api = {
 
   deleteRelation: (relationId: number) =>
     request<{ ok: true }>(`/api/relations/${relationId}`, { method: 'DELETE' }),
+
+  // -------------------------------------------------------------------------
+  // Scan jobs — the intake queue
+  //
+  // ⚠️ Every one of these is a *proposal*. Nothing here writes to the catalog;
+  // `patchScanLine({ addedWorkId })` records that the ordinary create endpoints
+  // already did. See apps/worker/src/routes/scan-jobs.ts.
+  // -------------------------------------------------------------------------
+
+  /** `open` narrows to sweeps that still want attention. */
+  scanJobs: (open = true) =>
+    request<{ jobs: ScanJob[] }>(`/api/scan-jobs${open ? '?open=1' : ''}`),
+
+  scanJob: (id: number) => request<{ job: ScanJob }>(`/api/scan-jobs/${id}`),
+
+  /**
+   * One barcode, appended to an open sweep. Omit `jobId` to start one.
+   *
+   * `duplicate: true` means the server refused a code the job already holds —
+   * not an error. A book left in front of the lens is the ordinary case.
+   */
+  scanBarcode: (code: string, jobId: number | null) =>
+    request<{ job: ScanJob; index: number; line: ScanLine; duplicate: boolean }>(
+      '/api/scan-jobs/barcode',
+      { method: 'POST', body: JSON.stringify({ code, jobId }) },
+    ),
+
+  /**
+   * ⚠️ Costs money, and the photo is never stored — see the route.
+   * `usage.estimatedCents` comes back so the screen can say what it cost.
+   */
+  scanShelf: (data: string, mediaType: string) =>
+    request<{
+      job: ScanJob;
+      unreadable: boolean;
+      usage: { inputTokens: number; outputTokens: number; estimatedCents: number };
+    }>('/api/scan-jobs/shelf', { method: 'POST', body: JSON.stringify({ data, mediaType }) }),
+
+  /** `q` is the corrected title. Without it, the spine's own words are used. */
+  lookupScanLine: (jobId: number, index: number, q?: string) =>
+    request<{ job: ScanJob; index: number; line: ScanLine; found: boolean }>(
+      `/api/scan-jobs/${jobId}/lines/${index}/lookup${q ? `?q=${encodeURIComponent(q)}` : ''}`,
+      { method: 'POST' },
+    ),
+
+  patchScanLine: (
+    jobId: number,
+    index: number,
+    body: { addedWorkId?: number | null; dismissed?: boolean; text?: string; author?: string | null },
+  ) =>
+    request<{ job: ScanJob; index: number; line: ScanLine }>(
+      `/api/scan-jobs/${jobId}/lines/${index}`,
+      { method: 'PATCH', body: JSON.stringify(body) },
+    ),
+
+  finishScanJob: (id: number) =>
+    request<{ job: ScanJob }>(`/api/scan-jobs/${id}/done`, { method: 'POST' }),
+
+  deleteScanJob: (id: number) =>
+    request<{ ok: true }>(`/api/scan-jobs/${id}`, { method: 'DELETE' }),
 };

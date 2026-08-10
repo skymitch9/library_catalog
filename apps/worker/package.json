@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.116.0",
     "@lc/core": "*",
     "@lc/db": "*",
     "@lc/isbn": "*",

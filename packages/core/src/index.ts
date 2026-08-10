@@ -26,6 +26,7 @@ export * from './matching.js';
 export * from './corroboration.js';
 export * from './reviews.js';
 export * from './vision.js';
+export * from './scanjobs.js';
 export * from './schemas.js';
 
 export const roleEnum = z.enum(ROLES);

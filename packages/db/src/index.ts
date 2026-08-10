@@ -5,3 +5,4 @@ export * from './editions.js';
 export * from './reading.js';
 export * from './relations.js';
 export * from './series.js';
+export * from './scanjobs.js';

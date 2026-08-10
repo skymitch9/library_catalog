@@ -37,9 +37,16 @@ import {
 } from '@lc/core';
 import { DEFAULT_PREFS, SORTS } from './lib/prefs.js';
 
-/** The two tabs the add screen owns. Kept here so `parse` can validate them. */
-export type AddMode = 'scan' | 'type';
-const ADD_MODES: readonly AddMode[] = ['scan', 'type'];
+/**
+ * The three tabs the add screen owns. Kept here so `parse` can validate them.
+ *
+ * `photo` is the shelf camera. It is a *tab*, not a screen, for the reason
+ * `/add` is one flat path at all: a standalone PWA on iOS re-prompts for camera
+ * permission on every route change (WebKit #215884), and two of these three
+ * tabs open a camera. Splitting them would ask twice.
+ */
+export type AddMode = 'scan' | 'photo' | 'type';
+const ADD_MODES: readonly AddMode[] = ['scan', 'photo', 'type'];
 
 /**
  * What the collection is showing, as opposed to which screen it is.
@@ -77,7 +84,12 @@ export type Route =
   // `?mode=` lets a caller land on the right tab of the add screen rather than
   // on the right screen and the wrong tab. Optional, and an unrecognised value
   // falls back to the screen's own default, so junk is harmless.
-  | { name: 'add'; mode: AddMode | null }
+  //
+  // `?job=` is what makes a sweep survive a locked phone: the screen writes the
+  // job id into the URL as soon as the server mints one, so a reload — or a
+  // link from the queue — reopens the same sweep with every line still on it.
+  | { name: 'add'; mode: AddMode | null; job: number | null }
+  | { name: 'scans' }
   | { name: 'notFound' };
 
 /* -- reading the URL ------------------------------------------------------- */
@@ -172,9 +184,23 @@ export function seriesPath(name: string): string {
   return `/series/${encodeURIComponent(name)}`;
 }
 
-export function addPath(mode?: AddMode): string {
-  return mode ? `/add?mode=${mode}` : '/add';
+/**
+ * ⚠️ The job id belongs in the URL, not only in React state.
+ *
+ * That is the whole persistence feature seen from the client side: the server
+ * remembers the lines, and this remembers *which* sweep you were on. Without it
+ * a reload lands on an empty scan screen with a finished job sitting invisibly
+ * in the queue behind it.
+ */
+export function addPath(mode?: AddMode, job?: number | null): string {
+  const p = new URLSearchParams();
+  if (mode) p.set('mode', mode);
+  if (job) p.set('job', String(job));
+  const qs = p.toString();
+  return qs ? `/add?${qs}` : '/add';
 }
+
+export const scansPath = '/scans';
 
 function parse(pathname: string, search: string): Route {
   const parts = pathname.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
@@ -202,8 +228,15 @@ function parse(pathname: string, search: string): Route {
   // and "Type it in" must not change the path. The tab is a query parameter,
   // written with `replaceUrl`, for exactly that reason.
   if (parts[0] === 'add' && parts.length === 1) {
-    return { name: 'add', mode: pick(search, 'mode', ADD_MODES) };
+    const job = Number(new URLSearchParams(search).get('job'));
+    return {
+      name: 'add',
+      mode: pick(search, 'mode', ADD_MODES),
+      job: Number.isInteger(job) && job > 0 ? job : null,
+    };
   }
+
+  if (parts[0] === 'scans' && parts.length === 1) return { name: 'scans' };
 
   return { name: 'notFound' };
 }
@@ -281,6 +314,7 @@ export function labelFor(path: string): string {
   if (p === '/series') return 'Series';
   if (p === '/wishlist') return 'Wishlist';
   if (p === '/add') return 'Add books';
+  if (p === '/scans') return 'Sweeps';
   if (p.startsWith('/series/')) return decodeSegment(p.slice('/series/'.length)) || 'Series';
   // A book, and the path does not carry its title. "Back" is honest; inventing
   // "the last book" would be worse than saying less.
