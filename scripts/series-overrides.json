@@ -7,10 +7,12 @@
   "_verdict": "Three values, and the difference matters. `series` — the book is in a series and it is named below; the backfill writes it. `standalone` — the book was researched and genuinely belongs to no series; `series` is null, the backfill writes nothing, and the entry exists so nobody researches it a second time. `unknown` — researched and not settled; also writes nothing, and the note says what was tried. Absence from this file means nobody has looked.",
   "_measured": "2026-08-10. The 2026-08-10 backfill left 37 works with no series. All 37 were researched: 24 got a series, 11 are true standalones, 2 remain unknown. Sources in order of strength — the EPUB's own metadata and text, the audiobook catalog's curated `series` column, Open Library *edition* records (the search index's `series` field is empty for every one of these; the edition records are not), then the publisher's or retailer's own series label.",
   "_openlibrary": "⚠️ openlibrary.org/search.json returns `series: null` for all 37 of these, including books whose series is beyond doubt. The data is in the per-edition records: /works/<key>/editions.json, fields `series` and `subtitle`. Anything that concludes 'Open Library does not know' from the search endpoint alone is reading the wrong endpoint.",
-
   "unsouled|will wight": {
-    "series": "Cradle", "index": 1, "display": "Book 1",
-    "verdict": "series", "confidence": "high",
+    "series": "Cradle",
+    "index": 1,
+    "display": "Book 1",
+    "verdict": "series",
+    "confidence": "high",
     "source": [
       "Open Library edition /books/OL28126666M (Hidden Gnome Publishing, 14 Jun 2017): series = [\"Cradle, Volume 1\"]",
       "Open Library edition /books/OL60946858M subtitle \"Cradle, Volume One\"",
@@ -18,44 +20,65 @@
     ]
   },
   "ghostwater|will wight": {
-    "series": "Cradle", "index": 5, "display": "Book 5",
-    "verdict": "series", "confidence": "high",
+    "series": "Cradle",
+    "index": 5,
+    "display": "Book 5",
+    "verdict": "series",
+    "confidence": "high",
     "source": [
       "Open Library work /works/OL19658492W is titled \"Ghostwater (Cradle) (Volume 5)\"",
       "Open Library edition /books/OL60949973M (Hidden Gnome Publishing) subtitle \"Cradle, Volume Five\""
     ]
   },
   "uncrowned|will wight": {
-    "series": "Cradle", "index": 7, "display": "Book 7",
-    "verdict": "series", "confidence": "high",
-    "source": ["Open Library edition /books/OL60938543M (Hidden Gnome Publishing) subtitle \"Cradle, Volume Seven\""]
+    "series": "Cradle",
+    "index": 7,
+    "display": "Book 7",
+    "verdict": "series",
+    "confidence": "high",
+    "source": [
+      "Open Library edition /books/OL60938543M (Hidden Gnome Publishing) subtitle \"Cradle, Volume Seven\""
+    ]
   },
   "wintersteel|will wight": {
-    "series": "Cradle", "index": 8, "display": "Book 8",
-    "verdict": "series", "confidence": "high",
+    "series": "Cradle",
+    "index": 8,
+    "display": "Book 8",
+    "verdict": "series",
+    "confidence": "high",
     "source": [
       "Open Library edition /books/OL60941329M (Hidden Gnome Publishing) subtitle \"Cradle, Volume Eight\"",
       "Open Library edition /books/OL51339411M, same subtitle"
     ]
   },
   "bloodline|will wight": {
-    "series": "Cradle", "index": 9, "display": "Book 9",
-    "verdict": "series", "confidence": "high",
-    "source": ["Open Library edition /books/OL60946984M (Hidden Gnome Publishing) subtitle \"Cradle, Volume Nine\""]
+    "series": "Cradle",
+    "index": 9,
+    "display": "Book 9",
+    "verdict": "series",
+    "confidence": "high",
+    "source": [
+      "Open Library edition /books/OL60946984M (Hidden Gnome Publishing) subtitle \"Cradle, Volume Nine\""
+    ]
   },
   "reaper|will wight": {
-    "series": "Cradle", "index": 10, "display": "Book 10",
-    "verdict": "series", "confidence": "high",
+    "series": "Cradle",
+    "index": 10,
+    "display": "Book 10",
+    "verdict": "series",
+    "confidence": "high",
     "source": [
       "Open Library edition /books/OL35159543M (Hidden Gnome Publishing, 2021) subtitle \"Cradle Volume Ten\"",
       "Open Library edition /books/OL60938548M subtitle \"Cradle, Volume Ten\""
     ],
     "note": "With these six the catalog holds Cradle 1-12 complete. The publisher on every cited edition is Hidden Gnome, which is the discriminator isbn-ladder.md §4.4 says to check: \"Reaper\" and \"Bloodline\" are common titles and Open Library holds other books by both names."
   },
-
   "tress of the emerald sea|brandon sanderson": {
-    "series": "Secret Projects", "index": 1, "display": "1",
-    "verdict": "series", "confidence": "high",
+    "series": "Secret Projects",
+    "index": 1,
+    "display": "1",
+    "verdict": "series",
+    "confidence": "high",
     "source": [
       "Open Library edition /books/OL46007966M (Dragonsteel Entertainment, 2023-01-10): series = [\"Secret Projects\"]",
       "Amazon \"Secret Projects Series 4-Book Collection Set - Tress of the Emerald Sea, The Frugal Wizard's Handbook…, Yumi…, The Sunlit Man\" (that order)",
@@ -63,24 +86,33 @@
     ]
   },
   "frugal wizard s handbook for surviving medieval england|brandon sanderson": {
-    "series": "Secret Projects", "index": 2, "display": "2",
-    "verdict": "series", "confidence": "high",
+    "series": "Secret Projects",
+    "index": 2,
+    "display": "2",
+    "verdict": "series",
+    "confidence": "high",
     "source": [
       "Open Library edition /books/OL49671929M (Dragonsteel Entertainment, 2023-04-11): series = [\"Secret Projects, Book #2\"]",
       "Open Library edition /books/OL46057198M (Gollancz): series = [\"Secret Projects\"]"
     ]
   },
   "yumi and the nightmare painter|brandon sanderson": {
-    "series": "Secret Projects", "index": 3, "display": "3",
-    "verdict": "series", "confidence": "high",
+    "series": "Secret Projects",
+    "index": 3,
+    "display": "3",
+    "verdict": "series",
+    "confidence": "high",
     "source": [
       "Open Library edition /books/OL57511518M (Dragonsteel, 2023-07-11): series = [\"Secret Projects\"]",
       "Open Library edition /books/OL48947700M (Ediciones B, Spanish): series = [\"Novela Secreta 3\"] — the number"
     ]
   },
   "sunlit man|brandon sanderson": {
-    "series": "Secret Projects", "index": 4, "display": "4",
-    "verdict": "series", "confidence": "high",
+    "series": "Secret Projects",
+    "index": 4,
+    "display": "4",
+    "verdict": "series",
+    "confidence": "high",
     "source": [
       "Amazon \"Secret Projects Series 4-Book Collection Set\" lists it fourth",
       "screenrant.com/every-brandon-sanderson-secret-project-book-explained/ — \"The Sunlit Man is Secret Project #4\"",
@@ -88,10 +120,12 @@
     ],
     "note": "Two of the four (Frugal Wizard #2, Yumi #3) carry their number in an Open Library edition record, and both land exactly where the Dragonsteel quarterly publication dates put them — Tress 2023-01-10, Frugal Wizard 2023-04-11, Yumi 2023-07-11, Sunlit Man 2023-10-10, all read out of the EPUBs' own <dc:date>. Isles of the Emberdark is already in this catalog as Secret Projects 5, from the audiobook catalog's curated column."
   },
-
   "untapped|dakota krout": {
-    "series": "The Completionist Chronicles", "index": 12, "display": "12",
-    "verdict": "series", "confidence": "high",
+    "series": "The Completionist Chronicles",
+    "index": 12,
+    "display": "12",
+    "verdict": "series",
+    "confidence": "high",
     "source": [
       "mountaindalepress.store/products/untapped-book-12-in-the-completionist-chronicles — the publisher's own store, \"Untapped | Completionist Chronicles Book 12\"",
       "Amazon B0FHL2XTK8 \"Untapped: The Completionist Chronicles, Book 12\"",
@@ -99,8 +133,11 @@
     ]
   },
   "unmapped|dakota krout": {
-    "series": "The Completionist Chronicles", "index": 13, "display": "13",
-    "verdict": "series", "confidence": "high",
+    "series": "The Completionist Chronicles",
+    "index": 13,
+    "display": "13",
+    "verdict": "series",
+    "confidence": "high",
     "source": [
       "Amazon B0FLYR1DDN \"Unmapped: An Epic Fantasy LitRPG Adventure (The Completionist Chronicles Book 13)\"",
       "mountaindalepress.store/products/unmapped — \"Unmapped | Completionist Chronicles Book 13\"",
@@ -108,8 +145,11 @@
     ]
   },
   "uncapped|dakota krout": {
-    "series": "The Completionist Chronicles", "index": 14, "display": "14",
-    "verdict": "series", "confidence": "high",
+    "series": "The Completionist Chronicles",
+    "index": 14,
+    "display": "14",
+    "verdict": "series",
+    "confidence": "high",
     "source": [
       "mountaindalepress.store/products/uncapped — \"Uncapped | Completionist Chronicles Book 14\"",
       "Amazon B0GX2YSYVX \"(The Completionist Chronicles Book 14)\"",
@@ -118,8 +158,11 @@
     "note": "⚠️ The audiobook catalog carries all three of these with an EMPTY series column, so rung 3 could never have found them — its curated data stops at Invent (Book 7). Do not read a blank there as \"no series\"."
   },
   "invent short story|dakota krout": {
-    "series": "The Completionist Chronicles", "index": null, "display": null,
-    "verdict": "series", "confidence": "high",
+    "series": "The Completionist Chronicles",
+    "index": null,
+    "display": null,
+    "verdict": "series",
+    "confidence": "high",
     "source": [
       "the file itself: title-page.xhtml reads \"THE COMPLETIONIST CHRONICLES: INVENT — Prologue and the First Five Chapters\"",
       "its toc.ncx is titled \"The Completionist Chronicles: Invent\"",
@@ -128,18 +171,23 @@
     "note": "A publisher's sampler of Invent (Book 7), not Invent. Index deliberately null: a five-chapter preview has no place on the number line, and claiming 7 would collide with the real Book 7 if the full ebook is ever imported. Nulls sort last, which is the right shelf position for it."
   },
   "divine dungeon complete series dungeon core gamelit fantasy|dakota krout": {
-    "series": "The Divine Dungeon", "index": null, "display": "Complete Series",
-    "verdict": "series", "confidence": "high",
+    "series": "The Divine Dungeon",
+    "index": null,
+    "display": "Complete Series",
+    "verdict": "series",
+    "confidence": "high",
     "source": [
       "the work's own <dc:title>, \"The Divine Dungeon Complete Series: Dungeon Core GameLit Fantasy\" (ASIN B084RD9N97, Mountaindale Press)",
       "the audiobook catalog curates the series name as \"The Divine Dungeon\"; Dungeon Born is already in this catalog as index 1"
     ],
     "note": "An omnibus. Index null for the same reason as any compilation."
   },
-
   "seirei tsukai no blade dance br ss compilation|shimizu yuu": {
-    "series": "Seirei Tsukai no Blade Dance", "index": null, "display": "BR SS Compilation",
-    "verdict": "series", "confidence": "high",
+    "series": "Seirei Tsukai no Blade Dance",
+    "index": null,
+    "display": "BR SS Compilation",
+    "verdict": "series",
+    "confidence": "high",
     "source": [
       "the file's own <dc:title>, \"Seirei Tsukai no Blade Dance - BR SS Compilation\"",
       "it lives in the ebook root's \"Seirei Tsukai no Blade Dance/\" folder",
@@ -147,10 +195,12 @@
     ],
     "note": "detectSeriesFromTitle passes on it because there is no volume marker to anchor the split — the same reason the six Extra.N volumes needed one, except those had a marker. Index null, exactly like them."
   },
-
   "onyx storm the empyrean|rebecca yarros": {
-    "series": "The Empyrean", "index": 3, "display": "3",
-    "verdict": "series", "confidence": "high",
+    "series": "The Empyrean",
+    "index": 3,
+    "display": "3",
+    "verdict": "series",
+    "confidence": "high",
     "source": [
       "audiobook_catalog/site/catalog.csv: \"Onyx Storm - Empyrean, Book 3\" — series \"The Empyrean\", display \"3\", sort 3.0",
       "Open Library edition /books/OL57758752M: series = [\"The Empyrean #3\"]",
@@ -158,10 +208,12 @@
     ],
     "note": "⚠️ This one the audiobook catalog DOES know, and rung 3 still missed it — matchIndexedWork does not connect this library's \"Onyx Storm (The Empyrean)\" to the audiobook row's cleaned \"Onyx Storm\". Worth a look if the matcher is ever revisited; the override is the cheap fix, not the diagnosis."
   },
-
   "legion|brandon sanderson": {
-    "series": "Legion", "index": 1, "display": "1",
-    "verdict": "series", "confidence": "medium",
+    "series": "Legion",
+    "index": 1,
+    "display": "1",
+    "verdict": "series",
+    "confidence": "medium",
     "source": [
       "Open Library edition /books/OL26501922M (Tor, 2018 omnibus): series = [\"Legion\"] — the series name",
       "en.wikipedia.org/wiki/Legion_(novella_series): Legion (2012), Legion: Skin Deep (2014), Legion: Lies of the Beholder (2018)",
@@ -169,8 +221,11 @@
     ]
   },
   "legion skin deep|brandon sanderson": {
-    "series": "Legion", "index": 2, "display": "2",
-    "verdict": "series", "confidence": "medium",
+    "series": "Legion",
+    "index": 2,
+    "display": "2",
+    "verdict": "series",
+    "confidence": "medium",
     "source": [
       "en.wikipedia.org/wiki/Legion_(novella_series) — second of the three novellas",
       "the EPUB's own <dc:date> 2014-11-24",
@@ -178,10 +233,12 @@
     ],
     "note": "Confidence medium, and only on the NUMBERS. The series name is directly attested; the 1/2 ordering is publication order from Wikipedia plus the EPUBs' own dates, not a number printed on either cover. No source checked prints \"Legion #1\" or \"#2\"."
   },
-
   "world s only hero|dakota krout": {
-    "series": "Chance Encounter", "index": 1, "display": "1",
-    "verdict": "series", "confidence": "high",
+    "series": "Chance Encounter",
+    "index": 1,
+    "display": "1",
+    "verdict": "series",
+    "confidence": "high",
     "source": [
       "the EPUB's own EPUB3 metadata: <meta property=\"belongs-to-collection\">Chance Encounter</meta> with group-position 1",
       "Amazon B0GYQ8SC24 \"(Chance Encounter Book 1)\"",
@@ -189,31 +246,38 @@
     ],
     "note": "⚠️ This is the ONLY file in all 117 that carries belongs-to-collection, and scripts/lib/epub.mjs does not read it — it reads calibre:series, which is present in 0 of 117. One file is not a rung worth building, but if Vellum-produced ebooks start arriving in bulk, that is the metadata to read."
   },
-
   "guild mage apprentice|david niemitz": {
-    "series": "Guild Mage", "index": 1, "display": "1",
-    "verdict": "series", "confidence": "high",
+    "series": "Guild Mage",
+    "index": 1,
+    "display": "1",
+    "verdict": "series",
+    "confidence": "high",
     "source": [
       "goodreads.com/book/show/238933596-guild-mage — \"Guild Mage: Apprentice: Guild Mage, Book 1\"",
       "Open Library work /works/OL44593767W is titled \"Guild Mage\" and its other editions are subtitled \"Coral Bay\" and \"The Lady of Winter\"",
       "fantasticfiction.com/n/david-niemitz/guild-mage/ — Apprentice, Eld, Coral Bay, Journeyman, Renegade"
     ]
   },
-
   "what if everybody said that what if everybody|ellen javernick": {
-    "series": "What If Everybody?", "index": 2, "display": "2",
-    "verdict": "series", "confidence": "high",
+    "series": "What If Everybody?",
+    "index": 2,
+    "display": "2",
+    "verdict": "series",
+    "confidence": "high",
     "source": [
       "the EPUB's own <dc:title> carries the series in its parenthetical: \"What If Everybody Said That? (What If Everybody?)\"",
       "Amazon B078JR36SH \"What If Everybody Said That? (What If Everybody? Book 2)\"",
       "goodreads.com/series/270520-what-if-everybody"
     ]
   },
-
   "white sand|julius gopez rik hoskin": {
-    "series": "White Sand", "index": 1, "display": "Volume 1",
-    "verdict": "series", "confidence": "high",
+    "series": "White Sand",
+    "index": null,
+    "display": null,
+    "verdict": "series",
+    "confidence": "high",
     "source": [
+      "Owner confirmed 2026-08-10 they hold the omnibus; the redownloaded file measures 490 spine items / 412MB against the volume-1 file's 162 / 150MB, so both editions are held and neither is a guess",
       "The cover image extracted from this very file was LOOKED AT (2026-08-10): it is the Volume 1 cover — Kenton in white robes amid sand ribbons, four character portraits across the top, credit bar reading RIK HOSKIN / DYNAMITE / JULIUS GOPEZ. This is a direct observation of the artifact, not a database lookup",
       "Owner supplied amazon.com/dp/1606908855 — White Sand Volume 1, Dynamite — as the edition they believe they hold; it matches the cover above",
       "Julius Gopez drew volumes 1-2, not 3; combined with the cover this excludes volume 3",
@@ -221,31 +285,41 @@
       "en.wikipedia.org/wiki/Brandon_Sanderson_bibliography lists White Sand under Cosmere graphic novels (Taldain), 2016-2019",
       "Open Library holds White Sand 1 / 2 / 3 plus an omnibus, all Dynamite Entertainment — which is the publisher in this EPUB's <dc:publisher>"
     ],
-    "note": "Volume resolved 2026-08-10 by LOOKING AT THE COVER, after an earlier pass correctly left it null. The metadata genuinely cannot settle it — <dc:title> is bare \"White Sand\", there is no ISBN, and the 162 page images are 162 pictures with no text layer at all, so no amount of parsing would ever have got there. The picture was the evidence the text did not contain. Filed under the author-order spelling that owns the actual file; see the sibling key for the duplicate row."
+    "note": "Volume moved OFF the work and ONTO the edition on 2026-08-10. The owner re-downloaded and the new file is the 496pp OMNIBUS (490 spine items, ASIN B0C51J2YKH, its own description says it collects all three volumes) - so this single work now carries TWO editions: the 162-page volume 1 EPUB (edition_name 'Volume 1') and the omnibus. No single volume number applies to the work any more, so index is null and the per-edition detail lives in edition.edition_name where it belongs. The earlier identification still stands and is why edition 107 is labelled Volume 1: the cover extracted from that file is the volume 1 cover, and 162 spine items rule out the 496pp omnibus that the NEW file matches exactly. The duplicate row 'white sand|rik hoskin julius gopez' (work 35) was deleted - it had no edition, no file, no cover, no copies and no read-state."
   },
   "white sand|rik hoskin julius gopez": {
-    "series": "White Sand", "index": null, "display": null,
-    "verdict": "series", "confidence": "medium",
-    "source": ["same as \"white sand|julius gopez rik hoskin\" — this is the same book under a second author spelling"],
+    "series": "White Sand",
+    "index": null,
+    "display": null,
+    "verdict": "series",
+    "confidence": "medium",
+    "source": [
+      "same as \"white sand|julius gopez rik hoskin\" — this is the same book under a second author spelling"
+    ],
     "note": "⚠️ Two rows, one book. This one has no edition and no source_url at all. Worth a look as a duplicate; merging it is a work_key question, not a series question, so it is out of scope here."
   },
-
   "emperor s soul|brandon sanderson": {
-    "series": null, "verdict": "standalone", "confidence": "high",
+    "series": null,
+    "verdict": "standalone",
+    "confidence": "high",
     "source": [
       "en.wikipedia.org/wiki/The_Emperor's_Soul — \"a stand-alone novella\"; set in the Elantris world but with none of its characters",
       "no series field on any of 16 Open Library editions across three work records"
     ]
   },
   "perfect state|brandon sanderson": {
-    "series": null, "verdict": "standalone", "confidence": "high",
+    "series": null,
+    "verdict": "standalone",
+    "confidence": "high",
     "source": [
       "en.wikipedia.org/wiki/Brandon_Sanderson_bibliography — \"Other works\", standalone novella (2015)",
       "Open Library edition /books/OL27104928M subtitle \"A Novella\", no series"
     ]
   },
   "snapshot|brandon sanderson": {
-    "series": null, "verdict": "standalone", "confidence": "high",
+    "series": null,
+    "verdict": "standalone",
+    "confidence": "high",
     "source": [
       "en.wikipedia.org/wiki/Brandon_Sanderson_bibliography — \"Other works\", standalone novella (2017)",
       "Open Library edition /books/OL49554337M subtitle \"A Novella\", no series",
@@ -253,11 +327,17 @@
     ]
   },
   "dreamer|brandon sanderson": {
-    "series": null, "verdict": "standalone", "confidence": "high",
-    "source": ["en.wikipedia.org/wiki/Brandon_Sanderson_bibliography — \"Other works\", standalone short story"]
+    "series": null,
+    "verdict": "standalone",
+    "confidence": "high",
+    "source": [
+      "en.wikipedia.org/wiki/Brandon_Sanderson_bibliography — \"Other works\", standalone short story"
+    ]
   },
   "shadows for silence in the forests of hell|brandon sanderson": {
-    "series": null, "verdict": "standalone", "confidence": "medium",
+    "series": null,
+    "verdict": "standalone",
+    "confidence": "medium",
     "source": [
       "en.wikipedia.org/wiki/Brandon_Sanderson_bibliography — Cosmere short works, a novella set on Threnody; not an entry in any numbered series",
       "Open Library edition /books/OL46543675M subtitle \"A Cosmere Novella\", no series"
@@ -265,12 +345,18 @@
     "note": "The Cosmere is a shared universe, not a reading-order series, and work.series holds reading-order series everywhere else in this catalog. If that ever changes, revisit this and Sixth of the Dusk together."
   },
   "sixth of the dusk|brandon sanderson": {
-    "series": null, "verdict": "standalone", "confidence": "medium",
-    "source": ["en.wikipedia.org/wiki/Brandon_Sanderson_bibliography — Cosmere short works, a novella set on First of the Sun; not an entry in any numbered series"],
+    "series": null,
+    "verdict": "standalone",
+    "confidence": "medium",
+    "source": [
+      "en.wikipedia.org/wiki/Brandon_Sanderson_bibliography — Cosmere short works, a novella set on First of the Sun; not an entry in any numbered series"
+    ],
     "note": "Same reasoning as Shadows for Silence."
   },
   "long chills and case dough|brandon sanderson": {
-    "series": null, "verdict": "standalone", "confidence": "medium",
+    "series": null,
+    "verdict": "standalone",
+    "confidence": "medium",
     "source": [
       "en.wikipedia.org/wiki/Brandon_Sanderson_bibliography — \"Other works\", a short story",
       "dragonsteelbooks.com files it under the \"Sanderson Curiosity\" filter (5 products), with no volume number on any of them"
@@ -278,7 +364,9 @@
     "note": "\"Sanderson Curiosities\" is a publisher category, not a reading order — the store's own listings carry no numbers. Recording it as a series would put an imprint label in a column that holds reading-order series everywhere else."
   },
   "dragonsteel prime|brandon sanderson": {
-    "series": null, "verdict": "standalone", "confidence": "medium",
+    "series": null,
+    "verdict": "standalone",
+    "confidence": "medium",
     "source": [
       "en.wikipedia.org/wiki/Brandon_Sanderson_bibliography — \"Other works\", a Sanderson Curiosities novel (2024)",
       "dragonsteelbooks.com \"Sanderson Curiosity\" filter, unnumbered",
@@ -287,23 +375,34 @@
     "note": "Same reasoning as Long Chills and Case Dough. Non-canon, and not the published Dragonsteel series."
   },
   "tenth island finding joy beauty and unexpected love in the azores|diana marcum": {
-    "series": null, "verdict": "standalone", "confidence": "high",
-    "source": ["a standalone memoir (Little A, 2018); no series on the single Open Library edition, none on the publisher's or Goodreads listing"]
+    "series": null,
+    "verdict": "standalone",
+    "confidence": "high",
+    "source": [
+      "a standalone memoir (Little A, 2018); no series on the single Open Library edition, none on the publisher's or Goodreads listing"
+    ]
   },
   "whisper me this|kerry anne king": {
-    "series": null, "verdict": "standalone", "confidence": "high",
+    "series": null,
+    "verdict": "standalone",
+    "confidence": "high",
     "source": [
       "fantasticfiction.com/k/kerry-anne-king/whisper-me-this.htm lists it as a standalone",
       "no series on any of 3 Open Library editions; every edition is subtitled \"A Novel\""
     ]
   },
   "beautiful exiles|meg waite clayton": {
-    "series": null, "verdict": "standalone", "confidence": "high",
-    "source": ["a standalone historical novel (Lake Union, 2018); no series on any of 3 Open Library editions, none on the publisher's listing"]
+    "series": null,
+    "verdict": "standalone",
+    "confidence": "high",
+    "source": [
+      "a standalone historical novel (Lake Union, 2018); no series on any of 3 Open Library editions, none on the publisher's listing"
+    ]
   },
-
   "firstborn defending elysium|brandon sanderson": {
-    "series": null, "verdict": "unknown", "confidence": "low",
+    "series": null,
+    "verdict": "unknown",
+    "confidence": "low",
     "source": [
       "en.wikipedia.org/wiki/Brandon_Sanderson_bibliography: Firstborn is under \"Other works\" (standalone, 2008); Defending Elysium is under \"Cytoverse\" (short story, 2008)",
       "Open Library /works/OL20109892W, 2 editions, no series"
@@ -311,7 +410,9 @@
     "note": "A two-novella bind-up whose halves sit in different places: one uncollected, one Cytoverse. The bound volume is in no series, but calling it a standalone would bury the Cytoverse half, and calling it Cytoverse would be wrong about the other half. Left unset on purpose — an empty column is the honest answer here."
   },
   "undead knight|erik colombe": {
-    "series": null, "verdict": "unknown", "confidence": "low",
+    "series": null,
+    "verdict": "unknown",
+    "confidence": "low",
     "source": [
       "Open Library /works/OL29904548W, 1 edition, no series, no publisher",
       "goodreads.com/book/show/44587393-undead-knight carries no series annotation",
