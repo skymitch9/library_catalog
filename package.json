@@ -22,7 +22,8 @@
     "db:migrate": "npm run db:migrate --workspace @lc/worker",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "tsx --test packages/core/test/*.test.ts",
-    "backfill:reviews": "tsx scripts/backfill-review-keys.mjs"
+    "backfill:reviews": "tsx scripts/backfill-review-keys.mjs",
+    "secrets:push": "node scripts/push-secrets.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",

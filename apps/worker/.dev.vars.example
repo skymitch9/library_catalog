@@ -1,34 +1,39 @@
-# Copy to `.dev.vars` (gitignored) for local development.
+# Local development, and the SINGLE SOURCE OF TRUTH for production secrets.
 #
-# wrangler's equivalent of a .env — loaded automatically by `wrangler dev`.
-# Production secrets are set separately with `npx wrangler secret put NAME` and
-# are never read from this file.
+# Edit a key here, then:   npm run secrets:push
+#
+# That pushes every allowlisted key to the deployed Worker over stdin, so a value
+# never reaches argv, a process listing, or your shell history. One place to
+# change a key — which is the point.
+#
+# ⚠️ This file is gitignored and must stay that way. It is the only file in the
+# repo that holds real key material.
+
+# --- local only, never pushed ------------------------------------------------
 
 # Must not be "production", or DEV_EMAIL is ignored. That guard is what stops a
-# stray value from bypassing sign-in on the real site. It ALSO switches the
-# review bridge to the `reviews_dev` Firestore collection, mirroring the
-# audiobook site's own dev lane — so local experiments never write into the
-# reviews the live site reads.
+# stray value bypassing Google sign-in on the real site.
 ENVIRONMENT = "development"
 
-# Stands in for the Google identity Firebase would supply. The first identity to
-# hit an empty database becomes owner.
-#
-# ⚠️ Use your REAL Google address here, not a placeholder. `email` is the join
-# key to the audiobook catalog, so a made-up one creates a local account that
-# will not be you when you deploy.
+# Stands in for the Google identity Firebase supplies. Use your REAL address:
+# `email` is the join key to the audiobook catalog, so a placeholder creates a
+# local account that will not be you.
 DEV_EMAIL = "you@example.com"
 DEV_NAME = "Your Name"
 
-# Google Books API key — free, from https://console.cloud.google.com/apis/credentials
-# with the Books API enabled.
+# --- pushed to production by `npm run secrets:push` --------------------------
+
+# Google Books, ISBN ladder rung 2. Free.
 #
-# ⚠️ Not optional in the way it looks. Anonymous Google Books returned HTTP 429
-# on 40 of 40 calls on 2026-08-09: the shared unauthenticated quota is exhausted,
-# so without a key that rung does not degrade, it simply never answers. With the
-# key blank the ladder skips it rather than burning a subrequest to be refused.
+# ⚠️ Not optional in the way it looks: anonymous Google Books returned HTTP 429
+# on 40 of 40 calls (2026-08-09), so without a key that rung never answers at
+# all — it is skipped, with the reason in the scan trace.
+#
+# Use a key restricted to Books API only, on project 68492219785. Do NOT reuse
+# the Firebase web key: it ships to every browser on the audiobook site, and
+# restricting it to Books would break sign-in. See docs/access/cloudflare.md.
 GOOGLE_BOOKS_API_KEY = ""
 
-# Anthropic API key for the research pipeline (phase 5).
+# Anthropic, for the research pipeline (phase 5, not built yet).
 # https://platform.claude.com/settings/keys
 ANTHROPIC_API_KEY = ""

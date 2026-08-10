@@ -159,14 +159,38 @@ A second key on the same project costs nothing and avoids both.
 from a Cloudflare Worker, not a browser, so there is no referrer to match and the
 restriction silently rejects everything.
 
-Then set it **without pasting it into a chat, a file, or your shell history**:
+### Setting it — one place, one command
+
+`apps/worker/.dev.vars` is the **single source of truth** for every secret. Edit
+it there, then:
 
 ```bash
-npm run secret GOOGLE_BOOKS_API_KEY
+npm run secrets:push -- --dry   # names and a last-4 fingerprint, nothing sent
+npm run secrets:push            # push every allowlisted key
 ```
 
-`wrangler` prompts for the value and reads it directly. It never touches the
-repo, and `.dev.vars` is only for local development.
+`scripts/push-secrets.mjs` sends values to wrangler over **stdin**, so a key
+never reaches argv, a process listing or your shell history. Ported from the
+Board Game Catalog, where it exists because `wrangler secret put` handles one key
+at a time and a rotation once left production holding the old value while
+`.dev.vars` held the new one.
+
+Three properties worth knowing:
+
+- **Allowlist, not denylist.** `PRODUCTION_SECRETS` names what may be pushed, so
+  a new local-only variable cannot reach production by being forgotten.
+  `DEV_EMAIL` is explicitly refused — it is the auth bypass.
+- **It only ever sets.** Deleting a line does not delete the production secret;
+  that needs `wrangler secret delete`, so a typo cannot strip a live credential.
+- **Fingerprints, not values.** It prints `push GOOGLE_BOOKS_API_KEY (…5mMA)` —
+  enough to confirm which value went up, useless to anyone else.
+
+Verified working 2026-08-09 — the ISBN ladder now returns two rungs:
+
+```
+openlibrary  ok=True found=1 208ms
+googlebooks  ok=True found=1 254ms
+```
 
 Verify with a scan whose trace should now show two rungs instead of one:
 
@@ -273,6 +297,7 @@ game catalog and are wrong here.
 
 | Symptom | First check |
 |---|---|
+| `"database":"down"` locally, right after provisioning | ⚠️ **Local D1 state is keyed by `database_id`.** Changing that value in `wrangler.toml` — as happened when the placeholder was replaced with the real id — orphans the old local database, and the new id starts with no tables. Production is unaffected. Fix: `npm run db:migrate:local`. |
 | A completely different app on localhost | **Port collision.** `wrangler dev` does not tell you the port was taken; 8792 was already bound by the Board Game Catalog's dev server and served *that* app, title and data included. `curl -s localhost:PORT/ \| grep title`. |
 | `auth/unauthorized-domain` | §5 — the Firebase authorised domain. |
 | `/api/me` returns 401 in production | Expected without a signed-in Google account. Sign in through the UI; curl cannot. |
