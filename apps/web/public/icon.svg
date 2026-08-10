@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" role="img" aria-label="Library">
+  <!-- Maskable: the safe zone is the middle 80%, so nothing meaningful goes
+       within ~19px of an edge or a round mask will clip it. -->
+  <rect width="192" height="192" fill="#16150f"/>
+  <g fill="none" stroke="#8fbc8f" stroke-width="9" stroke-linejoin="round">
+    <rect x="46" y="42" width="30" height="108" rx="3"/>
+    <rect x="84" y="42" width="30" height="108" rx="3"/>
+    <path d="M124 50 L150 46 L164 144 L138 148 Z"/>
+  </g>
+</svg>

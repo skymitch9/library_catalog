@@ -80,6 +80,18 @@ export const api = {
   work: (id: number) => request<Record<string, unknown>>(`/api/works/${id}`),
 
   /**
+   * "Do we already hold this book?" Ask before creating one.
+   *
+   * ⚠️ `createWork` does NOT dedupe — the schema allows two works with one key
+   * on purpose. Skipping this check means scanning the paperback of a book you
+   * already hold as an ebook silently produces a second row for the same book.
+   */
+  matchWork: (title: string, authors: string) =>
+    request<{ work: { id: number; title: string; authors: string } | null }>(
+      `/api/works/match?title=${encodeURIComponent(title)}&authors=${encodeURIComponent(authors)}`,
+    ),
+
+  /**
    * ⚠️ A PUT, so it REPLACES the whole read-state row. Send the dates back with
    * it or they are cleared — the endpoint is `.strict()` and will also reject any
    * key it does not know, including `rating` (ratings go through reviewDraft).

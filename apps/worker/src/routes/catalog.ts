@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import {
   COLLECTION_PAGE_SIZE,
+  workKeyFor,
   createCopySchema,
   createEditionSchema,
   createWorkSchema,
@@ -13,6 +14,7 @@ import {
   createWork,
   deleteCopy,
   deleteWork,
+  findWorkByKey,
   getReadState,
   getWork,
   listCollection,
@@ -44,6 +46,34 @@ export const catalogRoutes = new Hono<AppBindings>()
       offset: page * COLLECTION_PAGE_SIZE,
     });
     return c.json({ rows, total, page, pageSize: COLLECTION_PAGE_SIZE });
+  })
+
+  /**
+   * "Do we already hold this book?" — asked BEFORE creating a work.
+   *
+   * ⚠️ This exists because `POST /api/works` deliberately does not dedupe.
+   * Migration 0001 says `work_key` is not UNIQUE on purpose: two genuinely
+   * different works can fold to one key, and a refused write is a mystery where
+   * a duplicate is visible and fixable.
+   *
+   * That is right for the database and wrong as a default for scanning. The
+   * catalog already holds 81 works imported from ebooks, so scanning the
+   * paperback of one of them would otherwise produce a second row for the same
+   * book — the exact "filed under already-yours, where it is lost" failure the
+   * matcher was designed to prevent, arriving through the front door instead.
+   *
+   * So the client asks first, and a hit becomes "add this edition to the book
+   * you already have" rather than a new work. The decision stays with a person;
+   * the database keeps its permissive shape.
+   */
+  .get('/works/match', requireCapability('read'), async (c) => {
+    const title = c.req.query('title');
+    const authors = c.req.query('authors');
+    if (!title || !authors) {
+      return c.json({ error: 'bad_request', detail: 'title and authors are required' }, 400);
+    }
+    const work = await findWorkByKey(c.env.DB, workKeyFor(title, authors));
+    return c.json({ work: work ?? null });
   })
 
   .get('/works/:id', requireCapability('read'), async (c) => {

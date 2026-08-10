@@ -48,6 +48,8 @@ interface Row {
   format?: string;
   detail?: string;
   added?: boolean;
+  /** Set when this scan attached to a work we already had, rather than making one. */
+  attachedTo?: string | null;
 }
 
 export function ScanPage({ onDone }: { onDone: () => void }) {
@@ -233,7 +235,16 @@ export function ScanPage({ onDone }: { onDone: () => void }) {
   async function add(row: Row) {
     if (!row.title || !row.authors) return;
     try {
-      const { work } = await api.createWork({ title: row.title, authors: row.authors });
+      // ⚠️ Attach to the book we already hold rather than creating a second row
+      // for it. The catalog contains works imported from ebooks, so scanning the
+      // paperback of one is the ordinary case, not the exception — and a
+      // duplicate work is the "filed under already-yours, where it is lost"
+      // failure the matcher exists to prevent, arriving through the front door.
+      const existing = await api.matchWork(row.title, row.authors);
+      const work =
+        existing.work ??
+        (await api.createWork({ title: row.title, authors: row.authors })).work;
+      const attached = existing.work !== null;
       await api.createEdition({
         workId: work.id,
         isbn13: row.code,
@@ -247,7 +258,11 @@ export function ScanPage({ onDone }: { onDone: () => void }) {
       // book. This is the one place that inference is safe — unlike the ebook
       // importer, where a file existing says nothing about a shelf.
       await api.createCopy({ workId: work.id, status: 'owned' });
-      setRows((prev) => prev.map((r) => (r.code === row.code ? { ...r, added: true } : r)));
+      setRows((prev) =>
+        prev.map((r) =>
+          r.code === row.code ? { ...r, added: true, attachedTo: attached ? work.title : null } : r,
+        ),
+      );
     } catch (err) {
       setRows((prev) =>
         prev.map((r) =>

@@ -1,0 +1,19 @@
+{
+  "name": "Library",
+  "short_name": "Library",
+  "description": "Our books, on the shelf and on the Kindle.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#16150f",
+  "theme_color": "#16150f",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
