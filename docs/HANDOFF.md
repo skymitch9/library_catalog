@@ -155,12 +155,40 @@ curl -s localhost:8787/api/health
 curl -s localhost:8787/api/isbn/9780765326355   # live Open Library
 ```
 
+## Kindle: metadata only, and the mechanism is the desktop app
+
+The owner's requirement is that buying a book should show up without waiting.
+That rules out the data export and points at **Kindle for PC's local metadata
+cache**, which updates whenever the app syncs.
+
+⚠️ **This imports names, not files.** Kindle books are DRM protected and this
+repo does not circumvent that — the import produces `ebook_kindle` editions,
+which migration 0002 defines as *a licence with no bytes*. `EBOOK_FILE_FORMATS`
+deliberately excludes it, so nothing will ever offer to send one to a device.
+
+**No books need to be downloaded.** The sync cache lists the whole account
+library, not just downloaded titles, so signing in and letting it sync is enough
+and nothing encrypted lands on disk.
+
+Next steps, in order:
+
+1. Owner installs Kindle for PC, signs in, lets it finish syncing.
+2. Identify what it actually wrote. Older versions produced
+   `KindleSyncMetadataCache.xml` — ASIN, title, authors, publication date, a
+   trivial parse. **Kindle for PC 2.x reorganised its storage and the current
+   format is unverified.** Look before writing the parser.
+3. Parse → `ebook_kindle` editions through the existing API.
+
+This does **not** depend on the paused ebook pipeline. It writes catalog rows,
+not files, so it needs no CWA, no Docker and no ingest route — a script and the
+API that is already deployed.
+
 ## Open questions
 
 | # | Question | Blocks | State |
 |---|---|---|---|
-| 1 | Kindle metadata cache on this machine? | Phase 3 | `My Kindle Content` does not exist at either default path. A wider sweep timed out at 2 minutes without finishing, so "no Kindle for PC" is likely but **not proven**. |
-| 2 | Amazon "Request My Data" export | Phase 3 | Not started. Needs the owner's Amazon login; takes days, so start it early. |
+| 1 | Kindle metadata cache on this machine? | Kindle import | ✅ **Answered 2026-08-09: Kindle for PC is NOT installed.** Proven, not assumed — no `%LOCALAPPDATA%\Amazon`, no `%APPDATA%\Amazon`, no Program Files entry, no uninstall registry key under HKLM or HKCU, no Store appx. The earlier sweep that timed out left this "likely"; a targeted PowerShell check settled it. **Installing it is the chosen path** — see below. |
+| 2 | Amazon "Request My Data" export | — | ❌ **Rejected by the owner, and rightly.** A batch export with days of latency cannot answer "I bought a book an hour ago". Superseded by the Kindle for PC cache, which is local and updates on sync. |
 | 3 | Where do loose ebook files live — disk, Drive, or both? | Phase 3 | Not investigated. |
 | 4 | Do the legacy passphrase users need Google accounts? | UX | Their reviews show up fine; they just cannot sign in here. A conversation, not a code change. |
 | 5 | Should `edition.format` gain an audiobook value once the shared index lands? | Platform | **No.** `PLATFORM.md` §2.2 says nothing merges; audiobooks stay read-only in their own catalog and meet this one through `work_key`. Recorded because it will be asked. |
