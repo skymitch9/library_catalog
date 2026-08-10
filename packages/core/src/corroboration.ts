@@ -173,14 +173,33 @@ export function seriesMentioned(olText: string, ourSeries: string): boolean {
  */
 const VOLUME_MARKERS = new Set(['book', 'volume', 'vol', 'part', 'no', 'number']);
 
-export function volumeMentioned(olText: string, ourVolume: number): boolean {
+/**
+ * What volume number does this string state, if any?
+ *
+ * The extracting half of `volumeMentioned`. Corroboration only ever needed
+ * "does it say OUR number", but auditing our own `series_index_sort` against
+ * Open Library needs the number itself — you cannot report a disagreement you
+ * cannot name.
+ *
+ * Same marker rule, deliberately shared rather than re-derived: a bare trailing
+ * digit is never a volume, because Eric Vall's book really is called
+ * *Summoner 6*.
+ *
+ * Returns the FIRST marker-led number. A string stating two different volumes
+ * is not something to average.
+ */
+export function volumeStatedIn(olText: string): number | null {
   const tokens = normaliseTitle(olText).split(' ').filter(Boolean);
   for (let i = 0; i < tokens.length - 1; i++) {
     if (!VOLUME_MARKERS.has(tokens[i] as string)) continue;
     const n = parseVolumeNumber(tokens[i + 1] as string);
-    if (n !== null && n === ourVolume) return true;
+    if (n !== null) return n;
   }
-  return false;
+  return null;
+}
+
+export function volumeMentioned(olText: string, ourVolume: number): boolean {
+  return volumeStatedIn(olText) === ourVolume;
 }
 
 // ---------------------------------------------------------------------------

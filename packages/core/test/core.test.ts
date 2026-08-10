@@ -30,6 +30,7 @@ import {
   samePublisher,
   seriesMentioned,
   volumeMentioned,
+  volumeStatedIn,
 } from '../src/corroboration.ts';
 import {
   completenessSentence,
@@ -629,5 +630,27 @@ describe('corroboration — series and volume in an edition label', () => {
   it('requires every word of our series name to be present', () => {
     assert.ok(!seriesMentioned('Skyward Flight', 'Skyward Legacy'));
     assert.ok(seriesMentioned('The Reckoners, Book 2', 'The Reckoners'));
+  });
+});
+
+describe('volumeStatedIn — the extracting half of volumeMentioned', () => {
+  it('reads Arabic, word and Roman volumes', () => {
+    assert.equal(volumeStatedIn('Cradle, Volume Four'), 4);
+    assert.equal(volumeStatedIn('Cradle, Volume 4'), 4);
+    assert.equal(volumeStatedIn('Rise of the Weakest Summoner: Volume XI'), 11);
+    assert.equal(volumeStatedIn('Secret Projects, Book #2'), 2);
+  });
+
+  it('refuses a bare trailing number', () => {
+    // Eric Vall's book really is called "Summoner 6". Reading every trailing
+    // digit as a volume would invent one for any title ending in a digit.
+    assert.equal(volumeStatedIn('Summoner 6'), null);
+    assert.equal(volumeStatedIn('Skysworn'), null);
+  });
+
+  it('still agrees with volumeMentioned, which now delegates to it', () => {
+    assert.equal(volumeMentioned('Cradle, Volume Four', 4), true);
+    assert.equal(volumeMentioned('Cradle, Volume Four', 5), false);
+    assert.equal(volumeMentioned('Summoner 6', 6), false);
   });
 });

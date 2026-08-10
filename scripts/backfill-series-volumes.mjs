@@ -177,6 +177,106 @@ for (const s of ours) {
 }
 
 // ---------------------------------------------------------------------------
+// Rung 2: Open Library, for the works that carry an id
+//
+// ⚠️ READ THE EDITION RECORDS, NOT THE SEARCH INDEX. This rung was nearly not
+// built, on a measurement that used the wrong source — and the difference is
+// the whole point of it:
+//
+//   | source consulted                        | Cradle volumes found |
+//   | search.json titles ("(Volume N)" in the name) | 3 — [2,4,5]     |
+//   | /works/<id>/editions.json series+subtitle     | **12 — all of them** |
+//
+// The index is impoverished and the edition records are not. It is the same
+// trap covers-and-series §3.1 records for the `series` field, met again from a
+// different direction, and it is worth stating twice: **anything that concludes
+// "Open Library does not know" from search.json is reading the wrong endpoint.**
+//
+// What Open Library still cannot do is enumerate a series it has not already
+// linked to a work we hold: `series:"Cradle"` is a fuzzy full-text match that
+// returns Cat's Cradle, and `/series/<name>` is the *lists* endpoint, which
+// rejects anything that is not an `OL…L` id. So this rung is only ever as broad
+// as `work.openlibrary_work_id` is populated — 45 of 116 works today.
+//
+// That is still worth having: Cradle is one of the 13 series the sibling
+// audiobook catalog has never heard of, and this rung attests all 12 of its
+// volumes independently. `--no-openlibrary` skips the network.
+//
+// It attests volumes the same way the audiobook rung does. It NEVER writes a
+// series length: `series_check.known_total` stays NULL, because nothing here
+// can say how long a series is.
+// ---------------------------------------------------------------------------
+
+const olReport = [];
+const mismatches = [];
+
+if (!process.argv.includes('--no-openlibrary')) {
+  const { editionsOfWork } = await import('../packages/isbn/src/works.ts');
+  const { seriesMentioned, volumeStatedIn } = await import('../packages/core/src/corroboration.ts');
+
+  const withIds = query(
+    `SELECT id, title, series, series_index_sort, openlibrary_work_id
+       FROM work
+      WHERE openlibrary_work_id IS NOT NULL AND series IS NOT NULL
+      ORDER BY series, series_index_sort`,
+    flags,
+  );
+  console.log(`\n${withIds.length} work(s) carry an Open Library id — asking for their editions`);
+
+  const olSeen = new Map(); // series -> Set(volume)
+  for (const w of withIds) {
+    let editions = [];
+    try {
+      editions = await editionsOfWork(w.openlibrary_work_id, { limit: 50 });
+    } catch (e) {
+      console.warn(`  [skip] ${w.title}: ${e instanceof Error ? e.message : e}`);
+      continue;
+    }
+    // Every string on the edition that could name the series and its volume.
+    // Open Library puts it in `series` sometimes and in `subtitle` others — the
+    // covers-and-series §3.1 finding, and the reason both are read here.
+    for (const ed of editions) {
+      for (const text of [...(ed.series ?? []), ed.subtitle ?? ''].filter(Boolean)) {
+        if (!seriesMentioned(text, w.series)) continue;
+        const vol = volumeStatedIn(text);
+        if (vol === null) continue;
+        if (!olSeen.has(w.series)) olSeen.set(w.series, new Set());
+        olSeen.get(w.series).add(vol);
+
+        // ⚠️ The cross-check. Advisory ONLY — it never writes to
+        // work.series_index_sort. Our value is the one a person set or a file
+        // stated; Open Library holds duplicate and mislabelled work records
+        // (Skysworn had two, and `Unsouled` matched a different book entirely at
+        // title 1.0 / author 1.0). A disagreement is a question for a human, not
+        // a correction to apply, so it is printed and nothing more.
+        if (w.series_index_sort != null && vol !== w.series_index_sort) {
+          mismatches.push({ title: w.title, series: w.series, ours: w.series_index_sort, theirs: vol, text });
+        }
+      }
+    }
+    await new Promise((r) => setTimeout(r, 120)); // be a polite client
+  }
+
+  for (const [series, vols] of olSeen) {
+    let added = 0;
+    for (const v of [...vols].sort((a, b) => a - b)) {
+      const key = `${series}|${v}`;
+      if (manual.has(key)) continue; // a person's row outranks a fetched one
+      if (!known.has(key)) added++;
+      statements.push(
+        `INSERT INTO series_volume (series, index_sort, source, source_url)` +
+          ` VALUES (${lit(series)}, ${lit(v)}, 'openlibrary', 'https://openlibrary.org/')` +
+          ` ON CONFLICT(series, index_sort) DO UPDATE SET` +
+          ` source = CASE WHEN series_volume.source = 'manual' THEN series_volume.source` +
+          ` ELSE excluded.source END;`,
+      );
+    }
+    newVolumes += added;
+    olReport.push({ series, top: Math.max(...vols), count: vols.size, added });
+  }
+}
+
+// ---------------------------------------------------------------------------
 // ⚠️ Read the rows, not the totals.
 //
 // The review backfill's dry run said 860/860 matched and was writing keys no
@@ -202,6 +302,26 @@ for (const r of report.sort((a, b) => a.series.localeCompare(b.series))) {
   console.log(
     `  ok   ${r.series}  ours→${r.top ?? '-'}  theirs→${r.abTop}  ${r.added} new${beyond}${under}${renamed}`,
   );
+}
+
+if (olReport.length) {
+  console.log('');
+  console.log('open library:');
+  for (const r of olReport.sort((a, b) => a.series.localeCompare(b.series))) {
+    console.log(`  ${r.series}  states volume(s) up to ${r.top}  (${r.count} named, ${r.added} new)`);
+  }
+}
+
+// ⚠️ The cross-check output is the point of the second rung, not the volumes.
+// Our series_index_sort stays authoritative — this is a question, not a patch.
+console.log('');
+if (mismatches.length === 0) {
+  console.log('cross-check: no disagreement between our series_index_sort and Open Library');
+} else {
+  console.log(`cross-check: ⚠️ ${mismatches.length} disagreement(s) — OUR VALUE IS KEPT, look at these:`);
+  for (const m of mismatches) {
+    console.log(`  ${m.title}  —  ours ${m.ours}, Open Library ${m.theirs}   ("${m.text}")`);
+  }
 }
 
 console.log('');
