@@ -52,6 +52,8 @@ export interface Work {
   openlibraryWorkId: string | null;
   description: string | null;
   coverUrl: string | null;
+  /** When this row was catalogued. Drives the "recently added" view. */
+  createdAt: string;
 }
 
 export function toWork(row: WorkRow): Work {
@@ -70,6 +72,7 @@ export function toWork(row: WorkRow): Work {
     openlibraryWorkId: row.openlibrary_work_id,
     description: row.description,
     coverUrl: row.cover_url,
+    createdAt: row.created_at,
   };
 }
 
@@ -214,6 +217,11 @@ export interface CollectionQuery {
   series?: string | undefined;
   format?: string | undefined;
   status?: string | undefined;
+  /** Read state for ONE person — the caller's, never a body parameter. */
+  readState?: string | undefined;
+  readerId?: number | undefined;
+  sort?: CollectionSort | undefined;
+  dir?: 'asc' | 'desc' | undefined;
   limit: number;
   offset: number;
 }
@@ -222,6 +230,125 @@ export interface CollectionRow extends Work {
   /** Formats actually held, comma-joined. Empty when nothing is owned. */
   formats: string | null;
   copyCount: number;
+  /** This reader's state for this book, when a reader was supplied. */
+  readState: string | null;
+}
+
+/**
+ * ⚠️ THE ALLOWLIST. A sort key never reaches SQL as text a caller supplied.
+ *
+ * `ORDER BY` cannot be a bound parameter, so the only safe shape is a fixed map
+ * from a name to a fragment written here. An unknown key falls back to `series`
+ * rather than erroring: a stale bookmark should show the collection, not a 400.
+ *
+ * ## Why each one is more than a column
+ *
+ * **series** is the default and is the read side of migration 0001's decision to
+ * put a line in a column rather than a parent row. Books with no series fall
+ * back to their own sort title, so a standalone slots in alphabetically among
+ * the series names rather than piling up at one end.
+ *
+ * **`series_index_sort IS NULL` first in every series-aware sort.** SQLite orders
+ * NULL *before* everything in ASC, and this library has real volumes with no
+ * number — the six *Seirei Tsukai no Blade Dance* "Extra" side stories. Without
+ * this they sort ahead of Volume 01, which reads as a data error.
+ *
+ * **author** keeps the series grouping underneath it, because "sort by author"
+ * on a shelf means "put an author's books together", and inside that a series
+ * still wants to be in order.
+ *
+ * **added** is what makes a recently-added view possible at all. `created_at`
+ * has second resolution and imports land in one batch, so `id` breaks the tie —
+ * without it the order inside an import is undefined and the list reshuffles
+ * between requests.
+ */
+const SORTS = {
+  series:
+    `COALESCE(w.series, w.sort_title) COLLATE NOCASE %DIR%,
+     w.series_index_sort IS NULL %DIR%, w.series_index_sort %DIR%,
+     w.sort_title COLLATE NOCASE %DIR%`,
+  title: 'w.sort_title COLLATE NOCASE %DIR%, w.id %DIR%',
+  author:
+    `w.primary_author COLLATE NOCASE %DIR%,
+     COALESCE(w.series, '') COLLATE NOCASE %DIR%,
+     w.series_index_sort IS NULL ASC, w.series_index_sort ASC,
+     w.sort_title COLLATE NOCASE ASC`,
+  added: 'w.created_at %DIR%, w.id %DIR%',
+} as const;
+
+export type CollectionSort = keyof typeof SORTS;
+export const COLLECTION_SORTS = Object.keys(SORTS) as CollectionSort[];
+
+export function isCollectionSort(value: unknown): value is CollectionSort {
+  return typeof value === 'string' && Object.hasOwn(SORTS, value);
+}
+
+function orderBy(sort: CollectionSort | undefined, dir: 'asc' | 'desc' | undefined): string {
+  const template = SORTS[sort && isCollectionSort(sort) ? sort : 'series'];
+  return template.replace(/%DIR%/g, dir === 'desc' ? 'DESC' : 'ASC');
+}
+
+/**
+ * The WHERE clause and its binds, shared by the list, the count and the facets.
+ *
+ * One builder rather than three, because a facet count that disagrees with the
+ * list it labels is worse than no facet at all — and three copies of this is how
+ * they come to disagree.
+ */
+function collectionFilter(query: CollectionQuery): { sql: string; binds: unknown[] } {
+  const where: string[] = [];
+  const binds: unknown[] = [];
+
+  if (query.q) {
+    // Two patterns, because the columns are stored two different ways.
+    //
+    // `work_key` and `primary_author` are written folded, so a folded pattern
+    // finds "Café" from "cafe" — that is the second reason those columns exist.
+    // `series` is stored as printed and has no folded twin, so it is matched
+    // raw; SQLite's LIKE is case-insensitive over ASCII, which is enough.
+    //
+    // ⚠️ Searching the series is not a nicety. Verified against the local
+    // database 2026-08-10: before this clause, `?q=cradle` returned **0 rows**
+    // while the collection held six Cradle books — none of them has the word in
+    // its title, because the importer strips "(Cradle Book 3)" off before
+    // storing. Searching a series by name is the first thing anyone tries.
+    const folded = `%${normaliseTitle(query.q)}%`;
+    const raw = `%${query.q.trim()}%`;
+    where.push('(w.work_key LIKE ? OR w.primary_author LIKE ? OR w.series LIKE ?)');
+    binds.push(folded, folded, raw);
+  }
+  if (query.series) {
+    where.push('w.series = ?');
+    binds.push(query.series);
+  }
+  if (query.format) {
+    where.push('EXISTS (SELECT 1 FROM edition e WHERE e.work_id = w.id AND e.format = ?)');
+    binds.push(query.format);
+  }
+  if (query.status) {
+    where.push('EXISTS (SELECT 1 FROM copy c WHERE c.work_id = w.id AND c.status = ?)');
+    binds.push(query.status);
+  }
+  if (query.readState && query.readerId) {
+    // 'unread' has to include rows with no `user_book` at all — a book nobody has
+    // opened has no row, and treating that as "not unread" would hide most of the
+    // collection behind the one filter people reach for first.
+    if (query.readState === 'unread') {
+      where.push(
+        `NOT EXISTS (SELECT 1 FROM user_book ub
+                      WHERE ub.work_id = w.id AND ub.user_id = ? AND ub.read_state <> 'unread')`,
+      );
+      binds.push(query.readerId);
+    } else {
+      where.push(
+        `EXISTS (SELECT 1 FROM user_book ub
+                  WHERE ub.work_id = w.id AND ub.user_id = ? AND ub.read_state = ?)`,
+      );
+      binds.push(query.readerId, query.readState);
+    }
+  }
+
+  return { sql: where.length ? `WHERE ${where.join(' AND ')}` : '', binds };
 }
 
 /**
@@ -237,49 +364,159 @@ export async function listCollection(
   db: D1Database,
   query: CollectionQuery,
 ): Promise<{ rows: CollectionRow[]; total: number }> {
-  const where: string[] = [];
-  const binds: unknown[] = [];
-
-  if (query.q) {
-    const folded = `%${normaliseTitle(query.q)}%`;
-    where.push('(w.work_key LIKE ? OR w.primary_author LIKE ?)');
-    binds.push(folded, folded);
-  }
-  if (query.series) {
-    where.push('w.series = ?');
-    binds.push(query.series);
-  }
-  if (query.format) {
-    where.push('EXISTS (SELECT 1 FROM edition e WHERE e.work_id = w.id AND e.format = ?)');
-    binds.push(query.format);
-  }
-  if (query.status) {
-    where.push('EXISTS (SELECT 1 FROM copy c WHERE c.work_id = w.id AND c.status = ?)');
-    binds.push(query.status);
-  }
-
-  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const { sql: whereSql, binds } = collectionFilter(query);
 
   const totalRow = await db
     .prepare(`SELECT COUNT(*) AS n FROM work w ${whereSql}`)
     .bind(...binds)
     .first<{ n: number }>();
 
+  // The reader's own read-state travels with the row so the grid can mark a book
+  // read without N follow-up requests. Bound as a parameter even when absent, so
+  // the statement text is the same shape every time.
+  //
+  // ⚠️ It is the FIRST bind because it appears first in the SQL text, inside the
+  // select list. D1 binds positionally by order of appearance; numbering it `?1`
+  // and leaving the rest bare mixes SQLite's two parameter syntaxes, which is
+  // legal SQL and not something D1's positional bind promises to follow.
+  const readerId = query.readerId ?? -1;
+
   const { results } = await db
     .prepare(
       `SELECT ${WORK_COLS.split(',').map((c) => `w.${c.trim()}`).join(', ')},
               (SELECT group_concat(DISTINCT e.format) FROM edition e WHERE e.work_id = w.id) AS formats,
-              (SELECT COUNT(*) FROM copy c WHERE c.work_id = w.id AND c.status = 'owned') AS copy_count
+              (SELECT COUNT(*) FROM copy c WHERE c.work_id = w.id AND c.status = 'owned') AS copy_count,
+              (SELECT ub.read_state FROM user_book ub
+                WHERE ub.work_id = w.id AND ub.user_id = ?) AS read_state
          FROM work w
          ${whereSql}
-        ORDER BY COALESCE(w.series, w.sort_title), w.series_index_sort, w.sort_title
+        ORDER BY ${orderBy(query.sort, query.dir)}
         LIMIT ? OFFSET ?`,
     )
-    .bind(...binds, query.limit, query.offset)
-    .all<WorkRow & { formats: string | null; copy_count: number }>();
+    .bind(readerId, ...binds, query.limit, query.offset)
+    .all<WorkRow & { formats: string | null; copy_count: number; read_state: string | null }>();
 
   return {
     total: totalRow?.n ?? 0,
-    rows: results.map((r) => ({ ...toWork(r), formats: r.formats, copyCount: r.copy_count })),
+    rows: results.map((r) => ({
+      ...toWork(r),
+      formats: r.formats,
+      copyCount: r.copy_count,
+      readState: r.read_state,
+    })),
+  };
+}
+
+export interface CollectionFacets {
+  series: { name: string; count: number }[];
+  formats: { format: string; count: number }[];
+  statuses: { status: string; count: number }[];
+}
+
+/**
+ * What is in the collection to filter by, counted against the *current* filter.
+ *
+ * Counted rather than listed, because "Cradle" with nothing after it does not
+ * tell you whether picking it leaves you with 6 books or 1. The series filter is
+ * counted with the series clause removed, so choosing one does not collapse the
+ * list you chose it from to a single entry.
+ */
+export async function collectionFacets(
+  db: D1Database,
+  query: CollectionQuery,
+): Promise<CollectionFacets> {
+  const withoutSeries = collectionFilter({ ...query, series: undefined });
+  const all = collectionFilter(query);
+
+  const [series, formats, statuses] = await Promise.all([
+    db
+      .prepare(
+        `SELECT w.series AS name, COUNT(*) AS count
+           FROM work w ${withoutSeries.sql}
+          ${withoutSeries.sql ? 'AND' : 'WHERE'} w.series IS NOT NULL
+          GROUP BY w.series
+          ORDER BY w.series COLLATE NOCASE`,
+      )
+      .bind(...withoutSeries.binds)
+      .all<{ name: string; count: number }>(),
+    db
+      .prepare(
+        `SELECT e.format AS format, COUNT(DISTINCT w.id) AS count
+           FROM work w JOIN edition e ON e.work_id = w.id ${all.sql}
+          GROUP BY e.format ORDER BY count DESC`,
+      )
+      .bind(...all.binds)
+      .all<{ format: string; count: number }>(),
+    db
+      .prepare(
+        `SELECT c.status AS status, COUNT(DISTINCT w.id) AS count
+           FROM work w JOIN copy c ON c.work_id = w.id ${all.sql}
+          GROUP BY c.status ORDER BY count DESC`,
+      )
+      .bind(...all.binds)
+      .all<{ status: string; count: number }>(),
+  ]);
+
+  return { series: series.results, formats: formats.results, statuses: statuses.results };
+}
+
+export interface CollectionStats {
+  works: number;
+  editions: number;
+  copies: number;
+  series: number;
+  authors: number;
+  withCover: number;
+  formats: { format: string; count: number }[];
+  readStates: { readState: string; count: number }[];
+}
+
+/**
+ * The numbers on the shelf, counted from the database on every request.
+ *
+ * ⚠️ Nothing here is cached and nothing is written into the UI as a literal.
+ * A previous session in this household shipped a hard-coded count that was wrong
+ * by a wide margin; a number a page shows must be a number the database just
+ * answered.
+ */
+export async function collectionStats(
+  db: D1Database,
+  readerId: number,
+): Promise<CollectionStats> {
+  const [totals, formats, readStates] = await Promise.all([
+    db
+      .prepare(
+        `SELECT (SELECT COUNT(*) FROM work) AS works,
+                (SELECT COUNT(*) FROM edition) AS editions,
+                (SELECT COUNT(*) FROM copy WHERE status = 'owned') AS copies,
+                (SELECT COUNT(DISTINCT series) FROM work WHERE series IS NOT NULL) AS series,
+                (SELECT COUNT(DISTINCT primary_author) FROM work) AS authors,
+                (SELECT COUNT(cover_url) FROM work) AS with_cover`,
+      )
+      .first<{
+        works: number; editions: number; copies: number;
+        series: number; authors: number; with_cover: number;
+      }>(),
+    db
+      .prepare('SELECT format, COUNT(*) AS count FROM edition GROUP BY format ORDER BY count DESC')
+      .all<{ format: string; count: number }>(),
+    db
+      .prepare(
+        `SELECT read_state AS readState, COUNT(*) AS count
+           FROM user_book WHERE user_id = ? GROUP BY read_state ORDER BY count DESC`,
+      )
+      .bind(readerId)
+      .all<{ readState: string; count: number }>(),
+  ]);
+
+  return {
+    works: totals?.works ?? 0,
+    editions: totals?.editions ?? 0,
+    copies: totals?.copies ?? 0,
+    series: totals?.series ?? 0,
+    authors: totals?.authors ?? 0,
+    withCover: totals?.with_cover ?? 0,
+    formats: formats.results,
+    readStates: readStates.results,
   };
 }

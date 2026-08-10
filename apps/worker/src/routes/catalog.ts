@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import {
   COLLECTION_PAGE_SIZE,
+  COLLECTION_PAGE_SIZES,
   workKeyFor,
   createCopySchema,
   createEditionSchema,
@@ -9,6 +10,8 @@ import {
   updateWorkSchema,
 } from '@lc/core';
 import {
+  collectionFacets,
+  collectionStats,
   createCopy,
   createEdition,
   createWork,
@@ -17,14 +20,52 @@ import {
   findWorkByKey,
   getReadState,
   getWork,
+  isCollectionSort,
   listCollection,
   listCopiesForWork,
   listEditionsForWork,
   setReadState,
   updateWork,
+  type CollectionQuery,
 } from '@lc/db';
 import type { AppBindings } from '../env.js';
 import { requireCapability } from '../middleware/auth.js';
+
+/**
+ * Read the query string into a `CollectionQuery`.
+ *
+ * ⚠️ `pageSize` is chosen from a fixed list, not clamped from whatever arrived.
+ * `COLLECTION_PAGE_SIZE`'s comment says why the server owns this number: a
+ * caller asking for 5,000 is handed the exact payload paging exists to prevent.
+ * Offering a *menu* — the audiobook catalog offers 10/20/50/100 — is a different
+ * thing from letting the client name a number, and the allowlist is what keeps
+ * them different.
+ *
+ * `readerId` comes from the verified token and never from the query string, so
+ * "unread" can only ever mean "unread by whoever is asking".
+ */
+function collectionQueryFrom(c: {
+  req: { query: (k: string) => string | undefined };
+}, readerId: number): CollectionQuery {
+  const page = Math.max(0, Number(c.req.query('page') ?? '0') || 0);
+  const asked = Number(c.req.query('pageSize'));
+  const pageSize = COLLECTION_PAGE_SIZES.includes(asked) ? asked : COLLECTION_PAGE_SIZE;
+  const sortParam = c.req.query('sort');
+  const dir = c.req.query('dir') === 'desc' ? 'desc' : 'asc';
+
+  return {
+    q: c.req.query('q'),
+    series: c.req.query('series'),
+    format: c.req.query('format'),
+    status: c.req.query('status'),
+    readState: c.req.query('readState'),
+    readerId,
+    sort: isCollectionSort(sortParam) ? sortParam : 'series',
+    dir,
+    limit: pageSize,
+    offset: page * pageSize,
+  };
+}
 
 /**
  * The catalog: works, their editions, the copies on the shelf, and read-state.
@@ -34,19 +75,35 @@ import { requireCapability } from '../middleware/auth.js';
  */
 export const catalogRoutes = new Hono<AppBindings>()
   .get('/collection', requireCapability('read'), async (c) => {
-    const page = Math.max(0, Number(c.req.query('page') ?? '0') || 0);
-    const { rows, total } = await listCollection(c.env.DB, {
-      q: c.req.query('q'),
-      series: c.req.query('series'),
-      format: c.req.query('format'),
-      status: c.req.query('status'),
-      // Fixed server-side. A client asking for 5,000 would be handed the exact
-      // payload paging exists to prevent.
-      limit: COLLECTION_PAGE_SIZE,
-      offset: page * COLLECTION_PAGE_SIZE,
+    const query = collectionQueryFrom(c, c.get('user').id);
+    const { rows, total } = await listCollection(c.env.DB, query);
+    return c.json({
+      rows,
+      total,
+      page: Math.floor(query.offset / query.limit),
+      pageSize: query.limit,
+      sort: query.sort,
+      dir: query.dir,
     });
-    return c.json({ rows, total, page, pageSize: COLLECTION_PAGE_SIZE });
   })
+
+  /**
+   * What there is to filter by, counted against the filter already applied.
+   *
+   * Separate from `/collection` rather than folded into it, because the two have
+   * different lifetimes: the list changes on every keystroke of a debounced
+   * search, and the facets only need to change when a filter does. One response
+   * would recompute three GROUP BYs per keystroke to send bytes nothing redrew.
+   */
+  .get('/collection/facets', requireCapability('read'), async (c) => {
+    const query = collectionQueryFrom(c, c.get('user').id);
+    return c.json(await collectionFacets(c.env.DB, query));
+  })
+
+  /** Counted live on every request — never a literal written into the UI. */
+  .get('/stats', requireCapability('read'), async (c) =>
+    c.json(await collectionStats(c.env.DB, c.get('user').id)),
+  )
 
   /**
    * "Do we already hold this book?" — asked BEFORE creating a work.

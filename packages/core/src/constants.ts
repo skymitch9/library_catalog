@@ -157,6 +157,18 @@ export type ScanStatus = (typeof SCAN_STATUSES)[number];
 export const COLLECTION_PAGE_SIZE = 50;
 
 /**
+ * The page sizes a person may choose from.
+ *
+ * An allowlist and not a clamp, and the difference is the whole point: a menu
+ * the server defines cannot be asked for 5,000, which is the request
+ * `COLLECTION_PAGE_SIZE` exists to refuse. The audiobook catalog offers the same
+ * ladder from its own `#ab-page-size` control, minus its "All" option — that
+ * site renders a static file it already holds in the browser, while this one
+ * would be asking a Worker to serialise the entire catalog into one response.
+ */
+export const COLLECTION_PAGE_SIZES: readonly number[] = [10, 25, 50, 100, 200];
+
+/**
  * Rating scale, in half stars.
  *
  * ⚠️ **This is the audiobook catalog's scale, deliberately.** Its

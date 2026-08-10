@@ -17,7 +17,9 @@ import {
   cleanAudiobookTitle,
   normaliseTitle,
   cleanTitleWithSeries,
+  detectSeriesFromTitle,
   parseSeriesFromTitle,
+  parseVolumeNumber,
   primaryAuthor,
   splitAuthors,
   workKeyFor,
@@ -139,6 +141,93 @@ describe('titles — the fold everything else depends on', () => {
       display: 'Book 2',
     });
     assert.equal(parseSeriesFromTitle('Sharp Objects').series, null);
+  });
+});
+
+describe('detectSeriesFromTitle — the shapes an ebook title uses', () => {
+  // Every example below is a real title out of the 117 ebook rows already in
+  // this catalog, read from the D1 database on 2026-08-10. None of them is
+  // hypothetical, and none of them is caught by `parseSeriesFromTitle`.
+  const cases: [string, string, number | null, string][] = [
+    ['Blackflame (Cradle Book 3)', 'Cradle', 3, 'Book 3'],
+    ['The Captain (The Last Horizon Book 1)', 'The Last Horizon', 1, 'Book 1'],
+    ['A Killer’s Mind (Zoe Bentley Mystery Book 1)', 'Zoe Bentley Mystery', 1, 'Book 1'],
+    [
+      'High School DxD - Volume 07 - Ragnarok After the School',
+      'High School DxD',
+      7,
+      'Volume 07',
+    ],
+    ['Arcane Pathfinder Book 5: Daunting', 'Arcane Pathfinder', 5, 'Book 5'],
+    ['Tamer: King of Dinosaurs Book 10', 'Tamer: King of Dinosaurs', 10, 'Book 10'],
+    [
+      'Rise of the Weakest Summoner: Volume XI',
+      'Rise of the Weakest Summoner',
+      11,
+      'Volume XI',
+    ],
+    [
+      'He Who Fights with Monsters 10: A LitRPG Adventure',
+      'He Who Fights with Monsters',
+      10,
+      '10',
+    ],
+    ['All The Skills - 5', 'All The Skills', 5, '5'],
+  ];
+
+  for (const [raw, series, index, display] of cases) {
+    it(`reads ${JSON.stringify(raw)}`, () => {
+      assert.deepEqual(detectSeriesFromTitle(raw), { series, index, display });
+    });
+  }
+
+  it('gives an Extra a label but no sort position', () => {
+    // "Extra.3" has no place on a number line. A null sort index puts it after
+    // the numbered volumes rather than claiming it is volume 0.
+    assert.deepEqual(
+      detectSeriesFromTitle(
+        "Seirei Tsukai no Blade Dance - Extra.3 - The Princess' Confidential Part-time Job",
+      ),
+      { series: 'Seirei Tsukai no Blade Dance', index: null, display: 'Extra 3' },
+    );
+  });
+
+  it('⚠️ never reads a bare trailing number as a volume', () => {
+    // The rule `cleanAudiobookTitle` exists to protect: Eric Vall's books really
+    // are called "Summoner 6", and six distinct works would collapse into one.
+    assert.equal(detectSeriesFromTitle('Summoner 6').series, null);
+    assert.equal(detectSeriesFromTitle('Monster Empire 2').series, null);
+  });
+
+  it('does not mistake a subtitle for a series', () => {
+    for (const raw of [
+      'Legion: Skin Deep',
+      'Guild Mage: Apprentice',
+      'The Tenth Island: Finding Joy, Beauty, and Unexpected Love in the Azores',
+      'Board & Conquest: [A Kingdom Building LitRPG]',
+      'What If Everybody Said That? (What If Everybody?)',
+      'Firstborn / Defending Elysium',
+      'Under Ashen Skies- MM',
+    ]) {
+      assert.equal(detectSeriesFromTitle(raw).series, null, raw);
+    }
+  });
+});
+
+describe('parseVolumeNumber — three spellings, all in this library', () => {
+  it('reads Arabic, leading-zero, decimal, word and Roman numerals', () => {
+    assert.equal(parseVolumeNumber('10'), 10);
+    assert.equal(parseVolumeNumber('07'), 7);
+    assert.equal(parseVolumeNumber('2.5'), 2.5);
+    assert.equal(parseVolumeNumber('Three'), 3);
+    assert.equal(parseVolumeNumber('XI'), 11);
+    assert.equal(parseVolumeNumber('IX'), 9);
+  });
+
+  it('returns null rather than guessing at a label that is not a number', () => {
+    assert.equal(parseVolumeNumber('Prequel'), null);
+    assert.equal(parseVolumeNumber('BR SS Compilation'), null);
+    assert.equal(parseVolumeNumber(''), null);
   });
 });
 
