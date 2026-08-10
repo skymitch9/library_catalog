@@ -115,7 +115,54 @@ npm run secret:list
 
 | Name | Needed for | Consequence if unset |
 |---|---|---|
-| `GOOGLE_BOOKS_API_KEY` | ISBN ladder rung 2 | rung skipped, with the reason in the scan trace. **Not a degraded mode** — anonymous Google Books returned 429 on 40 of 40 calls, so without a key that rung never answers at all. Free, from the Google Cloud console with the Books API enabled. |
+| `GOOGLE_BOOKS_API_KEY` | ISBN ladder rung 2 | rung skipped, with the reason in the scan trace. **Not a degraded mode** — anonymous Google Books returned 429 on 40 of 40 calls, so without a key that rung never answers at all. See below. |
+
+### Getting a Google Books key
+
+Free. No billing account required for the Books API.
+
+1. <https://console.cloud.google.com/> — sign in with the Google account you use
+   for everything else here.
+2. Create a project, or reuse one. The name is irrelevant.
+3. **APIs & Services → Library → search "Books API" → Enable.**
+   ⚠️ Easy to skip, and skipping it produces a key that authenticates fine and
+   then 403s on every call, which reads like a bad key.
+4. **APIs & Services → Credentials → Create credentials → API key.**
+5. Restrict it: **API restrictions → Books API only.** A key that can call
+   anything in the project is a worse thing to leak than one that can look up
+   ISBNs.
+6. Do **not** add an HTTP-referrer restriction. The calls come from a Cloudflare
+   Worker, not a browser, so there is no referrer to match and the restriction
+   silently rejects everything.
+
+Then set it **without pasting it into a chat, a file, or your shell history**:
+
+```bash
+npm run secret GOOGLE_BOOKS_API_KEY
+```
+
+`wrangler` prompts for the value and reads it directly. It never touches the
+repo, and `.dev.vars` is only for local development.
+
+Verify with a scan whose trace should now show two rungs instead of one:
+
+```bash
+curl -s "$LIBRARY/api/isbn/9780765326355"   # signed-in browser, not curl — see §8
+```
+
+### There is no Goodreads key
+
+Checked 2026-08-09: `goodreads.com/api` 302s to the homepage and `/api/keys` is a
+bare sign-in wall. Goodreads stopped issuing API keys in December 2020 and
+retired the API. **Do not spend time looking for one.**
+
+What it would have supplied, and where that actually comes from here:
+
+| Goodreads gave | This project's answer |
+|---|---|
+| Ratings and reviews | **Your own**, in the shared Firestore `reviews` collection — the same documents the audiobook site writes. Better than a stranger's average for this purpose. |
+| Series and volume | **`audiobook_catalog`'s own `series` / `series_index_sort` columns**, for 1,073 books, joinable on `work_key`. For this library's indie/KU half that is a *better* source than any public API, because those books are barely in the public ones. |
+| Covers | Open Library, and CWA extracted them from the EPUBs themselves |
 | `ANTHROPIC_API_KEY` | research pipeline (phase 5, unbuilt) | nothing today |
 
 ---
