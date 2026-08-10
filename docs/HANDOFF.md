@@ -3,6 +3,70 @@
 > Updated **2026-08-10**. **Live** at https://library.heygabi.ai — deployed,
 > Firebase domain authorised, Google sign-in verified in production 2026-08-09.
 
+## 🟡 In flight — `feature/aliases-export-people`
+
+Three features, branched from `main` **on top of `feature/router`'s merge**,
+committed and pushed. **Not deployed, not merged, and migration 0005 has NOT
+been applied to `--remote`.** The owner gates production.
+
+| | |
+|---|---|
+| **`work_alias` write path** | The table has existed since migration 0001 with **nothing writing to it**. Now: a `kind` column, an API, a panel on the book page, and three readers. **Measured 45 → 50 of 116 Open Library ids** against production rows, read-only. |
+| **Export** | `/api/export.json` (twelve tables, the backup) and `/api/export.csv` (one row per work, for a spreadsheet), both streamed and paged. `/export` in the top bar, owner only. |
+| **People** | `/people`, owner only. Approve, promote, demote, revoke. The API already existed; this is the screen, plus a bug fix found by clicking. |
+
+Everything measured is in
+[`docs/info/aliases-export-people.md`](info/aliases-export-people.md).
+The four worth knowing without opening it:
+
+- ⚠️ **The pen name alone did NOT fix the five HWFWM works.** There were two
+  blockers, not one: Open Library files them under **Shirtaloon**, *and* the
+  stored title's `: A LitRPG Adventure` makes the fielded query return zero even
+  under the right author. Each of the five needs **two** aliases — an author one
+  and a short-title one. Widening `cleanAudiobookTitle` instead is what
+  `matching.ts`'s header forbids.
+- ⚠️ **A changed alias set re-opens a settled ledger entry with no flag** — which
+  is what makes the feature work at all, and is also a trap in reverse: running
+  the backfill against a database *without* these alias rows will re-ask the five
+  and overwrite the matches with `not_found`. **Migrate and re-enter the aliases
+  before re-running `--remote`.**
+- ⚠️ **Export downloads are fetch-and-Blob, not `<a download>`.** A plain anchor
+  sends no Bearer token; it works perfectly against the local dev bypass and
+  401s the moment it is deployed.
+- ⚠️ **An owner stepping down used to see "forbidden" and a stale list** — the
+  PATCH succeeded and the refetch 403'd. Fixed; the app now re-reads `/api/me`
+  and returns to the collection.
+
+### To finish it
+
+```bash
+npm test                                    # 72
+npm run typecheck                           # five workspaces
+npm run db:migrate                          # ⚠️ REMOTE — 0005, BEFORE deploying
+npm run deploy
+# then, in the app, re-enter the ten aliases on the five HWFWM works
+npm run backfill:openlibrary-ids -- --remote            # dry run; expect 50/116
+npm run backfill:openlibrary-ids -- --remote --commit   # ⚠️ owner gates this
+```
+
+⚠️ **Migrate before deploying.** `/api/works/:id/aliases` and the export both
+select `work_alias.kind`; deploying first makes every book page's alias panel a
+500.
+
+### Deliberately left out
+
+- ***White Sand* has no alias.** The mechanism exists; deciding what Sanderson's
+  credit should be on a work whose `authors` is "Julius Gopez Rik Hoskin" is the
+  owner's call, not a script's.
+- **No bulk alias seeding**, and no `openlibrary`-sourced aliases. `alias_check`
+  is still an unused table — nothing has ever asked Open Library "what else is
+  this called".
+- **No import to match the export.** The JSON is shaped to be re-importable
+  (tables in dependency order, migration list stamped) but nothing reads it back.
+- **The multi-user test used seeded rows.** The dev bypass hardcodes
+  `firebase_uid = 'dev-uid'`, which is `UNIQUE`, so a second local identity 500s
+  on the constraint. Pre-existing and dev-only.
+
 ## 🟡 In flight — `feature/router`
 
 Real URLs and a working Back button. Branched from `main`, committed and pushed,

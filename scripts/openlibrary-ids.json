@@ -5,6 +5,7 @@
   "_bar": "⚠️ Title and author agreement is the entry ticket, never the verdict. isbn-ladder.md §4.4: a wrong book scored 1.0 on BOTH and only the publisher and year discriminated. Every \"matched\" entry therefore carries at least one strong corroborator, or two weak ones — see the table in packages/core/src/corroboration.ts.",
   "_manual": "Set \"manual\": true on an entry a person settled by hand. Like series-overrides.json, a person's answer outranks every rung and is never overwritten by a re-run, not even by --refresh.",
   "_rerun": "A second run reads this file, makes zero network calls and writes nothing. --refresh re-asks about everything; --retry-misses re-asks only the not_found rows, which is the one worth repeating occasionally because Open Library gains records over time.",
+  "_aliases": "The `aliases` field lists the work_alias rows the question was asked under, as \"kind:name\", sorted. It is absent when the work had none. ⚠️ A work whose aliases have CHANGED since its entry was written is re-asked automatically, with no flag — the names are part of the question, so a new pen name makes the old answer stale. That is how the five He Who Fights with Monsters works went from not_found to matched: an author alias of \"Shirtaloon\", which is what Open Library files the series under.",
   "adventures in the argo mm|selkie myth": {
     "olid": null,
     "verdict": "not_found",
@@ -362,69 +363,123 @@
     "searched_at": "2026-08-10"
   },
   "he who fights with monsters 10 a litrpg adventure|travis deverell": {
-    "olid": null,
-    "verdict": "not_found",
-    "confidence": null,
+    "olid": "OL37999440W",
+    "verdict": "matched",
+    "confidence": "high",
     "via": "search",
+    "corroboration": [
+      "publisher",
+      "series",
+      "year"
+    ],
     "evidence": [
-      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+      "fielded search matched \"He Who Fights With Monsters 10\" by Shirtaloon (title 1.00, author 1.00)",
+      "publisher \"Aethon Books\" matches Open Library's \"Aethon Books\"",
+      "an edition is labelled \"He Who Fights With Monsters\" — our series, volume unconfirmed",
+      "our file says 2023; Open Library has an edition from 2023"
     ],
     "source": [
-      "https://openlibrary.org/search.json?title=He%20Who%20Fights%20with%20Monsters%2010%3A%20A%20LitRPG%20Adventure&author=Travis%20Deverell"
+      "https://openlibrary.org/works/OL37999440W"
     ],
-    "searched_at": "2026-08-10"
+    "searched_at": "2026-08-10",
+    "aliases": [
+      "author:Shirtaloon",
+      "title:He Who Fights with Monsters 10"
+    ]
   },
   "he who fights with monsters 2 a litrpg adventure|travis deverell": {
-    "olid": null,
-    "verdict": "not_found",
-    "confidence": null,
+    "olid": "OL39744035W",
+    "verdict": "matched",
+    "confidence": "high",
     "via": "search",
+    "corroboration": [
+      "publisher",
+      "series",
+      "year"
+    ],
     "evidence": [
-      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+      "fielded search matched \"He Who Fights With Monsters 2\" by Shirtaloon (title 1.00, author 1.00)",
+      "publisher \"Aethon Books\" matches Open Library's \"Aethon Books\"",
+      "an edition is labelled \"He Who Fights with Monsters\" — our series, volume unconfirmed",
+      "our file says 2021; Open Library has an edition from 2021"
     ],
     "source": [
-      "https://openlibrary.org/search.json?title=He%20Who%20Fights%20with%20Monsters%202%3A%20A%20LitRPG%20Adventure&author=Travis%20Deverell"
+      "https://openlibrary.org/works/OL39744035W"
     ],
-    "searched_at": "2026-08-10"
+    "searched_at": "2026-08-10",
+    "aliases": [
+      "author:Shirtaloon",
+      "title:He Who Fights with Monsters 2"
+    ]
   },
   "he who fights with monsters 3 a litrpg adventure|travis deverell": {
-    "olid": null,
-    "verdict": "not_found",
-    "confidence": null,
+    "olid": "OL36310135W",
+    "verdict": "matched",
+    "confidence": "high",
     "via": "search",
+    "corroboration": [
+      "series",
+      "year"
+    ],
     "evidence": [
-      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+      "fielded search matched \"He Who Fights with Monsters 3\" by Shirtaloon (title 1.00, author 1.00)",
+      "an edition is labelled \"He Who Fights with Monsters\" — our series, volume unconfirmed",
+      "our file says 2021; Open Library has an edition from 2021"
     ],
     "source": [
-      "https://openlibrary.org/search.json?title=He%20Who%20Fights%20with%20Monsters%203%3A%20A%20LitRPG%20Adventure&author=Travis%20Deverell"
+      "https://openlibrary.org/works/OL36310135W"
     ],
-    "searched_at": "2026-08-10"
+    "searched_at": "2026-08-10",
+    "aliases": [
+      "author:Shirtaloon",
+      "title:He Who Fights with Monsters 3"
+    ]
   },
   "he who fights with monsters 5 a litrpg adventure|travis deverell": {
-    "olid": null,
-    "verdict": "not_found",
-    "confidence": null,
+    "olid": "OL28199716W",
+    "verdict": "matched",
+    "confidence": "high",
     "via": "search",
+    "corroboration": [
+      "series",
+      "year"
+    ],
     "evidence": [
-      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+      "fielded search matched \"He Who Fights with Monsters 5\" by Shirtaloon (title 1.00, author 1.00)",
+      "an edition is labelled \"He Who Fights with Monsters\" — our series, volume unconfirmed",
+      "our file says 2022; Open Library has an edition from 2022"
     ],
     "source": [
-      "https://openlibrary.org/search.json?title=He%20Who%20Fights%20with%20Monsters%205%3A%20A%20LitRPG%20Adventure&author=Travis%20Deverell"
+      "https://openlibrary.org/works/OL28199716W"
     ],
-    "searched_at": "2026-08-10"
+    "searched_at": "2026-08-10",
+    "aliases": [
+      "author:Shirtaloon",
+      "title:He Who Fights with Monsters 5"
+    ]
   },
   "he who fights with monsters 6 a litrpg adventure|travis deverell": {
-    "olid": null,
-    "verdict": "not_found",
-    "confidence": null,
+    "olid": "OL28199758W",
+    "verdict": "matched",
+    "confidence": "high",
     "via": "search",
+    "corroboration": [
+      "series",
+      "year"
+    ],
     "evidence": [
-      "fielded search returned 0 result(s), 0 of which cleared the title ≥ 0.7 / author ≥ 0.5 gate"
+      "fielded search matched \"He Who Fights with Monsters 6\" by Shirtaloon (title 1.00, author 1.00)",
+      "an edition is labelled \"He Who Fights With Monsters\" — our series, volume unconfirmed",
+      "our file says 2022; Open Library has an edition from 2022"
     ],
     "source": [
-      "https://openlibrary.org/search.json?title=He%20Who%20Fights%20with%20Monsters%206%3A%20A%20LitRPG%20Adventure&author=Travis%20Deverell"
+      "https://openlibrary.org/works/OL28199758W"
     ],
-    "searched_at": "2026-08-10"
+    "searched_at": "2026-08-10",
+    "aliases": [
+      "author:Shirtaloon",
+      "title:He Who Fights with Monsters 6"
+    ]
   },
   "high school dxd volume 07 ragnarok after the school|ichiei ishibumi": {
     "olid": null,

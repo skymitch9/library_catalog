@@ -45,6 +45,8 @@ import {
   type Route,
 } from './router.js';
 import { CollectionPage } from './pages/CollectionPage.js';
+import { ExportPage } from './pages/ExportPage.js';
+import { PeoplePage } from './pages/PeoplePage.js';
 import { ScanPage } from './pages/ScanPage.js';
 import { SeriesDetailPage } from './pages/SeriesDetailPage.js';
 import { SeriesPage } from './pages/SeriesPage.js';
@@ -171,11 +173,38 @@ export function App() {
           <Link to="/wishlist" className={route.name === 'wishlist' ? 'primary chip' : 'chip'}>
             Wishlist
           </Link>
+          {/* Owner-only, and both genuinely places rather than actions — one is
+              a page that explains two file formats, the other is the guest list.
+              Hidden rather than disabled for a reader: an entry that is visible
+              and refuses is an invitation to wonder what is behind it, and there
+              is nothing behind it for them. The routes are gated in `Screens`
+              too, because hiding a link is not access control. */}
+          {me.capabilities.includes('manageUsers') && (
+            <Link to="/people" className={route.name === 'people' ? 'primary chip' : 'chip'}>
+              People
+            </Link>
+          )}
+          {me.capabilities.includes('editCatalog') && (
+            <Link to="/export" className={route.name === 'export' ? 'primary chip' : 'chip'}>
+              Export
+            </Link>
+          )}
         </nav>
         <button onClick={() => void signOutNow()}>Sign out</button>
       </header>
 
-      <Screens route={route} me={me} />
+      <Screens
+        route={route}
+        me={me}
+        // Re-read `/api/me` and start again from the collection. Only the People
+        // screen calls it, and only when you have just changed your OWN role —
+        // see the note there on why a plain refetch shows the opposite of what
+        // happened.
+        onSelfChanged={() => {
+          navigate('/');
+          void check();
+        }}
+      />
     </>
   );
 }
@@ -192,7 +221,15 @@ const openSeries = (series: string) => navigate(seriesPath(series));
  * Without the key React reuses one WorkPage across every book you open, and a
  * half-filled copy form follows you to the next.
  */
-function Screens({ route, me }: { route: Route; me: Me }) {
+function Screens({
+  route,
+  me,
+  onSelfChanged,
+}: {
+  route: Route;
+  me: Me;
+  onSelfChanged: () => void;
+}) {
   switch (route.name) {
     case 'work': {
       // Reads the `from` recorded by whichever `navigate` got us here, so a
@@ -250,6 +287,18 @@ function Screens({ route, me }: { route: Route; me: Me }) {
         />
       );
     }
+
+    // Gated the same way their nav entries are, and for the reason `/add`
+    // carries: a screen with an address is a screen anybody can type. Answering
+    // "Not a page" rather than a permission notice is deliberate — for a reader
+    // these two genuinely are not pages.
+    case 'export':
+      if (!me.capabilities.includes('editCatalog')) return <NotFound />;
+      return <ExportPage />;
+
+    case 'people':
+      if (!me.capabilities.includes('manageUsers')) return <NotFound />;
+      return <PeoplePage me={me} onSelfChanged={onSelfChanged} />;
 
     case 'collection':
       return (

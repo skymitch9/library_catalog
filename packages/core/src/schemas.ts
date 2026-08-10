@@ -21,6 +21,7 @@ import {
   RUN_TIERS,
   SERIES_VOLUME_SOURCES,
   SOURCE_TIERS,
+  WORK_ALIAS_KINDS,
   WORK_RELATIONS,
 } from './constants.js';
 
@@ -34,6 +35,7 @@ export const editionSourceSchema = z.enum(EDITION_SOURCES);
 export const sourceTierSchema = z.enum(SOURCE_TIERS);
 export const runTierSchema = z.enum(RUN_TIERS);
 export const workRelationSchema = z.enum(WORK_RELATIONS);
+export const workAliasKindSchema = z.enum(WORK_ALIAS_KINDS);
 export const seriesVolumeSourceSchema = z.enum(SERIES_VOLUME_SOURCES);
 
 /** Trim, and treat an empty string as absent — a blank form field is not a value. */
@@ -174,6 +176,35 @@ export const submitReviewSchema = z.object({
 });
 
 export const updateRoleSchema = z.object({ role: roleSchema });
+
+// ---------------------------------------------------------------------------
+// Other names a work answers to
+// ---------------------------------------------------------------------------
+
+/**
+ * Add one alias to one work.
+ *
+ * ⚠️ `kind` has no default, unlike almost every other create schema here. The
+ * two kinds are not interchangeable — an `author` alias widens the check that
+ * refuses a wrong book, and a `title` alias widens the check that finds one — so
+ * "which of the two did you mean" is the whole content of the request and a
+ * default would be a guess made silently. `createSeriesVolumeSchema` withholds a
+ * default from `source` for the same reason.
+ *
+ * `source` DOES default to `manual`, because this endpoint is only ever a person:
+ * an importer writing `openlibrary` rows would go through a script, and the
+ * distinction exists so a re-import cannot delete a person's answer.
+ *
+ * Two characters minimum, matching the floor `buildWorkIndex` applies when it
+ * folds an alias — a one-character alias is silently dropped there, and accepting
+ * one here would store a row that can never fire.
+ */
+export const createWorkAliasSchema = z.object({
+  alias: z.string().trim().min(2).max(200),
+  kind: workAliasKindSchema,
+  source: z.enum(['openlibrary', 'manual']).default('manual'),
+});
+export type CreateWorkAlias = z.infer<typeof createWorkAliasSchema>;
 
 // ---------------------------------------------------------------------------
 // Relations between works

@@ -345,6 +345,83 @@ describe('matching — the load-bearing change from the board game catalog', () 
     assert.equal(matchIndexedWork(aliased, 'The Golden Compass', 'Philip Pullman')?.work.id, 3);
     assert.equal(matchIndexedWork(aliased, 'The Golden Compass', 'Someone Else'), null);
   });
+
+  it('treats an alias with no kind as a TITLE alias', () => {
+    // Every row written before migration 0005 has no `kind`, and they were all
+    // alternate titles. An untyped alias must never reach the author gate.
+    const aliased = buildWorkIndex(
+      [{ id: 3, title: 'Northern Lights', authors: 'Philip Pullman' }],
+      [{ workId: 3, alias: 'Shirtaloon' }],
+    );
+    assert.equal(matchIndexedWork(aliased, 'Northern Lights', 'Shirtaloon'), null);
+  });
+});
+
+/**
+ * The five *He Who Fights with Monsters* works, and the shape that missed them.
+ *
+ * Measured on 2026-08-10: Open Library files the series under the pen name
+ * Shirtaloon, this catalog files it under Travis Deverell, and the author gate
+ * refused every candidate — correctly, on the evidence it had.
+ */
+describe('matching — author aliases', () => {
+  const hwfwm = [
+    { id: 94, title: 'He Who Fights with Monsters 2', authors: 'Travis Deverell' },
+    { id: 95, title: 'He Who Fights with Monsters 3', authors: 'Travis Deverell' },
+  ];
+
+  it('refuses the pen name before the alias exists', () => {
+    const bare = buildWorkIndex(hwfwm);
+    assert.equal(matchIndexedWork(bare, 'He Who Fights with Monsters 2', 'Shirtaloon'), null);
+  });
+
+  it('accepts it afterwards, on every work that carries it', () => {
+    const withPenName = buildWorkIndex(hwfwm, [
+      { workId: 94, alias: 'Shirtaloon', kind: 'author' },
+      { workId: 95, alias: 'Shirtaloon', kind: 'author' },
+    ]);
+    assert.equal(
+      matchIndexedWork(withPenName, 'He Who Fights with Monsters 2', 'Shirtaloon')?.work.id,
+      94,
+    );
+    // ⚠️ Both works claim the same alias, and both keep it. `buildWorkIndex`'s
+    // contested-alias rule applies to TITLE aliases only: a title identifies a
+    // work, so a contested one identifies neither — a pen name identifies a
+    // person and a whole series shares it. Applying rule 2 here would throw away
+    // the exact case this feature was built for.
+    assert.equal(
+      matchIndexedWork(withPenName, 'He Who Fights with Monsters 3', 'Shirtaloon')?.work.id,
+      95,
+    );
+  });
+
+  it('still accepts the name the catalog actually stores', () => {
+    const withPenName = buildWorkIndex(hwfwm, [
+      { workId: 94, alias: 'Shirtaloon', kind: 'author' },
+    ]);
+    const m = matchIndexedWork(withPenName, 'He Who Fights with Monsters 2', 'Travis Deverell');
+    assert.equal(m?.work.id, 94);
+    assert.equal(m?.authorSimilarity, 1);
+  });
+
+  it('an author alias does NOT make the book findable by that name as a title', () => {
+    // The whole reason `kind` exists. An author alias widens the gate that
+    // refuses a wrong book; it must not widen the one that finds a book.
+    const withPenName = buildWorkIndex(hwfwm, [
+      { workId: 94, alias: 'Shirtaloon', kind: 'author' },
+    ]);
+    assert.equal(matchIndexedWork(withPenName, 'Shirtaloon', 'Travis Deverell'), null);
+  });
+
+  it('still refuses an author who is neither the stored one nor an alias', () => {
+    const withPenName = buildWorkIndex(hwfwm, [
+      { workId: 94, alias: 'Shirtaloon', kind: 'author' },
+    ]);
+    assert.equal(
+      matchIndexedWork(withPenName, 'He Who Fights with Monsters 2', 'Brandon Sanderson'),
+      null,
+    );
+  });
 });
 
 describe('series completeness — what we may and may not claim', () => {

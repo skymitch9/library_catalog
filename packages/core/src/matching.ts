@@ -38,6 +38,7 @@
  * API response marks them; only a similarity gate does.
  */
 
+import type { WorkAliasKind } from './constants.js';
 import { normaliseTitle, primaryAuthor } from './titles.js';
 
 /**
@@ -109,14 +110,65 @@ export function isConfidentMatch(candidateName: string, searchedFor: string): bo
 }
 
 /**
- * One known other name for one work — see `work_alias` in migration 0001.
+ * One known other name for one work — see `work_alias` in migrations 0001 and
+ * 0005.
  *
  * Structural rather than the db package's row type, so `packages/core` stays a
  * leaf with nothing to import.
+ *
+ * `kind` is optional and absent means `'title'`, which is what every row written
+ * before migration 0005 meant. That default lives here rather than at each call
+ * site so a caller that has not been taught about author aliases cannot
+ * accidentally feed one into the author gate.
  */
 export interface WorkAliasRef {
   workId: number;
   alias: string;
+  kind?: WorkAliasKind | undefined;
+}
+
+/**
+ * The best agreement between one candidate name and every name we know a work by.
+ *
+ * ⚠️ One implementation, deliberately exported. The Open Library backfill applies
+ * the same gate outside the index (it has no `WorkIndex` — it is comparing a
+ * search result against one row it already holds), and this file's header records
+ * what a second similarity function costs: three wrong-game matches shipped in
+ * the sibling project, every one of them from a copy that drifted.
+ *
+ * Both sides must already be folded. Folding here would fold twice for every
+ * caller that keeps a folded index, which is all of them.
+ */
+export function bestSimilarity(candidateKey: string, ourKeys: readonly string[]): number {
+  let best = 0;
+  for (const key of ourKeys) best = Math.max(best, titleSimilarity(candidateKey, key));
+  return best;
+}
+
+/** Drop blanks and duplicates, preserving order. The primary name stays first. */
+function distinct(keys: readonly string[]): string[] {
+  return [...new Set(keys.filter((k) => k.length > 0))];
+}
+
+/**
+ * Every folded name this work's author is known by — the printed one first, then
+ * any `author` aliases.
+ *
+ * ⚠️ `primaryAuthor` is applied to the aliases too. An alias may legitimately be
+ * written "Shirtaloon, Travis Deverell" if that is how the other side prints it,
+ * and comparing the whole string against a folded primary author would make the
+ * alias score worse than the name it was added to rescue.
+ */
+export function foldAuthorNames(authors: string, aliases: readonly string[] = []): string[] {
+  return distinct([
+    normaliseTitle(primaryAuthor(authors)),
+    ...aliases.map((a) => normaliseTitle(primaryAuthor(a))),
+  ]);
+}
+
+/** Every folded name this work is titled under — the catalog's first. */
+export function foldTitleNames(title: string, aliases: readonly string[] = []): string[] {
+  return distinct([normaliseTitle(title), ...aliases.map((a) => normaliseTitle(a))]);
 }
 
 /** The minimum a row must expose to be matchable. */
@@ -135,7 +187,13 @@ export interface MatchableWork {
  * writes a second, faster, subtly different matcher when the loop starts to hurt.
  */
 export interface WorkIndex<T> {
-  entries: { work: T; titleKey: string; authorKey: string }[];
+  /**
+   * `authorKeys` is a list rather than one string because a work may be filed
+   * under a pen name somewhere else — *He Who Fights with Monsters* is Travis
+   * Deverell here and Shirtaloon on Open Library. The printed author is always
+   * first, so a report can name it without knowing about aliases.
+   */
+  entries: { work: T; titleKey: string; authorKeys: string[] }[];
   /**
    * Folded alternate titles, exact-match only, kept apart from `entries` because
    * the two answer *different questions* — see `matchIndexedWork`.
@@ -145,6 +203,8 @@ export interface WorkIndex<T> {
 
 /**
  * Fold the catalog, and fold what else each row answers to.
+ *
+ * ## Title aliases
  *
  * Two rules keep an alias from becoming the wrong-book bug it exists to prevent,
  * and both drop the alias rather than guess. Ported from the Board Game
@@ -156,15 +216,36 @@ export interface WorkIndex<T> {
  *  2. **A contested alias belongs to nobody.** Two works claiming one alias makes
  *     that string ambiguous, and picking either is how two different books get
  *     silently merged.
+ *
+ * ## Author aliases
+ *
+ * ⚠️ **Neither rule applies to them, and that is not an oversight.** Both exist
+ * because a title alias *identifies a work* — a string that identifies two works
+ * identifies neither. An author alias identifies nothing on its own; it only ever
+ * widens the gate on the work that carries it, and a pen name shared by five
+ * works is the ordinary case rather than the ambiguous one. Five *He Who Fights
+ * with Monsters* volumes all answering to "Shirtaloon" is exactly right, and rule
+ * 2 applied here would throw away every one of them.
+ *
+ * They are scoped per work for the same reason: an author alias on work 94 says
+ * nothing about work 12, so it never enters a global map.
  */
 export function buildWorkIndex<T extends MatchableWork>(
   works: readonly T[],
   aliases: readonly WorkAliasRef[] = [],
 ): WorkIndex<T> {
+  const authorAliases = new Map<number, string[]>();
+  for (const a of aliases) {
+    if (a.kind !== 'author') continue;
+    const list = authorAliases.get(a.workId);
+    if (list) list.push(a.alias);
+    else authorAliases.set(a.workId, [a.alias]);
+  }
+
   const entries = works.map((work) => ({
     work,
     titleKey: normaliseTitle(work.title),
-    authorKey: normaliseTitle(primaryAuthor(work.authors)),
+    authorKeys: foldAuthorNames(work.authors, authorAliases.get(work.id) ?? []),
   }));
 
   if (aliases.length === 0) return { entries, aliasKeys: new Map() };
@@ -175,6 +256,8 @@ export function buildWorkIndex<T extends MatchableWork>(
 
   const claimed = new Map<string, T | null>(); // null = contested, do not use
   for (const a of aliases) {
+    // Absent `kind` means 'title' — every row written before migration 0005.
+    if (a.kind === 'author') continue;
     const work = byId.get(a.workId);
     if (!work) continue;
     const key = normaliseTitle(a.alias);
@@ -233,16 +316,22 @@ export function matchIndexedWork<T extends MatchableWork>(
 
   const authorKey = author ? normaliseTitle(primaryAuthor(author)) : null;
 
-  /** An author that contradicts is a rejection, not a lower score. */
-  const authorOk = (candidateAuthorKey: string): number | null => {
+  /**
+   * An author that contradicts is a rejection, not a lower score.
+   *
+   * Scored against every name the work is known by, best wins — so a pen name
+   * recorded as an `author` alias passes the gate while an unrelated author still
+   * fails it. A work with no aliases has exactly one key and behaves as before.
+   */
+  const authorOk = (candidateAuthorKeys: readonly string[]): number | null => {
     if (!authorKey) return null;
-    const score = titleSimilarity(candidateAuthorKey, authorKey);
+    const score = bestSimilarity(authorKey, candidateAuthorKeys);
     return score >= MIN_AUTHOR_SIMILARITY ? score : Number.NaN;
   };
 
   const exact = index.entries.find((e) => e.titleKey === target);
   if (exact) {
-    const a = authorOk(exact.authorKey);
+    const a = authorOk(exact.authorKeys);
     if (!Number.isNaN(a as number)) {
       return { work: exact.work, via: 'exact', titleSimilarity: 1, authorSimilarity: a };
     }
@@ -255,7 +344,7 @@ export function matchIndexedWork<T extends MatchableWork>(
   const aliased = index.aliasKeys.get(target);
   if (aliased) {
     const entry = index.entries.find((e) => e.work.id === aliased.id);
-    const a = entry ? authorOk(entry.authorKey) : null;
+    const a = entry ? authorOk(entry.authorKeys) : null;
     if (!Number.isNaN(a as number)) {
       return { work: aliased, via: 'alias', titleSimilarity: 1, authorSimilarity: a };
     }
@@ -274,7 +363,7 @@ export function matchIndexedWork<T extends MatchableWork>(
       const shorter = Math.min(e.titleKey.length, target.length);
       const longer = Math.max(e.titleKey.length, target.length);
       if (shorter / longer < 0.6) return false;
-      return !Number.isNaN(authorOk(e.authorKey) as number);
+      return !Number.isNaN(authorOk(e.authorKeys) as number);
     })
     .sort((a, b) => b.titleKey.length - a.titleKey.length)[0];
 
@@ -283,7 +372,7 @@ export function matchIndexedWork<T extends MatchableWork>(
     work: contained.work,
     via: 'containment',
     titleSimilarity: titleSimilarity(contained.titleKey, target),
-    authorSimilarity: authorOk(contained.authorKey),
+    authorSimilarity: authorOk(contained.authorKeys),
   };
 }
 

@@ -65,6 +65,21 @@
  * An entry with `"manual": true` is a person's answer and is never overwritten,
  * exactly as `series-overrides.json` outranks every automatic rung.
  *
+ * ## ⚠️ Aliases are part of the question
+ *
+ * `work_alias` rows are extra names to search under and extra names to gate with.
+ * They are the reason five *He Who Fights with Monsters* works can be found at
+ * all: this catalog files them under **Travis Deverell**, Open Library files the
+ * series under the pen name **Shirtaloon**, and the author gate refused every
+ * candidate — correctly, on the names it had. §5 of
+ * `docs/info/openlibrary-ids.md` named an author alias as the fix.
+ *
+ * Because the names are part of the question, they are recorded in each ledger
+ * entry. **A work whose alias set has changed since it was last searched is
+ * re-asked automatically**, without `--refresh`. Otherwise adding the pen name
+ * would change nothing until somebody remembered to re-ask about all 116 rows,
+ * which is exactly the shape of a feature that quietly does not work.
+ *
  * ## Usage
  *
  *     npm run backfill:openlibrary-ids                       # dry run, local db
@@ -72,6 +87,17 @@
  *     npm run backfill:openlibrary-ids -- --commit
  *     npm run backfill:openlibrary-ids -- --refresh          # re-ask about everything
  *     npm run backfill:openlibrary-ids -- --retry-misses     # re-ask only the not_founds
+ *     npm run backfill:openlibrary-ids -- --remote --aliases-from-local
+ *
+ * ⚠️ That last one exists for one situation and says so: production rows, local
+ * aliases. Migration 0005 has not been applied to the remote database and the
+ * owner gates that, so production's `work_alias` has no `kind` column and no
+ * rows. `--aliases-from-local` reads the alias table out of the local database
+ * and joins it to the remote works **by `work_key`**, not by id — the two
+ * databases number their rows differently (HWFWM is 33–37 locally and 94–98 in
+ * production) and joining on id would attach a pen name to five unrelated books.
+ * It measures what the aliases *would* do to production without writing anything
+ * to it.
  */
 
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -79,7 +105,9 @@ import path from 'node:path';
 
 import { primaryAuthor, normaliseTitle } from '../packages/core/src/titles.ts';
 import {
-  titleSimilarity,
+  bestSimilarity,
+  foldAuthorNames,
+  foldTitleNames,
   MIN_TITLE_SIMILARITY,
   MIN_SPINE_SIMILARITY,
   MIN_AUTHOR_SIMILARITY,
@@ -94,6 +122,7 @@ import { readEpub } from './lib/epub.mjs';
 const flags = parseFlags();
 const REFRESH = process.argv.includes('--refresh');
 const RETRY_MISSES = process.argv.includes('--retry-misses');
+const ALIASES_FROM_LOCAL = process.argv.includes('--aliases-from-local');
 const NO_LEDGER = process.argv.includes('--no-ledger');
 const FORCE = process.argv.includes('--force');
 const EBOOK_ROOT = process.env.EBOOK_ROOT || 'C:/Users/nbasl/OpenAudible/books';
@@ -169,6 +198,13 @@ const LEDGER_DOC = {
     'A second run reads this file, makes zero network calls and writes nothing. --refresh re-asks ' +
     'about everything; --retry-misses re-asks only the not_found rows, which is the one worth ' +
     'repeating occasionally because Open Library gains records over time.',
+  _aliases:
+    'The `aliases` field lists the work_alias rows the question was asked under, as "kind:name", ' +
+    'sorted. It is absent when the work had none. ⚠️ A work whose aliases have CHANGED since its ' +
+    'entry was written is re-asked automatically, with no flag — the names are part of the ' +
+    'question, so a new pen name makes the old answer stale. That is how the five He Who Fights ' +
+    'with Monsters works went from not_found to matched: an author alias of "Shirtaloon", which ' +
+    'is what Open Library files the series under.',
 };
 
 // ---------------------------------------------------------------------------
@@ -188,6 +224,85 @@ const works = query(
 
 console.log(`${works.length} work(s) in the ${flags.remote ? 'REMOTE' : 'local'} database`);
 if (works.length === 0) process.exit(0);
+
+// ---------------------------------------------------------------------------
+// The other names each work answers to
+// ---------------------------------------------------------------------------
+
+/**
+ * Aliases, keyed on `work_key` rather than `work_id`.
+ *
+ * ⚠️ `work_key` is the join, deliberately. Row ids are per-database — the five
+ * HWFWM works are 33–37 locally and 94–98 in production — so `--aliases-from-local`
+ * joined on id would hand a pen name to five unrelated books. `work_key` is the
+ * same string in both, which is the whole reason the ledger is keyed on it too.
+ *
+ * A database without migration 0005 has no `kind` column. That is not an error
+ * worth stopping for: it is the ordinary state of a remote that has not been
+ * migrated yet, and the honest answer is "the aliases you have are title aliases",
+ * which is what every pre-0005 row meant.
+ */
+function readAliases(remote) {
+  const sql = (kind) =>
+    `SELECT w.work_key AS work_key, a.alias AS alias, ${kind} AS kind
+       FROM work_alias a JOIN work w ON w.id = a.work_id`;
+  let rows;
+  try {
+    rows = query(sql('a.kind'), { remote });
+  } catch (err) {
+    if (!/no such column/i.test(String(err?.message ?? err))) throw err;
+    console.log(
+      '⚠️  that database predates migration 0005 (no work_alias.kind); ' +
+        'treating every alias as a title alias, which is what they all were.',
+    );
+    rows = query(sql("'title'"), { remote });
+  }
+  const byKey = new Map();
+  for (const r of rows) {
+    const list = byKey.get(r.work_key);
+    if (list) list.push(r);
+    else byKey.set(r.work_key, [r]);
+  }
+  return byKey;
+}
+
+const aliasSource = ALIASES_FROM_LOCAL ? false : flags.remote;
+const aliasesByKey = readAliases(aliasSource);
+const aliasRowCount = [...aliasesByKey.values()].reduce((n, l) => n + l.length, 0);
+console.log(
+  `${aliasRowCount} alias row(s) across ${aliasesByKey.size} work(s), read from the ` +
+    `${aliasSource ? 'REMOTE' : 'local'} database` +
+    (ALIASES_FROM_LOCAL && flags.remote ? ' (--aliases-from-local; joined on work_key)' : ''),
+);
+
+/**
+ * Every name one work is known by: printed forms for the query, folded forms for
+ * the gate, and a stable fingerprint so the ledger can tell that the question has
+ * changed since it was last asked.
+ */
+function namesFor(work) {
+  const rows = aliasesByKey.get(work.work_key) ?? [];
+  const titleAliases = rows.filter((r) => r.kind === 'title').map((r) => r.alias);
+  const authorAliases = rows.filter((r) => r.kind === 'author').map((r) => r.alias);
+  return {
+    queryTitles: [work.title, ...titleAliases],
+    queryAuthors: [primaryAuthor(work.authors), ...authorAliases.map(primaryAuthor)],
+    titleKeys: foldTitleNames(work.title, titleAliases),
+    authorKeys: foldAuthorNames(work.authors, authorAliases),
+    // Sorted, so re-ordering the table is not a change. `kind` is in it because
+    // moving an alias from title to author IS a different question.
+    fingerprint: rows.map((r) => `${r.kind}:${r.alias}`).sort(),
+  };
+}
+
+/** Did the set of names change since this entry was written? */
+function aliasesChanged(entry, names) {
+  const before = entry?.aliases ?? [];
+  return (
+    before.length !== names.fingerprint.length ||
+    before.some((a, i) => a !== names.fingerprint[i])
+  );
+}
 
 const BACKSLASH = String.fromCharCode(92);
 
@@ -295,12 +410,19 @@ function factsFromEditions(editions, searchDoc) {
   };
 }
 
-/** Best title agreement between what we call it and anything the OL work is called. */
-function bestTitleSimilarity(ourTitle, candidateTitles) {
+/**
+ * Best agreement between anything the OL work is called and anything we call it.
+ *
+ * Both sides are lists now: Open Library's editions disagree about a title all
+ * the time, and since migration 0005 so may we — an alternate title is one of the
+ * names this book answers to, and scoring only against the shelf's spelling would
+ * throw away the alias at the moment it was needed.
+ */
+function bestTitleSimilarity(ourTitleKeys, candidateTitles) {
   let best = 0;
   for (const t of candidateTitles) {
     if (!t) continue;
-    best = Math.max(best, titleSimilarity(normaliseTitle(t), normaliseTitle(ourTitle)));
+    best = Math.max(best, bestSimilarity(normaliseTitle(t), ourTitleKeys));
   }
   return best;
 }
@@ -316,7 +438,7 @@ function bestTitleSimilarity(ourTitle, candidateTitles) {
  * printing (a 404 here is a real answer, and a common one for the Japanese
  * light-novel originals whose fan translations this library holds).
  */
-async function rungIsbn(work, ours) {
+async function rungIsbn(work, ours, names) {
   if (!ours.isbn13) return null;
 
   const hit = await polite(
@@ -338,7 +460,7 @@ async function rungIsbn(work, ours) {
   const c = corroborate({ ...ours, isbn13: null }, theirs);
 
   const titles = [hit.edition?.title, ...all.map((e) => e.title)];
-  const titleSim = bestTitleSimilarity(work.title, titles);
+  const titleSim = bestTitleSimilarity(names.titleKeys, titles);
   const titleAgrees = titleSim >= MIN_TITLE_SIMILARITY;
 
   return {
@@ -364,24 +486,52 @@ async function rungIsbn(work, ours) {
   };
 }
 
-/** Rung 2 — fielded search, gated, then corroborated one candidate at a time. */
-async function rungSearch(work, ours) {
-  const found = await polite(
-    () => searchOpenLibrary(work.title, primaryAuthor(work.authors), { userAgent: USER_AGENT }),
-    `search "${work.title}"`,
-  ).catch(() => []);
+/**
+ * Rung 2 — fielded search, gated, then corroborated one candidate at a time.
+ *
+ * ⚠️ One query per (name we call it, name we call its author) pair, capped at
+ * `MAX_QUERIES`. With no aliases that is exactly the one query it always was.
+ * With the *He Who Fights with Monsters* pen name it is two, and the second is
+ * the one that returns anything at all — measured 2026-08-10:
+ * `title=He Who Fights with Monsters 2&author=Travis Deverell` returns **0**
+ * results, and the same title with `author=Shirtaloon` returns the book.
+ */
+const MAX_QUERIES = 4;
 
-  // The gates from `matching.ts`, unchanged and unduplicated. The SPINE floor,
-  // not the friendlier one: nobody is confirming these, so this is the "matched
-  // without anyone looking" case that floor exists for.
+async function rungSearch(work, ours, names) {
+  const pairs = [];
+  for (const title of names.queryTitles) {
+    for (const author of names.queryAuthors) {
+      if (pairs.length < MAX_QUERIES) pairs.push({ title, author });
+    }
+  }
+
+  // Deduplicated by Open Library work id across the queries: the pen-name query
+  // and the shelf-name query overlap the moment both find anything, and the same
+  // record scored twice would look like two candidates agreeing.
+  const seen = new Map();
+  for (const pair of pairs) {
+    const hits = await polite(
+      () => searchOpenLibrary(pair.title, pair.author, { userAgent: USER_AGENT }),
+      `search "${pair.title}" / "${pair.author}"`,
+    ).catch(() => []);
+    for (const c of hits) {
+      const key = c.openlibraryWorkId ?? `${c.title}|${c.authors}`;
+      if (!seen.has(key)) seen.set(key, c);
+    }
+  }
+  const found = [...seen.values()];
+
+  // The gates from `matching.ts`, unchanged and unduplicated — now scored
+  // against every name we know rather than only the printed one, through the
+  // same `bestSimilarity` the index uses. The SPINE floor, not the friendlier
+  // one: nobody is confirming these, so this is the "matched without anyone
+  // looking" case that floor exists for.
   const gated = found
     .map((c) => ({
       c,
-      ts: titleSimilarity(normaliseTitle(c.title), normaliseTitle(work.title)),
-      as: titleSimilarity(
-        normaliseTitle(primaryAuthor(c.authors)),
-        normaliseTitle(primaryAuthor(work.authors)),
-      ),
+      ts: bestSimilarity(normaliseTitle(c.title), names.titleKeys),
+      as: bestSimilarity(normaliseTitle(primaryAuthor(c.authors)), names.authorKeys),
     }))
     .filter((x) => x.ts >= MIN_SPINE_SIMILARITY && x.as >= MIN_AUTHOR_SIMILARITY)
     .sort((a, b) => b.ts - a.ts)
@@ -422,7 +572,7 @@ async function rungSearch(work, ours) {
       olYear: x.c.publishedYear,
     });
   }
-  return { gatedCount: gated.length, searched: found.length, scored };
+  return { gatedCount: gated.length, searched: found.length, scored, queries: pairs };
 }
 
 // ---------------------------------------------------------------------------
@@ -440,6 +590,7 @@ let n = 0;
 for (const w of works) {
   if (n >= flags.limit) break;
 
+  const names = namesFor(w);
   const prior = ledger[w.work_key];
   if (prior?.manual) {
     stats.cached++;
@@ -447,7 +598,17 @@ for (const w of works) {
     continue;
   }
   const staleMiss = RETRY_MISSES && prior?.verdict === 'not_found';
-  if (prior && !REFRESH && !staleMiss) {
+  // ⚠️ A new alias is a new question, so it invalidates the cached answer by
+  // itself. Without this, adding "Shirtaloon" would change nothing until someone
+  // thought to pass --refresh, and the feature would look built and be inert.
+  const staleNames = prior != null && aliasesChanged(prior, names);
+  if (staleNames) {
+    console.log(
+      `  names changed for "${w.title}" — re-asking ` +
+        `(was [${(prior.aliases ?? []).join(', ') || 'none'}], now [${names.fingerprint.join(', ') || 'none'}])`,
+    );
+  }
+  if (prior && !REFRESH && !staleMiss && !staleNames) {
     stats.cached++;
     if (prior.verdict === 'matched' && prior.olid) {
       matched.push({ ...w, olid: prior.olid, via: prior.via, confidence: prior.confidence });
@@ -474,7 +635,7 @@ for (const w of works) {
 
   let entry = null;
 
-  const byIsbn = await rungIsbn(w, ours).catch((e) => {
+  const byIsbn = await rungIsbn(w, ours, names).catch((e) => {
     console.log(`\n    isbn rung failed: ${e.message}`);
     return null;
   });
@@ -514,9 +675,9 @@ for (const w of works) {
   }
 
   if (!entry || entry.verdict !== 'matched') {
-    const { scored, searched, gatedCount } = await rungSearch(w, ours).catch((e) => {
+    const { scored, searched, gatedCount, queries } = await rungSearch(w, ours, names).catch((e) => {
       console.log(`\n    search rung failed: ${e.message}`);
-      return { scored: [], searched: 0, gatedCount: 0 };
+      return { scored: [], searched: 0, gatedCount: 0, queries: [] };
     });
 
     // ⚠️ Open Library holds genuine duplicate work records for the same book —
@@ -602,13 +763,18 @@ for (const w of works) {
           confidence: null,
           via: 'search',
           evidence: [
-            `fielded search returned ${searched} result(s), ${gatedCount} of which cleared the` +
-              ` title ≥ ${MIN_SPINE_SIMILARITY} / author ≥ ${MIN_AUTHOR_SIMILARITY} gate`,
+            `${queries.length} fielded search(es) returned ${searched} distinct result(s),` +
+              ` ${gatedCount} of which cleared the title ≥ ${MIN_SPINE_SIMILARITY} /` +
+              ` author ≥ ${MIN_AUTHOR_SIMILARITY} gate`,
           ],
-          source: [
-            'https://openlibrary.org/search.json?title=' + encodeURIComponent(w.title) +
-              '&author=' + encodeURIComponent(primaryAuthor(w.authors)),
-          ],
+          // Every query that was actually run, so a miss can be reproduced by
+          // hand — including the alias ones, which are the whole reason a second
+          // look at these rows was worth taking.
+          source: queries.map(
+            (p) =>
+              'https://openlibrary.org/search.json?title=' + encodeURIComponent(p.title) +
+              '&author=' + encodeURIComponent(p.author),
+          ),
           searched_at: TODAY,
         };
         stats.notFound++;
@@ -625,6 +791,12 @@ for (const w of works) {
     stats.review++;
     outliers.push({ work: w, entry });
   }
+
+  // ⚠️ The names the question was asked under, so a later run can tell that the
+  // question has changed. Omitted entirely when there are none, so this does not
+  // rewrite 116 ledger entries with an empty array — `aliasesChanged` reads a
+  // missing field as "no aliases", which is what absence has always meant here.
+  if (names.fingerprint.length > 0) entry.aliases = names.fingerprint;
 
   ledger[w.work_key] = entry;
   touchedLedger = true;

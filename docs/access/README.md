@@ -16,6 +16,19 @@
 | `npm run backfill:series [-- --remote] [-- --commit]` | Fills `work.series` / `series_index_*`. Same defaults. |
 | `npm run backfill:openlibrary-ids [-- --remote] [-- --commit]` | Fills `work.openlibrary_work_id`. Dry-run, local, by default. Talks to openlibrary.org (~300 calls on a cold run, ~1/sec, no key needed); a warm run makes **zero** calls because `scripts/openlibrary-ids.json` caches every answer including the misses. |
 | `npm run sync:drive-map` | Copies `author_drive_map.json` from the audiobook repo into `apps/web/public/`. Needs no credentials. |
+| `npm run backfill:openlibrary-ids -- --remote --aliases-from-local` | Same dry run, but reads `work_alias` from the **local** database and joins it to the production works **by `work_key`**. Exists because production has not had migration 0005 applied and has no alias rows; it measures what the aliases would do without writing to production. See [`../info/aliases-export-people.md`](../info/aliases-export-people.md) §1.7. |
+
+### Downloads (owner only, `editCatalog`)
+
+| Route | Gives |
+|---|---|
+| `GET /api/export.json` | Every row of twelve tables, with the applied migration list stamped on it. Streamed, paged 500 at a time. **The backup.** |
+| `GET /api/export.csv` | One row per work, flattened, BOM-prefixed so Excel reads UTF-8. Lossy. |
+
+⚠️ Both need a **Bearer token**, so `curl localhost:8787/api/export.json` works
+only because of the dev bypass. In the browser they are fetch-and-Blob, not
+`<a download>` — an anchor sends no Authorization header and 401s in production
+while working perfectly in local dev.
 
 ⚠️ `backfill:covers --remote --commit` writes URLs that only resolve after
 `npm run deploy`. Do the two together — see `docs/HANDOFF.md`.

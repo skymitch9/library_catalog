@@ -186,6 +186,28 @@ export interface WishlistRow {
   formats: string | null;
 }
 
+/** A row of `work_alias`. `kind` decides which gate the name widens. */
+export interface WorkAlias {
+  id: number;
+  workId: number;
+  alias: string;
+  kind: 'title' | 'author';
+  source: 'openlibrary' | 'manual';
+  createdAt: string;
+}
+
+/** A row of `app_user`, as the People screen sees it. */
+export interface Person {
+  id: number;
+  email: string;
+  displayName: string | null;
+  reviewName: string | null;
+  photoUrl: string | null;
+  role: 'owner' | 'reader' | 'pending';
+  firstSeenAt: string;
+  approvedAt: string | null;
+}
+
 export interface RelatedWork {
   relationId: number;
   workId: number;
@@ -402,4 +424,88 @@ export const api = {
 
   deleteRelation: (relationId: number) =>
     request<{ ok: true }>(`/api/relations/${relationId}`, { method: 'DELETE' }),
+
+  // -------------------------------------------------------------------------
+  // Other names a book answers to
+  // -------------------------------------------------------------------------
+
+  aliases: (workId: number) => request<{ aliases: WorkAlias[] }>(`/api/works/${workId}/aliases`),
+
+  /**
+   * ⚠️ `kind` is required and has no client-side default, mirroring the schema.
+   * A title alias helps a search find this book; an author alias stops the author
+   * gate refusing it. Guessing which one somebody meant is how an alternate title
+   * ends up widening the check that keeps wrong books out.
+   */
+  addAlias: (workId: number, body: { alias: string; kind: 'title' | 'author' }) =>
+    request<{ aliases: WorkAlias[] }>(`/api/works/${workId}/aliases`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  deleteAlias: (workId: number, aliasId: number) =>
+    request<{ aliases: WorkAlias[] }>(`/api/works/${workId}/aliases/${aliasId}`, {
+      method: 'DELETE',
+    }),
+
+  // -------------------------------------------------------------------------
+  // People
+  // -------------------------------------------------------------------------
+
+  users: () => request<{ users: Person[] }>('/api/users'),
+
+  /**
+   * ⚠️ The server refuses the last owner demoting themselves, and refuses anyone
+   * without `manageUsers` outright. The UI disables those buttons too, but the
+   * server is the one that decides — see `apps/worker/src/routes/users.ts`.
+   */
+  setRole: (userId: number, role: 'owner' | 'reader' | 'pending') =>
+    request<{ user: Person }>(`/api/users/${userId}/role`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
+    }),
+
+  // -------------------------------------------------------------------------
+  // Export
+  // -------------------------------------------------------------------------
+
+  /**
+   * Download the whole catalog.
+   *
+   * ⚠️ Not a plain `<a download href="/api/export.json">`, and this is the one
+   * place that differs from the sibling Board Game Catalog. That app is behind
+   * Cloudflare Access, whose session is a **cookie**, so the browser attaches it
+   * to an ordinary navigation and an anchor just works. Here the credential is a
+   * Firebase **Bearer token** that only `request()` knows how to attach — an
+   * anchor would arrive with no Authorization header and 401.
+   *
+   * ⚠️ And it would have looked fine locally. `middleware/auth.ts`'s dev bypass
+   * answers without a token, so an anchor downloads perfectly on `:8787` and
+   * fails the moment it is deployed. That is the exact shape of bug this
+   * project's notes keep recording, so it is written down rather than discovered.
+   *
+   * The trade: the response is buffered into a Blob on this device before the
+   * save dialog opens. The *server* still streams and pages — see
+   * `packages/db/src/export.ts` — but the browser holds the finished file, which
+   * for a household catalog is a few hundred kilobytes and for a very large one
+   * would want the File System Access API instead (not available on iOS).
+   */
+  downloadExport: async (format: 'json' | 'csv'): Promise<{ filename: string; blob: Blob }> => {
+    const token = await getIdToken(false);
+    const res = await fetch(`/api/export.${format}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as { error?: string } | null;
+      throw new ApiError(res.status, null, body?.error ?? `HTTP ${res.status}`);
+    }
+    // The server names the file; the date in it is the server's, which is the one
+    // the data is as of.
+    const disposition = res.headers.get('Content-Disposition') ?? '';
+    const named = /filename="([^"]+)"/.exec(disposition)?.[1];
+    return {
+      filename: named ?? `library-catalog.${format}`,
+      blob: await res.blob(),
+    };
+  },
 };

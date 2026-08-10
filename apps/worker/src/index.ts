@@ -8,8 +8,10 @@
 import { Hono } from 'hono';
 import type { AppBindings, Env } from './env.js';
 import { requireAuth } from './middleware/auth.js';
+import { aliasRoutes } from './routes/aliases.js';
 import { catalogRoutes } from './routes/catalog.js';
 import { enrichRoutes } from './routes/enrich.js';
+import { exportRoutes } from './routes/export.js';
 import { healthRoutes } from './routes/health.js';
 import { ingestRoutes } from './routes/ingest.js';
 import { isbnRoutes } from './routes/isbn.js';
@@ -36,9 +38,12 @@ app.route('/api/ingest', ingestRoutes);
 app.use('/api/*', requireAuth());
 app.route('/api', userRoutes);
 app.route('/api', catalogRoutes);
-// Mounted at /api too: `/works/:id/relations` has one more segment than
-// catalogRoutes' `/works/:id`, so the two cannot shadow each other.
+// Mounted at /api too: `/works/:id/relations` and `/works/:id/aliases` each have
+// one more segment than catalogRoutes' `/works/:id`, so none of the three can
+// shadow another.
 app.route('/api', relationRoutes);
+app.route('/api', aliasRoutes);
+app.route('/api', exportRoutes);
 app.route('/api/series', seriesRoutes);
 app.route('/api/isbn', isbnRoutes);
 app.route('/api/enrich', enrichRoutes);
