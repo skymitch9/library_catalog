@@ -119,21 +119,45 @@ npm run secret:list
 
 ### Getting a Google Books key
 
-Free. No billing account required for the Books API.
+⚠️ **Do NOT create a new project or a new Google service. You already have one.**
 
-1. <https://console.cloud.google.com/> — sign in with the Google account you use
-   for everything else here.
-2. Create a project, or reuse one. The name is irrelevant.
-3. **APIs & Services → Library → search "Books API" → Enable.**
-   ⚠️ Easy to skip, and skipping it produces a key that authenticates fine and
-   then 403s on every call, which reads like a bad key.
-4. **APIs & Services → Credentials → Create credentials → API key.**
-5. Restrict it: **API restrictions → Books API only.** A key that can call
-   anything in the project is a worse thing to leak than one that can look up
-   ISBNs.
-6. Do **not** add an HTTP-referrer restriction. The calls come from a Cloudflare
-   Worker, not a browser, so there is no referrer to match and the restriction
-   silently rejects everything.
+Measured 2026-08-09: the Firebase web key in `audiobook_catalog/site/admin.html`
+was tested directly against the Books API and came back
+
+```
+403 PERMISSION_DENIED  accessNotConfigured
+"Books API has not been used in project 68492219785 before or it is disabled."
+```
+
+That is the *useful* failure. The key authenticated, and it carries no API
+restriction — the **only** missing piece is the Books API being switched on for
+the project that already exists. Project `68492219785` is the
+`audiobook-catalog` Firebase project, i.e. the same one this app already
+verifies sign-in tokens against.
+
+So the whole job is:
+
+1. **Enable the API on the existing project** —
+   <https://console.developers.google.com/apis/api/books.googleapis.com/overview?project=68492219785>
+   → Enable. Wait a minute or two for it to propagate.
+2. **Create a second key on that same project**, restricted to **Books API only**:
+   APIs & Services → Credentials → Create credentials → API key → Restrict key.
+
+⚠️ **Do not simply reuse the Firebase web key, even though it would now work.**
+Two reasons, both real:
+
+- It is **public by design** — it ships to every browser that loads the
+  audiobook site. Anything holding it can spend this project's Books quota
+  (1,000 requests/day on the free tier).
+- Restricting it later would **break Firebase sign-in**. A key cannot be scoped
+  to Books API only *and* remain a working Firebase web key, so the two uses want
+  two keys.
+
+A second key on the same project costs nothing and avoids both.
+
+⚠️ Do **not** add an HTTP-referrer restriction to the new key. The calls come
+from a Cloudflare Worker, not a browser, so there is no referrer to match and the
+restriction silently rejects everything.
 
 Then set it **without pasting it into a chat, a file, or your shell history**:
 
@@ -150,7 +174,20 @@ Verify with a scan whose trace should now show two rungs instead of one:
 curl -s "$LIBRARY/api/isbn/9780765326355"   # signed-in browser, not curl — see §8
 ```
 
-### There is no Goodreads key
+### There is no Goodreads key — but Hardcover is already wired up
+
+⚠️ **Before adding any book-metadata service, check `audiobook_catalog/.env`.**
+It already holds `HARDCOVER_TOKEN` and `HARDCOVER_ENABLED`, and
+`app/tools/` has a working `hardcover_gql()` client against
+`https://api.hardcover.app/v…`, used today for content warnings and chapter
+extraction. Hardcover is the modern successor to Goodreads and has a real
+GraphQL API — so the thing Goodreads would have provided is already paid for,
+authenticated, and has a client written for it one directory over.
+
+It also holds `DOESTHEDOGDIE_API_KEY`. The house rule this suggests: **grep the
+sibling repo's `.env` before signing up for anything.**
+
+### The retired API
 
 Checked 2026-08-09: `goodreads.com/api` 302s to the homepage and `/api/keys` is a
 bare sign-in wall. Goodreads stopped issuing API keys in December 2020 and
