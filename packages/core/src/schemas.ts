@@ -11,8 +11,11 @@ import { z } from 'zod';
 import {
   CONDITIONS,
   COPY_STATUSES,
+  DETAIL_FIELDS,
   EDITION_FORMATS,
   EDITION_SOURCES,
+  FINDING_REVIEW_STATES,
+  GAP_VERDICTS,
   RATING_MAX,
   RATING_MIN,
   READ_FORMATS,
@@ -35,6 +38,9 @@ export const sourceTierSchema = z.enum(SOURCE_TIERS);
 export const runTierSchema = z.enum(RUN_TIERS);
 export const workRelationSchema = z.enum(WORK_RELATIONS);
 export const seriesVolumeSourceSchema = z.enum(SERIES_VOLUME_SOURCES);
+export const detailFieldSchema = z.enum(DETAIL_FIELDS);
+export const gapVerdictSchema = z.enum(GAP_VERDICTS);
+export const findingReviewStateSchema = z.enum(FINDING_REVIEW_STATES);
 
 /** Trim, and treat an empty string as absent — a blank form field is not a value. */
 const optionalText = z
@@ -236,6 +242,39 @@ export const setSeriesTotalSchema = z
     path: ['knownTotalSource'],
   });
 export type SetSeriesTotal = z.infer<typeof setSeriesTotalSchema>;
+
+// ---------------------------------------------------------------------------
+// Research and gap verdicts
+// ---------------------------------------------------------------------------
+
+/**
+ * Accept or reject one proposed finding.
+ *
+ * ⚠️ `pending` is absent on purpose. A review is a decision; "un-deciding" a
+ * finding back to pending would leave no record that anyone had looked, which is
+ * the state this whole feature exists to distinguish from.
+ */
+export const reviewFindingSchema = z.object({
+  reviewState: z.enum(['accepted', 'rejected']),
+});
+export type ReviewFinding = z.infer<typeof reviewFindingSchema>;
+
+/**
+ * A person writing down an answer by hand: "this is a standalone, and here is
+ * how I know".
+ *
+ * ⚠️ `source` is required and non-empty, matching the NOT NULL in migration
+ * 0005 and the rule `series-overrides.json` already states: an entry with no
+ * source is a bug, not a shortcut. It is the free way to close a gap — no model
+ * call, no cost — and that is exactly why it must not be the careless way.
+ */
+export const setGapVerdictSchema = z.object({
+  field: detailFieldSchema,
+  verdict: gapVerdictSchema,
+  source: z.string().trim().min(1, 'a verdict needs a source — how do you know?'),
+  note: optionalText,
+});
+export type SetGapVerdict = z.infer<typeof setGapVerdictSchema>;
 
 // ---------------------------------------------------------------------------
 // API contracts for identity

@@ -31,6 +31,27 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const CONFIG = path.join(ROOT, 'apps/worker/wrangler.toml');
 const DB_NAME = 'library-catalog';
 
+/**
+ * Where the LOCAL database lives, when the default will not do.
+ *
+ * ⚠️ Not a preference — a workaround for a real failure. miniflare keeps the
+ * local D1 under `apps/worker/.wrangler/state`, and on Windows a deep enough
+ * checkout pushes that past the path limit. Every local `d1 execute` then fails
+ * with a bare `internal error; reference = …` and nothing else — including a
+ * plain `SELECT 1`, which is how you can tell it apart from a SQL problem.
+ *
+ * Seen 2026-08-10 in a git worktree under
+ * `AppData\Local\Temp\claude\…\scratchpad\wave4`. Set `LC_D1_PERSIST_TO=C:/lcw`
+ * and it works; the main checkout needs nothing. Remote is unaffected.
+ */
+const PERSIST_TO = process.env.LC_D1_PERSIST_TO;
+
+/** The flags that select a database, so the two runners cannot disagree. */
+function targetArgs(remote) {
+  if (remote) return ['--remote'];
+  return PERSIST_TO ? ['--local', '--persist-to', PERSIST_TO] : ['--local'];
+}
+
 function runWrangler(args) {
   // `shell: true` is needed to find npx.cmd on Windows, and it is why every
   // argument is quoted here rather than trusted — a path under
@@ -70,7 +91,7 @@ function runSql(sql, { remote }) {
     const out = runWrangler([
       'd1', 'execute', DB_NAME,
       '--config', CONFIG,
-      remote ? '--remote' : '--local',
+      ...targetArgs(remote),
       '--file', file,
       '--json',
     ]);
@@ -126,7 +147,7 @@ export function query(sql, { remote }) {
   const out = runWrangler([
     'd1', 'execute', DB_NAME,
     '--config', CONFIG,
-    remote ? '--remote' : '--local',
+    ...targetArgs(remote),
     '--command', oneLine,
     '--json',
   ]);

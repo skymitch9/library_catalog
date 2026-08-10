@@ -199,6 +199,125 @@ export interface RelatedWork {
   note: string | null;
 }
 
+// ---------------------------------------------------------------------------
+// Details queue and research
+// ---------------------------------------------------------------------------
+
+/** A `DETAIL_FIELDS` value. Mirrors `@lc/core`, which is where the list lives. */
+export type DetailField = 'firstPublished' | 'series' | 'seriesIndex' | 'description';
+
+export interface NeedsDetails {
+  workId: number;
+  title: string;
+  authors: string;
+  series: string | null;
+  missing: DetailField[];
+  missingLabels: string[];
+  /** Proposals waiting on a decision. Counted server-side so a row can say so
+   *  without being opened — a worklist you must expand row by row is not one. */
+  pending: number;
+  /** Fields already settled. Shown so the page can say what it is NOT asking. */
+  answered: DetailField[];
+  answeredLabels: string[];
+}
+
+/**
+ * The per-field tally.
+ *
+ * ⚠️ The part of the queue page that carries information. Every work is missing
+ * its year and its description, so the *list* says the same thing 116 times;
+ * this says which questions are nearly closed and which are wide open, and it is
+ * where already-answered work shows up as done rather than as absence.
+ */
+export interface FieldGapCount {
+  field: DetailField;
+  label: string;
+  missing: number;
+  /** A verdict says this book has no such thing. */
+  none: number;
+  /** A verdict says nobody knows. */
+  unknown: number;
+  filled: number;
+  /** The field cannot apply — a volume number on a book with no series. */
+  notApplicable: number;
+}
+
+/** What a run proposed about one field. Three kinds, and the third one matters. */
+export interface FindingValue {
+  kind: 'found' | 'none' | 'unknown';
+  value?: string | number | null;
+  /**
+   * What the source says, in the model's words.
+   *
+   * ⚠️ This is deliberately where a confidence score would otherwise be. §4.4 of
+   * `isbn-ladder.md`: a wrong answer scored 1.00 on title and 1.00 on author,
+   * twice. A number invites ranking; a sentence naming the page invites reading.
+   */
+  basis?: string | null;
+}
+
+export interface ResearchFinding {
+  id: number;
+  runId: number;
+  workId: number;
+  field: string;
+  value: FindingValue;
+  sourceTier: 'official' | 'crowdfunding' | 'retail' | 'community';
+  sourceUrl: string | null;
+  /** Always null. See `FindingValue.basis`. */
+  confidence: number | null;
+  reviewState: 'pending' | 'accepted' | 'rejected';
+  reviewedAt: string | null;
+  createdAt: string;
+}
+
+export interface RunView {
+  id: number;
+  workId: number;
+  status: 'queued' | 'running' | 'done' | 'error';
+  errorMessage: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  estimatedCents: number;
+  asked: string[];
+  proposed: number;
+  detail: string | null;
+  model: string | null;
+  effort: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+export interface GapVerdictRow {
+  id: number;
+  workId: number;
+  field: DetailField;
+  verdict: 'none' | 'unknown';
+  source: string;
+  note: string | null;
+  runId: number | null;
+  decidedAt: string;
+}
+
+export interface QueueResponse {
+  works: NeedsDetails[];
+  summary: FieldGapCount[];
+  /** Fields deliberately not asked about, each with the reason. */
+  refused: { field: string; because: string }[];
+  runs: RunView[];
+  spent: {
+    runs: number;
+    errors: number;
+    inputTokens: number;
+    outputTokens: number;
+    estimatedCents: number;
+  };
+  model: string;
+  centsEach: { low: number; high: number };
+  /** False when no Anthropic key is configured, so the page can say so once. */
+  configured: boolean;
+}
+
 function collectionQuery(params: CollectionParams): string {
   const u = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
@@ -402,4 +521,62 @@ export const api = {
 
   deleteRelation: (relationId: number) =>
     request<{ ok: true }>(`/api/relations/${relationId}`, { method: 'DELETE' }),
+
+  // -------------------------------------------------------------------------
+  // Details queue and research
+  // -------------------------------------------------------------------------
+
+  queue: () => request<QueueResponse>('/api/research/queue'),
+
+  workFindings: (workId: number) =>
+    request<{
+      work: { id: number; title: string; authors: string };
+      findings: ResearchFinding[];
+      runs: RunView[];
+      verdicts: GapVerdictRow[];
+      missing: DetailField[];
+    }>(`/api/research/works/${workId}/findings`),
+
+  /**
+   * ⚠️ Spends money, and takes 20–90 seconds. The request is held open for the
+   * whole lookup on purpose — see apps/worker/src/lib/research-run.ts. The
+   * outcome is written to `research_run` before the response is sent, so a
+   * lookup whose response never arrives still shows up on the next poll.
+   */
+  runResearch: (workId: number) =>
+    request<{ run: RunView; alreadyRunning: boolean; findings?: ResearchFinding[] }>(
+      `/api/research/works/${workId}/run`,
+      { method: 'POST', body: JSON.stringify({}) },
+    ),
+
+  /**
+   * Accept or reject one proposal.
+   *
+   * ⚠️ Accepting applies it — to a blank column only, never over something
+   * already recorded, and a `none`/`unknown` becomes a verdict rather than a
+   * value. `applied` and `skipped` say in a sentence what actually happened.
+   */
+  reviewFinding: (findingId: number, reviewState: 'accepted' | 'rejected') =>
+    request<{
+      finding: ResearchFinding;
+      applied: string | null;
+      skipped: string | null;
+      missing: DetailField[];
+    }>(`/api/research/findings/${findingId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ reviewState }),
+    }),
+
+  /** Free, and it demands a source. The honest way to close a gap by hand. */
+  setVerdict: (
+    workId: number,
+    body: { field: DetailField; verdict: 'none' | 'unknown'; source: string; note?: string | null },
+  ) =>
+    request<{ verdict: GapVerdictRow; missing: DetailField[] }>(
+      `/api/research/works/${workId}/verdict`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+
+  deleteVerdict: (id: number) =>
+    request<{ ok: true }>(`/api/research/verdicts/${id}`, { method: 'DELETE' }),
 };

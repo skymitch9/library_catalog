@@ -43,6 +43,7 @@ import {
   isDirectionalRelation,
 } from '../src/constants.ts';
 import { bookIdFromTitle, reviewDocFor, workKeyForAudiobookRow } from '../src/reviews.ts';
+import { REFUSED_FIELDS, detailGaps, verdictFor } from '../src/gaps.ts';
 
 describe('isbn — the scanner gate', () => {
   it('accepts a real Bookland EAN-13', () => {
@@ -652,5 +653,84 @@ describe('volumeStatedIn — the extracting half of volumeMentioned', () => {
     assert.equal(volumeMentioned('Cradle, Volume Four', 4), true);
     assert.equal(volumeMentioned('Cradle, Volume Four', 5), false);
     assert.equal(volumeMentioned('Summoner 6', 6), false);
+  });
+});
+
+describe('gaps — what is a question, and what is already an answer', () => {
+  it('asks every book for its year and its description', () => {
+    // Measured against production 2026-08-10: 116 of 116 works have neither.
+    // If this ever stops being true the queue has quietly stopped asking.
+    assert.deepEqual(detailGaps({ series: 'Cradle', seriesIndexSort: 1 }), [
+      'firstPublished',
+      'description',
+    ]);
+  });
+
+  it('does not ask a book with no series which volume it is', () => {
+    // ⚠️ The conditional that stops a model being handed a blank to fill. Asked
+    // anyway, it invents a series to put the number in.
+    const gaps = detailGaps({ series: null });
+    assert.ok(!gaps.includes('seriesIndex'));
+    assert.ok(gaps.includes('series'));
+  });
+
+  it('asks for the volume number once a series is known', () => {
+    assert.ok(detailGaps({ series: 'Cradle', seriesIndexSort: null }).includes('seriesIndex'));
+  });
+
+  it('⚠️ a recorded verdict is an answer, not a gap', () => {
+    // The eleven researched standalones. Without this the queue re-asks — and
+    // re-buys — work done by hand on 2026-08-10 and written down with sources
+    // in scripts/series-overrides.json.
+    const standalone = { series: null, verdicts: ['series'] as const };
+    assert.ok(!detailGaps(standalone).includes('series'));
+    assert.ok(detailGaps({ series: null }).includes('series'));
+  });
+
+  it('an unknown verdict closes the question just as firmly as a none', () => {
+    // Firstborn / Defending Elysium and Undead Knight. "Nobody knows" cost
+    // somebody an afternoon; it must not be re-asked either.
+    assert.ok(!detailGaps({ series: null, verdicts: ['series'] }).includes('series'));
+  });
+
+  it('a book with everything answered leaves the queue', () => {
+    assert.deepEqual(
+      detailGaps({
+        firstPublished: 2016,
+        series: 'Cradle',
+        seriesIndexSort: 1,
+        description: 'A boy from a doomed valley learns the sacred arts.',
+      }),
+      [],
+    );
+  });
+
+  it('treats whitespace as blank, because an empty form field is not a value', () => {
+    assert.ok(detailGaps({ description: '   ' }).includes('description'));
+    assert.ok(detailGaps({ series: '  ' }).includes('series'));
+  });
+
+  it('a volume 0 is a position, not a missing one', () => {
+    // `!subject.seriesIndexSort` would call volume 0 a gap. Prequels numbered 0
+    // exist and are already in this catalog's series ladders.
+    assert.ok(!detailGaps({ series: 'X', seriesIndexSort: 0 }).includes('seriesIndex'));
+  });
+
+  it('reports gaps in DETAIL_FIELDS order, so two rows read identically', () => {
+    assert.deepEqual(detailGaps({}), ['firstPublished', 'series', 'description']);
+  });
+
+  it('a found finding is not a verdict; the other two are', () => {
+    assert.equal(verdictFor('found'), null);
+    assert.equal(verdictFor('none'), 'none');
+    assert.equal(verdictFor('unknown'), 'unknown');
+  });
+
+  it('names every field it refuses, with a reason', () => {
+    // The list is rendered on the queue page. A refusal with no reason is
+    // indistinguishable from an oversight.
+    assert.ok(REFUSED_FIELDS.length > 0);
+    for (const r of REFUSED_FIELDS) assert.ok(r.because.length > 20, r.field);
+    assert.ok(REFUSED_FIELDS.some((r) => r.field.includes('ISBN')));
   });
 });

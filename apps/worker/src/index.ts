@@ -14,6 +14,7 @@ import { healthRoutes } from './routes/health.js';
 import { ingestRoutes } from './routes/ingest.js';
 import { isbnRoutes } from './routes/isbn.js';
 import { relationRoutes } from './routes/relations.js';
+import { researchRoutes } from './routes/research.js';
 import { reviewRoutes } from './routes/reviews.js';
 import { seriesRoutes } from './routes/series.js';
 import { userRoutes } from './routes/users.js';
@@ -42,6 +43,7 @@ app.route('/api', relationRoutes);
 app.route('/api/series', seriesRoutes);
 app.route('/api/isbn', isbnRoutes);
 app.route('/api/enrich', enrichRoutes);
+app.route('/api/research', researchRoutes);
 app.route('/api/reviews', reviewRoutes);
 
 app.notFound(async (c) => {
