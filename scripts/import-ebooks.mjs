@@ -71,7 +71,19 @@ const MANIFEST = argValue(
   path.resolve(here, '../../audiobook_catalog/site/ebooks.json'),
 );
 const API = argValue('--api', 'https://library-catalog.bgc-worker.workers.dev').replace(/\/$/, '');
-const TOKEN = process.env.LIBRARY_API_TOKEN ?? '';
+// The machine token. Read from the environment, or from .dev.vars so an
+// unattended run needs no shell setup at all — .dev.vars is already the single
+// source of truth for secrets and is gitignored.
+function tokenFromDevVars() {
+  try {
+    const text = readFileSync(path.resolve(here, '../apps/worker/.dev.vars'), 'utf8');
+    const m = /^[ \t]*EBOOK_INGEST_TOKEN[ \t]*=[ \t]*"?([^"\r\n]+)"?/m.exec(text);
+    return m?.[1]?.trim() ?? '';
+  } catch {
+    return '';
+  }
+}
+const TOKEN = process.env.EBOOK_INGEST_TOKEN || tokenFromDevVars();
 
 /** Manifest format -> `edition.format`. See migration 0002. */
 const FORMAT_MAP = {
@@ -167,10 +179,9 @@ if (!COMMIT) {
 const IS_LOCAL = /^https?:\/\/(127\.0\.0\.1|localhost)([:/]|$)/.test(API);
 
 if (!TOKEN && !IS_LOCAL) {
-  console.error('\nLIBRARY_API_TOKEN is not set.');
-  console.error('This importer authenticates as a person, not a service: sign in to the site,');
-  console.error('copy a Firebase ID token, and export it. Or point --api at a local');
-  console.error('`wrangler dev`, which has the ENVIRONMENT!=production auth bypass.');
+  console.error('\nEBOOK_INGEST_TOKEN is not set.');
+  console.error('Put it in apps/worker/.dev.vars and run `npm run secrets:push`,');
+  console.error('or export EBOOK_INGEST_TOKEN. Generate one: openssl rand -hex 32');
   process.exit(1);
 }
 
@@ -194,30 +205,26 @@ let failed = 0;
 
 for (const w of byWork.values()) {
   try {
-    // Match first. The catalog already holds works imported earlier and works
-    // added by scanning, so attaching is the common case, not the exception.
-    const { work: existing } = await api(
-      'GET',
-      `/api/works/match?title=${encodeURIComponent(w.title)}&authors=${encodeURIComponent(w.authors)}`,
-    );
-
-    let work = existing;
-    if (work) {
-      attachedWorks++;
-    } else {
-      ({ work } = await api('POST', '/api/works', { title: w.title, authors: w.authors }));
-      createdWorks++;
-    }
-
+    // One call per edition, through /api/ingest — the narrow machine route.
+    //
+    // ⚠️ It matches on `work_key` server-side and attaches to an existing work
+    // rather than creating a second one, so this is idempotent and the
+    // match-then-create dance does not belong on the client. It also means the
+    // importer never needs `editCatalog`, which is the point of the separate
+    // token: a leaked importer credential cannot edit the catalog at large.
     for (const f of w.formats) {
-      await api('POST', '/api/editions', {
-        workId: work.id,
+      const res = await api('POST', '/api/ingest/ebook', {
+        title: w.title,
+        authors: w.authors,
         format: f.format,
-        source: 'file',
-        // Where it actually is, relative to the audiobook library root. The one
-        // fact this importer knows that no lookup ever could.
-        sourceUrl: f.path,
+        sourcePath: f.path,
+        workKey: w.workKey,
       });
+      if (res.createdWork) createdWorks++;
+      else attachedWorks++;
+      if (res.warning === 'work_key_mismatch') {
+        console.warn(`  key mismatch on "${w.title}": sent ${res.sent}, server computed ${res.workKey}`);
+      }
       createdEditions++;
     }
   } catch (err) {

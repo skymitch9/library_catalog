@@ -37,6 +37,26 @@ export interface Env {
   /** Anthropic key for the research pipeline (phase 5). Secret, never in wrangler.toml. */
   ANTHROPIC_API_KEY?: string;
 
+  /**
+   * Shared secret for the ebook importer.
+   *
+   * ⚠️ Why a static token when everything else verifies a Firebase ID token:
+   * **the importer is not a person.** The owner's requirement is unattended
+   * import, and a Firebase token belongs to a human, expires in an hour, and
+   * needs a browser to refresh. Firebase service accounts exist but a
+   * service-account key bypasses `firestore.rules` outright, and this process
+   * has no business anywhere near Firestore — it writes to D1 and nothing else.
+   *
+   * So it gets a token that unlocks exactly one route, and that route
+   * (`/api/ingest/*`) is the narrowest in the app: it can create a work and an
+   * ebook edition. It cannot read the collection, touch copies, write a review
+   * or manage users.
+   *
+   * **Unset means the route is disabled entirely, not open.** Generate with
+   * `openssl rand -hex 32`, put it in `.dev.vars`, and `npm run secrets:push`.
+   */
+  EBOOK_INGEST_TOKEN?: string;
+
 
   /**
    * Local development only. Ignored unless ENVIRONMENT is not "production", so a

@@ -35,7 +35,7 @@ const CONFIG = join(root, 'apps', 'worker', 'wrangler.toml');
  * added to `.dev.vars` should never reach production just because nobody
  * remembered to exclude it.
  */
-const PRODUCTION_SECRETS = ['GOOGLE_BOOKS_API_KEY', 'ANTHROPIC_API_KEY'];
+const PRODUCTION_SECRETS = ['GOOGLE_BOOKS_API_KEY', 'ANTHROPIC_API_KEY', 'EBOOK_INGEST_TOKEN'];
 
 /** Local-only by design. Listed so the script can say *why* it skipped them. */
 const LOCAL_ONLY = {

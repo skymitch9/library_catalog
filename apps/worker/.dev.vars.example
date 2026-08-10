@@ -37,3 +37,7 @@ GOOGLE_BOOKS_API_KEY = ""
 # Anthropic, for the research pipeline (phase 5, not built yet).
 # https://platform.claude.com/settings/keys
 ANTHROPIC_API_KEY = ""
+
+# Machine token for the ebook importer. Generate: openssl rand -hex 32
+# Unset = /api/ingest 404s, which is the safe default.
+EBOOK_INGEST_TOKEN = ""
