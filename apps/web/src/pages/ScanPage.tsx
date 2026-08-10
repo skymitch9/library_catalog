@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import { CameraError, cameraPlausible, closeCamera, openRearCamera } from '../lib/camera.js';
 import { preloadDecoder, startScanLoop } from '../lib/scanner.js';
 import { formatLabel } from '../lib/formats.js';
+import { AddWork } from '../components/AddWork.js';
 
 /**
  * Scan a stack of books by their ISBNs.
@@ -52,7 +53,15 @@ interface Row {
   attachedTo?: string | null;
 }
 
-export function ScanPage({ onDone }: { onDone: () => void }) {
+export function ScanPage({
+  onDone,
+  initialMode = 'scan',
+}: {
+  onDone: () => void;
+  /** 'type' when the caller knows the camera is not available to this user. */
+  initialMode?: 'scan' | 'type';
+}) {
+  const [mode, setMode] = useState<'scan' | 'type'>(initialMode);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
@@ -274,10 +283,53 @@ export function ScanPage({ onDone }: { onDone: () => void }) {
     }
   }
 
+  if (mode === 'type') {
+    return (
+      <main>
+        <button onClick={onDone}>← Collection</button>
+        <h2>Add a book</h2>
+        <div className="row seg" role="tablist" aria-label="How to add">
+          <button role="tab" aria-selected="false" onClick={() => setMode('scan')}>
+            Scan a barcode
+          </button>
+          <button role="tab" aria-selected="true" className="primary">
+            Type it in
+          </button>
+        </div>
+        {/* Already a plain panel rather than a dialog, so it drops onto a screen
+            unchanged — it only ever *looked* like a modal because the collection
+            page revealed it in place. `onClose` goes back to the barcode tab
+            instead of unmounting, because on this screen "cancel" means "I'll
+            scan it after all", not "leave". */}
+        <AddWork onClose={() => setMode('scan')} onAdded={onDone} />
+      </main>
+    );
+  }
+
   return (
     <main>
       <button onClick={onDone}>← Collection</button>
-      <h2>Scan</h2>
+      <h2>Add a book</h2>
+
+      {/* ⚠️ Two ways in, one screen — not two buttons on the collection header.
+          The sibling Board Game Catalog reached five equal-weight buttons there
+          "by accretion", and its CollectionPage comment records the fix: the top
+          bar is for places, the collection header holds the single act of
+          adding, and every *way* of adding is a tab on the screen that act leads
+          to. This is that shape.
+
+          Barcode is first because it is the one that needs the hardware ready.
+          For this catalog it is also, today, the emptier path — every edition is
+          an ebook and there are no ISBNs to scan yet — so `initialMode` lets the
+          caller land on "Type it in" for anyone without the scan capability. */}
+      <div className="row seg" role="tablist" aria-label="How to add">
+        <button role="tab" aria-selected="true" className="primary">
+          Scan a barcode
+        </button>
+        <button role="tab" aria-selected="false" onClick={() => setMode('type')}>
+          Type it in
+        </button>
+      </div>
 
       {!cameraPlausible() && (
         <p className="muted small">

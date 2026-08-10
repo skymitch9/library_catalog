@@ -167,6 +167,14 @@ export function App() {
           The Library
         </button>
         <span className="muted small topbar__who">{me.displayName ?? me.email}</span>
+        {/* ⚠️ Places, not actions — and "Scan" used to be here, which broke that.
+            Adding belongs next to the thing being added to, so it is one button
+            on the collection header and every *way* of adding is a tab on the
+            screen it leads to. Hoisting it up here as well makes the top bar a
+            second, competing menu for the same job; the sibling Board Game
+            Catalog reached five equal-weight entry points that way and had to
+            unpick them. Series and Wishlist stay because they are views you go
+            to, not things you do. */}
         <nav className="topbar__nav">
           <button
             className={screen.name === 'series' ? 'primary chip' : 'chip'}
@@ -180,17 +188,18 @@ export function App() {
           >
             Wishlist
           </button>
-          {me.capabilities.includes('scan') && screen.name !== 'scan' && (
-            <button className="chip" onClick={() => setScreen({ name: 'scan' })}>
-              Scan
-            </button>
-          )}
         </nav>
         <button onClick={() => void signOutNow()}>Sign out</button>
       </header>
 
       {screen.name === 'scan' ? (
-        <ScanPage onDone={() => setScreen({ name: 'collection' })} />
+        <ScanPage
+          onDone={() => setScreen({ name: 'collection' })}
+          // Someone who may edit the catalog but has no `scan` capability would
+          // otherwise land on a camera they are not allowed to open. Same one
+          // button, same one screen — it just opens on the tab that works.
+          initialMode={me.capabilities.includes('scan') ? 'scan' : 'type'}
+        />
       ) : screen.name === 'wishlist' ? (
         <WishlistPage me={me} onOpen={openWork} />
       ) : screen.name === 'series' ? (
@@ -212,7 +221,7 @@ export function App() {
           onOpenSeries={openSeries}
         />
       ) : (
-        <CollectionPage me={me} onOpen={openWork} />
+        <CollectionPage me={me} onOpen={openWork} onAdd={() => setScreen({ name: 'scan' })} />
       )}
     </>
   );

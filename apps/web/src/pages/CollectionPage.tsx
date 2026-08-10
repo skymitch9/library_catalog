@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { COLLECTION_PAGE_SIZES, COPY_STATUSES, READ_STATES } from '@lc/core';
 import { api, type CollectionFacets, type Me, type Stats, type WorkSummary } from '../api.js';
-import { AddWork } from '../components/AddWork.js';
 import { Pager } from '../components/Pager.js';
 import { Shelf } from '../components/Shelf.js';
 import { WorkList } from '../components/WorkList.js';
@@ -26,7 +25,16 @@ import { loadPrefs, savePrefs } from '../lib/prefs.js';
  * changes. Folding them together would recompute three GROUP BYs to send bytes
  * nothing redrew — see the note on `/api/collection/facets`.
  */
-export function CollectionPage({ me, onOpen }: { me: Me; onOpen: (id: number) => void }) {
+export function CollectionPage({
+  me,
+  onOpen,
+  onAdd,
+}: {
+  me: Me;
+  onOpen: (id: number) => void;
+  /** Goes to the scan screen — the one place all the ways of adding live. */
+  onAdd: () => void;
+}) {
   const prefs = useMemo(loadPrefs, []);
 
   const [q, setQ] = useState('');
@@ -44,7 +52,6 @@ export function CollectionPage({ me, onOpen }: { me: Me; onOpen: (id: number) =>
   const [rows, setRows] = useState<WorkSummary[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [adding, setAdding] = useState(false);
   const [facets, setFacets] = useState<CollectionFacets | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [recent, setRecent] = useState<WorkSummary[]>([]);
@@ -100,11 +107,10 @@ export function CollectionPage({ me, onOpen }: { me: Me; onOpen: (id: number) =>
 
   useEffect(loadHeader, [loadHeader]);
 
-  function afterWrite() {
-    setAdding(false);
-    reload();
-    loadHeader();
-  }
+  // There is no afterWrite() any more. Adding happens on the scan screen now,
+  // and coming back unmounts it and mounts this page fresh, so the list and the
+  // stat strip refetch on their own — a manual refresh here would be a second
+  // request for the data the mount already asked for.
 
   return (
     <main>
@@ -141,9 +147,19 @@ export function CollectionPage({ me, onOpen }: { me: Me; onOpen: (id: number) =>
         >
           {view === 'grid' ? '☰' : '▦'}
         </button>
+        {/* ⚠️ ONE entry point, and it goes to the scan screen.
+            It used to open a type-it-in panel here while "Scan" sat separately
+            in the top bar — two buttons for one act, in two different places.
+            Adding now lands on the screen where every way of adding lives, with
+            the barcode tab first and "Type it in" beside it.
+
+            Nothing else goes here. If a new entry point seems necessary it
+            almost certainly belongs on the screen it leads to — the sibling
+            Board Game Catalog wrote that rule after this row reached five
+            buttons of equal weight by accretion. */}
         {canEdit && (
-          <button className="primary" onClick={() => setAdding(true)}>
-            Add
+          <button className="primary" onClick={onAdd}>
+            + Add books
           </button>
         )}
       </div>
@@ -261,8 +277,6 @@ export function CollectionPage({ me, onOpen }: { me: Me; onOpen: (id: number) =>
           )}
         </div>
       )}
-
-      {adding && <AddWork onClose={() => setAdding(false)} onAdded={afterWrite} />}
 
       {/* The strip is a way in, not a filter. It would be noise on top of a
           search you are already reading the results of. */}
