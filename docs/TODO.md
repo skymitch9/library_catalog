@@ -202,6 +202,50 @@ accessories are digital.
 
 ---
 
+## Browser verification sweep — 2026-08-10
+
+The first real browser pass over everything five agent branches shipped. **Zero
+console errors** across every screen. Verdicts:
+
+**Works:** scan picker and its four tabs · queue newest-first · duplicate,
+unresolved-barcode and SKU rows · Editions panel with two-click delete ·
+accessories (23 rows with kind chips, quantity, DIGITAL tag) · crowdfunding
+provenance · `WorkFields` in-place editing · series list search/sort/gaps ·
+"Bought more than once" · Edition and Print/Ebook filters with recomputing
+counts · details-queue auto-apply with per-row and bulk undo · Drive links
+correct in both directions.
+
+**Two correctness bugs found and fixed** (`6344cc4`, deployed `95af9fbd`):
+
+1. ⚠️ **The series page asserted audio it had only guessed at.** Tamer read
+   *"All 5 held as ebooks and on audio"* when all five matched the same generic
+   series-level row by containment. The per-rung chip *does* hedge with a `?`,
+   but that chip is suppressed when every rung agrees — and folding
+   `matchedVia` away in `signatureOf` is what made them agree. Both the chip and
+   the sentence were individually correct, which is why only a browser caught it.
+2. ⚠️ **"All N held…" overstated.** The count came from the whole series while
+   the signature behind it came from ladder rungs only, which exclude wishlist
+   entries and off-number-line works. *The Completionist Chronicles* said "All 4
+   … on audio" while the series list said 3. Now gated on the counts agreeing.
+
+Also corrected: the "Type a title" blurb promised *"Looks the rest up as you
+type"* over a tab that makes no such request, and contradicted itself by
+promising "no code" when the only lookup offered is by ISBN.
+
+**Still open from the sweep:**
+- ⚠️ **Mobile is UNVERIFIED and cannot currently be verified.** `resize_window`
+  returns `Successfully resized … to 390x844` and the viewport does not move —
+  `read_page` reports it unchanged every time. Two separate agents hit this.
+  **Distrust any mobile verdict from this tooling.**
+- The route is **`/add`, not `/scan`**.
+- Per-rung Print/Ebook/Audio chips have never actually rendered — every series
+  in production has a uniform ladder, so they are suppressed by design.
+- The preorder tag has never rendered either: zero preordered and zero wanted
+  copies exist. It will first appear when the 4 B&N preorders are imported.
+- Cosmetic: two stacked "Cancel" buttons in the accessories panel; an
+  `UNCLASSIFIED` chip that is accurate but the only jargon in an otherwise
+  plain-English panel.
+
 ## Known-imperfect, carried forward
 
 - ⚠️ **Audiobook match rate is 25% — 40 of 157.** Honest ceiling: ~35 misses are
