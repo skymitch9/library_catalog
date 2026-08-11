@@ -1,5 +1,16 @@
-import { useState } from 'react';
-import { MIN_SPINE_SIMILARITY, outstandingCount, type ScanJob, type ScanLine } from '@lc/core';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  MIN_SPINE_SIMILARITY,
+  isAddable,
+  lookupProgress,
+  needsLookup,
+  outstandingCount,
+  proposedTitle,
+  searchText,
+  type ScanJob,
+  type ScanLine,
+  type ScanStatus,
+} from '@lc/core';
 import { api } from '../api.js';
 import { addLineToCatalog } from '../lib/catalog-add.js';
 import { Link, workPath } from '../router.js';
@@ -18,13 +29,65 @@ import { Link, workPath } from '../router.js';
  * evidence than an ISBN. Nothing here is ticked in advance and nothing is
  * added without a tap.
  *
+ * ## ⚠️ The first lookup happens on its own
+ *
+ * This screen drives the automatic first pass, and that is why it polls. The
+ * server does one chunk per invocation and parks the job at `read`; this
+ * component notices there is more to do and asks for the next one. Ported from
+ * the sibling Board Game Catalog, down to the shape of the guard:
+ *
+ * - **keyed on `${id}:${done}`, not on the id.** Each distinct point of
+ *   progress is asked for exactly once, so a chunk that advances triggers the
+ *   next and a chunk that advances nothing stops rather than spinning.
+ * - **progress, not a spinner.** "5 of 14 looked up" is the difference between
+ *   working and the stall that used to look identical to it.
+ * - the manual lookup button **stays**, as the repair bench. Automatic asks
+ *   with the words the camera read; a person asks with the right ones.
+ *
  * ## ⚠️ A weak match is shown, not hidden
  *
  * Below `MIN_SPINE_SIMILARITY` the row is marked "loose match" and still
  * offered. Dropping it would be tidier and worse: the book is visibly on the
  * shelf, and a false negative costs a tap while a false positive costs a wrong
- * book in the catalog wearing someone else's cover.
+ * book in the catalog wearing someone else's cover. Nothing about the lookup
+ * becoming automatic changed this — an automatic proposal is still a proposal.
+ *
+ * ## ⚠️ A duplicate is a question, not a refusal
+ *
+ * A row that matched something we already hold used to render **no buttons at
+ * all** — "Already yours", full stop. The owner's complaint: *"it is up to the
+ * end user to deal with duplicates, not just the system, because currently we
+ * have to leave the scan page, find the book, and add a second copy instead of
+ * using the already-built features."* Owning one copy and buying a second is
+ * ordinary, and the scan is how you would say so. So the row now names the book
+ * it matched, links to it, and offers a second owned copy inline — one tap on a
+ * button that says what it does, never automatically.
+ *
+ * ## ⚠️ The rule the last three fixes all come from
+ *
+ * **What a row offers follows what the row needs, not how the row arrived.**
+ * Three separate dead ends were all the same defect wearing different clothes —
+ * an already-owned book, an unresolved board book, and a shop barcode each
+ * rendered a row with no buttons on it, because the gates asked `via === 'spine'`
+ * and `state === 'found'` instead of asking what was missing. The system having
+ * no answer is never a reason for the person to have no options. `isAddable`,
+ * `searchText` and `proposedTitle` in `@lc/core` are that rule made explicit,
+ * and the review screen and `catalog-add.ts` both read them so a button can
+ * never offer something the add path then refuses.
  */
+
+/** Slow enough not to be a nuisance, fast enough that a shelf read feels live. */
+const POLL_MS = 2500;
+
+/**
+ * Statuses that still change with nobody touching anything.
+ *
+ * ⚠️ `read` is deliberately **not** here. It means "lines exist, not all looked
+ * up" — a pass has paused between chunks — and the thing that moves it on is
+ * this component asking, not time passing. Polling it would burn a request
+ * every 2.5s on a job that is waiting for us.
+ */
+const IN_FLIGHT: ReadonlySet<ScanStatus> = new Set(['uploaded', 'reading', 'enriching']);
 
 function Similarity({ line }: { line: ScanLine }) {
   if (line.similarity === null) return null;
@@ -41,16 +104,22 @@ function LineRow({
   index,
   jobId,
   onJob,
+  awaiting,
 }: {
   line: ScanLine;
   index: number;
   jobId: number;
   onJob: (job: ScanJob) => void;
+  /** The automatic pass owns this line right now. Its buttons would race it. */
+  awaiting: boolean;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(line.text);
+  // ⚠️ `proposedTitle`, not `line.text` — a barcode line's text is the code,
+  // and pre-filling the title box with "9780241361221" invites somebody to
+  // catalog a book by that name.
+  const [draft, setDraft] = useState(proposedTitle(line) ?? '');
   const [draftAuthor, setDraftAuthor] = useState(line.author ?? '');
 
   async function run(what: string, fn: () => Promise<void>) {
@@ -67,6 +136,9 @@ function LineRow({
 
   const add = () =>
     run('add', async () => {
+      // ⚠️ One path for every kind of row, including the duplicate. See
+      // `catalog-add.ts`: a line that already names a work adds a second copy
+      // to it rather than matching or creating anything.
       const { workId } = await addLineToCatalog(line);
       // Recorded on the line only after the catalog write succeeded. The other
       // order would mark a book added that is not in the catalog.
@@ -98,6 +170,17 @@ function LineRow({
     });
 
   const settled = line.addedWorkId !== null || line.dismissed;
+  const owned = line.state === 'owned';
+  /*
+   * ⚠️ The gating rule, in three lines, and it is the fix for two separate
+   * complaints: **what a row offers follows what the row needs, never how the
+   * row arrived.** Gating on `via` and on `state === 'found'` is what made an
+   * already-owned book and an unresolved board book both render zero buttons —
+   * the system had no answer, so the person was given no options.
+   */
+  const addable = isAddable(line);
+  const canSearch = !line.dismissed && searchText(line) !== null;
+  const canType = !line.dismissed && line.state !== 'skipped';
 
   return (
     <li className={settled ? 'muted' : undefined}>
@@ -118,12 +201,20 @@ function LineRow({
           {line.confidence ? ` · ${line.confidence} confidence` : ''}
         </div>
 
-        {line.state === 'owned' && (
+        {owned && (
           <>
-            <strong>Already yours{line.existingTitle ? `: ${line.existingTitle}` : ''}</strong>
+            <strong>Already in the library{line.existingTitle ? `: ${line.existingTitle}` : ''}</strong>
             {line.existingWorkId !== null && (
               <div className="small">
                 <Link to={workPath(line.existingWorkId)}>Open it</Link>
+              </div>
+            )}
+            {/* Says what the buttons are for. Without it "Another copy" beside
+                "Already in the library" reads as an offer to duplicate the
+                *record*, which is the opposite of what it does. */}
+            {!settled && (
+              <div className="muted small">
+                Scanned again — add a second owned copy if you have two, or leave it.
               </div>
             )}
           </>
@@ -145,11 +236,18 @@ function LineRow({
           </>
         )}
 
-        {line.state !== 'owned' && line.state !== 'found' && (
-          <strong>{line.via === 'spine' ? line.text : line.code}</strong>
+        {/* ⚠️ `proposedTitle` first, so a barcode row that somebody has just
+            typed a title into shows the title rather than continuing to show
+            the code back at them. Falls through to the code when nobody has
+            said what the book is, which is the honest thing to show. */}
+        {!owned && line.state !== 'found' && (
+          <strong>{proposedTitle(line) ?? line.code ?? line.text}</strong>
         )}
 
-        {line.detail && <div className="muted small">{line.detail}</div>}
+        {/* While the pass owns this line, its `detail` is the *previous*
+            answer — or the placeholder written when the photo was read — and
+            showing it beside "Looking up…" says two contradictory things. */}
+        {line.detail && !awaiting && <div className="muted small">{line.detail}</div>}
         {line.note && <div className="muted small">Read: {line.note}</div>}
         {error && <div className="muted small">{error}</div>}
 
@@ -177,31 +275,71 @@ function LineRow({
       <div className="row-tight" style={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>
         {line.addedWorkId !== null ? (
           <Link to={workPath(line.addedWorkId)} className="chip">
-            Added
+            {owned ? 'Copy added' : 'Added'}
           </Link>
+        ) : awaiting ? (
+          /* The automatic pass has this row. No buttons: every one of them
+             would race a write that is already in flight, and the answer is
+             seconds away. `aria-live` so a screen reader hears it land. */
+          <span className="muted small" aria-live="polite">
+            Looking up…
+          </span>
         ) : (
           <>
-            {/* A spine that resolved to nothing can still be looked up — that is
-                the point of the button. A barcode cannot: its ladder has
-                already run, and re-running it asks the same question. */}
-            {line.via === 'spine' && !line.dismissed && (
+            {/* Search when there is something to search *with*.
+                ⚠️ Not `via === 'spine'`, which is what this used to say. A
+                barcode's ladder has run, so re-asking with the code is the same
+                question — but the instant somebody types a title into the row,
+                a title search is a completely new question and the button has
+                to be there. `searchText` is null in the first case and not in
+                the second, which is the whole distinction. */}
+            {canSearch && (
               <button onClick={() => void lookup()} disabled={busy !== null}>
                 {busy === 'lookup' ? 'Looking…' : line.state === 'found' ? 'Again' : 'Look up'}
               </button>
             )}
-            {line.via === 'spine' && !line.dismissed && (
+
+            {/* ⚠️ Every row, not just a spine. Typing the book in is the
+                universal escape hatch, and withholding it from barcode rows is
+                what made an unresolved board book a dead end — no title, no way
+                to give it one, no way to add it. The scanned ISBN survives the
+                edit; see `unresolve` in the route. */}
+            {canType && (
               <button onClick={() => setEditing((v) => !v)} disabled={busy !== null}>
-                {editing ? 'Cancel' : 'Edit'}
+                {editing ? 'Cancel' : line.state === 'found' || owned ? 'Edit' : 'Type it in'}
               </button>
             )}
-            {line.state === 'found' && !line.dismissed && (
+
+            {/* ⚠️ ONE tap, and the label carries the whole confirmation.
+                This was a two-step confirm until it became clear the thing it
+                was guarding against cannot happen: the route already refuses a
+                second line for a code the job holds ("one code is one line,
+                whatever arrives"), so an `owned` row never means "you waved the
+                same book past the lens twice" — it means the *catalog* already
+                has this book. A button that says what it does is deliberate
+                enough, and a confirm step on top of it is one more thing to tap
+                through on a screen whose entire complaint was too many taps. */}
+            {owned && addable && (
+              <button onClick={() => void add()} disabled={busy !== null}>
+                {busy === 'add' ? 'Adding…' : 'Add 2nd copy'}
+              </button>
+            )}
+
+            {/* ⚠️ `isAddable`, not `state === 'found'`. The old gate meant "only
+                books a service recognised", which is exactly the set that
+                excludes a board book. A row with a title and an author is
+                addable however it got them — including from the keyboard. */}
+            {!owned && addable && (
               <button className="primary" onClick={() => void add()} disabled={busy !== null}>
                 {busy === 'add' ? 'Adding…' : 'Add'}
               </button>
             )}
-            {line.state !== 'owned' && line.state !== 'skipped' && (
+
+            {/* Leaving a row alone has to stay one tap, or a sweep full of books
+                you already own is worse than no sweep at all. */}
+            {line.state !== 'skipped' && (
               <button onClick={() => void dismiss()} disabled={busy !== null}>
-                {line.dismissed ? 'Undo' : 'Not wanted'}
+                {line.dismissed ? 'Undo' : owned ? 'Leave it' : 'Not wanted'}
               </button>
             )}
           </>
@@ -221,7 +359,83 @@ export function ScanLines({
   /** What to say when the sweep has found nothing yet. Differs per tab. */
   empty: string;
 }) {
-  if (job.lines.length === 0) return <p className="muted small">{empty}</p>;
+  const [error, setError] = useState<string | null>(null);
+  const progress = lookupProgress(job.lines);
+  const working = IN_FLIGHT.has(job.status);
+  const stalled = !working && progress.done < progress.total;
+
+  /*
+   * Poll while the server is doing something. Only while — an idle job costs
+   * nothing, and a dropped poll is not worth an error box because the next one
+   * is 2.5 seconds away.
+   *
+   * ⚠️ `onJob` here is the same setter every row's buttons use, so a poll
+   * landing mid-action shows the server's view for a moment and the action's
+   * own response corrects it. Both converge on the same row; neither writes.
+   */
+  useEffect(() => {
+    if (!working) return;
+    const id = job.id;
+    const timer = setInterval(() => {
+      void api
+        .scanJob(id)
+        .then((r) => onJob(r.job))
+        .catch(() => undefined);
+    }, POLL_MS);
+    return () => clearInterval(timer);
+  }, [job.id, working, onJob]);
+
+  /**
+   * Ask for the next chunk, automatically, until the sweep is looked up.
+   *
+   * ⚠️ Keyed on `${id}:${done}` rather than on the id, and that key is the
+   * whole safety of it: each distinct point of progress is asked for exactly
+   * once, so a chunk that advances triggers the next one and a chunk that
+   * advances nothing stops rather than spinning. Open Library being down
+   * therefore costs one wasted chunk, not an infinite retry loop.
+   *
+   * Not gated on `status === 'read'`, on purpose: a sweep created before this
+   * feature existed sits at `review` with lines nobody ever looked up, and
+   * reopening it should finish the job rather than make a person press
+   * fourteen buttons.
+   */
+  const attempted = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (working || job.status === 'done' || job.status === 'failed') return;
+    if (progress.done >= progress.total) return;
+    const key = `${job.id}:${progress.done}`;
+    if (attempted.current.has(key)) return;
+    attempted.current.add(key);
+    void api
+      .enrichScanJob(job.id)
+      .then((r) => onJob(r.job))
+      .catch(() => undefined);
+  }, [job.id, job.status, working, progress.done, progress.total, onJob]);
+
+  /**
+   * "Try that again."
+   *
+   * Deliberately does **not** clear the attempted keys. It bypasses the guard
+   * by calling directly, so one press is one attempt: if it advances, the
+   * effect picks the chain back up at the new progress point; if it does not,
+   * nothing fires on its own and the button is still here.
+   */
+  const [retrying, setRetrying] = useState(false);
+  const retry = useCallback(async () => {
+    setRetrying(true);
+    setError(null);
+    try {
+      onJob((await api.enrichScanJob(job.id)).job);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRetrying(false);
+    }
+  }, [job.id, onJob]);
+
+  if (job.lines.length === 0) {
+    return <p className="muted small">{working ? 'Reading…' : empty}</p>;
+  }
 
   const left = outstandingCount(job.lines);
 
@@ -230,18 +444,37 @@ export function ScanLines({
       <p className="muted small">
         {job.lines.length} {job.lines.length === 1 ? 'book' : 'books'} ·{' '}
         {left === 0 ? 'all sorted' : `${left} still to sort`}
+        {/* Progress, not a spinner. A shelf arrives over several passes, and a
+            number that moves is the difference between "working" and a stall
+            that looks exactly like it. */}
+        {progress.done < progress.total &&
+          ` · ${working ? 'looking up' : 'looked up'} ${progress.done} of ${progress.total}`}
       </p>
+
+      {stalled && (
+        <p className="row-tight">
+          <button onClick={() => void retry()} disabled={retrying}>
+            {retrying ? 'Asking…' : `Look up the remaining ${progress.total - progress.done}`}
+          </button>
+        </p>
+      )}
+      {error && <p className="notice notice--bad">{error}</p>}
+
       <ul className="works scan-lines">
         {/*
          * Newest first. A sweep appends, so the book just scanned landed at the
          * end of the array and sat below the fold — exactly the one you want to
-         * confirm while it is still in your hand.
+         * confirm while it is still in your hand. An automatic first pass makes
+         * this more important, not less: rows now fill themselves in, and the
+         * one worth watching is the one that just arrived.
          *
          * ⚠️ Pair the position BEFORE reversing. `index` is the array offset the
          * server patches (`patchScanLine`/`lookupScanLine` take it verbatim), so
          * a display-order index would confirm, rename or dismiss a different
          * book than the row you tapped. `.map()` builds a new array, so the
          * `.reverse()` below mutates that copy and never `job.lines` itself.
+         * A duplicate accepted with `allowDuplicate` is appended to the end,
+         * which means it lands at the TOP here — which is what you want.
          */}
         {job.lines
           .map((line, i) => ({ line, i }))
@@ -253,6 +486,7 @@ export function ScanLines({
               index={i}
               jobId={job.id}
               onJob={onJob}
+              awaiting={working && needsLookup(line)}
             />
           ))}
       </ul>

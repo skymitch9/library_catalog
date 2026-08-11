@@ -34,9 +34,16 @@ import {
 } from '../src/corroboration.ts';
 import {
   blankLine,
+  hasPendingLookups,
+  isAddable,
   isOutstanding,
   jobSummary,
+  lookupProgress,
+  needsLookup,
   outstandingCount,
+  proposedAuthors,
+  proposedTitle,
+  searchText,
   type ScanLine,
 } from '../src/scanjobs.ts';
 import { SHELF_SCHEMA } from '../src/vision.ts';
@@ -794,11 +801,24 @@ describe('scan-job lines — what still needs a person', () => {
     ...over,
   });
 
-  it('settles a book we already hold, and one that was not a book', () => {
-    // Neither needs a decision: the catalog already answers the first, and the
-    // second is a price code. Anything else is outstanding until someone acts.
-    assert.equal(isOutstanding(line({ state: 'owned' })), false);
+  it('⚠️ a book we already hold is a QUESTION, not a settled row', () => {
+    // Reversed on the owner's instruction. "Already yours" used to settle the
+    // row, which made it a dead end: the one legitimate reason to scan a book
+    // you own — a second physical copy — could only be recorded by leaving the
+    // sweep, finding the book, and adding the copy by hand.
+    assert.equal(isOutstanding(line({ state: 'owned', existingWorkId: 7 })), true);
+  });
+
+  it('a price code is still settled, because it is still not a book', () => {
+    // The other half of the same rule, deliberately NOT reversed. There is no
+    // question to ask about a five-digit price add-on.
     assert.equal(isOutstanding(line({ state: 'skipped' })), false);
+  });
+
+  it('answering the duplicate question either way settles it', () => {
+    // Both routes off an owned row: a second copy added, or left alone.
+    assert.equal(isOutstanding(line({ state: 'owned', existingWorkId: 7, addedWorkId: 7 })), false);
+    assert.equal(isOutstanding(line({ state: 'owned', existingWorkId: 7, dismissed: true })), false);
   });
 
   it('⚠️ keeps the rows that did NOT resolve cleanly', () => {
@@ -813,7 +833,6 @@ describe('scan-job lines — what still needs a person', () => {
   it('settles only on a person having acted', () => {
     assert.equal(isOutstanding(line({ state: 'found', dismissed: true })), false);
     assert.equal(isOutstanding(line({ state: 'found', addedWorkId: 9 })), false);
-    assert.equal(isOutstanding(line({ state: 'found', existingWorkId: 9 })), false);
   });
 
   it('a fresh line is never pre-added or pre-dismissed', () => {
@@ -824,22 +843,171 @@ describe('scan-job lines — what still needs a person', () => {
     assert.equal(fresh.dismissed, false);
     assert.equal(fresh.similarity, null);
     assert.equal(fresh.position, 3);
+    // And never pre-answered: the automatic pass keys on this.
+    assert.equal(fresh.lookedUp, false);
   });
 
   it('counts and summarises what is left', () => {
     const lines = [
-      line({ state: 'owned' }),
+      line({ state: 'owned', existingWorkId: 1 }),
       line({ state: 'found' }),
       line({ state: 'not_found' }),
       line({ state: 'found', addedWorkId: 4 }),
     ];
-    assert.equal(outstandingCount(lines), 2);
-    assert.equal(jobSummary({ lines, status: 'review' }), '4 books · 2 to sort');
+    // Three, not two: the owned row is now a duplicate awaiting a decision.
+    assert.equal(outstandingCount(lines), 3);
+    assert.equal(jobSummary({ lines, status: 'review' }), '4 books · 3 to sort');
     assert.equal(
-      jobSummary({ lines: [line({ state: 'owned' })], status: 'review' }),
+      jobSummary({ lines: [line({ state: 'owned', dismissed: true })], status: 'review' }),
       '1 book · all sorted',
     );
     assert.equal(jobSummary({ lines: [], status: 'review' }), 'nothing yet');
+  });
+});
+
+describe('scan-job lines — what the automatic first pass will spend a search on', () => {
+  const spine = (over: Partial<ScanLine> = {}): ScanLine => ({
+    ...blankLine(1, 'spine', 'Wintersteel'),
+    ...over,
+  });
+
+  it('asks about an unresolved spine, exactly once', () => {
+    const fresh = spine();
+    assert.equal(needsLookup(fresh), true);
+    // "Asked" and "answered" are different things, and this is the one that
+    // stops the pass looping: a search that found nothing is still an answer.
+    assert.equal(needsLookup({ ...fresh, state: 'not_found', lookedUp: true }), false);
+    assert.equal(needsLookup({ ...fresh, state: 'found', lookedUp: true }), false);
+  });
+
+  it('⚠️ retries a line the service never answered, and only that line', () => {
+    // `error` means Open Library was unreachable — not a fact about the book.
+    // The route leaves `lookedUp` alone for exactly this.
+    assert.equal(needsLookup(spine({ state: 'error' })), true);
+    assert.equal(needsLookup(spine({ state: 'error', lookedUp: true })), false);
+  });
+
+  it('⚠️ never searches a barcode line that has only its code', () => {
+    // Its ladder already ran, against an identifier. The only thing this pass
+    // can do is search by title, and a barcode line's text IS the code —
+    // searching Open Library for "9780765326355" is a wasted call at best.
+    const code = blankLine(1, 'barcode', '9780765326355');
+    assert.equal(searchText(code), null);
+    assert.equal(needsLookup(code), false);
+    assert.equal(needsLookup({ ...code, state: 'not_found' }), false);
+  });
+
+  it('⚠️ does search a barcode line once somebody types a title into it', () => {
+    // The board-book path. `via` is still 'barcode', and gating on `via` — as
+    // the button used to — would refuse the one search that can work here.
+    const typed = { ...blankLine(1, 'barcode', '9780241361221'), text: 'Brown Bear, Brown Bear' };
+    assert.equal(searchText(typed), 'Brown Bear, Brown Bear');
+    assert.equal(needsLookup(typed), true);
+  });
+
+  it('spends nothing on rows the catalog or a person already settled', () => {
+    assert.equal(needsLookup(spine({ state: 'owned', existingWorkId: 3 })), false);
+    assert.equal(needsLookup(spine({ state: 'skipped' })), false);
+    assert.equal(needsLookup(spine({ state: 'unresolvable' })), false);
+    assert.equal(needsLookup(spine({ dismissed: true })), false);
+    assert.equal(needsLookup(spine({ addedWorkId: 3 })), false);
+    assert.equal(needsLookup(spine({ text: '   ' })), false);
+  });
+
+  it('⚠️ treats a job written before the flag existed as not yet asked', () => {
+    // Old rows have no `lookedUp` key at all. `undefined` must read as "ask",
+    // so reopening a half-finished sweep finishes it instead of stranding it.
+    const legacy = { ...spine(), lookedUp: undefined };
+    assert.equal(needsLookup(legacy), true);
+  });
+
+  it('reports progress over the lines the pass is responsible for', () => {
+    // Not over every line: a shelf of five where two are already ours reads
+    // "3 of 3", not "3 of 5 (two of which will never move)".
+    const lines = [
+      spine({ state: 'found', lookedUp: true }),
+      spine({ state: 'not_found', lookedUp: true }),
+      spine(),
+      spine({ state: 'owned', existingWorkId: 9 }),
+      blankLine(5, 'barcode', '9780765326355'),
+    ];
+    assert.deepEqual(lookupProgress(lines), { done: 2, total: 3 });
+    assert.equal(hasPendingLookups(lines), true);
+
+    const finished = lines.map((l) => (needsLookup(l) ? { ...l, lookedUp: true } : l));
+    assert.deepEqual(lookupProgress(finished), { done: 3, total: 3 });
+    assert.equal(hasPendingLookups(finished), false);
+  });
+});
+
+describe('scan-job lines — what a row may be given, however it arrived', () => {
+  const spine = (over: Partial<ScanLine> = {}): ScanLine => ({
+    ...blankLine(1, 'spine', 'Wintersteel'),
+    ...over,
+  });
+  /** A board book: real ISBN, scanned fine, and nothing indexes it. */
+  const boardBook = (over: Partial<ScanLine> = {}): ScanLine => ({
+    ...blankLine(1, 'barcode', '9780241361221'),
+    isbn13: '9780241361221',
+    state: 'not_found',
+    lookedUp: true,
+    ...over,
+  });
+
+  it('⚠️ refuses to file a book under the barcode that was scanned', () => {
+    // The whole reason `proposedTitle` exists. `resolvedTitle ?? text` — the
+    // old rule in catalog-add.ts — would have created a work called
+    // "9780241361221" the moment the Add button was un-gated.
+    assert.equal(proposedTitle(boardBook()), null);
+    assert.equal(isAddable(boardBook()), false);
+  });
+
+  it('⚠️ lets an unresolved board book be added once it is typed in', () => {
+    // The owner's bug: scanned, ISBN valid, nothing found, no way to add it.
+    const typed = boardBook({ text: 'Brown Bear, Brown Bear', author: 'Bill Martin Jr.' });
+    assert.equal(proposedTitle(typed), 'Brown Bear, Brown Bear');
+    assert.equal(proposedAuthors(typed), 'Bill Martin Jr.');
+    assert.equal(isAddable(typed), true);
+  });
+
+  it('needs BOTH a title and an author, because the catalog does', () => {
+    assert.equal(isAddable(boardBook({ text: 'Brown Bear, Brown Bear' })), false);
+    assert.equal(isAddable(boardBook({ author: 'Bill Martin Jr.' })), false);
+  });
+
+  it('a SKU or shop barcode is addable by hand too, and never looked up', () => {
+    // No global registry of SKUs, so there is nothing to ask — but the book is
+    // in your hand, so there is everything to type.
+    const sku = {
+      ...blankLine(1, 'barcode', '5012345678900'),
+      state: 'unresolvable' as const,
+    };
+    assert.equal(isAddable(sku), false);
+    assert.equal(needsLookup(sku), false);
+    const typed = { ...sku, text: 'The Very Hungry Caterpillar', author: 'Eric Carle' };
+    assert.equal(isAddable(typed), true);
+    // Still not searched automatically: `unresolvable` is an answer.
+    assert.equal(needsLookup(typed), false);
+  });
+
+  it('a duplicate is addable with no title of its own — the work supplies it', () => {
+    // The second-copy path. There is nothing to name, because the work is known.
+    const dup = spine({ state: 'owned', existingWorkId: 12, existingTitle: 'Wintersteel' });
+    assert.equal(isAddable(dup), true);
+    assert.equal(isAddable({ ...dup, dismissed: true }), false);
+    assert.equal(isAddable({ ...dup, addedWorkId: 12 }), false);
+  });
+
+  it('prefers what a service resolved over what was read off the shelf', () => {
+    const found = spine({ state: 'found', resolvedTitle: 'Wintersteel', resolvedAuthors: 'Will Wight' });
+    assert.equal(proposedTitle(found), 'Wintersteel');
+    assert.equal(proposedAuthors(found), 'Will Wight');
+    assert.equal(isAddable(found), true);
+  });
+
+  it('treats whitespace as nothing said', () => {
+    assert.equal(proposedTitle(spine({ text: '   ' })), null);
+    assert.equal(proposedAuthors(spine({ author: '  ' })), null);
   });
 });
 

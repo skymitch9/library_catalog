@@ -1,4 +1,4 @@
-import type { ScanLine } from '@lc/core';
+import { proposedAuthors, proposedTitle, type ScanLine } from '@lc/core';
 import { api } from '../api.js';
 
 /**
@@ -28,10 +28,42 @@ export interface AddedWork {
  * the matcher exists to prevent, arriving through the front door.
  */
 export async function addLineToCatalog(line: ScanLine): Promise<AddedWork> {
-  const title = line.resolvedTitle ?? line.text;
-  const authors = line.resolvedAuthors ?? line.author;
+  /*
+   * ⚠️ The duplicate case — a book we already hold, scanned again on purpose.
+   *
+   * The line already names the work, so there is nothing to match and nothing
+   * to create: this is the *second copy* path, and it deliberately runs through
+   * this same function rather than a shortcut beside it. The header explains
+   * why, and it is not hypothetical — the whole reason a duplicate used to be a
+   * dead end is that "already yours" had no route into the code that adds
+   * things.
+   *
+   * No edition is written here either, and that is not laziness. A `owned`
+   * barcode line got its state from an edition row that *already exists* with
+   * that ISBN, so creating one would be a duplicate printing; a `owned` spine
+   * line matched on title and author and has no ISBN to write. Migration 0001
+   * makes `copy.edition_id` nullable for exactly this — "a copy can exist
+   * before its exact printing is known".
+   */
+  if (line.existingWorkId !== null) {
+    await api.createCopy({ workId: line.existingWorkId, status: 'owned' });
+    return { workId: line.existingWorkId, attachedTo: line.existingTitle };
+  }
+
+  /*
+   * ⚠️ `proposedTitle` / `proposedAuthors`, not `resolvedTitle ?? text`.
+   *
+   * The naive fallback treats a barcode line's `text` as a title, and a barcode
+   * line's text is the *code* — so a board book whose ISBN resolved to nothing
+   * would have been filed under "9780241361221" rather than refused. The
+   * predicates live in `@lc/core` because the review screen gates its Add
+   * button on the same question, and a button that offers what this function
+   * then throws on is worse than either.
+   */
+  const title = proposedTitle(line);
+  const authors = proposedAuthors(line);
   if (!title || !authors) {
-    throw new Error('A book needs a title and an author before it can be added.');
+    throw new Error('Type in the title and author first — nothing found this book for us.');
   }
 
   const existing = await api.matchWork(title, authors);

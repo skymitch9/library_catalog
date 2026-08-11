@@ -116,6 +116,30 @@ export function ScanPage({
   const [busy, setBusy] = useState<string | null>(null);
   const [manual, setManual] = useState('');
   const [cost, setCost] = useState<string | null>(null);
+  /** A code this sweep already holds, waiting to be told whether it is a 2nd copy. */
+  const [duplicate, setDuplicate] = useState<
+    { code: string; title: string | null; position: number } | null
+  >(null);
+  /**
+   * Codes already offered as a possible second copy.
+   *
+   * ⚠️ Without this the camera asks the same question five times a second. The
+   * scan loop's `ignore` runs on every decoded frame, and a book sitting in
+   * front of the lens decodes continuously — so the prompt is raised once per
+   * code and cleared only when the person answers it.
+   */
+  const promptedRef = useRef<Set<string>>(new Set());
+  /**
+   * The current job, readable from inside the scan loop.
+   *
+   * The loop's callbacks are created once and would otherwise close over the
+   * first render's `job` forever — the same reason `seenRef` and `jobIdRef`
+   * exist. This one is needed to name the row a repeat scan collided with.
+   */
+  const jobRef = useRef<ScanJob | null>(null);
+  useEffect(() => {
+    jobRef.current = job;
+  }, [job]);
 
   /** Every server answer arrives as a whole job, so there is one way to accept it. */
   function acceptJob(next: ScanJob) {
@@ -192,16 +216,41 @@ export function ScanPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function lookupCode(code: string, typed = false) {
+  async function lookupCode(code: string, typed = false, allowDuplicate = false) {
     try {
-      const res = await api.scanBarcode(code, jobIdRef.current);
+      const res = await api.scanBarcode(code, jobIdRef.current, allowDuplicate);
       acceptJob(res.job);
+      /*
+       * ⚠️ The sweep already holds this code. Ask, do not swallow.
+       *
+       * The owner's report: *"if a book is in the open queued scan list and you
+       * scan a duplicate it doesn't prompt you, it just rejects the scan."* The
+       * server's refusal was already carrying the row it collided with; nothing
+       * was reading it, so a deliberate second copy looked exactly like a
+       * misfire. Some books here genuinely are owned twice.
+       */
+      if (res.duplicate) {
+        setDuplicate({ code, title: res.line.resolvedTitle ?? res.line.existingTitle, position: res.line.position });
+        return;
+      }
+      setDuplicate(null);
       if (typed && res.line.state === 'skipped') {
         setCameraError(res.line.detail ?? 'Not a book barcode.');
       }
     } catch (err) {
       setCameraError(err instanceof Error ? err.message : String(err));
     }
+  }
+
+  /** "Yes, a second copy" — the only thing that appends a duplicate line. */
+  async function addDuplicate() {
+    const pending = duplicate;
+    if (!pending) return;
+    setDuplicate(null);
+    // Re-prompting is what makes a *third* copy possible, so the code comes
+    // back out of the "already prompted" set the moment the answer is given.
+    promptedRef.current.delete(pending.code);
+    await lookupCode(pending.code, false, true);
   }
 
   async function startBarcode() {
@@ -222,11 +271,33 @@ export function ScanPage({
       stopRef.current = startScanLoop({
         video,
         continuous: true,
-        // A book left in front of the lens would otherwise rebuild its two
-        // confirmations every few hundred milliseconds and be looked up again.
-        // The server refuses duplicates too — see the route — but the cheapest
-        // duplicate is the one that never becomes a request.
-        ignore: (code) => seenRef.current.has(code),
+        /*
+         * A book left in front of the lens would otherwise rebuild its two
+         * confirmations every few hundred milliseconds and be looked up again.
+         * The server refuses duplicates too — see the route — but the cheapest
+         * duplicate is the one that never becomes a request.
+         *
+         * ⚠️ **Suppressing the request must not mean suppressing the person.**
+         * This used to return `true` and nothing else, which is why re-scanning
+         * a book you own two of did nothing at all: the request never left the
+         * phone, so the server never got the chance to say "already on this
+         * sweep" and the screen never got the chance to ask. It still sends
+         * nothing — it raises the prompt instead, once per code, and the answer
+         * is what sends a request.
+         */
+        ignore: (code) => {
+          if (!seenRef.current.has(code)) return false;
+          if (!promptedRef.current.has(code)) {
+            promptedRef.current.add(code);
+            const held = jobRef.current?.lines.find((l) => l.code === code) ?? null;
+            setDuplicate({
+              code,
+              title: held?.resolvedTitle ?? held?.existingTitle ?? null,
+              position: held?.position ?? 0,
+            });
+          }
+          return true;
+        },
         onScan: (scan) => {
           seenRef.current.add(scan.code);
           void lookupCode(scan.code);
@@ -482,6 +553,26 @@ export function ScanPage({
       )}
 
       {cameraError && <p className="notice notice--bad">{cameraError}</p>}
+
+      {/* ⚠️ Already on this sweep — asked, not refused. The whole of the
+          owner's report was that this case produced no prompt and no row, so
+          a genuine second copy was indistinguishable from a misfire. Both
+          answers are one tap, and neither is the default. */}
+      {duplicate && (
+        <div className="panel">
+          <strong>Already on this sweep{duplicate.title ? `: ${duplicate.title}` : ''}</strong>
+          <p className="muted small">
+            {duplicate.position > 0 ? `Scanned as #${duplicate.position}. ` : ''}
+            Do you have a second copy of this one?
+          </p>
+          <div className="row">
+            <button className="primary" onClick={() => void addDuplicate()}>
+              Yes — add a 2nd copy
+            </button>
+            <button onClick={() => setDuplicate(null)}>No, same book</button>
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <p className="muted small">Reopening that sweep…</p>

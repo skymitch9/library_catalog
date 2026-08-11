@@ -849,13 +849,17 @@ export const api = {
   /**
    * One barcode, appended to an open sweep. Omit `jobId` to start one.
    *
-   * `duplicate: true` means the server refused a code the job already holds —
-   * not an error. A book left in front of the lens is the ordinary case.
+   * ⚠️ `duplicate: true` means the server declined to add a second line for a
+   * code the sweep already holds — **not an error, and not the end of it**. A
+   * book left in front of the lens is the ordinary case, so the refusal is
+   * right by default; but the response carries `index` and `line` precisely so
+   * the screen can say *which* row it collided with and offer to add it anyway.
+   * `allowDuplicate` is that offer being accepted, and it appends a new line.
    */
-  scanBarcode: (code: string, jobId: number | null) =>
+  scanBarcode: (code: string, jobId: number | null, allowDuplicate = false) =>
     request<{ job: ScanJob; index: number; line: ScanLine; duplicate: boolean }>(
       '/api/scan-jobs/barcode',
-      { method: 'POST', body: JSON.stringify({ code, jobId }) },
+      { method: 'POST', body: JSON.stringify({ code, jobId, allowDuplicate }) },
     ),
 
   /**
@@ -883,6 +887,19 @@ export const api = {
       unreadable: boolean;
       usage: { inputTokens: number; outputTokens: number; estimatedCents: number };
     }>('/api/scan-jobs/shelf', { method: 'POST', body: JSON.stringify({ data, mediaType }) }),
+
+  /**
+   * Continue — or retry — the automatic first lookup pass.
+   *
+   * ⚠️ One call does one chunk. The review screen asks again each time progress
+   * moves, which is the whole continuation mechanism; there is no cron and no
+   * queue. `running: false` means there was nothing left to look up.
+   *
+   * Never an error when a pass is already in flight: the honest answer to
+   * "please continue" is `running: true`.
+   */
+  enrichScanJob: (id: number) =>
+    request<{ job: ScanJob; running: boolean }>(`/api/scan-jobs/${id}/enrich`, { method: 'POST' }),
 
   /** `q` is the corrected title. Without it, the spine's own words are used. */
   lookupScanLine: (jobId: number, index: number, q?: string) =>

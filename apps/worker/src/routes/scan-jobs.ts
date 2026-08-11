@@ -5,10 +5,13 @@ import {
   blankLine,
   buildWorkIndex,
   classifyScannedCode,
+  hasPendingLookups,
   matchIndexedWork,
+  needsLookup,
   normaliseTitle,
   primaryAuthor,
   titleSimilarity,
+  type ScanJob,
   type ScanLine,
 } from '@lc/core';
 import {
@@ -54,27 +57,48 @@ import { requireCapability } from '../middleware/auth.js';
  * confident, well-formed, wrong book; a spine read is weaker evidence than an
  * ISBN, so the review step is not ceremony here either.
  *
- * ## Why lookups are per line and driven by the client
+ * ## The first lookup pass is automatic
  *
- * The sibling Board Game Catalog enriches a whole photo server-side, in chunks,
- * behind `waitUntil`, with staleness detection and a resume path — machinery it
- * grew after three shelves silently died against the 50-subrequest-per-
- * invocation ceiling. This deliberately does not copy that, for two reasons
- * specific to books:
+ * ⚠️ **This reverses an earlier decision, deliberately and on the owner's
+ * instruction.** This file used to argue that every external search should be a
+ * button, on two grounds: half this library is not in Open Library (measured:
+ * 14 of 30), so most searches answer nothing; and spine text is often wrong, so
+ * the *useful* search is the one made after a person corrects it.
  *
- *  1. **Half this library is not in Open Library** (measured: 14 of 30). Firing
- *     fifteen searches to have most of them answer nothing, or answer with a
- *     different book that shares a word, spends the budget to make the review
- *     list *worse*.
- *  2. **The spine text is often wrong**, so the useful lookup is the one made
- *     after a person has corrected it. `POST /:id/lines/:i/lookup` takes an
- *     optional `q`, which is exactly that.
+ * Both facts are still true and neither was the point. The sibling Board Game
+ * Catalog does the first pass automatically, and it is plainly the better
+ * screen to work through: you arrive at a list that already knows what it can,
+ * instead of a list of fifteen buttons you must press one at a time before it
+ * can tell you anything. A search that answers nothing costs a row that says
+ * "not in Open Library" — which is *information*, arrived at without a tap.
+ * What the two facts actually argue for is that the manual, corrected re-lookup
+ * must survive, and it does: `POST /:id/lines/:i/lookup?q=` is unchanged and is
+ * now the repair bench rather than the only way in.
  *
- * So a photograph gets vision plus the local catalog match — free, instant, and
- * the answer that actually prevents duplicates — and every external search is a
- * separate request the client makes one line at a time. No chunking, no
- * heartbeat, no stale-job recovery, and no ceiling to hit: every line is
- * written when it lands, so an interrupted sweep resumes exactly where it was.
+ * ## How, and it is the sibling's mechanism rather than a new one
+ *
+ * | | |
+ * |---|---|
+ * | **Barcode** | Already automatic, synchronously, inside the append. Unchanged. |
+ * | **Photo** | `waitUntil` a chunked pass, kicked from the upload response |
+ * | Continuing | the client asks for the next chunk; `POST /:id/enrich` |
+ *
+ * The chunking is the sibling's, and it exists because a Worker invocation has
+ * a ceiling: theirs is the 50-subrequest limit that silently killed three
+ * shelves. `LINES_PER_RUN` bounds one pass, the pass leaves the job at `read`
+ * when there is more to do, and the review screen asks again. `read` therefore
+ * means "lines exist, not all looked up" — which is what it already meant — so
+ * continuing needed no new status and no migration.
+ *
+ * `processed_at` is the heartbeat: `STALE_AFTER_MS` is what lets a retry tell a
+ * dead pass from a live one instead of racing it.
+ *
+ * ## ⚠️ Automatic must not mean silently wrong
+ *
+ * Nothing about the pass relaxes what a line claims. `similarity` is still
+ * carried and not enforced, the author gate still *rejects* rather than
+ * down-ranks, and a weak match still arrives unticked with its score printed.
+ * The pass fills a proposal in; a person still confirms it.
  */
 
 const UA = 'library_catalog (private household catalog)';
@@ -110,6 +134,17 @@ const barcodeSchema = z.object({
    * which is what the first scan of a sweep does.
    */
   jobId: z.number().int().positive().nullable().optional(),
+  /**
+   * "Yes, I really do have two of these — put it on the sweep again."
+   *
+   * ⚠️ The answer to a prompt, never a default. Without it the route still
+   * refuses a code the job already holds, because a book left in front of the
+   * lens re-locks several times a second and that refusal is the only thing
+   * standing between one book and five queue entries. With it, the person has
+   * been *told* the code is already on the sweep and has said to add it anyway,
+   * which is a completely different claim and deserves its own line.
+   */
+  allowDuplicate: z.boolean().optional(),
 });
 
 const lineUpdateSchema = z
@@ -147,6 +182,9 @@ function applyCandidate(line: ScanLine, candidate: BookCandidate, searchedFor: s
   return {
     ...line,
     state: 'found',
+    // A candidate only exists because a service answered, so this is the one
+    // place the flag can be set without repeating "we asked" at every call site.
+    lookedUp: true,
     detail: null,
     isbn13: candidate.isbn13,
     resolvedTitle: candidate.title,
@@ -158,7 +196,16 @@ function applyCandidate(line: ScanLine, candidate: BookCandidate, searchedFor: s
   };
 }
 
-/** Clear every field a previous resolution wrote. Used when the question changes. */
+/**
+ * Clear every field a previous resolution wrote. Used when the question changes.
+ *
+ * ⚠️ **A scanned ISBN survives this, and that is not an inconsistency.** Every
+ * other field here is something a *service* claimed, so a new question makes it
+ * stale. `isbn13` on a barcode line is something a *barcode* said — it is the
+ * question, not the answer. Wiping it was how a board book that Open Library
+ * has never heard of lost its ISBN the moment someone typed the title in by
+ * hand, which is exactly when the ISBN is the only hard fact on the row.
+ */
 function unresolve(line: ScanLine): ScanLine {
   return {
     ...line,
@@ -166,7 +213,7 @@ function unresolve(line: ScanLine): ScanLine {
     detail: null,
     existingWorkId: null,
     existingTitle: null,
-    isbn13: null,
+    isbn13: line.via === 'barcode' ? line.isbn13 : null,
     resolvedTitle: null,
     resolvedAuthors: null,
     publisher: null,
@@ -189,15 +236,47 @@ async function resolveBarcode(env: Env, position: number, code: string): Promise
   const classified = classifyScannedCode(code);
   const line = blankLine(position, 'barcode', code);
 
+  /*
+   * ⚠️ Two very different kinds of "not an ISBN", and they used to be one.
+   *
+   * The owner asked whether a book carrying a **SKU or a retail UPC** instead
+   * of an ISBN can be scanned. It can be *read* — the decoder does not care —
+   * but every one of them was landing as `skipped`, which is settled, silent
+   * and buttonless, so the answer in practice was no.
+   *
+   * They are now split by whether the code could plausibly belong to a book:
+   *
+   * - **`price_addon` stays `skipped`.** Five digits printed beside the real
+   *   barcode. It is never the book, it is the single most common thing a sweep
+   *   locks onto by mistake, and surfacing it would mean a warning per book.
+   * - **A UPC, an own-brand SKU or a misread becomes `unresolvable`** — the
+   *   state that already means "a real thing, and no free database indexes it".
+   *   Outstanding, so it is visible; typeable, so a board book with only a SKU
+   *   on the back can be given a title and added.
+   *
+   * ⚠️ **This has a cost, and it is the one to watch.** A back cover often
+   * carries two or three barcodes, so a stray UPC read is ordinary rather than
+   * exceptional — and each one now costs a "Not wanted" tap where it used to
+   * cost nothing. If that turns out to be a nuisance in real use, reverting is
+   * this branch and nothing else. Nothing is looked up either way: there is no
+   * global registry of SKUs and inventing one lookup would be worse than none.
+   */
   if (classified.kind === 'ignore') {
+    if (classified.reason === 'price_addon') {
+      return {
+        ...line,
+        code: classified.raw,
+        state: 'skipped',
+        detail: 'That is the five-digit price code printed beside the barcode. Use the longer one.',
+      };
+    }
     return {
       ...line,
       code: classified.raw,
-      state: 'skipped',
+      state: 'unresolvable',
       detail:
-        classified.reason === 'price_addon'
-          ? 'That is the five-digit price code printed beside the barcode. Use the longer one.'
-          : 'Not a book barcode. Books start 978 or 979.',
+        'Not an ISBN — a shop barcode or a SKU, which nothing indexes. Type the title and ' +
+        'author in and it can still be added.',
     };
   }
 
@@ -226,7 +305,19 @@ async function resolveBarcode(env: Env, position: number, code: string): Promise
     return {
       ...withCode,
       state: 'not_found',
-      detail: 'Not in Open Library. About half this library is not — add it by hand.',
+      lookedUp: true,
+      /*
+       * ⚠️ Names the button, because this row is the owner's board-book
+       * complaint: *"some baby board books are showing up with ISBN numbers but
+       * when scanned they aren't populating with a title or author — we need
+       * these to be able to still be added."* Board books and picture books are
+       * the worst-indexed corner of Open Library and the best-represented
+       * corner of this house, so this is a common row, not an edge case. The
+       * ISBN stays on the line and reaches the edition when it is added.
+       */
+      detail:
+        'Nothing found for that ISBN — board books and picture books often are not indexed. ' +
+        'Type the title and author in, and it can still be added.',
     };
   }
   // Searched by ISBN, so there is nothing to score a title against: the code is
@@ -243,6 +334,223 @@ async function ownedBy(env: Env, workId: number): Promise<Partial<ScanLine>> {
     existingTitle: work?.title ?? null,
     detail: null,
   };
+}
+
+/**
+ * Ask Open Library about one line, and answer with the line it becomes.
+ *
+ * ⚠️ **The one implementation.** The automatic pass and the manual
+ * "look it up again" button both call this, and they must, because the whole
+ * promise of the automatic pass is that pressing the button afterwards asks the
+ * *same question the same way* — only with better words. Two copies of this
+ * scoring would mean an automatic answer a person could not reproduce by hand.
+ *
+ * Pure of the database: it takes a line and gives a line back. The caller
+ * decides where that lands, which is what lets the chunked pass merge results
+ * into a job that has moved on underneath it.
+ */
+async function lookupLine(line: ScanLine, query: string): Promise<ScanLine> {
+  const corrected = query !== line.text;
+
+  let candidates: BookCandidate[];
+  try {
+    candidates = await searchOpenLibrary(query, line.author, { userAgent: UA });
+  } catch (err) {
+    return {
+      ...line,
+      state: 'error',
+      /*
+       * ⚠️ `lookedUp` is *not* set here, and that is the difference between the
+       * two ways a search can fail to produce a book.
+       *
+       * "Open Library has nothing" is an **answer**: asking again gets it
+       * again, so the automatic pass must not spend another call on it. "Open
+       * Library did not answer" is not an answer at all, so the line stays
+       * eligible and the next pass — or the Retry button — picks it up.
+       */
+      detail: `Open Library did not answer: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+
+  /*
+   * Pick the best answer, and refuse a bad one.
+   *
+   * ⚠️ Unlike the barcode path, there is no identifier here — only two strings
+   * a model read off a spine. Open Library answers "Firefight" + "Brandon
+   * Sanderson" with a *different* 2001 novel called Firefight, at a perfect
+   * title score. The author gate is what separates them, and it is a rejection
+   * rather than a down-rank: a title match with a contradicting author is a
+   * different book, not a worse match.
+   *
+   * ⚠️ None of this got stricter when the pass became automatic. A weak match
+   * is still kept, still scored, and still shown unticked — see `applyCandidate`.
+   * Raising the bar here to "protect" an automatic pass would silently drop
+   * books that are visibly on the shelf, which is the failure the review screen
+   * exists to prevent.
+   */
+  const scored = candidates
+    .map((candidate) => ({
+      candidate,
+      title: titleSimilarity(normaliseTitle(candidate.title), normaliseTitle(query)),
+      author: line.author
+        ? titleSimilarity(
+            normaliseTitle(primaryAuthor(candidate.authors)),
+            normaliseTitle(primaryAuthor(line.author)),
+          )
+        : null,
+    }))
+    .filter((s) => s.author === null || s.author >= MIN_AUTHOR_SIMILARITY)
+    .sort((a, b) => b.title - a.title);
+
+  const best = scored[0];
+  return best
+    ? {
+        ...applyCandidate(unresolve(line), best.candidate, query),
+        relookedUpAs: corrected ? query : null,
+      }
+    : {
+        ...unresolve(line),
+        lookedUp: true,
+        detail:
+          candidates.length > 0
+            ? 'Open Library answered, but with a different author. Nothing here matches.'
+            : 'Open Library has nothing under that title. About half this library is not in it.',
+        relookedUpAs: corrected ? query : null,
+      };
+}
+
+// ---------------------------------------------------------------------------
+// The automatic first pass
+// ---------------------------------------------------------------------------
+
+/**
+ * Lines looked up in one Worker invocation.
+ *
+ * The sibling Board Game Catalog derives its chunk from the free plan's
+ * 50-subrequest ceiling — `(40 - 5) / 4 = 8` — after three shelves were
+ * silently killed by exceeding it. ⚠️ **The arithmetic does not transfer, and
+ * copying the number without the reasoning would be luck rather than design.**
+ * A line here costs exactly *one* subrequest (a single Open Library search; the
+ * ISBN rungs do not run on a spine), plus four fixed reads and writes on the
+ * job — so the subrequest ceiling alone would allow thirty-odd.
+ *
+ * What actually binds is **time**. Every search goes through the queue in
+ * `@lc/isbn`'s `throttle.ts`, one at a time, `MIN_GAP_MS` apart, so thirty
+ * lines is over half a minute of `waitUntil` for a single pass. Eight is about
+ * nine seconds — short enough to be a chunk, long enough to be worth one.
+ *
+ * Landing on the same 8 as the sibling is a coincidence of two different
+ * limits. Do not "unify" the two constants.
+ */
+const LINES_PER_RUN = 8;
+
+/**
+ * How long a pass may be silent before a retry is allowed to replace it.
+ *
+ * `processed_at` is stamped at the start and end of every chunk, so a pass that
+ * is alive is beating. Without this, `enriching` is indistinguishable from a
+ * pass whose isolate was torn down, and the job is stuck at "Looking up…"
+ * forever with no button that will do anything about it.
+ */
+const STALE_AFTER_MS = 90_000;
+
+/**
+ * D1 hands back `datetime('now')` — `YYYY-MM-DD HH:MM:SS`, UTC, no zone marker.
+ * `Date.parse` on that string is implementation-defined and has historically
+ * been read as *local* time, which on a machine behind UTC makes every job look
+ * stale and on one ahead makes none of them ever stale. Say UTC explicitly.
+ */
+function sqliteTime(value: string | null): number | null {
+  if (!value) return null;
+  const ms = Date.parse(`${value.replace(' ', 'T')}Z`);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+function isStale(job: ScanJob): boolean {
+  const beat = sqliteTime(job.processedAt);
+  return beat === null || Date.now() - beat > STALE_AFTER_MS;
+}
+
+/**
+ * One chunk of the automatic first pass.
+ *
+ * Runs inside `waitUntil`, so it must never throw and must always leave the job
+ * in a status the review screen can act on. It leaves `read` when there is more
+ * to do — the status already means "lines exist, not all looked up" — and the
+ * screen asks for the next chunk. That is the whole continuation mechanism:
+ * no cron, no queue, no new status, no migration.
+ */
+async function runLookupPass(env: Env, jobId: number): Promise<void> {
+  try {
+    const job = await getScanJob(env.DB, jobId);
+    if (!job || job.status === 'done') return;
+
+    const pending = job.lines.flatMap((line, i) => (needsLookup(line) ? [i] : []));
+    if (pending.length === 0) {
+      if (job.status !== 'review') await updateScanJob(env.DB, jobId, { status: 'review' });
+      return;
+    }
+
+    // Heartbeat before the slow part, so a torn-down isolate is detectable.
+    await updateScanJob(env.DB, jobId, { status: 'enriching', processed: true });
+
+    /*
+     * ⚠️ Eight at once here is *not* eight requests at once.
+     *
+     * `searchOpenLibrary` funnels every call through the serialising queue in
+     * `@lc/isbn/throttle.ts`, so the real upstream concurrency from this
+     * invocation is one. `Promise.all` is here to keep the code the shape the
+     * sibling settled on, and because the queue — not this line — is the right
+     * place for the limit to live.
+     */
+    const results = await Promise.all(
+      pending.slice(0, LINES_PER_RUN).map(async (i) => {
+        const before = job.lines[i]!;
+        return { i, before, after: await lookupLine(before, before.text) };
+      }),
+    );
+
+    /*
+     * ⚠️ Re-read before writing. This is the one genuinely new hazard the
+     * automatic pass introduces.
+     *
+     * A person is looking at this list *while* the pass runs — that is the
+     * point of it being automatic — and every one of their actions is a
+     * read-modify-write of the same JSON blob. Writing back the snapshot this
+     * pass started from would silently undo an Add or a Not-wanted made in the
+     * last nine seconds. So each result is merged into the *current* job, and
+     * only onto a line that is still asking the same question.
+     */
+    const fresh = await getScanJob(env.DB, jobId);
+    if (!fresh) return;
+
+    const lines = [...fresh.lines];
+    for (const { i, before, after } of results) {
+      const current = lines[i];
+      if (!current) continue;
+      // Moved on without us: added, dismissed, retyped, or already answered by
+      // the person pressing the button themselves. Their answer wins.
+      if (!needsLookup(current)) continue;
+      if (current.text !== before.text || current.author !== before.author) continue;
+      lines[i] = { ...after, position: current.position };
+    }
+
+    const more = hasPendingLookups(lines);
+    await updateScanJob(env.DB, jobId, {
+      lines,
+      // `read` is "paused between chunks", not a failure. `/enrich` already
+      // accepts it, so continuing and retrying are the same request.
+      status: more ? 'read' : 'review',
+      processed: true,
+    });
+  } catch (err) {
+    // A pass that dies must not leave the job pinned at `enriching`, where the
+    // screen shows a spinner and the retry button refuses to race it.
+    await updateScanJob(env.DB, jobId, {
+      status: 'read',
+      error: `Lookup pass failed: ${err instanceof Error ? err.message : String(err)}`,
+    }).catch(() => undefined);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -291,21 +599,39 @@ export const scanJobRoutes = new Hono<AppBindings>()
     /*
      * The same code twice.
      *
-     * The client already refuses to re-submit a code it accepted this session,
-     * but a book left in front of the lens is the single most likely way this
-     * feature turns one book into five queue entries — so the server refuses
-     * too. One code is one line, whatever arrives.
+     * ⚠️ **A refusal here is an answer to the machine, not to the person**, and
+     * conflating the two was the bug. A book left in front of the lens re-locks
+     * several times a second, so refusing a code the job already holds is the
+     * only thing standing between one book and five queue entries — that part
+     * is right and stays. What was wrong is that the refusal was *silent* and
+     * *final*: the owner's report is that scanning a genuine second copy of a
+     * book already on the sweep "doesn't prompt you, it just rejects the scan".
+     * Some books in this house really are owned twice.
      *
-     * The exception is a line whose lookup never reached a service. Pointing the
-     * camera at it again is the obvious way to ask again, so an `error` line
-     * re-runs in place instead of answering with the failure it already recorded.
+     * So the refusal now carries everything needed to ask — `duplicate: true`
+     * plus the index and the line it collided with — and `allowDuplicate` is
+     * the person's answer coming back. One code is still one line *until
+     * somebody says otherwise*.
+     *
+     * ⚠️ The second copy is **appended**, never inserted. The client patches
+     * lines by array offset, so inserting would silently repoint every index
+     * after it and confirm the wrong book.
+     *
+     * The other exception is a line whose lookup never reached a service.
+     * Pointing the camera at it again is the obvious way to ask again, so an
+     * `error` line re-runs in place instead of answering with the failure it
+     * already recorded.
      */
     const already = lines.findIndex((l) => l.code === code);
-    if (already >= 0 && lines[already]!.state !== 'error') {
+    const collision = already >= 0 && lines[already]!.state !== 'error';
+    if (collision && !parsed.data.allowDuplicate) {
       return c.json({ job, index: already, line: lines[already], duplicate: true });
     }
 
-    const index = already >= 0 ? already : lines.length;
+    // Append for a new code and for an allowed duplicate; re-run in place only
+    // for the `error` line the loop above deliberately let through.
+    const index = collision || already < 0 ? lines.length : already;
+
     lines[index] = await resolveBarcode(c.env, index + 1, code);
 
     const updated = await updateScanJob(c.env.DB, job.id, { lines: renumber(lines), status: 'review' });
@@ -344,12 +670,54 @@ export const scanJobRoutes = new Hono<AppBindings>()
 
 
   /**
-   * Ask Open Library about one line.
+   * Continue — or retry — the automatic first pass.
    *
-   * `?q=` is the whole point: the useful search is the one made *after* a person
-   * has looked at "Wintersteei" and corrected it. Re-asking with the same misread
-   * is theatre, and re-asking about fifteen lines nobody has read is how the
-   * review list fills up with confidently wrong covers.
+   * ⚠️ This is the *only* new endpoint the automatic pass needed, and it is
+   * both "carry on" and "try that again". One pass does `LINES_PER_RUN` lines
+   * and leaves the job at `read`; the review screen sees lines still
+   * outstanding and asks for the next chunk. A person pressing Retry sends the
+   * identical request.
+   *
+   * Answering "it is already running" is not an error — it is the honest answer
+   * to "please continue" — so it is a 200 with `running: true`, not a 409. The
+   * staleness check is what stops that being a way to wedge a job forever: a
+   * pass whose isolate died stops stamping `processed_at`, and after
+   * `STALE_AFTER_MS` a retry may replace it.
+   */
+  .post('/:id{[0-9]+}/enrich', requireCapability('editCatalog'), async (c) => {
+    const id = Number(c.req.param('id'));
+    const job = await getScanJob(c.env.DB, id);
+    if (!job) return c.json({ error: 'not_found' }, 404);
+
+    if (job.status === 'done') return c.json({ job, running: false });
+    if (job.status === 'enriching' && !isStale(job)) return c.json({ job, running: true });
+
+    if (!hasPendingLookups(job.lines)) {
+      // Nothing to do, and saying so by moving the job is better than saying so
+      // in a field: a job with no outstanding lookups sitting at `read` would
+      // have the screen ask again on every render.
+      const settled =
+        job.status === 'review' ? job : ((await updateScanJob(c.env.DB, id, { status: 'review' })) ?? job);
+      return c.json({ job: settled, running: false });
+    }
+
+    c.executionCtx.waitUntil(runLookupPass(c.env, id));
+    // The status the job is *about* to have. Returning the stale `read` would
+    // have the screen fire a second request on the very next render.
+    return c.json({ job: { ...job, status: 'enriching' as const }, running: true });
+  })
+
+  /**
+   * Ask Open Library about one line — the repair bench.
+   *
+   * ⚠️ Since the first pass became automatic this is no longer how a line gets
+   * looked up; it is how a line gets looked up **again, with better words**.
+   * `?q=` is the whole point: the useful search is the one made after a person
+   * has looked at "Wintersteei" and corrected it, and that is exactly the
+   * search the automatic pass cannot make on its own.
+   *
+   * Delegates to `lookupLine`, so a hand-made lookup and an automatic one score
+   * identically. See its header.
    */
   .post('/:id{[0-9]+}/lines/:index{[0-9]+}/lookup', requireCapability('editCatalog'), async (c) => {
     const id = Number(c.req.param('id'));
@@ -363,64 +731,22 @@ export const scanJobRoutes = new Hono<AppBindings>()
     const query = (c.req.query('q') ?? line.text).trim();
     if (!query) return c.json(badRequest('nothing to look up'), 400);
 
-    let candidates: BookCandidate[] = [];
-    try {
-      candidates = await searchOpenLibrary(query, line.author, { userAgent: UA });
-    } catch (err) {
-      const lines = [...job.lines];
-      lines[idx] = {
-        ...line,
-        state: 'error',
-        detail: `Open Library did not answer: ${err instanceof Error ? err.message : String(err)}`,
-      };
-      const updated = await updateScanJob(c.env.DB, id, { lines });
-      return c.json({ job: updated ?? job, index: idx, line: lines[idx] }, 502);
-    }
-
-    /*
-     * Pick the best answer, and refuse a bad one.
-     *
-     * ⚠️ Unlike the barcode path, there is no identifier here — only two
-     * strings a model read off a spine. Open Library answers "Firefight" +
-     * "Brandon Sanderson" with a *different* 2001 novel called Firefight, at
-     * a perfect title score. The author gate is what separates them, and it
-     * is a rejection rather than a down-rank: a title match with a
-     * contradicting author is a different book, not a worse match.
-     */
-    const scored = candidates
-      .map((candidate) => ({
-        candidate,
-        title: titleSimilarity(normaliseTitle(candidate.title), normaliseTitle(query)),
-        author: line.author
-          ? titleSimilarity(
-              normaliseTitle(primaryAuthor(candidate.authors)),
-              normaliseTitle(primaryAuthor(line.author)),
-            )
-          : null,
-      }))
-      .filter((s) => s.author === null || s.author >= MIN_AUTHOR_SIMILARITY)
-      .sort((a, b) => b.title - a.title);
-
-    const best = scored[0];
+    const resolved = await lookupLine(line, query);
     const lines = [...job.lines];
-    const corrected = query !== line.text;
-
-    lines[idx] = best
-      ? {
-          ...applyCandidate(unresolve(line), best.candidate, query),
-          relookedUpAs: corrected ? query : null,
-        }
-      : {
-          ...unresolve(line),
-          detail:
-            candidates.length > 0
-              ? 'Open Library answered, but with a different author. Nothing here matches.'
-              : 'Open Library has nothing under that title. About half this library is not in it.',
-          relookedUpAs: corrected ? query : null,
-        };
-
+    lines[idx] = resolved;
     const updated = await updateScanJob(c.env.DB, id, { lines });
-    return c.json({ job: updated ?? job, index: idx, line: lines[idx], found: Boolean(best) });
+
+    // `error` means the service was unreachable, which is a 502 about *this*
+    // request rather than a fact about the book — the line records it either way.
+    if (resolved.state === 'error') {
+      return c.json({ job: updated ?? job, index: idx, line: resolved, found: false }, 502);
+    }
+    return c.json({
+      job: updated ?? job,
+      index: idx,
+      line: resolved,
+      found: resolved.state === 'found',
+    });
   })
 
   /**
@@ -575,19 +901,37 @@ async function readPhoto(c: any, kind: 'shelf' | 'cover') {
       };
     }
 
-    return {
-      ...line,
-      detail: 'Not in the catalog. Look it up, or add it by hand.',
-    };
+    /*
+     * No `detail`, and that is a change: it used to read "Not in the catalog.
+     * Look it up, or add it by hand." — an instruction that is now wrong,
+     * because the pass below is already looking it up. The next thing written
+     * here is the answer, and a placeholder that contradicts the row's own
+     * "Looking up…" is worse than a blank.
+     */
+    return line;
   });
 
+  /*
+   * ⚠️ The automatic first pass starts here, and this is the change the owner
+   * asked for: "the first pass was always automatic and made for a better
+   * experience when adding things to the catalog".
+   *
+   * `enriching` rather than `read`, even though nothing has run yet. The two
+   * statuses differ only in who is expected to act next, and `waitUntil` has
+   * already been handed the job — returning `read` would have the review screen
+   * see an unstarted job and ask for a chunk that is at this moment starting.
+   * One of the two passes would then find nothing to do, but only after paying
+   * for a round trip and a D1 read to discover it.
+   */
+  const pending = hasPendingLookups(lines);
   const updated = await updateScanJob(c.env.DB, job.id, {
     lines,
-    status: 'review',
+    status: pending ? 'enriching' : 'review',
     error: reading.unreadable
       ? 'The model could not read that photograph. Try again with more light, or closer.'
       : null,
   });
+  if (pending) c.executionCtx.waitUntil(runLookupPass(c.env, job.id));
 
   return c.json(
     {
