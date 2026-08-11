@@ -88,6 +88,28 @@ function CoverMark({ work }: { work: WorkSummary }) {
 }
 
 /**
+ * "×2" — we hold this book more than once.
+ *
+ * ⚠️ **This exists because the series page could not show it.** "Owned more than
+ * once" lives on the series ladder, and of the five works actually held twice,
+ * two have no series at all and two more have a series but no volume number, so
+ * they are not rungs. Four of five could never appear there however correct the
+ * rule was. The same defect as three others found today: the signal was right
+ * and rendered somewhere the affected rows never appear.
+ *
+ * The count itself, not a word: "×2" and "×3" are different facts, and on a
+ * 150px tile a numeral survives where "Owned twice" wraps over the art.
+ */
+function CopiesMark({ count }: { count: number }) {
+  if (count < 2) return null;
+  return (
+    <span className="mark mark--copies" title={`${count} copies of this book are on the shelf`}>
+      ×{count}
+    </span>
+  );
+}
+
+/**
  * "Check" — somebody has left a note saying this book needs their eyes.
  *
  * One word, and not "Watch": on a card the reader is scanning, an imperative
@@ -157,6 +179,7 @@ export function WorkList({ rows, view }: { rows: WorkSummary[]; view: 'grid' | '
                 <span className="card__marks">
                   <ReadMark state={w.readState} />
                   <PreorderMark count={w.preordered} />
+                  <CopiesMark count={w.copyCount} />
                   {/* Last, so the two marks about the book's own record sit
                       below the two about our copy of it. Both can be true at
                       once and `.card__marks` is a column for exactly that. */}
@@ -191,6 +214,7 @@ export function WorkList({ rows, view }: { rows: WorkSummary[]; view: 'grid' | '
                 </Link>
                 <ReadMark state={w.readState} />
                 <PreorderMark count={w.preordered} />
+                <CopiesMark count={w.copyCount} />
                 <CoverMark work={w} />
                 <WatchMark count={w.openWatches} />
               </div>

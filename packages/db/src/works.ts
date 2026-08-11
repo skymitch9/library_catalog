@@ -572,7 +572,13 @@ export async function listCollection(
     .prepare(
       `SELECT ${WORK_COLS.split(',').map((c) => `w.${c.trim()}`).join(', ')},
               (SELECT group_concat(DISTINCT e.format) FROM edition e WHERE e.work_id = w.id) AS formats,
-              (SELECT COUNT(*) FROM copy c WHERE c.work_id = w.id AND c.status = 'owned') AS copy_count,
+              -- ⚠️ HELD_STATUSES, not 'owned' alone. ownedMoreThanOnce in @lc/core
+              -- counts owned + lent, and the card's x2 mark reads this column, so
+              -- counting only 'owned' here would make the badge and the series
+              -- page disagree about the same book. A lent copy is still ours.
+              -- (No backticks in here: this is inside a template literal.)
+              (SELECT COUNT(*) FROM copy c
+                WHERE c.work_id = w.id AND c.status IN ('owned','lent')) AS copy_count,
               (SELECT COUNT(*) FROM copy c
                 WHERE c.work_id = w.id AND c.status = 'preordered') AS preordered,
               (SELECT ub.read_state FROM user_book ub

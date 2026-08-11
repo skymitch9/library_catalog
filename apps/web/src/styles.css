@@ -1402,3 +1402,17 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
   color: var(--bg);
 }
 .scan-mode--on .muted { color: var(--bg); opacity: 0.8; }
+
+/*
+ * "x2" — more than one copy on the shelf.
+ *
+ * Neutral rather than warm: unlike `.mark--needs` and `.mark--watch`, owning a
+ * book twice is a fact about the collection, not a job to do. Terracotta is
+ * reserved for the marks that ask for something.
+ */
+.mark--copies {
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
