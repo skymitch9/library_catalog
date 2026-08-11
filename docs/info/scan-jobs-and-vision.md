@@ -43,11 +43,15 @@ review screens is the thing bulk intake exists to avoid. A **photograph is one
 job per photo**.
 
 ⚠️ **`photo_key` always holds `'not-stored'`.** The column is `NOT NULL` and
-predates the decision never to keep a photograph. There is no R2 binding in
-`wrangler.toml` and there must not be one — the sibling project deleted its
-bucket after noticing the objects were write-only, existing only to be deleted
-later, and that one forgotten code path would have kept photographs of someone's
-home indefinitely.
+predates the decision never to keep a photograph. **Nothing in this path may
+ever be given a bucket to write to** — the sibling project deleted its bucket
+after noticing the objects were write-only, existing only to be deleted later,
+and that one forgotten code path would have kept photographs of someone's home
+indefinitely.
+
+⚠️ Migration 0040 introduced an optional `COVERS` binding for *cover uploads*.
+It is not this, it is not reachable from this file's code paths, and a scan
+frame must never be written to it. See `docs/access/cloudflare.md` §7.
 
 ### The one rule the review list enforces
 

@@ -11,3 +11,4 @@ export * from './relations.js';
 export * from './series.js';
 export * from './scanjobs.js';
 export * from './research.js';
+export * from './watches.js';

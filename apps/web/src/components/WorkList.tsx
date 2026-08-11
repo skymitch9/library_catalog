@@ -29,6 +29,7 @@
  * address" works on a book in the grid.
  */
 
+import { coverNeeded } from '@lc/core';
 import type { WorkSummary } from '../api.js';
 import { formatLabel } from '../lib/formats.js';
 import { Link, seriesPath, workPath } from '../router.js';
@@ -52,6 +53,53 @@ function PreorderMark({ count }: { count: number }) {
   return (
     <span className="mark mark--preordered" title="Paid for and still on its way">
       Pre-ordered
+    </span>
+  );
+}
+
+/**
+ * "Cover needed" — no cover at all, or one we know is a stand-in.
+ *
+ * ⚠️ **Two states under one label, deliberately.** A missing cover already looks
+ * wrong; a stand-in is the case that needs the words, because it looks finished.
+ * The five Illumicrate Percy Jackson works all wear the same marketing
+ * photograph on purpose, and this mark is the only thing on the page that says
+ * so. `coverNeeded` in `@lc/core` decides, so the mark and the server's filter
+ * cannot come to disagree.
+ *
+ * The wording is short because the owner asked for it to be — it sits in the
+ * corner of a 150px tile on a 360px phone, where anything longer wraps to two
+ * lines and covers the art it is annotating.
+ */
+function CoverMark({ work }: { work: WorkSummary }) {
+  if (!coverNeeded(work)) return null;
+  return (
+    <span
+      className="mark mark--needs"
+      title={
+        work.coverUrl
+          ? 'The image shown is a stand-in, not this book’s own cover'
+          : 'No cover has been found for this book'
+      }
+    >
+      Cover needed
+    </span>
+  );
+}
+
+/**
+ * "Check" — somebody has left a note saying this book needs their eyes.
+ *
+ * One word, and not "Watch": on a card the reader is scanning, an imperative
+ * says what to do with the book, while "Watch" reads as a category the book
+ * belongs to. The count comes along when there is more than one, because two
+ * open questions and one are different amounts of work.
+ */
+function WatchMark({ count }: { count: number }) {
+  if (!count) return null;
+  return (
+    <span className="mark mark--watch" title={`${count} thing${count === 1 ? '' : 's'} to verify`}>
+      Check{count > 1 ? ` ${count}` : ''}
     </span>
   );
 }
@@ -109,6 +157,11 @@ export function WorkList({ rows, view }: { rows: WorkSummary[]; view: 'grid' | '
                 <span className="card__marks">
                   <ReadMark state={w.readState} />
                   <PreorderMark count={w.preordered} />
+                  {/* Last, so the two marks about the book's own record sit
+                      below the two about our copy of it. Both can be true at
+                      once and `.card__marks` is a column for exactly that. */}
+                  <CoverMark work={w} />
+                  <WatchMark count={w.openWatches} />
                 </span>
               </div>
               <div className="card__text">
@@ -138,6 +191,8 @@ export function WorkList({ rows, view }: { rows: WorkSummary[]; view: 'grid' | '
                 </Link>
                 <ReadMark state={w.readState} />
                 <PreorderMark count={w.preordered} />
+                <CoverMark work={w} />
+                <WatchMark count={w.openWatches} />
               </div>
               <div className="muted small">{w.authors}</div>
               <div className="row-open__meta">

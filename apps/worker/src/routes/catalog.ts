@@ -28,6 +28,7 @@ import {
   listCollection,
   listCopiesForWork,
   listEditionsForWork,
+  listWatchesForWork,
   listWishlist,
   setReadState,
   updateCopy,
@@ -69,6 +70,10 @@ function collectionQueryFrom(c: {
     // collection rather than a 400. Same rule the sort allowlist follows.
     medium: c.req.query('medium'),
     status: c.req.query('status'),
+    // Not validated here either, and for the same reason: `NEEDS_CLAUSE` is a
+    // fixed map of literal SQL and an unknown key adds no clause. No caller text
+    // reaches the statement.
+    needs: c.req.query('needs'),
     readState: c.req.query('readState'),
     readerId,
     sort: isCollectionSort(sortParam) ? sortParam : 'series',
@@ -177,13 +182,18 @@ export const catalogRoutes = new Hono<AppBindings>()
     if (!work) return c.json({ error: 'not_found' }, 404);
 
     const user = c.get('user');
-    const [editions, copies, reading] = await Promise.all([
+    // Watches ride along rather than being a second request from the page: the
+    // panel is above the fold on a book that has one, and a book page that
+    // rendered and *then* grew a "check this" note is the one place a late
+    // arrival actually misleads. Resolved ones come too — see `listWatchesForWork`.
+    const [editions, copies, reading, watches] = await Promise.all([
       listEditionsForWork(c.env.DB, id),
       listCopiesForWork(c.env.DB, id),
       getReadState(c.env.DB, id, user.id),
+      listWatchesForWork(c.env.DB, id),
     ]);
 
-    return c.json({ work, editions, copies, reading });
+    return c.json({ work, editions, copies, reading, watches });
   })
 
   .post('/works', requireCapability('editCatalog'), async (c) => {

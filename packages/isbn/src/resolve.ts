@@ -39,6 +39,7 @@
  * why no rung here writes to the catalog.
  */
 
+import { MIN_COVER_BYTES } from '@lc/core';
 import type { EditionFormat } from '@lc/core';
 
 /** One answer, whichever rung produced it. */
@@ -268,8 +269,17 @@ export function coverFrom(candidates: readonly BookCandidate[]): string | null {
  * 9781454965435). Real covers in the same sample ran 13,963 – 94,915 bytes and
  * Google's smallest thumbnail was 4,935. 1000 sits in a gap two orders of
  * magnitude wide, so it does not need to be precise to be safe.
+ *
+ * ⚠️ **Declared in `@lc/core` and imported here, not defined here**, since
+ * migration 0040 added an upload path. A cover can now arrive as a URL to fetch
+ * or as bytes to store, the two are checked by different functions in different
+ * packages, and a floor that drifted between them would mean the same
+ * 43-byte placeholder was refused down one path and stored down the other.
+ * It is deliberately NOT re-exported: `MIN_COVER_BYTES` reachable from both
+ * `@lc/core` and `@lc/isbn` is the shape that produced `TS2451` when
+ * `EDITION_MEDIA` was declared twice (see `docs/TODO.md`). The import is in the
+ * block at the top of this file.
  */
-export const MIN_COVER_BYTES = 1000;
 
 export interface CoverCheck {
   ok: boolean;

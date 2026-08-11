@@ -4,6 +4,7 @@ import {
   primaryAuthor,
   sortTitleFor,
   workKeyFor,
+  type CoverStatus,
   type CreateWork,
 } from '@lc/core';
 
@@ -34,6 +35,8 @@ export interface WorkRow {
   openlibrary_work_id: string | null;
   description: string | null;
   cover_url: string | null;
+  /** 'ok' | 'standin' | NULL (nobody has looked). Migration 0040. */
+  cover_status: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -53,6 +56,11 @@ export interface Work {
   openlibraryWorkId: string | null;
   description: string | null;
   coverUrl: string | null;
+  /**
+   * Whether the cover we hold is really this book's — `null` until somebody
+   * says. ⚠️ `null` is NOT 'ok'; see `COVER_STATUSES`.
+   */
+  coverStatus: CoverStatus | null;
   /** When this row was catalogued. Drives the "recently added" view. */
   createdAt: string;
 }
@@ -73,13 +81,15 @@ export function toWork(row: WorkRow): Work {
     openlibraryWorkId: row.openlibrary_work_id,
     description: row.description,
     coverUrl: row.cover_url,
+    coverStatus: (row.cover_status as CoverStatus | null) ?? null,
     createdAt: row.created_at,
   };
 }
 
 const WORK_COLS = `id, title, subtitle, sort_title, authors, primary_author, work_key,
                    series, series_index_sort, series_index_display, first_published,
-                   openlibrary_work_id, description, cover_url, created_at, updated_at`;
+                   openlibrary_work_id, description, cover_url, cover_status,
+                   created_at, updated_at`;
 
 export async function createWork(db: D1Database, input: CreateWork): Promise<Work> {
   const author = primaryAuthor(input.authors);
@@ -87,8 +97,8 @@ export async function createWork(db: D1Database, input: CreateWork): Promise<Wor
     .prepare(
       `INSERT INTO work (title, subtitle, sort_title, authors, primary_author, work_key,
                          series, series_index_sort, series_index_display, first_published,
-                         openlibrary_work_id, description, cover_url)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         openlibrary_work_id, description, cover_url, cover_status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        RETURNING ${WORK_COLS}`,
     )
     .bind(
@@ -105,6 +115,7 @@ export async function createWork(db: D1Database, input: CreateWork): Promise<Wor
       input.openlibraryWorkId ?? null,
       input.description ?? null,
       input.coverUrl ?? null,
+      input.coverStatus ?? null,
     )
     .first<WorkRow>();
   if (!res) throw new Error('insert returned no row');
@@ -126,6 +137,9 @@ export async function getWork(db: D1Database, id: number): Promise<Work | null> 
  * silently keeps pointing at the old key and the book's reviews vanish from this
  * side. That is why this is one function rather than a generic column setter:
  * there is no way to change `title` here without `work_key` following.
+ *
+ * ⚠️ The same rule now applies to the cover: **`cover_status` moves with
+ * `cover_url` or not at all.** See `coverStatus` below.
  */
 export async function updateWork(
   db: D1Database,
@@ -138,12 +152,35 @@ export async function updateWork(
   const title = patch.title ?? current.title;
   const authors = patch.authors ?? current.authors;
 
+  /**
+   * ⚠️ **A new cover with nothing said about it is unassessed, never
+   * inherited.** Three cases, and the middle one is the whole reason this is
+   * not a plain `patch.coverStatus ?? current.coverStatus`:
+   *
+   *   1. the patch names a status  → use it (with or without a new URL)
+   *   2. the patch moves the URL and says nothing → NULL: nobody has assessed
+   *      the *new* image, and carrying 'standin' across would leave the label
+   *      on a book somebody has just fixed — the exact failure migration 0040
+   *      exists to prevent, wearing the opposite sign
+   *   3. neither → leave it alone
+   *
+   * Case 2 fails safe in the direction that loses a warning rather than
+   * inventing one, which matches every other provenance column here: an
+   * unobserved value is NULL, not a guess.
+   */
+  const coverStatus =
+    patch.coverStatus !== undefined
+      ? patch.coverStatus
+      : patch.coverUrl !== undefined
+        ? null
+        : current.coverStatus;
+
   const row = await db
     .prepare(
       `UPDATE work SET
          title = ?, subtitle = ?, sort_title = ?, authors = ?, primary_author = ?, work_key = ?,
          series = ?, series_index_sort = ?, series_index_display = ?, first_published = ?,
-         openlibrary_work_id = ?, description = ?, cover_url = ?,
+         openlibrary_work_id = ?, description = ?, cover_url = ?, cover_status = ?,
          updated_at = datetime('now')
        WHERE id = ?
        RETURNING ${WORK_COLS}`,
@@ -166,6 +203,7 @@ export async function updateWork(
         : current.openlibraryWorkId,
       patch.description !== undefined ? patch.description : current.description,
       patch.coverUrl !== undefined ? patch.coverUrl : current.coverUrl,
+      coverStatus,
       id,
     )
     .first<WorkRow>();
@@ -217,6 +255,16 @@ export interface CollectionQuery {
    */
   medium?: string | undefined;
   status?: string | undefined;
+  /**
+   * "Show me what still wants attention" — `cover`, `watch` or `any`.
+   *
+   * ⚠️ The one filter here that is about **us**, not about the books. Every
+   * other control answers a question about the collection ("which of these are
+   * on the shelf"); this one answers "which of these have I not finished with",
+   * which is why it is a single control with a short vocabulary rather than two
+   * checkboxes. See `NEEDS_CLAUSE`.
+   */
+  needs?: string | undefined;
   /** Read state for ONE person — the caller's, never a body parameter. */
   readState?: string | undefined;
   readerId?: number | undefined;
@@ -242,6 +290,15 @@ export interface CollectionRow extends Work {
   preordered: number;
   /** This reader's state for this book, when a reader was supplied. */
   readState: string | null;
+  /**
+   * Open watches on this book. `0` for almost everything.
+   *
+   * A count and not a boolean, because the card shows a mark and the book page
+   * shows the notes, and "2 things to check" is worth knowing before you open
+   * it. Same argument `preordered` makes one field up: only the exceptions earn
+   * a number on the row.
+   */
+  openWatches: number;
 }
 
 /**
@@ -325,6 +382,34 @@ const MEDIUM_CLAUSE: Record<string, string> = {
 };
 
 /**
+ * "Still wants attention", as SQL. Migration 0040.
+ *
+ * ⚠️ **`cover` is not `cover_url IS NULL`, and that gap is the feature.** A
+ * stand-in has a URL, so every existing test for "has a cover" says yes — the
+ * five Illumicrate Percy Jackson works wear one marketing photograph between
+ * them and would otherwise be invisible here forever. Both halves of the OR are
+ * load-bearing.
+ *
+ * ⚠️ A `cover_status` of NULL over a filled URL is **not** included. NULL means
+ * nobody has assessed it, which is true of all 224 works today; treating it as
+ * suspect would return the whole catalog and make the control useless. Only a
+ * positive 'standin' counts. Same rule as `coverNeeded` in `@lc/core`, and the
+ * two must agree — that function is what the card mark uses.
+ *
+ * `watch` reads only *open* watches. A resolved one is history and is never what
+ * this question is asking.
+ */
+const NEEDS_COVER = "(w.cover_url IS NULL OR w.cover_status = 'standin')";
+const NEEDS_WATCH =
+  'EXISTS (SELECT 1 FROM work_watch ww WHERE ww.work_id = w.id AND ww.resolved_at IS NULL)';
+
+const NEEDS_CLAUSE: Record<string, string> = {
+  cover: NEEDS_COVER,
+  watch: NEEDS_WATCH,
+  any: `(${NEEDS_COVER} OR ${NEEDS_WATCH})`,
+};
+
+/**
  * The WHERE clause and its binds, shared by the list, the count and the facets.
  *
  * One builder rather than three, because a facet count that disagrees with the
@@ -373,6 +458,11 @@ function collectionFilter(query: CollectionQuery): { sql: string; binds: unknown
     where.push('EXISTS (SELECT 1 FROM copy c WHERE c.work_id = w.id AND c.status = ?)');
     binds.push(query.status);
   }
+  // No binds: every clause is a literal written above, never caller text. An
+  // unrecognised value adds no clause rather than erroring — the same rule the
+  // sort allowlist and `MEDIUM_CLAUSE` follow.
+  const needs = query.needs ? NEEDS_CLAUSE[query.needs] : undefined;
+  if (needs) where.push(needs);
   if (query.readState && query.readerId) {
     // 'unread' has to include rows with no `user_book` at all — a book nobody has
     // opened has no row, and treating that as "not unread" would hide most of the
@@ -433,7 +523,11 @@ export async function listCollection(
               (SELECT COUNT(*) FROM copy c
                 WHERE c.work_id = w.id AND c.status = 'preordered') AS preordered,
               (SELECT ub.read_state FROM user_book ub
-                WHERE ub.work_id = w.id AND ub.user_id = ?) AS read_state
+                WHERE ub.work_id = w.id AND ub.user_id = ?) AS read_state,
+              -- Open only. idx_work_watch_open is the partial index for this.
+              -- (No backticks in here: this is inside a template literal.)
+              (SELECT COUNT(*) FROM work_watch ww
+                WHERE ww.work_id = w.id AND ww.resolved_at IS NULL) AS open_watches
          FROM work w
          ${whereSql}
         ORDER BY ${orderBy(query.sort, query.dir)}
@@ -446,6 +540,7 @@ export async function listCollection(
         copy_count: number;
         preordered: number;
         read_state: string | null;
+        open_watches: number;
       }
     >();
 
@@ -457,6 +552,7 @@ export async function listCollection(
       copyCount: r.copy_count,
       preordered: r.preordered,
       readState: r.read_state,
+      openWatches: r.open_watches,
     })),
   };
 }
@@ -476,6 +572,13 @@ export interface CollectionFacets {
   media: { medium: string; count: number }[];
   formats: { format: string; count: number }[];
   statuses: { status: string; count: number }[];
+  /**
+   * How much is still outstanding. Counted with the `needs` clause itself
+   * removed, exactly as `series` and `media` drop their own — otherwise
+   * "Cover needed (4)" beside a selected "Watch" would be the count of books
+   * that are *both*, which is not what picking it would give you.
+   */
+  needs: { cover: number; watch: number };
 }
 
 /**
@@ -495,9 +598,10 @@ export async function collectionFacets(
   // own: with it applied, "Ebook (3)" beside a selected "Physical" would be the
   // count of books held *both* ways, which is not what picking it would give you.
   const withoutMedium = collectionFilter({ ...query, medium: undefined });
+  const withoutNeeds = collectionFilter({ ...query, needs: undefined });
   const all = collectionFilter(query);
 
-  const [series, media, formats, statuses] = await Promise.all([
+  const [series, media, formats, statuses, needs] = await Promise.all([
     db
       .prepare(
         `SELECT w.series AS name, COUNT(*) AS count
@@ -539,6 +643,18 @@ export async function collectionFacets(
       )
       .bind(...all.binds)
       .all<{ status: string; count: number }>(),
+    // One row, two columns, for the same reason `media` is: the two sets
+    // overlap (a book can want a cover *and* be on watch) and a GROUP BY would
+    // have to pick one bucket for it.
+    db
+      .prepare(
+        `SELECT
+            SUM(CASE WHEN ${NEEDS_COVER} THEN 1 ELSE 0 END) AS cover,
+            SUM(CASE WHEN ${NEEDS_WATCH} THEN 1 ELSE 0 END) AS watch
+           FROM work w ${withoutNeeds.sql}`,
+      )
+      .bind(...withoutNeeds.binds)
+      .first<{ cover: number | null; watch: number | null }>(),
   ]);
 
   return {
@@ -550,6 +666,10 @@ export async function collectionFacets(
     ],
     formats: formats.results,
     statuses: statuses.results,
+    // `SUM` over no rows is NULL. A zero here is a real and welcome answer —
+    // it means nothing is outstanding — so the control stays put and reads
+    // "Cover needed (0)" rather than vanishing, the rule `media` states.
+    needs: { cover: needs?.cover ?? 0, watch: needs?.watch ?? 0 },
   };
 }
 

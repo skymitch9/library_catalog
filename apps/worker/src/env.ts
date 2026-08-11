@@ -4,6 +4,53 @@ export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
 
+  /**
+   * Where an uploaded cover is stored. **Optional, and absent today.**
+   *
+   * ⚠️ **This is NOT the bucket `wrangler.toml` and `docs/access/cloudflare.md`
+   * §7 say must never exist.** That decision is about **scan photographs**, and
+   * its whole reasoning is that a photo is write-only — nothing ever read one
+   * back, so the bucket's only purpose was to be emptied later and one code path
+   * forgetting to delete would have kept photographs of a household indefinitely.
+   *
+   * A cover is the exact opposite object: it is read on every page load, forever,
+   * and deleting it is the bug. The two absences are not the same absence, and
+   * the photo one still holds — nothing here ever writes a scan frame.
+   *
+   * ## Why a binding is needed at all
+   *
+   * Four works in this catalog cannot get a cover from any rung (a Paw Patrol
+   * shaped board book, *Home Sweet Home*, a Korean Tinyping board book, *The
+   * Nightmare Before Christmas*), and five more wear a deliberate stand-in. The
+   * only remaining source is a person photographing or downloading one, and that
+   * image has to live somewhere this app controls. `apps/web/public/covers/` is
+   * not that somewhere: it is committed to git, and this household has already
+   * had a 377MB `.git` force a hosting migration.
+   *
+   * ⚠️ **With this undefined the upload route answers 501 and says so.** It does
+   * not fall back to storing bytes in D1 — a base64 image in a row is a database
+   * that gets slower every time somebody is helpful. `PUT /works/:id/cover`
+   * (point at a URL somebody else hosts) needs no binding and works today.
+   *
+   * See `docs/access/cloudflare.md` §7 for the exact `wrangler.toml` stanza and
+   * the custom-domain requirement — ⚠️ the `r2.dev` URL is rate-limited and
+   * uncacheable, which is why the sibling audiobook catalog fronts its bucket
+   * with a real hostname.
+   */
+  COVERS?: R2Bucket;
+
+  /**
+   * Public base URL for `COVERS`, no trailing slash — e.g.
+   * `https://covers.heygabi.ai`.
+   *
+   * ⚠️ Required alongside the binding and pointedly separate from it: a Worker
+   * can write to a bucket it has no idea how to serve from, and a stored object
+   * whose URL nobody can construct is a cover that does not exist. The upload
+   * route refuses to write unless BOTH are set, rather than storing an object
+   * and then failing to record where it went.
+   */
+  COVERS_BASE_URL?: string;
+
   APP_VERSION: string;
   ENVIRONMENT: string;
 

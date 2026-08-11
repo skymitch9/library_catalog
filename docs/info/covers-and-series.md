@@ -84,6 +84,86 @@ re-run with `--force`, and the same URL serves different bytes. That is why
 
 ---
 
+## 2.5 ⚠️ "Has a cover" and "has the RIGHT cover" — migration 0040
+
+> Added **2026-08-11**. Verified against a local D1 with the migration applied
+> and the Worker running; **not** yet applied to production. The Illumicrate URL
+> below was fetched from the Worker on that date and returned **198,624 bytes**
+> of `image/jpeg`.
+
+Everything above this section, and every check written before it, treats
+`cover_url IS NOT NULL` as *done*. `collectionStats` counts it, the backfills
+skip it, `Enrich` refuses to overwrite it. That is right for a **missing** cover
+and silently wrong for a **wrong** one.
+
+The case that forced it: the owner holds the **Illumicrate exclusive** Percy
+Jackson set. The vendor page has no per-title images — all seven were downloaded
+and inspected on 2026-08-10 and every one is a styled marketing shot. The
+instruction was *"use the marketing image now but put a label on them"*. So five
+works now share one photograph on purpose:
+
+```
+https://us.illumicrate.com/cdn/shop/files/ef4a309d-7981-48e0-b0b2-db9456075c9a__00407_1.jpg?width=1000
+```
+
+⚠️ **The five identical cover URLs are deliberate. Do not dedupe them.** Anything
+that later notices "five books, one image" and tidies it away is destroying the
+record, not cleaning it.
+
+### The column
+
+`work.cover_status`, nullable, no CHECK (`gap_verdict.field`'s idiom — the set
+may grow and a CHECK would make each addition a table rebuild).
+
+| Value | Means |
+|---|---|
+| `'ok'` | somebody looked, and this is the book's own cover |
+| `'standin'` | we know it is not, and are holding it until a real one exists |
+| `NULL` | **nobody has assessed it.** Not the same as `'ok'` |
+
+Nothing was backfilled to `'ok'`, for the reason §3.1 gives about series
+verdicts and migration 0013 gives about `decided_how`: it would be accurate and
+it would still be a value nothing observed.
+
+**"Cover needed" = `cover_url IS NULL OR cover_status = 'standin'`.** One
+function — `coverNeeded` in `@lc/core` — and one SQL fragment, `NEEDS_CLAUSE` in
+`packages/db/src/works.ts`; the card mark and the server's filter go through them
+so they cannot drift.
+
+⚠️ **`updateWork` pairs the two columns.** A patch that moves `cover_url` without
+naming a status sets the status to NULL rather than inheriting the old one — so
+a `'standin'` can never survive onto the image that replaces it. Fails in the
+direction that loses a warning rather than inventing one.
+
+### Where a cover can now come from
+
+| Route | | Needs R2 |
+|---|---|---|
+| `PUT /api/works/:id/cover` | link an image somebody else hosts | no |
+| `PATCH /api/works/:id/cover-status` | "that is a stand-in" | no |
+| `POST /api/works/:id/cover` | upload a file we serve | ⚠️ **yes — not bound** |
+
+Every one verifies before writing, because **nothing in this system ever revisits
+a cover column**. The link path fetches the URL (`verifyCoverUrl`); the upload
+path reads the file's own **magic bytes** and ignores the `Content-Type` the
+browser declared. Both share `MIN_COVER_BYTES`, which now lives in `@lc/core` so
+the 43-byte Open Library placeholder cannot be refused down one path and stored
+down the other.
+
+⚠️ **The upload route is complete and inert.** There is no `COVERS` binding on
+this Worker; it answers 501 with a sentence naming what is missing, and the UI
+hides the control. `docs/access/cloudflare.md` §7.1 has the exact commands — and
+§7 explains why a *covers* bucket is not the *scan-photo* bucket that must never
+exist.
+
+⚠️ **An uploaded object's name hashes the FILE CONTENTS**, deliberately the
+opposite of §2's committed `apps/web/public/covers/` names, which hash the work
+key — and which is why those can only be given one day of cache. A
+content-addressed object can be cached forever, and replacing a cover is simply
+a different URL.
+
+---
+
 ## 3. Series — `npm run backfill:series`
 
 | Rung | Source | Works |

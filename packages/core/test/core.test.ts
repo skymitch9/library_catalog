@@ -51,6 +51,14 @@ import {
   searchText,
   type ScanLine,
 } from '../src/scanjobs.ts';
+import {
+  MAX_COVER_BYTES,
+  checkCoverUpload,
+  coverNeeded,
+  coverObjectKey,
+  extensionFor,
+  sniffImageType,
+} from '../src/covers.ts';
 import { SHELF_SCHEMA } from '../src/vision.ts';
 import { REFUSED_FIELDS, detailGaps, verdictFor } from '../src/gaps.ts';
 import {
@@ -1405,5 +1413,121 @@ describe('matching — a numbered volume prefers a numbered row', () => {
     assert.equal(foldVolumeMarker('space knight volume 5'), 'space knight 5');
     // "The Book Thief" keeps its "book" — nothing numeric follows it.
     assert.equal(foldVolumeMarker('book thief'), 'book thief');
+  });
+});
+
+/* --------------------------------------------------------------------------
+ * Covers — migration 0040
+ *
+ * Every rule below guards something that fails SILENTLY. A wrongly-accepted
+ * upload is served from our own origin forever; a wrongly-cleared "cover
+ * needed" mark retires a book from the only list that would have got it fixed.
+ * ------------------------------------------------------------------------ */
+
+/** A file of `size` bytes whose first bytes are `head`. */
+function fileOf(head: number[], size: number): Uint8Array {
+  const bytes = new Uint8Array(size);
+  bytes.set(head.slice(0, size));
+  return bytes;
+}
+
+const JPEG = [0xff, 0xd8, 0xff, 0xe0];
+const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+describe('covers — what a file actually is', () => {
+  it('reads the five accepted formats off their own bytes', () => {
+    assert.equal(sniffImageType(fileOf(JPEG, 32)), 'image/jpeg');
+    assert.equal(sniffImageType(fileOf(PNG, 32)), 'image/png');
+    assert.equal(sniffImageType(new TextEncoder().encode('GIF89a...........')), 'image/gif');
+    // RIFF container: "RIFF", four size bytes, then "WEBP".
+    assert.equal(sniffImageType(new TextEncoder().encode('RIFF1234WEBPVP8 ')), 'image/webp');
+    assert.equal(sniffImageType(new TextEncoder().encode('1234ftypavif....')), 'image/avif');
+  });
+
+  it('⚠️ refuses a file that merely CLAIMS to be an image', () => {
+    // The whole reason the sniff exists. A multipart part can declare any type
+    // it likes, and every one of these would otherwise be stored and served
+    // from our own origin under a name ending in .jpg.
+    const html = new TextEncoder().encode('<!doctype html><html><body>404 Not Found</body></html>');
+    assert.equal(sniffImageType(html), null);
+    const check = checkCoverUpload(html, 'image/jpeg');
+    assert.equal(check.ok, false);
+    assert.equal(check.contentType, null);
+
+    assert.equal(sniffImageType(new TextEncoder().encode('%PDF-1.7\n%....')), null);
+    // SVG is deliberately not an accepted cover: it is a document that can
+    // carry script, and nothing here needs a vector cover.
+    assert.equal(sniffImageType(new TextEncoder().encode('<svg xmlns="http://...')), null);
+    // HEIC lands in the same ISO-BMFF container as AVIF and is NOT accepted —
+    // an iPhone would happily upload one that half of browsers cannot render.
+    assert.equal(sniffImageType(new TextEncoder().encode('1234ftypheic....')), null);
+  });
+
+  it('⚠️ refuses a 43-byte placeholder even though it IS an image', () => {
+    // The trap `verifyCoverUrl` was written for, arriving down the upload path
+    // instead. Open Library serves exactly this as HTTP 200. A real, tiny,
+    // valid image is still not a book cover.
+    const tiny = fileOf(JPEG, 43);
+    assert.equal(sniffImageType(tiny), 'image/jpeg');
+    const check = checkCoverUpload(tiny);
+    assert.equal(check.ok, false);
+    assert.match(check.reason ?? '', /placeholder/);
+  });
+
+  it('accepts a plausible cover, and reports the type it read', () => {
+    const check = checkCoverUpload(fileOf(PNG, 40_000), 'image/jpeg');
+    assert.equal(check.ok, true);
+    // ⚠️ The BYTES win over the declaration. Browsers get the type wrong on
+    // drag-and-drop, and the file itself is the authority.
+    assert.equal(check.contentType, 'image/png');
+    assert.equal(check.bytes, 40_000);
+  });
+
+  it('refuses an empty file and a full-size photograph', () => {
+    assert.equal(checkCoverUpload(new Uint8Array(0)).ok, false);
+    const check = checkCoverUpload(fileOf(JPEG, MAX_COVER_BYTES + 1));
+    assert.equal(check.ok, false);
+    assert.match(check.reason ?? '', /limit/);
+  });
+});
+
+describe('covers — where an upload is stored', () => {
+  it('⚠️ hashes the CONTENT, so a replacement is a different URL', () => {
+    const a = coverObjectKey('the hobbit|tolkien', 'abc123def456789012345', 'image/jpeg');
+    const b = coverObjectKey('the hobbit|tolkien', 'ffffffffffffffffffffff', 'image/jpeg');
+    assert.notEqual(a, b);
+    // The opposite of apps/web/public/covers/, whose names hash the work key —
+    // which is why those can only be cached for a day. See covers-and-series.md.
+    assert.equal(a, 'covers/the-hobbit-tolkien-abc123def4567890.jpg');
+  });
+
+  it('maps types to the extension a browser expects', () => {
+    assert.equal(extensionFor('image/jpeg'), 'jpg');
+    assert.equal(extensionFor('image/png'), 'png');
+    assert.equal(extensionFor('image/webp'), 'webp');
+  });
+});
+
+describe('covers — which books still need one', () => {
+  it('⚠️ a stand-in still needs a cover, even though it HAS one', () => {
+    // The five Illumicrate Percy Jackson works. They have a URL, the image
+    // loads, `cover_url IS NOT NULL` says yes — and it is the wrong picture.
+    // Every check written before migration 0040 called this book finished.
+    assert.equal(
+      coverNeeded({ coverUrl: 'https://us.illumicrate.com/x.jpg', coverStatus: 'standin' }),
+      true,
+    );
+  });
+
+  it('a book with no cover needs one', () => {
+    assert.equal(coverNeeded({ coverUrl: null, coverStatus: null }), true);
+  });
+
+  it('⚠️ an UNASSESSED cover does not need one', () => {
+    // NULL means nobody has looked, which is true of nearly every row in this
+    // catalog. Treating it as suspect would put all 224 works on the list and
+    // make the feature useless. Only a positive 'standin' counts.
+    assert.equal(coverNeeded({ coverUrl: 'https://covers/x.jpg', coverStatus: null }), false);
+    assert.equal(coverNeeded({ coverUrl: 'https://covers/x.jpg', coverStatus: 'ok' }), false);
   });
 });
