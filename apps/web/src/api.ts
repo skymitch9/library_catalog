@@ -794,6 +794,24 @@ export const api = {
       `/api/reviews/${workId}/keys`,
     ),
 
+  /**
+   * "This rating is really in Firestore, and it is mine." Derives read state.
+   *
+   * ⚠️ Only ever called with a rating that has been **read back** out of
+   * Firestore, never with one about to be written — the Worker cannot see
+   * Firestore, so this browser is the only witness it has, and a read state
+   * derived from a write that failed would be a visible lie rather than a stale
+   * cache. See `routes/reviews.ts`.
+   *
+   * `marked` lists the works that changed, which is empty on every call after
+   * the first. That is what the caller uses to decide whether to reload.
+   */
+  reviewObserved: (workId: number, body: { rating: number; source?: 'audio' | 'library' | null }) =>
+    request<{ marked: { workId: number; title: string; readState: string; readFormat: string | null }[] }>(
+      `/api/reviews/${workId}/observed`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+
   // -------------------------------------------------------------------------
   // Series completeness
   // -------------------------------------------------------------------------

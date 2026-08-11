@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { isMyReview, reviewSourceOf } from '@lc/core';
 import { api, type Me } from '../api.js';
 import { fetchReviews, writeReview, type Review } from '../lib/reviews.js';
 
@@ -13,6 +14,18 @@ import { fetchReviews, writeReview, type Review } from '../lib/reviews.js';
  * catalogs' reviews into one place is what the owner asked for, but presenting
  * them identically would make "5 stars" on a paperback mean something it never
  * said. So `source` is rendered, always, and the write path stamps it.
+ *
+ * ## ⚠️ This component is also the bridge that marks books read
+ *
+ * *"if a book has a rating from the audiobook library mark it as read"*.
+ *
+ * That derivation has to start here and nowhere else, and it is worth knowing
+ * why before moving it. The Worker cannot reach Firestore — there is no service
+ * account in this project, deliberately — so this browser is the only thing in
+ * the estate that sees both stores. `load()` already fetches every review of
+ * this book from the shared collection; recognising the signed-in person's own
+ * rating among them and reporting it back is the entire mechanism. Nothing else
+ * has the two halves in one place.
  */
 
 const STARS = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
@@ -36,7 +49,25 @@ function Stars({ rating }: { rating: number }) {
   );
 }
 
-export function Reviews({ workId, me }: { workId: number; me: Me }) {
+export function Reviews({
+  workId,
+  me,
+  onReadStateDerived,
+}: {
+  workId: number;
+  me: Me;
+  /**
+   * A rating just marked this book read. The book page's own "Your reading"
+   * panel is now stale and has to refetch.
+   *
+   * ⚠️ Only fired when the server reports something actually changed, which is
+   * never on the second call for the same rating. That is what keeps this from
+   * looping: a reload re-renders the parent, this component's effect does not
+   * re-run (it is keyed on `workId`), and even if it did the second derivation
+   * would report nothing and stop.
+   */
+  onReadStateDerived?: () => void;
+}) {
   const [reviews, setReviews] = useState<Review[] | null>(null);
   const [rating, setRating] = useState<number>(0);
   const [text, setText] = useState('');
@@ -51,12 +82,39 @@ export function Reviews({ workId, me }: { workId: number; me: Me }) {
 
       // Pre-fill with this person's existing review, so the form updates it
       // rather than looking like a blank slate they are about to duplicate.
-      const mine = found.find(
-        (r) => r.displayName.toLowerCase() === (me.reviewName ?? '').toLowerCase(),
-      );
+      //
+      // ⚠️ `isMyReview` rather than the display-name comparison this used to
+      // do, and it is not a tidy-up: it prefers `email` where the document has
+      // one, which is the join `docs/info/identity-and-reviews.md` §2 settles
+      // on, and falls back to the folded display name — the only key that
+      // reaches the 860 reviews written on the audiobook site, which carry no
+      // email at all. It is the ONE implementation, shared with the Worker and
+      // `scripts/backfill-read-from-ratings.mjs`, because getting it loose would
+      // mark this person's books read on a housemate's rating.
+      const mine = found.find((r) => isMyReview(r, me));
       if (mine) {
         setRating(mine.rating);
         setText(mine.text ?? '');
+        // A rating is evidence the book was read. Reported after the fact, from
+        // what Firestore actually holds — see `api.reviewObserved`. Failing here
+        // must not disturb the panel: the reviews rendered fine, and read state
+        // is a derived nicety on top of them.
+        try {
+          const { marked } = await api.reviewObserved(workId, {
+            rating: mine.rating,
+            // ⚠️ `reviewSourceOf`, not `mine.source`. All 869 existing review
+            // documents carry no `source` at all, and reading the field alone
+            // would derive a read state with no format for every book in the
+            // house — throwing away the most accurate thing this app knows,
+            // for an owner who listens to far more than they read. The absence
+            // of both `source` and `workKey` is itself proof the audiobook site
+            // wrote it; the function carries the argument.
+            source: reviewSourceOf(mine),
+          });
+          if (marked.length) onReadStateDerived?.();
+        } catch {
+          /* non-fatal, and deliberately silent — nothing was promised. */
+        }
       }
     } catch (err) {
       // Firestore being unreachable must not take the page down — the book, its
@@ -109,9 +167,15 @@ export function Reviews({ workId, me }: { workId: number; me: Me }) {
                 <div className="row-tight">
                   <strong>{r.displayName}</strong>
                   <Stars rating={r.rating} />
-                  {/* Never optional. See the note at the top of this file. */}
+                  {/* Never optional. See the note at the top of this file.
+                      ⚠️ `reviewSourceOf`, not `r.source` — and this was a live
+                      defect, not a refactor. All 869 documents in the shared
+                      collection carry no `source`, so reading the field alone
+                      labelled every audiobook review "this library": the one
+                      thing the note at the top of this file says must never
+                      happen, on every review the collection currently holds. */}
                   <span className="muted small">
-                    {r.source === 'audio'
+                    {reviewSourceOf(r) === 'audio'
                       ? 'audiobook'
                       : (r.editionLabel ?? 'this library')}
                   </span>

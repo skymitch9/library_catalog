@@ -26,6 +26,7 @@ import {
   RATING_MIN,
   READ_FORMATS,
   READ_STATES,
+  REVIEW_SOURCES,
   ROLES,
   RUN_TIERS,
   SERIES_VOLUME_SOURCES,
@@ -297,6 +298,51 @@ export const submitReviewSchema = z.object({
   text: z.string().max(1000).default(''),
   editionLabel: optionalText,
 });
+
+/**
+ * A rating the browser has just **observed** in Firestore for the signed-in
+ * person, reported back so the read state can be derived from it.
+ *
+ * ## ⚠️ Why this is a separate endpoint from `submitReviewSchema`
+ *
+ * `/draft` is asked for a document *before* the browser writes it, and its
+ * `cacheRating` call accepts being wrong if that write then fails — the cache is
+ * only ever used for sorting, and says so. A read state is not that: it is shown
+ * to the person as a fact about their own life, and deriving one from a review
+ * that never landed would be a visible lie. So this endpoint reports what
+ * Firestore *actually holds*, read back after the write, and it is also the only
+ * path by which a review written on the **audiobook site** can ever reach this
+ * database — the Worker cannot see Firestore, and the browser is the one thing
+ * that sees both.
+ *
+ * ## ⚠️ Trust
+ *
+ * The Worker does not verify this rating against Firestore, and cannot without a
+ * service account (see `routes/reviews.ts` for why there is none). That grants
+ * no new authority: the same capability already lets the caller `PUT
+ * /works/:id/reading` and set 'read' outright. This is a more convenient way to
+ * do something already permitted, not a way to do something new.
+ *
+ * `.strict()` for the same reason `setReadStateSchema` has it — a client sending
+ * a field this does not model is a bug report, not something to strip in silence.
+ */
+export const observedRatingSchema = z
+  .object({
+    rating: z
+      .number()
+      .min(RATING_MIN)
+      .max(RATING_MAX)
+      .refine((r) => (r * 2) % 1 === 0, 'ratings are in half-star steps'),
+    /**
+     * Which catalog the review was written from. ⚠️ Load-bearing rather than
+     * decorative: the owner reads far more audiobooks than physical books, so
+     * `'audio'` is the common case and is the most accurate thing this app will
+     * ever know about how a given book was actually consumed.
+     */
+    source: z.enum(REVIEW_SOURCES).nullable().optional(),
+  })
+  .strict();
+export type ObservedRatingInput = z.infer<typeof observedRatingSchema>;
 
 export const updateRoleSchema = z.object({ role: roleSchema });
 

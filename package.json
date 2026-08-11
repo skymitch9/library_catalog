@@ -23,6 +23,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "tsx --test packages/core/test/*.test.ts",
     "backfill:reviews": "tsx scripts/backfill-review-keys.mjs",
+    "backfill:read-states": "tsx scripts/backfill-read-from-ratings.mjs",
     "secrets:push": "node scripts/push-secrets.mjs",
     "import:ebooks": "tsx scripts/import-ebooks.mjs",
     "import:crowdfunding": "tsx scripts/import-crowdfunding.mjs",
