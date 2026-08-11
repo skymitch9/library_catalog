@@ -6,6 +6,7 @@ import { Shelf } from '../components/Shelf.js';
 import { WorkList } from '../components/WorkList.js';
 import { formatLabel, mediumLabel } from '../lib/formats.js';
 import { loadPrefs, savePrefs } from '../lib/prefs.js';
+import { ON_THE_WAY, statusLabel } from '../lib/statuses.js';
 import { collectionPath, replaceUrl, type CollectionFilters } from '../router.js';
 
 /**
@@ -201,7 +202,15 @@ export function CollectionPage({
           <Stat n={stats.series} label="series" />
           <Stat n={stats.authors} label="authors" />
           <Stat n={stats.editions} label="editions" />
+          {/* ⚠️ Two numbers, not one. They were one — `wanted + preordered`
+              under the word "wanted" — and the sibling Board Game Catalog shows
+              what that becomes: 262 "wanted" over a wishlist of 25, because 236
+              were pledges already paid for. A BackerKit import is expected here
+              shortly and would do the same thing to this figure in an
+              afternoon. `on the way` rather than "preordered" because that is
+              what somebody would say out loud. */}
           {stats.wanted > 0 && <Stat n={stats.wanted} label="wanted" />}
+          {stats.preordered > 0 && <Stat n={stats.preordered} label={ON_THE_WAY} />}
           {stats.readStates
             .filter((r) => r.readState === 'read')
             .map((r) => (
@@ -352,11 +361,16 @@ export function CollectionPage({
             <span className="field__label">Copies</span>
             <select value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="">Any status</option>
+              {/* ⚠️ Every status, straight off `COPY_STATUSES` — which is what
+                  makes "show me what is on the way" a filter that already works
+                  rather than a feature. `statusLabel` and not a title-case of
+                  the enum: that printed "Preordered" here while the copy panel
+                  printed "Pre-ordered", and two spellings read as two things. */}
               {COPY_STATUSES.map((s) => {
                 const facet = facets?.statuses.find((f) => f.status === s);
                 return (
                   <option key={s} value={s} disabled={!facet}>
-                    {s[0]?.toUpperCase() + s.slice(1)}
+                    {statusLabel(s)}
                     {facet ? ` (${facet.count})` : ''}
                   </option>
                 );

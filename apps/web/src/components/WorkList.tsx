@@ -14,6 +14,28 @@ import type { WorkSummary } from '../api.js';
 import { formatLabel } from '../lib/formats.js';
 import { Cover } from './Cover.js';
 
+/**
+ * Paid for and not here yet.
+ *
+ * ⚠️ There is no `owned` counterpart and there should not be one. Being owned is
+ * what being in the collection *means*, so a badge saying it on all 140 rows is
+ * a badge nobody reads — the rule the sibling Board Game Catalog settled on
+ * after doing exactly that. Only the exceptions earn ink, and a book in the post
+ * is an exception: it is the one row on the page you cannot go and fetch.
+ *
+ * The word is "Pre-ordered" and not "on the way", which is the phrasing used for
+ * *counts*. A badge names the status of the thing it sits on; a number in the
+ * stat strip is a sentence about the shelf.
+ */
+function PreorderMark({ count }: { count: number }) {
+  if (!count) return null;
+  return (
+    <span className="mark mark--preordered" title="Paid for and still on its way">
+      Pre-ordered
+    </span>
+  );
+}
+
 /** A finished book earns a mark; everything else stays quiet. */
 function ReadMark({ state }: { state: string | null }) {
   if (!state || state === 'unread') return null;
@@ -54,7 +76,11 @@ export function WorkList({
             <button className="card" onClick={() => onOpen(w.id)} aria-label={`Open ${w.title}`}>
               <div className="card__art">
                 <Cover src={w.coverUrl} title={w.title} authors={w.authors} size="grid" />
-                <ReadMark state={w.readState} />
+                {/* A column, because both can be true at once — see `.card__marks`. */}
+                <span className="card__marks">
+                  <ReadMark state={w.readState} />
+                  <PreorderMark count={w.preordered} />
+                </span>
               </div>
               <div className="card__text">
                 <strong className="card__title">{w.title}</strong>
@@ -78,6 +104,7 @@ export function WorkList({
               <div className="row-open__head">
                 <strong>{w.title}</strong>
                 <ReadMark state={w.readState} />
+                <PreorderMark count={w.preordered} />
               </div>
               <div className="muted small">{w.authors}</div>
               <div className="row-open__meta">

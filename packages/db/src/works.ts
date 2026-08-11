@@ -230,6 +230,16 @@ export interface CollectionRow extends Work {
   /** Formats actually held, comma-joined. Empty when nothing is owned. */
   formats: string | null;
   copyCount: number;
+  /**
+   * Copies paid for and not here yet.
+   *
+   * Carried on the row so the collection can mark them. ⚠️ `owned` gets no such
+   * field and no mark: being owned is what being in the collection *means*, and
+   * a label repeated on every row stops being read. Only the exceptions earn
+   * one — the rule the sibling Board Game Catalog arrived at after badging
+   * "owned" on eight hundred cards.
+   */
+  preordered: number;
   /** This reader's state for this book, when a reader was supplied. */
   readState: string | null;
 }
@@ -420,6 +430,8 @@ export async function listCollection(
       `SELECT ${WORK_COLS.split(',').map((c) => `w.${c.trim()}`).join(', ')},
               (SELECT group_concat(DISTINCT e.format) FROM edition e WHERE e.work_id = w.id) AS formats,
               (SELECT COUNT(*) FROM copy c WHERE c.work_id = w.id AND c.status = 'owned') AS copy_count,
+              (SELECT COUNT(*) FROM copy c
+                WHERE c.work_id = w.id AND c.status = 'preordered') AS preordered,
               (SELECT ub.read_state FROM user_book ub
                 WHERE ub.work_id = w.id AND ub.user_id = ?) AS read_state
          FROM work w
@@ -428,7 +440,14 @@ export async function listCollection(
         LIMIT ? OFFSET ?`,
     )
     .bind(readerId, ...binds, query.limit, query.offset)
-    .all<WorkRow & { formats: string | null; copy_count: number; read_state: string | null }>();
+    .all<
+      WorkRow & {
+        formats: string | null;
+        copy_count: number;
+        preordered: number;
+        read_state: string | null;
+      }
+    >();
 
   return {
     total: totalRow?.n ?? 0,
@@ -436,6 +455,7 @@ export async function listCollection(
       ...toWork(r),
       formats: r.formats,
       copyCount: r.copy_count,
+      preordered: r.preordered,
       readState: r.read_state,
     })),
   };
@@ -541,14 +561,30 @@ export interface CollectionStats {
   authors: number;
   withCover: number;
   /**
-   * Copies with a wishlist status — `wanted` or `preordered`.
+   * Copies we might buy. **`wanted` alone — `preordered` is counted separately
+   * and folding the two back together is the bug this replaced.**
    *
-   * Counted here rather than derived on the client from `formats`, for the
-   * reason the rest of this function exists: a number the page shows is a number
-   * the database just answered. Measured 2026-08-10, this is **0** in production
-   * and locally, because nothing has ever written a `copy` row.
+   * They mean opposite things about a wallet: one is a decision still to make,
+   * the other is money already spent on a book in the post. The sibling Board
+   * Game Catalog shipped them as one number and it read "262 wanted" over a
+   * wishlist of 25, because 236 of the 262 were pledges — both figures right,
+   * describing different sets under one word. A crowdfunding import can turn
+   * that ratio over in a single afternoon, and one is expected here shortly.
+   *
+   * Counted by the database rather than derived on the client, for the reason
+   * the rest of this function exists: a number a page shows is a number the
+   * database just answered.
    */
   wanted: number;
+  /**
+   * Copies paid for and not here yet. Not a wish, and never was.
+   *
+   * ⚠️ Both of these are **rows**, not `SUM(quantity)` — this schema has no
+   * quantity, but the rule behind it still applies and is worth keeping in
+   * view: a number that links somewhere must count what the place it links to
+   * counts. Both of these are wishlist rows, and `/wishlist` lists rows.
+   */
+  preordered: number;
   formats: { format: string; count: number }[];
   readStates: { readState: string; count: number }[];
 }
@@ -574,12 +610,14 @@ export async function collectionStats(
                 (SELECT COUNT(DISTINCT series) FROM work WHERE series IS NOT NULL) AS series,
                 (SELECT COUNT(DISTINCT primary_author) FROM work) AS authors,
                 (SELECT COUNT(cover_url) FROM work) AS with_cover,
-                (SELECT COUNT(*) FROM copy
-                  WHERE status IN ('wanted', 'preordered')) AS wanted`,
+                -- Apart, not together. See the doc comment on CollectionStats.
+                (SELECT COUNT(*) FROM copy WHERE status = 'wanted') AS wanted,
+                (SELECT COUNT(*) FROM copy WHERE status = 'preordered') AS preordered`,
       )
       .first<{
         works: number; editions: number; copies: number;
-        series: number; authors: number; with_cover: number; wanted: number;
+        series: number; authors: number; with_cover: number;
+        wanted: number; preordered: number;
       }>(),
     db
       .prepare('SELECT format, COUNT(*) AS count FROM edition GROUP BY format ORDER BY count DESC')
@@ -601,6 +639,7 @@ export async function collectionStats(
     authors: totals?.authors ?? 0,
     withCover: totals?.with_cover ?? 0,
     wanted: totals?.wanted ?? 0,
+    preordered: totals?.preordered ?? 0,
     formats: formats.results,
     readStates: readStates.results,
   };

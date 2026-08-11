@@ -70,6 +70,13 @@ export interface WorkSummary {
   coverUrl: string | null;
   formats: string | null;
   copyCount: number;
+  /**
+   * Copies paid for and not here yet. `0` for almost everything.
+   *
+   * There is deliberately no `owned` counterpart to mark: being owned is what
+   * being in the collection means, and only the exceptions earn a label.
+   */
+  preordered: number;
   createdAt: string;
   /** This reader's state, not the household's. Null when nobody has set one. */
   readState: string | null;
@@ -116,8 +123,14 @@ export interface Stats {
   series: number;
   authors: number;
   withCover: number;
-  /** Copies with a wishlist status. Counted by the database, like everything here. */
+  /**
+   * Copies we might buy — `wanted` alone. ⚠️ Deliberately **not** summed with
+   * `preordered`; see the doc comment in `@lc/db`, which records what happened
+   * to the sibling project when they were one number.
+   */
   wanted: number;
+  /** Copies paid for and on the way. Shown as "N on the way", never "preordered". */
+  preordered: number;
   formats: { format: string; count: number }[];
   readStates: { readState: string; count: number }[];
 }

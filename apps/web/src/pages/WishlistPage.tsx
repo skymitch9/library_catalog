@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, type Me, type WishlistRow } from '../api.js';
 import { Cover } from '../components/Cover.js';
 import { formatLabel } from '../lib/formats.js';
+import { ON_THE_WAY, statusLabel } from '../lib/statuses.js';
 
 /**
  * Books we have said we want and do not have.
@@ -76,6 +77,9 @@ export function WishlistPage({
   if (error) return <main className="notice notice--bad">Could not load the wishlist: {error}</main>;
   if (!rows) return <main className="muted">Loading…</main>;
 
+  const onTheWay = rows.filter((r) => r.status === 'preordered').length;
+  const wishes = rows.length - onTheWay;
+
   return (
     <main>
       <h2 className="page-title">Wishlist</h2>
@@ -87,8 +91,16 @@ export function WishlistPage({
         </p>
       ) : (
         <>
+          {/* ⚠️ Counted apart, even though the page lists them together.
+              A pre-order is a wish that has already been paid for, and calling
+              twelve pledges "twelve wishes" makes the shopping list unusable
+              the first time a crowdfunder delivers — which is what happened to
+              the sibling Board Game Catalog at 204 pre-orders against 30
+              wishes. They stay on one list because the list is short and both
+              are "not here yet"; only the counting is separated. */}
           <p className="muted small">
-            {rows.length} {rows.length === 1 ? 'wish' : 'wishes'}. Marking one as owned keeps
+            {wishes} {wishes === 1 ? 'wish' : 'wishes'}
+            {onTheWay > 0 && ` · ${onTheWay} ${ON_THE_WAY}`}. Marking one as owned keeps
             the row — when you wanted it, and what you were going to pay — rather than
             starting a new one.
           </p>
@@ -105,7 +117,17 @@ export function WishlistPage({
                     <span className="row-open__text">
                       <span className="row-open__head">
                         <strong>{r.title}</strong>
-                        {r.status === 'preordered' && <span className="mark mark--attested">Pre-ordered</span>}
+                        {/* ⚠️ `mark--preordered`, not the `mark--attested` this
+                            borrowed before. That class belongs to series
+                            evidence and means "somebody says this volume
+                            exists"; wearing it here made a book in the post
+                            look like a bibliographic claim. Preorder has its
+                            own colour now — see `--transit`. */}
+                        {r.status === 'preordered' && (
+                          <span className="mark mark--preordered">
+                            {statusLabel('preordered')}
+                          </span>
+                        )}
                       </span>
                       <span className="muted small">{r.authors}</span>
                       {r.series && (
