@@ -39,6 +39,33 @@ audiobook holdings **40 → 46** with the false claims removed.
 afternoon of scanning. Any figure here is a measurement with a timestamp, never a
 constant. Re-measure before relying on one.
 
+## ⚠️ GitHub Actions minutes — diagnosed 2026-08-11, fix deferred by the user
+
+**Only `audiobook_catalog` runs any workflows.** `library_catalog`,
+`Board_Game_Catalog` and `catalog-platform` have **no `.github/workflows` at
+all**, so the user's assumption was right.
+
+Seven workflows there, and **two of them are pure cron**:
+
+| Workflow | Schedule | Share of the last 100 runs |
+|---|---|---|
+| **Club Discord Notifications** | `*/15 * * * *` — **every 15 min** | 25 |
+| **Content-warning requests** | `17 * * * *` — hourly | 21 |
+| Deploy / Lint / Tests / promote | push or manual | the rest |
+
+Measured: **100 runs in 26 hours ≈ 92/day ≈ 2,760/month.** The two crons alone
+are ~46% of that and run whether or not anything changed.
+
+⚠️ **The root cause is not the crons — it is that the repo went private on
+2026-08-10.** Public repos get unlimited Actions minutes; private repos are
+metered (2,000/mo Free, 3,000 Pro). Those two schedules were free the day before
+and metered the day after. Nothing about the workflows changed.
+
+Cheapest fixes, in order: lengthen the Discord poll from 15 min to 30–60 (saves
+~50–75% of the largest consumer on its own), fold the hourly CW check into the
+same job, or move both to Cloudflare Cron Triggers — the estate already runs
+Workers, and Cloudflare's scheduler is free.
+
 ## ⚠️ Read this first: the run is finished
 
 **Every actionable item on this list is done.** What is left in **Blocked**
@@ -104,13 +131,29 @@ the Cloudflare dashboard.
 
 | | Item | Blocker | Who clears it |
 |---|---|---|---|
-| ⏸️ | **Words of Radiance "+ Books" cannot be itemised from BackerKit** | Checked the pledge detail page directly: unlike every other pledge, this one has **no "included items" control at all** — the tier string *"Signed Words of Radiance Leatherbound + 10 Radiant Packs + 1 Backer Pack + Books"* is the entire record BackerKit holds. So "+ Books" plural and the Radiant/Backer Packs cannot be resolved from this source. | User — only they know what actually arrived |
-| ⏸️ | **"DCC RPG + Unstoppable" needs splitting** | ⚠️ Earlier note said "not on Kickstarter, probably Indiegogo" — **that was wrong**. It is a **BackerKit account 1** pledge ($490 on the Pledges tab, $367.50 on Surveys — the two figures disagree, which is also unexplained). The RPG belongs in the board game catalog and the *Unstoppable* novel in the library. ⚠️ No work has been minted for it because the exact published title is unconfirmed, and a guessed title is a permanent duplicate. | User confirms the title, or Claude reads the campaign page |
+| ⏸️ | **Percy Jackson covers: the Illumicrate page has no per-book images** | User asked for the covers to come from the Illumicrate link. Downloaded and inspected all 7 images at full size: **every one is a styled marketing shot** — two group lineups, a sprayed-edge photo of the five spines, a set on a log. There is no flat individual cover for any single title. So the five works currently wear *standard-edition* covers from Open Library, which are not the books on the shelf. | User — accept standard covers, or supply five images |
 | ⏸️ | **10 reward lines have no printing** | Lines matched their works but no `edition` exists for the specific printing a campaign delivered, so they landed with `edition_id NULL`. The importer never mints an edition — by design. | Create the editions in the app, then re-run the import |
 | ⏸️ | **Two books claim contradictory series** | #213 *Secret Ingredient* is recorded as "The Pengrooms" vol 2 while #215 *Pengrooms* is "Pringle & Finn" vol 1. Both were auto-filled, both carry a source URL, both are plausible — and they cannot both be right. | User — needs eyes on the actual books |
 | ⏸️ | **Three books the model refused to identify** | #141 *Touch and Explore*, #160 *Bizzy Bear*, #174 *I love you, little bear* — bare series-line titles with no subtitle and no ISBN. It declined rather than guessing, which is the behaviour we want. **Re-running will not help; adding a subtitle will.** | User adds a subtitle |
 | ⏸️ | **Confirm the Percy Jackson set is the 5-book original series** | Imported, but the vendor page never lists the individual titles — the five are *supplied by Claude*, not read off the page. Low risk, still an assumption. | User, when awake |
 | ⏸️ | **4 works have no cover, and they are genuinely obscure** | **57 → 4** overnight: 12 stranded, 20 Google Books, 33 LLM, 4 from a new free title-search rung. What is left: a Paw Patrol shaped board book, *Home Sweet Home*, a Korean Tinyping board book, and *The Nightmare Before Christmas*. No rung reached them. This is the real floor. | Nobody — accept, or hand-supply a URL |
+
+### Answered by the user 2026-08-11
+
+- **Percy Jackson set confirmed** — and independently verified: the group photo
+  on the Illumicrate page shows exactly *The Lightning Thief*, *The Sea of
+  Monsters*, *The Titan's Curse*, *The Battle of the Labyrinth*, *The Last
+  Olympian*. No longer an assumption.
+- **Words of Radiance "+ Books" is solved.** The leatherbound shipped as **two
+  physical volumes**, because the book is too large to bind as one. So it is one
+  edition delivered as two objects — not two different books, and not a mystery.
+- **"DCC RPG + Unstoppable" — dropped.** The user says it is a D&D book, so the
+  whole pledge belongs to the board game catalog. Nothing to split out, and no
+  work should be minted. Removed from Blocked entirely.
+- **The `/todo` page must NOT be public.** It stays built and pushed but
+  undeployed. heygabi.ai has no auth and never will, so if it is wanted live it
+  has to move to a host that does — the catalog sites already sit behind
+  Firebase sign-in.
 
 ### Cleared since the last revision
 
