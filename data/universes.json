@@ -232,12 +232,19 @@
     },
     {
       "name": "Riordanverse",
-      "decidedHow": "proposed",
+      "decidedHow": "human",
       "series": [
         "Percy Jackson and the Olympians",
-        "Heroes Of Olympus"
+        "Heroes Of Olympus",
+        "From the World of Percy Jackson"
       ],
-      "notes": "Camp Half-Blood continuity."
+      "notes": "Camp Half-Blood continuity. 'From the World of Percy Jackson' is Sun and the Star, the Nico di Angelo novel co-written with Mark Oshiro — same continuity, found during review rather than in the first proposal.",
+      "confirmed": "Owner approved 2026-08-11, including the third series found during review.",
+      "watch": [
+        "⚠️ The ONLY universe spanning both catalogs. 13 Percy Jackson rows are 5 library (the Illumicrate exclusives) + 8 audio, and the five OVERLAP — the same books in two formats, not 13 titles. Counting them needs the catalogs reconciled, not summed.",
+        "⚠️ MORE PHYSICAL COPIES ARE COMING — the owner has a lot more Percy Jackson to scan. This is the first place the x2 'owned more than once' mark will legitimately fire, since today's five candidates were all children's books. It is also the free case for auto-assign: a known series mapping means every future scan lands in the universe with zero lookups.",
+        "Naming: the audio row 'Percy Jackson & the Olympians - The Demigod Files' uses '&' where every other row uses 'and'. A corrections-layer job — exactly the class of drift that splits a series under a text key, like the four Completionist Chronicles spellings."
+      ]
     },
     {
       "name": "Solaria",
