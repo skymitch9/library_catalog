@@ -27,8 +27,7 @@
     },
     {
       "name": "Runnerverse",
-      "decidedHow": "proposed",
-      "pending": "Owner said 'I think all of the William and Randi books I have are in the verse' and asked to see the list first. 15 series / 43 books shown; NOT yet confirmed.",
+      "decidedHow": "human",
       "penNames": [
         "William D. Arand",
         "Randi Darren"
@@ -45,9 +44,7 @@
         "Monster's Mercy",
         "Right of Retribution",
         "Swing Shift",
-        "Save State Hero Series",
-        "Cultivating Chaos",
-        "The Axe Falls Series"
+        "Save State Hero Series"
       ],
       "bookOverrides": [
         {
@@ -70,7 +67,8 @@
         "name": "The Selfless Hero Trilogy",
         "why": "⚠️ All three Otherlife books carry the series name INSIDE their title and have no series field, so they read as three unrelated standalones. Grouping them is a fix to the audiobook catalog's data, not to this list — recorded here so the universe entry does not have to name three loose books forever.",
         "note": "Reading order is Dreams, Nightmares, Awakenings — NOT alphabetical, which is how they currently sort."
-      }
+      },
+      "confirmed": "Owner confirmed 2026-08-11, after reviewing the full list, with three held out for verification."
     },
     {
       "name": "Divine Dungeon",
@@ -135,6 +133,12 @@
       "decidedHow": "human",
       "decision": "LEAVE OUT for now",
       "why": "Owner's call, 2026-08-11: 'Turncoat leave out for now while I verify.' Co-authored, and co-authored work does not always sit inside an author's shared continuity. Held out rather than swept in with the other 14 series."
+    },
+    {
+      "subject": "Cultivating Chaos and The Axe Falls — William D. Arand",
+      "decidedHow": "human",
+      "decision": "LEAVE OUT until verified",
+      "why": "Owner's call: 'Cultivating and axe falls should be excluded until I can verify.' ⚠️ Both are SINGLE-BOOK series, so there is no internal evidence of a shared world — only the author, and author alone is never sufficient here. That is the same reasoning that keeps Reckoners out of the Cosmere."
     }
   ]
 }
