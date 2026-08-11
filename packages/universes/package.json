@@ -1,0 +1,9 @@
+{
+  "name": "@lc/universes",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The shared fictional-universe list, read from catalog-platform at build time. ⚠️ The only package in this repo with a dependency on another repo — kept alone here so the blast radius is one package and `@lc/core` stays I/O-free.",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc --noEmit" }
+}

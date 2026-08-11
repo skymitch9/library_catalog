@@ -39,16 +39,30 @@ audiobook holdings **40 → 46** with the false claims removed.
 afternoon of scanning. Any figure here is a measurement with a timestamp, never a
 constant. Re-measure before relying on one.
 
-## Universes — in progress 2026-08-11
+## Universes — the list has MOVED OUT of this repo, 2026-08-11
 
 Flag a shared fictional universe **only where it says something the series does
-not already say**. The list lives at **`data/universes.json`** with every
-decision and its reasoning, including refusals so they are not re-litigated.
+not already say**. The list holds every decision and its reasoning, including
+refusals so they are not re-litigated.
 
-⚠️ **It is a SHARED list, not library_catalog data.** Keyed on series + author,
-which both catalogs can compute. Location unsettled — `catalog-platform` is the
-likely home. **Do not copy it into the audiobook catalog**; a copy is how two
-lists drift.
+⚠️ **IT NO LONGER LIVES HERE.** It is at
+**`catalog-platform/data/universes.json`**, and `library_catalog/data/` is gone
+with it. It was never library data: it is keyed on series + author, both
+catalogs need it, and the audiobook side is a Python static build that cannot
+query D1. **Do not recreate a copy in this repo** — a copy is how two lists
+drift, and that is the failure the move exists to prevent.
+
+| Want to | Do |
+|---|---|
+| Read or edit the list | `cd ../../catalog-platform && node tools/universes.mjs` — the CLI refuses an edit that carries no reason |
+| Use it in this repo | `import { universeFor, universeIndex } from '@lc/universes'` |
+| Understand the wiring | [`docs/info/universes.md`](info/universes.md) |
+| Understand the decisions | `catalog-platform/docs/UNIVERSES.md` |
+
+⚠️ **`catalog-platform` is now a build dependency of this repo.** `prebuild`,
+`pretest` and `pretypecheck` all run `scripts/sync-universes.mjs`, which fails
+loudly — naming `CATALOG_PLATFORM_DIR` — if it cannot find that checkout. No UI
+reads universes yet; that is a separate job.
 
 **Feasibility was proved by hand, at no API cost.** A 15-case probe
 (`scripts/probe-universes.mjs`) scored **13/15 with zero false positives** at
@@ -78,10 +92,19 @@ the series and stop.
 | **The Cosmere** | ✅ approved — 5 series, 10 book overrides, 8 exclusions |
 | **Runnerverse** | ✅ approved — 11 series + the Otherlife trilogy, 40 of 43 Arand/Darren books |
 | **CAL Verse** | ✅ approved — all 9 Dakota Krout series, grouped broadly by instruction |
-| Maasverse · Riordanverse · Solaria | ⏸️ awaiting the owner, one at a time |
+| **Maasverse · Riordanverse · Solaria** | ✅ approved — 3, 3 and 2 series |
+
+Every count above is asserted by `packages/core/test/universes.test.ts`, so an
+edit in the other repo that changes one fails here.
 
 **Held out for owner verification:** Will Wight (Cradle, Last Horizon),
 Turncoat's Truth, Cultivating Chaos, The Axe Falls, Tailored Realities.
+
+⚠️ The refusals are now **enforceable**, not just prose: each carries the exact
+series values it holds out, and a test proves none of them resolves. Doing that
+turned up a discrepancy worth knowing — the refusal says *The Axe Falls*, and
+the series value in `site/catalog.csv` is **`The Axe Falls Series`**. Testing the
+wrong spelling would have passed while protecting nothing.
 
 ### Data problems this surfaced — not universe work, but found by it
 

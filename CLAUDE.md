@@ -10,6 +10,7 @@ things that will bite you in the first ten minutes.
 | `docs/info/isbn-ladder.md` | The **measured** hit rates. Two of the original design's assumptions were wrong, and this records which. |
 | `docs/info/identity-and-reviews.md` | One Google account across two catalogs, and one review store. The audiobook site does three surprising things; they are all documented there. |
 | `migrations/0001_init.sql` | The schema comments carry the reasoning, not just the columns. |
+| `docs/info/universes.md` | ⚠️ **This repo now depends on a sibling repo to build.** `catalog-platform` owns the shared universe list; `prebuild` / `pretest` / `pretypecheck` fetch it and **fail loudly** if that checkout is missing. Set `CATALOG_PLATFORM_DIR` if yours is not a sibling. |
 
 ## Committing on Windows
 
@@ -68,12 +69,25 @@ import from `index.ts`** — doing so reintroduces a cycle that makes `z.enum()`
 receive `undefined`, and every write endpoint starts returning 500 with a
 misleading message. Typecheck does not catch it.
 
+**`packages/universes` is the only package that depends on another repo.** It is
+alone on purpose — `@lc/core` promises "no I/O, safe to import anywhere", and a
+build-generated file with cross-repo provenance does not belong inside that
+promise. `packages/universes/generated/` is a **gitignored build artifact**;
+editing it is lost work, because the next build overwrites it. The editor is
+`node tools/universes.mjs` in `catalog-platform`.
+
 **`normaliseTitle`, `splitAuthors` and `bookIdFromTitle` are each the ONE
 implementation.** They produce stored keys — `work.work_key` and Firestore
 document ids. Changing one is a migration, not an edit. `bookIdFromTitle` in
 particular is ported verbatim from the audiobook site and keeps the leading
 article where `normaliseTitle` strips it; using the wrong one writes a duplicate
 review rather than updating the existing one.
+
+⚠️ **`normaliseUniverseText` is a fourth one and is NOT interchangeable with
+these.** It keeps leading articles — the universe list holds `The Cosmere` and
+`Cosmere` as deliberately different strings — folds curly apostrophes, and
+writes nothing. Reaching for `normaliseTitle` there silently merges two entries
+the owner separated.
 
 ## Shape of the code
 

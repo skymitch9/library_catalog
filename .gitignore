@@ -25,12 +25,11 @@ dist/
 # nothing here needs a file to survive in a commit.
 runtime/
 
-<<<<<<< HEAD
 # Agent worktrees: throwaway git repos created by Claude Code sessions.
 # They were committed by accident on 2026-08-10 as embedded repos (gitlinks),
 # which clone as empty directories and confuse every later status.
 .claude/worktrees/
-=======
+
 # ⚠️ The crowdfunding scan's own output — the default file
 # `npm run import:crowdfunding` reads.
 #
@@ -44,4 +43,16 @@ runtime/
 # ledgers of research nobody wants to redo, and they hold no money.
 scripts/crowdfunding-scan.json
 scripts/crowdfunding-scan.*.json
->>>>>>> worktree-agent-acc0ee0ce26ec42ec
+
+# ⚠️ A BUILD ARTIFACT, not a copy of the universe list.
+#
+# `scripts/sync-universes.mjs` writes these on every build, test and typecheck,
+# from catalog-platform/data/. The ONE source of truth is that repo; nothing
+# tracked here may hold a second version of those decisions, because two
+# versions is exactly the drift the shared list exists to prevent.
+#
+# It is materialised rather than imported by relative path because the bundler
+# needs a static path and the checkout layout is not guaranteed. The sync script
+# fails loudly, naming CATALOG_PLATFORM_DIR, if it cannot find the platform repo.
+# See docs/info/universes.md.
+packages/universes/generated/
