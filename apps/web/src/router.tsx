@@ -33,6 +33,7 @@ import {
   COLLECTION_PAGE_SIZES,
   COPY_STATUSES,
   EDITION_FORMATS,
+  EDITION_MEDIA,
   READ_STATES,
 } from '@lc/core';
 import { DEFAULT_PREFS, SORTS } from './lib/prefs.js';
@@ -65,6 +66,8 @@ const ADD_MODES: readonly AddMode[] = ['scan', 'single', 'photo', 'type'];
 export interface CollectionFilters {
   q: string;
   series: string;
+  /** The coarse axis — `physical` or `ebook`. Narrower than `format`, not instead of it. */
+  medium: string;
   format: string;
   status: string;
   readState: string;
@@ -146,6 +149,7 @@ function parseCollection(search: string): CollectionFilters {
     // to check against. The server parameterises it, and a name that matches
     // nothing shows an empty list, which is the honest answer.
     series: p.get('series') ?? '',
+    medium: pick(search, 'medium', EDITION_MEDIA) ?? '',
     format: pick(search, 'format', EDITION_FORMATS) ?? '',
     status: pick(search, 'status', COPY_STATUSES) ?? '',
     readState: pick(search, 'read', READ_STATES) ?? '',
@@ -170,6 +174,7 @@ export function collectionPath(f: CollectionFilters): string {
   const p = new URLSearchParams();
   if (f.q) p.set('q', f.q);
   if (f.series) p.set('series', f.series);
+  if (f.medium) p.set('medium', f.medium);
   if (f.format) p.set('format', f.format);
   if (f.status) p.set('status', f.status);
   if (f.readState) p.set('read', f.readState);

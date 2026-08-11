@@ -214,6 +214,15 @@ a.topbar__brand { text-decoration: none; }
   color: var(--muted);
 }
 .field select { max-width: 14rem; }
+/* A line of explanation under the filter row rather than beside the last
+   control. `.controls--filters` wraps, so `flex-basis: 100%` is what puts this
+   on its own line at every width instead of only on a phone. */
+.controls__note {
+  flex-basis: 100%;
+  margin: 0.15rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
 
 /* --- stats --------------------------------------------------------------- */
 

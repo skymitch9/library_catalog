@@ -23,3 +23,20 @@ export const FORMAT_LABEL: Record<string, string> = {
 export function formatLabel(format: string): string {
   return FORMAT_LABEL[format] ?? format;
 }
+
+/**
+ * The coarse axis, written for a person.
+ *
+ * "Ebook" and not "Digital": a Kindle licence and an EPUB file are both books
+ * you read on a screen, and the word the household uses for both is ebook. The
+ * sibling Board Game Catalog says "digital" because a D&D Beyond licence is not
+ * a book at all — same line, different domain, different word.
+ */
+export const MEDIUM_LABEL: Record<string, string> = {
+  physical: 'Physical',
+  ebook: 'Ebook',
+};
+
+export function mediumLabel(medium: string): string {
+  return MEDIUM_LABEL[medium] ?? medium;
+}

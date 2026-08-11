@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { COLLECTION_PAGE_SIZES, COPY_STATUSES, READ_STATES } from '@lc/core';
+import { COLLECTION_PAGE_SIZES, COPY_STATUSES, EDITION_MEDIA, READ_STATES } from '@lc/core';
 import { api, type CollectionFacets, type Me, type Stats, type WorkSummary } from '../api.js';
 import { Pager } from '../components/Pager.js';
 import { Shelf } from '../components/Shelf.js';
 import { WorkList } from '../components/WorkList.js';
-import { formatLabel } from '../lib/formats.js';
+import { formatLabel, mediumLabel } from '../lib/formats.js';
 import { loadPrefs, savePrefs } from '../lib/prefs.js';
 import { collectionPath, replaceUrl, type CollectionFilters } from '../router.js';
 
@@ -58,6 +58,7 @@ export function CollectionPage({
 
   const [q, setQ] = useState(filters.q);
   const [series, setSeries] = useState(filters.series);
+  const [medium, setMedium] = useState(filters.medium);
   const [format, setFormat] = useState(filters.format);
   const [status, setStatus] = useState(filters.status);
   const [readState, setReadState] = useState(filters.readState);
@@ -69,7 +70,9 @@ export function CollectionPage({
   // only a dot beside "Filters", which is enough of a reminder for a filter you
   // just applied and not enough of an explanation for a page somebody sent you.
   const [showFilters, setShowFilters] = useState(
-    Boolean(filters.series || filters.format || filters.status || filters.readState),
+    Boolean(
+      filters.series || filters.medium || filters.format || filters.status || filters.readState,
+    ),
   );
 
   // 0-based here, 1-based in the URL, converted at both edges. A `?page=0` in
@@ -85,13 +88,13 @@ export function CollectionPage({
   const [error, setError] = useState<string | null>(null);
 
   const canEdit = me.capabilities.includes('editCatalog');
-  const filtered = Boolean(q || series || format || status || readState);
+  const filtered = Boolean(q || series || medium || format || status || readState);
 
   useEffect(() => savePrefs({ sort, dir, pageSize, view }), [sort, dir, pageSize, view]);
 
   const params = useMemo(
-    () => ({ q, series, format, status, readState, sort, dir, page, pageSize }),
-    [q, series, format, status, readState, sort, dir, page, pageSize],
+    () => ({ q, series, medium, format, status, readState, sort, dir, page, pageSize }),
+    [q, series, medium, format, status, readState, sort, dir, page, pageSize],
   );
 
   const reload = useCallback(() => {
@@ -122,7 +125,17 @@ export function CollectionPage({
   // already on it, and `/?q=dungeon&page=2` resetting itself to page 1 before the
   // first request went out is the shared link not working. Comparing is also
   // what makes it survive StrictMode's deliberate double-mount in dev.
-  const filterKey = JSON.stringify([q, series, format, status, readState, sort, dir, pageSize]);
+  const filterKey = JSON.stringify([
+    q,
+    series,
+    medium,
+    format,
+    status,
+    readState,
+    sort,
+    dir,
+    pageSize,
+  ]);
   const lastFilterKey = useRef(filterKey);
   useEffect(() => {
     if (lastFilterKey.current === filterKey) return;
@@ -140,13 +153,27 @@ export function CollectionPage({
   // the box.
   useEffect(() => {
     replaceUrl(
-      collectionPath({ q, series, format, status, readState, sort, dir, pageSize, page: page + 1 }),
+      collectionPath({
+        q,
+        series,
+        medium,
+        format,
+        status,
+        readState,
+        sort,
+        dir,
+        pageSize,
+        page: page + 1,
+      }),
     );
-  }, [q, series, format, status, readState, sort, dir, pageSize, page]);
+  }, [q, series, medium, format, status, readState, sort, dir, pageSize, page]);
 
   useEffect(() => {
-    api.facets({ q, format, status, readState }).then(setFacets).catch(() => setFacets(null));
-  }, [q, format, status, readState]);
+    api
+      .facets({ q, medium, format, status, readState })
+      .then(setFacets)
+      .catch(() => setFacets(null));
+  }, [q, medium, format, status, readState]);
 
   const loadHeader = useCallback(() => {
     api.stats().then(setStats).catch(() => setStats(null));
@@ -268,10 +295,46 @@ export function CollectionPage({
             </select>
           </label>
 
+          {/* ⚠️ The coarse axis, and it means HAS — not ONLY.
+              Same shape as every other control here (a `<select>` in a `.field`,
+              exactly as the sibling Board Game Catalog builds its browse
+              filters), because a segmented row of buttons among four dropdowns
+              would be a second idiom for one job, and a native select is also
+              the best thing a 360px phone can be handed.
+
+              Both options are always offered, including at zero. Physical books
+              are only starting to arrive and a BackerKit import is about to add
+              a pile of them; a control that came and went with the data would be
+              worse than one that currently reads "Physical (0)". */}
           <label className="field">
             <span className="field__label">Format</span>
-            <select value={format} onChange={(e) => setFormat(e.target.value)}>
+            <select
+              value={medium}
+              onChange={(e) => setMedium(e.target.value)}
+              title="Books that have an edition of this kind. A book held both ways is in both."
+            >
               <option value="">Any format</option>
+              {EDITION_MEDIA.map((m) => {
+                const facet = facets?.media.find((f) => f.medium === m);
+                return (
+                  <option key={m} value={m}>
+                    {mediumLabel(m)}
+                    {facet ? ` (${facet.count})` : ''}
+                  </option>
+                );
+              })}
+            </select>
+          </label>
+
+          {/* The fine axis, kept beside the coarse one rather than replaced by
+              it. Called "Edition" because that is the row it filters on, and
+              because two controls both labelled "Format" is how a filter panel
+              starts lying about itself. The two compose: Physical + EPUB is
+              "on the shelf and also as a file", which is a real question. */}
+          <label className="field">
+            <span className="field__label">Edition</span>
+            <select value={format} onChange={(e) => setFormat(e.target.value)}>
+              <option value="">Any edition</option>
               {facets?.formats.map((f) => (
                 <option key={f.format} value={f.format}>
                   {formatLabel(f.format)} ({f.count})
@@ -318,6 +381,7 @@ export function CollectionPage({
               onClick={() => {
                 setQ('');
                 setSeries('');
+                setMedium('');
                 setFormat('');
                 setStatus('');
                 setReadState('');
@@ -326,6 +390,17 @@ export function CollectionPage({
               Clear
             </button>
           )}
+
+          {/* ⚠️ The one sentence that says which way the format filter cuts.
+              It is written down because the answer is not guessable and the
+              wrong guess is silent: "Physical" here is *has a physical edition*,
+              so the same book on the shelf and on the Kindle is under both, and
+              the two counts add up to more than the collection. Kept visible
+              rather than hidden in a tooltip — a phone has no hover. */}
+          <p className="controls__note muted">
+            Format and Edition match a book that <b>has</b> one, not one that has only that.
+            A book held on the shelf and on a screen is under both.
+          </p>
         </div>
       )}
 

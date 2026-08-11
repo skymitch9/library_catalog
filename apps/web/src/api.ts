@@ -87,6 +87,8 @@ export interface CollectionParams {
   q?: string;
   series?: string;
   format?: string;
+  /** The coarse axis: `physical` or `ebook`. Composes with `format`. */
+  medium?: string;
   status?: string;
   readState?: string;
   sort?: string;
@@ -97,6 +99,12 @@ export interface CollectionParams {
 
 export interface CollectionFacets {
   series: { name: string; count: number }[];
+  /**
+   * Always both media, zeroes included — see the note on `CollectionFacets` in
+   * `@lc/db`. The two counts overlap on purpose: a book held on the shelf *and*
+   * on the Kindle is counted in each.
+   */
+  media: { medium: string; count: number }[];
   formats: { format: string; count: number }[];
   statuses: { status: string; count: number }[];
 }

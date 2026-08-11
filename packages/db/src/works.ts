@@ -1,4 +1,5 @@
 import {
+  PHYSICAL_FORMATS,
   normaliseTitle,
   primaryAuthor,
   sortTitleFor,
@@ -207,6 +208,14 @@ export interface CollectionQuery {
   q?: string | undefined;
   series?: string | undefined;
   format?: string | undefined;
+  /**
+   * The coarse format axis — `physical` or `ebook`. See `MEDIUM_CLAUSE`.
+   *
+   * Composes with `format` rather than replacing it: `medium=physical` and
+   * `format=ebook_epub` together is "on the shelf and also as a file", which is
+   * a real question and not a contradiction.
+   */
+  medium?: string | undefined;
   status?: string | undefined;
   /** Read state for ONE person — the caller's, never a body parameter. */
   readState?: string | undefined;
@@ -279,6 +288,32 @@ function orderBy(sort: CollectionSort | undefined, dir: 'asc' | 'desc' | undefin
   return template.replace(/%DIR%/g, dir === 'desc' ? 'DESC' : 'ASC');
 }
 
+/** `?, ?, ?` — one placeholder per physical format, so the list is never inlined. */
+const PHYSICAL_PLACEHOLDERS = PHYSICAL_FORMATS.map(() => '?').join(', ');
+
+/**
+ * "Has an edition of this medium", as SQL.
+ *
+ * ⚠️ **EXISTS, not "every edition is" — the filter means *has*, not *only*.**
+ * This household routinely owns the same book on the shelf and on the Kindle, so
+ * an exclusive filter would drop exactly those books out of *both* sides and
+ * hide the most interesting rows behind the control meant to find them. It also
+ * matches every other filter on this page: `format` and `status` are both
+ * "any edition/copy matches", and one exclusive filter sitting among inclusive
+ * ones is a trap nobody reads the code to discover. The page says so in words.
+ *
+ * `ebook` is the negation of `PHYSICAL_FORMATS` rather than a list of its own —
+ * see `EDITION_MEDIA` in `@lc/core` for why the second list must not exist.
+ */
+const MEDIUM_CLAUSE: Record<string, string> = {
+  physical:
+    `EXISTS (SELECT 1 FROM edition e
+              WHERE e.work_id = w.id AND e.format IN (${PHYSICAL_PLACEHOLDERS}))`,
+  ebook:
+    `EXISTS (SELECT 1 FROM edition e
+              WHERE e.work_id = w.id AND e.format NOT IN (${PHYSICAL_PLACEHOLDERS}))`,
+};
+
 /**
  * The WHERE clause and its binds, shared by the list, the count and the facets.
  *
@@ -311,6 +346,14 @@ function collectionFilter(query: CollectionQuery): { sql: string; binds: unknown
   if (query.series) {
     where.push('w.series = ?');
     binds.push(query.series);
+  }
+  // Coarse before fine, so the binds land in the order the SQL text reads them.
+  // An unrecognised medium adds no clause rather than erroring — same rule the
+  // sort allowlist follows, because a stale bookmark should show the collection.
+  const medium = query.medium ? MEDIUM_CLAUSE[query.medium] : undefined;
+  if (medium) {
+    where.push(medium);
+    binds.push(...PHYSICAL_FORMATS);
   }
   if (query.format) {
     where.push('EXISTS (SELECT 1 FROM edition e WHERE e.work_id = w.id AND e.format = ?)');
@@ -400,6 +443,17 @@ export async function listCollection(
 
 export interface CollectionFacets {
   series: { name: string; count: number }[];
+  /**
+   * The coarse axis, counted with the medium clause itself removed.
+   *
+   * ⚠️ **Always two entries, and a zero is a real answer.** Physical books are
+   * only starting to arrive here, so "Physical (0)" is the truth today and will
+   * not be tomorrow; a facet that omitted the empty side would make the control
+   * appear and disappear under the reader. The two counts deliberately sum to
+   * more than the total when a book is held both ways — that overlap is the
+   * point, and `MEDIUM_CLAUSE` explains it.
+   */
+  media: { medium: string; count: number }[];
   formats: { format: string; count: number }[];
   statuses: { status: string; count: number }[];
 }
@@ -417,9 +471,13 @@ export async function collectionFacets(
   query: CollectionQuery,
 ): Promise<CollectionFacets> {
   const withoutSeries = collectionFilter({ ...query, series: undefined });
+  // Counted without the medium clause, for the reason the series facet drops its
+  // own: with it applied, "Ebook (3)" beside a selected "Physical" would be the
+  // count of books held *both* ways, which is not what picking it would give you.
+  const withoutMedium = collectionFilter({ ...query, medium: undefined });
   const all = collectionFilter(query);
 
-  const [series, formats, statuses] = await Promise.all([
+  const [series, media, formats, statuses] = await Promise.all([
     db
       .prepare(
         `SELECT w.series AS name, COUNT(*) AS count
@@ -430,6 +488,21 @@ export async function collectionFacets(
       )
       .bind(...withoutSeries.binds)
       .all<{ name: string; count: number }>(),
+    // One row, two columns — not a GROUP BY, because the two buckets overlap and
+    // a work can legitimately be counted in both. SUM(CASE...) rather than
+    // COUNT(*) FILTER so this does not depend on how new D1's SQLite is.
+    //
+    // ⚠️ Bind order is by order of appearance in the SQL text: the physical list
+    // twice (once per column) and only then the WHERE binds.
+    db
+      .prepare(
+        `SELECT
+            SUM(CASE WHEN ${MEDIUM_CLAUSE.physical} THEN 1 ELSE 0 END) AS physical,
+            SUM(CASE WHEN ${MEDIUM_CLAUSE.ebook} THEN 1 ELSE 0 END) AS ebook
+           FROM work w ${withoutMedium.sql}`,
+      )
+      .bind(...PHYSICAL_FORMATS, ...PHYSICAL_FORMATS, ...withoutMedium.binds)
+      .first<{ physical: number | null; ebook: number | null }>(),
     db
       .prepare(
         `SELECT e.format AS format, COUNT(DISTINCT w.id) AS count
@@ -448,7 +521,16 @@ export async function collectionFacets(
       .all<{ status: string; count: number }>(),
   ]);
 
-  return { series: series.results, formats: formats.results, statuses: statuses.results };
+  return {
+    series: series.results,
+    // Both entries, always, in `EDITION_MEDIA` order. `SUM` over no rows is NULL.
+    media: [
+      { medium: 'physical', count: media?.physical ?? 0 },
+      { medium: 'ebook', count: media?.ebook ?? 0 },
+    ],
+    formats: formats.results,
+    statuses: statuses.results,
+  };
 }
 
 export interface CollectionStats {

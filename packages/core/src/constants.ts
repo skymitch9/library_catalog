@@ -71,6 +71,36 @@ export const EBOOK_FILE_FORMATS: readonly EditionFormat[] = [
   'ebook_pdf',
 ];
 
+/**
+ * The coarse axis: a book you can hold, or a book on a screen.
+ *
+ * This is the line people actually ask about — *"which of these are on the
+ * shelf?"* — and `EDITION_FORMATS` is too fine to answer it. Nine values, of
+ * which six mean "a screen", is a menu, not an answer.
+ *
+ * ⚠️ **Derived from `PHYSICAL_FORMATS`, never listed twice.** `ebook` is defined
+ * as *not physical* rather than as its own list, so a format added to
+ * `EDITION_FORMATS` tomorrow lands on one side of this line without anybody
+ * remembering to come back here and widen a second array. That is also why
+ * `mediumOf` is total: every `EditionFormat` is one or the other, and there is
+ * no third bucket for a value to fall into unnoticed.
+ *
+ * Audiobooks cannot arrive and break that: they live in `audiobook_catalog`, are
+ * read-only to this app, and are never rows in `edition`.
+ */
+export const EDITION_MEDIA = ['physical', 'ebook'] as const;
+export type EditionMedium = (typeof EDITION_MEDIA)[number];
+
+/** Whether this is a thing you can hold. The one test; nothing re-lists it. */
+export function isPhysicalFormat(format: string): boolean {
+  return (PHYSICAL_FORMATS as readonly string[]).includes(format);
+}
+
+/** Which side of the line a format falls on. Total over `EditionFormat`. */
+export function mediumOf(format: string): EditionMedium {
+  return isPhysicalFormat(format) ? 'physical' : 'ebook';
+}
+
 export const COPY_STATUSES = [
   'owned',
   'wanted',
