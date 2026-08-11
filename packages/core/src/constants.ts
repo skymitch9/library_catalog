@@ -291,6 +291,24 @@ export type GapVerdict = (typeof GAP_VERDICTS)[number];
 export const FINDING_REVIEW_STATES = ['pending', 'accepted', 'rejected'] as const;
 export type FindingReviewState = (typeof FINDING_REVIEW_STATES)[number];
 
+/**
+ * Whether a decision was read before it was made. Migration 0013.
+ *
+ * ⚠️ This is a different question from *who* decided, and the two must not be
+ * collapsed. `reviewed_by` / `decided_by` answer "on whose authority" — and
+ * under auto-apply that is still a real person, the one who pressed Look up.
+ * This answers "did anybody actually look at the value", and under auto-apply
+ * the answer is no.
+ *
+ * `accepted` used to imply both. Now it implies only the first, and anything
+ * auditing the catalog has to read this column to tell a machine's guess from a
+ * person's assertion. NULL means undecided, or decided before 0013 existed —
+ * deliberately not backfilled, because an invented 'human' would be
+ * indistinguishable from an observed one.
+ */
+export const DECISION_MODES = ['human', 'auto'] as const;
+export type DecisionMode = (typeof DECISION_MODES)[number];
+
 export const SCAN_MODES = ['shelf', 'single', 'isbn', 'file'] as const;
 export type ScanMode = (typeof SCAN_MODES)[number];
 

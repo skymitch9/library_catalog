@@ -320,7 +320,28 @@ export interface ResearchFinding {
   confidence: number | null;
   reviewState: 'pending' | 'accepted' | 'rejected';
   reviewedAt: string | null;
+  /**
+   * Whether a person read this before it was accepted. Migration 0013.
+   *
+   * ⚠️ `accepted` no longer implies anybody looked — a run accepts its own
+   * findings now. Anything reasoning about how trustworthy a value is must read
+   * this and not the review state.
+   */
+  decidedHow: 'human' | 'auto' | null;
   createdAt: string;
+}
+
+/** One value the machine wrote, with enough around it to judge and undo. */
+export interface AutoApplied {
+  findingId: number;
+  workId: number;
+  title: string;
+  authors: string;
+  field: string;
+  value: FindingValue;
+  sourceTier: 'official' | 'crowdfunding' | 'retail' | 'community';
+  sourceUrl: string | null;
+  appliedAt: string | null;
 }
 
 export interface RunView {
@@ -333,6 +354,12 @@ export interface RunView {
   estimatedCents: number;
   asked: string[];
   proposed: number;
+  /**
+   * How many proposals were actually written in. ⚠️ Not `proposed` — a column
+   * that filled while the lookup was out is proposed and not applied, and
+   * showing the larger number would overstate what the run did.
+   */
+  applied: number;
   detail: string | null;
   model: string | null;
   effort: string | null;
@@ -752,9 +779,33 @@ export const api = {
    * lookup whose response never arrives still shows up on the next poll.
    */
   runResearch: (workId: number) =>
-    request<{ run: RunView; alreadyRunning: boolean; findings?: ResearchFinding[] }>(
-      `/api/research/works/${workId}/run`,
-      { method: 'POST', body: JSON.stringify({}) },
+    request<{
+      run: RunView;
+      alreadyRunning: boolean;
+      /**
+       * ⚠️ Still pending *after* the run — which now means "could not be
+       * applied", not "waiting to be read". Normally empty; a value that was not
+       * a usable year lands here and is the only thing left for a person.
+       */
+      findings?: ResearchFinding[];
+      missing?: DetailField[];
+    }>(`/api/research/works/${workId}/run`, { method: 'POST', body: JSON.stringify({}) }),
+
+  /** What the machine wrote lately, newest first. The undo list. */
+  autoApplied: (limit = 50) =>
+    request<{ applied: AutoApplied[] }>(`/api/research/auto-applied?limit=${limit}`),
+
+  /**
+   * Take back auto-applied values — one, or a screenful.
+   *
+   * ⚠️ At most 10 per call; the server refuses more rather than truncating,
+   * because each revert costs D1 subrequests and a partial undo reporting
+   * success would be worse than a refusal.
+   */
+  undoAutoApplied: (ids: number[]) =>
+    request<{ reverted: string[]; skipped: string[]; works: number[] }>(
+      '/api/research/undo',
+      { method: 'POST', body: JSON.stringify({ ids }) },
     ),
 
   /**

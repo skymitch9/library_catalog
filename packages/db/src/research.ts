@@ -7,16 +7,25 @@
  * comments carry the reasoning. Nothing here changes their shape;
  * `gap_verdict` (migration 0005) is the one addition.
  *
- * ⚠️ **Nothing in this file writes to `work`.** A run records what it found and
- * stops. Applying a finding is `applyFinding` in the Worker, and it happens only
- * because a person pressed Use. See `isbn-ladder.md` §4.4 for the measured
- * reason: a wrong answer scored 1.00 on both title and author, twice, in two
- * different series, and only the publisher gave it away.
+ * ⚠️ **Nothing in this file writes to `work`.** That much is unchanged: this
+ * layer records what a run found and stops. Applying a finding is
+ * `applyFinding` in the Worker.
+ *
+ * What *has* changed is who triggers it. It used to happen only because a person
+ * pressed Use; a run now applies its own findings unread, on the owner's
+ * explicit instruction — see the head of `apps/worker/src/lib/research-run.ts`
+ * for the argument and the terms. The consequence for this file is
+ * `decided_how` (migration 0013): `review_state = 'accepted'` no longer implies
+ * a human read the value, and anything judging trustworthiness must read that
+ * column instead. `isbn-ladder.md` §4.4 is why the distinction is worth storing
+ * — a wrong answer scored 1.00 on both title and author, twice, in two different
+ * series, and only the publisher gave it away.
  */
 
 import {
   DETAIL_FIELDS,
   detailGaps,
+  type DecisionMode,
   type DetailField,
   type FindingReviewState,
   type FindingValue,
@@ -61,7 +70,7 @@ export interface ResearchRun {
   inputTokens: number | null;
   outputTokens: number | null;
   /** Whatever the run wanted to say for itself. Free-form by design. */
-  result: { detail?: string | null; proposed?: number } | null;
+  result: { detail?: string | null; proposed?: number; applied?: number } | null;
   inputTitle: string | null;
   inputYear: number | null;
   /** The fields the run was sent to find, comma-delimited with edge commas. */
@@ -170,7 +179,7 @@ export interface FinishRunInput {
   errorMessage?: string | null;
   inputTokens?: number | null;
   outputTokens?: number | null;
-  result?: { detail?: string | null; proposed?: number } | null;
+  result?: { detail?: string | null; proposed?: number; applied?: number } | null;
 }
 
 export async function finishRun(
@@ -304,6 +313,7 @@ export interface ResearchFindingRow {
   review_state: string;
   reviewed_by: number | null;
   reviewed_at: string | null;
+  decided_how: string | null;
   created_at: string;
 }
 
@@ -327,11 +337,20 @@ export interface ResearchFinding {
   confidence: number | null;
   reviewState: FindingReviewState;
   reviewedAt: string | null;
+  /**
+   * Whether anybody read this before it was accepted. Migration 0013.
+   *
+   * ⚠️ `reviewState: 'accepted'` no longer implies a person looked. Under
+   * auto-apply the run accepts its own findings, and this is the only column
+   * that says so. NULL means still pending, or decided before 0013.
+   */
+  decidedHow: DecisionMode | null;
   createdAt: string;
 }
 
 const FINDING_COLS = `id, run_id, work_id, field, value_json, source_tier, source_url,
-                      confidence, review_state, reviewed_by, reviewed_at, created_at`;
+                      confidence, review_state, reviewed_by, reviewed_at, decided_how,
+                      created_at`;
 
 export function toFinding(row: ResearchFindingRow): ResearchFinding {
   let value: FindingValue;
@@ -351,6 +370,7 @@ export function toFinding(row: ResearchFindingRow): ResearchFinding {
     confidence: row.confidence,
     reviewState: row.review_state as FindingReviewState,
     reviewedAt: row.reviewed_at,
+    decidedHow: (row.decided_how as DecisionMode | null) ?? null,
     createdAt: row.created_at,
   };
 }
@@ -434,23 +454,106 @@ export async function getFinding(db: D1Database, id: number): Promise<ResearchFi
   return row ? toFinding(row) : null;
 }
 
-/** Mark one finding. The only thing review does to the finding itself. */
+/**
+ * Mark one finding. The only thing review does to the finding itself.
+ *
+ * ⚠️ `decidedHow` is not optional and should never be guessed at a call site.
+ * It is the difference between "a person asserted this" and "a machine wrote it
+ * while nobody was looking", and the whole audit trail for auto-apply rests on
+ * callers passing the truth. See migration 0013.
+ */
 export async function markFinding(
   db: D1Database,
   id: number,
   reviewState: FindingReviewState,
   reviewedBy: number | null,
+  decidedHow: DecisionMode,
 ): Promise<ResearchFinding | null> {
   const row = await db
     .prepare(
       `UPDATE research_finding
-          SET review_state = ?, reviewed_by = ?, reviewed_at = datetime('now')
+          SET review_state = ?, reviewed_by = ?, reviewed_at = datetime('now'), decided_how = ?
         WHERE id = ?
         RETURNING ${FINDING_COLS}`,
     )
-    .bind(reviewState, reviewedBy, id)
+    .bind(reviewState, reviewedBy, decidedHow, id)
     .first<ResearchFindingRow>();
   return row ? toFinding(row) : null;
+}
+
+/**
+ * One auto-applied value, with enough around it to judge and undo.
+ *
+ * The work's title travels with the row because the whole point of the list is
+ * to be skimmed — "Cradle 3, description, from reactormag.com" — and a list of
+ * work ids is not skimmable.
+ */
+export interface AutoApplied {
+  findingId: number;
+  workId: number;
+  title: string;
+  authors: string;
+  field: string;
+  value: FindingValue;
+  sourceTier: SourceTier;
+  sourceUrl: string | null;
+  appliedAt: string | null;
+}
+
+/**
+ * What the machine wrote lately, newest first.
+ *
+ * ⚠️ This is the other half of the auto-apply bargain and not a nicety. The
+ * owner gave up reading each value *before* it lands; what they get back is the
+ * ability to see a batch afterwards and throw it away wholesale. Without this
+ * the trade is one-sided — the gate is gone and there is no remedy.
+ *
+ * `accepted` only: a rejected or still-pending finding never touched a column,
+ * so it has nothing to undo.
+ */
+export async function listAutoApplied(db: D1Database, limit = 50): Promise<AutoApplied[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT f.id AS finding_id, f.work_id, w.title, w.authors, f.field, f.value_json,
+              f.source_tier, f.source_url, f.reviewed_at
+         FROM research_finding f
+         JOIN work w ON w.id = f.work_id
+        WHERE f.decided_how = 'auto' AND f.review_state = 'accepted'
+        ORDER BY f.reviewed_at DESC, f.id DESC
+        LIMIT ?`,
+    )
+    .bind(limit)
+    .all<{
+      finding_id: number;
+      work_id: number;
+      title: string;
+      authors: string;
+      field: string;
+      value_json: string;
+      source_tier: string;
+      source_url: string | null;
+      reviewed_at: string | null;
+    }>();
+
+  return results.map((r) => {
+    let value: FindingValue;
+    try {
+      value = JSON.parse(r.value_json) as FindingValue;
+    } catch {
+      value = { kind: 'unknown', basis: 'This finding could not be read back.' };
+    }
+    return {
+      findingId: r.finding_id,
+      workId: r.work_id,
+      title: r.title,
+      authors: r.authors,
+      field: r.field,
+      value,
+      sourceTier: r.source_tier as SourceTier,
+      sourceUrl: r.source_url,
+      appliedAt: r.reviewed_at,
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -500,6 +603,8 @@ export interface SetVerdictInput {
   note?: string | null;
   runId?: number | null;
   decidedBy?: number | null;
+  /** Whether anybody read it first. See migration 0013. Defaults to 'human'. */
+  decidedHow?: DecisionMode | null;
 }
 
 /**
@@ -515,14 +620,16 @@ export async function setGapVerdict(
 ): Promise<WorkGapVerdict> {
   const row = await db
     .prepare(
-      `INSERT INTO gap_verdict (work_id, field, verdict, source, note, run_id, decided_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO gap_verdict
+         (work_id, field, verdict, source, note, run_id, decided_by, decided_how)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (work_id, field) DO UPDATE SET
          verdict = excluded.verdict,
          source = excluded.source,
          note = excluded.note,
          run_id = excluded.run_id,
          decided_by = excluded.decided_by,
+         decided_how = excluded.decided_how,
          decided_at = datetime('now')
        RETURNING id, work_id, field, verdict, source, note, run_id, decided_at`,
     )
@@ -534,6 +641,7 @@ export async function setGapVerdict(
       input.note ?? null,
       input.runId ?? null,
       input.decidedBy ?? null,
+      input.decidedHow ?? 'human',
     )
     .first<GapVerdictRow>();
   if (!row) throw new Error('gap_verdict upsert returned no row');
@@ -556,6 +664,30 @@ export async function listGapVerdicts(
 
 export async function deleteGapVerdict(db: D1Database, id: number): Promise<boolean> {
   const res = await db.prepare('DELETE FROM gap_verdict WHERE id = ?').bind(id).run();
+  return (res.meta.changes ?? 0) > 0;
+}
+
+/**
+ * Withdraw one auto-recorded verdict, putting the question back on the list.
+ *
+ * ⚠️ Narrowed to `decided_how = 'auto'` on purpose, and this is the guard that
+ * makes bulk undo safe. Undoing a machine batch must never reach a verdict a
+ * person wrote by hand — those are the eleven researched standalones migration
+ * 0007 exists to protect, and re-opening them would make the catalog pay a model
+ * to rediscover work somebody already did.
+ */
+export async function deleteAutoVerdict(
+  db: D1Database,
+  workId: number,
+  field: DetailField,
+): Promise<boolean> {
+  const res = await db
+    .prepare(
+      `DELETE FROM gap_verdict
+        WHERE work_id = ? AND field = ? AND decided_how = 'auto'`,
+    )
+    .bind(workId, field)
+    .run();
   return (res.meta.changes ?? 0) > 0;
 }
 
