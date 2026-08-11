@@ -67,7 +67,13 @@ ENVIRONMENT = "production"
 # not "switch projects", it silently forks every user into a second account.
 FIREBASE_PROJECT_ID = "audiobook-catalog"
 
-# Leave empty. Ownership is claimed by whoever signs in first, which is you right
-# after deploying. This is only a recovery hatch: if you ever lock yourself out,
-# put an email here and redeploy to force it back to `owner`.
-OWNER_EMAILS = ""
+# The recovery hatch. Any email listed here is forced to `owner` when it signs
+# in — every sign-in, not just the first — regardless of its app_user row.
+#
+# It was empty while there were two owners, because each was the other's way
+# back in. ⚠️ As of 2026-08-10 there is exactly one owner and the second account
+# is a `manager`, which cannot change roles. Nothing else can restore ownership
+# now, so without this the only route back would be hand-editing D1.
+#
+# Set for the same reason and to the same address as the board game catalog's.
+OWNER_EMAILS = "nbaslamking@gmail.com"
