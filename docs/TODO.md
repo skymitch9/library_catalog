@@ -79,7 +79,7 @@ the Cloudflare dashboard.
 | ⏸️ | **Kickstarter "DCC RPG + Unstoppable"** | Not on the Kickstarter account at all — 62 of 62 rows enumerated and it is absent. Almost certainly an Indiegogo pledge. | Claude — needs a second Indiegogo pass |
 | ⏸️ | **10 reward lines have no printing** | Lines matched their works but no `edition` exists for the specific printing a campaign delivered, so they landed with `edition_id NULL`. The importer never mints an edition — by design. | Create the editions in the app, then re-run the import |
 | ⏸️ | **Confirm the Percy Jackson set is the 5-book original series** | Imported, but the vendor page never lists the individual titles — the five are *supplied by Claude*, not read off the page. Low risk, still an assumption. | User, when awake |
-| ⏸️ | **12 works still have no cover from any source** | Not stranded — the backfill reports 0 stranded. Needs a genuinely different cover source. | Unassigned |
+| ⏸️ | **25 works have no cover the free rungs can reach** | Measured over 224 works: **57 blank**, of which 12 are stranded again (re-run `backfill-work-covers`), 20 are gettable from **Google Books**, and 25 are not. Of those 25, 13 have an ISBN neither database holds a cover for and 12 have no edition at all. The `--llm` rung is built; yield unmeasured, ~$1.50 for 25. | Claude — running overnight under the user's standing spend approval |
 
 ### Cleared since the last revision
 
@@ -116,6 +116,47 @@ the Cloudflare dashboard.
 | ✅ | All 62 Kickstarter pledges enumerated | 15 library, 45 board games, 2 neither, 8 mixed, 6 flagged ambiguous rather than guessed. |
 
 ---
+
+## Staged, waiting on the user to run — 2026-08-10
+
+All dry-run and verified against production. **Nothing below has been written.**
+Every one needs `LC_AUDIOBOOK_ROOT` only where noted, and all are idempotent.
+
+Run **in this order** — the first is free and the second deliberately skips what
+the first fixes.
+
+```bash
+# 1. Lift 12 stranded edition covers onto their works. No network.
+node scripts/backfill-work-covers.mjs --remote --commit
+
+# 2. Fetch the 20 covers Google Books holds. ~2 min, free (keyed).
+npm run backfill:missing-covers -- --remote --commit
+
+# 3. Three asserted audiobook aliases: Tamer 9, Tamer 10, The Primal Hunter.
+LC_AUDIOBOOK_ROOT=C:/Users/nbasl/OneDrive/Documents/vs-code-repos/bookbuddy/audiobook_catalog \
+  npm run seed:audiobook-aliases -- --remote --commit
+
+# 4. Re-run the audiobook match so the Tamer fix and the aliases both land.
+LC_AUDIOBOOK_ROOT=C:/Users/nbasl/OneDrive/Documents/vs-code-repos/bookbuddy/audiobook_catalog \
+  npm run backfill:audiobooks -- --remote --commit
+```
+
+⚠️ **Step 4 rewrites `audiobook_holding`.** It marks the five wrong Tamer rows
+and the wrong Primal Hunter row `stale_at` rather than deleting them (migration
+0003's rule), and writes the correct rows for Tamer 7–10. Expect **six fewer
+false claims** and the honest total to land near 45.
+
+### Optional and **paid** — not run, gate separately
+
+```bash
+# ⚠️ COSTS MONEY. ~6c/book × 25 books ≈ $1.50, estimated from list prices.
+npm run backfill:missing-covers -- --remote --llm            # dry run first
+npm run backfill:missing-covers -- --remote --llm --commit
+```
+
+Yield is **unmeasured** — no sweep has been run. Every URL it proposes is fetched
+and size-checked before it can be written, so the failure mode is "found
+nothing", not "stored a dead link".
 
 ## Open work, not blocked
 
@@ -248,13 +289,26 @@ promising "no code" when the only lookup offered is by ISBN.
 
 ## Known-imperfect, carried forward
 
-- ⚠️ **Audiobook match rate is 25% — 40 of 157.** Honest ceiling: ~35 misses are
-  board books, 38 are fan-translated light novels with no English audio. **Cradle
-  is the group worth chasing** — 12 owned on audio, needs aliases.
-- ⚠️ **All five *Tamer* volumes matched one generic audiobook row.** The catalog
-  holds individual volumes 7–10, so the matcher preferred a series-level row.
-  Book 11 probably has no audiobook. Renders as `AUDIO?`, so it reads as
-  uncertain rather than asserted — still wrong.
+- ⚠️ **Audiobook match rate is 19% — 43 of 224.** The rate fell because the
+  catalog grew, not because matching got worse: matches went 42 → 43 while works
+  went 219 → 224. Honest ceiling: ~35 misses are board books and 38 are
+  fan-translated light novels with no English audio.
+- ❌ **"Cradle is the group worth chasing" was wrong — retire it.** Searched all
+  1,075 audiobook rows for every Cradle title (Unsouled, Soulsmith, Blackflame,
+  Skysworn, Ghostwater, Underlord, Uncrowned, Wintersteel, Bloodline, Reaper,
+  Dreadgod, Waybound) and for "cradle" anywhere in the file including
+  descriptions: **zero hits**. Will Wight's only audiobooks here are *The Last
+  Horizon* 1–3, which already match exactly. No alias can create a match for an
+  audiobook the household does not own. Those 12 works are a genuine miss.
+- ✅ **The five *Tamer* volumes are fixed.** Diagnosis: containment is a
+  *substring* test, and our "Book 7" vs their "7" differ by a word in the middle,
+  so the correct numbered row was never a candidate — only the series-level
+  "Tamer: King of Dinosaurs" was. Fixed in `matching.ts` with a volume-marker
+  fold plus a rule that containment may differ in words but never in numbers.
+  Books 7 and 8 now match their own rows; 9 and 10 need the alias seed (the
+  audiobook titles carry "Kickstarter Edition", 0.56 against a 0.6 floor); **11
+  correctly matches nothing.** Same fix removed a second false positive: *The
+  Primal Hunter* (book 1) had matched *The Primal Hunter 10*.
 - ⚠️ **A false positive that was caught:** "An Unexpected Wedding Invitation (5e)"
   has add-ons literally labelled "(Book)" that are 5e modules. Would have
   polluted the library silently.

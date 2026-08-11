@@ -151,6 +151,72 @@ function distinct(keys: readonly string[]): string[] {
 }
 
 /**
+ * The same folded title with a volume *marker word* removed from in front of its
+ * number: "tamer king of dinosaurs book 7" -> "tamer king of dinosaurs 7".
+ *
+ * ## Why this exists — measured 2026-08-10 against production
+ *
+ * This catalog files Michael-Scott Earle's series as "Tamer: King of Dinosaurs
+ * Book 7"; the audiobook catalog files the very same volume as "Tamer: King of
+ * Dinosaurs 7". Nothing exact meets, and **containment cannot bridge it either**,
+ * because containment is a substring test and the word "book" sits in the middle
+ * of one side. The only audiobook row that *is* a substring of ours is the
+ * series-level "Tamer: King of Dinosaurs" — so all five volumes matched one
+ * generic row while the correct numbered rows sat unused beside it.
+ *
+ * ⚠️ This is a comparison key and **not** a change to `normaliseTitle`. That
+ * function produces `work.work_key` and Firestore document ids; changing it is a
+ * migration. This fold is computed at match time, is never stored, and is applied
+ * identically to both sides — it is not a second similarity function, which the
+ * header of this file bans for good reason.
+ *
+ * ⚠️ The marker must be followed by a number. "The Book Thief" keeps its "book",
+ * because nothing numeric follows it.
+ */
+export function foldVolumeMarker(key: string): string {
+  return key.replace(/\b(?:book|volume|vol|part)\s+(\d+(?:\.\d+)?)\b/g, '$1');
+}
+
+/**
+ * The numbers a folded title contains, as a set of strings.
+ *
+ * Used to stop containment from silently adding or dropping a volume number —
+ * see `numbersAgree`.
+ */
+function numbersIn(key: string): Set<string> {
+  return new Set(key.match(/\d+(?:\.\d+)?/g) ?? []);
+}
+
+/**
+ * True when two titles carry exactly the same numbers.
+ *
+ * ## ⚠️ The rule this enforces: a containment match may differ in words, never in
+ * numbers.
+ *
+ * Containment exists so "Oathbound Healer - MM" can meet "Oathbound Healer" — a
+ * difference of decoration. It must not let a *numbered volume* meet something
+ * numbered differently, because that is not decoration, it is a different book.
+ * Two real false positives this catches, both measured against production
+ * 2026-08-10:
+ *
+ * | Ours | Matched | Why it is wrong |
+ * |---|---|---|
+ * | `Tamer: King of Dinosaurs Book 11` | `Tamer: King of Dinosaurs` | there is no volume 11 on audio at all |
+ * | `The Primal Hunter` | `The Primal Hunter 10` | we hold book 1; the sort picked the longest key, which is the highest volume |
+ *
+ * The Tamer case is the worse of the two: it claims the household owns an
+ * audiobook that does not exist. A wrong match is worse than no match, so this
+ * gate rejects rather than down-ranks — the same stance the author gate takes.
+ */
+function numbersAgree(a: string, b: string): boolean {
+  const left = numbersIn(a);
+  const right = numbersIn(b);
+  if (left.size !== right.size) return false;
+  for (const n of left) if (!right.has(n)) return false;
+  return true;
+}
+
+/**
  * Every folded name this work's author is known by — the printed one first, then
  * any `author` aliases.
  *
@@ -193,7 +259,17 @@ export interface WorkIndex<T> {
    * Deverell here and Shirtaloon on Open Library. The printed author is always
    * first, so a report can name it without knowing about aliases.
    */
-  entries: { work: T; titleKey: string; authorKeys: string[] }[];
+  entries: {
+    work: T;
+    titleKey: string;
+    /**
+     * `titleKey` with a volume marker word folded away — see `foldVolumeMarker`.
+     * Equal to `titleKey` for the overwhelming majority of rows, and different
+     * exactly where one catalog writes "Book 7" and the other writes "7".
+     */
+    matchKey: string;
+    authorKeys: string[];
+  }[];
   /**
    * Folded alternate titles, exact-match only, kept apart from `entries` because
    * the two answer *different questions* — see `matchIndexedWork`.
@@ -242,11 +318,15 @@ export function buildWorkIndex<T extends MatchableWork>(
     else authorAliases.set(a.workId, [a.alias]);
   }
 
-  const entries = works.map((work) => ({
-    work,
-    titleKey: normaliseTitle(work.title),
-    authorKeys: foldAuthorNames(work.authors, authorAliases.get(work.id) ?? []),
-  }));
+  const entries = works.map((work) => {
+    const titleKey = normaliseTitle(work.title);
+    return {
+      work,
+      titleKey,
+      matchKey: foldVolumeMarker(titleKey),
+      authorKeys: foldAuthorNames(work.authors, authorAliases.get(work.id) ?? []),
+    };
+  });
 
   if (aliases.length === 0) return { entries, aliasKeys: new Map() };
 
@@ -341,6 +421,34 @@ export function matchIndexedWork<T extends MatchableWork>(
     return null;
   }
 
+  /*
+   * The same title, with "Book 7" written as "7" on one side. Still `exact`:
+   * it identifies one specific volume with nothing guessed at, which is a
+   * strictly stronger claim than containment and belongs above it.
+   *
+   * ⚠️ Placed AFTER the literal test so a row that matches exactly as printed
+   * always wins, and before containment so a numbered volume can never be
+   * captured by its own series-level row. `titleSimilarity` reports the honest
+   * word-overlap of the printed keys rather than 1, because the two strings do
+   * differ — the caller stores it and the UI shows it.
+   */
+  const targetFolded = foldVolumeMarker(target);
+  if (targetFolded !== target || index.entries.some((e) => e.matchKey !== e.titleKey)) {
+    const folded = index.entries.find((e) => e.matchKey === targetFolded);
+    if (folded) {
+      const a = authorOk(folded.authorKeys);
+      if (!Number.isNaN(a as number)) {
+        return {
+          work: folded.work,
+          via: 'exact',
+          titleSimilarity: titleSimilarity(folded.titleKey, target),
+          authorSimilarity: a,
+        };
+      }
+      return null;
+    }
+  }
+
   const aliased = index.aliasKeys.get(target);
   if (aliased) {
     const entry = index.entries.find((e) => e.work.id === aliased.id);
@@ -363,6 +471,12 @@ export function matchIndexedWork<T extends MatchableWork>(
       const shorter = Math.min(e.titleKey.length, target.length);
       const longer = Math.max(e.titleKey.length, target.length);
       if (shorter / longer < 0.6) return false;
+      // A containment match may differ in words, never in numbers. Without this
+      // every numbered volume in a series is a substring match for the
+      // series-level row, and the sort below — longest key first — then hands an
+      // unnumbered work the *highest*-numbered volume it can find. See
+      // `numbersAgree` for the two false positives this was measured against.
+      if (!numbersAgree(e.titleKey, target)) return false;
       return !Number.isNaN(authorOk(e.authorKeys) as number);
     })
     .sort((a, b) => b.titleKey.length - a.titleKey.length)[0];

@@ -230,6 +230,123 @@ export async function lookupGoogleBooksByIsbn(
   ];
 }
 
+// ---------------------------------------------------------------------------
+// Covers
+// ---------------------------------------------------------------------------
+
+/**
+ * The first cover any rung found, in rung order.
+ *
+ * ## ⚠️ Why this is not just `candidates[0].coverUrl`
+ *
+ * It was, and that is the whole reason board books had no covers. Rung 1 is
+ * always first and Open Library answers for these ISBNs with **full metadata and
+ * no cover**; Google Books, rung 2, holds the cover. `scan-jobs.ts` took
+ * `candidates[0]` and with it Open Library's `null`, so the cover that had
+ * already been fetched two lines below was thrown away.
+ *
+ * Measured 2026-08-10 over the 46 coverless works in production that carry an
+ * ISBN: Open Library supplied **12**, and Google Books supplied **19 more** of the
+ * 34 it missed. Every one of those 19 was reachable the whole time.
+ *
+ * Borrowing across rungs is safe *because the join is the ISBN* — a hard
+ * identifier, not a title similarity. Every candidate here answered the same
+ * `isbn:` query, so they are printings of the same edition and any cover among
+ * them is a cover of it. That is emphatically not true of the title-search path
+ * in `search.ts`, which is why this lives here and takes candidates rather than a
+ * bare list of URLs.
+ */
+export function coverFrom(candidates: readonly BookCandidate[]): string | null {
+  for (const c of candidates) if (c.coverUrl) return c.coverUrl;
+  return null;
+}
+
+/**
+ * The smallest thing we will believe is a book cover.
+ *
+ * Open Library's 1×1 placeholder is **43 bytes** (measured 2026-08-10 on ISBN
+ * 9781454965435). Real covers in the same sample ran 13,963 – 94,915 bytes and
+ * Google's smallest thumbnail was 4,935. 1000 sits in a gap two orders of
+ * magnitude wide, so it does not need to be precise to be safe.
+ */
+export const MIN_COVER_BYTES = 1000;
+
+export interface CoverCheck {
+  ok: boolean;
+  bytes: number;
+  status: number | string;
+  contentType: string | null;
+  /** Why it was rejected, for a log a person will actually read. */
+  reason?: string;
+}
+
+/**
+ * Fetch a cover URL and decide whether it is really an image of a book.
+ *
+ * ## ⚠️ The trap this exists for
+ *
+ * `https://covers.openlibrary.org/b/isbn/{isbn}-L.jpg` returns **HTTP 200 and a
+ * 1×1 pixel placeholder** when it has no cover — not a 404. Storing that looks
+ * exactly like success: the column fills, the count goes up, the backfill reports
+ * a clean sweep, and every tile on the page renders a blank dot. Measured
+ * 2026-08-10: with `?default=false` that same ISBN returns **404**; without it,
+ * **200 and 43 bytes**.
+ *
+ * So there are two defences and both are needed, because they fail differently:
+ *
+ *  1. `?default=false` on any `covers.openlibrary.org` URL — appended here rather
+ *     than trusted to the caller, since forgetting it is silent.
+ *  2. A size floor, which also catches an error page served as 200, a Google
+ *     "image not available" gif, and a truncated response.
+ *
+ * A URL that cannot be verified is treated as no cover at all. ⚠️ Never store an
+ * unverified URL: nothing in this system ever revisits a cover column, so a dead
+ * link is permanent in a way a blank is not.
+ */
+export async function verifyCoverUrl(
+  url: string,
+  opts: { fetchImpl?: typeof fetch; userAgent?: string } = {},
+): Promise<CoverCheck> {
+  const doFetch = opts.fetchImpl ?? fetch;
+  const guarded = /covers\.openlibrary\.org/.test(url) && !/default=false/.test(url)
+    ? `${url}${url.includes('?') ? '&' : '?'}default=false`
+    : url;
+
+  try {
+    const res = await doFetch(guarded, {
+      headers: { 'User-Agent': opts.userAgent ?? DEFAULT_UA },
+      redirect: 'follow',
+    });
+    if (!res.ok) {
+      return { ok: false, bytes: 0, status: res.status, contentType: null, reason: `HTTP ${res.status}` };
+    }
+    const contentType = res.headers.get('content-type');
+    const bytes = (await res.arrayBuffer()).byteLength;
+
+    if (contentType && !/^image\//i.test(contentType)) {
+      return { ok: false, bytes, status: res.status, contentType, reason: `not an image (${contentType})` };
+    }
+    if (bytes < MIN_COVER_BYTES) {
+      return {
+        ok: false,
+        bytes,
+        status: res.status,
+        contentType,
+        reason: `${bytes} bytes — a placeholder, not a cover`,
+      };
+    }
+    return { ok: true, bytes, status: res.status, contentType };
+  } catch (err) {
+    return {
+      ok: false,
+      bytes: 0,
+      status: 'ERR',
+      contentType: null,
+      reason: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 /**
  * Ask every rung that can answer, in order, and return everything found.
  *

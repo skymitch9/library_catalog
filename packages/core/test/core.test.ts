@@ -24,7 +24,12 @@ import {
   splitAuthors,
   workKeyFor,
 } from '../src/titles.ts';
-import { buildWorkIndex, matchIndexedWork, titleSimilarity } from '../src/matching.ts';
+import {
+  buildWorkIndex,
+  foldVolumeMarker,
+  matchIndexedWork,
+  titleSimilarity,
+} from '../src/matching.ts';
 import {
   corroborate,
   samePublisher,
@@ -1334,5 +1339,71 @@ describe('crowdfunding — the physical/digital split', () => {
     assert.equal(suggestFormat('Mass market paperback'), 'mass_market');
     assert.equal(suggestFormat('All-In Tier'), null);
     assert.equal(suggestFormat(null), null);
+  });
+});
+
+describe('matching — a numbered volume prefers a numbered row', () => {
+  /*
+   * The real rows, measured against production 2026-08-10. The audiobook catalog
+   * holds Tamer volumes 1, 7, 8, 9 and 10 — and a series-level row with no
+   * number at all. It does NOT hold volume 11.
+   */
+  const audio = [
+    { id: 1, title: 'Tamer: King of Dinosaurs', authors: 'Michael-scott Earle' },
+    { id: 2, title: 'Tamer: King of Dinosaurs 1', authors: 'Michael-scott Earle' },
+    { id: 3, title: 'Tamer: King of Dinosaurs 7', authors: 'Michael-scott Earle' },
+    { id: 4, title: 'Tamer: King of Dinosaurs 8', authors: 'Michael-scott Earle' },
+    { id: 5, title: 'The Primal Hunter 10', authors: 'Zogarth' },
+    { id: 6, title: 'The Primal Hunter 5', authors: 'Zogarth' },
+    { id: 7, title: 'Oathbound Healer', authors: 'Actus' },
+  ];
+  const index = buildWorkIndex(audio);
+
+  it('reaches the numbered row when only the marker word differs', () => {
+    // Ours says "Book 7", theirs says "7". Before the volume-marker fold these
+    // could not meet at all: containment is a substring test and "book" sits in
+    // the middle, so the ONLY substring candidate was the series-level row.
+    const m = matchIndexedWork(index, 'Tamer: King of Dinosaurs Book 7', 'Michael-scott Earle');
+    assert.equal(m?.work.id, 3);
+    assert.equal(m?.via, 'exact');
+  });
+
+  it('does not let volume 8 reach volume 7', () => {
+    assert.equal(
+      matchIndexedWork(index, 'Tamer: King of Dinosaurs Book 8', 'Michael-scott Earle')?.work.id,
+      4,
+    );
+  });
+
+  it('⚠️ claims NOTHING for a volume that is not held on audio', () => {
+    // The whole point. Volume 11 exists in this library and not in that catalog,
+    // and before the numeric gate it matched the series-level row by containment
+    // and rendered as `AUDIO?` — a false claim about what the household owns.
+    assert.equal(
+      matchIndexedWork(index, 'Tamer: King of Dinosaurs Book 11', 'Michael-scott Earle'),
+      null,
+    );
+  });
+
+  it('does not hand an unnumbered work the highest-numbered volume', () => {
+    // "The Primal Hunter" is book 1. Containment sorts longest key first, which
+    // among numbered volumes means the biggest number wins — it matched book 10.
+    assert.equal(matchIndexedWork(index, 'The Primal Hunter', 'Zogarth'), null);
+  });
+
+  it('still allows containment where only decoration differs', () => {
+    // The rung must keep working: this library files the book as "Oathbound
+    // Healer - MM" and the audiobook catalog as "Oathbound Healer". No numbers
+    // on either side, so the gate does not fire.
+    const m = matchIndexedWork(index, 'Oathbound Healer - MM', 'Actus');
+    assert.equal(m?.work.id, 7);
+    assert.equal(m?.via, 'containment');
+  });
+
+  it('folds only a marker that precedes a number', () => {
+    assert.equal(foldVolumeMarker('tamer king of dinosaurs book 7'), 'tamer king of dinosaurs 7');
+    assert.equal(foldVolumeMarker('space knight volume 5'), 'space knight 5');
+    // "The Book Thief" keeps its "book" — nothing numeric follows it.
+    assert.equal(foldVolumeMarker('book thief'), 'book thief');
   });
 });

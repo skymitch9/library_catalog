@@ -26,7 +26,7 @@ import {
   listWorksForMatching,
   updateScanJob,
 } from '@lc/db';
-import { resolveIsbn, searchOpenLibrary, type BookCandidate } from '@lc/isbn';
+import { coverFrom, resolveIsbn, searchOpenLibrary, type BookCandidate } from '@lc/isbn';
 import type { AppBindings, Env } from '../env.js';
 import { isPhotoMediaType, readShelf, VisionError } from '../lib/vision.js';
 import { requireCapability } from '../middleware/auth.js';
@@ -300,7 +300,23 @@ async function resolveBarcode(env: Env, position: number, code: string): Promise
     googleBooksKey: env.GOOGLE_BOOKS_API_KEY,
     userAgent: UA,
   });
-  const best = candidates[0];
+  /*
+   * ⚠️ Rung 1 wins the metadata, but the cover comes from whichever rung has one.
+   *
+   * This was `candidates[0]` alone, and it is why "every book should get a cover"
+   * was not happening. Open Library answers for board-book ISBNs with a full
+   * record and **no cover**; Google Books, rung 2, has the cover. Taking rung 1
+   * whole took its `null` with it and discarded a cover already in hand.
+   *
+   * Safe because every candidate answered the same `isbn:` query — see
+   * `coverFrom`. Not verified over the network here on purpose: this is a
+   * *proposal* a person is about to look at, and the review screen renders the
+   * cover, so a bad one is visible rather than silent. The backfill, which writes
+   * without anyone looking, does verify.
+   */
+  const best = candidates[0]
+    ? { ...candidates[0], coverUrl: candidates[0].coverUrl ?? coverFrom(candidates) }
+    : undefined;
   if (!best) {
     return {
       ...withCode,
