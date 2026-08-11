@@ -24,3 +24,8 @@ dist/
 # repo publishes its outputs; this one serves from D1 and Workers assets, so
 # nothing here needs a file to survive in a commit.
 runtime/
+
+# Agent worktrees: throwaway git repos created by Claude Code sessions.
+# They were committed by accident on 2026-08-10 as embedded repos (gitlinks),
+# which clone as empty directories and confuse every later status.
+.claude/worktrees/

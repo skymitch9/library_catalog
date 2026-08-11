@@ -3,7 +3,7 @@
  * nothing else has to.
  */
 
-import type { ScanJob, ScanLine } from '@lc/core';
+import type { Role, ScanJob, ScanLine } from '@lc/core';
 import { getIdToken } from './lib/firebase.js';
 
 export class ApiError extends Error {
@@ -592,7 +592,13 @@ export const api = {
    * without `manageUsers` outright. The UI disables those buttons too, but the
    * server is the one that decides — see `apps/worker/src/routes/users.ts`.
    */
-  setRole: (userId: number, role: 'owner' | 'reader' | 'pending') =>
+  // ⚠️ `Role`, not a hand-written union. This listed the three role names
+  // literally until 2026-08-10, and adding `manager` to core is what surfaced
+  // it: the People page derives its buttons from ROLES, so the new role
+  // appeared in the UI and then failed to typecheck here. That is the good
+  // outcome — the same drift with a wider signature would have compiled and
+  // 400d at runtime.
+  setRole: (userId: number, role: Role) =>
     request<{ user: Person }>(`/api/users/${userId}/role`, {
       method: 'PATCH',
       body: JSON.stringify({ role }),

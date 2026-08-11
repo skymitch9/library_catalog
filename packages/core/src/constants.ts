@@ -11,7 +11,19 @@
  * Nothing under src/ may import from index.ts.
  */
 
-export const ROLES = ['owner', 'reader', 'pending'] as const;
+/**
+ * ⚠️ Mirrored by a CHECK constraint on `app_user.role` — migration 0008 is the
+ * current definition. Adding a value here without a migration means the role is
+ * assignable in the UI, passes zod, and then fails at the write with a bare
+ * SQLITE_CONSTRAINT.
+ *
+ * `manager` is everything an owner can do **except decide who is in**. It exists
+ * because ownership had been doing two unrelated jobs: keeping the catalog, and
+ * controlling the guest list. Two people were `owner` purely so both could add
+ * books, which made "who can let someone in" a question with two answers. The
+ * board game catalog carries the same role, with the same rule.
+ */
+export const ROLES = ['owner', 'manager', 'reader', 'pending'] as const;
 export type Role = (typeof ROLES)[number];
 
 /**

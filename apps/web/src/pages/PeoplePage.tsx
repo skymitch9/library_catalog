@@ -32,7 +32,9 @@ import { api, type Me, type Person } from '../api.js';
  */
 
 const ROLE_BLURB: Record<Role, string> = {
-  owner: 'Everything: add and edit books, scan, export, and decide who else gets in.',
+  owner: 'Everything a manager can do, plus deciding who else gets in.',
+  manager:
+    'Add and edit books, scan, export, run research. Cannot change anyone’s role.',
   reader: 'Browse the shelf, track their own reading, and leave reviews. Changes nothing else.',
   pending: 'Signed in, and sees a holding screen until an owner lets them in.',
 };
