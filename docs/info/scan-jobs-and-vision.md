@@ -1,9 +1,15 @@
 # Scan jobs and the shelf photo — Information Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
-> Last verified: **2026-08-10** — every number below was produced by the real
-> `POST /api/scan-jobs/shelf` route against a local worker on `127.0.0.1:8793`,
-> with the real `ANTHROPIC_API_KEY`, and the whole flow was driven in a browser.
+> Last verified: **2026-08-11**. §1, §2 and §4 were verified 2026-08-10 against
+> the real `POST /api/scan-jobs/shelf` route on a local worker with the real
+> `ANTHROPIC_API_KEY`, driven in a browser. **§3 and §3b were verified
+> 2026-08-11** against a local worker and live Open Library — every timing and
+> every state transition below was measured, not reasoned.
+>
+> ⚠️ **Not verified for §3/§3b: the browser.** The review screen's polling and
+> auto-continue effect were exercised at the API layer only; no shelf
+> photograph was taken, because that half needs a paid vision call.
 
 Two features, in the order they had to be built: a scan **job** that survives a
 locked phone, and then a **shelf photograph** that is allowed to cost money
@@ -131,23 +137,58 @@ only in a dashboard is a cost nobody ever sees.
 
 ---
 
-## 3. Why lookups are one line at a time
+## 3. The first lookup pass is automatic
 
-The sibling Board Game Catalog enriches a whole photo server-side in chunks
-behind `waitUntil`, with staleness detection and a resume path — machinery it
-grew after three shelves silently died against the **50-subrequest-per-
-invocation** ceiling. This route does not copy that. Two book-specific reasons:
+> ⚠️ **Reversed on 2026-08-11.** This section used to be titled "Why lookups are
+> one line at a time" and argued that every external search should be a button.
+> The owner overruled it: *"we keep having to manually engage the lookup feature;
+> in the board game project the first pass was always automatic and made for a
+> better experience."* The two facts the old argument rested on are still true
+> and were never the point — see below.
 
-1. **Half this library is not in Open Library** (measured, 14 of 30). Firing
-   fifteen searches to have most answer nothing — or answer with a different
-   book that shares a word — spends the budget to make the review list *worse*.
-2. **The spine text is often wrong**, so the useful lookup is the one made after
-   a person corrects it. `POST /:id/lines/:i/lookup?q=` is exactly that.
+A photograph now gets **vision, the local catalog match, and a first Open
+Library pass**, without anybody pressing anything. The mechanism is the sibling
+Board Game Catalog's, ported rather than re-derived:
 
-So a photograph gets **vision plus the local catalog match** — free, instant,
-and the answer that actually prevents duplicates — and every external search is
-a separate request the client makes per line. No chunking, no heartbeat, no
-stale-job recovery, and no ceiling to hit.
+| | |
+|---|---|
+| Barcode | already synchronous inside the append. Unchanged |
+| Photo | `waitUntil(runLookupPass)` kicked from the upload response |
+| Continuing | `POST /:id/enrich`, asked for by the review screen |
+| Chunk | `LINES_PER_RUN = 8`, then the job parks at `read` |
+| Heartbeat | `processed_at`; `STALE_AFTER_MS = 90_000` lets a retry replace a dead pass |
+| Upstream | **one request at a time**, `MIN_GAP_MS = 1100` apart — `packages/isbn/src/throttle.ts` |
+
+`read` already meant "lines exist, not all looked up", so continuing needed no
+new status and **no migration**.
+
+### What the old argument got right, and where it belongs
+
+1. **Half this library is not in Open Library** (measured, 14 of 30). True — and
+   a search that answers nothing now costs a row saying "not in Open Library",
+   which is information arrived at without a tap. It was never a reason to make
+   the person generate it by hand.
+2. **The spine text is often wrong**, so the useful search is the one made after
+   a person corrects it. Also true, and this is the real conclusion: the manual
+   `POST /:id/lines/:i/lookup?q=` survives as the **repair bench**. It is no
+   longer how a line gets looked up; it is how a line gets looked up *again,
+   with better words*. Both paths call the same `lookupLine`, so a hand-made
+   lookup and an automatic one score identically.
+
+### Measured, 2026-08-11, against the local dev worker
+
+| | |
+|---|---|
+| One chunk of 8 spine lookups | **8885 ms** — i.e. 1.11 s apart, confirming the throttle |
+| Concurrent upstream requests | **1** |
+| Ten lines | two chunks (8 then 2), ending at `review`; a third `/enrich` returns `running: false` |
+| A row dismissed or retyped mid-pass | **survives** — the pass re-reads before writing and skips any line that stopped asking the same question |
+
+That last row is the one hazard the automatic pass introduces and the only one
+worth remembering: a person reviews *while* the pass runs, and both write the
+same JSON blob. `runLookupPass` merges into a re-read job rather than writing
+back the snapshot it started from. Without that, nine seconds of a person's
+decisions get silently undone.
 
 ### The matcher, measured
 
@@ -172,6 +213,48 @@ found nothing usable where the bare series name would likely have. The spine
 prints the number, the prompt is told not to strip it, and the search passes it
 through — the fix, when someone wants one, is a second lookup rung that retries
 without a trailing volume number, not a change to what the model reports.
+
+---
+
+## 3b. Dead ends: the rule that four separate bugs came from
+
+> Added 2026-08-11, after four owner reports that turned out to be one defect.
+
+**The review screen gated its buttons on how a row *arrived* (`via === 'spine'`)
+and on whether a service had *answered* (`state === 'found'`), instead of on
+what the row still *needed*.** Wherever the system had no answer, the person was
+given no options — a row with no buttons on it at all.
+
+| Row | What used to happen | Now |
+|---|---|---|
+| Already in the catalog (`owned`) | "Already yours", **no buttons**. A second physical copy could only be recorded by leaving the sweep, finding the book and adding a copy by hand | Names and links the work, one-tap **Add 2nd copy**, one-tap **Leave it** |
+| Board book, ISBN resolves to nothing | `not_found`, **no Add, no Edit** — barcode rows were denied both | **Type it in** → **Add**. The scanned ISBN survives the edit and reaches the edition |
+| Shop barcode / SKU (non-Bookland) | `skipped` — silent, settled, buttonless | `unresolvable` — visible, typeable, addable. Never looked up: there is no registry of SKUs |
+| Same code already on this sweep | Server refused with `duplicate: true`; **nothing read the flag**, so it looked like a misfire | Prompts: "Already on this sweep — do you have a second copy?" `allowDuplicate` appends a new line |
+
+The rule is now explicit in `@lc/core`, and the review screen and
+`catalog-add.ts` both read the same predicates so a button can never offer
+something the add path then refuses:
+
+| | |
+|---|---|
+| `searchText(line)` | the words a title search would use — `null` when the only text is the scanned code |
+| `proposedTitle` / `proposedAuthors` | what the row would be filed under; `null` means nobody has said yet |
+| `isAddable(line)` | has a title and an author, **or** already names a work (the second-copy path) |
+
+⚠️ **`proposedTitle` is the guard that stops a book being catalogued as
+"9780241361221".** `blankLine` seeds a barcode line's `text` with the code, so
+the old `resolvedTitle ?? text` fallback would have created a work by that name
+the moment Add was un-gated.
+
+⚠️ **Two costs, both accepted deliberately.** A stray UPC read now costs one
+"Not wanted" tap where it used to be silent — reverting is one branch in
+`resolveBarcode`. And `owned` rows are no longer settled, so a sweep of books
+you already have reads "12 still to sort" rather than "all sorted"; that is the
+point, since each is now a question.
+
+⚠️ **The price add-on stays `skipped`, settled and silent.** Five digits beside
+the real barcode is never a book, and there is no question to ask about it.
 
 ---
 

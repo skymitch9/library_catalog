@@ -40,6 +40,7 @@
 
 import { cleanAudiobookTitle } from '@lc/core';
 import type { BookCandidate, ResolveOptions } from './resolve.js';
+import { schedule } from './throttle.js';
 
 interface OlSearchDoc {
   key?: string;
@@ -77,11 +78,21 @@ function toCandidate(d: OlSearchDoc): BookCandidate | null {
   };
 }
 
+/**
+ * ⚠️ Every search goes through `schedule`, and that is load-bearing.
+ *
+ * The automatic lookup pass calls this eight times at once from a single
+ * `Promise.all`. The queue in `throttle.ts` turns that into one request at a
+ * time — read its header before changing anything here, and do not add a
+ * caller that reaches Open Library around it.
+ */
 async function olSearch(url: string, opts: ResolveOptions): Promise<BookCandidate[]> {
   const doFetch = opts.fetchImpl ?? fetch;
-  const res = await doFetch(url, {
-    headers: { 'User-Agent': opts.userAgent ?? 'library_catalog (+private)' },
-  });
+  const res = await schedule(() =>
+    doFetch(url, {
+      headers: { 'User-Agent': opts.userAgent ?? 'library_catalog (+private)' },
+    }),
+  );
   if (!res.ok) throw new Error(`openlibrary search ${res.status}`);
   const body = (await res.json()) as { docs?: OlSearchDoc[] };
   return (body.docs ?? []).map(toCandidate).filter((c): c is BookCandidate => c !== null);
