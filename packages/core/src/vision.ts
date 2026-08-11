@@ -74,6 +74,16 @@ export interface ShelfBook {
   position: number;
   /** Why it is uncertain: glare, partly hidden, stylised type, spine too worn. */
   note: string | null;
+  /**
+   * The three below are populated by the COVER read and left undefined by the
+   * shelf read — a spine almost never prints them. Optional rather than
+   * nullable so "a shelf never asked" stays distinguishable from "the cover
+   * showed none", which is the same distinction the gap queue draws between an
+   * unanswered question and a recorded answer.
+   */
+  series?: string | null;
+  volume?: number | null;
+  publisher?: string | null;
 }
 
 /**
@@ -148,6 +158,45 @@ export const SHELF_SCHEMA = {
 } as const;
 
 /**
+ * One cover, and three fields a spine cannot give you.
+ *
+ * ⚠️ `series`, `volume` and `publisher` are the entire reason this is a separate
+ * mode rather than "the shelf prompt, but point it at one book". They are the
+ * discriminators `isbn-ladder.md` §4.4 demands: `Unsouled` matched a different
+ * book at title 1.00 AND author 1.00, and only the **publisher** exposed it.
+ * A spine rarely carries any of them; a cover usually carries two.
+ *
+ * Every one is nullable and the prompt says to report only what is printed —
+ * a cover with no series is the ordinary case, not a failure.
+ */
+export const COVER_SCHEMA = {
+  type: 'object',
+  properties: {
+    books: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          text: { type: 'string' },
+          author: { type: ['string', 'null'] },
+          series: { type: ['string', 'null'] },
+          volume: { type: ['number', 'null'] },
+          publisher: { type: ['string', 'null'] },
+          position: { type: 'integer' },
+          confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
+          note: { type: ['string', 'null'] },
+        },
+        required: ['text', 'author', 'series', 'volume', 'publisher', 'position', 'confidence', 'note'],
+        additionalProperties: false,
+      },
+    },
+    unreadable: { type: 'boolean' },
+  },
+  required: ['books', 'unreadable'],
+  additionalProperties: false,
+} as const;
+
+/**
  * The system prompt for shelf reads.
  *
  * ⚠️ Rewritten, not ported. The board game version asks for box titles across
@@ -156,6 +205,57 @@ export const SHELF_SCHEMA = {
  * matching, and a series name usually sits beside the volume title so a naive
  * read returns the series for every book on the shelf.
  */
+/**
+ * One book, photographed front-on.
+ *
+ * ⚠️ A separate prompt from `SHELF_SYSTEM`, and not for tidiness. A cover and a
+ * spine are different reading problems:
+ *
+ * - A spine is rotated, 15mm tall, and usually shows title + author and nothing
+ *   else. A cover is flat, legible, and carries the subtitle, the series, the
+ *   volume, often the publisher — the fields that actually discriminate when the
+ *   catalog goes looking (`isbn-ladder.md` §4.4: title and author agreeing at
+ *   1.00 is not enough on its own).
+ * - A shelf answer is a LIST and its hardest question is "how many books".
+ *   A cover answer is ONE book and its hardest question is "which of the words
+ *   on this cover is the title".
+ *
+ * Feeding a cover to the shelf prompt works and throws away the discriminators;
+ * feeding a shelf to this one returns one book out of thirty.
+ */
+export const COVER_SYSTEM = `You are reading the FRONT COVER of a single book from a photograph.
+
+Return exactly one entry — the book whose cover this is. Not the books behind it,
+not a book named in a cover quote or a "by the author of" line.
+
+Report:
+- text:   the TITLE exactly as printed on the cover. If the cover shows a series
+          name and a volume title, the volume title is the title. Do not merge
+          them, and do not expand abbreviations.
+- author: the author exactly as printed, or null if the cover genuinely shows
+          none. Do NOT infer an author you cannot see — a guessed author is
+          worse than none, because it will be trusted.
+- series: the series name if the cover states one, else null.
+- volume: the volume number if the cover states one, as a number, else null.
+          Only when it is printed. Never inferred from the title's shape.
+- publisher: the publisher or imprint if printed on the front, else null.
+- position: always 1.
+- confidence: high | medium | low.
+- note: why it is uncertain — glare, angle, stylised type, partly out of frame —
+        or null.
+
+Rules:
+- Report only what is printed. Never correct spelling, never complete a title
+  from knowledge of the book, never translate.
+- A cover quote, an award sticker, a tagline and a "soon to be a major series"
+  banner are none of them the title.
+- The largest text is usually the title, but not always — an author's name is
+  set larger than the title on many genre covers. Prefer position and
+  typography together over size alone.
+- Set unreadable to true ONLY when the photograph itself has defeated you — too
+  dark, too blurred, too angled, or not a book cover at all — and return an
+  empty list with it.`;
+
 export const SHELF_SYSTEM = `You are reading the spines of books on a shelf from a photograph.
 
 Return one entry per distinct book, left to right (or top to bottom for a stack).

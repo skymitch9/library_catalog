@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { SHELF_LONG_EDGE, type ScanJob } from '@lc/core';
+import { PHOTO_LONG_EDGE, SHELF_LONG_EDGE, type ScanJob } from '@lc/core';
 import { api } from '../api.js';
 import {
   CameraError,
@@ -58,6 +58,27 @@ import { addPath, replaceUrl, scansPath, Link, type AddMode } from '../router.js
  * warning per book. A *typed* one explains itself, because silence there reads
  * as the button being broken.
  */
+
+/**
+ * The four ways in, as a table rather than four hand-written buttons.
+ *
+ * ⚠️ This is the sibling Board Game Catalog's `ADD_MODES` with book nouns, and
+ * copying it rather than re-deriving it is the point — that app settled the
+ * shape after its add row "reached five buttons of equal weight by accretion".
+ * Same order, same markup, same `.scan-mode` cards, same one-line blurb under
+ * each label. A tab with no blurb makes the reader open it to find out what it
+ * does, which on a phone is the expensive way to answer a question.
+ *
+ * `costs` is the only field this app adds: two of the four spend money, and a
+ * reader who cannot spend never sees them. Hidden rather than disabled — a
+ * control that exists and refuses is worse than one that was never offered.
+ */
+const ADD_MODES: { id: AddMode; label: string; blurb: string; costs?: true }[] = [
+  { id: 'scan', label: 'Barcode', blurb: 'Exact, free, and keeps scanning. Best when the book has one.' },
+  { id: 'photo', label: 'Shelf photo', blurb: 'Reads every spine at once. Best for bulk.', costs: true },
+  { id: 'single', label: 'One book', blurb: 'Reads the title off a single cover.', costs: true },
+  { id: 'type', label: 'Type a title', blurb: 'No code, no book to hand. Looks the rest up as you type.' },
+];
 
 export function ScanPage({
   onDone,
@@ -255,7 +276,12 @@ export function ScanPage({
     setCost(null);
     try {
       const photo = await get();
-      const res = await api.scanShelf(photo.data, photo.mediaType);
+      // One book and a shelf are the same pipeline with different prompts, so
+      // the only thing that forks here is which endpoint is asked.
+      const res =
+        mode === 'single'
+          ? await api.scanSingle(photo.data, photo.mediaType)
+          : await api.scanShelf(photo.data, photo.mediaType);
       acceptJob(res.job);
       stopCamera();
       setCost(
@@ -285,35 +311,19 @@ export function ScanPage({
   }
 
   const tabs = (
-    <div className="row seg" role="tablist" aria-label="How to add">
-      <button
-        role="tab"
-        aria-selected={mode === 'scan'}
-        className={mode === 'scan' ? 'primary' : undefined}
-        onClick={() => setMode('scan')}
-      >
-        Scan a barcode
-      </button>
-      {/* Hidden rather than disabled for a reader: a control that exists and
-          refuses is worse than one that was never offered. */}
-      {canSpend && (
+    <div className="scan-modes" role="tablist" aria-label="How to add">
+      {ADD_MODES.filter((m) => !m.costs || canSpend).map((m) => (
         <button
+          key={m.id}
           role="tab"
-          aria-selected={mode === 'photo'}
-          className={mode === 'photo' ? 'primary' : undefined}
-          onClick={() => setMode('photo')}
+          aria-selected={mode === m.id}
+          className={mode === m.id ? 'scan-mode scan-mode--on' : 'scan-mode'}
+          onClick={() => setMode(m.id)}
         >
-          Photograph a shelf
+          <strong>{m.label}</strong>
+          <span className="muted">{m.blurb}</span>
         </button>
-      )}
-      <button
-        role="tab"
-        aria-selected={mode === 'type'}
-        className={mode === 'type' ? 'primary' : undefined}
-        onClick={() => setMode('type')}
-      >
-        Type it in
-      </button>
+      ))}
     </div>
   );
 
@@ -400,8 +410,11 @@ export function ScanPage({
       ) : (
         <>
           <p className="muted small">
-            Point at one shelf, straight on, with the spines filling the frame. Each photo
-            costs about a penny to read, so it is one deliberate tap — never automatic.
+            {mode === 'single'
+              ? 'Point at the front cover, straight on, filling the frame. A cover also gives the series and volume, which a spine rarely prints.'
+              : 'Point at one shelf, straight on, with the spines filling the frame.'}{' '}
+            Each photo costs about a penny to read, so it is one deliberate tap — never
+            automatic.
           </p>
           <div className="row">
             {running ? (
@@ -416,11 +429,17 @@ export function ScanPage({
                       // ⚠️ A live frame grab, not the photo library. It is the
                       // one capture path on iOS that provably writes nothing to
                       // the device — see lib/camera.ts.
-                      return captureFrame(video, SHELF_LONG_EDGE);
+                      // ⚠️ A cover is one large, flat piece of text; a shelf is
+                      // thirty rotated 15mm ones. Sending a cover at shelf
+                      // resolution costs more for nothing.
+                      return captureFrame(
+                        video,
+                        mode === 'single' ? PHOTO_LONG_EDGE : SHELF_LONG_EDGE,
+                      );
                     })
                   }
                 >
-                  {busy === 'photo' ? 'Reading…' : 'Read this shelf'}
+                  {busy === 'photo' ? 'Reading…' : mode === 'single' ? 'Read this book' : 'Read this shelf'}
                 </button>
                 <button onClick={stopCamera} disabled={busy !== null}>
                   Stop camera
@@ -451,7 +470,9 @@ export function ScanPage({
                   const file = e.target.files?.[0];
                   e.target.value = '';
                   if (!file) return;
-                  void sendPhoto(async () => fileToPhoto(file, SHELF_LONG_EDGE));
+                  void sendPhoto(async () =>
+                    fileToPhoto(file, mode === 'single' ? PHOTO_LONG_EDGE : SHELF_LONG_EDGE),
+                  );
                 }}
               />
             </label>
@@ -485,7 +506,9 @@ export function ScanPage({
         <p className="muted small">
           {mode === 'scan'
             ? 'Point the camera at the barcode on the back. The five-digit price code beside it is skipped automatically.'
-            : 'Take a photo of a shelf, or pick one, and the books on it are read into a list you can check.'}
+            : mode === 'single'
+              ? 'Photograph one book’s cover, or pick a photo, and what it says is read into a row you can check.'
+              : 'Take a photo of a shelf, or pick one, and the books on it are read into a list you can check.'}
         </p>
       )}
     </main>

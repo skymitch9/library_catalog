@@ -195,9 +195,20 @@ export function App() {
               catalog, not an action performed on it. Shown to readers as well as
               owners — seeing what the shelf does not know costs nothing; the
               buttons that spend money are gated on the page itself. */}
-          <Link to="/queue" className={route.name === 'queue' ? 'primary chip' : 'chip'}>
-            Missing
-          </Link>
+          {/* ⚠️ Shown only while there is something behind it, with the count on
+              the face — the sibling's rule, and its reasoning transfers exactly:
+              "a screen with nothing on it does not earn a permanent slot, and
+              this is a better answer to a 360px-wide phone than shrinking the
+              type until five links fit."
+
+              `chores == null` means the count could not be taken, and shows the
+              link WITHOUT a number. Treating that as zero would hide a worklist
+              because a query failed. */}
+          {(me.chores == null || me.chores.missingDetails > 0) && (
+            <Link to="/queue" className={route.name === 'queue' ? 'primary chip' : 'chip'}>
+              Missing{me.chores ? ` (${me.chores.missingDetails})` : ''}
+            </Link>
+          )}
         </nav>
         <button onClick={() => void signOutNow()}>Sign out</button>
       </header>

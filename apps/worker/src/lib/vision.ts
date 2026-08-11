@@ -1,5 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { SHELF_SCHEMA, SHELF_SYSTEM, type ShelfBook, type ShelfReading } from '@lc/core';
+import {
+  COVER_SCHEMA,
+  COVER_SYSTEM,
+  SHELF_SCHEMA,
+  SHELF_SYSTEM,
+  type ShelfBook,
+  type ShelfReading,
+} from '@lc/core';
 
 /**
  * Reading books off a photograph.
@@ -135,7 +142,16 @@ function explain(err: unknown): VisionError {
  * the free ISBN rungs is instant and costs nothing; asking the model to look
  * fifteen books up would take minutes and be charged per search.
  */
-export async function readShelf(apiKey: string | undefined, photo: Photo): Promise<ShelfReading> {
+/**
+ * @param kind `'shelf'` reads many spines; `'cover'` reads one front cover and
+ *   also returns series, volume and publisher. See the two prompts in
+ *   `packages/core/src/vision.ts` for why they are not one prompt.
+ */
+export async function readShelf(
+  apiKey: string | undefined,
+  photo: Photo,
+  kind: 'shelf' | 'cover' = 'shelf',
+): Promise<ShelfReading> {
   if (!apiKey) {
     throw new VisionError(
       'No Anthropic API key is configured, so photos cannot be read. Set ANTHROPIC_API_KEY in .dev.vars and run `npm run secrets:push`.',
@@ -156,14 +172,17 @@ export async function readShelf(apiKey: string | undefined, photo: Photo): Promi
         // Structured output, so there is no "please reply with JSON", no
         // extract-the-code-fence, and no retry-on-bad-parse. The API constrains
         // the answer to SHELF_SCHEMA or fails loudly.
-        format: { type: 'json_schema', schema: SHELF_SCHEMA as unknown as Record<string, unknown> },
+        format: {
+          type: 'json_schema',
+          schema: (kind === 'cover' ? COVER_SCHEMA : SHELF_SCHEMA) as unknown as Record<string, unknown>,
+        },
       },
       // ⚠️ No `cache_control` here on purpose. SHELF_SYSTEM is around 400
       // tokens and the minimum cacheable prefix on this model is 512, so a
       // breakpoint would be silently ignored — `cache_creation_input_tokens: 0`
       // and no error. A marker that does nothing is worse than no marker,
       // because the next person reads it as evidence that caching is working.
-      system: SHELF_SYSTEM,
+      system: kind === 'cover' ? COVER_SYSTEM : SHELF_SYSTEM,
       messages: [
         {
           role: 'user',
@@ -172,7 +191,13 @@ export async function readShelf(apiKey: string | undefined, photo: Photo): Promi
               type: 'image',
               source: { type: 'base64', media_type: photo.mediaType, data: photo.data },
             },
-            { type: 'text', text: 'List every book you can read on this shelf.' },
+            {
+              type: 'text',
+              text:
+                kind === 'cover'
+                  ? 'Read this book cover.'
+                  : 'List every book you can read on this shelf.',
+            },
           ],
         },
       ],
@@ -187,13 +212,15 @@ export async function readShelf(apiKey: string | undefined, photo: Photo): Promi
   if (message.stop_reason === 'refusal') {
     const category = message.stop_details?.category;
     throw new VisionError(
-      `The model declined to read that image${category ? ` (${category})` : ''}. Photograph the shelf rather than anything else in the room.`,
+      `The model declined to read that image${category ? ` (${category})` : ''}. Photograph the ${kind === 'cover' ? 'book' : 'shelf'} rather than anything else in the room.`,
       422,
     );
   }
   if (message.stop_reason === 'max_tokens') {
     throw new VisionError(
-      'That shelf produced more than one answer can hold. Photograph it in two halves.',
+      kind === 'cover'
+        ? 'That cover produced more than one answer can hold. Try a straighter, closer photograph.'
+        : 'That shelf produced more than one answer can hold. Photograph it in two halves.',
       502,
     );
   }

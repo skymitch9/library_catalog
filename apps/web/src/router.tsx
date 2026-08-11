@@ -45,8 +45,8 @@ import { DEFAULT_PREFS, SORTS } from './lib/prefs.js';
  * permission on every route change (WebKit #215884), and two of these three
  * tabs open a camera. Splitting them would ask twice.
  */
-export type AddMode = 'scan' | 'photo' | 'type';
-const ADD_MODES: readonly AddMode[] = ['scan', 'photo', 'type'];
+export type AddMode = 'scan' | 'single' | 'photo' | 'type';
+const ADD_MODES: readonly AddMode[] = ['scan', 'single', 'photo', 'type'];
 
 /**
  * What the collection is showing, as opposed to which screen it is.

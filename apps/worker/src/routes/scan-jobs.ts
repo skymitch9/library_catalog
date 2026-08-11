@@ -324,111 +324,24 @@ export const scanJobRoutes = new Hono<AppBindings>()
    * which fact it depends on, so widening `scan` later does not quietly widen
    * "may spend money" with it.
    */
-  .post('/shelf', requireCapability('runResearch'), async (c) => {
-    const parsed = photoSchema.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json(badRequest(parsed.error.issues), 400);
-    if (tooLarge(parsed.data.data)) {
-      return c.json(badRequest('That photo is too large. Downscale it before sending.'), 413);
-    }
+  .post('/shelf', requireCapability('runResearch'), (c) => readPhoto(c, 'shelf'))
 
-    const job = await createScanJob(c.env.DB, {
-      mode: 'shelf',
-      createdBy: c.get('user').id,
-      status: 'reading',
-    });
+  /**
+   * ONE book, photographed front-on.
+   *
+   * ⚠️ Same pipeline, different prompt — and the difference earns its keep. A
+   * cover prints the series, the volume and often the publisher; a spine prints
+   * almost none of them. Those are exactly the discriminators §4.4 says a title
+   * and an author cannot substitute for, so a single-cover read arrives with
+   * more to match on than a shelf read of the same book.
+   *
+   * `mode: 'single'` was already legal in migration 0001's CHECK constraint, so
+   * this needed no migration — 0001 anticipated it.
+   *
+   * The photo is never stored here either.
+   */
+  .post('/single', requireCapability('runResearch'), (c) => readPhoto(c, 'cover'))
 
-    let reading;
-    try {
-      reading = await readShelf(c.env.ANTHROPIC_API_KEY, {
-        data: parsed.data.data,
-        mediaType: parsed.data.mediaType as 'image/jpeg' | 'image/png' | 'image/webp',
-      });
-    } catch (err) {
-      const e = err instanceof VisionError ? err : new VisionError(String(err), 502, true);
-      // The job is kept, not deleted. It records that a photo was taken and
-      // failed, which is the difference between "nothing happened" and "you
-      // paid for nothing" — and `error` is the only place that says which.
-      await updateScanJob(c.env.DB, job.id, { status: 'failed', error: e.message });
-      return c.json({ error: 'vision_failed', detail: e.message, retryable: e.retryable, jobId: job.id }, e.status as 502);
-    }
-
-    // Keep exactly what the model said, before anything matched it. This is the
-    // only record of what was actually read, and the first thing to look at
-    // when a match turns out to be wrong.
-    await updateScanJob(c.env.DB, job.id, {
-      status: 'read',
-      rawTitles: JSON.stringify(reading.books),
-      processed: true,
-    });
-
-    /*
-     * Match against the catalog we already hold.
-     *
-     * This is the answer that earns the whole screen: re-adding books you own is
-     * the obvious failure mode of bulk intake, and it is settled here for free,
-     * before anyone is asked to tick anything. Two D1 reads for the whole photo,
-     * folded once — see `buildWorkIndex`, which exists so nobody writes a
-     * second, faster, subtly different matcher when the loop starts to hurt.
-     */
-    const [works, aliases] = await Promise.all([
-      listWorksForMatching(c.env.DB),
-      listWorkAliases(c.env.DB),
-    ]);
-    const index = buildWorkIndex(works, aliases);
-
-    const lines: ScanLine[] = reading.books.map((book, i) => {
-      const line = blankLine(i + 1, 'spine', book.text);
-      line.author = book.author;
-      line.confidence = book.confidence;
-      line.note = book.note;
-
-      const match = matchIndexedWork(index, book.text, book.author);
-      if (match) {
-        return {
-          ...line,
-          state: 'owned',
-          existingWorkId: match.work.id,
-          existingTitle: match.work.title,
-          // A title-only match on a spine that showed no author is the shape
-          // that files a genuinely new book under "already yours", where it is
-          // lost rather than merely wrong. Say so on the row.
-          detail:
-            match.authorSimilarity === null && match.via !== 'exact'
-              ? 'Matched on the title alone — the spine showed no author. Check this one.'
-              : null,
-        };
-      }
-
-      return {
-        ...line,
-        detail: 'Not in the catalog. Look it up, or add it by hand.',
-      };
-    });
-
-    const updated = await updateScanJob(c.env.DB, job.id, {
-      lines,
-      status: 'review',
-      error: reading.unreadable
-        ? 'The model could not read that photograph. Try again with more light, or closer.'
-        : null,
-    });
-
-    return c.json(
-      {
-        job: updated ?? job,
-        unreadable: reading.unreadable,
-        // Returned on purpose, and shown. The person spending the money is the
-        // person holding the phone, and a cost that lives only in a dashboard
-        // is a cost nobody ever sees.
-        usage: {
-          inputTokens: reading.inputTokens,
-          outputTokens: reading.outputTokens,
-          estimatedCents: reading.estimatedCents,
-        },
-      },
-      201,
-    );
-  })
 
   /**
    * Ask Open Library about one line.
@@ -570,3 +483,126 @@ export const scanJobRoutes = new Hono<AppBindings>()
     const ok = await deleteScanJob(c.env.DB, Number(c.req.param('id')));
     return ok ? c.json({ ok: true }) : c.json({ error: 'not_found' }, 404);
   });
+
+/**
+ * The shared body of `/shelf` and `/single`.
+ *
+ * ⚠️ Extracted rather than duplicated. Everything after the vision call is
+ * identical for both — create a job, keep the raw reading before anything
+ * matched it, match each line against the catalog, hand back proposals. The
+ * ONLY difference is which prompt and schema the model was given, and letting
+ * that one difference fork a hundred lines is how the two drift apart.
+ *
+ * `kind` also picks the stored `scan_job.mode`: a cover read is recorded as
+ * `'single'`, which migration 0001's CHECK constraint already allowed.
+ */
+async function readPhoto(c: any, kind: 'shelf' | 'cover') {
+  const parsed = photoSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json(badRequest(parsed.error.issues), 400);
+  if (tooLarge(parsed.data.data)) {
+    return c.json(badRequest('That photo is too large. Downscale it before sending.'), 413);
+  }
+
+  const job = await createScanJob(c.env.DB, {
+    mode: kind === 'cover' ? 'single' : 'shelf',
+    createdBy: c.get('user').id,
+    status: 'reading',
+  });
+
+  let reading;
+  try {
+    reading = await readShelf(
+      c.env.ANTHROPIC_API_KEY,
+      {
+        data: parsed.data.data,
+        mediaType: parsed.data.mediaType as 'image/jpeg' | 'image/png' | 'image/webp',
+      },
+      kind,
+    );
+  } catch (err) {
+    const e = err instanceof VisionError ? err : new VisionError(String(err), 502, true);
+    // The job is kept, not deleted. It records that a photo was taken and
+    // failed, which is the difference between "nothing happened" and "you
+    // paid for nothing" — and `error` is the only place that says which.
+    await updateScanJob(c.env.DB, job.id, { status: 'failed', error: e.message });
+    return c.json({ error: 'vision_failed', detail: e.message, retryable: e.retryable, jobId: job.id }, e.status as 502);
+  }
+
+  // Keep exactly what the model said, before anything matched it. This is the
+  // only record of what was actually read, and the first thing to look at
+  // when a match turns out to be wrong.
+  await updateScanJob(c.env.DB, job.id, {
+    status: 'read',
+    rawTitles: JSON.stringify(reading.books),
+    processed: true,
+  });
+
+  /*
+   * Match against the catalog we already hold.
+   *
+   * This is the answer that earns the whole screen: re-adding books you own is
+   * the obvious failure mode of bulk intake, and it is settled here for free,
+   * before anyone is asked to tick anything. Two D1 reads for the whole photo,
+   * folded once — see `buildWorkIndex`, which exists so nobody writes a
+   * second, faster, subtly different matcher when the loop starts to hurt.
+   */
+  const [works, aliases] = await Promise.all([
+    listWorksForMatching(c.env.DB),
+    listWorkAliases(c.env.DB),
+  ]);
+  const index = buildWorkIndex(works, aliases);
+
+  const lines: ScanLine[] = reading.books.map((book, i) => {
+    const line = blankLine(i + 1, 'spine', book.text);
+    line.author = book.author;
+    line.confidence = book.confidence;
+    line.note = book.note;
+
+    const match = matchIndexedWork(index, book.text, book.author);
+    if (match) {
+      return {
+        ...line,
+        state: 'owned',
+        existingWorkId: match.work.id,
+        existingTitle: match.work.title,
+        // A title-only match on a spine that showed no author is the shape
+        // that files a genuinely new book under "already yours", where it is
+        // lost rather than merely wrong. Say so on the row.
+        detail:
+          match.authorSimilarity === null && match.via !== 'exact'
+            ? 'Matched on the title alone — the spine showed no author. Check this one.'
+            : null,
+      };
+    }
+
+    return {
+      ...line,
+      detail: 'Not in the catalog. Look it up, or add it by hand.',
+    };
+  });
+
+  const updated = await updateScanJob(c.env.DB, job.id, {
+    lines,
+    status: 'review',
+    error: reading.unreadable
+      ? 'The model could not read that photograph. Try again with more light, or closer.'
+      : null,
+  });
+
+  return c.json(
+    {
+      job: updated ?? job,
+      unreadable: reading.unreadable,
+      // Returned on purpose, and shown. The person spending the money is the
+      // person holding the phone, and a cost that lives only in a dashboard
+      // is a cost nobody ever sees.
+      usage: {
+        inputTokens: reading.inputTokens,
+        outputTokens: reading.outputTokens,
+        estimatedCents: reading.estimatedCents,
+      },
+    },
+    201,
+  );
+}
+

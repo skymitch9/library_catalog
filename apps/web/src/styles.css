@@ -837,6 +837,8 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
   flex: none;
   border: 1px dashed var(--line-strong);
   border-radius: 3px;
+}
+
 /* --- the details queue ---------------------------------------------------- */
 
 /* The tally, not the list, is what this page is for — so it gets to look like a
@@ -877,3 +879,61 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
   font-size: 1rem;
   margin: 0.15rem 0;
 }
+
+/* --- the add-screen mode picker ------------------------------------------ */
+
+/*
+ * Ported from the sibling Board Game Catalog's `.scan-modes`, structure and all,
+ * rather than re-invented — that app settled this shape after its add row
+ * "reached five buttons of equal weight by accretion". Tabs are small panels,
+ * like every other pressable thing here, and each carries a one-line blurb so
+ * nobody has to open a tab to learn what it does.
+ *
+ * ⚠️ The colours are this app's, not that one's. It fills the selected tab with
+ * mustard over an ink border; here the palette is paper-and-ink, so the same
+ * idea is expressed with --accent on --panel. The rule being copied is "a filled
+ * tab reads as the one you are on, an inset ring reads as a focus state" — not
+ * the specific hue.
+ */
+.scan-modes {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 0.5rem;
+}
+
+/* Four across is unreadable on a 360px phone, so they wrap to two. The blurb is
+   the first thing that would be sacrificed by squeezing, and the blurb is the
+   reason the picker works. */
+@media (max-width: 34rem) {
+  .scan-modes {
+    grid-auto-flow: row;
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.scan-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.6rem 0.5rem;
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  /* 44px tap target even with one line of blurb. */
+  min-height: 44px;
+}
+
+.scan-mode strong { font-weight: 600; letter-spacing: 0.01em; }
+.scan-mode span { font-size: 0.75rem; line-height: 1.25; }
+
+.scan-mode--on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+}
+.scan-mode--on .muted { color: var(--bg); opacity: 0.8; }

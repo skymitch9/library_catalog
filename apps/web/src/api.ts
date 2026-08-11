@@ -50,6 +50,14 @@ export interface Me {
   role: 'owner' | 'reader' | 'pending';
   capabilities: string[];
   reviewName: string | null;
+  /**
+   * Outstanding work, riding along on `/api/me` — the sibling's pattern.
+   *
+   * ⚠️ `null` means the count could not be taken, and is NOT the same as `0`.
+   * Zero hides the nav link; null shows it without a count. A failed query must
+   * never look like a finished job.
+   */
+  chores: { missingDetails: number } | null;
 }
 
 export interface WorkSummary {
@@ -658,6 +666,21 @@ export const api = {
    * ⚠️ Costs money, and the photo is never stored — see the route.
    * `usage.estimatedCents` comes back so the screen can say what it cost.
    */
+  /**
+   * ONE book, photographed front-on. Same shape as `scanShelf`, different
+   * prompt — a cover also yields series, volume and publisher, which a spine
+   * almost never prints and which are the discriminators a title and an author
+   * cannot substitute for.
+   *
+   * ⚠️ Costs money, and the photo is never stored — see the route.
+   */
+  scanSingle: (data: string, mediaType: string) =>
+    request<{
+      job: ScanJob;
+      unreadable: boolean;
+      usage: { inputTokens: number; outputTokens: number; estimatedCents: number };
+    }>('/api/scan-jobs/single', { method: 'POST', body: JSON.stringify({ data, mediaType }) }),
+
   scanShelf: (data: string, mediaType: string) =>
     request<{
       job: ScanJob;
