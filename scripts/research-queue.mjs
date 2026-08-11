@@ -65,7 +65,8 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -251,14 +252,31 @@ function diff(db, table, snapshot) {
 }
 
 function flush(db, snapshots, { remote, commit }) {
-  // `work` first: the values, then the verdicts, then the run and its findings.
-  // A flush that dies halfway should leave the catalog holding the answer rather
-  // than a run claiming to have written one.
-  const order = ['work', 'gap_verdict', 'research_run', 'research_finding'];
+  // ⚠️ `research_run` first, and this order is a constraint rather than a
+  // preference. **D1 enforces foreign keys**, and both `gap_verdict.run_id` and
+  // `research_finding.run_id` point at the run this book just produced. Writing
+  // the verdict first fails the whole batch — and wrangler reports that as a
+  // bare non-zero exit with nothing on stderr, so it costs a dumped .sql file to
+  // find out why. Parents before children, then.
+  //
+  // The instinct it overrides was to write `work` first, so a half-flush left
+  // the catalog holding the answer rather than a run claiming to have written
+  // one. That still holds between `work` and the findings; the run row simply
+  // has to precede anything referencing it.
+  const order = ['research_run', 'work', 'gap_verdict', 'research_finding'];
   const statements = order.flatMap((t) => diff(db, t, snapshots.get(t)));
   if (statements.length === 0 || !commit) return statements.length;
-  for (let i = 0; i < statements.length; i += 40) {
-    execute(statements.slice(i, i + 40), { remote });
+  try {
+    for (let i = 0; i < statements.length; i += 40) {
+      execute(statements.slice(i, i + 40), { remote });
+    }
+  } catch (err) {
+    // ⚠️ wrangler reports a rejected batch as a bare non-zero exit with nothing
+    // on stderr, so the statement that broke is otherwise unknowable — and this
+    // runs unattended, after money has already been spent. Keep the SQL.
+    const dump = path.join(tmpdir(), `lc-flush-${Date.now()}.sql`);
+    writeFileSync(dump, statements.join('\n') + '\n', 'utf8');
+    throw new Error(`${err.message}\nThe batch that failed is at ${dump}`);
   }
   return statements.length;
 }
