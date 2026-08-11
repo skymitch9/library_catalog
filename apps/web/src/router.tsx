@@ -75,10 +75,35 @@ export interface CollectionFilters {
   page: number;
 }
 
+/**
+ * How the series list is ordered.
+ *
+ * ⚠️ `name` is the default and must stay the default. "Most missing first" looks
+ * like the more useful order and is not: it reorders itself every time a book is
+ * bought or a source is consulted, so the series you were looking at a moment
+ * ago is somewhere else, and a list you cannot form a habit about is a list you
+ * have to read end to end every time. The other orders are what the control is
+ * for — chosen, and then visible in the URL.
+ */
+export const SERIES_SORTS = ['name', 'missing', 'books', 'audio'] as const;
+export type SeriesSort = (typeof SERIES_SORTS)[number];
+
+/**
+ * What the series list is showing.
+ *
+ * In the URL for the same reason the collection's filters are: opening a series
+ * and pressing Back returns you to the list you had narrowed, not to all of it.
+ */
+export interface SeriesFilters {
+  q: string;
+  sort: SeriesSort;
+  gapsOnly: boolean;
+}
+
 export type Route =
   | { name: 'collection'; filters: CollectionFilters }
   | { name: 'work'; id: number }
-  | { name: 'series' }
+  | { name: 'series'; filters: SeriesFilters }
   | { name: 'seriesDetail'; series: string }
   | { name: 'wishlist' }
   // `?field=` narrows the worklist to one question. A query parameter and not a
@@ -185,6 +210,33 @@ export function workPath(id: number): string {
   return `/work/${id}`;
 }
 
+function parseSeriesList(search: string): SeriesFilters {
+  return {
+    q: new URLSearchParams(search).get('q') ?? '',
+    sort: pick(search, 'sort', SERIES_SORTS) ?? 'name',
+    gapsOnly: new URLSearchParams(search).get('gaps') === '1',
+  };
+}
+
+/**
+ * The inverse of `parseSeriesList`, kept beside it.
+ *
+ * Defaults are omitted so an ordinary visit is `/series` and not
+ * `/series?q=&sort=name`. ⚠️ It must stay exactly `/series` in that case: the
+ * top bar highlights the tab by comparing route names, but `labelFor` and the
+ * back button compare paths, and a bare visit that rewrote itself to
+ * `/series?sort=name` would put a second, differently-spelled entry in the
+ * history for the same screen.
+ */
+export function seriesListPath(f: SeriesFilters): string {
+  const p = new URLSearchParams();
+  if (f.q) p.set('q', f.q);
+  if (f.sort !== 'name') p.set('sort', f.sort);
+  if (f.gapsOnly) p.set('gaps', '1');
+  const qs = p.toString();
+  return qs ? `/series?${qs}` : '/series';
+}
+
 /**
  * ⚠️ Encoded, always. Real series names here include `Tamer: King of Dinosaurs`
  * and `Beneath the Dragoneye Moons` — a colon and spaces — and nothing stops a
@@ -229,7 +281,7 @@ function parse(pathname: string, search: string): Route {
   }
 
   if (parts[0] === 'series') {
-    if (parts.length === 1) return { name: 'series' };
+    if (parts.length === 1) return { name: 'series', filters: parseSeriesList(search) };
     if (parts.length === 2) {
       const series = decodeSegment(parts[1]!);
       if (series) return { name: 'seriesDetail', series };

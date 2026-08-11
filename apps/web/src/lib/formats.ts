@@ -23,3 +23,24 @@ export const FORMAT_LABEL: Record<string, string> = {
 export function formatLabel(format: string): string {
   return FORMAT_LABEL[format] ?? format;
 }
+
+/**
+ * How a *medium* is written for a person — the coarse question, one step above
+ * `formatLabel`.
+ *
+ * ⚠️ `audio` appears here and NOT in `EditionMedium`, and the asymmetry is on
+ * purpose. `@lc/core` has two media because an audiobook is not an edition of
+ * anything in this database; this map has three because the series page shows
+ * all three side by side and the third one needs a word. Everything that
+ * *stores* or *counts* by medium must use the two-value type; only display
+ * reaches for this.
+ */
+export const MEDIUM_LABEL: Record<string, string> = {
+  physical: 'Print',
+  ebook: 'Ebook',
+  audio: 'Audio',
+};
+
+export function mediumLabel(medium: string): string {
+  return MEDIUM_LABEL[medium] ?? medium;
+}

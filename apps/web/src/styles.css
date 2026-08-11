@@ -653,6 +653,66 @@ ol.ladder > li::before {
 .ladder__gap .ladder__text strong { color: var(--muted); font-style: italic; }
 .ladder__missing { flex-wrap: wrap; }
 
+/* --- what form we hold it in --------------------------------------------- */
+
+/*
+ * ⚠️ A new class rather than another `.mark`, on purpose.
+ *
+ * `.mark` is `position: absolute` because its first home was the corner of a
+ * cover, and every inline use since has had to undo that — see the warning
+ * above `.mark--alias`, and the three overrides proving the point. A badge whose
+ * only home is inline starts inline and never learns the habit.
+ *
+ * ## The grammar is "where does it live", not "how sure are we"
+ *
+ * Elsewhere in this app a fill means we hold it and an outline means we are
+ * taking somebody's word for it. That grammar does not apply here — we hold all
+ * three of these — so a different one is used and is consistent within itself:
+ *
+ *   filled accent   an object on a shelf
+ *   outlined accent a file, or a licence: real, but nothing to hand across a room
+ *   outlined warm   somebody else's record — it lives in the audiobook catalog,
+ *                   which this app reads and never writes
+ *
+ * The warm outline is doing real work: an audiobook is the one row here that is
+ * not in this database at all, and colouring it like the other two would say the
+ * catalogs had merged, which `PLATFORM.md` §2.2 says they never do.
+ */
+.fmts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 3px;
+}
+
+.fmt {
+  padding: 1px 5px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+.fmt--physical { background: var(--accent); color: var(--accent-fg); }
+.fmt--ebook { border-color: var(--accent); color: var(--accent); }
+.fmt--audio { border-color: var(--warm); color: var(--warm); }
+
+/* The count beside a section heading, ported from the sibling Board Game
+   Catalog's `.count` — the same muted, unbolded weight, so the number reads as
+   an annotation of the heading and not as part of it. */
+.count { color: var(--muted); font-weight: 400; }
+
+/* The printings of one volume, nested under it. Indented by the rule rather than
+   by padding alone, so the grouping survives a title long enough to wrap. */
+.alt__editions {
+  margin: 0.2rem 0 0;
+  padding-left: 0.6rem;
+  border-left: 2px solid var(--line);
+}
+.alt__editions li { padding: 0.25rem 0; border-bottom: 0; }
+
 /* --- wishlist ------------------------------------------------------------ */
 
 .wish { display: flex; align-items: flex-start; gap: 0.5rem; padding: 0.4rem 0; }

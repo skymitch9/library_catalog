@@ -39,6 +39,7 @@ import {
   backTarget,
   collectionPath,
   navigate,
+  seriesListPath,
   seriesPath,
   useRoute,
   workPath,
@@ -277,7 +278,19 @@ function Screens({
     }
 
     case 'series':
-      return <SeriesPage onOpenSeries={openSeries} />;
+      return (
+        // Keyed by the filters, exactly as the collection is and for the same
+        // two reasons: the page seeds its state from its props once, and typing
+        // in the search box does not come through here — it uses `replaceUrl`,
+        // which fires no popstate. So this key changes only when something
+        // outside the page changed the filters, which pressing Back into an
+        // earlier search is.
+        <SeriesPage
+          key={seriesListPath(route.filters)}
+          filters={route.filters}
+          onOpenSeries={openSeries}
+        />
+      );
 
     case 'seriesDetail': {
       const back = backTarget('/series');

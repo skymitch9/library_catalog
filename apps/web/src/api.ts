@@ -156,6 +156,31 @@ export interface SeriesCompleteness {
   checkSource: string | null;
 }
 
+/** One printing. Mirrors `EditionRef` in `@lc/db`. */
+export interface EditionRef {
+  id: number;
+  format: string;
+  editionName: string | null;
+  publisher: string | null;
+  publishedYear: number | null;
+  isbn13: string | null;
+}
+
+/**
+ * What the sibling audiobook catalog holds for this work — cached by migration
+ * 0010, because the Worker cannot read that catalog's CSV.
+ */
+export interface AudiobookRef {
+  title: string;
+  series: string | null;
+  indexDisplay: string | null;
+  matchedVia: string;
+  viaAlias: string | null;
+}
+
+/** `physical` or `ebook`. There is deliberately no `audio` — see `@lc/core`. */
+export type EditionMedium = 'physical' | 'ebook';
+
 export interface SeriesLadderEntry {
   index: number;
   volumeId: number | null;
@@ -170,12 +195,40 @@ export interface SeriesLadderEntry {
   sourceUrl: string | null;
   note: string | null;
   staleAt: string | null;
+  editions: EditionRef[];
+  media: EditionMedium[];
+  audiobook: AudiobookRef | null;
+}
+
+export interface AlternateEditions {
+  workId: number;
+  title: string;
+  index: number | null;
+  display: string | null;
+  coverUrl: string | null;
+  editions: EditionRef[];
+}
+
+/** Counted in works, never in editions. See `SeriesHoldings` in `@lc/db`. */
+export interface SeriesHoldings {
+  works: number;
+  physical: number;
+  ebook: number;
+  audio: number;
+  alternates: number;
 }
 
 export interface SeriesReport {
   completeness: SeriesCompleteness;
+  holdings: SeriesHoldings;
   ladder: SeriesLadderEntry[];
   unnumbered: { workId: number; title: string; display: string | null }[];
+  alternates: AlternateEditions[];
+}
+
+/** A row of the series list. */
+export interface SeriesSummary extends SeriesCompleteness {
+  holdings: SeriesHoldings;
 }
 
 export interface WishlistRow {
@@ -475,7 +528,7 @@ export const api = {
   // -------------------------------------------------------------------------
 
   seriesList: () =>
-    request<{ series: SeriesCompleteness[]; withoutSeries: number }>('/api/series'),
+    request<{ series: SeriesSummary[]; withoutSeries: number }>('/api/series'),
 
   series: (name: string) =>
     request<SeriesReport>(`/api/series/${encodeURIComponent(name)}`),

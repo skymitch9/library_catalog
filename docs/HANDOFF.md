@@ -3,6 +3,73 @@
 > Updated **2026-08-10**. **Live** at https://library.heygabi.ai — deployed,
 > Firebase domain authorised, Google sign-in verified in production 2026-08-09.
 
+## 🟡 In flight — series formats, alternate printings, audiobooks
+
+Built in a worktree, committed, **not deployed and migration 0010 has NOT been
+applied to `--remote`.** The owner gates production.
+
+The complaint this answers: the Series tab "is useful but jarring and will get
+out of control super fast". So the series stuff moved *into* each series, and the
+list learned to scale.
+
+| | |
+|---|---|
+| **Formats on the ladder** | Each held rung says whether we have it in print, as an ebook, on audio, or several at once. |
+| **Bought more than once** | A second section per series: one volume, several printings — the Target / Barnes & Noble case. |
+| **Audiobook cross-reference** | `audiobook_holding` (**migration 0010**) + `npm run backfill:audiobooks`. **40 of 157 works, 25%.** |
+| **A list that scales** | Search, four sort orders, gaps-only, a holdings line per row — all three controls in the URL. |
+
+Everything measured is in
+[`docs/info/series-formats-and-audiobooks.md`](info/series-formats-and-audiobooks.md).
+The four worth knowing without opening it:
+
+- ⚠️ **25% is the honest audiobook number and the ceiling is nowhere near 100.**
+  ~35 misses are children's board books with no audiobook in existence, 38 are
+  fan-translated light novels (*Blade Dance*, *High School DxD*) with no English
+  audio. **The one group worth chasing is Cradle** — 12 works whose audiobooks
+  really are owned, and the fix is aliases, not a looser matcher.
+- ⚠️ **Our `work_alias` rows are what lifted it from 35 to 40.** The five added
+  are the *He Who Fights with Monsters* volumes, which Audible files under
+  Shirtaloon. `matching.ts`'s author gate rejects them under the printed name and
+  is right to; asking a second time under a recorded pen name is the fix.
+- ⚠️ **Every physical edition in the catalog is on a work with no series** (39 of
+  156, all children's board books), so every series page today is uniformly
+  ebook. The page therefore says "All 23 held as ebooks" **once** instead of
+  stamping 23 identical chips. It is not a bug that the chips are absent; they
+  appear the moment one volume differs, which the BackerKit import will do.
+- ⚠️ **"Bought more than once" means two printings of ONE medium.** `editions
+  .length > 1` was the first rule and it swept in every book held as both an
+  EPUB and a paperback — caught by a local fixture, not by reading.
+
+### To finish it
+
+```bash
+npm install                                   # ⚠️ IN THE WORKTREE — see below
+npm test                                      # 95
+npm run typecheck                             # six workspaces
+npm run db:migrate                            # ⚠️ REMOTE — 0010, BEFORE deploying
+npm run deploy
+npm run backfill:audiobooks -- --remote           # dry run; READ THE CONTAINMENT LIST
+npm run backfill:audiobooks -- --remote --commit  # ⚠️ owner gates this
+```
+
+⚠️ **Migrate before deploying.** `/api/series` now selects from
+`audiobook_holding`; deploying first makes **every** series request a 500 — the
+list and every detail page. Migrations 0003 and 0005 each carried this trap.
+
+⚠️ **`npm install` inside a worktree, before trusting a typecheck.** A worktree
+has no `node_modules`, and Node resolution walks *up* — so `@lc/core` silently
+resolves to the **main checkout's** copy. On 2026-08-10 a typecheck in a worktree
+reported errors in `PeoplePage.tsx` from a different session's uncommitted work,
+and would equally have missed real errors in the code being written.
+`package-lock.json` is unchanged by the install.
+
+⚠️ **`LC_AUDIOBOOK_ROOT` is required from a worktree.**
+`scripts/lib/audiobooks.mjs` resolves `ROOT/../audiobook_catalog`, which under
+`.claude/worktrees/<name>` is three directories too deep, and a zero-row read
+looks exactly like "the sibling catalog knows nothing". The backfill now refuses
+to run on zero rows rather than marking every holding stale.
+
 ## 🟡 In flight — `feature/aliases-export-people`
 
 Three features, branched from `main` **on top of `feature/router`'s merge**,
