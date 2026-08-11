@@ -1,10 +1,12 @@
 import { Hono } from 'hono';
-import { createSeriesVolumeSchema, setSeriesTotalSchema } from '@lc/core';
+import { createSeriesVolumeSchema, setSeriesTotalSchema, skipSeriesGapSchema } from '@lc/core';
 import {
   deleteManualSeriesVolume,
   getSeriesReport,
   listSeries,
   setSeriesTotal,
+  skipSeriesGap,
+  unskipSeriesGap,
   upsertSeriesVolume,
 } from '@lc/db';
 import type { AppBindings } from '../env.js';
@@ -105,5 +107,52 @@ export const seriesRoutes = new Hono<AppBindings>()
       parsed.data.knownTotalSource ?? null,
       parsed.data.note ?? null,
     );
+    return c.json(await getSeriesReport(c.env.DB, c.get('user').id, name));
+  })
+
+  /**
+   * "I am never buying that one." — migration 0081.
+   *
+   * ⚠️ Deliberately NOT `/api/works/:id/gap-verdicts`, which is the other half of
+   * this idea and cannot serve here. That one is keyed `(work_id, field)` and
+   * answers "this book we own has no series"; a series gap has no work row at
+   * all — that is what makes it a gap — so the key has to be the series and the
+   * number, which is the only thing a rung is guaranteed to have.
+   *
+   * ⚠️ Unlike every other write in this file it costs no *source*, because it is
+   * a decision rather than a claim: the owner is the only authority on what the
+   * owner intends to buy. `skipSeriesGapSchema` still requires a `reason`, for a
+   * different job — see its header.
+   *
+   * An upsert, so re-recording it with a better reason is this same request.
+   */
+  .post('/:name/skips', requireCapability('editCatalog'), async (c) => {
+    const name = decodeURIComponent(c.req.param('name'));
+    const parsed = skipSeriesGapSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues }, 400);
+
+    await skipSeriesGap(
+      c.env.DB,
+      name,
+      parsed.data.indexSort,
+      parsed.data.reason,
+      parsed.data.note ?? null,
+      c.get('user').id,
+    );
+    return c.json(await getSeriesReport(c.env.DB, c.get('user').id, name));
+  })
+
+  /**
+   * Change your mind — the rung goes back to being missing.
+   *
+   * The index is in the path and it is a decimal: the three shorts this was
+   * built for are 6.5, 11.5 and 13.5. `Number.isFinite` and not `isInteger`.
+   */
+  .delete('/:name/skips/:index', requireCapability('editCatalog'), async (c) => {
+    const index = Number(c.req.param('index'));
+    if (!Number.isFinite(index)) return c.json({ error: 'bad_request' }, 400);
+    const name = decodeURIComponent(c.req.param('name'));
+    const ok = await unskipSeriesGap(c.env.DB, name, index);
+    if (!ok) return c.json({ error: 'not_found' }, 404);
     return c.json(await getSeriesReport(c.env.DB, c.get('user').id, name));
   });

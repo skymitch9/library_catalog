@@ -1,7 +1,23 @@
 #!/usr/bin/env node
 /**
  * Ask the sibling audiobook catalog which of our books we already own on audio,
- * and cache the answer in `audiobook_holding` (migration 0010).
+ * and cache the answer — in `audiobook_holding` (migration 0010) for the books
+ * this catalog knows, and in `audiobook_series_holding` (migration 0080) for the
+ * ones it does not.
+ *
+ * ## ⚠️ The second table exists because the first one structurally cannot answer
+ *
+ * `audiobook_holding.work_id` is `PRIMARY KEY REFERENCES work(id)`. A book owned
+ * ONLY on audio has no work row here, so it cannot be written down at all, and
+ * the series ladder drew it as a hole. Measured 2026-08-11: the household holds
+ * all seven Stormlight Archive audiobooks and this catalog holds one of those
+ * titles as an ebook, so `/series/The Stormlight Archive` reported six missing
+ * books that are in the house. About 397 audiobook rows have no work row here.
+ *
+ * Phase 2 below therefore joins on `(series, index_sort)` — the only two things
+ * a gap rung has — and never on a title. That is the point: containment matching
+ * is what produced the flat lie "All 5 held on audio" on Tamer, and there is no
+ * title comparison anywhere in phase 2 to produce another.
  *
  * ## Why a script and not a route
  *
@@ -55,11 +71,12 @@
  * matches is marked `stale_at` rather than deleted — migration 0003's rule,
  * because a row vanishing looks identical to the audiobook having gone away.
  *
- * ⚠️ Requires migration 0010. Against a database without it every statement
- * fails with `no such table: audiobook_holding`.
+ * ⚠️ Requires migrations 0010 **and 0080**. Against a database without either,
+ * every statement for that table fails with `no such table: …`.
  */
 
 import { execute, lit, parseFlags, query } from './lib/d1.mjs';
+import { normaliseTitle } from '../packages/core/src/titles.ts';
 import { AUDIOBOOK_CSV, audiobookIndex, loadAudiobooks } from './lib/audiobooks.mjs';
 
 const flags = parseFlags();
@@ -71,7 +88,12 @@ const flags = parseFlags();
 // ⚠️ `query()` refuses SQL over 6000 characters and this is nowhere near it —
 // but it returns one row per work, so the RESULT grows with the catalog while
 // the query does not. That is the right way round; see the note on query().
-const works = query('SELECT id, title, authors, series FROM work ORDER BY id', flags);
+// `series_index_sort` rides along for phase 2, where a work whose volume number
+// agrees on both sides is what upgrades a series mapping from a guess to a fact.
+const works = query(
+  'SELECT id, title, authors, series, series_index_sort FROM work ORDER BY id',
+  flags,
+);
 
 console.log(`${works.length} work(s) in the ${flags.remote ? 'REMOTE' : 'local'} database`);
 if (works.length === 0) process.exit(0);
@@ -202,6 +224,131 @@ for (const r of goneStale) {
 }
 
 // ---------------------------------------------------------------------------
+// Phase 2 — the rungs with no work row at all (migration 0080)
+//
+// ⚠️ Joined on `(series, index_sort)` and on nothing else. A gap rung has no
+// title — `completeness.ts` cannot even name an `interior` hole — so there is
+// nothing to match, which is exactly why this is safe: containment matching is
+// what shipped three wrong games in the sibling project and the flat "All 5
+// held on audio" claim here, and there is none of it below.
+//
+// ## The fold, and why it is `normaliseTitle`
+//
+// The two catalogs disagree about spelling: "All the Skills" there, "All The
+// Skills" here. Three folds exist in this estate and only one is right for this:
+//
+//   • `normaliseTitle` — the project's ONE fold, and ALREADY the series-name
+//     fold: `backfill-series-volumes.mjs` has resolved these same two spellings
+//     with it since it was written, and the rows it writes are what this table
+//     annotates. A second rule here would be the second-matching-function
+//     mistake `matching.ts` opens with.
+//   • `normaliseUniverseText` — keeps leading articles ON PURPOSE, because the
+//     universe list holds "The Cosmere" and "Cosmere" as different entries.
+//     Measured over this CSV's 331 series spellings, that is disqualifying:
+//     `Dark Healer` and `The Dark Healer` are one series written twice, and this
+//     fold is what merges them.
+//   • `bookIdFromTitle` — a Firestore document id. Not a comparison at all.
+//
+// ⚠️ It folds for COMPARISON only. What is stored is our spelling, so the read
+// path joins `work.series` exactly and no fold runs in the Worker — the same
+// decision `series_volume` made, for the same reason.
+//
+// Measured 2026-08-11: 331 raw spellings fold to 329 keys, and both collisions
+// are one series spelled two ways. Nothing distinct was conflated.
+// ---------------------------------------------------------------------------
+
+/** Folded audiobook series name -> its rows. */
+const abBySeries = new Map();
+for (const row of audiobooks) {
+  if (!row.series) continue;
+  const key = normaliseTitle(row.series);
+  const list = abBySeries.get(key);
+  if (list) list.push(row);
+  else abBySeries.set(key, [row]);
+}
+
+const existingRungs = query(
+  'SELECT series, index_sort, stale_at FROM audiobook_series_holding',
+  flags,
+);
+const rungKey = (series, index) => `${series}|${index}`;
+
+/**
+ * Which of our series a work-level match has already proved.
+ *
+ * ⚠️ Both halves, and the second is the one that matters. A work matched by
+ * `matching.ts` proves the two SERIES NAMES mean one series; the same work
+ * carrying the same volume number on both sides additionally proves the two
+ * catalogs NUMBER it alike. Only that pair earns `work_match` and an unhedged
+ * AUDIO chip — everything else says AUDIO?, because a series whose numbering we
+ * have never seen agree is a series whose book 4 might be somebody else's 3.
+ */
+const corroborated = new Set();
+for (const m of matched) {
+  if (!m.work.series || !m.row.series) continue;
+  if (normaliseTitle(m.work.series) !== normaliseTitle(m.row.series)) continue;
+  if (m.work.series_index_sort == null || m.row.seriesIndexSort == null) continue;
+  if (Number(m.work.series_index_sort) !== Number(m.row.seriesIndexSort)) continue;
+  corroborated.add(m.work.series);
+}
+
+const ourSeries = [...new Set(works.map((w) => w.series).filter(Boolean))].sort();
+const rungReport = [];
+const liveRungs = new Set();
+
+for (const series of ourSeries) {
+  const hits = abBySeries.get(normaliseTitle(series)) ?? [];
+  const numbered = hits.filter((h) => typeof h.seriesIndexSort === 'number');
+  if (numbered.length === 0) continue;
+
+  const via = corroborated.has(series) ? 'work_match' : 'fold';
+
+  // One row per index — the same rule `backfill-series-volumes.mjs` applies, so
+  // the two tables cannot end up describing different rungs. First wins.
+  const seen = new Map();
+  for (const h of numbered) if (!seen.has(h.seriesIndexSort)) seen.set(h.seriesIndexSort, h);
+
+  for (const [index, row] of [...seen].sort((a, b) => a[0] - b[0])) {
+    liveRungs.add(rungKey(series, index));
+    statements.push(
+      `INSERT INTO audiobook_series_holding (series, index_sort, title, authors,` +
+        ` audiobook_series, index_display, cover_href, series_matched_via)` +
+        ` VALUES (${lit(series)}, ${lit(index)}, ${lit(row.title)}, ${lit(row.authors)},` +
+        ` ${lit(row.series)}, ${lit(row.seriesIndexDisplay)}, ${lit(row.coverHref)}, ${lit(via)})` +
+        ` ON CONFLICT(series, index_sort) DO UPDATE SET` +
+        ` title = excluded.title, authors = excluded.authors,` +
+        ` audiobook_series = excluded.audiobook_series,` +
+        ` index_display = excluded.index_display, cover_href = excluded.cover_href,` +
+        ` series_matched_via = excluded.series_matched_via,` +
+        ` last_seen_at = datetime('now'), stale_at = NULL;`,
+    );
+  }
+
+  rungReport.push({
+    series,
+    via,
+    abName: hits[0].series,
+    indexes: [...seen.keys()].sort((a, b) => a - b),
+    fresh: [...seen.keys()].filter(
+      (i) => !existingRungs.some((r) => rungKey(r.series, r.index_sort) === rungKey(series, i)),
+    ).length,
+  });
+}
+
+// Marked, never deleted — the other catalog renaming a series must not look like
+// the audiobook having been returned.
+const rungsGoneStale = existingRungs.filter(
+  (r) => !liveRungs.has(rungKey(r.series, r.index_sort)) && !r.stale_at,
+);
+for (const r of rungsGoneStale) {
+  statements.push(
+    `UPDATE audiobook_series_holding SET stale_at = datetime('now')` +
+      ` WHERE series = ${lit(r.series)} AND index_sort = ${lit(r.index_sort)}` +
+      ` AND stale_at IS NULL;`,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // ⚠️ Read the rows, not the totals.
 //
 // The review backfill's dry run said 860/860 matched while writing keys no print
@@ -255,6 +402,43 @@ if (goneStale.length) {
   console.log(`${goneStale.length} existing holding(s) no longer match and will be marked stale.`);
 }
 
+// ---------------------------------------------------------------------------
+// ⚠️ Read the `fold` list. It is the one that can be wrong.
+//
+// A `work_match` series had a book independently identified by title AND author
+// AND volume number, so its rungs render as a flat AUDIO. A `fold` series has
+// nothing behind it but two names folding together, renders AUDIO?, and is still
+// counted as missing. Printed apart so the weaker list is read rather than
+// skimmed — the same reason the containment matches above get their own block.
+// ---------------------------------------------------------------------------
+
+console.log('');
+console.log(`series with audio rungs   ${rungReport.length}`);
+console.log(`  corroborated by a work  ${rungReport.filter((r) => r.via === 'work_match').length}`);
+console.log(`  series name only        ${rungReport.filter((r) => r.via === 'fold').length}`);
+
+for (const r of rungReport.sort((a, b) => a.series.localeCompare(b.series))) {
+  const renamed = r.abName !== r.series ? `  ("${r.abName}" there)` : '';
+  console.log(
+    `  ${r.via.padEnd(11)} ${r.series}  ${r.indexes.length} rung(s) [${r.indexes.join(',')}]` +
+      `  ${r.fresh} new${renamed}`,
+  );
+}
+
+const hedged = rungReport.filter((r) => r.via === 'fold');
+if (hedged.length) {
+  console.log('');
+  console.log(
+    `⚠️ ${hedged.length} series map on the folded name alone — every rung renders AUDIO?:`,
+  );
+  for (const r of hedged) console.log(`  "${r.series}"  ←→  "${r.abName}"`);
+}
+
+if (rungsGoneStale.length) {
+  console.log('');
+  console.log(`${rungsGoneStale.length} audio rung(s) no longer match and will be marked stale.`);
+}
+
 console.log('');
 console.log(`${statements.length} statement(s) to run.`);
 
@@ -268,13 +452,15 @@ const sent = execute(statements, flags);
 // Confirm by re-reading. `execute` cannot report rows changed — see its comment
 // in scripts/lib/d1.mjs; miniflare omits `meta.changes` entirely.
 const after = query(
-  `SELECT COUNT(*) AS all_rows,
-          SUM(CASE WHEN stale_at IS NULL THEN 1 ELSE 0 END) AS live_rows
-     FROM audiobook_holding`,
+  `SELECT (SELECT COUNT(*) FROM audiobook_holding) AS all_rows,
+          (SELECT COUNT(*) FROM audiobook_holding WHERE stale_at IS NULL) AS live_rows,
+          (SELECT COUNT(*) FROM audiobook_series_holding) AS all_rungs,
+          (SELECT COUNT(*) FROM audiobook_series_holding WHERE stale_at IS NULL) AS live_rungs`,
   flags,
 )[0];
 
 console.log(
-  `\n${sent} statement(s) run. ${after.live_rows ?? 0} live holding(s) of ${after.all_rows} row(s)` +
-    ` in the ${flags.remote ? 'REMOTE' : 'local'} database.`,
+  `\n${sent} statement(s) run. ${after.live_rows ?? 0} live holding(s) of ${after.all_rows} row(s),` +
+    ` and ${after.live_rungs ?? 0} live audio rung(s) of ${after.all_rungs}, in the` +
+    ` ${flags.remote ? 'REMOTE' : 'local'} database.`,
 );

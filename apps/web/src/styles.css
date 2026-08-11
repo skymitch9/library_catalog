@@ -827,6 +827,20 @@ ol.ladder > li::before {
 .ladder__gap--attested::before,
 .ladder__gap--implied::before { border-color: var(--line-strong); }
 
+/*
+ * ⚠️ Two rungs that are absent from this catalog and must NOT read as losses.
+ *
+ * `--audio` is a book the household owns, in the sibling catalog (migration
+ * 0080); `--skipped` is one the owner has decided never to own (0081). Both were
+ * drawn in `--warm` before those tables existed, which is how the Stormlight
+ * ladder came to show four holes over a complete run. They keep the hollow
+ * marker — we do not hold them *here* — and lose the warning colour, which is
+ * the whole of the distinction.
+ */
+.ladder__gap--audio::before { border-color: var(--accent); }
+.ladder__gap--skipped::before { border-color: var(--line); }
+.ladder__gap--skipped { opacity: 0.55; }
+
 .ladder__no {
   flex: none;
   min-width: 4.5rem;

@@ -461,6 +461,26 @@ export const setSeriesTotalSchema = z
   });
 export type SetSeriesTotal = z.infer<typeof setSeriesTotalSchema>;
 
+/**
+ * "I am never buying that one." — see migration 0081.
+ *
+ * ⚠️ `reason` is required, and it is the one required string in this file that
+ * is **not** an evidence rail. `series_volume.source`, `known_total_source` and
+ * `gap_verdict.source` all exist because their claims could be false; this one
+ * cannot be, since the owner is the only authority on what the owner intends to
+ * buy. It is required so that "why is 11.5 greyed out" has an answer in six
+ * months — *"Patreon-only short, not sold"* rather than a silent absence.
+ *
+ * `indexSort` is a plain number, not an integer: the three Completionist
+ * Chronicles shorts this was built for are 6.5, 11.5 and 13.5.
+ */
+export const skipSeriesGapSchema = z.object({
+  indexSort: z.number(),
+  reason: z.string().trim().min(2).max(200),
+  note: optionalText,
+});
+export type SkipSeriesGap = z.infer<typeof skipSeriesGapSchema>;
+
 // ---------------------------------------------------------------------------
 // Research and gap verdicts
 // ---------------------------------------------------------------------------

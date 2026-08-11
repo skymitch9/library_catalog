@@ -19,6 +19,13 @@ import {
  * audiobook catalog's curated series column. They are counted apart, coloured
  * apart, and explained apart on the detail page.
  *
+ * ⚠️ Since 2026-08-11 **both counts already exclude rungs the household owns on
+ * audio** — the exclusion lives in `seriesCompleteness`, not here, so this page
+ * and the detail page cannot disagree about which books they are calling
+ * missing. `onAudio` gets its own chip rather than being folded into either:
+ * "you own it, just not here" is a third state and reads as neither of the
+ * other two. See migration 0080 for the bug this fixed.
+ *
  * ## ⚠️ Why this filters in the browser when the collection filters on the server
  *
  * The collection holds one page of a 157-row catalog, so a client-side sort
@@ -187,6 +194,13 @@ export function SeriesPage({
                   )}
                   {s.attestedGaps > 0 && (
                     <span className="mark mark--attested">{s.attestedGaps} more listed</span>
+                  )}
+                  {/* ⚠️ Its own chip, not folded into either count above. These
+                      books are in the house — they are simply not in this
+                      catalog — and before migration 0080 they were being
+                      reported as missing. */}
+                  {s.onAudio > 0 && (
+                    <span className="mark mark--attested">{s.onAudio} on audio</span>
                   )}
                 </div>
                 <div className="muted small">{completenessSentence(s)}</div>
