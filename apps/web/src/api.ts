@@ -266,6 +266,12 @@ export interface WishlistRow {
   currency: string;
   notes: string | null;
   createdAt: string;
+  /**
+   * Normally null here — a copy on this list has not arrived. Carried so that
+   * marking it arrived fills the column only when it is empty; see
+   * `arrivedPatch` in `lib/statuses.ts`.
+   */
+  acquiredOn: string | null;
   formats: string | null;
 }
 

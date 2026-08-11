@@ -343,6 +343,14 @@ export interface WishlistRow {
   currency: string;
   notes: string | null;
   createdAt: string;
+  /**
+   * Normally null on this list — a copy that has not arrived has no arrival
+   * date. It rides along so that marking one as arrived can fill the column
+   * *only when it is empty*: an importer or a hand-typed correction may already
+   * know the real date, and ticking the row weeks late must not replace it with
+   * today. See `arrivedPatch` in the web app.
+   */
+  acquiredOn: string | null;
   /** Formats already held, if any — "we have the ebook, we want it in print". */
   formats: string | null;
 }
@@ -372,7 +380,7 @@ export async function listWishlist(
       `SELECT c.id AS copyId, c.work_id AS workId, w.title, w.authors, w.series,
               w.series_index_display AS seriesIndexDisplay, w.cover_url AS coverUrl,
               c.status, c.vendor, c.price_paid_cents AS pricePaidCents, c.currency,
-              c.notes, c.created_at AS createdAt,
+              c.notes, c.created_at AS createdAt, c.acquired_on AS acquiredOn,
               (SELECT group_concat(DISTINCT e.format) FROM edition e WHERE e.work_id = w.id) AS formats
          FROM copy c
          JOIN work w ON w.id = c.work_id

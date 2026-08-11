@@ -33,3 +33,38 @@ export function statusLabel(status: string): string {
  * is what somebody would actually say out loud.
  */
 export const ON_THE_WAY = 'on the way';
+
+/**
+ * What it means for a copy to turn up — as one patch body, in one place.
+ *
+ * Three controls say it: the arrivals checklist, the wishlist's per-row button,
+ * and the copies panel on a book page. They were going to be three spellings of
+ * one transition, which is the mistake `STATUS_LABEL` above exists to record.
+ *
+ * ## Why the date is here and not on the server
+ *
+ * ⚠️ This is the one place this port **departs from the sibling**, deliberately.
+ * The Board Game Catalog writes `status` alone, because it *dropped* its
+ * `acquired_on` column in migration 0004 and lets `created_at` stand in. This
+ * schema kept the column (migration 0001) and nothing has ever written it, so a
+ * shelf full of arrived books would carry no arrival dates at all — the column
+ * would stay as empty as `copy.status` was before the wishlist shipped.
+ *
+ * ⚠️ **Only when it is empty.** A pledge importer or a hand-typed correction may
+ * already know the real date, and an arrival ticked weeks late must not
+ * overwrite it with today. Sending the key at all is what `updateCopy` in
+ * `@lc/db` treats as "change this", so an absent key is the way to leave a value
+ * alone — see the `pick(patch.acquiredOn, current.acquired_on)` there.
+ *
+ * The date is the browser's, matching `setReadState` in `WorkPage`: a book
+ * arrives on the day the person holding it says it did, not on the Worker's UTC
+ * day.
+ */
+export function arrivedPatch(acquiredOn: string | null | undefined): {
+  status: 'owned';
+  acquiredOn?: string;
+} {
+  return acquiredOn
+    ? { status: 'owned' }
+    : { status: 'owned', acquiredOn: new Date().toISOString().slice(0, 10) };
+}

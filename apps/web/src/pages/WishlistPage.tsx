@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Me, type WishlistRow } from '../api.js';
+import { Arrivals } from '../components/Arrivals.js';
 import { Cover } from '../components/Cover.js';
 import { formatLabel } from '../lib/formats.js';
-import { ON_THE_WAY, statusLabel } from '../lib/statuses.js';
+import { ON_THE_WAY, arrivedPatch, statusLabel } from '../lib/statuses.js';
 
 /**
  * Books we have said we want and do not have.
@@ -37,6 +38,16 @@ export function WishlistPage({
   const [rows, setRows] = useState<WishlistRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
+  /**
+   * What a batch arrival did — said on the page, never inside the panel.
+   *
+   * ⚠️ Both outcomes live here, and the failure one is the reason why. The panel
+   * renders nothing once no copies are on the way, so a note it owned would be
+   * destroyed by the very reload that follows a batch. Measured: with five of six
+   * saved and the sixth deleted underneath, the panel unmounted and the warning
+   * went with it — the one case where saying nothing is worst.
+   */
+  const [note, setNote] = useState<{ text: string; tone: 'good' | 'bad' } | null>(null);
 
   const canEdit = me.capabilities.includes('editCatalog');
 
@@ -52,6 +63,9 @@ export function WishlistPage({
 
   async function change(copyId: number, body: Record<string, unknown>) {
     setBusy(copyId);
+    // A single row acting makes the batch note stale — it counted a set this row
+    // has just left.
+    setNote(null);
     try {
       await api.updateCopy(copyId, body);
       load();
@@ -77,12 +91,35 @@ export function WishlistPage({
   if (error) return <main className="notice notice--bad">Could not load the wishlist: {error}</main>;
   if (!rows) return <main className="muted">Loading…</main>;
 
-  const onTheWay = rows.filter((r) => r.status === 'preordered').length;
+  const onTheWayRows = rows.filter((r) => r.status === 'preordered');
+  const onTheWay = onTheWayRows.length;
   const wishes = rows.length - onTheWay;
 
   return (
     <main>
       <h2 className="page-title">Wishlist</h2>
+
+      {note && (
+        <p className={note.tone === 'good' ? 'notice notice--good' : 'notice notice--bad'}>
+          {note.text}
+        </p>
+      )}
+
+      {/* Above the list, because a parcel landing is why this screen was opened
+          — nobody comes to the wishlist to browse on the day four preorders turn
+          up. It renders nothing at all when nothing is on the way. */}
+      <Arrivals
+        rows={onTheWayRows}
+        canEdit={canEdit}
+        onArrived={(text) => {
+          setNote({ text, tone: 'good' });
+          load();
+        }}
+        onPartial={(text) => {
+          setNote({ text, tone: 'bad' });
+          load();
+        }}
+      />
 
       {rows.length === 0 ? (
         <p className="muted">
@@ -150,12 +187,16 @@ export function WishlistPage({
 
                   {canEdit && (
                     <div className="wish__actions">
+                      {/* ⚠️ The same transition the checklist above performs,
+                          through the same helper — a preorder arriving one row
+                          at a time must record the arrival date exactly as a
+                          parcel of four does. */}
                       <button
                         className="primary chip"
                         disabled={busy === r.copyId}
-                        onClick={() => void change(r.copyId, { status: 'owned' })}
+                        onClick={() => void change(r.copyId, arrivedPatch(r.acquiredOn))}
                       >
-                        Got it
+                        {r.status === 'preordered' ? 'It arrived' : 'Got it'}
                       </button>
                       {r.status === 'wanted' && (
                         <button
