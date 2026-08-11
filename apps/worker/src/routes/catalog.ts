@@ -9,6 +9,7 @@ import {
   createWorkSchema,
   setReadStateSchema,
   updateCopySchema,
+  updateEditionSchema,
   updateWorkSchema,
 } from '@lc/core';
 import {
@@ -18,6 +19,7 @@ import {
   createEdition,
   createWork,
   deleteCopy,
+  deleteEdition,
   deleteWork,
   findWorkByKey,
   getReadState,
@@ -29,6 +31,7 @@ import {
   listWishlist,
   setReadState,
   updateCopy,
+  updateEdition,
   updateWork,
   type CollectionQuery,
 } from '@lc/db';
@@ -208,6 +211,68 @@ export const catalogRoutes = new Hono<AppBindings>()
     const parsed = createEditionSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues }, 400);
     return c.json({ edition: await createEdition(c.env.DB, parsed.data) }, 201);
+  })
+
+  /**
+   * Correct a printing — the route a wrongly-filed hardcover needs.
+   *
+   * ⚠️ This existed as a schema and nothing else. `updateEditionSchema` has been
+   * in `@lc/core` since the beginning with no route, no query and no control
+   * behind it, so `edition.format` was effectively write-once: a barcode scan
+   * writes `paperback` for every book it sees (deliberately — see
+   * `addLineToCatalog`) and a hardcover scanned off its own barcode was stuck
+   * that way. Reported from the shelf, not from a test.
+   *
+   * A PATCH like `/copies/:id`, so `{ "format": "hardcover" }` is a complete
+   * request that changes one column and leaves the ISBN, the publisher and the
+   * provenance where they are.
+   */
+  .patch('/editions/:id', requireCapability('editCatalog'), async (c) => {
+    const id = Number(c.req.param('id'));
+    if (!Number.isInteger(id)) return c.json({ error: 'bad_request' }, 400);
+
+    const parsed = updateEditionSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues }, 400);
+
+    // `edition.isbn13` and `edition.asin` are UNIQUE partial indexes (migration
+    // 0001: "an ISBN-13 identifies one printing by definition"). Typing one that
+    // another row already holds is an ordinary mistake at a keyboard, and
+    // letting it reach the generic 500 handler answers it with a raw SQLite
+    // string. Answered here instead, as the conflict it is.
+    let edition;
+    try {
+      edition = await updateEdition(c.env.DB, id, parsed.data);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (/UNIQUE constraint failed/i.test(message)) {
+        return c.json(
+          {
+            error: 'conflict',
+            detail: 'Another edition already has that ISBN or ASIN.',
+          },
+          409,
+        );
+      }
+      throw err;
+    }
+
+    if (!edition) return c.json({ error: 'not_found' }, 404);
+    return c.json({ edition });
+  })
+
+  /**
+   * Remove a printing.
+   *
+   * Safe for the collection: `copy.edition_id` is `ON DELETE SET NULL`, so a
+   * copy on the shelf survives its edition being deleted and merely stops
+   * naming which printing it is. See `deleteEdition` in `@lc/db` for the one
+   * cascade that is not so gentle.
+   */
+  .delete('/editions/:id', requireCapability('editCatalog'), async (c) => {
+    const id = Number(c.req.param('id'));
+    if (!Number.isInteger(id)) return c.json({ error: 'bad_request' }, 400);
+    const ok = await deleteEdition(c.env.DB, id);
+    return ok ? c.json({ ok: true }) : c.json({ error: 'not_found' }, 404);
   })
 
   .post('/copies', requireCapability('editCatalog'), async (c) => {

@@ -1,4 +1,4 @@
-import type { CreateCopy, CreateEdition, UpdateCopy } from '@lc/core';
+import type { CreateCopy, CreateEdition, UpdateCopy, UpdateEdition } from '@lc/core';
 
 /**
  * Editions (printings) and copies (the ones on the shelf).
@@ -123,6 +123,88 @@ export async function findEditionByAsin(
     .prepare(`SELECT ${EDITION_COLS} FROM edition WHERE asin = ?`)
     .bind(asin)
     .first<EditionRow>();
+}
+
+export async function getEdition(db: D1Database, id: number): Promise<EditionRow | null> {
+  return db.prepare(`SELECT ${EDITION_COLS} FROM edition WHERE id = ?`).bind(id).first<EditionRow>();
+}
+
+/**
+ * Correct a printing in place.
+ *
+ * ⚠️ **The column this exists for is `format`.** A barcode scan writes
+ * `paperback` for every book — `addLineToCatalog` says why, and the guess is
+ * sound — but a hardcover scanned off its own barcode lands in the catalog as a
+ * paperback and nothing could change it. `PHYSICAL_FORMATS` filtering, the
+ * collection's format facet and the Drive links all key on this one value, so a
+ * wrong one is wrong in four places at once.
+ *
+ * Same `pick` idiom as `updateCopy`, and for the same reason: absent means
+ * "leave it alone", explicit `null` means "clear it". The caller's JSON
+ * distinguishes `undefined` from `null` and so does this, which is what lets the
+ * edit form clear a publisher somebody typed by mistake without a second verb.
+ *
+ * ⚠️ `source` is patchable but the form does not offer it, and that asymmetry is
+ * deliberate — see the note on `EDITION_SOURCES`: `manual` outranks every
+ * importer and is never overwritten. A person correcting a row by hand has not
+ * turned an Open Library import into a hand-typed one; they have corrected an
+ * Open Library import. Rewriting the provenance would lose the only record of
+ * where the other columns came from.
+ */
+export async function updateEdition(
+  db: D1Database,
+  id: number,
+  patch: UpdateEdition,
+): Promise<EditionRow | null> {
+  const current = await getEdition(db, id);
+  if (!current) return null;
+
+  const pick = <T>(next: T | undefined, fallback: T): T => (next === undefined ? fallback : next);
+
+  return db
+    .prepare(
+      `UPDATE edition SET
+         isbn13 = ?, isbn10 = ?, asin = ?, format = ?, edition_name = ?, publisher = ?,
+         published_year = ?, pages = ?, language = ?, cover_url = ?, source = ?,
+         source_url = ?, cwa_book_id = ?, updated_at = datetime('now')
+       WHERE id = ?
+       RETURNING ${EDITION_COLS}`,
+    )
+    .bind(
+      pick(patch.isbn13, current.isbn13),
+      pick(patch.isbn10, current.isbn10),
+      pick(patch.asin, current.asin),
+      pick(patch.format, current.format),
+      pick(patch.editionName, current.edition_name),
+      pick(patch.publisher, current.publisher),
+      pick(patch.publishedYear, current.published_year),
+      pick(patch.pages, current.pages),
+      pick(patch.language, current.language),
+      pick(patch.coverUrl, current.cover_url),
+      pick(patch.source, current.source),
+      pick(patch.sourceUrl, current.source_url),
+      pick(patch.cwaBookId, current.cwa_book_id),
+      id,
+    )
+    .first<EditionRow>();
+}
+
+/**
+ * Remove a printing.
+ *
+ * No cascade to worry about on the collection side: `copy.edition_id` is
+ * `ON DELETE SET NULL` (migration 0001), so a copy of a deleted printing stays
+ * on the shelf and merely stops naming which printing it is. That is the right
+ * answer — the book has not left the house because the catalog row was wrong.
+ *
+ * ⚠️ `research_run.edition_id` and `research_finding.edition_id` ARE
+ * `ON DELETE CASCADE`, so any research attached to this printing goes with it.
+ * Both tables hold 0 rows today (the paid call has never run), but that will
+ * stop being true.
+ */
+export async function deleteEdition(db: D1Database, id: number): Promise<boolean> {
+  const res = await db.prepare('DELETE FROM edition WHERE id = ?').bind(id).run();
+  return (res.meta.changes ?? 0) > 0;
 }
 
 // ---------------------------------------------------------------------------

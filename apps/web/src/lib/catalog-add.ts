@@ -74,6 +74,17 @@ export async function addLineToCatalog(line: ScanLine): Promise<AddedWork> {
    * invented fact in the column that `PHYSICAL_FORMATS` filters on — so a spine
    * with no resolved ISBN adds the work and the copy, and leaves the edition to
    * whoever later scans its barcode.
+   *
+   * ⚠️ **`paperback` here is a guess, and it is wrong often enough to be
+   * reported from the shelf.** A barcode proves a printing exists and does not
+   * say which one; a hardcover scanned off its own barcode lands here as a
+   * paperback. That is still the right default — it is the commoner printing and
+   * the alternative is interrupting every scan with a question — but it is only
+   * defensible because it is now correctable. The fix is the Editions panel on
+   * the book page (`components/Editions.tsx` → `PATCH /api/editions/:id`), which
+   * did not exist when this line was written and is why the guess was, in
+   * practice, permanent. If this ever stops being a one-tap correction, ask at
+   * scan time instead.
    */
   if (line.isbn13) {
     await api.createEdition({

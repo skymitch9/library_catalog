@@ -481,6 +481,20 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  /**
+   * A PATCH: `{ format: 'hardcover' }` corrects the format and touches nothing
+   * else. This is how a book scanned off its barcode — which always lands as
+   * `paperback` — stops being the wrong kind of printing.
+   */
+  updateEdition: (id: number, body: Record<string, unknown>) =>
+    request<{ edition: Record<string, unknown> }>(`/api/editions/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+
+  deleteEdition: (id: number) =>
+    request<{ ok: true }>(`/api/editions/${id}`, { method: 'DELETE' }),
+
   createCopy: (body: unknown) =>
     request<{ copy: { id: number } }>('/api/copies', {
       method: 'POST',

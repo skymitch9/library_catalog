@@ -47,6 +47,7 @@ import {
   seriesCompleteness,
 } from '../src/completeness.ts';
 import {
+  EBOOK_FILE_FORMATS,
   EDITION_FORMATS,
   EDITION_MEDIA,
   HELD_STATUSES,
@@ -55,6 +56,7 @@ import {
   editionMedium,
   isDirectionalRelation,
 } from '../src/constants.ts';
+import { updateEditionSchema } from '../src/schemas.ts';
 import { bookIdFromTitle, reviewDocFor, workKeyForAudiobookRow } from '../src/reviews.ts';
 
 describe('isbn — the scanner gate', () => {
@@ -933,5 +935,79 @@ describe('gaps — what is a question, and what is already an answer', () => {
     assert.ok(REFUSED_FIELDS.length > 0);
     for (const r of REFUSED_FIELDS) assert.ok(r.because.length > 20, r.field);
     assert.ok(REFUSED_FIELDS.some((r) => r.field.includes('ISBN')));
+  });
+});
+
+describe('updateEditionSchema — correcting a printing without disturbing it', () => {
+  // ⚠️ The whole panel rests on one zod subtlety. `createEditionSchema` gives
+  // `format` and `source` defaults; `.partial()` wraps each field as
+  // ZodOptional<ZodDefault<…>> and an absent key short-circuits at the
+  // ZodOptional, so the default never fires. If that ever stopped being true,
+  // every one-field PATCH would silently rewrite the row's provenance to
+  // `manual` — and `EDITION_SOURCES` says `manual` is never overwritten, so the
+  // damage would be permanent and invisible. Typecheck cannot see this.
+  it('⚠️ leaves absent fields absent rather than filling in defaults', () => {
+    const patch = updateEditionSchema.parse({ format: 'hardcover' });
+    assert.deepEqual(Object.keys(patch), ['format']);
+    assert.equal('source' in patch, false);
+    assert.equal('format' in patch, true);
+  });
+
+  it('an empty patch asks for no change at all', () => {
+    assert.deepEqual(updateEditionSchema.parse({}), {});
+  });
+
+  // The distinction `updateEdition` in @lc/db relies on: undefined leaves a
+  // column alone, an explicit null clears it. An edit form that cannot clear a
+  // publisher typed by mistake is only half a fix.
+  it('distinguishes clearing a field from not mentioning it', () => {
+    const cleared = updateEditionSchema.parse({ isbn13: null, publisher: '' });
+    assert.equal(cleared.isbn13, null);
+    assert.equal(cleared.publisher, null, 'a blank form field is not a value');
+    assert.equal('pages' in cleared, false);
+  });
+
+  it('refuses a malformed ISBN rather than storing it', () => {
+    assert.equal(updateEditionSchema.safeParse({ isbn13: '123' }).success, false);
+    assert.equal(updateEditionSchema.safeParse({ isbn13: '9780765326355' }).success, true);
+  });
+
+  it('refuses a format outside the enum, which is also the CHECK constraint', () => {
+    assert.equal(updateEditionSchema.safeParse({ format: 'audiobook' }).success, false);
+    for (const f of EDITION_FORMATS) {
+      assert.equal(updateEditionSchema.safeParse({ format: f }).success, true, f);
+    }
+  });
+
+  // Moving a printing to another book is not an edit: the copies, reviews and
+  // read-state all hang off the work and would be left behind. `workId` is
+  // omitted from the schema, so a caller sending one is ignored, not obeyed.
+  it('⚠️ will not re-point an edition at a different work', () => {
+    assert.equal('workId' in updateEditionSchema.parse({ workId: 9 }), false);
+  });
+});
+
+describe('PHYSICAL_FORMATS — the list the Drive links are hidden by', () => {
+  // A book that only exists on paper is on a shelf, so the book page hides the
+  // "open it in Drive" links for it. That rule keys on format and on nothing
+  // else — deliberately not on the presence of an ISBN, because an ebook can
+  // carry one. These guard the list the rule reads.
+  it('every physical format is a real format', () => {
+    for (const f of PHYSICAL_FORMATS) assert.ok(EDITION_FORMATS.includes(f), f);
+  });
+
+  it('⚠️ nothing is both a physical printing and a file', () => {
+    for (const f of EBOOK_FILE_FORMATS) assert.equal(PHYSICAL_FORMATS.includes(f), false, f);
+  });
+
+  it('a Kindle licence is not physical, so it keeps its Drive links', () => {
+    // No bytes on our side, but nor is it paper. Hiding the links for it would
+    // be hiding them for a book that may well have a sideloaded file in Drive.
+    assert.equal(PHYSICAL_FORMATS.includes('ebook_kindle'), false);
+  });
+
+  it('the three printings a barcode can mean are all physical', () => {
+    // The set `addLineToCatalog` is guessing between when it writes 'paperback'.
+    assert.deepEqual([...PHYSICAL_FORMATS], ['hardcover', 'paperback', 'mass_market']);
   });
 });

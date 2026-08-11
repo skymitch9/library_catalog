@@ -742,6 +742,56 @@ ol.ladder > li::before {
 .copy__actions { display: flex; align-items: flex-end; gap: 0.4rem; }
 .copy__actions select { min-height: 36px; max-width: 10rem; }
 
+/* --- editing a printing --------------------------------------------------- */
+
+/*
+ * The open edit form, marked as in-progress rather than saved.
+ *
+ * A dashed rule and an inset, which is the sibling catalog's `.copy-form`
+ * treatment: the panel around it is solid, so "this is a form you are part-way
+ * through" reads without a heading saying so.
+ */
+.edition-form {
+  padding: 0.7rem;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  background: var(--bg-tint);
+}
+
+/*
+ * Two short fields on a line, one per line on a phone.
+ *
+ * `minmax(0, 1fr)` and not `1fr`: a grid track's default minimum is `auto`, so a
+ * long placeholder in one of these inputs widens its column past the panel and
+ * takes the page's horizontal scrollbar with it. The same trap `.copy__text`
+ * answers with `min-width: 0`.
+ */
+.edition-form__pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.5rem;
+}
+@media (max-width: 26rem) {
+  .edition-form__pair { grid-template-columns: minmax(0, 1fr); }
+}
+/* `.field select` caps at 14rem, which is right in a filter bar and wrong for
+   the only control in a form the width of the panel. */
+.edition-form .field select { max-width: none; }
+
+/*
+ * The armed half of a two-click delete. Terracotta, because that is already
+ * what this palette uses for "outstanding, needs attention" — a third colour
+ * would be inventing one, and the design has exactly two.
+ *
+ * Only the ARMED button wears it. The resting Delete is a plain chip, so a thumb
+ * moving fast cannot read the pair as one control with two endings.
+ */
+button.chip.danger {
+  border-color: var(--warm);
+  color: var(--warm);
+}
+button.chip.danger:hover:not(:disabled) { background: var(--warm); color: var(--panel); }
+
 /* --- related ------------------------------------------------------------- */
 
 .related { display: flex; align-items: flex-start; gap: 0.5rem; }
