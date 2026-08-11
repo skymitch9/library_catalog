@@ -23,11 +23,14 @@
 
 ## Production right now
 
-Measured 2026-08-11 ~06:10, live version `8d60c84f`:
+Measured 2026-08-11 at the end of the overnight run, live version `b82ac811`:
 
 | works | editions | copies | audiobook holdings | accessories | no cover | paperback |
 |---|---|---|---|---|---|---|
-| **224** | 222 | 108 | **46** live | 32 | **28** | **0** |
+| **224** | 227 | 108 | **46** live | 32 | **6** | **0** |
+
+Overnight movement: covers **57 → 6**, details queue **78 questions → 7**,
+audiobook holdings **40 → 46** with the false claims removed.
 
 `/api/health` 200; `/api/series`, `/api/me`, `/api/crowdfunding` return 401
 (auth) rather than 500.
@@ -35,6 +38,27 @@ Measured 2026-08-11 ~06:10, live version `8d60c84f`:
 ⚠️ These numbers move *during* sessions — works went 120 → 140 → 162 → 214 in one
 afternoon of scanning. Any figure here is a measurement with a timestamp, never a
 constant. Re-measure before relying on one.
+
+## ⚠️ Read this first: the run is finished
+
+**Every actionable item on this list is done.** What is left in **Blocked**
+below is blocked on the *user* — questions only they can answer about physical
+objects in their house, or judgement calls about their own data. Nothing there
+is waiting on more work, and re-running the tooling will not clear any of it.
+
+Seven things want a human:
+
+1. Confirm the Illumicrate Percy Jackson set is the 5-book original series.
+2. Say what "+ Books" meant in the Words of Radiance tier — BackerKit holds no
+   itemisation for that pledge at all.
+3. Confirm the published title of the *Unstoppable* novel so it can be split out
+   of the DCC RPG pledge.
+4. Resolve *Secret Ingredient* vs *Pengrooms*, which claim contradictory series.
+5. Give five reward lines a format — the hints name none, and `suggestFormat`
+   rightly declined to guess.
+6. Add subtitles to three board books so they become identifiable.
+7. Decide whether the heygabi.ai `/todo` page should be public. It is built and
+   pushed but **deliberately not deployed**.
 
 ## Overnight autonomous run — started 2026-08-10 ~22:35
 
