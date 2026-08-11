@@ -30,7 +30,8 @@
     "backfill:series-volumes": "tsx scripts/backfill-series-volumes.mjs",
     "backfill:openlibrary-ids": "tsx scripts/backfill-openlibrary-ids.mjs",
     "sync:drive-map": "node scripts/sync-drive-map.mjs",
-    "seed:verdicts": "node scripts/seed-gap-verdicts.mjs"
+    "seed:verdicts": "node scripts/seed-gap-verdicts.mjs",
+    "backfill:years": "tsx scripts/backfill-years.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",
