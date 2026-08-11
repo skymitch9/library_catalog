@@ -249,6 +249,72 @@ accessories are digital.
 
 ---
 
+## Details queue emptied — 2026-08-10
+
+**224 works · 3 still holding a gap · 0 findings pending.** Two passes, on branch
+`feature/apply-pending-findings`.
+
+| | Pass | Cost |
+|---|---|---|
+| ✅ | **162 findings that predate auto-apply, applied.** 61 works. Already bought and paid for by 61 past runs and simply never written down — this is what the owner was hand-clicking "use it" on. `scripts/apply-pending-findings.mjs` | **$0.00** |
+| ✅ | **69 lookups run to clear what was left.** `scripts/research-queue.mjs`, 0 failed | **$1.11** (estimated $1.41) |
+
+Research has now cost **$6.06** over 301 runs. Tokens only — Anthropic bills its
+server-side web searches separately.
+
+⚠️ **The count went UP before it went down, and that is the pipeline working.**
+After the backlog landed, the queue read *66 works / 78 questions* — more
+questions than before, of which **57 were volume numbers**. Filling in 32 series
+names is what created them: `detailFieldsFor` refuses to ask "which volume is
+this?" of a book with no series, so the question does not exist until the series
+is known. The queue got **longer in count and shorter in kind**. Do not "fix" a
+rising number here without reading which field it is in.
+
+⚠️ **The page's own bulk button cannot finish this job**, and its count is
+misleading rather than wrong. `outstanding` filters on `runs[workId] === undefined`
+and `runs` is `latestRuns` — one row per work *ever* looked up. With 66 works
+still owing an answer it offered **"Look up 5"**. The other 61 had been looked up
+weeks earlier, before they had a series to be a volume of. The per-row button
+reaches them; the script is that, unattended.
+
+**Three works could not be identified and are deliberately left open** — the model
+declined rather than guess, which is the behaviour we want: #141 *Touch and
+Explore* (Scholastic), #160 *Bizzy Bear* (Nosy Crow), #174 *I love you, little
+bear* (Judi Abbot). All three are bare series-line titles with no subtitle, ISBN
+or year, where any match would attach another book's facts. Fix by adding the
+subtitle, not by re-running.
+
+**Everything is machine-decided and reversible.** All 311 values carry
+`decided_how = 'auto'`, so `GET /api/research/auto-applied` lists them and
+`POST /api/research/undo` takes them back, ten at a time. Nothing a person had
+asserted was touched: `applyFinding` writes only into blanks, and the 162-finding
+pass additionally refused any finding whose work+field already carried a
+human verdict (zero did).
+
+### Two things found by running it
+
+- ⚠️ **`updateWork` rewrites `sort_title`, `primary_author` and `work_key` from
+  title/authors on *every* update**, whatever the patch asked for. So a stored
+  value that has drifted gets silently corrected by a write that only meant to
+  fill in a year. Measured across all 224 works: `sort_title` disagreed on **5**
+  (works 224–228, the crowdfunding-import ones, which kept their leading article
+  and sort under "The"); `primary_author` and `work_key` disagreed on **none**.
+  The five are now corrected. **`work_key` drifting would be the serious one** —
+  it is the join to 860 audiobook reviews, so a silent rewrite moves a book's
+  reviews instead of failing visibly.
+- ⚠️ **Two books in one series ended up with two different series names.** #213
+  *Secret Ingredient* is "The Pengrooms" vol 2; #215 *Pengrooms* is "Pringle &
+  Finn" vol 1. Both findings cite a real source (the author's Kickstarter, and
+  Goodreads' series page) and both are plausible — Paul Castle's series is
+  indexed under both names. They cannot both be right in one catalog. Needs a
+  person to pick one.
+
+Every volume number written as a *value* (15 of them) carries a source URL and a
+basis that names the page. None hedge. Checked on purpose: a wrong volume number
+is worse than a blank, because a filled column is never re-asked.
+
+---
+
 ## Browser verification sweep — 2026-08-10
 
 The first real browser pass over everything five agent branches shipped. **Zero
