@@ -323,6 +323,45 @@ export type ReadState = (typeof READ_STATES)[number];
 export const READ_FORMATS = ['print', 'ebook', 'audio'] as const;
 export type ReadFormat = (typeof READ_FORMATS)[number];
 
+/**
+ * How a read state came to say what it says. Migration 0070.
+ *
+ * ⚠️ Not `DECISION_MODES`, though the shape is identical and the temptation is
+ * obvious. 'auto' answers *"was it read before it was applied"*; this answers
+ * *"on what evidence"*, and the evidence kind is the part worth keeping. There
+ * is one kind today and there are obvious future ones — an import, a Goodreads
+ * shelf — and every one of them must stay distinguishable from a rating. Spend
+ * 'auto' here and there is nothing left to tell the second source apart with.
+ *
+ * - `'human'`  — somebody pressed a read-state chip. `setReadState` is the only
+ *                writer that stamps it, and nothing may overrule it.
+ * - `'rating'` — derived from a rating this person left, on either catalog. See
+ *                `deriveReadState` in `readstate.ts`.
+ * - `NULL`     — the row predates the column, or exists only because
+ *                `cacheRating` minted it. Deliberately not backfilled; see the
+ *                head of migration 0070.
+ */
+export const READ_STATE_SOURCES = ['human', 'rating'] as const;
+export type ReadStateSource = (typeof READ_STATE_SOURCES)[number];
+
+/**
+ * Which catalog a review was written from, and therefore what it is a review
+ * *of*. Stored on the shared Firestore document as `source`.
+ *
+ * ⚠️ This is not bookkeeping — it is the honesty guard. An audiobook review is
+ * partly a review of a **narrator**; a print review is not. Porting both into
+ * one place without recording which is which would make "5 stars" on a paperback
+ * mean something it never said. The book page renders "audiobook" beside every
+ * one of them, always. See `reviews.ts`, which owns the rest of that contract.
+ *
+ * ⚠️ It lives here, in the leaf, rather than beside `ReviewDoc`, for one narrow
+ * reason: `schemas.ts` needs `z.enum()` over it, and `schemas.ts` may import
+ * `constants.ts` and nothing else. The alternative — a second copy of the list
+ * inside a schema — is the failure mode this whole file exists to prevent.
+ */
+export const REVIEW_SOURCES = ['audio', 'library'] as const;
+export type ReviewSource = (typeof REVIEW_SOURCES)[number];
+
 /** Where an edition's facts came from. 'manual' outranks all and is never overwritten. */
 export const EDITION_SOURCES = [
   'manual',

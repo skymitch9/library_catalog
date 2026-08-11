@@ -306,6 +306,118 @@ npm run backfill:edition-kinds -- --remote --commit
 npm run deploy
 ```
 
+## A rating means you read it — 2026-08-11
+
+The ask: *"if a book has a rating from the audiobook library mark it as read"*,
+refined to *"ratings should be for the logged in person"* and *"mark all copies
+of a book read"*.
+
+Built on `worktree-agent-afef029056ca7bdab`. Typecheck clean, **197 tests pass
+(was 180)**, exercised end to end against a local D1 with migration `0070`
+applied — the backfill run twice to prove idempotence, and the Worker's exact
+statement sequence run by hand (see the note on `wrangler dev` below).
+
+Full reasoning in **`docs/info/identity-and-reviews.md` §7**. The short version:
+
+| | What |
+|---|---|
+| ✅ | **`user_book.read_state_how`** — `'human'` / `'rating'` / NULL. Migration **`0070`**, schema only, no CHECK (`gap_verdict.field`'s idiom). Partial index on the non-null side. |
+| ✅ | **The derivation is in the BROWSER**, on the book page. The Worker cannot see Firestore — no service account, deliberately — so `Reviews.tsx` is the only thing in the estate that sees both stores. It posts what it read back to `POST /api/reviews/:workId/observed`. |
+| ✅ | **`deriveReadState` in `@lc/core`** — one rule, three callers (Worker, browser, backfill). Never overrules `'human'`; never promotes a `dnf`; refines its own earlier answer; returns null for a no-op so a second run is free. |
+| ✅ | **`setReadState` stamps `'human'` unconditionally.** That is the entire protection: touch the chips once and no sync can ever move it again. |
+| ✅ | **`read_format = 'audio'`** from an audiobook review. The owner listens to far more than they read, so this is the main signal rather than a nicety. |
+| ✅ | **`scripts/backfill-read-from-ratings.mjs`** — `npm run backfill:read-states`. Dry run by default. |
+| ✅ | The book page prints *"Marked read from your audiobook rating"*, so nobody is told they asserted something they did not. |
+
+### ⚠️ The multi-copy half needed no code, and here is why
+
+Read state is `UNIQUE (work_id, user_id)` — it hangs off the **work**, not the
+copy. Three `copy` rows of one work have always shared one read state. What
+needed code is three copies that arrived as three *works*, and the fan-out for
+that is by `work.work_key` (indexed, **not** unique), which is also the key the
+reviews carry. Measured: **no `work_key` is shared by two work rows in
+production today**, so it is correct in advance rather than after the fact.
+It merges nothing and mints no `work_relation` — that stays with the
+omnibus/`edition.collects` work.
+
+### ⚠️ Three things found by running it
+
+1. **All 869 review documents carry no `source`, no `workKey` and no `email`.**
+   So reading `doc.source` would have derived 869 read states with **no format
+   at all**. `reviewSourceOf` closes it: `reviewDocFor` always writes both
+   `workKey` and `source`, so a document with neither cannot have come from
+   here, and the only other writer is the audiobook site. The invariant that
+   makes that sound is asserted in `core.test.ts`, not left as a comment.
+2. **A live display defect.** `Reviews.tsx` rendered `r.source === 'audio' ?
+   'audiobook' : 'this library'` — which labelled **every** audiobook review
+   "this library", the one thing that component's own header says must never
+   happen. Fixed by the same function.
+3. ⚠️ **`wrangler dev` in a git worktree writes to the MAIN CHECKOUT**, and
+   `--persist-to` does not override it. A worktree's `.git` is a file, so
+   wrangler walks up past it and resolves `.wrangler/state` under
+   `library_catalog/apps/worker/`. Symptom: the dev server served a stale
+   116-work database and 500'd on `cover_status`. Only the local miniflare dev
+   D1 was touched (gitignored, not production), and the run was stopped as soon
+   as it was diagnosed. **`d1 execute --local --persist-to` IS honoured** — that
+   is the pair, and it is why the same asymmetry is worth remembering.
+
+### Staged — ⚠️ migration BEFORE deploy, and the backfill is the user's call
+
+```bash
+# 1. Schema only. No data in this one, unlike 0040.
+npx wrangler d1 migrations apply library-catalog --remote --config apps/worker/wrangler.toml
+
+# 2. Then the code.
+npm run deploy
+
+# 3. Rehearse against production. Reads only. READ THE SAMPLE LIST it prints.
+#    ⚠️ LC_AUDIOBOOK_ROOT is NOT optional — see the trap below.
+LC_AUDIOBOOK_ROOT=C:/Users/nbasl/OneDrive/Documents/vs-code-repos/bookbuddy/audiobook_catalog \
+  npm run backfill:read-states -- --remote
+
+# 4. Apply. Confirms by re-reading the database and warns on bad arithmetic.
+LC_AUDIOBOOK_ROOT=C:/Users/nbasl/OneDrive/Documents/vs-code-repos/bookbuddy/audiobook_catalog \
+  npm run backfill:read-states -- --remote --commit
+```
+
+**Dry run against production 2026-08-11 — nothing was written:**
+
+| | |
+|---|---|
+| review documents | **869** (860 on 2026-08-09) |
+| claimed by a signed-in person | **412** — Skylar 383, Amber Mitchell 29 |
+| nobody in `app_user` claims | **457** — Samantha Hardman 225, Jamie Jeremiah Lievertz 213, Sparkling Ember 11, Solomon Hardman 8 |
+| no derivable `workKey` | **0** |
+| book not held here | **397** |
+| **would mark read** | **15**, every one `read_format = 'audio'` |
+
+The 15: all five Percy Jackson volumes, *Project Hail Mary* (for **both**
+people), *Dungeon Born*, *Moonfall*, *Words of Radiance*, *Yumi and the
+Nightmare Painter*, *The Wandering Inn*, and four others.
+
+⚠️ **15 is the right answer, not a shortfall.** 397 of the 412 are audiobooks
+with no print or ebook copy here — the household owns ~1,075 audiobooks against
+231 works in this catalog. And most of the physical shelf is collection pieces
+that were never meant to be read, so a blank read state there is correct.
+**Nothing in this feature turns an unread physical book into a worklist, a badge
+or a count** — the same trap `cover_status` NULL and `edition_kind` NULL were
+each shaped to avoid.
+
+⚠️ **Two zero-reads that look like answers**, both hit while building this and
+both now fatal rather than tidy: the default `catalog.csv` path lands three
+directories too deep in a worktree (first dry run: `0 distinct bookIds`, `no
+derivable workKey: 412`), and `scripts/lib/d1.mjs` returned **0 works** against
+a live 231 on one run and 231 a minute later — the flaky read `docs/TODO.md`
+already records. The script exits on either.
+
+### Worth running alongside, not required
+
+`npm run backfill:reviews -- --commit` (the review-**key** backfill, written
+2026-08-09 and still never run) stamps `workKey` **and** `source: 'audio'` onto
+all 869. After it, the browser reads the audio signal from the field instead of
+inferring it, and `fetchReviews` can eventually drop its legacy `bookId` query.
+The two are independent and may run in either order.
+
 ## Staged, waiting on the user to run — 2026-08-10
 
 All dry-run and verified against production. **Nothing below has been written.**

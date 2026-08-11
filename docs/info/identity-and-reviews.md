@@ -241,7 +241,142 @@ Drop the second query once the backfill has run and the count is stable.
 
 ---
 
-## 7. Where each fact lives
+## 7. A rating is evidence the book was read
+
+> *"if a book has a rating from the audiobook library mark it as read"* —
+> *"ratings should be for the logged in person. so if its a rating i left mark it
+> read for me"* — *"mark all copies of a book read so if i own percy jackson 3
+> times … mark all 3 read"*
+
+Built 2026-08-11. Migration **0070** adds `user_book.read_state_how`.
+
+### 7.1 Where the derivation happens, and why it cannot happen anywhere else
+
+**In the browser, on the book page.** The Worker cannot see Firestore — there is
+no service account and §3 explains why that is the design. The browser is the
+only thing in this estate that sees both stores, and `Reviews.tsx` already
+fetches every review of a book when the page opens. Recognising the signed-in
+person's own rating among them and posting it to
+`POST /api/reviews/:workId/observed` is the whole mechanism.
+
+The three alternatives, and why each was rejected:
+
+| Option | Why not |
+|---|---|
+| A cron | There is none, deliberately (§3). Adding one to reach Firestore needs the service account this project refuses to hold. |
+| Server-side from `rating_cached` | Forbidden by the contract on `cacheRating`, and useless anyway — the cache only ever contains what this app already wrote, so it can never learn about a review written on the audiobook site. |
+| Inside `POST /draft` | `/draft` runs **before** the browser writes to Firestore. `cacheRating` there knowingly accepts being wrong if the write fails, because a sort key can be stale. A read state cannot: it is shown to a person as a fact about their own life. `/observed` reports what Firestore *actually holds*, read back afterwards. |
+
+A **backfill** covers what the browser cannot: nobody will open 224 book pages.
+`scripts/backfill-read-from-ratings.mjs`, dry run by default. See §7.5.
+
+### 7.2 ⚠️ A derived read state stays distinguishable, forever
+
+`user_book.read_state_how`, the same move as `research_finding.decided_how`
+(0013) and `work.cover_status` (0040):
+
+| Value | Meaning |
+|---|---|
+| `'human'` | Somebody pressed a read-state chip. **`setReadState` is the only writer, and it stamps unconditionally.** |
+| `'rating'` | Derived, by `deriveReadState` in `packages/core/src/readstate.ts`. |
+| `NULL` | Predates the column, or the row exists only because `cacheRating` minted it. Deliberately not backfilled. |
+
+The precedence never overrules a person, which is the point: a `'human'` row is
+refused outright, so **marking a book unread is permanent** and a re-sync cannot
+put 'read' back over it. A `'rating'` row may be refined by better evidence. A
+`'dnf'` or `'reference'` row with no recorded how is left alone — those are
+*more* specific than 'read', and overwriting one trades a precise truth for a
+vague one. The book page prints "Marked read from your audiobook rating" so
+nobody is told they asserted something they did not.
+
+### 7.3 `read_format` is the main signal, not a nicety
+
+The owner reads far more audiobooks than physical books; most of the shelf is
+collection pieces. So an audiobook review is evidence of a **listen**, and that
+is the most accurate thing this app will ever know about how a book was
+consumed. `source: 'audio'` ⇒ `read_format = 'audio'`. A library review is
+evidence of no particular format — this catalog holds EPUBs and Kindle editions
+too — and guessing `'print'` would be a fabrication. An existing format is never
+overwritten.
+
+⚠️ **And `source` is absent from every existing review.** Measured against the
+live collection 2026-08-11: **869 documents, 0 with `source`, 0 with `workKey`,
+0 with `email`.** Reading `doc.source` alone answers "unknown" for the entire
+corpus. `reviewSourceOf` in `packages/core/src/reviews.ts` closes that: this
+catalog's `reviewDocFor` **always** writes both `workKey` and `source`, so a
+document carrying neither cannot have come from here, and the only other writer
+of that collection is the audiobook site. Absence is the evidence. The invariant
+that makes it sound is asserted in `core.test.ts`, not left as a comment.
+
+The same measurement fixed a live display defect: `Reviews.tsx` rendered
+`r.source === 'audio' ? 'audiobook' : 'this library'`, which labelled **every**
+audiobook review "this library" — precisely the thing that component's own
+header says must never happen.
+
+### 7.4 ⚠️ The "three copies" half needed no code, and the half that did is not deduplication
+
+Read state is `UNIQUE (work_id, user_id)` — it hangs off the *work*, not the
+copy. **Three `copy` rows of one work have always shared one read state.**
+
+What needed code is three copies that arrived as three *works*, which is what
+scanning does when a title is spelled two ways. The join is `work.work_key`,
+which is indexed and **not unique**, and which is the same key the review
+documents carry. So "which works is this rating about" and "which works does this
+review belong to" are one question. A second work row for the same book is swept
+in for free.
+
+⚠️ This merges nothing, mints no `work_relation` and changes no title. Two works
+sharing a `work_key` are the same book by the only definition this catalog has.
+If they should be one row, that is a person's decision and a different feature —
+see the omnibus/`edition.collects` work.
+
+Measured against production 2026-08-11: **no `work_key` is shared by two work
+rows**, so the fan-out currently reaches exactly one work every time. It is
+correct in advance rather than after the duplicate appears.
+
+### 7.5 What the backfill would write — staged 2026-08-11, NOT run
+
+```bash
+LC_AUDIOBOOK_ROOT=C:/Users/nbasl/OneDrive/Documents/vs-code-repos/bookbuddy/audiobook_catalog \
+  npm run backfill:read-states -- --remote            # dry run, reads only
+LC_AUDIOBOOK_ROOT=... npm run backfill:read-states -- --remote --commit
+```
+
+Dry run against production, 231 works and 2 signed-in people:
+
+| | |
+|---|---|
+| review documents | **869** (was 860 on 2026-08-09) |
+| claimed by a signed-in person | **412** — Skylar 383, Amber Mitchell 29 |
+| nobody in `app_user` claims them | **457** — Samantha Hardman 225, Jamie Jeremiah Lievertz 213, Sparkling Ember 11, Solomon Hardman 8 |
+| no derivable `workKey` | **0** |
+| book not in this catalog | **397** |
+| **would mark read** | **15**, every one `read_format = 'audio'` |
+| would refuse (human-set) | 0 — `user_book` is empty |
+
+⚠️ **15 is not a shortfall.** 397 of the 412 are audiobooks the household owns
+and has no print or ebook copy of; the catalog holds 231 works against ~1,075
+audiobooks. And most of the physical shelf is collection pieces that were never
+read, so a blank read state there is the correct answer, not a gap. Nothing in
+this feature turns an unread physical book into a worklist, a badge or a count.
+
+⚠️ **Two `LC_AUDIOBOOK_ROOT` traps**, both hit while building this. In a git
+worktree the default path lands three directories too deep, and the first dry
+run reported `0 distinct bookIds` / `no derivable workKey: 412` — which looks
+exactly like a matching failure and was a missing file. The script now **exits**
+rather than reporting a tidy zero. Second, `scripts/lib/d1.mjs` returned **0
+works** against a live 231 on one run and 231 a minute later; the script now
+refuses to proceed on a zero-row read for the same reason.
+
+### 7.6 Running the review-key backfill would improve this
+
+`scripts/backfill-review-keys.mjs --commit` has still never been run. Doing so
+stamps `workKey` **and** `source: 'audio'` onto all 869, after which the browser
+path gets the audio signal from the field instead of by inference, and
+`fetchReviews` can eventually drop its legacy `bookId` query (§6). The two
+backfills are independent and may run in either order.
+
+## 8. Where each fact lives
 
 | Fact | Home | Read by |
 |---|---|---|
@@ -249,5 +384,6 @@ Drop the second query once the backfill has run and the count is stable.
 | What you may do here | D1 `app_user.role` | this app |
 | What you own, where it is | D1 `work`/`edition`/`copy` | this app |
 | Whether *this copy* is read | D1 `user_book` | this app |
+| **How that read state was decided** | D1 `user_book.read_state_how` | this app |
 | Whether the book was any good | Firestore `reviews` | **both** |
 | The rating, for sorting | D1 `user_book.rating_cached` | this app, never authoritative |

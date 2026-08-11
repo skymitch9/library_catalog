@@ -1,0 +1,80 @@
+-- How a read state came to say what it says.
+--
+-- ⚠️ Additive only. One nullable column and one partial index. No table is
+-- rebuilt and no existing row is touched.
+--
+-- ## Why this column has to exist before the derivation can
+--
+-- The owner's ask: *"if a book has a rating from the audiobook library mark it
+-- as read"*. Both catalogs write into one Firestore `reviews` collection, and
+-- 860 documents already sit there. Turning each of those into a `user_book` row
+-- is the whole feature.
+--
+-- Without this column, `read_state = 'read'` would stop meaning anything. It
+-- would be indistinguishable whether a person pressed the Read chip on the book
+-- page or a five-year-old audiobook rating did it on their behalf — and, worse,
+-- there would be no way for a re-sync to know it must NOT put 'read' back over
+-- an 'unread' the person had just corrected. A derived value that can silently
+-- undo a person's correction is not a convenience, it is a bug with a schedule.
+--
+-- This is the third time this project has made the same move, and deliberately
+-- the same way each time:
+--
+--   research_finding.decided_how  (0013) — was this value read before it landed?
+--   work.cover_status             (0040) — is this picture actually the book?
+--   user_book.read_state_how      (here) — did a person say this, or a rating?
+--
+-- Provenance stored beside the value, recorded at the moment it is free to
+-- record. A catalog that cannot tell a person's assertion from a machine's
+-- inference cannot be audited, and the information is unrecoverable afterwards.
+--
+-- ## Values
+--
+--   'human'  — somebody pressed a read-state chip. `setReadState` stamps it, and
+--              it is the ONLY writer that does. Nothing may overrule it.
+--   'rating' — derived from a rating this person left, on either catalog, by
+--              `deriveReadState` in packages/core/src/readstate.ts.
+--   NULL     — the row predates this column, or exists only because
+--              `cacheRating` minted it to hold a rating for sorting.
+--
+-- ⚠️ NULL is deliberately NOT backfilled to 'human', for exactly the reason
+-- migration 0013 gives: every read state set before today genuinely was set by a
+-- person, so backfilling would be *accurate*, and it would still be wrong —
+-- it would put into the column a fact that nothing observed, and an invented
+-- 'human' is indistinguishable from a measured one forever after. As it happens
+-- the point is moot today: `user_book` holds **zero rows** (measured against
+-- production 2026-08-11), so this feature does not fill gaps in a read history,
+-- it establishes the entire read history in one go.
+--
+-- ⚠️ Not 'auto', though `DECISION_MODES` already has that word. 'auto' answers
+-- "was it read before it was applied"; this answers "on what evidence", and the
+-- evidence kind is the part worth keeping — a future 'import' or 'goodreads'
+-- must be distinguishable from a rating, and 'auto' spends the distinction
+-- before it is needed.
+--
+-- Deliberately no CHECK constraint, following `gap_verdict.field` (0007) and
+-- `research_finding.decided_how` (0013): the set will grow, and a CHECK here
+-- makes each addition a table rebuild. `READ_STATE_SOURCES` in
+-- packages/core/src/constants.ts holds the list, and an unrecognised value
+-- simply matches no filter.
+--
+-- ## ⚠️ What this migration deliberately does NOT do
+--
+-- It adds no worklist, no badge and no count. The owner reads far more
+-- audiobooks than physical books, and most of the physical shelf is collection
+-- pieces that were never going to be read. A book with no read state is the
+-- NORMAL case here and must never render as a gap — the same trap
+-- `cover_status` NULL ("nobody looked", not "wrong") and `edition_kind` NULL
+-- ("ordinary", not "unclassified") were each shaped to avoid. Nothing here
+-- creates 223 jobs nobody will do.
+
+ALTER TABLE user_book ADD COLUMN read_state_how TEXT;
+
+-- "What did the ratings decide on my behalf?" is the audit question this column
+-- exists to answer, and it is a full scan of the table without an index. Partial
+-- on the non-null side, following `idx_edition_kind` in migration 0050: the
+-- interesting rows are the stamped ones, and once the backfill has run the NULL
+-- side will be the large one.
+CREATE INDEX idx_user_book_read_state_how
+  ON user_book(read_state_how, user_id)
+  WHERE read_state_how IS NOT NULL;

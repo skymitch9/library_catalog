@@ -80,7 +80,18 @@ import {
   isDirectionalRelation,
 } from '../src/constants.ts';
 import { updateEditionSchema } from '../src/schemas.ts';
-import { bookIdFromTitle, reviewDocFor, workKeyForAudiobookRow } from '../src/reviews.ts';
+import {
+  bookIdFromTitle,
+  reviewDocFor,
+  reviewSourceOf,
+  workKeyForAudiobookRow,
+} from '../src/reviews.ts';
+import {
+  deriveReadState,
+  isMyReview,
+  ratingImpliesRead,
+  readFormatFromReviewSource,
+} from '../src/readstate.ts';
 import {
   auditSentence,
   classifyEdition,
@@ -1878,5 +1889,221 @@ describe('edition contents — what is printed inside the object', () => {
 
   it('an empty box is a clear, not the string ""', () => {
     assert.equal(updateEditionSchema.parse({ collects: '   ' }).collects, null);
+  });
+});
+
+describe('which catalog wrote a review, including the 869 that never said', () => {
+  it('⚠️ a document with neither source nor workKey is an AUDIOBOOK review', () => {
+    // Measured against the live collection 2026-08-11: 869 documents, 0 with
+    // `source`, 0 with `workKey`. Reading `doc.source` alone answers "unknown"
+    // for the entire corpus, which would derive 869 read states with no format
+    // — for an owner who listens to far more than they read. Only two writers
+    // touch that collection, and this catalog always stamps both fields.
+    assert.equal(reviewSourceOf({ bookId: 'firefight', displayName: 'x' } as never), 'audio');
+  });
+
+  it('an explicit source is believed over the inference', () => {
+    assert.equal(reviewSourceOf({ source: 'library', workKey: 'a|b' }), 'library');
+    assert.equal(reviewSourceOf({ source: 'audio', workKey: 'a|b' }), 'audio');
+    // The backfill stamps both together, so a library review is never mistaken.
+    assert.equal(reviewSourceOf({ source: 'library' }), 'library');
+  });
+
+  it('⚠️ a workKey with no source is UNKNOWN, not assumed', () => {
+    // Unreachable today — the key backfill writes `source` in the same merge.
+    // Whatever produced it is something this rule has never seen, so it says so.
+    assert.equal(reviewSourceOf({ workKey: 'firefight|brandon sanderson' }), null);
+  });
+
+  it('⚠️ THE INVARIANT: a document this catalog writes always carries both', () => {
+    // `reviewSourceOf` is only sound while this stays true. Make `workKey`
+    // conditional in `reviewDocFor` and the inference starts calling print
+    // reviews audiobooks, silently, on every book page. Nothing else fails.
+    const { doc } = reviewDocFor({
+      title: 'Firefight',
+      authors: 'Brandon Sanderson',
+      displayName: 'Nick',
+      rating: 4,
+      text: '',
+    });
+    assert.equal(typeof doc.workKey, 'string');
+    assert.equal(doc.source, 'library');
+    assert.equal(reviewSourceOf(doc), 'library');
+  });
+});
+
+describe('read state from a rating — whose rating it is', () => {
+  it('⚠️ a housemate’s review does NOT mark my book read', () => {
+    // The refinement the whole feature turns on: "ratings should be for the
+    // logged in person. so if its a rating i left mark it read for me." Both
+    // people review into the same Firestore collection.
+    assert.equal(
+      isMyReview({ displayName: 'Gabi' }, { email: 'nb@example.com', reviewName: 'Nick' }),
+      false,
+    );
+  });
+
+  it('matches on email when the document has one', () => {
+    assert.equal(
+      isMyReview(
+        { displayName: 'Nicholas B', email: 'NB@Example.com' },
+        { email: 'nb@example.com', reviewName: 'Nick' },
+      ),
+      true,
+    );
+  });
+
+  it('⚠️ email WINS over the name, so a renamed Google account is not two people', () => {
+    // displayName is a Google profile string and can change at any time. When
+    // both sides carry an email, the name is not consulted at all.
+    assert.equal(
+      isMyReview(
+        { displayName: 'Nick', email: 'someone.else@example.com' },
+        { email: 'nb@example.com', reviewName: 'Nick' },
+      ),
+      false,
+    );
+  });
+
+  it('⚠️ falls back to the folded display name — the ONLY key that reaches the 860', () => {
+    // Reviews written on the audiobook site carry no email: that site signs out
+    // of Firebase before storing anything and attributes by displayName. A
+    // stricter rule here would see none of the existing reviews.
+    assert.equal(isMyReview({ displayName: '  nIcK ' }, { reviewName: 'Nick' }), true);
+  });
+
+  it('an empty name matches nobody', () => {
+    // Otherwise a document with no displayName would belong to every user whose
+    // reviewName has never been set, which is all of them at first sign-in.
+    assert.equal(isMyReview({ displayName: '' }, { reviewName: '' }), false);
+    assert.equal(isMyReview({}, { email: 'nb@example.com' }), false);
+  });
+});
+
+describe('read state from a rating — what counts as evidence', () => {
+  it('⚠️ 0.5 is a rating: a book somebody hated is still a book they read', () => {
+    // There is deliberately no floor. A threshold would silently un-read the
+    // worst books in the house.
+    assert.equal(ratingImpliesRead(0.5), true);
+    assert.equal(ratingImpliesRead(1), true);
+    assert.equal(ratingImpliesRead(5), true);
+  });
+
+  it('a value off the shared half-star scale is not a rating', () => {
+    assert.equal(ratingImpliesRead(0), false);
+    assert.equal(ratingImpliesRead(3.7), false);
+    assert.equal(ratingImpliesRead(6), false);
+    assert.equal(ratingImpliesRead(null), false);
+    assert.equal(ratingImpliesRead(undefined), false);
+  });
+
+  it('⚠️ an audiobook review is evidence of LISTENING, and that is the common case', () => {
+    // The owner reads far more audiobooks than physical books. Dropping this
+    // would make the page say "read" against a paperback never opened.
+    assert.equal(readFormatFromReviewSource('audio'), 'audio');
+  });
+
+  it('a library review is evidence of no particular format', () => {
+    // This catalog holds EPUBs and Kindle editions too, and the review form
+    // asks for a rating, not a format. Guessing 'print' would be a fabrication.
+    assert.equal(readFormatFromReviewSource('library'), null);
+    assert.equal(readFormatFromReviewSource(null), null);
+    assert.equal(readFormatFromReviewSource(undefined), null);
+  });
+});
+
+describe('read state from a rating — what it may overwrite', () => {
+  it('a rated book with no user_book row at all becomes read', () => {
+    // ⚠️ The case that happens ~860 times. `user_book` held zero rows when this
+    // was built, so this is not gap-filling — it establishes the read history.
+    assert.deepEqual(deriveReadState({ rating: 4.5, source: 'audio' }, null), {
+      readState: 'read',
+      readFormat: 'audio',
+      readStateHow: 'rating',
+    });
+  });
+
+  it('a row cacheRating minted — unread, no recorded how — is fair game', () => {
+    assert.deepEqual(
+      deriveReadState(
+        { rating: 3, source: 'audio' },
+        { readState: 'unread', readStateHow: null, readFormat: null },
+      ),
+      { readState: 'read', readFormat: 'audio', readStateHow: 'rating' },
+    );
+  });
+
+  it('⚠️ NEVER overrules a person, even one who has just marked it unread', () => {
+    // The reason migration 0070 exists. Without this, every page view would put
+    // 'read' back over the correction and the feature would be untrustworthy.
+    assert.equal(
+      deriveReadState(
+        { rating: 5, source: 'audio' },
+        { readState: 'unread', readStateHow: 'human', readFormat: null },
+      ),
+      null,
+    );
+  });
+
+  it('⚠️ never promotes a did-not-finish, which can carry a rating of its own', () => {
+    // 'dnf' is strictly more informative than 'read'. Overwriting it would
+    // replace the specific truth with a vaguer one. Same for 'reference'.
+    assert.equal(
+      deriveReadState(
+        { rating: 1, source: 'audio' },
+        { readState: 'dnf', readStateHow: null, readFormat: null },
+      ),
+      null,
+    );
+    assert.equal(
+      deriveReadState(
+        { rating: 4, source: 'audio' },
+        { readState: 'reference', readStateHow: null, readFormat: null },
+      ),
+      null,
+    );
+  });
+
+  it('is idempotent — a second look at the same rating writes nothing', () => {
+    // Load-bearing three times over: it keeps the backfill's "would write"
+    // count honest, keeps the browser from writing on every page view, and is
+    // what makes `marked: []` mean "nothing to reload for".
+    assert.equal(
+      deriveReadState(
+        { rating: 4, source: 'audio' },
+        { readState: 'read', readStateHow: 'rating', readFormat: 'audio' },
+      ),
+      null,
+    );
+  });
+
+  it('⚠️ refines its OWN earlier answer when the audiobook review turns up later', () => {
+    // A library review derived a read with no format; the audiobook review for
+    // the same book arrives afterwards and is better evidence. Allowed because
+    // the row is stamped 'rating' — ours to improve, unlike a human's.
+    assert.deepEqual(
+      deriveReadState(
+        { rating: 4, source: 'audio' },
+        { readState: 'read', readStateHow: 'rating', readFormat: null },
+      ),
+      { readState: 'read', readFormat: 'audio', readStateHow: 'rating' },
+    );
+  });
+
+  it('never overwrites a format already recorded', () => {
+    // Someone said they read this in print. An audio rating adds the read state
+    // it did not have, and leaves their answer about format alone.
+    assert.deepEqual(
+      deriveReadState(
+        { rating: 4, source: 'audio' },
+        { readState: 'unread', readStateHow: null, readFormat: 'print' },
+      ),
+      { readState: 'read', readFormat: 'print', readStateHow: 'rating' },
+    );
+  });
+
+  it('a non-rating changes nothing, whatever the row says', () => {
+    assert.equal(deriveReadState({ rating: 0 }, null), null);
+    assert.equal(deriveReadState({ rating: 3.3 }, null), null);
   });
 });

@@ -54,6 +54,7 @@
  * bridge is additive, and nothing on that side has to change for it to be safe.
  */
 
+import type { ReviewSource } from './constants.js';
 import { cleanAudiobookTitle, cleanTitleWithSeries, workKeyFor } from './titles.js';
 
 /**
@@ -81,16 +82,15 @@ export function reviewDocId(bookId: string, displayName: string): string {
 }
 
 /**
- * Which catalog a review was written from, and about what.
+ * ⚠️ `REVIEW_SOURCES` and `ReviewSource` live in `constants.ts` now, and the
+ * move is not cosmetic: `schemas.ts` needs `z.enum()` over the list and may
+ * import `constants.ts` and nothing else (see the header of both files). The
+ * honesty argument for why the field exists at all moved with the values.
  *
- * ⚠️ This is not bookkeeping — it is the honesty guard. An audiobook review is
- * partly a review of a *narrator*; a print review is not. Porting them into one
- * place without recording which is which would make "5 stars" on a paperback
- * mean something it never said. The UI is expected to render "4.5 (audiobook)"
- * rather than silently attributing it to the edition on the shelf.
+ * Not re-exported from here — `index.ts` already re-exports `constants.ts`, and
+ * two `export *` paths to one name is the `EDITION_MEDIA` duplicate-export trap
+ * `docs/TODO.md` records. Importers of `@lc/core` see no change.
  */
-export const REVIEW_SOURCES = ['audio', 'library'] as const;
-export type ReviewSource = (typeof REVIEW_SOURCES)[number];
 
 /**
  * A review document as it exists in Firestore, in the shared `reviews`
@@ -130,6 +130,48 @@ export interface ReviewDoc {
    * and never will.
    */
   email?: string;
+}
+
+/**
+ * Which catalog wrote this document — **including the 869 that never said**.
+ *
+ * ## ⚠️ Why this is a proof and not a guess
+ *
+ * Measured against the live `reviews` collection 2026-08-11: **869 documents,
+ * of which 0 carry `source`, 0 carry `workKey` and 0 carry `email`.** Every one
+ * of them predates this catalog, and `backfill-review-keys.mjs` — which is what
+ * stamps `source: 'audio'` — has never been run with `--commit`.
+ *
+ * So reading `doc.source` alone answers "unknown" for the entire corpus, and
+ * `read_format` would come out NULL for every book in the house. For an owner
+ * who *"reads way more audiobooks than physicals"* that throws away the single
+ * most accurate thing this app knows about how a book was consumed.
+ *
+ * The absence is itself the evidence. `reviewDocFor` below **always** writes
+ * both `workKey` and `source`, in the same object, with no branch that can omit
+ * either. A document carrying neither therefore cannot have come from this
+ * catalog, and the only other writer of that collection is
+ * `audiobook_catalog/site/reviews.js`. Hence: no `source` **and** no `workKey`
+ * ⇒ written on the audiobook site ⇒ a review of an audiobook.
+ *
+ * ⚠️ That inference is only sound while `reviewDocFor` writes both fields
+ * unconditionally. If a future edit ever makes `workKey` optional on a document
+ * this catalog writes, this function starts calling print reviews audiobooks
+ * and nothing will fail — so the invariant is asserted in `core.test.ts` rather
+ * than left as a comment.
+ *
+ * The remaining combination — no `source` but a `workKey` present — is not
+ * reachable today (the key backfill writes both in one merge) and is answered
+ * `null` rather than assumed, because whatever produced it is something this
+ * function has never seen.
+ */
+export function reviewSourceOf(doc: {
+  source?: string | null;
+  workKey?: string | null;
+}): ReviewSource | null {
+  if (doc.source === 'audio' || doc.source === 'library') return doc.source;
+  if (!doc.source && !doc.workKey) return 'audio';
+  return null;
 }
 
 /**

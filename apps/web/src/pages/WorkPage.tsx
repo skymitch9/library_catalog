@@ -55,6 +55,14 @@ interface WorkDetail {
     started_on: string | null;
     finished_on: string | null;
     read_format: string | null;
+    /**
+     * `'human' | 'rating' | null`. Migration 0070.
+     *
+     * ⚠️ NULL is "unrecorded", not "asserted" — the same reading as
+     * `cover_status`. Only a positive `'rating'` may be labelled as derived;
+     * captioning a NULL row would put a claim on screen that nothing observed.
+     */
+    read_state_how: string | null;
   } | null;
 }
 
@@ -217,6 +225,19 @@ export function WorkPage({
               {reading.read_format ? ` (${reading.read_format})` : ''}
             </p>
           )}
+          {/* ⚠️ Says where the answer came from, and says it plainly, because
+              nobody set this state by hand and a page that implies they did is
+              lying to them. Pressing any chip above replaces it with 'human'
+              and this line disappears — which is also the undo: a rating never
+              overrules a person. Only a positive 'rating' is captioned; NULL
+              means unrecorded and must stay silent. */}
+          {reading?.read_state_how === 'rating' && (
+            <p className="muted small">
+              Marked read from your{' '}
+              {reading.read_format === 'audio' ? 'audiobook rating' : 'rating'} — change it
+              above and it stays changed.
+            </p>
+          )}
         </section>
       )}
 
@@ -272,7 +293,13 @@ export function WorkPage({
         <Enrich workId={workId} hasCover={!!work.coverUrl} onApplied={load} />
       )}
 
-      <Reviews workId={workId} me={me} />
+      {/* ⚠️ `onReadStateDerived` is not optional wiring. Reviews is the only
+          thing here that can see Firestore, so it is where "you rated this, so
+          you read it" is discovered — and when it fires, the "Your reading"
+          panel above is already on screen showing the stale answer. Reloading
+          is what stops the page contradicting itself. It fires only when
+          something actually changed, so there is no loop. */}
+      <Reviews workId={workId} me={me} onReadStateDerived={load} />
     </main>
   );
 }

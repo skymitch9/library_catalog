@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
-import { reviewDocFor, submitReviewSchema, workKeyFor } from '@lc/core';
-import { cacheRating, getWork } from '@lc/db';
+import { observedRatingSchema, reviewDocFor, submitReviewSchema, workKeyFor } from '@lc/core';
+import { applyObservedRating, cacheRating, getWork } from '@lc/db';
 import type { AppBindings } from '../env.js';
 import { requireCapability } from '../middleware/auth.js';
 
@@ -108,4 +108,77 @@ export const reviewRoutes = new Hono<AppBindings>()
       workKey: workKeyFor(work.title, work.authors),
       legacyBookId: doc.bookId,
     });
+  })
+
+  /**
+   * "I have just read my own rating out of Firestore. Derive what follows."
+   *
+   * The owner's ask: *"if a book has a rating from the audiobook library mark it
+   * as read"* — *"so if its a rating i left mark it read for me"*.
+   *
+   * ## ⚠️ Why the derivation happens here and not in `/draft`
+   *
+   * `/draft` is asked for a document **before** the browser writes it. Its
+   * `cacheRating` call knowingly accepts being wrong if that write then fails,
+   * and can afford to: nothing presents that number as authoritative and the
+   * only reader is a sort. A read state cannot afford it. It is shown to the
+   * person as a fact about their own life, and deriving one from a review that
+   * never landed is a visible lie rather than a stale cache.
+   *
+   * So this endpoint takes only **observed** ratings — read back out of
+   * Firestore after the fact — and it is called from exactly one place,
+   * `Reviews.tsx`'s `load()`, which runs on page open and again after a
+   * successful write.
+   *
+   * ## ⚠️ And why it has to exist at all
+   *
+   * The Worker cannot see Firestore; there is no service account anywhere in
+   * this project and the long note at the head of this file is why. The browser
+   * is the only thing in the estate that sees both stores. That makes this
+   * endpoint the *only* path by which a review written on the **audiobook
+   * site** — which is where nearly all of them are written, the owner reads far
+   * more audiobooks than physical books — can ever reach this database. The
+   * alternative designs were a cron (there is none, deliberately) and reading
+   * `rating_cached` back (forbidden, and it would only ever see what this app
+   * had already written).
+   *
+   * ## Whose rating
+   *
+   * The caller must have decided the review is theirs before posting it, using
+   * `isMyReview` from `@lc/core` — the one implementation, shared with the
+   * backfill. Other people in the household review into the same collection, and
+   * the whole point of the refinement is that their ratings mark *their* books
+   * read, not the caller's.
+   *
+   * ⚠️ This grants no authority the caller did not already have. It writes only
+   * to `user_book` rows for `user.id`, taken from the verified token and never
+   * from the request, and the same capability already permits
+   * `PUT /works/:id/reading` to set 'read' outright.
+   */
+  .post('/:workId/observed', requireCapability('trackReading'), async (c) => {
+    const workId = Number(c.req.param('workId'));
+    if (!Number.isInteger(workId)) return c.json({ error: 'bad_request' }, 400);
+
+    const body = await c.req.json().catch(() => null);
+    const parsed = observedRatingSchema.safeParse(body ?? {});
+    if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues }, 400);
+
+    const work = await getWork(c.env.DB, workId);
+    if (!work) return c.json({ error: 'not_found' }, 404);
+
+    const user = c.get('user');
+    // ⚠️ By `work_key`, not by `workId`. That is the "all three copies" half of
+    // the ask: a book scanned in twice under two spellings is two `work` rows
+    // sharing one key, and one rating is honestly about both. See
+    // `applyObservedRating` for why this is not, and must not become, duplicate
+    // detection.
+    const marked = await applyObservedRating(c.env.DB, work.workKey, user.id, {
+      rating: parsed.data.rating,
+      source: parsed.data.source ?? null,
+    });
+
+    // `marked: []` is the ordinary answer on every page view after the first.
+    // The client uses it to decide whether to reload, so a second call costing
+    // nothing is what keeps this off the critical path.
+    return c.json({ marked });
   });
