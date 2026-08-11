@@ -1,0 +1,140 @@
+{
+  "_doc": "The shared universe list. A series or book belongs to a fictional universe ONLY where that says something the series name does not already say.",
+  "_scope": "⚠️ This list is SHARED BY BOTH CATALOGS and is not library_catalog data. It is keyed on series + author, which both sides can compute, because the same series exists in both collections under different rows and often in only one of them. Location is not settled — catalog-platform is the likely home, since it is already the shared repo. Do not copy it into the audiobook catalog; a copy is how two lists drift.",
+  "_decided": {
+    "canonicalNames": "The owner's spellings win. 'Cosmere' normalises to 'The Cosmere'. The model tends to answer 'Arand multiverse'; that renames to 'Runnerverse'.",
+    "confidence": "high applies automatically; medium and low go to the owner. Measured on a 15-case probe: 13 right, 0 false positives.",
+    "provenance": "Every entry records how it was decided — seed (hand-curated), human (owner confirmed), llm (proposed). A machine guess and a confirmed fact must stay distinguishable, following decided_how, cover_status and read_state_how."
+  },
+  "_theHardPart": "⚠️ A series→universe mapping is NOT sufficient, and this was found before spending anything on the API. Two real counterexamples in this collection, from opposite directions: 'Secret Projects' is a MIXED series — Tress, Yumi, The Sunlit Man and Isles of the Emberdark are Cosmere, The Frugal Wizard's Handbook is not — so a series-level answer would be wrong for one of five. And Arand's Otherlife / Selfless Hero Trilogy carries NO series value at all, so a series-keyed lookup misses it entirely. Both cases need per-book overrides, which also means the auto-assign-on-add path cannot read the series and stop.",
+  "universes": [
+    {
+      "name": "The Cosmere",
+      "decidedHow": "human",
+      "series": [
+        "Cosmere",
+        "The Cosmere",
+        "Elantris",
+        "The Mistborn Saga",
+        "The Stormlight Archive"
+      ],
+      "notSeries": [
+        "Legion",
+        "Reckoners",
+        "The Skyward Series"
+      ],
+      "notes": "⚠️ 'Cosmere' and 'The Cosmere' currently exist as SERIES values on two different works — a universe masquerading as a series, spelled two ways. Those two works need a real series (or none) once this lands. Reckoners and Skyward are the same author and deliberately excluded; Skyward is the Cytoverse."
+    },
+    {
+      "name": "Runnerverse",
+      "decidedHow": "proposed",
+      "pending": "Owner said 'I think all of the William and Randi books I have are in the verse' and asked to see the list first. 15 series / 43 books shown; NOT yet confirmed.",
+      "penNames": [
+        "William D. Arand",
+        "Randi Darren"
+      ],
+      "evidence": "Fostering Faust is credited to BOTH names in the owner's own data, which is direct evidence the two identities are one author rather than an outside assertion.",
+      "series": [
+        "Super Sales on Super Heroes",
+        "Wild Wastes",
+        "Fostering Faust",
+        "Incubus Inc.",
+        "Remnant",
+        "System Overclocked",
+        "Dungeon Deposed Series",
+        "Monster's Mercy",
+        "Right of Retribution",
+        "Swing Shift",
+        "Save State Hero Series",
+        "Cultivating Chaos",
+        "The Axe Falls Series"
+      ],
+      "bookOverrides": [
+        {
+          "title": "Otherlife Dreams - The Selfless Hero Trilogy",
+          "series": "The Selfless Hero Trilogy",
+          "volume": 1
+        },
+        {
+          "title": "Otherlife Nightmares - The Selfless Hero Trilogy",
+          "series": "The Selfless Hero Trilogy",
+          "volume": 2
+        },
+        {
+          "title": "Otherlife Awakenings - The Selfless Hero Trilogy",
+          "series": "The Selfless Hero Trilogy",
+          "volume": 3
+        }
+      ],
+      "seriesToCreate": {
+        "name": "The Selfless Hero Trilogy",
+        "why": "⚠️ All three Otherlife books carry the series name INSIDE their title and have no series field, so they read as three unrelated standalones. Grouping them is a fix to the audiobook catalog's data, not to this list — recorded here so the universe entry does not have to name three loose books forever.",
+        "note": "Reading order is Dreams, Nightmares, Awakenings — NOT alphabetical, which is how they currently sort."
+      }
+    },
+    {
+      "name": "Divine Dungeon",
+      "decidedHow": "proposed",
+      "series": [
+        "The Divine Dungeon",
+        "The Completionist Chronicles",
+        "Artorian's Archives"
+      ],
+      "notes": "Krout's shared world. Chance Encounter, Cooking with Disaster, Damsels of Distress, Full Murderhobo and Year of the Sword are also his and NOT included — unconfirmed, so left out rather than swept in."
+    },
+    {
+      "name": "Maasverse",
+      "decidedHow": "proposed",
+      "series": [
+        "A Court of Thorns and Roses",
+        "Throne of Glass",
+        "Crescent City"
+      ],
+      "notes": "Connected by an explicit crossover in Crescent City."
+    },
+    {
+      "name": "Riordanverse",
+      "decidedHow": "proposed",
+      "series": [
+        "Percy Jackson and the Olympians",
+        "Heroes Of Olympus"
+      ],
+      "notes": "Camp Half-Blood continuity."
+    },
+    {
+      "name": "Solaria",
+      "decidedHow": "proposed",
+      "series": [
+        "Zodiac Academy",
+        "Ruthless Boys of the Zodiac"
+      ],
+      "notes": "Peckham and Valenti, same world."
+    }
+  ],
+  "_refused": [
+    {
+      "subject": "Will Wight — Cradle, The Last Horizon",
+      "decidedHow": "human",
+      "decision": "LEAVE BLANK",
+      "why": "⚠️ Owner's explicit call, 2026-08-11: 'Will wight leave blank for now.' The author has hinted at a shared multiverse but nothing is established, and a hinted universe is exactly the kind of plausible-but-unconfirmed claim that nobody re-checks once it is filled in. Recorded so it is not re-litigated by the next pass."
+    },
+    {
+      "subject": "Children's picture-book lines — Bizzy Bear, Brown Bear and Friends, Baby University, The Pigeon, Elephant and Piggie, First 100",
+      "decidedHow": "seed",
+      "decision": "never a universe",
+      "why": "A brand or an imprint, not a fictional continuity. This is the LOUDEST possible false positive here: the library catalog is mostly children's books, so a rule that fires on these would bury the real answers."
+    },
+    {
+      "subject": "Same author, different world",
+      "decidedHow": "seed",
+      "decision": "never sufficient on its own",
+      "why": "Reckoners and the Cosmere share an author and nothing else. Author is not a universe."
+    },
+    {
+      "subject": "Turncoat's Truth — William D. Arand with Victor E. Krabin",
+      "decidedHow": "human",
+      "decision": "LEAVE OUT for now",
+      "why": "Owner's call, 2026-08-11: 'Turncoat leave out for now while I verify.' Co-authored, and co-authored work does not always sit inside an author's shared continuity. Held out rather than swept in with the other 14 series."
+    }
+  ]
+}
