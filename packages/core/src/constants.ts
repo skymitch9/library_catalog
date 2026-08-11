@@ -171,6 +171,89 @@ export const CONDITIONS = ['new', 'like_new', 'good', 'fair', 'poor'] as const;
 export type Condition = (typeof CONDITIONS)[number];
 
 /**
+ * What came in the box that is not a book.
+ *
+ * ⚠️ Closed so the panel can group and the audit can count, with `other` as a
+ * deliberate escape hatch — a list of merch cannot be complete. A row that cannot
+ * be filed is a row an import drops; `other` plus the free-text `name` is never
+ * wrong. Must match the CHECK in migration 0011.
+ *
+ * ⚠️ `standee`, `model`, `dust_jacket` and `slipcase` come from the purchase
+ * scan, not from a taxonomy. **The Primal Hunter box set is one book product and
+ * roughly twenty-three accessories.** On a pledge like that the accessories are
+ * the pledge, and filing them all as `other` would make the panel useless at
+ * exactly the moment it matters most.
+ */
+export const ACCESSORY_KINDS = [
+  'plush',
+  'pin',
+  'art_print',
+  'bookmark',
+  'sticker',
+  'poster',
+  'map',
+  'card',
+  'dice',
+  'coin',
+  'patch',
+  'apparel',
+  'bag',
+  'sleeve',
+  'slipcase',
+  /** Measured: a V1 dust jacket delivered by a later campaign's pledge. */
+  'dust_jacket',
+  'standee',
+  /** A 3D print file or a figure. Measured: an STL among the rewards. */
+  'model',
+  'signed_plate',
+  'audio',
+  'other',
+] as const;
+export type AccessoryKind = (typeof ACCESSORY_KINDS)[number];
+
+/**
+ * "Asked and answered" about a reward line's printing.
+ *
+ * ⚠️ The same two values as `GAP_VERDICTS`, for the same reason, and there is
+ * deliberately no `found`: a found printing is `pledge_item.edition_id`, and a
+ * verdict beside it would be a second copy of the same fact.
+ *
+ * The case that forced it is measured: one pledge routinely delivers **ebook +
+ * print + audiobook together**, and the audiobook line can never have an
+ * `edition` — `EDITION_FORMATS` has no audiobook value and never will (audio
+ * lives in `audiobook_catalog`). Without a verdict it would sit in the audit's
+ * "no printing" queue forever, and a queue that cannot empty is a queue nobody
+ * reads.
+ */
+export const PLEDGE_ITEM_VERDICTS = ['none', 'unknown'] as const;
+export type PledgeItemVerdict = (typeof PLEDGE_ITEM_VERDICTS)[number];
+
+/**
+ * Where a pledge was made.
+ *
+ * Three, and no `gamefound` — that is a board game platform and this catalog has
+ * never seen a book on it. Must match the CHECK in migration 0010.
+ */
+export const CROWDFUNDING_PLATFORMS = ['kickstarter', 'backerkit', 'indiegogo'] as const;
+export type CrowdfundingPlatform = (typeof CROWDFUNDING_PLATFORMS)[number];
+
+/**
+ * Where a pledge stands.
+ *
+ * `partial` exists because it is the ordinary state of a book pledge: the ebook
+ * arrives at once and the hardcover eighteen months later. Collapsing it into
+ * `pledged` or `delivered` would make one of the two lines lie.
+ */
+export const PLEDGE_STATUSES = [
+  'pledged',
+  'delivered',
+  'partial',
+  'cancelled',
+  'refunded',
+] as const;
+export type PledgeStatus = (typeof PLEDGE_STATUSES)[number];
+
+/**
  * Where a book stands with one reader.
  *
  * `reference` is not a synonym for unread: a cookbook, a rulebook or a field

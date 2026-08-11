@@ -8,8 +8,10 @@
 import { Hono } from 'hono';
 import type { AppBindings, Env } from './env.js';
 import { requireAuth } from './middleware/auth.js';
+import { accessoryRoutes } from './routes/accessories.js';
 import { aliasRoutes } from './routes/aliases.js';
 import { catalogRoutes } from './routes/catalog.js';
+import { crowdfundingRoutes, provenanceRoutes } from './routes/crowdfunding.js';
 import { enrichRoutes } from './routes/enrich.js';
 import { exportRoutes } from './routes/export.js';
 import { healthRoutes } from './routes/health.js';
@@ -45,8 +47,17 @@ app.route('/api', catalogRoutes);
 // shadow another.
 app.route('/api', relationRoutes);
 app.route('/api', aliasRoutes);
+// `/works/:id/accessories` and `/works/:id/provenance` — one more segment again,
+// so they cannot shadow `/works/:id` either. ⚠️ There is deliberately no
+// collection-wide accessory route: the owner asked for the count to stay off the
+// main page, and the surest way to keep it off is for nothing to be able to ask.
+app.route('/api', accessoryRoutes);
+app.route('/api', provenanceRoutes);
 app.route('/api', exportRoutes);
 app.route('/api/series', seriesRoutes);
+// Kickstarter / BackerKit / Indiegogo provenance and its physical-vs-digital
+// audit. Owner-only, including the reads — see routes/crowdfunding.ts.
+app.route('/api/crowdfunding', crowdfundingRoutes);
 app.route('/api/isbn', isbnRoutes);
 app.route('/api/enrich', enrichRoutes);
 app.route('/api/research', researchRoutes);

@@ -8,7 +8,7 @@
  *
  * ## Why JSON and not CSV, for the backup
  *
- * A CSV is one table. This catalog is **ten**, and the value of it is almost
+ * A CSV is one table. This catalog is **sixteen**, and the value of it is almost
  * entirely in the joins: `edition.work_id`, `copy.edition_id`,
  * `user_book.user_id`, `work_relation.from_work_id`, `series_volume.series`
  * matching `work.series` exactly. Flattening those into one wide row loses the
@@ -69,6 +69,15 @@ const TABLES: readonly { key: string; table: string; orderBy: string }[] = [
   { key: 'workRelations', table: 'work_relation', orderBy: 'id' },
   { key: 'seriesVolumes', table: 'series_volume', orderBy: 'id' },
   { key: 'seriesChecks', table: 'series_check', orderBy: 'series' },
+  // ⚠️ Campaign before pledge before item before accessory, and that order is the
+  // re-import order. `crowdfunding_pledge` references the campaign,
+  // `pledge_item` references the pledge *and* `work` and `edition`, and
+  // `book_accessory` references `work`, `copy` and the pledge — so it is last of
+  // the four and after `copies`, which it already is.
+  { key: 'campaigns', table: 'crowdfunding_campaign', orderBy: 'id' },
+  { key: 'pledges', table: 'crowdfunding_pledge', orderBy: 'id' },
+  { key: 'pledgeItems', table: 'pledge_item', orderBy: 'id' },
+  { key: 'accessories', table: 'book_accessory', orderBy: 'id' },
   { key: 'researchRuns', table: 'research_run', orderBy: 'id' },
   { key: 'researchFindings', table: 'research_finding', orderBy: 'id' },
 ];

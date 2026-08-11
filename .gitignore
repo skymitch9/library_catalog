@@ -24,3 +24,17 @@ dist/
 # repo publishes its outputs; this one serves from D1 and Workers assets, so
 # nothing here needs a file to survive in a commit.
 runtime/
+
+# ⚠️ The crowdfunding scan's own output — the default file
+# `npm run import:crowdfunding` reads.
+#
+# Gitignored because it carries pledge amounts and the two BackerKit account
+# addresses, which are household financial detail rather than catalog data. The
+# *shape* is tracked as `scripts/crowdfunding-example.json` and documented in
+# `docs/info/crowdfunding-and-accessories.md`; the scan itself is not.
+#
+# Note this is unlike `scripts/series-overrides.json` and
+# `scripts/openlibrary-ids.json`, which ARE tracked on purpose — those are
+# ledgers of research nobody wants to redo, and they hold no money.
+scripts/crowdfunding-scan.json
+scripts/crowdfunding-scan.*.json

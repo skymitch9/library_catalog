@@ -52,6 +52,14 @@ import {
   isDirectionalRelation,
 } from '../src/constants.ts';
 import { bookIdFromTitle, reviewDocFor, workKeyForAudiobookRow } from '../src/reviews.ts';
+import {
+  auditSentence,
+  mediumFromHint,
+  pledgeAudit,
+  pledgeItemMedium,
+  rewardFlags,
+  suggestFormat,
+} from '../src/crowdfunding.ts';
 
 describe('isbn — the scanner gate', () => {
   it('accepts a real Bookland EAN-13', () => {
@@ -896,5 +904,154 @@ describe('gaps — what is a question, and what is already an answer', () => {
     assert.ok(REFUSED_FIELDS.length > 0);
     for (const r of REFUSED_FIELDS) assert.ok(r.because.length > 20, r.field);
     assert.ok(REFUSED_FIELDS.some((r) => r.field.includes('ISBN')));
+  });
+});
+
+describe('crowdfunding — the physical/digital split', () => {
+  // ⚠️ The whole reason this module exists, in the owner's words: "Kickstarter
+  // stuff generally has a mix of physical and digital books so make sure when
+  // youre auditing you're really looking close." Every assertion below is a way
+  // that could go wrong quietly.
+
+  it('a matched edition ends the question', () => {
+    assert.equal(pledgeItemMedium({ format: 'hardcover' }), 'physical');
+    assert.equal(pledgeItemMedium({ format: 'ebook_epub' }), 'digital');
+    // ⚠️ A Kindle licence is digital even though no file exists on our side.
+    assert.equal(pledgeItemMedium({ format: 'ebook_kindle' }), 'digital');
+  });
+
+  it('⚠️ the edition beats the campaign blurb, never the other way round', () => {
+    // Once a line is resolved, the campaign's words are evidence for the match,
+    // not a second opinion about it. Letting the blurb win would make the
+    // catalog disagree with a row it had already settled.
+    assert.equal(
+      pledgeItemMedium({ format: 'ebook_epub', formatHint: 'Deluxe Hardcover + Ebook' }),
+      'digital',
+    );
+  });
+
+  it('reads the campaign words when nothing is matched yet', () => {
+    // The ordinary state of a fresh scan: a reward line and no edition row.
+    assert.equal(pledgeItemMedium({ formatHint: 'Deluxe Hardcover' }), 'physical');
+    assert.equal(pledgeItemMedium({ formatHint: 'EPUB + MOBI' }), 'digital');
+    assert.equal(pledgeItemMedium({ formatHint: 'Signed Paperback' }), 'physical');
+  });
+
+  it('⚠️ a bundle naming both is `both`, not whichever word came first', () => {
+    // This is the line that loses an ebook if it is silently resolved. It needs
+    // splitting into two pledge_item rows, and the audit says so.
+    assert.equal(mediumFromHint('Hardcover + Ebook Bundle'), 'both');
+    assert.equal(mediumFromHint('Print & Digital'), 'both');
+  });
+
+  it('falls back to the reward title, then gives up honestly', () => {
+    assert.equal(pledgeItemMedium({ title: 'Book 3 — Ebook' }), 'digital');
+    // ⚠️ `unknown` is a real answer. There is no rung guessing from the tier or
+    // the amount paid — isbn-ladder.md §4.4, where a wrong answer scored 1.00.
+    assert.equal(pledgeItemMedium({ title: 'All-In Tier' }), 'unknown');
+    assert.equal(pledgeItemMedium({}), 'unknown');
+  });
+
+  it('an audiobook reward is digital, not unknown', () => {
+    // It will never be an edition in this catalog — audio lives next door — but
+    // it is still a file, and calling it unknown would park it in the
+    // somebody-go-look queue forever.
+    assert.equal(mediumFromHint('Audiobook download'), 'digital');
+  });
+
+  it('⚠️ ONE work delivered twice is two lines and ONE book', () => {
+    // The failure the owner named in advance. `lines` must not equal `works`
+    // here: reporting 2 books double-counts the novel, reporting 1 line loses
+    // the ebook.
+    const audit = pledgeAudit([
+      { workId: 57, editionId: 9, format: 'hardcover' },
+      { workId: 57, editionId: 10, format: 'ebook_epub' },
+    ]);
+    assert.equal(audit.lines, 2);
+    assert.equal(audit.works, 1);
+    assert.equal(audit.physical, 1);
+    assert.equal(audit.digital, 1);
+    assert.equal(audit.unmatched, 0);
+  });
+
+  it('counts the two states a person still has to resolve', () => {
+    const audit = pledgeAudit([
+      { workId: 1, formatHint: 'Hardcover + Ebook' },
+      { workId: 2, formatHint: 'All-In' },
+      { workId: 3, editionId: 4, format: 'paperback', fulfilled: true },
+    ]);
+    assert.equal(audit.both, 1);
+    assert.equal(audit.unknown, 1);
+    // Two of the three have no edition_id, so two are "matched to a book, not a
+    // printing" — the queue the audit exists to produce.
+    assert.equal(audit.unmatched, 2);
+    assert.equal(audit.fulfilled, 1);
+  });
+
+  it('the audit sentence leads with what is wrong', () => {
+    const clean = auditSentence(pledgeAudit([{ workId: 1, editionId: 2, format: 'hardcover' }]));
+    assert.ok(!clean.startsWith('⚠️'), clean);
+
+    const dirty = auditSentence(pledgeAudit([{ workId: 1, formatHint: 'Hardcover + Ebook' }]));
+    assert.ok(dirty.startsWith('⚠️'), dirty);
+    assert.ok(dirty.includes('split'), dirty);
+  });
+
+  it('⚠️ a settled audiobook line is NOT an outstanding one', () => {
+    // Measured: one pledge routinely delivers ebook + print + audiobook (Space
+    // Knight 5 and 6, Tamer Bk 11, Fires of December). The audiobook can never
+    // have an `edition` — EDITION_FORMATS has no audiobook value and never will
+    // — so without the verdict the "no printing" queue could never empty, and a
+    // queue that cannot empty is a queue nobody reads. Same rule `detailGaps`
+    // follows for `gap_verdict`.
+    const audit = pledgeAudit([
+      { workId: 5, editionId: 11, format: 'ebook_epub' },
+      { workId: 5, editionId: 12, format: 'paperback' },
+      { workId: 5, editionId: null, editionVerdict: 'none', formatHint: 'Audiobook' },
+    ]);
+    assert.equal(audit.lines, 3);
+    assert.equal(audit.works, 1);
+    assert.equal(audit.unmatched, 0);
+    assert.equal(audit.digital, 2);
+    assert.equal(audit.physical, 1);
+    assert.ok(!auditSentence(audit).startsWith('⚠️'), auditSentence(audit));
+  });
+
+  it('reads signed and numbered out of the reward prose', () => {
+    // ⚠️ There is no signed field on a campaign page. All three strings below
+    // are verbatim from the real purchase scan.
+    assert.deepEqual(rewardFlags('Book 1 will be Signed & Numbered'), {
+      signed: true,
+      numbered: true,
+    });
+    assert.deepEqual(rewardFlags('CONQUEROR -- SIGNED PAPERBACK+'), {
+      signed: true,
+      numbered: false,
+    });
+    assert.deepEqual(rewardFlags('Legendary Book Box (Uniquely Numbered)'), {
+      signed: false,
+      numbered: true,
+    });
+  });
+
+  it('⚠️ "deluxe" is not "signed"', () => {
+    // A nicer printing is not a signature, and a ticked is_signed box is very
+    // hard to un-believe once it is ticked.
+    assert.deepEqual(rewardFlags('Deluxe Hardcover, sprayed edges'), {
+      signed: false,
+      numbered: false,
+    });
+    assert.deepEqual(rewardFlags(null), { signed: false, numbered: false });
+  });
+
+  it('suggests a format from a hint, and only ever suggests', () => {
+    assert.equal(suggestFormat('Deluxe Hardcover'), 'hardcover');
+    assert.equal(suggestFormat('Signed Paperback'), 'paperback');
+    assert.equal(suggestFormat('EPUB'), 'ebook_epub');
+    assert.equal(suggestFormat('Kindle edition'), 'ebook_kindle');
+    // Mass market must win over the bare "paperback" inside it.
+    assert.equal(suggestFormat('Mass market paperback'), 'mass_market');
+    assert.equal(suggestFormat('All-In Tier'), null);
+    assert.equal(suggestFormat(null), null);
   });
 });

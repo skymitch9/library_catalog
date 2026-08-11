@@ -230,6 +230,59 @@ export interface RelatedWork {
   note: string | null;
 }
 
+/**
+ * A row of `book_accessory` — the things in the box that are not books.
+ *
+ * ⚠️ Only ever fetched for one work. There is no collection-wide accessory read
+ * and there must not be one: *"we don't need ti publish that count on the main
+ * page, just keep it each book."*
+ */
+export interface Accessory {
+  id: number;
+  workId: number;
+  copyId: number | null;
+  name: string;
+  kind: string;
+  isDigital: boolean;
+  quantity: number;
+  location: string | null;
+  notes: string | null;
+  pledgeId: number | null;
+  campaignName: string | null;
+  campaignPlatform: string | null;
+  createdAt: string;
+}
+
+/**
+ * One reward line that delivered this book.
+ *
+ * ⚠️ A work legitimately has **two** of these from one pledge — the deluxe
+ * hardcover and the EPUB. The panel renders them as two rows on purpose; see
+ * `listProvenanceForWork` in `@lc/db`.
+ */
+export interface Provenance {
+  itemId: number;
+  pledgeId: number;
+  campaignId: number;
+  campaignName: string;
+  campaignUrl: string | null;
+  campaignPlatform: 'kickstarter' | 'backerkit' | 'indiegogo';
+  pledgePlatform: 'kickstarter' | 'backerkit' | 'indiegogo';
+  account: string;
+  tier: string | null;
+  pledgedOn: string | null;
+  status: 'pledged' | 'delivered' | 'partial' | 'cancelled' | 'refunded';
+  editionId: number | null;
+  /** 'none' = no printing can exist for this line (an audiobook), not "unmatched". */
+  editionVerdict: 'none' | 'unknown' | null;
+  format: string | null;
+  formatHint: string | null;
+  title: string | null;
+  quantity: number;
+  fulfilled: boolean;
+  notes: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Details queue and research
 // ---------------------------------------------------------------------------
@@ -574,6 +627,71 @@ export const api = {
   deleteAlias: (workId: number, aliasId: number) =>
     request<{ aliases: WorkAlias[] }>(`/api/works/${workId}/aliases/${aliasId}`, {
       method: 'DELETE',
+    }),
+
+  // -------------------------------------------------------------------------
+  // Accessories — the things in the box that are not books
+  //
+  // ⚠️ Every one of these is scoped to a single work, and that is the feature.
+  // There is no `api.accessoryCount()` and no collection-wide read, because the
+  // owner asked for the count to stay off the main page. Adding one here is how
+  // it would arrive there by accident.
+  // -------------------------------------------------------------------------
+
+  accessories: (workId: number) =>
+    request<{ accessories: Accessory[] }>(`/api/works/${workId}/accessories`),
+
+  addAccessory: (
+    workId: number,
+    body: {
+      name: string;
+      kind?: string;
+      isDigital?: boolean;
+      quantity?: number;
+      copyId?: number | null;
+      pledgeId?: number | null;
+      location?: string | null;
+      notes?: string | null;
+    },
+  ) =>
+    request<{ accessories: Accessory[] }>(`/api/works/${workId}/accessories`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  /** ⚠️ A PATCH: send only what changed. Sending the whole object is safe too. */
+  updateAccessory: (workId: number, accessoryId: number, body: Record<string, unknown>) =>
+    request<{ accessories: Accessory[] }>(`/api/works/${workId}/accessories/${accessoryId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+
+  deleteAccessory: (workId: number, accessoryId: number) =>
+    request<{ accessories: Accessory[] }>(`/api/works/${workId}/accessories/${accessoryId}`, {
+      method: 'DELETE',
+    }),
+
+  // -------------------------------------------------------------------------
+  // Crowdfunding provenance
+  // -------------------------------------------------------------------------
+
+  /** Where this book came from. Two rows for one pledge is the physical/digital pair. */
+  provenance: (workId: number) =>
+    request<{ provenance: Provenance[] }>(`/api/works/${workId}/provenance`),
+
+  /** Owner-only, for the accessory form's "which pledge did this come in" picker. */
+  pledgeOptions: () =>
+    request<{ pledges: { id: number; label: string }[] }>('/api/crowdfunding/pledges'),
+
+  /** ⚠️ Unlinks the reward line. It does not delete the book or the copy. */
+  deletePledgeItem: (itemId: number) =>
+    request<{ ok: true }>(`/api/crowdfunding/items/${itemId}`, { method: 'DELETE' }),
+
+  /** Close an `unmatched` line by saying which printing it actually was. */
+  matchPledgeItemEdition: (itemId: number, editionId: number | null) =>
+    request<{ item: Record<string, unknown> }>(`/api/crowdfunding/items/${itemId}/edition`, {
+      method: 'PUT',
+      body: JSON.stringify({ editionId }),
     }),
 
   // -------------------------------------------------------------------------

@@ -25,6 +25,7 @@
     "backfill:reviews": "tsx scripts/backfill-review-keys.mjs",
     "secrets:push": "node scripts/push-secrets.mjs",
     "import:ebooks": "tsx scripts/import-ebooks.mjs",
+    "import:crowdfunding": "tsx scripts/import-crowdfunding.mjs",
     "backfill:covers": "tsx scripts/backfill-covers.mjs",
     "backfill:series": "tsx scripts/backfill-series.mjs",
     "backfill:series-volumes": "tsx scripts/backfill-series-volumes.mjs",

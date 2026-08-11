@@ -764,11 +764,48 @@ ul.picker > li + li { border-top: 1px solid var(--line); }
  * ancestor happens to be positioned.
  */
 .mark--alias,
-.mark--role {
+.mark--role,
+.mark--accessory,
+.mark--digital,
+.mark--medium {
   position: static;
   box-shadow: none;
   flex: none;
 }
+
+/* --- accessories and provenance ------------------------------------------
+   ⚠️ No media query, and that is the house answer to a phone rather than an
+   omission: `.row-tight` already wraps, and every badge here is `flex: none`, so
+   a row of "Pin · Princess Donut enamel pin · digital · Edit · Delete" reflows
+   onto as many lines as it needs at any width. A breakpoint would only be a
+   second place to keep in step. */
+
+/* What kind of thing it is. Quiet — the NAME is what a person reads. */
+.mark--accessory {
+  background: none;
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+}
+
+/* A file is not a thing on a shelf, and the tag has to be legible at a glance
+   because it is the axis the crowdfunding audit counts. */
+.mark--digital {
+  background: none;
+  border: 1px dashed var(--accent);
+  color: var(--accent);
+}
+
+/* Four states, and only two of them are settled. `both` and `unknown` are jobs
+   somebody has to do — they get the warm colour every other unfinished thing in
+   this app gets, so the eye finds them without reading. */
+.mark--medium-physical { background: var(--accent); color: var(--accent-fg); }
+.mark--medium-digital {
+  background: none;
+  border: 1px dashed var(--accent);
+  color: var(--accent);
+}
+.mark--medium-both,
+.mark--medium-unknown { background: var(--warm); color: #fff; }
 
 /* A title alias and an author alias widen two different checks, so they are not
    two shades of one colour: outline for a title (a name for the book), filled

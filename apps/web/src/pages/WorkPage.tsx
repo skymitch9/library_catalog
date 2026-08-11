@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { api, type Me } from '../api.js';
+import { Accessories } from '../components/Accessories.js';
 import { Aliases } from '../components/Aliases.js';
 import { Copies, type CopyView } from '../components/Copies.js';
 import { Cover } from '../components/Cover.js';
 import { DriveLinks } from '../components/DriveLinks.js';
 import { Enrich } from '../components/Enrich.js';
+import { Provenance } from '../components/Provenance.js';
 import { Related } from '../components/Related.js';
 import { Reviews } from '../components/Reviews.js';
 import { formatLabel } from '../lib/formats.js';
@@ -220,6 +222,26 @@ export function WorkPage({
         canEdit={me.capabilities.includes('editCatalog')}
         onChanged={load}
       />
+
+      {/* Directly under Copies, because an accessory belongs to a copy — a
+          plushie arrived in a specific box, not with the novel as an idea. See
+          migration 0011 and the panel's own header.
+
+          ⚠️ This is the ONLY place accessories are shown. The owner asked for the
+          count to stay off the collection page, and nothing on that page (or in
+          `/api/collection`, or `collectionStats`) knows the table exists. */}
+      <Accessories
+        workId={workId}
+        copies={copies}
+        canEdit={me.capabilities.includes('editCatalog')}
+      />
+
+      {/* Where it came from, when it did not come from a shop. Below the copies
+          and the extras because it explains both of them — and it renders one
+          line per reward, so a campaign that delivered a hardcover AND an EPUB of
+          this novel shows two. That pair is the thing the owner asked to be able
+          to check; a panel that summarised it away would defeat the feature. */}
+      <Provenance workId={workId} canEdit={me.capabilities.includes('editCatalog')} />
 
       {/* Above Related and below Copies deliberately: an alias is a fact about
           THIS book's identity, like its editions, whereas a relation points at a

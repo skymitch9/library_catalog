@@ -9,9 +9,13 @@
 
 import { z } from 'zod';
 import {
+  ACCESSORY_KINDS,
   CONDITIONS,
   COPY_STATUSES,
+  CROWDFUNDING_PLATFORMS,
   DETAIL_FIELDS,
+  PLEDGE_ITEM_VERDICTS,
+  PLEDGE_STATUSES,
   EDITION_FORMATS,
   EDITION_SOURCES,
   FINDING_REVIEW_STATES,
@@ -41,6 +45,10 @@ export const workRelationSchema = z.enum(WORK_RELATIONS);
 export const workAliasKindSchema = z.enum(WORK_ALIAS_KINDS);
 export const seriesVolumeSourceSchema = z.enum(SERIES_VOLUME_SOURCES);
 export const detailFieldSchema = z.enum(DETAIL_FIELDS);
+export const accessoryKindSchema = z.enum(ACCESSORY_KINDS);
+export const crowdfundingPlatformSchema = z.enum(CROWDFUNDING_PLATFORMS);
+export const pledgeStatusSchema = z.enum(PLEDGE_STATUSES);
+export const pledgeItemVerdictSchema = z.enum(PLEDGE_ITEM_VERDICTS);
 export const gapVerdictSchema = z.enum(GAP_VERDICTS);
 export const findingReviewStateSchema = z.enum(FINDING_REVIEW_STATES);
 
@@ -306,6 +314,136 @@ export const setGapVerdictSchema = z.object({
   note: optionalText,
 });
 export type SetGapVerdict = z.infer<typeof setGapVerdictSchema>;
+
+// ---------------------------------------------------------------------------
+// Accessories — the things in the box that are not books
+// ---------------------------------------------------------------------------
+
+/**
+ * Record a plushie, a pin, an art print.
+ *
+ * ⚠️ `copyId` is optional and NOT defaulted to anything. Migration 0011's header
+ * has the reasoning: the accessory genuinely belongs to the *copy* — two backers
+ * at two tiers get different piles — but this catalog holds 120 works and **4
+ * copies**, so requiring one would make the feature fire on four books. Sending
+ * `null` means "we have this, nobody has said which copy"; the server refuses a
+ * `copyId` belonging to a different work.
+ *
+ * ⚠️ `isDigital` defaults to `false` rather than being required, and that is the
+ * one guess made here. A plushie is the case this feature was asked for; a PDF
+ * art book is the case that has to be *said*. The form ticks a box, the importer
+ * sends the field explicitly, and the audit lists what is unticked so the guess
+ * is visible rather than silent.
+ */
+export const createAccessorySchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  kind: accessoryKindSchema.default('other'),
+  isDigital: z.boolean().default(false),
+  quantity: z.number().int().positive().default(1),
+  copyId: z.number().int().positive().nullable().optional(),
+  pledgeId: z.number().int().positive().nullable().optional(),
+  location: optionalText,
+  notes: optionalText,
+});
+export type CreateAccessory = z.infer<typeof createAccessorySchema>;
+
+/**
+ * Change one.
+ *
+ * `.partial()` for the reason `updateCopySchema` is: a PATCH that only moves an
+ * accessory to a different shelf must not clear the note explaining what it is.
+ */
+export const updateAccessorySchema = createAccessorySchema.partial();
+export type UpdateAccessory = z.infer<typeof updateAccessorySchema>;
+
+// ---------------------------------------------------------------------------
+// Crowdfunding provenance
+// ---------------------------------------------------------------------------
+
+/**
+ * A campaign — a fact about the world.
+ *
+ * `externalId` is what makes a re-scan an upsert instead of a duplicate library,
+ * so it is offered on every write even though it is nullable.
+ */
+export const createCampaignSchema = z.object({
+  platform: crowdfundingPlatformSchema,
+  name: z.string().trim().min(1).max(300),
+  creator: optionalText,
+  url: optionalText,
+  externalId: optionalText,
+  launchedOn: optionalText,
+  fundedOn: optionalText,
+  notes: optionalText,
+});
+export type CreateCampaign = z.infer<typeof createCampaignSchema>;
+
+export const updateCampaignSchema = createCampaignSchema.partial();
+
+/**
+ * Our pledge on a campaign.
+ *
+ * ⚠️ `account` is required and non-empty, and no other field here is. **There are
+ * two BackerKit accounts.** A pledge with no account cannot be reconciled against
+ * a scan of either of them, and the next scan of the other one would duplicate
+ * everything. Migration 0010's `UNIQUE (campaign_id, platform, account)` refuses
+ * the duplicate; this refuses the row that would slip past it.
+ *
+ * ⚠️ `platform` is required and is deliberately NOT inherited from the campaign.
+ * Backing on Kickstarter and completing through a BackerKit pledge manager is one
+ * campaign and one pledge, found by a scan of BackerKit — inheriting would file
+ * it under the wrong account's sweep.
+ */
+export const createPledgeSchema = z.object({
+  campaignId: z.number().int().positive(),
+  platform: crowdfundingPlatformSchema,
+  account: z.string().trim().min(1, 'which account backed this? there are two BackerKit logins'),
+  tier: optionalText,
+  pledgedOn: optionalText,
+  amountCents: z.number().int().nonnegative().nullable().optional(),
+  currency: z.string().trim().length(3).default('USD'),
+  managerUrl: optionalText,
+  status: pledgeStatusSchema.default('pledged'),
+  notes: optionalText,
+});
+export type CreatePledge = z.infer<typeof createPledgeSchema>;
+
+export const updatePledgeSchema = createPledgeSchema.omit({ campaignId: true }).partial();
+
+/**
+ * One book a pledge delivered.
+ *
+ * ⚠️ **Two of these against one `workId` is correct and expected**, and the
+ * schema must not be "helpfully" tightened to prevent it. One Kickstarter pledge
+ * routinely yields a deluxe hardcover *and* an EPUB of the same novel; migration
+ * 0010's `IFNULL` unique index is what allows the pair while still refusing an
+ * exact re-insert. Anything that deduped on `workId` here would delete half of
+ * every pledge in this catalog.
+ *
+ * `formatHint` is the campaign's own words and is kept even after `editionId` is
+ * filled in — it is the evidence for the match, and the only thing re-readable
+ * when a match turns out to be wrong.
+ */
+export const createPledgeItemSchema = z.object({
+  workId: z.number().int().positive(),
+  editionId: z.number().int().positive().nullable().optional(),
+  copyId: z.number().int().positive().nullable().optional(),
+  /**
+   * ⚠️ "There is no printing to match", as opposed to "nobody has matched it".
+   * An audiobook reward line takes `'none'`: `EDITION_FORMATS` has no audiobook
+   * value and never will. Without it the audit's queue can never empty.
+   */
+  editionVerdict: pledgeItemVerdictSchema.nullable().optional(),
+  formatHint: optionalText,
+  title: optionalText,
+  quantity: z.number().int().positive().default(1),
+  fulfilled: z.boolean().default(false),
+  externalRef: optionalText,
+  notes: optionalText,
+});
+export type CreatePledgeItem = z.infer<typeof createPledgeItemSchema>;
+
+export const updatePledgeItemSchema = createPledgeItemSchema.omit({ workId: true }).partial();
 
 // ---------------------------------------------------------------------------
 // API contracts for identity
