@@ -216,13 +216,19 @@
     },
     {
       "name": "Maasverse",
-      "decidedHow": "proposed",
+      "decidedHow": "human",
       "series": [
         "A Court of Thorns and Roses",
         "Throne of Glass",
         "Crescent City"
       ],
-      "notes": "Connected by an explicit crossover in Crescent City."
+      "notes": "Canon, not fan inference: Crescent City book 2 (House of Sky and Breath) has an explicit, plot-critical ACOTAR crossover, carried further in House of Flame and Shadow. 19 rows across 3 series, all audiobooks — none in the library catalog.",
+      "confirmed": "Owner approved 2026-08-11.",
+      "dataProblems": [
+        "⚠️ ACOTAR's 11 rows are inflated. Duplicates: A Court of Thorns and Roses x3, A Court of Wings and Ruin x3, A Court of Mist and Fury x2. Some are legitimately different recordings (dramatized full-cast editions) but 11 is not 11 distinct books.",
+        "Part-files sit alongside their whole counterparts: 'A Court of Silver Flames (2 of 2)' and 'A Court of Wings and Ruin (1 of 3) []' — note the stray brackets in the latter.",
+        "Throne of Glass has 5 of 8 plus The Assassin's Blade — Empire of Storms, Tower of Dawn and Kingdom of Ash are genuine gaps, not data problems."
+      ]
     },
     {
       "name": "Riordanverse",
