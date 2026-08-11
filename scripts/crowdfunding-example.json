@@ -1,0 +1,191 @@
+{
+  "_doc": "The shape `npm run import:crowdfunding` reads. Copy this to scripts/crowdfunding-scan.json (the default filename, gitignored) and replace the contents with a real scan. Full field reference: docs/info/crowdfunding-and-accessories.md.",
+  "_warning": "⚠️ The two `books` entries below are ONE novel delivered twice — a deluxe hardcover and an EPUB — by ONE pledge. That is the shape a Kickstarter actually has, and it is the thing that must not be collapsed into a single line. Two rows, one work, and the audit prints `2 lines across 1 book`.",
+  "_accounts": "⚠️ `account` is required on every pledge. There are TWO BackerKit logins and a pledge that does not say which one cannot be reconciled against a scan of either.",
+  "_notCreated": "⚠️ The importer creates no `work` and no `edition` rows. A book not already in the catalog is reported and skipped; a reward with no matching printing lands with edition_id NULL and the audit counts it. Both are deliberate — see the script header.",
+  "_notCrowdfunding": "⚠️ Barnes & Noble does NOT belong in this file. It is a shop, and a shop purchase already has a home: `copy.vendor`, `copy.acquired_on`, `copy.price_paid_cents`. The test is whether the money bought a promise or a product.",
+  "_signed": "⚠️ Signed/numbered is never a field — it is prose in the reward title (\"Book 1 will be Signed & Numbered\", \"CONQUEROR -- SIGNED PAPERBACK+\", \"Legendary Book Box (Uniquely Numbered)\"). The importer prints a prompt; a person ticks `copy.is_signed` and writes `edition.edition_name`.",
+
+  "scannedAt": "2026-08-10",
+  "scannedBy": "manual browser sweep",
+
+  "campaigns": [
+    {
+      "platform": "kickstarter",
+      "name": "Dungeon Crawler Carl: The Butcher's Masquerade",
+      "creator": "Matt Dinniman",
+      "url": "https://www.kickstarter.com/projects/example/butchers-masquerade",
+      "externalId": "example/butchers-masquerade",
+      "launchedOn": "2024-03-01",
+      "fundedOn": "2024-03-31",
+      "notes": null,
+
+      "pledges": [
+        {
+          "platform": "backerkit",
+          "account": "nbaslamking@gmail.com",
+          "tier": "All-In Hardcover",
+          "pledgedOn": "2024-03-05",
+          "amountCents": 21500,
+          "currency": "USD",
+          "managerUrl": "https://butchers-masquerade.backerkit.com/",
+          "status": "delivered",
+          "notes": null,
+
+          "books": [
+            {
+              "title": "The Butcher's Masquerade",
+              "authors": "Matt Dinniman",
+              "formatHint": "Deluxe Hardcover, sprayed edges",
+              "editionFormat": "hardcover",
+              "quantity": 1,
+              "fulfilled": true,
+              "externalRef": "reward-1-hc"
+            },
+            {
+              "title": "The Butcher's Masquerade",
+              "authors": "Matt Dinniman",
+              "formatHint": "EPUB + MOBI",
+              "editionFormat": "ebook_epub",
+              "quantity": 1,
+              "fulfilled": true,
+              "externalRef": "reward-1-ebook"
+            },
+            {
+              "_why": "MEASURED: one pledge routinely delivers ebook + print + AUDIOBOOK together (Space Knight 5 and 6, Tamer Bk 11, Fires of December). ⚠️ `editionVerdict: \"none\"` is required on an audiobook line — EDITION_FORMATS has no audiobook value and never will, so without it this row sits in the audit's `no printing` queue forever.",
+              "title": "The Butcher's Masquerade",
+              "authors": "Matt Dinniman",
+              "formatHint": "Audiobook download",
+              "editionFormat": null,
+              "editionVerdict": "none",
+              "fulfilled": true,
+              "externalRef": "reward-1-audio"
+            }
+          ],
+
+          "accessories": [
+            {
+              "name": "Princess Donut plush",
+              "kind": "plush",
+              "quantity": 1,
+              "isDigital": false,
+              "location": "desk shelf"
+            },
+            {
+              "name": "Mongo enamel pin",
+              "kind": "pin",
+              "quantity": 1,
+              "isDigital": false
+            },
+            {
+              "name": "Desktop wallpaper pack",
+              "kind": "other",
+              "isDigital": true,
+              "notes": "⚠️ digital, so it is a reward but not a thing on a shelf"
+            }
+          ]
+        },
+
+        {
+          "_why": "The same campaign, backed again from the second BackerKit login. Two pledges, not one — and the campaign's audit counts the work ONCE across both.",
+          "platform": "backerkit",
+          "account": "second.account@example.com",
+          "tier": "Digital Only",
+          "pledgedOn": "2024-03-20",
+          "amountCents": 2500,
+          "currency": "USD",
+          "status": "delivered",
+
+          "books": [
+            {
+              "title": "The Butcher's Masquerade",
+              "authors": "Matt Dinniman",
+              "formatHint": "EPUB",
+              "editionFormat": "ebook_epub",
+              "fulfilled": true,
+              "externalRef": "reward-2-ebook"
+            }
+          ]
+        }
+      ]
+    },
+
+    {
+      "_why": "A pledge whose reward line names both a hardcover and an ebook in one string. The audit reports it as `needs splitting` rather than guessing — see pledgeItemMedium in packages/core/src/crowdfunding.ts.",
+      "platform": "indiegogo",
+      "name": "An Example Indiegogo Book",
+      "creator": "Some Publisher",
+      "url": "https://www.indiegogo.com/projects/example",
+      "externalId": "example-indiegogo-book",
+
+      "pledges": [
+        {
+          "platform": "indiegogo",
+          "account": "nbaslamking@gmail.com",
+          "tier": "Bundle",
+          "pledgedOn": "2025-11-02",
+          "status": "partial",
+
+          "books": [
+            {
+              "workId": null,
+              "title": "An Example Indiegogo Book",
+              "authors": "Some Author",
+              "formatHint": "Hardcover + Ebook Bundle",
+              "editionFormat": null,
+              "fulfilled": false,
+              "notes": "one line, two things — split it into two once the editions exist"
+            },
+            {
+              "_why": "MEASURED: a single reward line can cover SEVERAL works — \"Collector's Edition Trilogy\" is three books. They are N rows sharing one `externalRef` and one `title`; that is what groups them, and migration 0010's external-ref index includes work_id so all three land instead of only the first. Also note the signed prose: rewardFlags() reads it and the importer prints a prompt, but nothing writes copy.is_signed — a person ticks it.",
+              "title": "Collector's Edition Trilogy",
+              "authors": "Some Author",
+              "workKey": null,
+              "formatHint": "Book 1 will be Signed & Numbered",
+              "editionFormat": null,
+              "fulfilled": false,
+              "externalRef": "trilogy-line",
+              "notes": "row 1 of 3 for one reward line — repeat with the other two titles"
+            }
+          ],
+
+          "accessories": [
+            {
+              "_why": "⚠️ This pledge has TWO distinct books, so the importer refuses to guess and requires `title`+`authors` (or `workId`) on every accessory. With exactly one book it would attach automatically.",
+              "name": "Signed bookplate",
+              "title": "An Example Indiegogo Book",
+              "authors": "Some Author",
+              "kind": "signed_plate",
+              "isDigital": false
+            },
+            {
+              "_why": "MEASURED: high-value pledges are overwhelmingly accessories — the Primal Hunter box set is ONE book product and roughly TWENTY-THREE pins, standees, plushies, bookmarks and a slipcase.",
+              "name": "Guild standee set",
+              "title": "An Example Indiegogo Book",
+              "authors": "Some Author",
+              "kind": "standee",
+              "quantity": 6,
+              "isDigital": false
+            },
+            {
+              "_why": "MEASURED: some accessories are DIGITAL — an STL file, a concept-art PDF. Never assume an accessory is a thing on a shelf.",
+              "name": "Dragon STL file",
+              "title": "An Example Indiegogo Book",
+              "authors": "Some Author",
+              "kind": "model",
+              "isDigital": true
+            },
+            {
+              "_why": "MEASURED: \"V2 or V3 Bundle w/ V1 Jacket\" — a dust jacket delivered by THIS campaign for a book bought in an EARLIER one. Set `copyId` in the app afterwards; the accessory belongs to a copy that predates the pledge that sent it, which is why copy_id and pledge_id are separate columns.",
+              "name": "V1 dust jacket",
+              "title": "An Example Indiegogo Book",
+              "authors": "Some Author",
+              "kind": "dust_jacket",
+              "isDigital": false
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -25,7 +25,23 @@ dist/
 # nothing here needs a file to survive in a commit.
 runtime/
 
+<<<<<<< HEAD
 # Agent worktrees: throwaway git repos created by Claude Code sessions.
 # They were committed by accident on 2026-08-10 as embedded repos (gitlinks),
 # which clone as empty directories and confuse every later status.
 .claude/worktrees/
+=======
+# ⚠️ The crowdfunding scan's own output — the default file
+# `npm run import:crowdfunding` reads.
+#
+# Gitignored because it carries pledge amounts and the two BackerKit account
+# addresses, which are household financial detail rather than catalog data. The
+# *shape* is tracked as `scripts/crowdfunding-example.json` and documented in
+# `docs/info/crowdfunding-and-accessories.md`; the scan itself is not.
+#
+# Note this is unlike `scripts/series-overrides.json` and
+# `scripts/openlibrary-ids.json`, which ARE tracked on purpose — those are
+# ledgers of research nobody wants to redo, and they hold no money.
+scripts/crowdfunding-scan.json
+scripts/crowdfunding-scan.*.json
+>>>>>>> worktree-agent-acc0ee0ce26ec42ec

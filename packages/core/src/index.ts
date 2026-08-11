@@ -25,6 +25,7 @@ export * from './isbn.js';
 export * from './titles.js';
 export * from './matching.js';
 export * from './corroboration.js';
+export * from './crowdfunding.js';
 export * from './reviews.js';
 export * from './vision.js';
 export * from './scanjobs.js';
