@@ -23,9 +23,14 @@
 
 ## Production right now
 
-**214 works · 217 editions · 103 copies · 40 audiobook holdings · 0 paperback.**
-Live version `86e453ed`. All of `/api/health` 200; `/api/series`, `/api/me`,
-`/api/crowdfunding` return 401 (auth) rather than 500.
+Measured 2026-08-11 ~06:10, live version `8d60c84f`:
+
+| works | editions | copies | audiobook holdings | accessories | no cover | paperback |
+|---|---|---|---|---|---|---|
+| **224** | 222 | 108 | **46** live | 32 | **28** | **0** |
+
+`/api/health` 200; `/api/series`, `/api/me`, `/api/crowdfunding` return 401
+(auth) rather than 500.
 
 ⚠️ These numbers move *during* sessions — works went 120 → 140 → 162 → 214 in one
 afternoon of scanning. Any figure here is a measurement with a timestamp, never a
