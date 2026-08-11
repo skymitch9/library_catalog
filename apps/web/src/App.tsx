@@ -172,6 +172,31 @@ export function App() {
           <Link to="/series" className={route.name === 'series' ? 'primary chip' : 'chip'}>
             Series
           </Link>
+          {/* A place, like the others: "what is missing" is a view of the
+              catalog, not an action performed on it. Shown to readers as well as
+              owners — seeing what the shelf does not know costs nothing; the
+              buttons that spend money are gated on the page itself.
+
+              ⚠️ Ordered BEFORE Wishlist and People deliberately. It is the only
+              entry here that changes from day to day, and the only one carrying
+              a number, so it is the one worth reading first; the other three are
+              stable places you go when you already know you want them. It also
+              keeps the count away from the right-hand edge, where a thumb and
+              the "Sign out" button both live.
+
+              Shown only while there is something behind it, with the count on
+              the face — the sibling's rule: "a screen with nothing on it does
+              not earn a permanent slot, and this is a better answer to a
+              360px-wide phone than shrinking the type until five links fit."
+
+              `chores == null` means the count could not be taken, and shows the
+              link WITHOUT a number. Treating that as zero would hide a worklist
+              because a query failed. */}
+          {(me.chores == null || me.chores.missingDetails > 0) && (
+            <Link to="/queue" className={route.name === 'queue' ? 'primary chip' : 'chip'}>
+              Missing{me.chores ? ` (${me.chores.missingDetails})` : ''}
+            </Link>
+          )}
           <Link to="/wishlist" className={route.name === 'wishlist' ? 'primary chip' : 'chip'}>
             Wishlist
           </Link>
@@ -189,24 +214,6 @@ export function App() {
           {me.capabilities.includes('editCatalog') && (
             <Link to="/export" className={route.name === 'export' ? 'primary chip' : 'chip'}>
               Export
-            </Link>
-          )}
-          {/* A place, like the other two: "what is missing" is a view of the
-              catalog, not an action performed on it. Shown to readers as well as
-              owners — seeing what the shelf does not know costs nothing; the
-              buttons that spend money are gated on the page itself. */}
-          {/* ⚠️ Shown only while there is something behind it, with the count on
-              the face — the sibling's rule, and its reasoning transfers exactly:
-              "a screen with nothing on it does not earn a permanent slot, and
-              this is a better answer to a 360px-wide phone than shrinking the
-              type until five links fit."
-
-              `chores == null` means the count could not be taken, and shows the
-              link WITHOUT a number. Treating that as zero would hide a worklist
-              because a query failed. */}
-          {(me.chores == null || me.chores.missingDetails > 0) && (
-            <Link to="/queue" className={route.name === 'queue' ? 'primary chip' : 'chip'}>
-              Missing{me.chores ? ` (${me.chores.missingDetails})` : ''}
             </Link>
           )}
         </nav>
