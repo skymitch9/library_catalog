@@ -47,8 +47,12 @@ import {
   seriesCompleteness,
 } from '../src/completeness.ts';
 import {
+  EDITION_FORMATS,
+  EDITION_MEDIA,
   HELD_STATUSES,
+  PHYSICAL_FORMATS,
   WISHLIST_STATUSES,
+  editionMedium,
   isDirectionalRelation,
 } from '../src/constants.ts';
 import { bookIdFromTitle, reviewDocFor, workKeyForAudiobookRow } from '../src/reviews.ts';
@@ -632,6 +636,39 @@ describe('work relations — direction is the meaning', () => {
     for (const s of WISHLIST_STATUSES) assert.ok(!HELD_STATUSES.includes(s));
     assert.ok(HELD_STATUSES.includes('lent'));
     assert.ok(!HELD_STATUSES.includes('sold'));
+  });
+});
+
+describe('edition medium — the shelf a printing lives on', () => {
+  it('calls exactly the things with mass physical', () => {
+    for (const f of PHYSICAL_FORMATS) assert.equal(editionMedium(f), 'physical');
+  });
+
+  it('calls every file and every licence an ebook', () => {
+    // ⚠️ Including `ebook_kindle`, which is a licence with no bytes on our side
+    // (migration 0002). It is still not something you can hand across a table,
+    // which is the only question this function answers. Anything that cares
+    // about the file/licence difference must gate on EBOOK_FILE_FORMATS.
+    for (const f of EDITION_FORMATS) {
+      if ((PHYSICAL_FORMATS as readonly string[]).includes(f)) continue;
+      assert.equal(editionMedium(f), 'ebook');
+    }
+  });
+
+  it('classifies every format in the enum, leaving none unaccounted for', () => {
+    // The guard that matters when a format is added: a new value silently
+    // falling into 'ebook' is right for a file and wrong for, say, 'audio_cd'.
+    // This does not stop that — nothing can — but it makes the count visible.
+    const counted = EDITION_FORMATS.filter((f) => editionMedium(f) === 'physical').length;
+    assert.equal(counted, PHYSICAL_FORMATS.length);
+  });
+
+  it('⚠️ has no audio medium, and must not grow one', () => {
+    // HANDOFF.md open question 5, and PLATFORM.md §2.2: audiobooks stay in the
+    // sibling catalog and meet this one through work_key, never by merging. A
+    // third value here is the first step towards edition.format = 'audiobook'.
+    // The series page shows audio as a third chip; it does not store one.
+    assert.deepEqual([...EDITION_MEDIA], ['physical', 'ebook']);
   });
 });
 

@@ -18,8 +18,25 @@ import { cleanTitleWithSeries, parseVolumeNumber } from '../../packages/core/src
 import { buildWorkIndex, matchIndexedWork } from '../../packages/core/src/matching.ts';
 import { ROOT } from './d1.mjs';
 
-export const AUDIOBOOK_ROOT = path.resolve(ROOT, '../audiobook_catalog');
+/**
+ * Where the sibling catalog is checked out.
+ *
+ * Normally the repo next door, which is true of the main checkout and of every
+ * measurement recorded in this project. ⚠️ It is **not** true in a git worktree:
+ * those live under `library_catalog/.claude/worktrees/<name>`, so `../` lands
+ * three directories too deep and `loadAudiobooks()` silently returns `[]` — a
+ * zero-row read that looks exactly like "the sibling catalog knows nothing about
+ * any of these books". `LC_AUDIOBOOK_ROOT` is the same escape hatch
+ * `LC_D1_PERSIST_TO` is in `d1.mjs`, and exists for the same reason: a worktree
+ * on Windows.
+ */
+export const AUDIOBOOK_ROOT = process.env.LC_AUDIOBOOK_ROOT
+  ? path.resolve(process.env.LC_AUDIOBOOK_ROOT)
+  : path.resolve(ROOT, '../audiobook_catalog');
 const CSV = path.join(AUDIOBOOK_ROOT, 'site/catalog.csv');
+
+/** The CSV this module reads, so a caller can say where it looked when it is empty. */
+export const AUDIOBOOK_CSV = CSV;
 
 /** RFC4180 enough for this file: quoted fields, doubled quotes, embedded newlines. */
 function parseCsv(text) {

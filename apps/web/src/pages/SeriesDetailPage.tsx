@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
 import { completenessSentence, gapEvidenceLabel } from '@lc/core';
-import { api, type Me, type SeriesGap, type SeriesReport } from '../api.js';
+import {
+  api,
+  type AlternateEditions,
+  type EditionRef,
+  type Me,
+  type SeriesGap,
+  type SeriesHoldings,
+  type SeriesLadderEntry,
+  type SeriesReport,
+} from '../api.js';
 import { Cover } from '../components/Cover.js';
+import { formatLabel, mediumLabel } from '../lib/formats.js';
 
 /**
  * One series as a ladder: every rung we hold, every rung we do not, in order.
@@ -27,6 +37,24 @@ import { Cover } from '../components/Cover.js';
  *
  * The wording lives in `gapEvidenceLabel` in `@lc/core`, beside the arithmetic
  * that produces it, so the explanation and the rule cannot drift apart.
+ *
+ * ## What form we hold each rung in — and ⚠️ why it is not on every rung
+ *
+ * A rung can be held on paper, on a screen, on audio, or in several of those at
+ * once, and the page shows it. It does **not** stamp every rung with a chip, and
+ * that restraint is measured rather than tasteful. Against production
+ * 2026-08-10: 156 editions, of which 39 are physical — and **every one of those
+ * 39 is on a work with no series at all** (the children's board books). So every
+ * series in the catalog today is uniformly ebook, and a chip on all 23 rungs of
+ * *Blade Dance* saying EBOOK would be a label on the majority, which the sibling
+ * Board Game Catalog states outright is a label nobody reads.
+ *
+ * So: `uniformMedia` below finds the case where every held rung has the same
+ * answer, says it **once** in the summary, and leaves the rungs clean. The
+ * moment one volume differs — the BackerKit import landing a hardback of book 3
+ * — every rung starts carrying its chips and the odd one out is visible without
+ * hunting. The page therefore says more as the shelf gets more interesting, not
+ * less.
  */
 export function SeriesDetailPage({
   name,
@@ -62,7 +90,7 @@ export function SeriesDetailPage({
   if (error) return <main className="notice notice--bad">Could not load that series: {error}</main>;
   if (!report) return <main className="muted">Loading…</main>;
 
-  const { completeness: c, ladder, unnumbered } = report;
+  const { completeness: c, ladder, unnumbered, holdings, alternates } = report;
 
   // The rungs, in order: everything we hold, plus everything reported missing.
   //
@@ -78,6 +106,12 @@ export function SeriesDetailPage({
     ...c.gaps.map((g) => ({ index: g.index, entry: null, gap: g })),
   ].sort((a, b) => a.index - b.index);
 
+  // The one answer every held rung gives, when they all give the same one. See
+  // the header: this is what keeps a uniformly-ebook series from wearing the
+  // same chip twenty-three times.
+  const held = rungs.map((r) => r.entry).filter((e): e is SeriesLadderEntry => e != null);
+  const uniformMedia = signatureShared(held);
+
   return (
     <main>
       <button className="back" onClick={onBack}>
@@ -86,6 +120,8 @@ export function SeriesDetailPage({
 
       <h2 className="page-title">{name}</h2>
       <p className="series-claim">{completenessSentence(c)}</p>
+
+      <Holdings holdings={holdings} uniform={uniformMedia} />
 
       <p className="muted small">
         {c.knownTotal != null ? (
@@ -115,6 +151,9 @@ export function SeriesDetailPage({
                   {entry.readState && entry.readState !== 'unread' && (
                     <span className="muted small"> · {entry.readState}</span>
                   )}
+                  {/* Suppressed when every rung says the same thing; the summary
+                      above has already said it once. See the header. */}
+                  {!uniformMedia && <Media entry={entry} />}
                 </span>
               </button>
             ) : (
@@ -134,6 +173,30 @@ export function SeriesDetailPage({
 
       {rungs.length === 0 && (
         <p className="muted">Nothing in this series carries a volume number.</p>
+      )}
+
+      {alternates.length > 0 && (
+        <section className="panel">
+          <h3>
+            Bought more than once
+            <span className="count"> {alternates.length}</span>
+          </h3>
+          <p className="muted small">
+            {/* ⚠️ Not a duplicate and not an error to be cleaned up. A Target
+                edition and a Barnes & Noble edition of the same book are two
+                objects on the shelf with different covers, different endpapers
+                and, usually, different prices — which is exactly why `edition`
+                is a table and not a column on `work`. The ladder above counts
+                each of these once, because it is one volume of the series. */}
+            One volume of the series, held in more than one printing. Each of these is a
+            separate object; the ladder above counts the book once.
+          </p>
+          <ul className="plain">
+            {alternates.map((a) => (
+              <AlternateRow key={a.workId} alt={a} onOpen={onOpen} />
+            ))}
+          </ul>
+        </section>
       )}
 
       {unnumbered.length > 0 && (
@@ -205,6 +268,180 @@ export function SeriesDetailPage({
         </section>
       )}
     </main>
+  );
+}
+
+/* -- what form we hold it in ----------------------------------------------- */
+
+/**
+ * The media a rung covers, as one comparable string.
+ *
+ * `audio` joins `physical` and `ebook` here and only here — it is a display
+ * concern. Nothing in `@lc/core` counts three media; see `MEDIUM_LABEL`.
+ */
+function signatureOf(entry: SeriesLadderEntry): string {
+  return [...entry.media, ...(entry.audiobook ? ['audio'] : [])].join('+');
+}
+
+/** True when every held rung gives the same answer — and there is one to give. */
+function signatureShared(held: SeriesLadderEntry[]): string | null {
+  if (held.length === 0) return null;
+  const first = signatureOf(held[0]!);
+  if (first === '') return null;
+  return held.every((e) => signatureOf(e) === first) ? first : null;
+}
+
+/**
+ * The chips on one rung.
+ *
+ * ⚠️ Deliberately NOT the `.mark` class. `.mark` is `position: absolute` because
+ * its first home was the corner of a cover, and every inline use of it since has
+ * had to undo that — styles.css carries the warning and three overrides proving
+ * it. A new inline badge starts inline.
+ */
+function Media({ entry }: { entry: SeriesLadderEntry }) {
+  const audio = entry.audiobook;
+  if (entry.media.length === 0 && !audio) return null;
+
+  return (
+    <span className="fmts">
+      {entry.media.map((m) => (
+        <span
+          key={m}
+          className={`fmt fmt--${m}`}
+          // The coarse word is what fits; the exact formats are the tooltip, so
+          // "Ebook" can still tell you it is an EPUB and a Kindle licence.
+          title={entry.editions
+            .filter((e) => (m === 'physical') === PHYSICAL.has(e.format))
+            .map((e) => formatLabel(e.format))
+            .join(' · ')}
+        >
+          {mediumLabel(m)}
+        </span>
+      ))}
+      {audio && (
+        <span
+          className="fmt fmt--audio"
+          title={
+            `In the audiobook catalog as "${audio.title}"` +
+            (audio.viaAlias ? `, matched through the alias "${audio.viaAlias}"` : '') +
+            (audio.matchedVia === 'containment' ? ' — matched on a partial title' : '')
+          }
+        >
+          {mediumLabel('audio')}
+          {/* A containment match is a weaker claim than an exact one and says so.
+              `matching.ts` opens with three wrong matches the sibling project
+              shipped, and containment is the rung that produced them. */}
+          {audio.matchedVia === 'containment' && '?'}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** Mirrors `PHYSICAL_FORMATS`; used only to split a tooltip, never to count. */
+const PHYSICAL = new Set(['hardcover', 'paperback', 'mass_market']);
+
+/**
+ * A medium as it reads in the middle of a sentence.
+ *
+ * ⚠️ Separate from `MEDIUM_LABEL`, which is the one-word form the chips wear.
+ * Reusing the chip word gave "All 3 held ebook." — read in a browser and fixed
+ * there, which is the only place it would ever have been noticed.
+ */
+function mediumPhrase(medium: string): string {
+  if (medium === 'physical') return 'in print';
+  if (medium === 'ebook') return 'as ebooks';
+  if (medium === 'audio') return 'on audio';
+  return mediumLabel(medium);
+}
+
+/** "a", "a and b", "a, b and c" — no Oxford comma, matching the rest of the app. */
+function andList(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? '';
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+}
+
+/**
+ * What is on the shelf for this series, in one line.
+ *
+ * Counted in works rather than editions — see `SeriesHoldings` in `@lc/db`. A
+ * zero is omitted rather than printed: "0 physical" invites the reader to work
+ * out whether that is a fact or a gap in the data, and on this catalog it is
+ * both at once.
+ */
+function Holdings({ holdings: h, uniform }: { holdings: SeriesHoldings; uniform: string | null }) {
+  if (h.works === 0) return null;
+
+  const parts = [
+    h.physical > 0 && `${h.physical} in print`,
+    h.ebook > 0 && `${h.ebook} as ebooks`,
+    h.audio > 0 && `${h.audio} on audio`,
+  ].filter((p): p is string => Boolean(p));
+
+  return (
+    <p className="muted small">
+      {/* When every rung is the same, this sentence is the only place the answer
+          appears, so it has to be unambiguous rather than merely short. */}
+      {uniform && h.works > 1
+        ? `All ${h.works} held ${andList(uniform.split('+').map(mediumPhrase))}.`
+        : parts.length > 0
+          ? `Held: ${parts.join(' · ')}.`
+          : null}
+      {h.audio === 0 && h.works > 0 && (
+        <>
+          {' '}
+          {/* Said out loud, because a silent absence and "we never asked" look
+              identical — the same distinction `series_check` exists to draw. */}
+          None of them are in the audiobook catalog.
+        </>
+      )}
+    </p>
+  );
+}
+
+/** One volume we own several printings of. */
+function AlternateRow({
+  alt,
+  onOpen,
+}: {
+  alt: AlternateEditions;
+  onOpen: (workId: number) => void;
+}) {
+  return (
+    <li>
+      <button className="link" onClick={() => onOpen(alt.workId)}>
+        {alt.title}
+      </button>
+      {alt.display && <span className="muted small"> · {alt.display}</span>}
+      <ul className="plain alt__editions">
+        {alt.editions.map((e) => (
+          <li key={e.id}>
+            <span className={`fmt fmt--${PHYSICAL.has(e.format) ? 'physical' : 'ebook'}`}>
+              {formatLabel(e.format)}
+            </span>{' '}
+            <EditionFacts edition={e} />
+          </li>
+        ))}
+      </ul>
+    </li>
+  );
+}
+
+/**
+ * What tells one printing from another.
+ *
+ * ⚠️ `edition_name` first and unabbreviated. It is the whole reason these two
+ * rows are not one row — "Target exclusive" against "Barnes & Noble edition" —
+ * and a printing with nothing to distinguish it says so rather than rendering as
+ * a blank, which reads as a bug.
+ */
+function EditionFacts({ edition: e }: { edition: EditionRef }) {
+  const facts = [e.editionName, e.publisher, e.publishedYear, e.isbn13].filter(Boolean);
+  return (
+    <span className="muted small">
+      {facts.length > 0 ? facts.join(' · ') : 'nothing recorded to tell it apart'}
+    </span>
   );
 }
 

@@ -1,6 +1,8 @@
 import {
+  editionMedium,
   seriesCompleteness,
   type CreateSeriesVolume,
+  type EditionMedium,
   type SeriesCompleteness,
   type SeriesVolumeInput,
 } from '@lc/core';
@@ -12,10 +14,15 @@ import {
  *
  * The arithmetic lives in `packages/core/src/completeness.ts` and is pure, so it
  * has to be handed rows rather than run in SQL. That is a choice, and the cost
- * is measured rather than assumed: 25 series, 104 works with a series, and — if
- * every series were fully attested — a few hundred `series_volume` rows. Three
+ * is measured rather than assumed: 27 series, 111 works with a series, and — if
+ * every series were fully attested — a few hundred `series_volume` rows. Five
  * queries and a group-by in memory, against a table where a self-join with a
  * generated integer series would be the alternative.
+ *
+ * The two added for formats and audiobooks are the cheapest of the five: one
+ * row per edition and at most one row per work, both narrowed to works that have
+ * a series at all. Measured against production 2026-08-10 they are 156 and 40
+ * rows respectively, for the whole catalog, on the unscoped list request.
  *
  * The gain is that the one rule anybody will ever argue about — what counts as
  * missing — is a pure function with tests, and not a `WITH RECURSIVE` nobody
@@ -28,6 +35,29 @@ import {
  * The importer resolves names on the way in and stores the spelling this catalog
  * uses — see `scripts/backfill-series-volumes.mjs`.
  */
+
+/** One printing of a work: what it is, and what makes it tellable from its siblings. */
+export interface EditionRef {
+  id: number;
+  format: string;
+  /** "Target exclusive", "Barnes & Noble edition", "Omnibus - collects volumes 1-3". */
+  editionName: string | null;
+  publisher: string | null;
+  publishedYear: number | null;
+  isbn13: string | null;
+}
+
+/** What the sibling audiobook catalog has, cached by migration 0010. */
+export interface AudiobookRef {
+  /** Its title over there, which is not always ours. Shown when they differ. */
+  title: string;
+  /** That catalog's own series spelling and volume. Deliberately not folded to ours. */
+  series: string | null;
+  indexDisplay: string | null;
+  matchedVia: string;
+  /** The `work_alias` that unlocked the match, when one did. */
+  viaAlias: string | null;
+}
 
 export interface SeriesLadderEntry {
   index: number;
@@ -46,14 +76,73 @@ export interface SeriesLadderEntry {
   sourceUrl: string | null;
   note: string | null;
   staleAt: string | null;
+  /**
+   * Every printing we hold of this volume. Empty for a rung nobody owns, and —
+   * importantly — empty for a work created by the wishlist button, which is what
+   * `isWish` keys on.
+   */
+  editions: EditionRef[];
+  /** `editions` reduced to the question a person actually asks. */
+  media: EditionMedium[];
+  audiobook: AudiobookRef | null;
+}
+
+/**
+ * A volume we hold two printings of *in the same medium* — see `boughtTwice`.
+ *
+ * The Target-exclusive-versus-Barnes-&-Noble case. Kept apart from the ladder
+ * because it answers a different question: the ladder is *which volumes*, this
+ * is *how many ways we have one of them*, and threading the second into the
+ * first makes a rung that is two rungs tall for a reason nobody scanning the run
+ * cares about.
+ *
+ * `editions` carries **all** of the work's printings, not only the repeated
+ * ones. Once a row is being shown at all, "two hardcovers and an EPUB" is the
+ * honest description and "two hardcovers" is a partial one.
+ */
+export interface AlternateEditions {
+  workId: number;
+  title: string;
+  /** Null for a work in the series with no place on the number line. */
+  index: number | null;
+  display: string | null;
+  coverUrl: string | null;
+  editions: EditionRef[];
+}
+
+/**
+ * What we hold across a whole series, counted in works rather than editions.
+ *
+ * ⚠️ Works, not editions, and the difference matters the moment the alternate
+ * editions above exist: three printings of volume 1 is one book on the shelf,
+ * and "4 physical" meaning "2 books, one of them bought three times" would be a
+ * number that sorts and filters and means nothing.
+ */
+export interface SeriesHoldings {
+  /** Held works, wishes excluded. Matches `SeriesCompleteness.owned`. */
+  works: number;
+  physical: number;
+  ebook: number;
+  /** Held works the sibling audiobook catalog also has. */
+  audio: number;
+  /** Held works with two printings of one medium — see `boughtTwice`. */
+  alternates: number;
 }
 
 export interface SeriesReport {
   completeness: SeriesCompleteness;
+  holdings: SeriesHoldings;
   /** Every volume, owned or attested, in order. The page's ladder. */
   ladder: SeriesLadderEntry[];
   /** Works in this series we hold but cannot place on the number line. */
   unnumbered: { workId: number; title: string; display: string | null }[];
+  /** Works we hold in more than one printing. Usually empty; see the type. */
+  alternates: AlternateEditions[];
+}
+
+/** One row of the series list: the arithmetic, plus what is on the shelf. */
+export interface SeriesSummary extends SeriesCompleteness {
+  holdings: SeriesHoldings;
 }
 
 interface OwnedRow {
@@ -92,16 +181,55 @@ interface CheckRow {
   note: string | null;
 }
 
+interface EditionRow {
+  work_id: number;
+  id: number;
+  format: string;
+  edition_name: string | null;
+  publisher: string | null;
+  published_year: number | null;
+  isbn13: string | null;
+}
+
+interface AudioRow {
+  work_id: number;
+  title: string;
+  series: string | null;
+  index_display: string | null;
+  matched_via: string;
+  via_alias: string | null;
+}
+
+/** `work_id` -> its rows, for a table read whole and grouped in memory. */
+function groupBy<T extends { work_id: number }>(rows: T[]): Map<number, T[]> {
+  const out = new Map<number, T[]>();
+  for (const r of rows) {
+    const list = out.get(r.work_id);
+    if (list) list.push(r);
+    else out.set(r.work_id, [r]);
+  }
+  return out;
+}
+
 async function loadAll(
   db: D1Database,
   readerId: number,
   onlySeries?: string,
-): Promise<{ owned: OwnedRow[]; volumes: VolumeRow[]; checks: Map<string, CheckRow> }> {
+): Promise<{
+  owned: OwnedRow[];
+  volumes: VolumeRow[];
+  checks: Map<string, CheckRow>;
+  editions: Map<number, EditionRow[]>;
+  audio: Map<number, AudioRow>;
+}> {
   const scope = onlySeries ? 'AND w.series = ?2' : '';
   const volumeScope = onlySeries ? 'WHERE series = ?1' : '';
   const checkScope = onlySeries ? 'WHERE series = ?1' : '';
+  // These two join `work` rather than being scoped by a series column of their
+  // own, so the bound parameter is ?1 and not ?2 — neither needs the reader id.
+  const joinScope = onlySeries ? 'AND w.series = ?1' : '';
 
-  const [owned, volumes, checks] = await Promise.all([
+  const [owned, volumes, checks, editions, audio] = await Promise.all([
     db
       .prepare(
         `SELECT w.id, w.series, w.series_index_sort, w.series_index_display,
@@ -139,12 +267,108 @@ async function loadAll(
       )
       .bind(...(onlySeries ? [onlySeries] : []))
       .all<CheckRow>(),
+    // Every printing of every work in scope. This is what makes "we have it as
+    // an ebook but not on paper" answerable, and what surfaces the works held in
+    // more than one printing.
+    db
+      .prepare(
+        `SELECT e.work_id, e.id, e.format, e.edition_name, e.publisher,
+                e.published_year, e.isbn13
+           FROM edition e
+           JOIN work w ON w.id = e.work_id
+          WHERE w.series IS NOT NULL ${joinScope}
+          ORDER BY e.work_id, e.id`,
+      )
+      .bind(...(onlySeries ? [onlySeries] : []))
+      .all<EditionRow>(),
+    // ⚠️ Requires migration 0010. Deploying this code against a database without
+    // `audiobook_holding` makes every request to /api/series a 500 — the same
+    // trap migrations 0003 and 0005 each carried, recorded again because it is
+    // the one that keeps recurring in this project.
+    //
+    // `stale_at IS NULL` because a holding is marked and never deleted; a stale
+    // row is history, not a book we have.
+    db
+      .prepare(
+        `SELECT a.work_id, a.title, a.series, a.index_display, a.matched_via, a.via_alias
+           FROM audiobook_holding a
+           JOIN work w ON w.id = a.work_id
+          WHERE w.series IS NOT NULL AND a.stale_at IS NULL ${joinScope}`,
+      )
+      .bind(...(onlySeries ? [onlySeries] : []))
+      .all<AudioRow>(),
   ]);
 
   return {
     owned: owned.results,
     volumes: volumes.results,
     checks: new Map(checks.results.map((c) => [c.series, c])),
+    editions: groupBy(editions.results),
+    // One row per work — `audiobook_holding.work_id` is the primary key.
+    audio: new Map(audio.results.map((a) => [a.work_id, a])),
+  };
+}
+
+function toEditionRef(e: EditionRow): EditionRef {
+  return {
+    id: e.id,
+    format: e.format,
+    editionName: e.edition_name,
+    publisher: e.publisher,
+    publishedYear: e.published_year,
+    isbn13: e.isbn13,
+  };
+}
+
+/**
+ * The distinct media a set of printings covers, physical first.
+ *
+ * ⚠️ Distinct, and that is the point. Three EPUBs of one book are one answer to
+ * "do we have this on a screen", and listing the format of every row would make
+ * the common case — a work with one printing — indistinguishable from the case
+ * this feature exists for.
+ */
+function mediaOf(editions: EditionRef[]): EditionMedium[] {
+  const seen = new Set(editions.map((e) => editionMedium(e.format)));
+  return (['physical', 'ebook'] as const).filter((m) => seen.has(m));
+}
+
+/**
+ * ⚠️ Two printings **of the same medium** — not merely two printings.
+ *
+ * The obvious rule is `editions.length > 1`, and it is wrong. A book held as an
+ * EPUB and as a paperback has two edition rows and is not a book anybody bought
+ * twice: it is one book in two formats, which the media chips on its rung
+ * already say, and listing it again underneath is the same fact told twice.
+ *
+ * What the second section is for is the Target-exclusive-versus-Barnes-&-Noble
+ * case — two objects of the same kind that differ only in who sold them, where
+ * nothing else on the page can show you there are two. Requiring a repeat within
+ * one medium catches exactly that, plus *White Sand* (two `ebook_epub` rows, a
+ * single volume and an omnibus) and *Dinosaur Dance!* (a paperback and a
+ * hardcover, which genuinely is the board book bought twice).
+ *
+ * Caught by a local fixture, not by reading: the first version put a rung with
+ * an ebook and a paperback into "bought more than once", and against the
+ * BackerKit import that is about to land it would have swept up nearly every
+ * book in the house.
+ */
+function boughtTwice(editions: EditionRef[]): boolean {
+  const perMedium = new Map<EditionMedium, number>();
+  for (const e of editions) {
+    const m = editionMedium(e.format);
+    perMedium.set(m, (perMedium.get(m) ?? 0) + 1);
+  }
+  return [...perMedium.values()].some((n) => n > 1);
+}
+
+function toAudiobookRef(a: AudioRow): AudiobookRef {
+  return {
+    title: a.title,
+    series: a.series,
+    indexDisplay: a.index_display,
+    matchedVia: a.matched_via,
+    viaAlias: a.via_alias,
   };
 }
 
@@ -153,6 +377,8 @@ function reportFor(
   owned: OwnedRow[],
   volumes: VolumeRow[],
   check: CheckRow | undefined,
+  editionsByWork: Map<number, EditionRow[]>,
+  audioByWork: Map<number, AudioRow>,
 ): SeriesReport {
   // ⚠️ Narrow on purpose — see the long note on `SeriesVolumeInput.wanted`.
   // A work with an edition is a work something on our side knows about; only a
@@ -227,22 +453,31 @@ function reportFor(
     },
   );
 
+  const editionsFor = (workId: number) => (editionsByWork.get(workId) ?? []).map(toEditionRef);
+
   const ladder: SeriesLadderEntry[] = [
-    ...numbered.map((w) => ({
-      index: w.series_index_sort as number,
-      volumeId: null,
-      display: w.series_index_display,
-      title: w.title,
-      authors: w.authors,
-      workId: w.id,
-      wanted: isWish(w),
-      coverUrl: w.cover_url,
-      readState: w.read_state,
-      source: null,
-      sourceUrl: null,
-      note: null,
-      staleAt: null,
-    })),
+    ...numbered.map((w) => {
+      const editions = editionsFor(w.id);
+      const audio = audioByWork.get(w.id);
+      return {
+        index: w.series_index_sort as number,
+        volumeId: null,
+        display: w.series_index_display,
+        title: w.title,
+        authors: w.authors,
+        workId: w.id,
+        wanted: isWish(w),
+        coverUrl: w.cover_url,
+        readState: w.read_state,
+        source: null,
+        sourceUrl: null,
+        note: null,
+        staleAt: null,
+        editions,
+        media: mediaOf(editions),
+        audiobook: audio ? toAudiobookRef(audio) : null,
+      };
+    }),
     ...attestedInputs.map((v) => ({
       index: v.index,
       volumeId: v.volumeId ?? null,
@@ -257,17 +492,60 @@ function reportFor(
       sourceUrl: v.sourceUrl ?? null,
       note: v.note ?? null,
       staleAt: v.staleAt ?? null,
+      // A rung nobody owns has nothing on the shelf, by definition. Empty arrays
+      // rather than an optional field so the UI never has to test for undefined.
+      editions: [] as EditionRef[],
+      media: [] as EditionMedium[],
+      audiobook: null,
     })),
   ].sort((a, b) => a.index - b.index);
 
+  // ⚠️ Held works only — wishes excluded, the same rule `seriesCompleteness`
+  // applies. A work created by the wishlist button has no editions anyway, so
+  // this is belt and braces; it stops meaning belt and braces the moment
+  // somebody wishes for a *second* printing of a book they already hold.
+  const heldWorks = owned.filter((w) => !isWish(w));
+
+  const holdings: SeriesHoldings = {
+    works: heldWorks.length,
+    physical: 0,
+    ebook: 0,
+    audio: 0,
+    alternates: 0,
+  };
+  const alternates: AlternateEditions[] = [];
+
+  for (const w of heldWorks) {
+    const editions = editionsFor(w.id);
+    for (const m of mediaOf(editions)) holdings[m] += 1;
+    if (audioByWork.has(w.id)) holdings.audio += 1;
+    if (boughtTwice(editions)) {
+      holdings.alternates += 1;
+      alternates.push({
+        workId: w.id,
+        title: w.title,
+        index: w.series_index_sort,
+        display: w.series_index_display,
+        coverUrl: w.cover_url,
+        editions,
+      });
+    }
+  }
+
+  // Down the number line, then anything unplaceable — the ladder's order, so the
+  // second section reads as an annotation of the first rather than a new list.
+  alternates.sort((a, b) => (a.index ?? Infinity) - (b.index ?? Infinity));
+
   return {
     completeness,
+    holdings,
     ladder,
     unnumbered: unnumberedRows.map((w) => ({
       workId: w.id,
       title: w.title,
       display: w.series_index_display,
     })),
+    alternates,
   };
 }
 
@@ -281,8 +559,8 @@ function reportFor(
 export async function listSeries(
   db: D1Database,
   readerId: number,
-): Promise<{ series: SeriesCompleteness[]; withoutSeries: number }> {
-  const { owned, volumes, checks } = await loadAll(db, readerId);
+): Promise<{ series: SeriesSummary[]; withoutSeries: number }> {
+  const { owned, volumes, checks, editions, audio } = await loadAll(db, readerId);
 
   const byName = new Map<string, OwnedRow[]>();
   for (const w of owned) {
@@ -303,7 +581,20 @@ export async function listSeries(
   }
 
   const series = [...byName.entries()]
-    .map(([name, rows]) => reportFor(name, rows, volumesByName.get(name) ?? [], checks.get(name)).completeness)
+    .map(([name, rows]) => {
+      const report = reportFor(
+        name,
+        rows,
+        volumesByName.get(name) ?? [],
+        checks.get(name),
+        editions,
+        audio,
+      );
+      return { ...report.completeness, holdings: report.holdings };
+    })
+    // Alphabetical, and it stays that way. The list page offers other orders,
+    // but the *default* has to be the one a person can predict — see the note
+    // there on why "most missing first" is not the default it looks like.
     .sort((a, b) => a.series.localeCompare(b.series, undefined, { sensitivity: 'base' }));
 
   const none = await db
@@ -319,9 +610,9 @@ export async function getSeriesReport(
   readerId: number,
   name: string,
 ): Promise<SeriesReport | null> {
-  const { owned, volumes, checks } = await loadAll(db, readerId, name);
+  const { owned, volumes, checks, editions, audio } = await loadAll(db, readerId, name);
   if (owned.length === 0 && volumes.length === 0) return null;
-  return reportFor(name, owned, volumes, checks.get(name));
+  return reportFor(name, owned, volumes, checks.get(name), editions, audio);
 }
 
 /**

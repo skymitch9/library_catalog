@@ -57,6 +57,28 @@ export const PHYSICAL_FORMATS: readonly EditionFormat[] = [
 ];
 
 /**
+ * Which shelf a printing lives on — a thing you can hold, or a thing you cannot.
+ *
+ * ⚠️ Deliberately two values and not three. **There is no `audio` medium**, and
+ * there must not be one: open question 5 in `docs/HANDOFF.md` settles it, and
+ * `EDITION_FORMATS` above says why. Audiobooks are not editions of anything in
+ * this database; they are rows in the sibling catalog, cached into
+ * `audiobook_holding` (migration 0010) and joined by `work_id`. A third medium
+ * here would be the first step towards `edition.format = 'audiobook'`, which is
+ * the merge that catalog's owner has already refused.
+ *
+ * `PHYSICAL_FORMATS` is the closed list of things with mass. Everything else in
+ * the enum is a file or a licence, which for the question this answers — *do we
+ * have this on the shelf, or on a screen?* — are the same answer.
+ */
+export const EDITION_MEDIA = ['physical', 'ebook'] as const;
+export type EditionMedium = (typeof EDITION_MEDIA)[number];
+
+export function editionMedium(format: string): EditionMedium {
+  return (PHYSICAL_FORMATS as readonly string[]).includes(format) ? 'physical' : 'ebook';
+}
+
+/**
  * Formats that are a file CWA can hold, convert and send to a device.
  *
  * ⚠️ `ebook_kindle` is deliberately absent: it is an Amazon licence with no
