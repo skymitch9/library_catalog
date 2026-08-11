@@ -81,13 +81,45 @@ const OWNER_USER_ID = 1;
 /** Mirrored whole. All four are small, and three of them get written to. */
 const MIRRORED = ['work', 'research_run', 'research_finding', 'gap_verdict'];
 
-/** The only `work` columns `applyFinding` may reach. */
+/**
+ * The `work` columns this script will write.
+ *
+ * The four detail fields, plus the timestamp — and then two derived columns,
+ * which are here for a reason found by the guard rather than by reading.
+ *
+ * ⚠️ `updateWork` recomputes `sort_title`, `primary_author` **and `work_key`**
+ * from title and authors on every single update, whatever the patch asked for.
+ * So a stored value that has drifted from its derivation gets silently corrected
+ * the first time anything touches the row. The guard caught this on work #224
+ * and stopped the run: *"the run changed sort_title, which this script does not
+ * write."*
+ *
+ * Checked across all 224 works before widening anything:
+ *
+ * | Column | Stored disagrees with derived |
+ * |---|---|
+ * | `sort_title` | **5** — works 224–228, the ones just created for the crowdfunding import |
+ * | `primary_author` | 0 |
+ * | `work_key` | 0 |
+ *
+ * The five are new rows whose `sort_title` kept its leading article, so they
+ * sort under "The". Letting the correction through is what the live route would
+ * do anyway, and it fixes them.
+ *
+ * ⚠️ **`work_key` stays out, and must.** It is the join to 860 audiobook
+ * reviews, and a silent rewrite would move a book's reviews rather than break
+ * visibly. It agrees everywhere today; the day it does not, this script must
+ * stop and say so rather than paper over it. Same for `title` and `authors`,
+ * which are what it is derived from.
+ */
 const SAFE_COLUMNS = new Set([
   'first_published',
   'series',
   'series_index_sort',
   'description',
   'updated_at',
+  'sort_title',
+  'primary_author',
 ]);
 
 // ---------------------------------------------------------------------------
