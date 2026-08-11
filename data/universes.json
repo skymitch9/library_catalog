@@ -170,8 +170,8 @@
       ],
       "seriesToFix": {
         "series": "The Completionist Chronicles",
-        "shouldBe": 14,
-        "why": "⚠️ Filed as 7 in the audiobook catalog. The owner said it should be 'like 14 or 15 books maybe with some side stories' and was right. Seven more belong to it: Implode, Tenacity, Thesaurize and Thunderplump (owner-identified), plus Uncapped, Unmapped and Untapped — and those last three the LIBRARY catalog already files as Completionist Chronicles while the audiobook catalog leaves them seriesless. The two catalogs disagree, and the library is right.",
+        "shouldBe": 15,
+        "why": "⚠️ The m4b `trkn` TAGS were correct on all 14; the FILENAMES were the unreliable source. Untapped's filename says Book 11 while its tag says 12 — Goodreads confirms 12. Implode's filename carries no series at all while its tag knows both the series and track 8. So there was never a volume-11 collision, and the sweep does NOT need to reconstruct ordering. The only damaged field is the album/series string: four spellings, one of them ('Uncapped') holding the title instead of the series.",
         "add": [
           "Implode",
           "Tenacity",
@@ -181,7 +181,19 @@
           "Unmapped",
           "Untapped"
         ],
-        "alsoCheck": "'Invent' (audio) and 'Invent Short Story' (library) are probably the same book under two names."
+        "alsoCheck": "'Invent' (audio) and 'Invent Short Story' (library) are probably the same book under two names.",
+        "confirmedAgainst": "https://www.goodreads.com/series/229735-the-completionist-chronicles",
+        "order": "1 Ritualist, 2 Regicide, 3 Rexus: Side Quest, 4 Raze, 5 Ruthless, 6 Inflame, 7 Invent, 7.75 Invent Short Story (assigned), 8 Implode, 9 Tenacity, 10 Thesaurize, 11 Thunderplump, 12 Untapped, 13 Unmapped, 14 Uncapped",
+        "assignedIndex": {
+          "title": "Invent Short Story",
+          "index": 7.75,
+          "why": "⚠️ ASSIGNED, not official. A Patreon exclusive, so it is unlisted on Goodreads and no canonical index exists. 6.5 and 7.5 already flank Invent, so 7.75 sorts after both and before Implode without colliding. Measured 12,029 words / ~44 pages against Krout novels of 116k-176k, which is what settles it as a genuine short story rather than a mislabelled copy of Invent."
+        },
+        "notOwned": [
+          "6.5 Havoc in the Deathyards",
+          "11.5 Jaxon's New Clients",
+          "13.5 Poppy's Promise"
+        ]
       },
       "notThisSeries": [
         {
@@ -193,6 +205,12 @@
           "title": "World's Only Hero",
           "belongsTo": "Chance Encounter",
           "why": "the library files it there; the audio row is seriesless"
+        }
+      ],
+      "collectsCases": [
+        {
+          "title": "The Divine Dungeon Complete Series",
+          "why": "564k words / ~2,053 pages — an OMNIBUS of all five Dungeon books, not a sixth book. Same shape as White Sand; belongs in edition.collects."
         }
       ]
     },
