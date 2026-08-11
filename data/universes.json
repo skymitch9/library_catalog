@@ -94,7 +94,7 @@
         },
         {
           "title": "Firstborn / Defending Elysium",
-          "why": "⚠️ ONE catalog row holding TWO works. Defending Elysium is Cytoverse (Skyward). A per-book override still cannot express this — the row needs splitting."
+          "why": "⚠️ An OMNIBUS, not a data error — corrected by the owner. It is a real published two-novella volume: one file (firstborn_defendingelysium.epub), and the audiobook catalog's own description enumerates its contents as bullets, one of which reads '(from the world of Skyward)'. NEITHER novella is Cosmere. Belongs in edition.collects (migration 0060), the same shape as the White Sand omnibus — not split into two works."
         },
         {
           "title": "Lux - A Texas Reckoners Novel",
@@ -222,6 +222,12 @@
       "decidedHow": "human",
       "decision": "LEAVE BLANK pending owner check",
       "why": "Believed to be a short-fiction collection, which would make it a mixed bag rather than a clean yes or no. Flagged rather than guessed, same treatment as Will Wight."
+    }
+  ],
+  "_shapeNotes": [
+    {
+      "note": "A universe flag belongs on the WORK, never on the edition",
+      "why": "An omnibus is one object holding several works, and nothing stops a bind-up collecting works from different universes. Firstborn / Defending Elysium does not bite — neither novella is Cosmere — but a Cosmere-plus-non-Cosmere bind-up would make an edition-level flag simply wrong. edition.collects records what is inside; the universe answers per work."
     }
   ]
 }
