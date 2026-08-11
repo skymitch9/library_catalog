@@ -541,27 +541,66 @@ promising "no code" when the only lookup offered is by ISBN.
   `UNCLASSIFIED` chip that is accurate but the only jargon in an otherwise
   plain-English panel.
 
-## An omnibus is not an edition — noted 2026-08-11, not yet acted on
+## ✅ An omnibus is not an edition — done 2026-08-11, three parts
 
-While bucketing edition names the user observed: *"Omnibus is not edition
-correct"*. They are right, and the schema already agrees with them.
+The user was holding off scanning any book that would hit the omnibus/duplicate
+case — *"we're waiting to scan books that will meet this criteria until we
+decide"* — so this was blocking real work, not tidying.
 
-`WORK_RELATIONS` has carried **`contains`** since migration 0004 — its own
-comment reads *"An omnibus or a bind-up, and the books printed inside it"* — and
-every value in that list was chosen from a pair of works actually in this
-catalog. But `work_relation` holds **0 rows**, so the one omnibus we own is
-recorded as `edition_name = 'Omnibus - collects volumes 1-3'` instead: a
-*relationship between works* smuggled into a field about *printings*.
+**One badge was answering three different questions.** Do I own the same
+*object* twice (`copy`), the same *book* in two printings (`edition`), or the
+same *text* via a bundle (two works and a `contains`)? Three tables, one badge.
 
-⚠️ **Do not "fix" this casually.** Those two White Sand rows — the omnibus and
-`Volume 1` — are the only reason White Sand appears under "Bought more than
-once", which is the worked example the entire series restructure was built
-around. Moving them to `work_relation` without giving that section another way
-to see them would silently empty the feature's own demo.
+### 1. ✅ The duplicate badge counts COPIES now
 
-The right shape, when someone does it: the omnibus is a work that `contains`
-the volumes, the volumes stay their own works, and "bought more than once"
-learns to read relations as well as editions.
+"Bought more than once" → **"Owned more than once"**, and the rule is 2+ copies
+in `HELD_STATUSES`. `ownedMoreThanOnce` in `packages/core/src/holdings.ts`, with
+tests; `boughtTwice()` in `@lc/db` is deleted.
+
+⚠️ **Measured before changing it: the badge was firing on scan artifacts, and
+nothing in the catalog is genuinely owned twice today.** *Dinosaur Dance!* is one
+board book recorded twice by two scan paths; *Pout-Pout Fish* and *Grinch* have
+two real ISBNs each and **zero copies**. The five ebook+hardcover works were
+already excluded and stay excluded. Full table in
+`docs/info/series-formats-and-audiobooks.md` §3.
+
+The section therefore renders for **no series** until a real second copy exists.
+That is the honest answer and not a regression.
+
+### 2. ✅ White Sand: the omnibus fact recorded, no volumes invented
+
+Migration **0060** adds `edition.collects` — *what is printed inside this
+object*. `scripts/backfill-omnibus-collects.mjs` (dry-run by default) sets
+edition 206 to `Volumes 1-3` and edition 107 to `Volume 1`, matched on the
+edition name rather than the id.
+
+⚠️ **No works and no `work_relation` rows were created, deliberately.** White
+Sand's three volumes are not rows in this catalog, and minting them means
+guessing three titles — `POST /api/works` does not dedupe, so a guessed title is
+a *permanent* duplicate that collects its own copies and reviews. The honest
+statement ("this printing has volumes 1-3 in it") is recorded now; the statement
+that needs two rows waits until there are two rows, at which point the Related
+panel makes it one tap. `edition_name` is untouched; the Editions panel now shows
+and edits a **Contains** field beside it.
+
+0050 predicted this exactly: *"If that axis is ever wanted it is a new column,
+not a new value here."* 0060 is that column.
+
+### 3. ✅ The overlap warning fires AT SCAN TIME
+
+`work_relation.contains` is no longer display-only. Every scan line carries an
+`overlap`, and the review screen raises **the prompt it already had for
+duplicates** — one more reason, not a second mechanism:
+
+- scan a volume whose omnibus is held → *"You already own this inside …"*
+- scan the omnibus of a held volume → *"This collects …, which you already own."*
+
+⚠️ **It does not block.** Same buttons as before: *Add* / *Add 2nd copy* /
+*Leave it*. Owning volume 1 and the omnibus on purpose is a real choice.
+
+Costs **one query** while `work_relation` is empty (which it is), because the
+index short-circuits. Wishes are excluded — a wished-for omnibus produces no
+warning. Both directions verified through a running Worker against a fixture.
 
 ## Known-imperfect, carried forward
 

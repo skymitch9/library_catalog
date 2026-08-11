@@ -268,12 +268,31 @@ export interface SeriesLadderEntry {
   audiobook: AudiobookRef | null;
 }
 
-export interface AlternateEditions {
+/** One object on the shelf. See `CopyRef` in `@lc/db`. */
+export interface CopyRef {
+  id: number;
+  status: string;
+  editionId: number | null;
+  location: string | null;
+  vendor: string | null;
+  acquiredOn: string | null;
+  isSigned: boolean;
+  editionNotes: string | null;
+}
+
+/**
+ * A book we own two or more copies of.
+ *
+ * ⚠️ **Copies, not editions** — the rule changed on 2026-08-11 and the old one
+ * fired on scan artifacts. `packages/core/src/holdings.ts` carries the argument.
+ */
+export interface OwnedTwice {
   workId: number;
   title: string;
   index: number | null;
   display: string | null;
   coverUrl: string | null;
+  copies: CopyRef[];
   editions: EditionRef[];
 }
 
@@ -283,7 +302,7 @@ export interface SeriesHoldings {
   physical: number;
   ebook: number;
   audio: number;
-  alternates: number;
+  ownedTwice: number;
 }
 
 export interface SeriesReport {
@@ -291,7 +310,7 @@ export interface SeriesReport {
   holdings: SeriesHoldings;
   ladder: SeriesLadderEntry[];
   unnumbered: { workId: number; title: string; display: string | null }[];
-  alternates: AlternateEditions[];
+  ownedTwice: OwnedTwice[];
 }
 
 /** A row of the series list. */

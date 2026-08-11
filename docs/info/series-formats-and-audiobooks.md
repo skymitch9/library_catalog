@@ -1,8 +1,10 @@
 # Series pages — formats, alternate printings, audiobooks — Information Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
-> Last verified: **2026-08-10**, against production D1 (read-only) and a local
-> fixture driven in a browser.
+> Last verified: **2026-08-11** for §3 (the duplicate rule), against a local D1
+> fixture through a running Worker. §2, §4 and below were last verified
+> **2026-08-10** against production D1 (read-only) and a browser, and their
+> counts have moved since — the catalog held 224 works on 2026-08-11.
 
 What the series screens now answer, what was measured to get there, and the four
 decisions that will look arbitrary if you only read the code.
@@ -15,7 +17,7 @@ decisions that will look arbitrary if you only read the code.
 |---|---|
 | **Series list** | Search, four sort orders, gaps-only, all three in the URL. A holdings line per row. |
 | **Series page** | Each held rung says what form we hold it in. A summary line above the ladder. |
-| **Bought more than once** | A second section: one volume, several printings. The Target / Barnes & Noble case. |
+| **Owned more than once** | A second section: one volume, **two or more copies on the shelf**. ⚠️ Renamed and re-pointed 2026-08-11 — see §3, and do not restore the edition-based rule. |
 | **Audiobooks** | `audiobook_holding` (migration 0010) + `npm run backfill:audiobooks`. **40 of 157 works, 25%.** |
 
 ---
@@ -49,26 +51,62 @@ first time you read the code against today's data, and it is not.
 
 ---
 
-## 3. "Bought more than once" is two printings *of one medium*
+## 3. "Owned more than once" counts COPIES — rewritten 2026-08-11
 
-The obvious rule is `editions.length > 1`. It is wrong, and a local fixture
-caught it before anything shipped.
+> ⚠️ **This section replaces the old rule and its heading. Both were wrong.**
+> The section used to be called *"Bought more than once"* and fired on
+> **editions**; it now says *"Owned more than once"* and fires on **copies**.
+> `ownedMoreThanOnce` in `packages/core/src/holdings.ts` is the rule, and it has
+> tests. `boughtTwice()` in `packages/db/src/series.ts` is gone.
 
-A book held as an EPUB **and** a paperback has two edition rows and is not a book
-anybody bought twice — it is one book in two formats, which the chips on its rung
-already say. Listing it again underneath is the same fact told twice, and once
-the BackerKit import lands it would sweep up nearly every book in the house.
+### 3.1 Three questions, one badge
 
-`boughtTwice()` in `packages/db/src/series.ts` therefore requires a repeat
-**within one medium**. Against production that is exactly:
+| The question | The table that answers it |
+|---|---|
+| Do I own the same **object** twice? | `copy` — and this is what the badge means |
+| Do I own the same **book** in two printings? | `edition`, one `work` |
+| Do I own the same **text** twice, via a bundle? | two `work`s and `work_relation.contains` |
 
-| Work | Printings | In? |
+The old rule answered the middle question under a heading that asked the first.
+
+### 3.2 What was measured, 2026-08-11
+
+Nine works have 2+ editions, in three shapes:
+
+| Shape | Works | Verdict |
 |---|---|---|
-| *White Sand* | 2 × `ebook_epub` ("Volume 1", "Omnibus - collects volumes 1-3") | ✅ — and it is in a series, so it shows |
-| *Dinosaur Dance!* | `paperback` + `hardcover` | ✅ by the rule, but **has no series**, so no series page shows it |
+| **Two media** — ebook + hardcover | 5 (Tress, Yumi, The Sunlit Man, The Frugal Wizard's Handbook, Fires of December) | Ordinary. Never a duplicate. The old rule already excluded these, which is why it was the *second* attempt. |
+| **Two printings, one medium** | 3 (*Dinosaur Dance!*, *The Pout-Pout Fish*, *How the Grinch Stole Christmas*) | ⚠️ **All three fired, and all three were wrong** |
+| **Superseded file** | 1 (*White Sand*) | Two `ebook_epub` rows, **0 copies** |
 
-So the section renders for exactly one series today, *White Sand*. That is
-correct, not a bug.
+⚠️ **The middle group is not real.** All three have 0 or 1 copies:
+
+- *Dinosaur Dance!* — one edition with an ISBN and **no copy**, one with no ISBN
+  and **one copy**. One board book, recorded twice by two different scan paths.
+- *Pout-Pout Fish* and *Grinch* — two genuine ISBNs each, **zero copies**.
+
+**So the badge was firing on scan artifacts, not purchases, and nothing in the
+catalog is genuinely owned twice today.** The section renders for **no series**
+until a second copy exists, which is the honest answer.
+
+### 3.3 The rule now
+
+Two or more copies whose `status` is in `HELD_STATUSES` (`owned`, `lent`). Not
+editions, not formats, not media.
+
+- **`lent` counts.** The book is ours, it is just in someone else's hands.
+- **A wish does not.** "We have the EPUB and want the hardcover" is the ordinary
+  wishlist case and shows as a `wanted` copy against a book that is also owned.
+- **`sold` and `borrowed` do not.** One has left and the other never arrived.
+
+The panel lists the **copies**, not the printings — a copy that names its
+printing borrows that printing's format and name, one that does not says where it
+is instead. `copy.edition_id` is nullable by design (migration 0001: *"a copy can
+exist before its exact printing is known"*), so the un-named case is ordinary.
+
+⚠️ The copies query in `loadAll` binds `HELD_STATUSES` **first**, so the series
+name is `?3` and not `?1`. Reusing the shared `joinScope` there would filter the
+catalog to a series called "owned" and silently return nothing.
 
 ---
 

@@ -235,6 +235,27 @@ given no options — a row with no buttons on it at all.
 | Board book, ISBN resolves to nothing | `not_found`, **no Add, no Edit** — barcode rows were denied both | **Type it in** → **Add**. The scanned ISBN survives the edit and reaches the edition |
 | Shop barcode / SKU (non-Bookland) | `skipped` — silent, settled, buttonless | `unresolvable` — visible, typeable, addable. Never looked up: there is no registry of SKUs |
 | Same code already on this sweep | Server refused with `duplicate: true`; **nothing read the flag**, so it looked like a misfire | Prompts: "Already on this sweep — do you have a second copy?" `allowDuplicate` appends a new line |
+| **Owned inside an omnibus we hold** (2026-08-11) | Nothing. The fact existed only in a report read afterwards, if at all | The **same prompt, a second reason**: *"You already own this inside …"* above the buttons that were already there. ⚠️ Never blocks — see below |
+
+### ⚠️ The overlap warning is a REASON, not a mechanism — 2026-08-11
+
+A book can be already-yours in a way `state` cannot express: you hold the
+omnibus, and this is a volume printed inside it. No *object* on the shelf is this
+object, so it is not a duplicate — and it is not grounds to refuse, because
+owning volume 1 *and* the omnibus is a choice people make on purpose.
+
+So each line carries `overlap: ScanOverlap[]`, filled from
+`work_relation.contains` (`loadContainmentIndex` in `@lc/db`), and the review
+screen renders it **inside the duplicate block, above the same buttons**.
+`overlapSentence` in `@lc/core` is the wording, kept beside the rule.
+
+| | |
+|---|---|
+| both directions | scanning the volume reads *"You already own this inside X"*; scanning the omnibus reads *"This collects Y, which you already own"* |
+| how a line names a work | `existingWorkId` when the ISBN/ASIN/spine matcher said so, otherwise `workKeyFor(title, authors)` — the same key `addLineToCatalog` would attach to, which is what makes it fire on a paperback of an ebook we hold |
+| wishes | excluded. "You already own this inside X" is a lie if X is only wanted |
+| cost | **one query**, and none of the work-matching, while `work_relation` is empty — which it is today. Do not make it per-line; a shelf photo is a dozen lines |
+| retyping a line | clears it, along with everything else the old resolution claimed (`unresolve`) |
 
 The rule is now explicit in `@lc/core`, and the review screen and
 `catalog-add.ts` both read the same predicates so a button can never offer

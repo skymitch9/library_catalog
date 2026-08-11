@@ -5,6 +5,7 @@ import {
   lookupProgress,
   needsLookup,
   outstandingCount,
+  overlapSentence,
   proposedTitle,
   searchText,
   type ScanJob,
@@ -62,6 +63,20 @@ import { Link, workPath } from '../router.js';
  * ordinary, and the scan is how you would say so. So the row now names the book
  * it matched, links to it, and offers a second owned copy inline — one tap on a
  * button that says what it does, never automatically.
+ *
+ * ## ⚠️ An overlap raises the SAME prompt, for a different reason
+ *
+ * A book can be already-yours in a second way: you hold the omnibus, and this is
+ * one of the volumes printed inside it. That is not a duplicate — no object on
+ * the shelf is this object — and it is not a reason to refuse the add, because
+ * owning volume 1 *and* the omnibus is a choice people make on purpose. It is a
+ * reason to **say so while the person is deciding**, which is the whole
+ * difference between this and a report they read afterwards.
+ *
+ * So it renders inside the same block as the duplicate prompt and above the same
+ * buttons. `line.overlap` is filled by the scan routes from
+ * `work_relation.contains`; `overlapSentence` in `@lc/core` is the wording, kept
+ * beside the rule so the two cannot drift.
  *
  * ## ⚠️ The rule the last three fixes all come from
  *
@@ -172,6 +187,25 @@ function LineRow({
   const settled = line.addedWorkId !== null || line.dismissed;
   const owned = line.state === 'owned';
   /*
+   * ⚠️ **An overlap is a second REASON to raise the duplicate prompt, not a
+   * second prompt.**
+   *
+   * The row already knows how to say "here is what you have — add it, or leave
+   * it", and an omnibus is the other way that sentence becomes true: you own the
+   * *text* without owning *this object*. So this renders inside the same block,
+   * above the same buttons, and changes nothing about what they do.
+   *
+   * ⚠️ It must not block, and it does not. The owner's position all session:
+   * *tell me, then let me decide*. They own volume 1 and the omnibus deliberately
+   * in some cases, and a feature that refused that would be worse than the report
+   * it replaces.
+   *
+   * `overlap` is optional on the wire — jobs written before the field existed
+   * have no key for it — so this is `?? []` rather than a non-null assertion.
+   */
+  const overlaps = line.overlap ?? [];
+  const overlapNote = overlapSentence(overlaps);
+  /*
    * ⚠️ The gating rule, in three lines, and it is the fix for two separate
    * complaints: **what a row offers follows what the row needs, never how the
    * row arrived.** Gating on `via` and on `state === 'found'` is what made an
@@ -242,6 +276,39 @@ function LineRow({
             said what the book is, which is the honest thing to show. */}
         {!owned && line.state !== 'found' && (
           <strong>{proposedTitle(line) ?? line.code ?? line.text}</strong>
+        )}
+
+        {/*
+          ⚠️ Below the identification and above the buttons, on purpose, and on
+          BOTH kinds of row — a book can be an overlap without being a duplicate
+          (the omnibus is on the shelf, this volume is not) and can be both at
+          once (you own the volume separately *and* inside the omnibus).
+
+          It names the book and stops. No verdict, no default, and the buttons
+          below are the ones that were already there: "Add" / "Not wanted" on a
+          new book, "Add 2nd copy" / "Leave it" on one we hold.
+        */}
+        {overlapNote && !settled && (
+          <div className="stack" style={{ gap: '0.15rem', marginTop: '0.25rem' }}>
+            <div>
+              <span className="mark mark--gap" style={{ position: 'static' }}>
+                also inside something you own
+              </span>
+            </div>
+            <strong>{overlapNote}</strong>
+            <div className="muted small">
+              {/* The one thing the person needs to know to decide, and the
+                  reason this is not a refusal: owning both is a real choice
+                  somebody makes on purpose. */}
+              Some books are worth having both ways. Add it if you want it separately, or
+              leave it.
+            </div>
+            {overlaps.map((o) => (
+              <div className="small" key={o.workId}>
+                <Link to={workPath(o.workId)}>Open {o.title}</Link>
+              </div>
+            ))}
+          </div>
         )}
 
         {/* While the pass owns this line, its `detail` is the *previous*

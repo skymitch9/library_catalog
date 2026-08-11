@@ -4,6 +4,10 @@
 > Last verified: **2026-08-09**. `migrations/0001_init.sql` applied cleanly to a
 > local D1 (39 statements) and every table below was exercised through the API.
 > The migration's own comments carry the full reasoning; this is the map.
+>
+> `edition.collects` added **2026-08-11** (migration 0060, applied to a local D1
+> and read back through the API). Counts elsewhere on this page predate that and
+> have moved.
 
 ```
 work        title · authors · series · series_index · work_key
@@ -104,6 +108,20 @@ honest rather than merely convenient.
 assigns it, and the importers call it. It refuses anything describing a book's
 **contents** rather than its printing — an omnibus and a "Volume 1" are ordinary
 trade printings.
+
+**`collects` (migration 0060) is where those two went.** A third axis, and the
+one 0050 promised: `edition_name` is what the *shop* called the printing,
+`edition_kind` is whether it is a special one, and `collects` is **what is
+printed inside the object** — "Volumes 1-3". Free text on purpose; this house
+holds bind-ups of unnumbered novellas and one leatherbound *edition* delivered as
+two physical volumes. NULL means the ordinary case (the whole work), which is 227
+of 229 rows.
+
+⚠️ It is **not** a substitute for `work_relation.contains`. This says what is in
+the object; that says which catalog *rows* are inside which, and only that one
+can be linked to or read by the scanner's overlap warning. *White Sand* has
+`collects` filled and **no** relation row, because its three volumes are not rows
+— and inventing them would mean guessing three titles.
 
 **`format` is the point of the whole table.** It is what makes *"I own this in
 audio and paperback but not ebook"* a query rather than a feature. Audiobooks are

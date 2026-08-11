@@ -15,7 +15,7 @@ list learned to scale.
 | | |
 |---|---|
 | **Formats on the ladder** | Each held rung says whether we have it in print, as an ebook, on audio, or several at once. |
-| **Bought more than once** | A second section per series: one volume, several printings — the Target / Barnes & Noble case. |
+| **Owned more than once** | A second section per series: one volume, two or more **copies** on the shelf. ⚠️ Renamed and re-pointed from editions to copies on 2026-08-11. |
 | **Audiobook cross-reference** | `audiobook_holding` (**migration 0010**) + `npm run backfill:audiobooks`. **40 of 157 works, 25%.** |
 | **A list that scales** | Search, four sort orders, gaps-only, a holdings line per row — all three controls in the URL. |
 
@@ -37,9 +37,13 @@ The four worth knowing without opening it:
   ebook. The page therefore says "All 23 held as ebooks" **once** instead of
   stamping 23 identical chips. It is not a bug that the chips are absent; they
   appear the moment one volume differs, which the BackerKit import will do.
-- ⚠️ **"Bought more than once" means two printings of ONE medium.** `editions
-  .length > 1` was the first rule and it swept in every book held as both an
-  EPUB and a paperback — caught by a local fixture, not by reading.
+- ⚠️ ~~**"Bought more than once" means two printings of ONE medium.**~~
+  **SUPERSEDED 2026-08-11.** That was the second of three rules and it was also
+  wrong: measured against production, all three books it named were scan
+  artifacts rather than purchases. The section is now **"Owned more than once"**
+  and counts held **copies** — `ownedMoreThanOnce` in `@lc/core`, with tests. Do
+  not restore an edition-based rule; `docs/info/series-formats-and-audiobooks.md`
+  §3 carries the measurement.
 
 ### To finish it
 

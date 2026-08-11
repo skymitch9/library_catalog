@@ -42,6 +42,16 @@ export interface EditionView {
    * Migration 0050. ⚠️ Null is NOT "unknown"; see `EDITION_KINDS` in `@lc/core`.
    */
   edition_kind?: string | null;
+  /**
+   * What is bound inside this object — "Volumes 1-3". Migration 0060.
+   *
+   * ⚠️ A third axis, and not a tidier `edition_name`. The name is what the shop
+   * called the printing, the kind is whether it is a special one, and this is
+   * which parts of the story are between the covers. *White Sand* is the whole
+   * reason: "Omnibus - collects volumes 1-3" was in the name field, where nothing
+   * could read it.
+   */
+  collects?: string | null;
   isbn13: string | null;
   isbn10?: string | null;
   asin: string | null;
@@ -185,6 +195,12 @@ export function Editions({
                         .filter(Boolean)
                         .join(' · ')}
                     </span>
+                    {/* Its own line, not folded into the run above. "Volumes
+                        1-3" is the difference between two printings that
+                        otherwise look identical — both *White Sand* rows are
+                        `ebook_epub` with no publisher — so burying it between a
+                        page count and a year is how it stops being read. */}
+                    {e.collects && <span className="muted small">Contains {e.collects}</span>}
                     <span className="muted small">
                       {e.isbn13 && <>ISBN {e.isbn13} </>}
                       {e.isbn10 && !e.isbn13 && <>ISBN {e.isbn10} </>}
@@ -263,6 +279,7 @@ function EditionForm({
     format: edition.format,
     editionName: edition.edition_name ?? '',
     editionKind: edition.edition_kind ?? '',
+    collects: edition.collects ?? '',
     publisher: edition.publisher ?? '',
     publishedYear: edition.published_year?.toString() ?? '',
     pages: edition.pages?.toString() ?? '',
@@ -295,6 +312,7 @@ function EditionForm({
         // has to travel as an explicit null for `updateEdition` in `@lc/db` to
         // tell it from a field this form never mentioned.
         editionKind: text(form.editionKind),
+        collects: text(form.collects),
         publisher: text(form.publisher),
         publishedYear: num(form.publishedYear),
         pages: num(form.pages),
@@ -381,6 +399,31 @@ function EditionForm({
             </option>
           ))}
         </select>
+      </label>
+
+      {/*
+        ⚠️ The third axis, and the one that had nowhere to live until migration
+        0060. An omnibus is **not** a special printing — 0050 refused to make it
+        an `edition_kind` and said so in writing — and it is not an edition name
+        either, because an edition name is what the shop called it. It is what is
+        printed inside the object, and until this box existed both *White Sand*
+        rows were carrying it in the name field where nothing could read it.
+
+        Empty is the ordinary case by a wide margin: 227 of 229 printings are the
+        whole work and nothing else.
+
+        ⚠️ This records a fact about the OBJECT. Saying that the omnibus contains
+        three books this catalog also holds as their own rows is a different
+        statement, it lives in the Related panel as `contains`, and it is the one
+        the scanner's overlap warning can read. Fill both in when both are true.
+      */}
+      <label className="field">
+        <span className="field__label">Contains</span>
+        <input
+          value={form.collects}
+          onChange={(e) => set('collects', e.target.value)}
+          placeholder="“Volumes 1-3”, “Books 1-3 and two short stories”"
+        />
       </label>
 
       <div className="edition-form__pair">

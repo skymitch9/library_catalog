@@ -1,5 +1,8 @@
 import {
+  HELD_STATUSES,
   editionMedium,
+  heldCopies,
+  ownedMoreThanOnce,
   seriesCompleteness,
   type CreateSeriesVolume,
   type EditionMedium,
@@ -87,36 +90,60 @@ export interface SeriesLadderEntry {
   audiobook: AudiobookRef | null;
 }
 
+/** One object on the shelf — what tells it apart from the other one like it. */
+export interface CopyRef {
+  id: number;
+  status: string;
+  /** The printing it names, when it names one. `copy.edition_id` is nullable. */
+  editionId: number | null;
+  location: string | null;
+  vendor: string | null;
+  acquiredOn: string | null;
+  isSigned: boolean;
+  /** Free text on the copy: "Target exclusive cover", "signed at the launch". */
+  editionNotes: string | null;
+}
+
 /**
- * A volume we hold two printings of *in the same medium* — see `boughtTwice`.
+ * A volume we own **two or more physical or licensed copies of** — see
+ * `ownedMoreThanOnce` in `@lc/core`.
  *
- * The Target-exclusive-versus-Barnes-&-Noble case. Kept apart from the ladder
- * because it answers a different question: the ladder is *which volumes*, this
- * is *how many ways we have one of them*, and threading the second into the
- * first makes a rung that is two rungs tall for a reason nobody scanning the run
- * cares about.
+ * ⚠️ **The rule changed on 2026-08-11, from editions to copies.** It used to be
+ * "two printings of one medium", and measured against production every book it
+ * named was a scan artifact rather than a purchase — see the header of
+ * `packages/core/src/holdings.ts` for the three books and what was actually
+ * wrong with each. `copy` is the table that means "an object in this house";
+ * `edition` means "a printing that exists in the world", and the catalog can
+ * hold two rows for one book without anybody having bought it twice.
  *
- * `editions` carries **all** of the work's printings, not only the repeated
- * ones. Once a row is being shown at all, "two hardcovers and an EPUB" is the
- * honest description and "two hardcovers" is a partial one.
+ * Kept apart from the ladder because it answers a different question: the ladder
+ * is *which volumes*, this is *how many of one of them are on the shelf*, and
+ * threading the second into the first makes a rung that is two rungs tall for a
+ * reason nobody scanning the run cares about.
+ *
+ * `editions` still rides along — it is what turns "copy #412" into "the
+ * hardcover" on screen — but it no longer decides anything.
  */
-export interface AlternateEditions {
+export interface OwnedTwice {
   workId: number;
   title: string;
   /** Null for a work in the series with no place on the number line. */
   index: number | null;
   display: string | null;
   coverUrl: string | null;
+  /** The held copies — the objects. This is the list the section is about. */
+  copies: CopyRef[];
+  /** Every printing on file, so a copy can be labelled with what it is. */
   editions: EditionRef[];
 }
 
 /**
  * What we hold across a whole series, counted in works rather than editions.
  *
- * ⚠️ Works, not editions, and the difference matters the moment the alternate
- * editions above exist: three printings of volume 1 is one book on the shelf,
- * and "4 physical" meaning "2 books, one of them bought three times" would be a
- * number that sorts and filters and means nothing.
+ * ⚠️ Works, not editions, and the difference matters the moment a book is owned
+ * twice: three copies of volume 1 is one book on the shelf, and "4 physical"
+ * meaning "2 books, one of them bought three times" would be a number that sorts
+ * and filters and means nothing.
  */
 export interface SeriesHoldings {
   /** Held works, wishes excluded. Matches `SeriesCompleteness.owned`. */
@@ -125,8 +152,8 @@ export interface SeriesHoldings {
   ebook: number;
   /** Held works the sibling audiobook catalog also has. */
   audio: number;
-  /** Held works with two printings of one medium — see `boughtTwice`. */
-  alternates: number;
+  /** Held works with 2+ held copies — see `ownedMoreThanOnce` in `@lc/core`. */
+  ownedTwice: number;
 }
 
 export interface SeriesReport {
@@ -136,8 +163,8 @@ export interface SeriesReport {
   ladder: SeriesLadderEntry[];
   /** Works in this series we hold but cannot place on the number line. */
   unnumbered: { workId: number; title: string; display: string | null }[];
-  /** Works we hold in more than one printing. Usually empty; see the type. */
-  alternates: AlternateEditions[];
+  /** Works we own two or more copies of. Usually empty; see the type. */
+  ownedTwice: OwnedTwice[];
 }
 
 /** One row of the series list: the arithmetic, plus what is on the shelf. */
@@ -191,6 +218,18 @@ interface EditionRow {
   isbn13: string | null;
 }
 
+interface CopyRow {
+  work_id: number;
+  id: number;
+  status: string;
+  edition_id: number | null;
+  location: string | null;
+  vendor: string | null;
+  acquired_on: string | null;
+  is_signed: number;
+  edition_notes: string | null;
+}
+
 interface AudioRow {
   work_id: number;
   title: string;
@@ -220,16 +259,21 @@ async function loadAll(
   volumes: VolumeRow[];
   checks: Map<string, CheckRow>;
   editions: Map<number, EditionRow[]>;
+  copies: Map<number, CopyRow[]>;
   audio: Map<number, AudioRow>;
 }> {
   const scope = onlySeries ? 'AND w.series = ?2' : '';
   const volumeScope = onlySeries ? 'WHERE series = ?1' : '';
   const checkScope = onlySeries ? 'WHERE series = ?1' : '';
-  // These two join `work` rather than being scoped by a series column of their
-  // own, so the bound parameter is ?1 and not ?2 — neither needs the reader id.
+  // These three join `work` rather than being scoped by a series column of their
+  // own, so the bound parameter is ?1 and not ?2 — none needs the reader id.
   const joinScope = onlySeries ? 'AND w.series = ?1' : '';
+  // ⚠️ NOT `joinScope`. The copies query binds the held statuses first, so the
+  // series lands after them — hard-coding `?1` there would have filtered the
+  // whole catalog to a series called "owned" and quietly returned nothing.
+  const copyScope = onlySeries ? `AND w.series = ?${HELD_STATUSES.length + 1}` : '';
 
-  const [owned, volumes, checks, editions, audio] = await Promise.all([
+  const [owned, volumes, checks, editions, copies, audio] = await Promise.all([
     db
       .prepare(
         `SELECT w.id, w.series, w.series_index_sort, w.series_index_display,
@@ -281,6 +325,27 @@ async function loadAll(
       )
       .bind(...(onlySeries ? [onlySeries] : []))
       .all<EditionRow>(),
+    // Every copy on the shelf, which is what "owned more than once" now counts.
+    //
+    // ⚠️ Filtered to `HELD_STATUSES` in SQL rather than in the loop, so a series
+    // whose only extra copies are wishes does not carry them across the wire at
+    // all. `ownedMoreThanOnce` applies the same filter again on what arrives —
+    // belt and braces, and it is the pure function that has the tests.
+    //
+    // Small: production held 108 copies in total on 2026-08-11, against 224
+    // works, and this is narrowed to the ones with a series.
+    db
+      .prepare(
+        `SELECT c.work_id, c.id, c.status, c.edition_id, c.location, c.vendor,
+                c.acquired_on, c.is_signed, c.edition_notes
+           FROM copy c
+           JOIN work w ON w.id = c.work_id
+          WHERE w.series IS NOT NULL
+            AND c.status IN (${HELD_STATUSES.map((_, i) => `?${i + 1}`).join(', ')}) ${copyScope}
+          ORDER BY c.work_id, c.id`,
+      )
+      .bind(...HELD_STATUSES, ...(onlySeries ? [onlySeries] : []))
+      .all<CopyRow>(),
     // ⚠️ Requires migration 0010. Deploying this code against a database without
     // `audiobook_holding` makes every request to /api/series a 500 — the same
     // trap migrations 0003 and 0005 each carried, recorded again because it is
@@ -304,8 +369,22 @@ async function loadAll(
     volumes: volumes.results,
     checks: new Map(checks.results.map((c) => [c.series, c])),
     editions: groupBy(editions.results),
+    copies: groupBy(copies.results),
     // One row per work — `audiobook_holding.work_id` is the primary key.
     audio: new Map(audio.results.map((a) => [a.work_id, a])),
+  };
+}
+
+function toCopyRef(c: CopyRow): CopyRef {
+  return {
+    id: c.id,
+    status: c.status,
+    editionId: c.edition_id,
+    location: c.location,
+    vendor: c.vendor,
+    acquiredOn: c.acquired_on,
+    isSigned: c.is_signed === 1,
+    editionNotes: c.edition_notes,
   };
 }
 
@@ -333,34 +412,22 @@ function mediaOf(editions: EditionRef[]): EditionMedium[] {
   return (['physical', 'ebook'] as const).filter((m) => seen.has(m));
 }
 
-/**
- * ⚠️ Two printings **of the same medium** — not merely two printings.
+/*
+ * ⚠️ `boughtTwice(editions)` used to live here and has been deleted.
  *
- * The obvious rule is `editions.length > 1`, and it is wrong. A book held as an
- * EPUB and as a paperback has two edition rows and is not a book anybody bought
- * twice: it is one book in two formats, which the media chips on its rung
- * already say, and listing it again underneath is the same fact told twice.
+ * Its rule was "two printings of the same medium", and it was the *second*
+ * attempt: the obvious `editions.length > 1` had swept up every ebook-plus-
+ * paperback pair, which is five works in this catalog and not one of them a
+ * duplicate. The narrower rule was better and still wrong, because it answered
+ * "how many printings do we have rows for" while the heading asked "how many of
+ * these do I own". Measured against production on 2026-08-11, all three books it
+ * named were scan artifacts and **nothing in the catalog was genuinely owned
+ * twice**.
  *
- * What the second section is for is the Target-exclusive-versus-Barnes-&-Noble
- * case — two objects of the same kind that differ only in who sold them, where
- * nothing else on the page can show you there are two. Requiring a repeat within
- * one medium catches exactly that, plus *White Sand* (two `ebook_epub` rows, a
- * single volume and an omnibus) and *Dinosaur Dance!* (a paperback and a
- * hardcover, which genuinely is the board book bought twice).
- *
- * Caught by a local fixture, not by reading: the first version put a rung with
- * an ebook and a paperback into "bought more than once", and against the
- * BackerKit import that is about to land it would have swept up nearly every
- * book in the house.
+ * The rule is now `ownedMoreThanOnce` in `@lc/core`, it counts held copies, and
+ * it has tests. That header carries the three books and what was wrong with
+ * each.
  */
-function boughtTwice(editions: EditionRef[]): boolean {
-  const perMedium = new Map<EditionMedium, number>();
-  for (const e of editions) {
-    const m = editionMedium(e.format);
-    perMedium.set(m, (perMedium.get(m) ?? 0) + 1);
-  }
-  return [...perMedium.values()].some((n) => n > 1);
-}
 
 function toAudiobookRef(a: AudioRow): AudiobookRef {
   return {
@@ -378,6 +445,7 @@ function reportFor(
   volumes: VolumeRow[],
   check: CheckRow | undefined,
   editionsByWork: Map<number, EditionRow[]>,
+  copiesByWork: Map<number, CopyRow[]>,
   audioByWork: Map<number, AudioRow>,
 ): SeriesReport {
   // ⚠️ Narrow on purpose — see the long note on `SeriesVolumeInput.wanted`.
@@ -511,22 +579,28 @@ function reportFor(
     physical: 0,
     ebook: 0,
     audio: 0,
-    alternates: 0,
+    ownedTwice: 0,
   };
-  const alternates: AlternateEditions[] = [];
+  const ownedTwice: OwnedTwice[] = [];
 
   for (const w of heldWorks) {
     const editions = editionsFor(w.id);
     for (const m of mediaOf(editions)) holdings[m] += 1;
     if (audioByWork.has(w.id)) holdings.audio += 1;
-    if (boughtTwice(editions)) {
-      holdings.alternates += 1;
-      alternates.push({
+
+    // ⚠️ Copies, not editions. The rows arrive already filtered to
+    // `HELD_STATUSES`; `heldCopies` re-applies it so this cannot start lying if
+    // the query is ever widened.
+    const copies = heldCopies((copiesByWork.get(w.id) ?? []).map(toCopyRef));
+    if (ownedMoreThanOnce(copies)) {
+      holdings.ownedTwice += 1;
+      ownedTwice.push({
         workId: w.id,
         title: w.title,
         index: w.series_index_sort,
         display: w.series_index_display,
         coverUrl: w.cover_url,
+        copies,
         editions,
       });
     }
@@ -534,7 +608,7 @@ function reportFor(
 
   // Down the number line, then anything unplaceable — the ladder's order, so the
   // second section reads as an annotation of the first rather than a new list.
-  alternates.sort((a, b) => (a.index ?? Infinity) - (b.index ?? Infinity));
+  ownedTwice.sort((a, b) => (a.index ?? Infinity) - (b.index ?? Infinity));
 
   return {
     completeness,
@@ -545,7 +619,7 @@ function reportFor(
       title: w.title,
       display: w.series_index_display,
     })),
-    alternates,
+    ownedTwice,
   };
 }
 
@@ -560,7 +634,7 @@ export async function listSeries(
   db: D1Database,
   readerId: number,
 ): Promise<{ series: SeriesSummary[]; withoutSeries: number }> {
-  const { owned, volumes, checks, editions, audio } = await loadAll(db, readerId);
+  const { owned, volumes, checks, editions, copies, audio } = await loadAll(db, readerId);
 
   const byName = new Map<string, OwnedRow[]>();
   for (const w of owned) {
@@ -588,6 +662,7 @@ export async function listSeries(
         volumesByName.get(name) ?? [],
         checks.get(name),
         editions,
+        copies,
         audio,
       );
       return { ...report.completeness, holdings: report.holdings };
@@ -610,9 +685,9 @@ export async function getSeriesReport(
   readerId: number,
   name: string,
 ): Promise<SeriesReport | null> {
-  const { owned, volumes, checks, editions, audio } = await loadAll(db, readerId, name);
+  const { owned, volumes, checks, editions, copies, audio } = await loadAll(db, readerId, name);
   if (owned.length === 0 && volumes.length === 0) return null;
-  return reportFor(name, owned, volumes, checks.get(name), editions, audio);
+  return reportFor(name, owned, volumes, checks.get(name), editions, copies, audio);
 }
 
 /**

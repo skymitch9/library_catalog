@@ -2,8 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { completenessSentence, gapEvidenceLabel } from '@lc/core';
 import {
   api,
-  type AlternateEditions,
   type EditionRef,
+  type OwnedTwice,
   type Me,
   type SeriesGap,
   type SeriesHoldings,
@@ -90,7 +90,7 @@ export function SeriesDetailPage({
   if (error) return <main className="notice notice--bad">Could not load that series: {error}</main>;
   if (!report) return <main className="muted">Loading…</main>;
 
-  const { completeness: c, ladder, unnumbered, holdings, alternates } = report;
+  const { completeness: c, ladder, unnumbered, holdings, ownedTwice } = report;
 
   // The rungs, in order: everything we hold, plus everything reported missing.
   //
@@ -175,25 +175,29 @@ export function SeriesDetailPage({
         <p className="muted">Nothing in this series carries a volume number.</p>
       )}
 
-      {alternates.length > 0 && (
+      {ownedTwice.length > 0 && (
         <section className="panel">
           <h3>
-            Bought more than once
-            <span className="count"> {alternates.length}</span>
+            Owned more than once
+            <span className="count"> {ownedTwice.length}</span>
           </h3>
           <p className="muted small">
-            {/* ⚠️ Not a duplicate and not an error to be cleaned up. A Target
-                edition and a Barnes & Noble edition of the same book are two
-                objects on the shelf with different covers, different endpapers
-                and, usually, different prices — which is exactly why `edition`
-                is a table and not a column on `work`. The ladder above counts
-                each of these once, because it is one volume of the series. */}
-            One volume of the series, held in more than one printing. Each of these is a
-            separate object; the ladder above counts the book once.
+            {/* ⚠️ **Copies, not editions**, since 2026-08-11. The old heading said
+                "Bought more than once" over a rule that counted *printings of one
+                medium*, and measured against production every book it named was a
+                scan artifact: one board book recorded twice by two scan paths, and
+                two books with two real ISBNs and zero copies. `copy` is the table
+                that means "an object in this house".
+
+                Still not an error to be cleaned up. A Target edition and a Barnes
+                & Noble edition are two objects on the shelf, and the ladder above
+                counts each of these once because it is one volume of the series. */}
+            Two or more of these are on the shelf. An ebook and a hardcover of one book is
+            not this — that is one book held two ways, and the chips above say so.
           </p>
           <ul className="plain">
-            {alternates.map((a) => (
-              <AlternateRow key={a.workId} alt={a} onOpen={onOpen} />
+            {ownedTwice.map((a) => (
+              <OwnedTwiceRow key={a.workId} row={a} onOpen={onOpen} />
             ))}
           </ul>
         </section>
@@ -436,29 +440,53 @@ function Holdings({
   );
 }
 
-/** One volume we own several printings of. */
-function AlternateRow({
-  alt,
-  onOpen,
-}: {
-  alt: AlternateEditions;
-  onOpen: (workId: number) => void;
-}) {
+/**
+ * One volume we own several copies of.
+ *
+ * ⚠️ Lists the **copies**, not the printings, because the copies are what there
+ * are two of. A copy that names its printing borrows that printing's format and
+ * name — "Hardcover · Target exclusive" — and one that does not says where it is
+ * instead, which is the fact a person on the landing needs. `copy.edition_id` is
+ * nullable by design (migration 0001: "a copy can exist before its exact
+ * printing is known"), so the un-named case is ordinary rather than broken.
+ */
+function OwnedTwiceRow({ row, onOpen }: { row: OwnedTwice; onOpen: (workId: number) => void }) {
+  const editionById = new Map(row.editions.map((e) => [e.id, e]));
+
   return (
     <li>
-      <button className="link" onClick={() => onOpen(alt.workId)}>
-        {alt.title}
+      <button className="link" onClick={() => onOpen(row.workId)}>
+        {row.title}
       </button>
-      {alt.display && <span className="muted small"> · {alt.display}</span>}
+      {row.display && <span className="muted small"> · {row.display}</span>}
+      <span className="muted small"> · {row.copies.length} copies</span>
       <ul className="plain alt__editions">
-        {alt.editions.map((e) => (
-          <li key={e.id}>
-            <span className={`fmt fmt--${PHYSICAL.has(e.format) ? 'physical' : 'ebook'}`}>
-              {formatLabel(e.format)}
-            </span>{' '}
-            <EditionFacts edition={e} />
-          </li>
-        ))}
+        {row.copies.map((copy) => {
+          const edition = copy.editionId === null ? undefined : editionById.get(copy.editionId);
+          const facts = [
+            copy.location,
+            copy.vendor,
+            copy.acquiredOn,
+            copy.isSigned ? 'signed' : null,
+            copy.editionNotes,
+            copy.status === 'lent' ? 'lent out' : null,
+          ].filter(Boolean);
+          return (
+            <li key={copy.id}>
+              {edition ? (
+                <>
+                  <span className={`fmt fmt--${PHYSICAL.has(edition.format) ? 'physical' : 'ebook'}`}>
+                    {formatLabel(edition.format)}
+                  </span>{' '}
+                  <EditionFacts edition={edition} />
+                </>
+              ) : (
+                <span className="muted small">Printing not recorded</span>
+              )}
+              {facts.length > 0 && <span className="muted small"> · {facts.join(' · ')}</span>}
+            </li>
+          );
+        })}
       </ul>
     </li>
   );
