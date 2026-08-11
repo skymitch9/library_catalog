@@ -110,7 +110,7 @@ the Cloudflare dashboard.
 | ⏸️ | **Two books claim contradictory series** | #213 *Secret Ingredient* is recorded as "The Pengrooms" vol 2 while #215 *Pengrooms* is "Pringle & Finn" vol 1. Both were auto-filled, both carry a source URL, both are plausible — and they cannot both be right. | User — needs eyes on the actual books |
 | ⏸️ | **Three books the model refused to identify** | #141 *Touch and Explore*, #160 *Bizzy Bear*, #174 *I love you, little bear* — bare series-line titles with no subtitle and no ISBN. It declined rather than guessing, which is the behaviour we want. **Re-running will not help; adding a subtitle will.** | User adds a subtitle |
 | ⏸️ | **Confirm the Percy Jackson set is the 5-book original series** | Imported, but the vendor page never lists the individual titles — the five are *supplied by Claude*, not read off the page. Low risk, still an assumption. | User, when awake |
-| ⏸️ | **6 works have no cover, and they are genuinely obscure** | **57 → 6** overnight: 12 stranded, 20 Google Books, 18 LLM, **4 from a new free title-search rung**. The remaining six are a Korean Tinyping board book, a Paw Patrol shaped board book, *Home Sweet Home*, *What If Everybody Said That?*, *How to Catch a Loveosaurus* and *The Nightmare Before Christmas* — no free rung and no paid lookup reached them. This is close to the real floor. | Nobody — accept, or hand-supply a URL |
+| ⏸️ | **4 works have no cover, and they are genuinely obscure** | **57 → 4** overnight: 12 stranded, 20 Google Books, 33 LLM, 4 from a new free title-search rung. What is left: a Paw Patrol shaped board book, *Home Sweet Home*, a Korean Tinyping board book, and *The Nightmare Before Christmas*. No rung reached them. This is the real floor. | Nobody — accept, or hand-supply a URL |
 
 ### Cleared since the last revision
 
@@ -438,6 +438,13 @@ promising "no code" when the only lookup offered is by ISBN.
   statements run, not rows changed. ⚠️ Worse: the read helper in
   `scripts/lib/d1.mjs` returned an **empty result** on one run and the script
   reported "nothing to do" over 99 live rows. A second run behaved.
+- ⚠️ **Never pipe a long background job through `tail` or `grep`.** They buffer
+  until exit, so a running job writes an empty log and looks dead. This cost
+  real money: a cover run was judged dead and restarted, and **both copies then
+  processed the full set — 36 paid lookups where 25 would have done, about 94c
+  where ~60c was needed.** The `UPDATE … WHERE cover_url IS NULL` guard meant no
+  data was harmed, and the script's own "that is not the arithmetic expected"
+  warning is what exposed it. Redirect to a file and `tail` the file instead.
 - ⚠️ **Two branches can add the same export and git will merge both silently.**
   `EDITION_MEDIA` was declared twice with no conflict marker; it surfaced only as
   `TS2451`. After any multi-branch merge, run typecheck *and* count the tests.
