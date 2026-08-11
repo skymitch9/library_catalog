@@ -15,7 +15,7 @@
 -- gap, on a row that exists. A series gap is the opposite shape: it is
 -- definitionally a volume with **no work row**, which is why `completeness.ts`
 -- can produce an `interior` gap it cannot even name. There is no `work_id` to
--- key on, and inventing one would be exactly the mistake migration 0080's header
+-- key on, and inventing one would be exactly the mistake migration 0090's header
 -- refuses.
 --
 -- So the key is the same one a gap rung actually has: `(series, index_sort)`.
@@ -55,7 +55,7 @@
 
 CREATE TABLE series_gap_skip (
   -- Matches `work.series` and `series_volume.series` exactly — this catalog's
-  -- spelling. No fold at read time; see migration 0080's header.
+  -- spelling. No fold at read time; see migration 0090's header.
   series       TEXT NOT NULL,
   -- REAL, so the Patreon shorts at 6.5, 11.5 and 13.5 are expressible. It does
   -- NOT have to exist in `series_volume`: an `earlier` gap is pure arithmetic

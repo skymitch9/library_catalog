@@ -2,7 +2,7 @@
 /**
  * Ask the sibling audiobook catalog which of our books we already own on audio,
  * and cache the answer — in `audiobook_holding` (migration 0010) for the books
- * this catalog knows, and in `audiobook_series_holding` (migration 0080) for the
+ * this catalog knows, and in `audiobook_series_holding` (migration 0090) for the
  * ones it does not.
  *
  * ## ⚠️ The second table exists because the first one structurally cannot answer
@@ -71,7 +71,7 @@
  * matches is marked `stale_at` rather than deleted — migration 0003's rule,
  * because a row vanishing looks identical to the audiobook having gone away.
  *
- * ⚠️ Requires migrations 0010 **and 0080**. Against a database without either,
+ * ⚠️ Requires migrations 0010 **and 0090**. Against a database without either,
  * every statement for that table fails with `no such table: …`.
  */
 
@@ -224,7 +224,7 @@ for (const r of goneStale) {
 }
 
 // ---------------------------------------------------------------------------
-// Phase 2 — the rungs with no work row at all (migration 0080)
+// Phase 2 — the rungs with no work row at all (migration 0090)
 //
 // ⚠️ Joined on `(series, index_sort)` and on nothing else. A gap rung has no
 // title — `completeness.ts` cannot even name an `interior` hole — so there is

@@ -244,7 +244,7 @@ interface AudioRow {
 
 /**
  * An audiobook the household holds at a rung with no `work` row — migration
- * 0080. Keyed on `(series, index_sort)`, because that is all a gap has.
+ * 0090. Keyed on `(series, index_sort)`, because that is all a gap has.
  */
 interface AudioRungRow {
   series: string;
@@ -256,7 +256,7 @@ interface AudioRungRow {
   series_matched_via: string;
 }
 
-/** A rung the owner has decided never to own — migration 0081. */
+/** A rung the owner has decided never to own — migration 0100. */
 interface SkipRow {
   series: string;
   index_sort: number;
@@ -401,7 +401,7 @@ async function loadAll(
       )
       .bind(...(onlySeries ? [onlySeries] : []))
       .all<AudioRow>(),
-    // ⚠️ Requires migration 0080, and it is the fix for the worse of the two
+    // ⚠️ Requires migration 0090, and it is the fix for the worse of the two
     // bugs: `audiobook_holding` above can only speak for a work that EXISTS
     // here, so a book owned only on audio was invisible and the ladder drew it
     // as a hole. This table is keyed on the series and the number, which is all
@@ -409,7 +409,7 @@ async function loadAll(
     //
     // Scoped by its own `series` column — our spelling, exactly as
     // `series_volume` stores it — so the bound parameter is ?1 like the two
-    // above it and no fold runs here. See migration 0080.
+    // above it and no fold runs here. See migration 0090.
     db
       .prepare(
         `SELECT series, index_sort, title, authors, audiobook_series, index_display,
@@ -419,7 +419,7 @@ async function loadAll(
       )
       .bind(...(onlySeries ? [onlySeries] : []))
       .all<AudioRungRow>(),
-    // ⚠️ Requires migration 0081. "I am never buying that one."
+    // ⚠️ Requires migration 0100. "I am never buying that one."
     db
       .prepare(
         `SELECT series, index_sort, reason, note, decided_at
@@ -507,7 +507,7 @@ function toAudiobookRef(a: AudioRow): AudiobookRef {
 }
 
 /**
- * A migration 0080 row as the arithmetic wants it.
+ * A migration 0090 row as the arithmetic wants it.
  *
  * ⚠️ `series_matched_via` is narrowed with a comparison rather than a cast. The
  * column has a CHECK constraint, but a database predating it — or one restored
@@ -916,7 +916,7 @@ export async function setSeriesTotal(
 }
 
 /**
- * "I am never buying that one." — migration 0081.
+ * "I am never buying that one." — migration 0100.
  *
  * An upsert on `(series, index_sort)`, so changing the reason is one row and not
  * two contradicting decisions. Nothing here checks that the rung is *currently*

@@ -111,7 +111,7 @@ export const seriesRoutes = new Hono<AppBindings>()
   })
 
   /**
-   * "I am never buying that one." — migration 0081.
+   * "I am never buying that one." — migration 0100.
    *
    * ⚠️ Deliberately NOT `/api/works/:id/gap-verdicts`, which is the other half of
    * this idea and cannot serve here. That one is keyed `(work_id, field)` and

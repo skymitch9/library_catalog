@@ -43,13 +43,13 @@
  *
  * | | What it is | What it does to the arithmetic |
  * |---|---|---|
- * | `audio` | the household owns that volume, in the sibling audiobook catalog (migration 0080) | the rung stays a gap — it IS absent from *this* catalog — but stops being counted as missing |
- * | `skipped` | the owner has decided never to own it (migration 0081) | the rung leaves `gaps` for `skipped`, so nothing derived from `gaps` counts it |
+ * | `audio` | the household owns that volume, in the sibling audiobook catalog (migration 0090) | the rung stays a gap — it IS absent from *this* catalog — but stops being counted as missing |
+ * | `skipped` | the owner has decided never to own it (migration 0100) | the rung leaves `gaps` for `skipped`, so nothing derived from `gaps` counts it |
  *
  * The audio case is the one that was actively lying. The household holds all
  * seven Stormlight Archive audiobooks and this catalog holds one of those titles
  * as an ebook; the page read *"1 book of at least 5 — 6 missing from the run
- * itself"*, and every one of the six is in the house. See migration 0080.
+ * itself"*, and every one of the six is in the house. See migration 0090.
  *
  * ⚠️ **An unconfirmed audio match stays counted as missing.** `matchedVia` is
  * `'fold'` when nothing but a folded series name connects the two catalogs, and
@@ -139,7 +139,7 @@ export type GapEvidence =
  * How firmly the two catalogs' series names were shown to mean one series.
  *
  * ⚠️ Not the same question as migration 0010's `matched_via`, which is one title
- * meeting another. See migration 0080 for both values in full.
+ * meeting another. See migration 0090 for both values in full.
  */
 export type AudioSeriesMatch =
   /** A work we hold corroborated the name mapping AND the numbering. Firm. */
@@ -149,7 +149,7 @@ export type AudioSeriesMatch =
 
 /**
  * A volume of this series the household owns on audio — cached by migration
- * 0080, because the Worker cannot read the sibling catalog's CSV.
+ * 0090, because the Worker cannot read the sibling catalog's CSV.
  *
  * ⚠️ It never says a volume *exists*; `series_volume` does that, from the same
  * file, and by construction there is a row there for every row here. This only
@@ -166,10 +166,10 @@ export interface SeriesAudioInput {
   matchedVia: AudioSeriesMatch;
 }
 
-/** The owner's decision never to own one rung. Migration 0081. */
+/** The owner's decision never to own one rung. Migration 0100. */
 export interface SeriesSkipInput {
   index: number;
-  /** Why, in their words. Not evidence — a reminder. See migration 0081. */
+  /** Why, in their words. Not evidence — a reminder. See migration 0100. */
   reason: string;
   note?: string | null;
   decidedAt?: string | null;
@@ -242,7 +242,7 @@ export interface SeriesCompleteness {
    */
   gaps: SeriesGap[];
   /**
-   * Rungs the owner has decided never to own. Migration 0081.
+   * Rungs the owner has decided never to own. Migration 0100.
    *
    * Kept as full rungs rather than a count so the ladder can still draw them,
    * with their reason and an undo. A skipped book that vanishes from the page is
@@ -491,7 +491,7 @@ export function completenessSentence(c: SeriesCompleteness): string {
   if (c.knownTotal != null) {
     // ⚠️ Skips come off the outstanding count, never off the total. Deciding not
     // to buy book 13 does not un-publish it, and only a sourced
-    // `series_check.known_total` may say how long a series is — migration 0081.
+    // `series_check.known_total` may say how long a series is — migration 0100.
     const missing = c.knownTotal - c.owned - skips - c.onAudio;
     if (missing > 0) {
       return `${c.owned} of ${c.knownTotal}, per ${source} — ${missing} to go.${tail()}`;

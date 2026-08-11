@@ -677,7 +677,7 @@ describe('series completeness — a rung we own, but not in this catalog', () =>
     source: 'audiobook_catalog',
     ...extra,
   });
-  /** A migration 0080 row. `work_match` unless a test says otherwise. */
+  /** A migration 0090 row. `work_match` unless a test says otherwise. */
   const onAudio = (index: number, extra: Record<string, unknown> = {}) => ({
     index,
     title: `Volume ${index}`,

@@ -462,7 +462,7 @@ export const setSeriesTotalSchema = z
 export type SetSeriesTotal = z.infer<typeof setSeriesTotalSchema>;
 
 /**
- * "I am never buying that one." — see migration 0081.
+ * "I am never buying that one." — see migration 0100.
  *
  * ⚠️ `reason` is required, and it is the one required string in this file that
  * is **not** an evidence rail. `series_volume.source`, `known_total_source` and

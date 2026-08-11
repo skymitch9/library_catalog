@@ -24,7 +24,7 @@ import {
  * and the detail page cannot disagree about which books they are calling
  * missing. `onAudio` gets its own chip rather than being folded into either:
  * "you own it, just not here" is a third state and reads as neither of the
- * other two. See migration 0080 for the bug this fixed.
+ * other two. See migration 0090 for the bug this fixed.
  *
  * ## ⚠️ Why this filters in the browser when the collection filters on the server
  *
@@ -197,7 +197,7 @@ export function SeriesPage({
                   )}
                   {/* ⚠️ Its own chip, not folded into either count above. These
                       books are in the house — they are simply not in this
-                      catalog — and before migration 0080 they were being
+                      catalog — and before migration 0090 they were being
                       reported as missing. */}
                   {s.onAudio > 0 && (
                     <span className="mark mark--attested">{s.onAudio} on audio</span>

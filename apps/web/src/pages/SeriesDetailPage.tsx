@@ -44,7 +44,7 @@ import { formatLabel, mediumLabel } from '../lib/formats.js';
  * on audio has no `work` row here — migration 0010's `audiobook_holding` is
  * keyed on one — so it could not be represented and the ladder drew it as a
  * hole. `/series/The Stormlight Archive` read *"1 book of at least 5 — 6
- * missing"* while the household owned all seven of them. Migration 0080 caches
+ * missing"* while the household owned all seven of them. Migration 0090 caches
  * the answer on `(series, index)`, which is all a gap rung has, and the rungs
  * below now say so.
  *
@@ -62,7 +62,7 @@ import { formatLabel, mediumLabel } from '../lib/formats.js';
  * The three Patreon-era Completionist Chronicles shorts are not sold, so that
  * series read incomplete for ever. `completeness.skipped` holds those rungs;
  * they are drawn greyed, with the owner's reason and an undo, and they are out
- * of `gaps` so nothing counts them as missing. Migration 0081.
+ * of `gaps` so nothing counts them as missing. Migration 0100.
  *
  * ## What form we hold each rung in — and ⚠️ why it is not on every rung
  *
@@ -452,7 +452,7 @@ function Holdings({
   holdings: SeriesHoldings;
   uniform: string | null;
   /**
-   * ⚠️ Rungs held on audio that are NOT works here — migration 0080.
+   * ⚠️ Rungs held on audio that are NOT works here — migration 0090.
    *
    * `SeriesHoldings` counts works in this catalog and cannot see them, which is
    * the whole bug. Without this the line below said "None of them are in the
@@ -752,7 +752,7 @@ function MissingRung({
  * `AddVolume` uses for its source. The job here is different, though: this is
  * not evidence, because a preference cannot be wrong. It is the answer to "why
  * is 11.5 greyed out" six months from now, and without it a skipped rung and a
- * misfiled one look identical. See migration 0081.
+ * misfiled one look identical. See migration 0100.
  */
 function SkipReason({
   busy,

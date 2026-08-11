@@ -237,7 +237,7 @@ export interface Stats {
  * page prints and the arithmetic behind it cannot drift.
  */
 /**
- * An audiobook the household owns at a rung with no work row — migration 0080.
+ * An audiobook the household owns at a rung with no work row — migration 0090.
  *
  * ⚠️ `matchedVia` is the honesty rail and not decoration. `'fold'` means only
  * the series name connects the two catalogs, and the ladder must render it as
@@ -252,7 +252,7 @@ export interface SeriesGapAudio {
   matchedVia: 'work_match' | 'fold';
 }
 
-/** The owner's decision never to own one rung — migration 0081. */
+/** The owner's decision never to own one rung — migration 0100. */
 export interface SeriesGapSkip {
   index: number;
   reason: string;
@@ -953,7 +953,7 @@ export const api = {
    *
    * ⚠️ Costs a `reason` but no *source*, unlike every other write above it. It
    * is a decision about intent, not a claim about the world — see migration
-   * 0081. An upsert, so re-recording with a better reason is the same call.
+   * 0100. An upsert, so re-recording with a better reason is the same call.
    */
   skipSeriesGap: (name: string, body: { indexSort: number; reason: string; note?: string | null }) =>
     request<SeriesReport>(`/api/series/${encodeURIComponent(name)}/skips`, {

@@ -5,7 +5,7 @@
 > verified **2026-08-11** through a running Worker against a local fixture —
 > both directions, and a wished-for container correctly producing no warning;
 > and §§1.4a–1.4b, added **2026-08-11** and verified the same day by driving the
-> real `getSeriesReport` against a fresh local D1 with migrations 0080 and 0081
+> real `getSeriesReport` against a fresh local D1 with migrations 0090 and 0100
 > applied. See §5's third trap for why that went through `@lc/db` rather than
 > through a running Worker.
 >
@@ -126,7 +126,7 @@ so it cannot be represented at all.** Measured against
 | what `/series/The Stormlight Archive` said | *"1 book of at least 5 — **6 missing** from the run itself"* |
 | audiobook rows with no work row at all | **~397**, so this is systemic |
 
-**Migration 0080 (`audiobook_series_holding`) is the fix, and it is a second
+**Migration 0090 (`audiobook_series_holding`) is the fix, and it is a second
 cache table rather than ~400 new `work` rows.** Minting works was the obvious
 option and contradicts all three of migration 0010's stated rules — an audiobook
 is *a different object in a different catalog*, the table is *a cache, never a
@@ -191,7 +191,7 @@ applied there. The local D1 in the main checkout is behind the repo and holds no
 Stormlight rows, so the seven-audiobook figure comes from the CSV, not from a
 production read.
 
-### 1.4b "I am never buying that one" — migration 0081
+### 1.4b "I am never buying that one" — migration 0100
 
 The Completionist Chronicles has three Patreon-era shorts — **6.5** *Havoc in the
 Deathyards*, **11.5** *Jaxon's New Clients*, **13.5** *Poppy's Promise* — that
@@ -387,7 +387,7 @@ a typo mint a second copy of a book already on the shelf.
 ## 4. Running it
 
 ```bash
-npm run db:migrate:local                       # 0003 + 0004, and now 0080 + 0081
+npm run db:migrate:local                       # 0003 + 0004, and now 0090 + 0100
 npm run backfill:series-volumes                # dry run, LOCAL — read the per-series lines
 npm run backfill:series-volumes -- --commit
 npm run backfill:audiobooks                    # dry run — ⚠️ READ THE `fold` LIST
