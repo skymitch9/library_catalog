@@ -382,6 +382,27 @@ export interface CollectionQuery {
    * checkboxes. See `NEEDS_CLAUSE`.
    */
   needs?: string | undefined;
+  /**
+   * The works belonging to the chosen fictional universe, **already resolved**.
+   *
+   * ⚠️ Ids and not a name, and this package deliberately does not know what a
+   * universe is. The list lives in another repo (`catalog-platform`), it is
+   * keyed on series names and exact titles rather than on any column here, and
+   * exclusions have to be checked before overrides — all of which is
+   * implemented once, in `@lc/universes`. Expressing it again as SQL would make
+   * the same decision exist in a third language, which is the class of bug this
+   * estate has already shipped once (see the header of
+   * `packages/universes/src/catalog.ts`).
+   *
+   * So the caller resolves and hands over ids. `listUniverseKeys` below is what
+   * it reads to do that, and it applies every *other* clause in this query, so
+   * the ids arrive already narrowed by the rest of the filter.
+   *
+   * ⚠️ An empty array means "that universe holds nothing here" and returns no
+   * rows. `undefined` means nobody asked. They are not the same, and collapsing
+   * them turns an empty universe into the whole collection.
+   */
+  universeIds?: readonly number[] | undefined;
   /** Read state for ONE person — the caller's, never a body parameter. */
   readState?: string | undefined;
   readerId?: number | undefined;
@@ -560,6 +581,26 @@ const NEEDS_CLAUSE: Record<string, string> = {
 };
 
 /**
+ * "Is one of these works", as SQL. See `CollectionQuery.universeIds`.
+ *
+ * ⚠️ **Inlined rather than bound, and that is not a shortcut.** D1 caps a
+ * statement at 100 bound parameters; The Cosmere alone can supply more ids than
+ * that as the shelf grows, and a filter that starts erroring at book 101 is a
+ * trap laid for later. Inlining is safe here for the reason `KIND_CLAUSE` and
+ * `NEEDS_CLAUSE` are literals: no caller text reaches the statement. These are
+ * integers this database issued, filtered through `Number.isInteger` on the way
+ * past — a non-integer cannot survive the join.
+ *
+ * `0 = 1` for the empty case, because `w.id IN ()` is not valid SQLite and
+ * "this universe holds nothing here" must return nothing rather than
+ * everything.
+ */
+function universeClause(ids: readonly number[]): string {
+  const safe = ids.filter((id) => Number.isInteger(id));
+  return safe.length === 0 ? '0 = 1' : `w.id IN (${safe.join(', ')})`;
+}
+
+/**
  * The WHERE clause and its binds, shared by the list, the count and the facets.
  *
  * One builder rather than three, because a facet count that disagrees with the
@@ -619,6 +660,9 @@ function collectionFilter(query: CollectionQuery): { sql: string; binds: unknown
   // sort allowlist and `MEDIUM_CLAUSE` follow.
   const needs = query.needs ? NEEDS_CLAUSE[query.needs] : undefined;
   if (needs) where.push(needs);
+  // No binds — see `universeClause`. `undefined` adds no clause (nobody asked,
+  // or the name was not one of the six); an empty array adds `0 = 1`.
+  if (query.universeIds) where.push(universeClause(query.universeIds));
   if (query.readState && query.readerId) {
     // 'unread' has to include rows with no `user_book` at all — a book nobody has
     // opened has no row, and treating that as "not unread" would hide most of the
@@ -719,6 +763,41 @@ export async function listCollection(
   };
 }
 
+/** The two columns the universe lookup reads, plus the id it answers about. */
+export interface UniverseKeyRow {
+  id: number;
+  title: string;
+  series: string | null;
+}
+
+/**
+ * Every work the rest of the filter allows, as `(id, title, series)`.
+ *
+ * The read half of `CollectionQuery.universeIds`: the caller resolves these
+ * rows through `@lc/universes` and hands the ids back. Three columns and no
+ * joins, so it is cheap over a catalog this size — 116 rows locally, a few
+ * hundred in production — and it is only asked for when a universe control is
+ * on screen or a universe filter is applied.
+ *
+ * ⚠️ **It drops the universe clause itself**, exactly as `collectionFacets`
+ * drops the series, medium, needs and kind clauses before counting them. Two
+ * consequences, both wanted: a universe *facet* counts what picking it would
+ * actually give you rather than what is already showing, and the ids fed back
+ * into `universeIds` are already narrowed by every other filter, so the AND
+ * that follows is a no-op rather than a second opinion.
+ */
+export async function listUniverseKeys(
+  db: D1Database,
+  query: CollectionQuery,
+): Promise<UniverseKeyRow[]> {
+  const { sql, binds } = collectionFilter({ ...query, universeIds: undefined });
+  const { results } = await db
+    .prepare(`SELECT w.id, w.title, w.series FROM work w ${sql}`)
+    .bind(...binds)
+    .all<UniverseKeyRow>();
+  return results;
+}
+
 export interface CollectionFacets {
   series: { name: string; count: number }[];
   /**
@@ -756,6 +835,18 @@ export interface CollectionFacets {
    * why "ordinary" is not a thing anybody filters for.
    */
   kinds: { collectors: number; unsorted: number };
+  /**
+   * ⚠️ There is deliberately no `universes` field here, even though the
+   * collection has a universe filter and the API response carries the counts.
+   *
+   * This package does not depend on `@lc/universes`, and that is the one thing
+   * keeping the cross-repo build dependency contained: `@lc/universes` is the
+   * only package here that reads another checkout, and making the database
+   * layer import it would put catalog-platform behind every query in the app.
+   * The worker composes the two instead — see `apps/worker/src/lib/universes.ts`
+   * and the `/collection/facets` route, which spreads this object and adds one
+   * more key.
+   */
 }
 
 /**

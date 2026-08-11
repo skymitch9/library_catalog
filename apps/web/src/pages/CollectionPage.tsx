@@ -7,7 +7,13 @@ import { WorkList } from '../components/WorkList.js';
 import { editionKindLabel, formatLabel, mediumLabel } from '../lib/formats.js';
 import { loadPrefs, savePrefs } from '../lib/prefs.js';
 import { ON_THE_WAY, statusLabel } from '../lib/statuses.js';
-import { collectionPath, replaceUrl, type CollectionFilters } from '../router.js';
+import {
+  Link,
+  collectionPath,
+  replaceUrl,
+  universePath,
+  type CollectionFilters,
+} from '../router.js';
 
 /**
  * The collection.
@@ -59,6 +65,8 @@ export function CollectionPage({
 
   const [q, setQ] = useState(filters.q);
   const [series, setSeries] = useState(filters.series);
+  // The tier above the series. Composes with it rather than replacing it.
+  const [universe, setUniverse] = useState(filters.universe);
   const [medium, setMedium] = useState(filters.medium);
   const [format, setFormat] = useState(filters.format);
   // The third format-ish axis — how fancy the printing is. Migration 0050.
@@ -77,6 +85,7 @@ export function CollectionPage({
   const [showFilters, setShowFilters] = useState(
     Boolean(
       filters.series ||
+        filters.universe ||
         filters.medium ||
         filters.format ||
         filters.editionKind ||
@@ -100,17 +109,17 @@ export function CollectionPage({
 
   const canEdit = me.capabilities.includes('editCatalog');
   const filtered = Boolean(
-    q || series || medium || format || editionKind || status || needs || readState,
+    q || series || universe || medium || format || editionKind || status || needs || readState,
   );
 
   useEffect(() => savePrefs({ sort, dir, pageSize, view }), [sort, dir, pageSize, view]);
 
   const params = useMemo(
     () => ({
-      q, series, medium, format, editionKind, status, needs, readState,
+      q, series, universe, medium, format, editionKind, status, needs, readState,
       sort, dir, page, pageSize,
     }),
-    [q, series, medium, format, editionKind, status, needs, readState, sort, dir, page, pageSize],
+    [q, series, universe, medium, format, editionKind, status, needs, readState, sort, dir, page, pageSize],
   );
 
   const reload = useCallback(() => {
@@ -144,6 +153,7 @@ export function CollectionPage({
   const filterKey = JSON.stringify([
     q,
     series,
+    universe,
     medium,
     format,
     editionKind,
@@ -174,6 +184,7 @@ export function CollectionPage({
       collectionPath({
         q,
         series,
+        universe,
         medium,
         format,
         editionKind,
@@ -186,14 +197,14 @@ export function CollectionPage({
         page: page + 1,
       }),
     );
-  }, [q, series, medium, format, editionKind, status, needs, readState, sort, dir, pageSize, page]);
+  }, [q, series, universe, medium, format, editionKind, status, needs, readState, sort, dir, pageSize, page]);
 
   useEffect(() => {
     api
-      .facets({ q, medium, format, editionKind, status, needs, readState })
+      .facets({ q, universe, medium, format, editionKind, status, needs, readState })
       .then(setFacets)
       .catch(() => setFacets(null));
-  }, [q, medium, format, editionKind, status, needs, readState]);
+  }, [q, universe, medium, format, editionKind, status, needs, readState]);
 
   const loadHeader = useCallback(() => {
     api.stats().then(setStats).catch(() => setStats(null));
@@ -318,6 +329,44 @@ export function CollectionPage({
               {facets?.series.map((s) => (
                 <option key={s.name} value={s.name}>
                   {s.name} ({s.count})
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {/* ⚠️ The tier ABOVE the series, sitting directly under it because
+              that is the ladder of scope: book, series, world. It composes with
+              the series filter rather than replacing it — picking The Cosmere
+              and then *Secret Projects* is a real narrowing, not a
+              contradiction.
+
+              Same `<select>` in a `.field` as every other control here, for the
+              reason `Format` gives: seven dropdowns and one segmented row would
+              be two idioms for one job, and a native select is the best thing a
+              360px phone can be handed.
+
+              ⚠️ **There is no "in no universe" option and there must not be
+              one.** Most of this catalog belongs to no shared world and is
+              correctly filed — it is largely children's picture books — so that
+              option would be a four-figure worklist made of rows with nothing
+              wrong with them. The settled reading elsewhere in this app is the
+              same: a NULL `cover_status` means nobody looked, a NULL
+              `edition_kind` means ordinary, and neither gets a control.
+
+              All six are always offered, zeroes included, the rule `Format`
+              states: physical books are still arriving and a world that is all
+              audiobooks today will not be forever. */}
+          <label className="field">
+            <span className="field__label">Universe</span>
+            <select
+              value={universe}
+              onChange={(e) => setUniverse(e.target.value)}
+              title="A shared world, across the series in it"
+            >
+              <option value="">Any universe</option>
+              {facets?.universes.map((u) => (
+                <option key={u.name} value={u.name}>
+                  {u.name} ({u.count})
                 </option>
               ))}
             </select>
@@ -485,6 +534,7 @@ export function CollectionPage({
               onClick={() => {
                 setQ('');
                 setSeries('');
+                setUniverse('');
                 setMedium('');
                 setFormat('');
                 setEditionKind('');
@@ -496,6 +546,36 @@ export function CollectionPage({
               Clear
             </button>
           )}
+
+          {/* The other half of the pair, and only once a world is chosen. This
+              control gives a flat, sortable, pageable list; the universe page
+              gives the *spread* — the same world grouped across its series,
+              with each heading a way into that series' own ladder. Neither
+              replaces the other, so the way across is a link rather than a
+              choice made for the reader.
+
+              A `.chip` and not a `<p>`: it is somewhere to go, and everything
+              else on this row is a control. */}
+          {universe && (
+            <p className="controls__note">
+              <Link to={universePath(universe)} className="chip">
+                See {universe} grouped by series →
+              </Link>
+            </p>
+          )}
+
+          {/* ⚠️ Written down for the reason the three notes below it are: the
+              wrong guess is silent, and here the wrong guess is the damaging
+              one. Somebody reading "Universe (6)" over a catalog of hundreds
+              will read the other hundreds as unclassified — as a backlog. They
+              are not. A picture book belongs to no shared world, that is the
+              correct answer, and nothing in this app will ever ask anybody to
+              fix it. */}
+          <p className="controls__note muted">
+            A <b>universe</b> is the tier above a series — one world shared across several
+            of them, like Elantris and Mistborn both being the Cosmere. Most books belong to
+            none, which is the ordinary answer and not a gap.
+          </p>
 
           {/* ⚠️ The one sentence that says which way the format filter cuts.
               It is written down because the answer is not guessable and the

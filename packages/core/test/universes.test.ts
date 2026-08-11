@@ -29,12 +29,15 @@ import {
   canonicalUniverseName,
   membersOf,
   normaliseUniverseText,
+  resolveUniverseName,
   universeAsserted,
   universeFor,
   universeIndex,
+  universeMemberIds,
   universeNames,
   universeOnCreate,
   universeOnUpdate,
+  universeTally,
   universesDocument,
   assertSchemaVersion,
   type UniverseAssignment,
@@ -201,6 +204,99 @@ describe("canonical names — the owner's spellings win", () => {
   it('every universe name resolves to itself', () => {
     for (const name of universeNames) {
       assert.equal(canonicalUniverseName(universeIndex, name), name);
+    }
+  });
+});
+
+/* -------------------------------------------------------------------------- *
+ * Applying the list to rows — what the UI is built on
+ *
+ * ⚠️ These are NOT part of the two-repo contract; `catalog.ts` is a caller of
+ * the lookup, not a twin of anything in the Python. What they pin is the pair
+ * of rules the screens depend on: absence is ordinary and is never counted, and
+ * a filter and the count labelling it come from one function.
+ * -------------------------------------------------------------------------- */
+
+describe('universes over catalog rows', () => {
+  /**
+   * Six rows standing in for the shapes this catalog actually holds: a series
+   * match, a title override with no series at all, a title override that
+   * carries an unrelated series, an exclusion sitting next to the titles that
+   * would otherwise sweep it in, and two ordinary books in no universe.
+   */
+  const rows = [
+    { id: 1, title: 'The Way of Kings', series: 'The Stormlight Archive' },
+    { id: 2, title: 'Sixth of the Dusk', series: null },
+    { id: 3, title: 'Tress of the Emerald Sea', series: 'Secret Projects' },
+    { id: 4, title: 'The Frugal Wizard’s Handbook for Surviving Medieval England', series: 'Secret Projects' },
+    { id: 5, title: 'Dungeon Born', series: 'The Divine Dungeon' },
+    { id: 6, title: 'The Very Hungry Caterpillar', series: null },
+  ];
+
+  it('collects the ids of one universe, across series and standalones alike', () => {
+    // 1 by series, 2 and 3 by title — and 3 proves a book can be in a universe
+    // while its own series is in none of them.
+    assert.deepEqual(universeMemberIds(universeIndex, rows, 'The Cosmere'), [1, 2, 3]);
+    assert.deepEqual(universeMemberIds(universeIndex, rows, 'CAL Verse'), [5]);
+  });
+
+  it('⚠️ an exclusion is left out, so the same row cannot be filtered in and counted out', () => {
+    assert.ok(!universeMemberIds(universeIndex, rows, 'The Cosmere').includes(4));
+  });
+
+  it('a universe this catalog holds nothing from is an empty list, never everything', () => {
+    assert.deepEqual(universeMemberIds(universeIndex, rows, 'Maasverse'), []);
+    // A name that is not a universe at all also collects nothing. The caller
+    // decides whether that means "no filter" — see `resolveUniverseName`.
+    assert.deepEqual(universeMemberIds(universeIndex, rows, 'Cytoverse'), []);
+  });
+
+  it('the tally agrees with the ids, because one function answers both', () => {
+    const tally = universeTally(universeIndex, rows, universeNames);
+    for (const { name, count } of tally) {
+      assert.equal(count, universeMemberIds(universeIndex, rows, name).length, name);
+    }
+  });
+
+  it('⚠️ every universe is counted, zeroes included, so a control cannot come and go', () => {
+    const tally = universeTally(universeIndex, rows, universeNames);
+    assert.deepEqual(tally.map((t) => t.name), universeNames);
+    assert.deepEqual(
+      tally.filter((t) => t.count === 0).map((t) => t.name),
+      ['Runnerverse', 'Maasverse', 'Riordanverse', 'Solaria'],
+    );
+  });
+
+  it('⚠️ nothing counts the books in NO universe — absence here is ordinary, not a gap', () => {
+    const tally = universeTally(universeIndex, rows, universeNames);
+    const counted = tally.reduce((n, t) => n + t.count, 0);
+    // Two of the six rows are in no universe (the exclusion and the picture
+    // book) and neither appears anywhere in the answer. A "none" bucket would
+    // put a worklist on screen made of correctly filed books.
+    assert.equal(counted, 4);
+    assert.ok(!tally.some((t) => t.name === '' || t.name.toLowerCase().includes('none')));
+  });
+
+  it('a row with neither a title nor a series is simply in no universe', () => {
+    assert.deepEqual(
+      universeTally(universeIndex, [{ id: 9 }], universeNames).filter((t) => t.count > 0),
+      [],
+    );
+  });
+
+  it('resolveUniverseName folds a spelling, and refuses to guess', () => {
+    assert.equal(resolveUniverseName(universeIndex, universeNames, 'cosmere'), 'The Cosmere');
+    assert.equal(resolveUniverseName(universeIndex, universeNames, '  THE   Cosmere '), 'The Cosmere');
+    assert.equal(resolveUniverseName(universeIndex, universeNames, 'Cytoverse'), null);
+    assert.equal(resolveUniverseName(universeIndex, universeNames, ''), null);
+    assert.equal(resolveUniverseName(universeIndex, universeNames, null), null);
+  });
+
+  it('a canonical name resolves even if no alias was ever written for it', () => {
+    // The fallback, not the alias map: `names` is the whole vocabulary here.
+    assert.equal(resolveUniverseName(universeIndex, ['Cytoverse'], 'cytoverse'), 'Cytoverse');
+    for (const name of universeNames) {
+      assert.equal(resolveUniverseName(universeIndex, universeNames, name), name);
     }
   });
 });

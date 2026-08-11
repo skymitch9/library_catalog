@@ -88,6 +88,33 @@ person in `catalog-platform/tools/universes.mjs`, not by a sweep.
 Not run yet: **`npm run backfill:universes --remote`** (dry run first). It
 re-resolves machine rows when the list grows and skips human ones.
 
+### ✅ On screen since 2026-08-11 — three surfaces, and one rule between them
+
+| Where | What it says |
+|---|---|
+| A book page | `Part of <universe>`, under the series line, linking into it. ⚠️ **Nothing at all when there is none** |
+| `/universe/:name` | Everything held from one world, grouped by series, each heading a link out to that series' own ladder |
+| `/?universe=` | A filter beside the others, with counts, and a link across to the page above |
+
+⚠️ **The rule the three share: absence is never drawn.** Measured on the local
+snapshot 2026-08-11 — **13 of 116 works resolve** (6 Cosmere, 7 CAL Verse). The
+other 103 are mostly children's picture books that belong to no shared world and
+are correctly filed, so there is no "no universe" badge, no such filter option,
+and no count of them anywhere. Same settled reading as a NULL `cover_status`
+("nobody looked") and a NULL `edition_kind` ("ordinary").
+
+⚠️ **A universe is the tier above a series, never a replacement for one.**
+`/universe/:name` computes no completeness and draws no ladder: a universe has
+no volume numbering to be complete against. Anything about *what is missing*
+belongs on the series page.
+
+The lookup never runs in SQL. `listUniverseKeys` (`@lc/db`) hands
+`(id, title, series)` to `universeFor`, and the ids come back as a WHERE clause
+— so the filter and the count labelling it are produced by one function and
+cannot disagree. `@lc/db` still does not import `@lc/universes`; the join lives
+in `apps/worker/src/lib/universes.ts`, which is what keeps the cross-repo build
+dependency out from behind every query.
+
 **Feasibility was proved by hand, at no API cost.** A 15-case probe
 (`scripts/probe-universes.mjs`) scored **13/15 with zero false positives** at
 ~21¢/100, no web search — search cost 5× and was *worse*, inventing a name

@@ -114,6 +114,18 @@ export interface CollectionFilters {
    * can be sent, bookmarked, or come back to after pressing Back out of one.
    */
   needs: string;
+  /**
+   * One shared fictional world — `The Cosmere`, `Runnerverse` — or empty.
+   *
+   * ⚠️ The tier **above** `series`, and it composes with it rather than
+   * replacing it. It is open-ended in the URL like `series` is, but for the
+   * opposite reason: series names come from the catalog and have no closed set,
+   * while universe names come from a shared list in another repo that this
+   * bundle deliberately does not carry. The server folds `cosmere` onto
+   * `The Cosmere` and ignores anything that is not one of the six, so an
+   * unrecognised value shows the collection.
+   */
+  universe: string;
   readState: string;
   sort: string | null;
   dir: 'asc' | 'desc' | null;
@@ -152,6 +164,12 @@ export type Route =
   | { name: 'work'; id: number }
   | { name: 'series'; filters: SeriesFilters }
   | { name: 'seriesDetail'; series: string }
+  // The tier above a series. A screen of its own rather than a filtered
+  // collection, because what it has to show is the *spread* — the same world
+  // across several series plus a handful of standalones — and a flat list of
+  // books sorted by series is not that. `/?universe=` exists too and is the
+  // other half of the pair: this page groups, that one filters.
+  | { name: 'universe'; universe: string }
   | { name: 'wishlist' }
   // `?field=` narrows the worklist to one question. A query parameter and not a
   // segment, for the same reason the collection's filters are: it is what the
@@ -218,6 +236,12 @@ function parseCollection(search: string): CollectionFilters {
     // to check against. The server parameterises it, and a name that matches
     // nothing shows an empty list, which is the honest answer.
     series: p.get('series') ?? '',
+    // Open-ended for a different reason than `series` — see the field's note.
+    // The six names live in `@lc/universes`, which reads another repo at build
+    // time; importing it here to validate one query parameter would put a
+    // cross-repo build artifact in the phone's bundle to duplicate a check the
+    // server already makes.
+    universe: p.get('universe') ?? '',
     medium: pick(search, 'medium', EDITION_MEDIA) ?? '',
     format: pick(search, 'format', EDITION_FORMATS) ?? '',
     editionKind: pick(search, 'kind', EDITION_KIND_FILTERS) ?? '',
@@ -245,6 +269,7 @@ export function collectionPath(f: CollectionFilters): string {
   const p = new URLSearchParams();
   if (f.q) p.set('q', f.q);
   if (f.series) p.set('series', f.series);
+  if (f.universe) p.set('universe', f.universe);
   if (f.medium) p.set('medium', f.medium);
   if (f.format) p.set('format', f.format);
   if (f.editionKind) p.set('kind', f.editionKind);
@@ -257,6 +282,31 @@ export function collectionPath(f: CollectionFilters): string {
   if (f.page > 1) p.set('page', String(f.page));
   const qs = p.toString();
   return qs ? `/?${qs}` : '/';
+}
+
+/**
+ * The collection, filtered to one universe and to nothing else.
+ *
+ * Built through `collectionPath` rather than by hand, because that function is
+ * the one definition of the parameter names — a second place spelling
+ * `?universe=` is a second place to misspell it.
+ */
+export function collectionInUniversePath(universe: string): string {
+  return collectionPath({
+    q: '',
+    series: '',
+    universe,
+    medium: '',
+    format: '',
+    editionKind: '',
+    status: '',
+    needs: '',
+    readState: '',
+    sort: null,
+    dir: null,
+    pageSize: null,
+    page: 1,
+  });
 }
 
 export function workPath(id: number): string {
@@ -302,6 +352,20 @@ export function seriesPath(name: string): string {
 }
 
 /**
+ * ⚠️ Encoded, for the reason `seriesPath` gives — `CAL Verse` and
+ * `The Cosmere` both carry a space, and the shared list is edited in another
+ * repo, so nothing here can promise what a future name contains.
+ *
+ * The name is the id. The server folds spellings onto the owner's, so
+ * `/universe/cosmere` and `/universe/The%20Cosmere` are one page; minting a
+ * surrogate key for a list this repo does not own would be a third place the
+ * spellings could drift.
+ */
+export function universePath(name: string): string {
+  return `/universe/${encodeURIComponent(name)}`;
+}
+
+/**
  * ⚠️ The job id belongs in the URL, not only in React state.
  *
  * That is the whole persistence feature seen from the client side: the server
@@ -339,6 +403,13 @@ function parse(pathname: string, search: string): Route {
       const series = decodeSegment(parts[1]!);
       if (series) return { name: 'seriesDetail', series };
     }
+  }
+
+  // Singular, beside `/series/:name` rather than under it: a universe is not a
+  // kind of series, and `/series/The Cosmere/…` would say it was.
+  if (parts[0] === 'universe' && parts.length === 2) {
+    const universe = decodeSegment(parts[1]!);
+    if (universe) return { name: 'universe', universe };
   }
 
   if (parts[0] === 'wishlist' && parts.length === 1) return { name: 'wishlist' };
@@ -449,6 +520,9 @@ export function labelFor(path: string): string {
   if (p === '/export') return 'Export';
   if (p === '/people') return 'People';
   if (p.startsWith('/series/')) return decodeSegment(p.slice('/series/'.length)) || 'Series';
+  // The name is the whole label — "← The Cosmere" reads as a place, where
+  // "← Universe" would name a category and tell you nothing about which one.
+  if (p.startsWith('/universe/')) return decodeSegment(p.slice('/universe/'.length)) || 'Back';
   // A book, and the path does not carry its title. "Back" is honest; inventing
   // "the last book" would be worse than saying less.
   return 'Back';

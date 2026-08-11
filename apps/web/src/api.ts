@@ -129,6 +129,15 @@ export interface CollectionParams {
    */
   editionKind?: string;
   status?: string;
+  /**
+   * One shared fictional world, the tier above `series` — and it composes with
+   * it rather than replacing it.
+   *
+   * The server folds spellings onto the owner's (`cosmere` → `The Cosmere`) and
+   * ignores a name that is not one of the six, so an unrecognised value shows
+   * the collection rather than erroring.
+   */
+  universe?: string;
   /** `cover`, `watch` or `any` — what is still outstanding. Migration 0040. */
   needs?: string;
   readState?: string;
@@ -161,6 +170,43 @@ export interface CollectionFacets {
    * whole collection minus a handful. See `EDITION_KINDS` in `@lc/core`.
    */
   kinds: { collectors: number; unsorted: number };
+  /**
+   * How many books each shared universe holds, under the rest of the filter.
+   *
+   * ⚠️ **Always all six, zeroes included**, the rule `media` follows: a control
+   * that appears and disappears with the data is worse than one reading
+   * "Maasverse (0)". And ⚠️ **there is no count of the books in no universe** —
+   * that is most of the catalog, it is the correct answer for a picture book,
+   * and putting a number on it would invent a worklist out of rows that are
+   * perfectly filed.
+   *
+   * Added by the worker rather than by `@lc/db`, which does not know what a
+   * universe is. See the `/collection/facets` route.
+   */
+  universes: { name: string; count: number }[];
+}
+
+/**
+ * One shared fictional world, and what this catalog holds from it.
+ *
+ * ⚠️ Deliberately NOT a `SeriesReport`. There is no ladder, no gap list and no
+ * completeness: a universe has no volume numbering to be complete against, and
+ * the question it answers — which books across *different* series are the same
+ * world — is the one a series page cannot.
+ */
+export interface UniverseView {
+  /** The owner's spelling, whatever spelling was asked for. */
+  name: string;
+  /** Every held book, ordered by series and then by volume. Same shape the collection uses. */
+  rows: WorkSummary[];
+  /** ⚠️ May exceed `rows.length`; the page says so rather than hiding it. */
+  total: number;
+  /**
+   * How big the universe is in the *shared list*, which is not how much of it
+   * is on this shelf. Both catalogs read that list, so most of a universe is
+   * often in the other one — which is why the page says both numbers.
+   */
+  declared: { series: number; titles: number };
 }
 
 export interface Stats {
@@ -605,6 +651,16 @@ export const api = {
 
   /** ⚠️ Always from the database. No count in this app is ever a literal. */
   stats: () => request<Stats>('/api/stats'),
+
+  /**
+   * One shared world, across the series in it.
+   *
+   * The name is the id and is folded onto the owner's spelling server-side, so
+   * `cosmere` and `The Cosmere` are one page. A name that is not one of the six
+   * is a 404 — unlike a series name, which comes from the catalog and can
+   * legitimately match nothing, this vocabulary is closed.
+   */
+  universe: (name: string) => request<UniverseView>(`/api/universes/${encodeURIComponent(name)}`),
 
   work: (id: number) => request<Record<string, unknown>>(`/api/works/${id}`),
 

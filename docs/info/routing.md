@@ -2,7 +2,8 @@
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
 > Last verified: **2026-08-10** — every row of the route table below was driven
-> in a browser against the built assets on `127.0.0.1:8791`.
+> in a browser against the built assets on `127.0.0.1:8791`. The `/universe/:name`
+> row was added and driven the same way on **2026-08-11**, on `:8843`.
 
 Every screen this app grows from here adds a row to one table:
 `apps/web/src/router.tsx`. Read that file's comments before adding one — this
@@ -33,6 +34,7 @@ the same file without needing one.
 | `/work/:id` | One book | A **page**, not a modal. Deliberate, and settled |
 | `/series` | Every series | |
 | `/series/:name` | One series ladder | `encodeURIComponent`, always — `Tamer%3A%20King%20of%20Dinosaurs` |
+| `/universe/:name` | One shared world, grouped by series | Encoded too. ⚠️ Singular, and **beside** `/series/:name` rather than under it — a universe is the tier above a series, not a kind of one. The name folds onto the owner's spelling server-side, so `/universe/cosmere` is the same page; a name that is not one of the six 404s, because unlike a series name this vocabulary is closed |
 | `/wishlist` | Wishlist | |
 | `/add` | Add books | `?mode=scan\|type` picks the tab. **One flat path** — see below |
 | `/export` | Download the catalog | Owner only (`editCatalog`). A reader gets "Not a page" |
@@ -51,6 +53,7 @@ Collection query parameters, all optional, all forgiving of junk:
 |---|---|---|
 | `q` | free text | — |
 | `series` | free text (names come from the catalog) | — |
+| `universe` | free text (one of six, folded onto the owner's spelling) | — |
 | `format` | an `EDITION_FORMATS` value | — |
 | `status` | a `COPY_STATUSES` value | — |
 | `read` | a `READ_STATES` value | — |
@@ -58,6 +61,13 @@ Collection query parameters, all optional, all forgiving of junk:
 | `dir` | `asc\|desc` | stored prefs, then `asc` |
 | `size` | a `COLLECTION_PAGE_SIZES` value | stored prefs, then 50 |
 | `page` | **1-based** | 1 |
+
+⚠️ `universe` is open-ended in the URL for the *opposite* reason `series` is.
+Series names come from the catalog and have no closed set; the six universe
+names come from `catalog-platform` through `@lc/universes`, which this bundle
+deliberately does not carry — validating one query parameter is not worth
+putting a cross-repo build artifact on a phone. The server folds the spelling
+and ignores anything else, so a stale link shows the collection.
 
 An unrecognised value falls back to the default rather than erroring, and
 anything equal to the *shipped* default is omitted, so an ordinary browse is
@@ -116,6 +126,10 @@ through to the Worker. Verified: `/`, `/work/1`, `/series`,
 `/nonsense/deep/path` all return `index.html`; `/api/nope` still returns a JSON
 404.
 
+`/universe/The%20Cosmere` and `/universe/maasverse` were driven the same way on
+2026-08-11 (against the built assets on `127.0.0.1:8843`) and needed no worker
+change either — both rendered, the lowercase one folding onto **Maasverse**.
+
 ## Where the state actually lives
 
 | Thing | Home | Why |
@@ -125,5 +139,16 @@ through to the Worker. Verified: `/`, `/work/1`, `/series`,
 | `view` (grid/list) | `localStorage` prefs only | it is how the page looks, not what it shows, and nothing else depends on it |
 
 `App.tsx` keys `CollectionPage` on `collectionPath(route.filters)`, `WorkPage` on
-the id and `SeriesDetailPage` on the name. Without those keys React reuses one
-page instance across every book you open and its half-filled forms follow you.
+the id, `SeriesDetailPage` on the name and `UniversePage` on the universe.
+Without those keys React reuses one page instance across every book you open and
+its half-filled forms follow you.
+
+## The back button out of a universe
+
+`/universe/:name` falls back to `/`, not to `/series`. A universe is the tier
+above a series rather than one of them, and the two ways in — a book page's
+"Part of …" line, and the collection's own universe filter — both come from
+places `backTarget` can name, so the fallback only fires on a pasted link.
+`labelFor` gives `/universe/The Cosmere` the label **The Cosmere**, the same way
+`/series/:name` is labelled by its own name: "← Universe" would name a category
+and tell you nothing about which one.
