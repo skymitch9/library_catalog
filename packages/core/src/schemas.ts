@@ -170,6 +170,22 @@ export const createEditionSchema = z.object({
    * than unassessed.
    */
   editionKind: editionKindSchema.nullable().optional(),
+  /**
+   * What is printed **inside** this object — "Volumes 1-3", "Books 1-3 plus two
+   * shorts". Migration 0060.
+   *
+   * ⚠️ A different axis from both `editionName` and `editionKind`, and the two
+   * *White Sand* rows are why the column exists: "Omnibus - collects volumes
+   * 1-3" and "Volume 1" were sitting in `editionName`, which is supposed to hold
+   * what the *vendor* called the printing. An omnibus is an ordinary trade
+   * printing — see the refusal at the foot of migration 0050 — so it must not be
+   * an `editionKind` either.
+   *
+   * Free text, and deliberately not a number range: this house holds bind-ups of
+   * unnumbered novellas and one leatherbound *edition* delivered as two physical
+   * volumes, which is the opposite case.
+   */
+  collects: optionalText,
   publisher: optionalText,
   publishedYear: z.number().int().min(1).max(2200).nullable().optional(),
   pages: z.number().int().positive().nullable().optional(),

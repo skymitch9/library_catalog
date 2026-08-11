@@ -22,6 +22,7 @@ export * from './capabilities.js';
 export * from './completeness.js';
 export * from './covers.js';
 export * from './gaps.js';
+export * from './holdings.js';
 export * from './isbn.js';
 export * from './titles.js';
 export * from './matching.js';

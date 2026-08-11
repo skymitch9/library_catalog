@@ -26,6 +26,17 @@ export interface EditionRow {
    * null here as a question to be answered.
    */
   edition_kind: string | null;
+  /**
+   * What is bound inside this object — "Volumes 1-3". Migration 0060, and NULL
+   * on 227 of 229 rows because the ordinary printing is the whole work.
+   *
+   * ⚠️ Not a substitute for `work_relation.contains`. This says what is in the
+   * *object*; that says which *catalog rows* are inside which, and only that one
+   * can be linked to, counted, or read by the scan path's overlap warning. White
+   * Sand has this column filled and no relation row, because its three volumes
+   * are not rows — see migration 0060.
+   */
+  collects: string | null;
   publisher: string | null;
   published_year: number | null;
   pages: number | null;
@@ -37,16 +48,16 @@ export interface EditionRow {
 }
 
 const EDITION_COLS = `id, work_id, isbn13, isbn10, asin, format, edition_name, edition_kind,
-                      publisher, published_year, pages, language, cover_url, source, source_url,
-                      cwa_book_id`;
+                      collects, publisher, published_year, pages, language, cover_url, source,
+                      source_url, cwa_book_id`;
 
 export async function createEdition(db: D1Database, input: CreateEdition): Promise<EditionRow> {
   const row = await db
     .prepare(
       `INSERT INTO edition (work_id, isbn13, isbn10, asin, format, edition_name, edition_kind,
-                            publisher, published_year, pages, language, cover_url, source,
-                            source_url, cwa_book_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            collects, publisher, published_year, pages, language, cover_url,
+                            source, source_url, cwa_book_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        RETURNING ${EDITION_COLS}`,
     )
     .bind(
@@ -57,6 +68,7 @@ export async function createEdition(db: D1Database, input: CreateEdition): Promi
       input.format,
       input.editionName ?? null,
       input.editionKind ?? null,
+      input.collects ?? null,
       input.publisher ?? null,
       input.publishedYear ?? null,
       input.pages ?? null,
@@ -176,8 +188,8 @@ export async function updateEdition(
     .prepare(
       `UPDATE edition SET
          isbn13 = ?, isbn10 = ?, asin = ?, format = ?, edition_name = ?, edition_kind = ?,
-         publisher = ?, published_year = ?, pages = ?, language = ?, cover_url = ?, source = ?,
-         source_url = ?, cwa_book_id = ?, updated_at = datetime('now')
+         collects = ?, publisher = ?, published_year = ?, pages = ?, language = ?, cover_url = ?,
+         source = ?, source_url = ?, cwa_book_id = ?, updated_at = datetime('now')
        WHERE id = ?
        RETURNING ${EDITION_COLS}`,
     )
@@ -193,6 +205,10 @@ export async function updateEdition(
       // one-off correction gets undone by an unrelated edit. The form sends
       // both, and each says exactly what it means.
       pick(patch.editionKind, current.edition_kind),
+      // Independent of both of the above. "Volume 1" is a fact about what is
+      // between the covers and survives being renamed or re-filed — see
+      // migration 0060 for why it is neither a name nor a kind.
+      pick(patch.collects, current.collects),
       pick(patch.publisher, current.publisher),
       pick(patch.publishedYear, current.published_year),
       pick(patch.pages, current.pages),

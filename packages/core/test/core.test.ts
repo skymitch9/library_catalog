@@ -46,11 +46,13 @@ import {
   lookupProgress,
   needsLookup,
   outstandingCount,
+  overlapSentence,
   proposedAuthors,
   proposedTitle,
   searchText,
   type ScanLine,
 } from '../src/scanjobs.ts';
+import { heldCopies, ownedMoreThanOnce } from '../src/holdings.ts';
 import {
   MAX_COVER_BYTES,
   checkCoverUpload,
@@ -1711,5 +1713,141 @@ describe('covers — which books still need one', () => {
     // make the feature useless. Only a positive 'standin' counts.
     assert.equal(coverNeeded({ coverUrl: 'https://covers/x.jpg', coverStatus: null }), false);
     assert.equal(coverNeeded({ coverUrl: 'https://covers/x.jpg', coverStatus: 'ok' }), false);
+  });
+});
+
+/**
+ * The rule behind "Owned more than once", rewritten 2026-08-11.
+ *
+ * Every case here is a real production row. The old rule counted **editions**
+ * and got all three of its hits wrong; these tests are the measurement written
+ * down so it cannot come back.
+ */
+describe('owned more than once — copies, not editions', () => {
+  const copy = (status: string) => ({ status });
+
+  it('⚠️ two owned copies is the whole rule', () => {
+    assert.equal(ownedMoreThanOnce([copy('owned'), copy('owned')]), true);
+  });
+
+  it('⚠️ ONE copy is not, however many editions the work has', () => {
+    // *Dinosaur Dance!* — two edition rows, one with an ISBN and no copy, one
+    // with no ISBN and a copy. One board book, recorded twice by two different
+    // scan paths. The old rule called it "bought more than once".
+    assert.equal(ownedMoreThanOnce([copy('owned')]), false);
+  });
+
+  it('⚠️ ZERO copies is not, and this is what the old rule fired on', () => {
+    // *The Pout-Pout Fish* and *How the Grinch Stole Christmas*: two genuine
+    // ISBNs each, no copies at all. Two printings exist in the world; nothing
+    // says we hold either of them twice.
+    assert.equal(ownedMoreThanOnce([]), false);
+  });
+
+  it('a lent copy still counts — the book is ours, it is just elsewhere', () => {
+    assert.equal(ownedMoreThanOnce([copy('owned'), copy('lent')]), true);
+  });
+
+  it('⚠️ a wish for a book we hold is NOT a duplicate', () => {
+    // "We have the EPUB and want the hardcover" is the ordinary wishlist case
+    // and shows up as a wanted copy against a book that is also owned.
+    assert.equal(ownedMoreThanOnce([copy('owned'), copy('wanted')]), false);
+    assert.equal(ownedMoreThanOnce([copy('owned'), copy('preordered')]), false);
+  });
+
+  it('a copy that has left, or was never ours, does not count', () => {
+    assert.equal(ownedMoreThanOnce([copy('owned'), copy('sold')]), false);
+    assert.equal(ownedMoreThanOnce([copy('owned'), copy('borrowed')]), false);
+  });
+
+  it('heldCopies keeps the rows themselves, so the page can show them', () => {
+    const kept = heldCopies([
+      { status: 'owned', id: 1 },
+      { status: 'wanted', id: 2 },
+      { status: 'lent', id: 3 },
+    ]);
+    assert.deepEqual(
+      kept.map((c) => c.id),
+      [1, 3],
+    );
+  });
+});
+
+/**
+ * The scan-time overlap warning — the wording, and which way round it reads.
+ *
+ * ⚠️ `contains` is directional. A sentence built from the wrong end is not
+ * untidy, it is false: it would tell somebody they own an omnibus inside one of
+ * its own chapters. Migration 0004 makes the same point about the row itself.
+ */
+describe('overlap — you already own this, inside something else', () => {
+  it('says nothing when there is nothing to say', () => {
+    assert.equal(overlapSentence([]), null);
+  });
+
+  it('⚠️ scanning a volume whose omnibus we hold reads "inside"', () => {
+    assert.equal(
+      overlapSentence([
+        { workId: 103, title: 'The Divine Dungeon Complete Series', direction: 'inside' },
+      ]),
+      'You already own this inside The Divine Dungeon Complete Series.',
+    );
+  });
+
+  it('⚠️ scanning the omnibus of a volume we hold reads the other way', () => {
+    assert.equal(
+      overlapSentence([{ workId: 24, title: 'Dungeon Born', direction: 'holds' }]),
+      'This collects Dungeon Born, which you already own.',
+    );
+  });
+
+  it('an omnibus over several books we hold names all of them', () => {
+    assert.equal(
+      overlapSentence([
+        { workId: 24, title: 'Dungeon Born', direction: 'holds' },
+        { workId: 25, title: 'Dungeon Madness', direction: 'holds' },
+      ]),
+      'This collects Dungeon Born and Dungeon Madness, which you already own.',
+    );
+  });
+
+  it('both directions at once is possible and both are said', () => {
+    const said = overlapSentence([
+      { workId: 103, title: 'The Complete Series', direction: 'inside' },
+      { workId: 24, title: 'Dungeon Born', direction: 'holds' },
+    ]);
+    assert.equal(
+      said,
+      'You already own this inside The Complete Series. ' +
+        'This collects Dungeon Born, which you already own.',
+    );
+  });
+});
+
+/**
+ * ⚠️ `collects` is a third axis, not a tidier edition name.
+ *
+ * Migration 0050 refused to make `omnibus` an `edition_kind` and said, in
+ * writing, that the axis would need its own column. 0060 is that column. This
+ * test is the one that fails if somebody folds them back together.
+ */
+describe('edition contents — what is printed inside the object', () => {
+  it('travels beside the name and the kind, independently', () => {
+    const parsed = updateEditionSchema.parse({
+      editionName: 'Omnibus - collects volumes 1-3',
+      collects: 'Volumes 1-3',
+    });
+    assert.equal(parsed.collects, 'Volumes 1-3');
+    // Untouched: an omnibus is an ordinary trade printing.
+    assert.equal(parsed.editionKind, undefined);
+  });
+
+  it('an explicit null clears it, which an absent key does not', () => {
+    assert.equal(updateEditionSchema.parse({ collects: null }).collects, null);
+    assert.equal(Object.hasOwn(updateEditionSchema.parse({ pages: 490 }), 'collects'), false);
+  });
+
+  it('an empty box is a clear, not the string ""', () => {
+    assert.equal(updateEditionSchema.parse({ collects: '   ' }).collects, null);
   });
 });

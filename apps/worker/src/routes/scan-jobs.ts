@@ -10,20 +10,26 @@ import {
   needsLookup,
   normaliseTitle,
   primaryAuthor,
+  proposedAuthors,
+  proposedTitle,
   titleSimilarity,
+  workKeyFor,
   type ScanJob,
   type ScanLine,
+  type ScanOverlap,
 } from '@lc/core';
 import {
   createScanJob,
   deleteScanJob,
   findEditionByAsin,
   findEditionByIsbn13,
+  findWorkByKey,
   getScanJob,
   getWork,
   listScanJobs,
   listWorkAliases,
   listWorksForMatching,
+  loadContainmentIndex,
   updateScanJob,
 } from '@lc/db';
 import { coverFrom, resolveIsbn, searchOpenLibrary, type BookCandidate } from '@lc/isbn';
@@ -213,6 +219,11 @@ function unresolve(line: ScanLine): ScanLine {
     detail: null,
     existingWorkId: null,
     existingTitle: null,
+    // Cleared with everything else the old resolution claimed. An overlap is a
+    // statement about a *specific* work, and the whole point of a retype is that
+    // the line no longer names that work — keeping it would warn about the book
+    // somebody has just said this is not.
+    overlap: [],
     isbn13: line.via === 'barcode' ? line.isbn13 : null,
     resolvedTitle: null,
     resolvedAuthors: null,
@@ -339,6 +350,57 @@ async function resolveBarcode(env: Env, position: number, code: string): Promise
   // Searched by ISBN, so there is nothing to score a title against: the code is
   // the identity claim. `similarity` stays null rather than being invented.
   return { ...applyCandidate(withCode, best, best.title), similarity: null, isbn13: classified.isbn13 };
+}
+
+/**
+ * ⚠️ **"You already own this, inside something else" — said AT SCAN TIME.**
+ *
+ * The owner is holding the book and deciding. A report afterwards is too late,
+ * and a refusal is wrong: they own volume 1 *and* the omnibus on purpose in some
+ * cases. So this is a **reason**, added to the line, and the review screen raises
+ * the prompt it already has for duplicates — "here is what you have, add it or
+ * leave it" — rather than growing a second mechanism beside it.
+ *
+ * ## What it is not
+ *
+ * Not `state`. `state === 'owned'` means the *object* is already ours and is
+ * answered from `edition.isbn13`; this means the *text* already reached us some
+ * other way and is answered from `work_relation.contains`. They are independent:
+ * a line can be neither, either, or both, and collapsing them would either hide
+ * an overlap behind a duplicate or turn an overlap into a false duplicate.
+ *
+ * ## ⚠️ The short-circuit is load-bearing
+ *
+ * `work_relation` held **0 rows** on 2026-08-11. With no `contains` rows there is
+ * nothing this can ever say, so it costs exactly one query per request and skips
+ * the work index entirely. A scan path that got slower to support a table nobody
+ * has filled in yet would be the wrong trade, and it is not the trade made here.
+ *
+ * Two ways a line names a work, and both are used:
+ *
+ * 1. `existingWorkId` — the ISBN, the ASIN or the spine matcher already said so.
+ * 2. Otherwise the resolved title and author, through `workKeyFor` — the same key
+ *    `POST /api/works` files under and the same question `/works/match` asks, so
+ *    the overlap warning fires on exactly the works `addLineToCatalog` would
+ *    attach to. A paperback of an ebook we hold has a *different* ISBN, so
+ *    without this the commonest case in the house never matches.
+ */
+async function overlapsFor(
+  env: Env,
+  line: ScanLine,
+  index: Map<number, ScanOverlap[]>,
+): Promise<ScanOverlap[]> {
+  if (index.size === 0) return [];
+
+  let workId = line.existingWorkId;
+  if (workId === null) {
+    const title = proposedTitle(line);
+    const authors = proposedAuthors(line);
+    if (!title || !authors) return [];
+    workId = (await findWorkByKey(env.DB, workKeyFor(title, authors)))?.id ?? null;
+  }
+  if (workId === null) return [];
+  return index.get(workId) ?? [];
 }
 
 /** The "we already have this" half of a line, named so both producers share it. */
@@ -540,6 +602,11 @@ async function runLookupPass(env: Env, jobId: number): Promise<void> {
     const fresh = await getScanJob(env.DB, jobId);
     if (!fresh) return;
 
+    // One read for the whole chunk, and none at all while nobody has recorded a
+    // `contains` — see `overlapsFor`. Loaded after the slow part so it reflects a
+    // relation added while Open Library was being waited on.
+    const containments = await loadContainmentIndex(env.DB);
+
     const lines = [...fresh.lines];
     for (const { i, before, after } of results) {
       const current = lines[i];
@@ -548,7 +615,11 @@ async function runLookupPass(env: Env, jobId: number): Promise<void> {
       // the person pressing the button themselves. Their answer wins.
       if (!needsLookup(current)) continue;
       if (current.text !== before.text || current.author !== before.author) continue;
-      lines[i] = { ...after, position: current.position };
+      lines[i] = {
+        ...after,
+        position: current.position,
+        overlap: await overlapsFor(env, after, containments),
+      };
     }
 
     const more = hasPendingLookups(lines);
@@ -648,7 +719,15 @@ export const scanJobRoutes = new Hono<AppBindings>()
     // for the `error` line the loop above deliberately let through.
     const index = collision || already < 0 ? lines.length : already;
 
-    lines[index] = await resolveBarcode(c.env, index + 1, code);
+    const resolved = await resolveBarcode(c.env, index + 1, code);
+    // ⚠️ After the ladder, not inside it. `resolveBarcode` has six exits — an
+    // owned edition, a price add-on, a SKU, an ASIN, a miss, a hit — and only
+    // some of them name a work. Asking once, here, is the difference between one
+    // rule and six chances to forget it.
+    lines[index] = {
+      ...resolved,
+      overlap: await overlapsFor(c.env, resolved, await loadContainmentIndex(c.env.DB)),
+    };
 
     const updated = await updateScanJob(c.env.DB, job.id, { lines: renumber(lines), status: 'review' });
     return c.json({ job: updated ?? job, index, line: lines[index], duplicate: false }, 201);
@@ -747,7 +826,13 @@ export const scanJobRoutes = new Hono<AppBindings>()
     const query = (c.req.query('q') ?? line.text).trim();
     if (!query) return c.json(badRequest('nothing to look up'), 400);
 
-    const resolved = await lookupLine(line, query);
+    const found = await lookupLine(line, query);
+    // A new answer is a new work, so the overlap is re-asked rather than carried
+    // over — `unresolve` has already cleared the old one.
+    const resolved: ScanLine = {
+      ...found,
+      overlap: await overlapsFor(c.env, found, await loadContainmentIndex(c.env.DB)),
+    };
     const lines = [...job.lines];
     lines[idx] = resolved;
     const updated = await updateScanJob(c.env.DB, id, { lines });
@@ -888,9 +973,13 @@ async function readPhoto(c: any, kind: 'shelf' | 'cover') {
    * folded once — see `buildWorkIndex`, which exists so nobody writes a
    * second, faster, subtly different matcher when the loop starts to hurt.
    */
-  const [works, aliases] = await Promise.all([
+  const [works, aliases, containments] = await Promise.all([
     listWorksForMatching(c.env.DB),
     listWorkAliases(c.env.DB),
+    // Third read of the photo's three, and it answers every line at once. A
+    // shelf is where the overlap warning earns its keep — twelve books go past
+    // and one of them is already inside an omnibus upstairs.
+    loadContainmentIndex(c.env.DB),
   ]);
   const index = buildWorkIndex(works, aliases);
 
@@ -907,6 +996,10 @@ async function readPhoto(c: any, kind: 'shelf' | 'cover') {
         state: 'owned',
         existingWorkId: match.work.id,
         existingTitle: match.work.title,
+        // Free: the matcher has just named the work, so this is a map lookup and
+        // not a query. An unmatched spine gets its overlap from the lookup pass,
+        // once something has said what the book is.
+        overlap: containments.get(match.work.id) ?? [],
         // A title-only match on a spine that showed no author is the shape
         // that files a genuinely new book under "already yours", where it is
         // lost rather than merely wrong. Say so on the row.

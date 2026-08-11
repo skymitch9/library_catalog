@@ -1,0 +1,86 @@
+-- "Omnibus is not edition information." — the owner, 2026-08-11.
+--
+-- One nullable column on `edition`. Additive only: no table rebuilt, no existing
+-- row touched, and **no data** — the backfill is
+-- `scripts/backfill-omnibus-collects.mjs`, which dry-runs by default and confirms
+-- by re-reading the database. Same shape as 0050, for the same reason.
+--
+-- ⚠️ Numbered 0060 rather than 0051 on purpose. `docs/TODO.md` records two agents
+-- both being told "0010 or higher", both taking 0010, and one of them already
+-- being applied to production. Wide gaps while several agents are running is the
+-- rule that came out of it.
+--
+-- ===========================================================================
+-- `edition.collects` — what is printed INSIDE this object
+-- ===========================================================================
+--
+-- ## The problem, in one row
+--
+-- *White Sand* is work 90 and has two printings, both `ebook_epub`:
+--
+--     107  edition_name = 'Volume 1'
+--     206  edition_name = 'Omnibus - collects volumes 1-3'   2024, 490pp
+--
+-- Neither of those strings is an edition name. An edition name says **how this
+-- printing differs from the standard one** — "Illumicrate Exclusive", "Signed
+-- Leatherbound", "B&N Exclusive Edition" — and both of these say **which parts
+-- of the story are between the covers**. Migration 0050 spotted it and refused
+-- to fold it into `edition_kind`, in as many words:
+--
+--     ⚠️ `omnibus` is the obvious next value and is deliberately NOT added now.
+--     […] both describe **what is inside the book** rather than how it was
+--     printed, which is a different axis from this column. […] If that axis is
+--     ever wanted it is a new column, not a new value here.
+--
+-- This is that column, and this comment is the receipt for that promise.
+--
+-- ## ⚠️ Why this is NOT `work_relation.contains`
+--
+-- It is not an alternative to that table, it is the other half of the picture,
+-- and the two answer different questions:
+--
+--   `work_relation.contains`  Two WORKS, both of which are rows. *The Divine
+--                             Dungeon Complete Series* (work 103) contains
+--                             *Dungeon Born* (work 24). This is what the scan
+--                             path's overlap warning reads, because a warning
+--                             has to name a book you can open.
+--
+--   `edition.collects`        One EDITION, and what is bound into it. White Sand
+--                             volumes 1, 2 and 3 are **not rows in this catalog**
+--                             and inventing them would mean guessing three
+--                             titles — and a guessed title is a permanent
+--                             duplicate, which is the one failure `POST
+--                             /api/works` not deduping makes unrecoverable.
+--
+-- So White Sand gets this column and no relation row. The honest statement it
+-- can make today is *"this printing has volumes 1-3 in it"*; the statement
+-- *"this book contains that book"* has nothing to point at, and a relation to a
+-- work invented for the purpose would be a false statement wearing a foreign
+-- key. When the volumes ever become real rows — bought separately, scanned, or
+-- typed in — the relation is one tap in the Related panel and this column is
+-- still true.
+--
+-- ## Free text, not a number range
+--
+-- "Volumes 1-3" as two integers would be tidier and would be wrong more often
+-- than it is right. Real bind-ups in this house include *Firstborn / Defending
+-- Elysium* (two unnumbered novellas), the Words of Radiance leatherbound (ONE
+-- edition delivered as two physical volumes, which is the opposite case), and
+-- omnibuses that collect "books 1-3 plus two short stories". The column that
+-- holds all of those is prose, and prose is what a person reads off the Editions
+-- panel anyway. Same judgement `copy.location` made in 0001 — the space is open,
+-- and an enum would be rewritten every time.
+--
+-- ## NULL means an ordinary printing, exactly as `edition_kind` does
+--
+-- The default state of a printing is "the whole work, and nothing else", which
+-- is 227 of the catalog's 229 editions. NULL is that, not "nobody has checked" —
+-- and unlike `edition_kind` there is not even a review list to build, because a
+-- bind-up announces itself on the cover. `copy.is_signed` made this choice in
+-- 0001 and 0050 restated it: **only the exceptions earn a mark.**
+--
+-- No CHECK constraint and no index. There is no closed set to check, and nothing
+-- queries this column — it is read off a work that is already on screen. An index
+-- over a column with two non-NULL rows is pure write cost.
+
+ALTER TABLE edition ADD COLUMN collects TEXT;

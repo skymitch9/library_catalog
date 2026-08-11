@@ -1,7 +1,9 @@
 # Series completeness, the wishlist & related books — Information Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
-> Last verified: **2026-08-10**.
+> Last verified: **2026-08-10**, except §3.2a (the scan-time overlap warning),
+> verified **2026-08-11** through a running Worker against a local fixture —
+> both directions, and a wished-for container correctly producing no warning.
 >
 > Every figure below is a **measured run on that date** against the local D1
 > (115 works; production held 117 at the same moment, differing by two
@@ -200,7 +202,7 @@ from pairs actually in this catalog rather than from a taxonomy.
 |---|---|---|
 | `same_universe` | symmetric | Nine Sanderson works, Cosmere, no series between them |
 | `companion` | symmetric | *Invent Short Story* — a five-chapter sampler of Completionist Chronicles 7 |
-| `contains` | **directional** | *The Divine Dungeon Complete Series* (work 103) contains *Dungeon Born* (work 24) |
+| `contains` | **directional** | *The Divine Dungeon Complete Series* (work 103) contains *Dungeon Born* (work 24). ⚠️ Read by the scanner since 2026-08-11 — see §3.2a |
 | `precedes` | **directional** | Reading order across a series boundary |
 
 ### 3.1 ⚠️ Direction, and the pair that proves it matters
@@ -222,6 +224,35 @@ what a game *is* — link three Catans and all three are Catans. The Cosmere is 
 published works; a transitive closure would make every Cosmere page a table of
 contents, and one wrong link would silently absorb an unrelated book into the
 whole set.
+
+### 3.2a ⚠️ `contains` is now READ at scan time — added 2026-08-11
+
+A relation used to be display only. `contains` is not: `loadContainmentIndex` in
+`packages/db/src/relations.ts` reads every `contains` row and the scan path
+attaches the answer to the line, so **"you already own this inside something
+else" is said while the person is holding the book**, not in a report afterwards.
+
+| Which end you scanned | What the row says |
+|---|---|
+| the volume, and the omnibus is held | *"You already own this inside The Divine Dungeon Complete Series."* |
+| the omnibus, and a volume is held | *"This collects Dungeon Born, which you already own."* |
+
+Three things about it that are decisions rather than details:
+
+- **It never blocks.** The review screen raises the prompt it already has for
+  duplicates — *add it, or leave it* — and the buttons are unchanged. Owning
+  volume 1 **and** the omnibus is a choice people make on purpose.
+- **It is not `state`.** `state === 'owned'` is about the *object* and comes from
+  `edition.isbn13`; this is about the *text*. A line can be neither, either, or
+  both.
+- **Wishes are excluded**, by the §2 rule above. "You already own this inside
+  *X*" is a lie if *X* is a book we only want. Verified against a fixture: a
+  wished-for omnibus containing a held volume produces **no** warning.
+
+⚠️ **It costs one query while `work_relation` is empty**, which it is today. With
+no `contains` rows the index is empty and `overlapsFor` returns immediately
+without touching the work matcher. Do not replace it with a per-line query — a
+shelf photograph is a dozen lines.
 
 ### 3.3 It is hand-entered, and that is the design
 

@@ -76,6 +76,64 @@ export const SCAN_LINE_STATES = [
 export type ScanLineState = (typeof SCAN_LINE_STATES)[number];
 
 /**
+ * A book we already hold whose text overlaps the one being scanned.
+ *
+ * ⚠️ **Not a duplicate, and the difference is the reason this exists.** A
+ * duplicate is the same *object* twice. An overlap is the same *text* reached
+ * two ways — an omnibus and one of the volumes printed inside it — and the
+ * catalog records it as `work_relation.contains`, which is directional and whose
+ * direction is the entire meaning.
+ *
+ * One `contains` row reads as two different warnings depending on which end the
+ * scanned book is standing on, and both are worth saying out loud:
+ */
+export interface ScanOverlap {
+  workId: number;
+  title: string;
+  /**
+   * - `inside` — we already hold that book, and **this one is printed inside
+   *   it**. Scanning volume 1 of something whose omnibus is already on the
+   *   shelf.
+   * - `holds` — this one is the bundle, and **we already hold that book**, which
+   *   is one of the things inside it. Scanning the omnibus of a volume we own.
+   */
+  direction: 'inside' | 'holds';
+}
+
+/**
+ * What to tell somebody standing at the shelf with the book in their hand.
+ *
+ * ⚠️ One sentence, no verdict. The owner's position all session has been *tell
+ * me, then let me decide* — they own volume 1 **and** the omnibus deliberately
+ * in some cases — so this names the book and stops. It is the same shape as the
+ * duplicate prompt's "Scanned again — add a second owned copy if you have two,
+ * or leave it", because it raises the same prompt for a second reason.
+ *
+ * Lives here rather than in the component so the wording and the rule that
+ * produces it cannot drift apart, exactly as `gapEvidenceLabel` does for the
+ * series ladder.
+ */
+export function overlapSentence(overlaps: readonly ScanOverlap[]): string | null {
+  if (overlaps.length === 0) return null;
+  const names = (list: readonly ScanOverlap[]) =>
+    list.length === 1
+      ? list[0]!.title
+      : `${list.slice(0, -1).map((o) => o.title).join(', ')} and ${list[list.length - 1]!.title}`;
+
+  const inside = overlaps.filter((o) => o.direction === 'inside');
+  const holds = overlaps.filter((o) => o.direction === 'holds');
+
+  const parts: string[] = [];
+  if (inside.length > 0) {
+    parts.push(`You already own this inside ${names(inside)}.`);
+  }
+  if (holds.length > 0) {
+    parts.push(`This collects ${names(holds)}, which you already own.`);
+  }
+  return parts.join(' ');
+}
+
+/**
  * One book on one sweep.
  *
  * Stored as JSON in `scan_job.enriched` rather than as rows in a table, and
@@ -105,6 +163,22 @@ export interface ScanLine {
   /** The work we already hold, if this line names one. */
   existingWorkId: number | null;
   existingTitle: string | null;
+
+  /**
+   * Books already on the shelf whose text overlaps this one. Usually empty.
+   *
+   * ⚠️ **Never a refusal, and never a state.** `state` says whether the *object*
+   * is already ours; this says whether the *text* already reached us some other
+   * way, and the two are independent — a book can be neither, either or both. It
+   * is carried on the line so the warning arrives with the row rather than as a
+   * second request per book, and so it survives the phone locking mid-shelf,
+   * which is the whole reason `scan_job` persists lines at all.
+   *
+   * ⚠️ Optional on the wire, like `lookedUp`: jobs written before this field
+   * existed have no key for it, and `undefined` correctly reads as "nothing
+   * known to overlap".
+   */
+  overlap?: ScanOverlap[];
 
   /** The best proposal from the free rungs. All null when nothing resolved. */
   isbn13: string | null;
@@ -188,6 +262,7 @@ export function blankLine(
     detail: null,
     existingWorkId: null,
     existingTitle: null,
+    overlap: [],
     isbn13: null,
     resolvedTitle: null,
     resolvedAuthors: null,

@@ -264,7 +264,10 @@ function Holdings({ s }: { s: SeriesSummary }) {
     h.physical > 0 && `${h.physical} in print`,
     h.ebook > 0 && `${h.ebook} as ebooks`,
     h.audio > 0 && `${h.audio} on audio`,
-    h.alternates > 0 && `${h.alternates} bought twice`,
+    // ⚠️ "owned", not "bought". The rule counts held copies as of 2026-08-11 —
+    // see `holdings.ts` in `@lc/core`. The old wording claimed a purchase that
+    // the data never evidenced.
+    h.ownedTwice > 0 && `${h.ownedTwice} owned twice`,
   ].filter((p): p is string => Boolean(p));
 
   if (parts.length === 0) return null;
