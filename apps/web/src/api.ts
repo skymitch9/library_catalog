@@ -390,7 +390,12 @@ export const api = {
    * already hold as an ebook silently produces a second row for the same book.
    */
   matchWork: (title: string, authors: string) =>
-    request<{ work: { id: number; title: string; authors: string } | null }>(
+    request<{
+      // The endpoint returns the whole work row; this type was narrower than
+      // the wire for no reason, which hid `coverUrl` from the add path and let
+      // a scan attach to a coverless book without noticing it could fill it in.
+      work: { id: number; title: string; authors: string; coverUrl: string | null } | null;
+    }>(
       `/api/works/match?title=${encodeURIComponent(title)}&authors=${encodeURIComponent(authors)}`,
     ),
 
