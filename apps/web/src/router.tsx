@@ -33,6 +33,7 @@ import {
   COLLECTION_PAGE_SIZES,
   COPY_STATUSES,
   EDITION_FORMATS,
+  EDITION_KINDS,
   EDITION_MEDIA,
   READ_STATES,
 } from '@lc/core';
@@ -75,12 +76,35 @@ const ADD_MODES: readonly AddMode[] = ['scan', 'single', 'photo', 'type'];
 export const NEEDS_FILTERS = ['cover', 'watch', 'any'] as const;
 export type NeedsFilter = (typeof NEEDS_FILTERS)[number];
 
+/**
+ * The values the "Printing" control accepts. Migration 0050.
+ *
+ * ⚠️ **Half stored vocabulary, half canned query, and the join is deliberate.**
+ * `EDITION_KINDS` comes from `@lc/core` because a column really does hold those
+ * values — the rule `NEEDS_FILTERS` states just above, applied in the other
+ * direction. `'unsorted'` is appended here and nowhere else, because nothing
+ * stores it: it is the query "named, but nothing has said what kind", defined
+ * once as SQL in `KIND_CLAUSE` (`packages/db/src/works.ts`) and once as a URL
+ * word here. Promoting it into `EDITION_KINDS` would imply a row could BE
+ * unsorted, and the whole point of that column is that a null means ordinary.
+ */
+export const EDITION_KIND_FILTERS = [...EDITION_KINDS, 'unsorted'] as const;
+export type EditionKindFilter = (typeof EDITION_KIND_FILTERS)[number];
+
 export interface CollectionFilters {
   q: string;
   series: string;
   /** The coarse axis — `physical` or `ebook`. Narrower than `format`, not instead of it. */
   medium: string;
   format: string;
+  /**
+   * How fancy the printing is — `collectors`, `unsorted`, or empty.
+   *
+   * A third axis beside `medium` and `format`, and orthogonal to both: a
+   * slipcased signed hardcover is physical, a hardcover, and a collector's
+   * edition, and none of the three implies another.
+   */
+  editionKind: string;
   status: string;
   /**
    * What is still outstanding — `cover`, `watch`, `any`, or empty.
@@ -196,6 +220,7 @@ function parseCollection(search: string): CollectionFilters {
     series: p.get('series') ?? '',
     medium: pick(search, 'medium', EDITION_MEDIA) ?? '',
     format: pick(search, 'format', EDITION_FORMATS) ?? '',
+    editionKind: pick(search, 'kind', EDITION_KIND_FILTERS) ?? '',
     status: pick(search, 'status', COPY_STATUSES) ?? '',
     needs: pick(search, 'needs', NEEDS_FILTERS) ?? '',
     readState: pick(search, 'read', READ_STATES) ?? '',
@@ -222,6 +247,7 @@ export function collectionPath(f: CollectionFilters): string {
   if (f.series) p.set('series', f.series);
   if (f.medium) p.set('medium', f.medium);
   if (f.format) p.set('format', f.format);
+  if (f.editionKind) p.set('kind', f.editionKind);
   if (f.status) p.set('status', f.status);
   if (f.needs) p.set('needs', f.needs);
   if (f.readState) p.set('read', f.readState);

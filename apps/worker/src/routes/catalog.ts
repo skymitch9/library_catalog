@@ -69,6 +69,16 @@ function collectionQueryFrom(c: {
     // and adds no clause when it misses, so an unknown medium shows the
     // collection rather than a 400. Same rule the sort allowlist follows.
     medium: c.req.query('medium'),
+    // Not validated here either. `KIND_CLAUSE` is a fixed map of literal SQL —
+    // `'collectors'` is compared against text written in that file, never
+    // against this string — so an unknown value adds no clause and shows the
+    // collection. Migration 0050.
+    //
+    // ⚠️ Named in full here and shortened to `?kind=` in the *address bar*,
+    // exactly as `readState` is shortened to `?read=`. The API parameter says
+    // which of three format-ish axes it is; the address bar can afford to be
+    // terse because `apps/web/src/router.tsx` owns both ends of that name.
+    editionKind: c.req.query('editionKind'),
     status: c.req.query('status'),
     // Not validated here either, and for the same reason: `NEEDS_CLAUSE` is a
     // fixed map of literal SQL and an unknown key adds no clause. No caller text

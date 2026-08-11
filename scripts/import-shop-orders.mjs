@@ -35,7 +35,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { suggestFormat } from '../packages/core/src/crowdfunding.ts';
+import { classifyEdition, suggestFormat } from '../packages/core/src/crowdfunding.ts';
 import { primaryAuthor, workKeyFor } from '../packages/core/src/titles.ts';
 import { execute, parseFlags, query, ROOT } from './lib/d1.mjs';
 
@@ -51,6 +51,25 @@ const sql = (v) => (v == null ? 'NULL' : `'${String(v).replace(/'/g, "''")}'`);
 /** The scan's explicit `format` wins; the retailer's word is only a fallback. */
 function formatOf(item) {
   return item.format ?? suggestFormat(item.bnFormat) ?? null;
+}
+
+/**
+ * Which canonical bucket the printing falls in. Migration 0050.
+ *
+ * ⚠️ **This is the half of the “Special” / “BN Exclusive” problem the note at
+ * the top of this file could not fix.** `formatOf` maps those words to
+ * `hardcover` and `edition_name` keeps the retailer's exact wording — both
+ * right, and between them still leaving *“show me the fancy ones”* as a
+ * substring search. `classifyEdition` reads the same prose and answers the
+ * question the column exists for.
+ *
+ * Reads the recorded `editionName` first and falls back to the retailer's own
+ * format word, because that is where B&N actually puts it: the scan records
+ * `bnFormat: "BN Exclusive"` for a row whose `editionName` may be unset.
+ * Null — an ordinary printing — is the common and correct answer.
+ */
+function kindOf(item) {
+  return classifyEdition(item.editionName) ?? classifyEdition(item.bnFormat);
 }
 
 const items = (scan.items ?? []).filter((i) => !i.skipImport);
@@ -70,6 +89,7 @@ const plan = items.map((i) => {
     primary: primaryAuthor(authors),
     workId: held.get(key) ?? null,
     fmt: formatOf(i),
+    kind: kindOf(i),
   };
 });
 
@@ -79,6 +99,7 @@ for (const p of plan) {
   const fmt = p.fmt ?? '⚠️ no format';
   console.log(`  ${p.copyStatus.padEnd(10)} ${fmt.padEnd(10)} ${where.padEnd(9)} ${p.title.slice(0, 46)}`);
   if (p.editionName) console.log(`             edition_name: ${p.editionName}   (retailer said "${p.bnFormat}")`);
+  if (p.kind) console.log(`             edition_kind: ${p.kind}`);
 }
 for (const s of skipped) console.log(`  SKIPPED    ${s.title.slice(0, 46)} — ${s.status}`);
 
@@ -116,8 +137,8 @@ if (withFmt.length) {
   execute(
     withFmt.map(
       (p) =>
-        `INSERT INTO edition (work_id, format, edition_name, publisher, source)
-         VALUES (${p.workId}, ${sql(p.fmt)}, ${sql(p.editionName ?? null)}, ${sql(scan.vendor ?? null)}, 'manual');`,
+        `INSERT INTO edition (work_id, format, edition_name, edition_kind, publisher, source)
+         VALUES (${p.workId}, ${sql(p.fmt)}, ${sql(p.editionName ?? null)}, ${sql(p.kind)}, ${sql(scan.vendor ?? null)}, 'manual');`,
     ),
     { remote },
   );

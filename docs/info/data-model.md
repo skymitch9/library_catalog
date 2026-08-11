@@ -78,7 +78,32 @@ different books.
 | `isbn13` | UNIQUE. Digits only, 978/979, checksum valid. ISBN-10s converted at the edge |
 | `asin` | UNIQUE. ⚠️ **not an ISBN.** For Kindle-native titles it is the only identifier that exists |
 | `format` | `hardcover \| paperback \| mass_market \| ebook_epub \| ebook_kindle \| ebook_pdf` |
+| `edition_name` | Free text, exactly as the vendor wrote it. Never rewritten; it is what the UI prints |
+| `edition_kind` | `collectors` or NULL. ⚠️ **NULL means an ORDINARY printing, not "unclassified"** (migration 0050) |
 | `source` | `manual` outranks everything and is never overwritten automatically |
+
+**`edition_name` and `edition_kind` are a pair, and the split is the design.**
+The name is *what the vendor called it* — "Illumicrate Exclusive", "Year of
+Sanderson premium hardcover", "B&N Exclusive Edition" — and 13 distinct spellings
+were in production on 2026-08-11, which made *"show me the fancy ones"* thirteen
+`LIKE` patterns. The kind is *what it is*, and everything that filters or counts
+reads it. Normalising the name itself was rejected: it is the only record of
+which shop a book came out of.
+
+⚠️ **NULL in `edition_kind` means ordinary, breaking the NULL rule that
+`gap_verdict`, `decided_how` and `cover_status` share.** Those three record
+whether somebody *looked*; this records what a book *is*, and the default state
+of a book is ordinary — 220 editions carry no name at all. The price is that an
+unrecognised special edition is filed as ordinary silently, and the payment is
+the collection's **Printing → "Named, not sorted"** filter: a special printing is
+always *named*, so `edition_name IS NOT NULL AND edition_kind IS NULL` is exactly
+the set that could be wrong. Keep that control; it is what makes the NULL rule
+honest rather than merely convenient.
+
+`classifyEdition` in `packages/core/src/crowdfunding.ts` is the one rule that
+assigns it, and the importers call it. It refuses anything describing a book's
+**contents** rather than its printing — an omnibus and a "Volume 1" are ordinary
+trade printings.
 
 **`format` is the point of the whole table.** It is what makes *"I own this in
 audio and paperback but not ebook"* a query rather than a feature. Audiobooks are

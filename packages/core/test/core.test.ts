@@ -69,6 +69,7 @@ import {
 import {
   EBOOK_FILE_FORMATS,
   EDITION_FORMATS,
+  EDITION_KINDS,
   EDITION_MEDIA,
   HELD_STATUSES,
   PHYSICAL_FORMATS,
@@ -80,6 +81,7 @@ import { updateEditionSchema } from '../src/schemas.ts';
 import { bookIdFromTitle, reviewDocFor, workKeyForAudiobookRow } from '../src/reviews.ts';
 import {
   auditSentence,
+  classifyEdition,
   mediumFromHint,
   pledgeAudit,
   pledgeItemMedium,
@@ -1369,6 +1371,164 @@ describe('crowdfunding — the physical/digital split', () => {
     // guess-and-apply.
     assert.equal(suggestFormat('Deluxe Edition'), null);
     assert.equal(suggestFormat('Backer Pack'), null);
+  });
+});
+
+describe('edition kind — one bucket for every way a shop spells "fancy"', () => {
+  /*
+   * The owner, 2026-08-11: *"Let's normalize any edition to collectors edition.
+   * Keep the original name on the visible listing but for our sanity all
+   * editions should be collectors and we can fix them one off if needed."*
+   *
+   * ⚠️ Every string in the tests below is a VERBATIM `edition_name` from
+   * production, measured the same day: 17 named editions across 13 distinct
+   * names, beside 220 rows with no name at all. They are here rather than
+   * paraphrased because the whole value of this function is that it survives
+   * contact with real vendor prose, and a paraphrase would quietly test a tidier
+   * world.
+   */
+
+  it('the real names that ARE a special printing', () => {
+    assert.equal(classifyEdition('Illumicrate Exclusive'), 'collectors');
+    assert.equal(classifyEdition('Year of Sanderson premium hardcover'), 'collectors');
+    assert.equal(classifyEdition('B&N Exclusive Edition'), 'collectors');
+    assert.equal(classifyEdition('Campaign-only exclusive hardcover, signed extras'), 'collectors');
+    assert.equal(classifyEdition("Collector's Edition"), 'collectors');
+    assert.equal(
+      classifyEdition("Collector's Edition Trilogy — Book 1 Signed & Numbered"),
+      'collectors',
+    );
+    assert.equal(classifyEdition('Deluxe Edition'), 'collectors');
+    assert.equal(classifyEdition('Signed Leatherbound'), 'collectors');
+  });
+
+  /*
+   * ⚠️ THE THREE EXCLUSIONS. These are why this is a keyword list about
+   * *objects* rather than a "does it have a name" test, and each is a different
+   * way the obvious implementation goes wrong.
+   */
+  it('⚠️ an omnibus is not a collector’s edition — it describes the CONTENTS', () => {
+    // Both rows are *White Sand*, the original "alternate copies of stuff we
+    // already own" case the whole series restructure was built around. An
+    // omnibus is an ordinary trade printing that happens to hold three volumes;
+    // calling it a collector's edition would be plainly false, and would break
+    // the feature's own worked example.
+    assert.equal(classifyEdition('Omnibus - collects volumes 1-3'), null);
+    assert.equal(classifyEdition('Volume 1'), null);
+  });
+
+  it('⚠️ a bare "ebook" names no printing at all', () => {
+    // Junk that leaked out of a crowdfunding reward name. The row's `format` is
+    // already `ebook_epub`, so the name adds nothing — the backfill clears it to
+    // NULL rather than finding a bucket for it.
+    assert.equal(classifyEdition('ebook'), null);
+  });
+
+  it('⚠️ a contents word does not veto a tier word — the combination is real', () => {
+    // Nothing blacklists "omnibus": the refusals above work because no contents
+    // word is on COLLECTORS_HINTS in the first place. A blacklist would get this
+    // wrong, and "Omnibus Collector's Edition" is a product people sell.
+    assert.equal(classifyEdition("Omnibus Collector's Edition"), 'collectors');
+    assert.equal(classifyEdition('Volume 1 — Signed Leatherbound'), 'collectors');
+  });
+
+  it('an unnamed printing is an ordinary printing', () => {
+    // ⚠️ 220 editions in production are this case. NULL means ORDINARY
+    // here, not "unclassified" — see EDITION_KINDS, which argues out why this
+    // column breaks the NULL rule `cover_status` and `decided_how` follow.
+    assert.equal(classifyEdition(null), null);
+    assert.equal(classifyEdition(undefined), null);
+    assert.equal(classifyEdition(''), null);
+  });
+
+  it('⚠️ answers a different question from suggestFormat, about the same string', () => {
+    // The pair that proves these are not one function wearing two names.
+    // "Deluxe Edition" names no binding, so suggestFormat rightly refuses it —
+    // and it is unmistakably a special printing.
+    assert.equal(suggestFormat('Deluxe Edition'), null);
+    assert.equal(classifyEdition('Deluxe Edition'), 'collectors');
+    // And the other way round: a binding is a format and no kind.
+    assert.equal(suggestFormat('Trade paperback'), 'paperback');
+    assert.equal(classifyEdition('Trade paperback'), null);
+  });
+
+  it('the curly apostrophe is the same word as the straight one', () => {
+    // Measured names in this catalog use ASCII, but a vendor page writing U+2019
+    // is selling the identical product, and a substring test that could not see
+    // that would file half a shelf as ordinary.
+    assert.equal(classifyEdition('Collector’s Edition'), 'collectors');
+  });
+
+  it('is case-insensitive, because vendor prose is not consistent', () => {
+    assert.equal(classifyEdition('COLLECTORS EDITION'), 'collectors');
+    assert.equal(classifyEdition('bn exclusive edition'), 'collectors');
+  });
+
+  it('⚠️ one value, and the ask is the reason', () => {
+    // "Illumicrate Exclusive", "Deluxe Edition" and "Signed Leatherbound" are
+    // three names for one shelf. Splitting them into exclusive/deluxe/signed
+    // would rebuild the thirteen-way problem with tidier spelling — the exact
+    // thing "for our sanity" was asking to stop.
+    assert.deepEqual([...EDITION_KINDS], ['collectors']);
+    for (const name of [
+      'Illumicrate Exclusive',
+      'Deluxe Edition',
+      'Signed Leatherbound',
+      'Year of Sanderson premium hardcover',
+    ]) {
+      const kind = classifyEdition(name);
+      assert.ok(kind !== null && EDITION_KINDS.includes(kind), name);
+    }
+  });
+
+  it('a name it does not recognise stays unsorted rather than being guessed at', () => {
+    // ⚠️ The failure this leaves open, on purpose. "Book with sticker and
+    // bookmark tier" is a real production row the owner calls a special
+    // printing, and no honest keyword reaches it — a bookmark is not a binding.
+    // It is set by hand in `scripts/backfill-edition-kinds.mjs`, and any future
+    // one like it lands in the collection's "Named, not sorted" filter, which is
+    // what makes NULL-means-ordinary safe rather than merely convenient.
+    assert.equal(classifyEdition('Book with sticker and bookmark tier'), null);
+    assert.equal(classifyEdition('All-In Tier'), null);
+    assert.equal(classifyEdition('Backer Pack'), null);
+  });
+});
+
+describe('updateEditionSchema — the kind travels beside the name, separately', () => {
+  it('accepts the vocabulary and refuses anything else', () => {
+    assert.equal(updateEditionSchema.safeParse({ editionKind: 'collectors' }).success, true);
+    assert.equal(updateEditionSchema.safeParse({ editionKind: 'deluxe' }).success, false);
+    for (const k of EDITION_KINDS) {
+      assert.equal(updateEditionSchema.safeParse({ editionKind: k }).success, true, k);
+    }
+  });
+
+  it('⚠️ an explicit null is how a printing is filed back as ordinary', () => {
+    // Not an absence. NULL is a real value in this column — it means an ordinary
+    // printing — so the edit form's "Ordinary printing" option has to reach the
+    // database, and `updateEdition` in @lc/db distinguishes an explicit null
+    // from a field the patch never mentioned.
+    const cleared = updateEditionSchema.parse({ editionKind: null });
+    assert.equal(cleared.editionKind, null);
+    assert.equal('editionKind' in cleared, true);
+  });
+
+  it('⚠️ has no default, unlike format and source', () => {
+    // A default would be indistinguishable from the value it defaults to and
+    // would remove the caller's ability to clear it. Same zod subtlety the
+    // partial-schema test above guards for `source`.
+    const patch = updateEditionSchema.parse({ format: 'hardcover' });
+    assert.equal('editionKind' in patch, false);
+  });
+
+  it('renaming a printing does not re-file it, and vice versa', () => {
+    // Two independent fields on the wire, because the alternative — deriving the
+    // kind from the name on every save — would undo a hand-made one-off
+    // correction the next time somebody fixed a typo in the name.
+    const renamed = updateEditionSchema.parse({ editionName: 'B&N Exclusive Edition' });
+    assert.equal('editionKind' in renamed, false);
+    const refiled = updateEditionSchema.parse({ editionKind: 'collectors' });
+    assert.equal('editionName' in refiled, false);
   });
 });
 

@@ -1007,6 +1007,53 @@ ol.ladder > li::before {
 .copy__actions { display: flex; align-items: flex-end; gap: 0.4rem; }
 .copy__actions select { min-height: 36px; max-width: 10rem; }
 
+/*
+ * A printing's binding and its kind, on one line. Migration 0050.
+ *
+ * ⚠️ Wraps, and the wrap is the point. "Hardcover" plus "Collector's edition" is
+ * comfortably wider than a 360px phone's share of this row once the Edit and
+ * Delete chips have taken their side, and `.copy` is already `flex-wrap` for the
+ * same reason one level up. Nothing here may be `white-space: nowrap`: the
+ * sibling's equivalent row overflowed its card at 360px and took the document's
+ * horizontal scrollbar with it, which is the trap `.copy__text` answers with
+ * `min-width` and `.edition-form__pair` answers with `minmax(0, 1fr)`.
+ */
+.edition-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+/*
+ * "This printing was sold as better than the standard one."
+ *
+ * ⚠️ `--accent`, the cloth binding, and NOT `--warm`. The comment on
+ * `.mark--needs` records that terracotta is reserved for the two marks that are
+ * a *request to the owner*; this one states a **fact about the book**, like
+ * `.mark--preordered` and the format chips, and borrowing the request colour
+ * would put "there is something to do here" on nine books that are finished.
+ *
+ * Outlined rather than filled, following the grammar `.mark--needs` and
+ * `.mark--watch` set out — solid is the stronger claim — and matching
+ * `.mark--relation`, which is the other mark that names a category rather than
+ * raising an alarm.
+ *
+ * ⚠️ No lower-casing and no `text-transform` override: `.mark` upper-cases, so
+ * this renders as COLLECTOR'S EDITION, in step with every other mark in the app.
+ * There is deliberately no counterpart for an ordinary printing — a null kind
+ * shows nothing, because a badge on 220 of 237 rows is a badge nobody reads.
+ */
+.mark--kind {
+  position: static;
+  box-shadow: none;
+  flex: none;
+  background: none;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
 /* --- editing a printing --------------------------------------------------- */
 
 /*

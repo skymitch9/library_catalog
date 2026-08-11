@@ -28,7 +28,7 @@
  *   node scripts/create-pledge-editions.mjs --remote --commit
  */
 
-import { rewardFlags, suggestFormat } from '../packages/core/src/crowdfunding.ts';
+import { classifyEdition, rewardFlags, suggestFormat } from '../packages/core/src/crowdfunding.ts';
 import { execute, parseFlags, query } from './lib/d1.mjs';
 
 const { commit, remote } = parseFlags();
@@ -51,7 +51,12 @@ const doable = [];
 const declined = [];
 for (const l of lines) {
   const format = suggestFormat(l.hint);
-  (format ? doable : declined).push({ ...l, format });
+  // ⚠️ Read off the SAME reward prose the format comes from, and answering a
+  // different question about it — `suggestFormat` says what the object is made
+  // of, `classifyEdition` says whether it was sold as better than standard.
+  // "Collector's Edition Trilogy — Book 1 Signed & Numbered" is a hardcover AND
+  // a collector's edition, and both facts come out of one string. Migration 0050.
+  (format ? doable : declined).push({ ...l, format, kind: classifyEdition(l.hint) });
 }
 
 console.log(`\n${remote ? 'production' : 'local'}: ${lines.length} line(s) with no printing`);
@@ -59,7 +64,8 @@ console.log(`\ncan create (${doable.length}) — the hint names a format:`);
 for (const l of doable) {
   const flags = rewardFlags?.(l.hint) ?? null;
   const note = flags && (flags.signed || flags.numbered) ? '   ⚠️ says signed/numbered' : '';
-  console.log(`  ${String(l.id).padStart(3)}  ${l.format.padEnd(10)} ${l.title.slice(0, 42)}${note}`);
+  const kind = l.kind ? `   [${l.kind}]` : '';
+  console.log(`  ${String(l.id).padStart(3)}  ${l.format.padEnd(10)} ${l.title.slice(0, 42)}${note}${kind}`);
 }
 console.log(`\nleft for a person (${declined.length}) — the hint names no format:`);
 for (const l of declined) console.log(`  ${String(l.id).padStart(3)}  ${l.title.slice(0, 34)}  "${l.hint}"`);
@@ -75,8 +81,8 @@ if (doable.length === 0) process.exit(0);
 execute(
   doable.map(
     (l) =>
-      `INSERT INTO edition (work_id, format, edition_name, source, source_url)
-       VALUES (${l.workId}, ${sql(l.format)}, ${sql(l.hint)}, 'manual', NULL);`,
+      `INSERT INTO edition (work_id, format, edition_name, edition_kind, source, source_url)
+       VALUES (${l.workId}, ${sql(l.format)}, ${sql(l.hint)}, ${sql(l.kind)}, 'manual', NULL);`,
   ),
   { remote },
 );

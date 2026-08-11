@@ -442,6 +442,80 @@ export const COVER_STATUSES = [
 export type CoverStatus = (typeof COVER_STATUSES)[number];
 
 /**
+ * What kind of printing this is, beyond what it is made of. Migration 0050.
+ *
+ * ⚠️ **This is the canonical counterpart to `edition_name`, and it does NOT
+ * replace it.** The owner's words, 2026-08-11: *"Let's normalize any edition to
+ * collectors edition. Keep the original name on the visible listing but for our
+ * sanity all editions should be collectors and we can fix them one off if
+ * needed."*
+ *
+ * The problem it solves is countable. Measured against production the same day:
+ * **17 editions carry a name, spelled 13 different ways** — "Illumicrate
+ * Exclusive", "Year of Sanderson premium hardcover", "B&N Exclusive Edition",
+ * "Campaign-only exclusive hardcover, signed extras", "Collector's Edition",
+ * "Deluxe Edition", "Signed Leatherbound" and six more. Every one of them is
+ * prose typed by a vendor or a campaign, so *"show me the fancy ones"* was
+ * thirteen `LIKE` patterns and would be fourteen the next time somebody invents
+ * a word. This column is the one bucket they all fall into; `edition_name` keeps
+ * its exact text and stays what the UI prints.
+ *
+ * ## ⚠️ NULL means ORDINARY, not "nobody has looked"
+ *
+ * **This is a deliberate departure from `COVER_STATUSES`, `GAP_VERDICTS` and
+ * `DECISION_MODES` above, and the asymmetry is the whole reason it is safe.**
+ * Those three describe a *question that was asked*, so NULL honestly means
+ * unasked. This one describes what a book **is**, and the default state of a
+ * book is ordinary: 220 editions in production have no name at all — 115
+ * `ebook_epub`, 101 `hardcover`, 4 `paperback` — and are plain printings. Backfilling them to an
+ * `'unknown'` would mint 220 pieces of work that nobody will ever do, and a
+ * "needs attention" list that is 93% noise is a list that gets ignored — which
+ * is exactly what `DETAIL_FIELDS` says about a queue built from "which columns
+ * are null".
+ *
+ * The same rule `copy.is_signed` already follows by defaulting to 0 rather than
+ * NULL, and the rule `CollectionRow.preordered` states in words: **only the
+ * exceptions earn a mark.**
+ *
+ * ⚠️ The cost of that choice is real and is paid for elsewhere. A newly imported
+ * special edition that nothing recognises is silently filed as ordinary, because
+ * "ordinary" and "unexamined" now look identical in the column. What makes that
+ * recoverable is that they are *not* identical in the table: a special printing
+ * is **named** — that is how anybody knows it is special — so the rows where
+ * NULL might be wrong are exactly the rows with an `edition_name` and no kind,
+ * and the collection's **"Named, not sorted"** filter is that query. It is one
+ * click, it is normally two rows long, and it is what "we can fix them one off"
+ * means in practice.
+ *
+ * ## Why one value and not five
+ *
+ * Because the ask was to *stop* distinguishing them. "Illumicrate Exclusive",
+ * "Deluxe Edition" and "Signed Leatherbound" are three names for one shelf, and
+ * splitting them back into `exclusive` / `deluxe` / `signed` would rebuild the
+ * thirteen-way problem with tidier spelling. The name is still there for anyone
+ * who wants to know which.
+ *
+ * Deliberately NO CHECK constraint, following `gap_verdict.field` (0007),
+ * `research_finding.decided_how` (0013) and `work.cover_status` (0040): the set
+ * may grow — `omnibus` is the obvious candidate and is discussed in migration
+ * 0050 — a CHECK would make each addition a table rebuild, and an unrecognised
+ * value simply fails to match any filter.
+ */
+export const EDITION_KINDS = [
+  /**
+   * A printing sold as better than the standard one: collector's, deluxe,
+   * exclusive, premium, limited, signed, numbered, leatherbound, slipcased.
+   *
+   * ⚠️ It is about **how the object was made and sold**, never about what is
+   * inside it. An omnibus and a "Volume 1" are ordinary printings that happen to
+   * describe their contents, and calling either a collector's edition would be
+   * plainly false — see `classifyEdition` in `crowdfunding.ts`.
+   */
+  'collectors',
+] as const;
+export type EditionKind = (typeof EDITION_KINDS)[number];
+
+/**
  * Image types an uploaded cover may be, checked against the file's own **magic
  * bytes** and never against the type the browser declared.
  *

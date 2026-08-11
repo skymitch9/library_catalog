@@ -123,6 +123,11 @@ export interface CollectionParams {
   format?: string;
   /** The coarse axis: `physical` or `ebook`. Composes with `format`. */
   medium?: string;
+  /**
+   * `collectors` or `unsorted` — how fancy the printing is. Migration 0050.
+   * Travels as `?kind=`; the server reads it as `editionKind`.
+   */
+  editionKind?: string;
   status?: string;
   /** `cover`, `watch` or `any` — what is still outstanding. Migration 0040. */
   needs?: string;
@@ -148,6 +153,14 @@ export interface CollectionFacets {
    * *and* be on watch — so they are two numbers rather than a breakdown.
    */
   needs: { cover: number; watch: number };
+  /**
+   * Books holding a special printing, and books holding a *named* printing
+   * nothing has sorted yet. Overlapping, like `needs` — a book can be in both.
+   *
+   * There is no `ordinary` count on purpose: it is the default and would be the
+   * whole collection minus a handful. See `EDITION_KINDS` in `@lc/core`.
+   */
+  kinds: { collectors: number; unsorted: number };
 }
 
 export interface Stats {

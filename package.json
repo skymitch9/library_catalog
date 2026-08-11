@@ -32,6 +32,7 @@
     "backfill:audiobooks": "tsx scripts/backfill-audiobook-holdings.mjs",
     "backfill:openlibrary-ids": "tsx scripts/backfill-openlibrary-ids.mjs",
     "backfill:missing-covers": "tsx scripts/backfill-missing-covers.mjs",
+    "backfill:edition-kinds": "tsx scripts/backfill-edition-kinds.mjs",
     "seed:audiobook-aliases": "tsx scripts/seed-audiobook-aliases.mjs",
     "sync:drive-map": "node scripts/sync-drive-map.mjs",
     "seed:verdicts": "node scripts/seed-gap-verdicts.mjs",
