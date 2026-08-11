@@ -248,12 +248,19 @@
     },
     {
       "name": "Solaria",
-      "decidedHow": "proposed",
+      "decidedHow": "human",
       "series": [
         "Zodiac Academy",
         "Ruthless Boys of the Zodiac"
       ],
-      "notes": "Peckham and Valenti, same world."
+      "notes": "Peckham and Valenti's shared realm. Structural rather than a cameo: Ruthless Boys of the Zodiac (the Dark Fae books) runs in PARALLEL with Zodiac Academy in Solaria, sharing characters and timeline, and the two are usually read interleaved. A stronger link than Maasverse, where one crossover scene does the work.",
+      "confirmed": "Owner approved 2026-08-11.",
+      "naming": "Named for the in-world realm rather than 'Zodiac Academy universe', which would elevate one series over the other — the same reason Divine Dungeon became CAL Verse.",
+      "dataProblems": [
+        "⚠️ Zodiac Academy has no consistent index: 'Zodiac Academy 8' and 'Zodiac Academy 8.5: Beyond the Veil' are numbered while everything else is titled.",
+        "Side stories sit inline with the main run: Live and Let Lionel, The Awakening as Told by the Boys, Origins of an Academy Bully, The Big A.S.S. Party.",
+        "'Zodiac Academy 2 - Ruthless Fae' carries its volume in the title — and is Ruthless FAE, not the separate Ruthless BOYS series."
+      ]
     }
   ],
   "_refused": [
