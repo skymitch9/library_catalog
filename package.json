@@ -31,6 +31,8 @@
     "backfill:series-volumes": "tsx scripts/backfill-series-volumes.mjs",
     "backfill:audiobooks": "tsx scripts/backfill-audiobook-holdings.mjs",
     "backfill:openlibrary-ids": "tsx scripts/backfill-openlibrary-ids.mjs",
+    "backfill:missing-covers": "tsx scripts/backfill-missing-covers.mjs",
+    "seed:audiobook-aliases": "tsx scripts/seed-audiobook-aliases.mjs",
     "sync:drive-map": "node scripts/sync-drive-map.mjs",
     "seed:verdicts": "node scripts/seed-gap-verdicts.mjs",
     "backfill:years": "tsx scripts/backfill-years.mjs"
