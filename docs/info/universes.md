@@ -1,6 +1,7 @@
 # Universes — Information Reference
 
-> **Audience:** Claude sessions. **Status:** TRACKED. Wired 2026-08-11.
+> **Audience:** Claude sessions. **Status:** TRACKED. Wired 2026-08-11,
+> surfaced in the UI the same day.
 > Last verified: **2026-08-11**.
 
 ⚠️ **The data is not in this repo.** It lives at
@@ -76,10 +77,40 @@ it is alone on purpose. `@lc/core` promises *"no I/O — safe to import anywhere
 a build-generated file with cross-repo provenance does not belong inside that
 promise. `grep -r '@lc/universes'` finds every consumer.
 
-**Nothing surfaces universes in the UI yet** — that is a separate job. The one
-live consumer is `/api/health`, which reports `{ count, schemaVersion }`. That
-line exists so a missing or empty list is visible in one curl instead of months
-later: a dependency nobody exercises is a dependency that breaks quietly.
+`/api/health` still reports `{ count, schemaVersion }`, and that line stays: it
+is how a missing or empty list becomes visible in one curl rather than months
+later in a wrong answer.
+
+### The runtime consumers, 2026-08-11
+
+| Consumer | Reads |
+|---|---|
+| `apps/worker/src/lib/universes.ts` | the only place the list meets this catalog's rows — every route goes through it |
+| `routes/catalog.ts` | `?universe=` on `/collection`, the `universes` key on `/collection/facets`, and `universe` on `GET /works/:id` |
+| `routes/universes.ts` | `GET /api/universes/:name` — one world, everything held from it |
+| `routes/health.ts` | the count and schema version |
+
+⚠️ **No universe is ever resolved in SQL, and that is the point.** `@lc/db`
+exposes `listUniverseKeys`, which returns `(id, title, series)` for the rows the
+rest of the filter allows; the caller runs them through `universeFor` and hands
+back ids, which become an inlined `w.id IN (…)` clause. So the filter, the facet
+count and the page all come out of the one implementation. A WHERE clause
+matching series names and titles would be a **third** implementation of §5's
+contract, in a third language — exactly the shape of the
+`resolve_author_link` / `_resolveAuthorFolder` bug this estate already shipped.
+
+⚠️ `@lc/db` deliberately does **not** import `@lc/universes`. Keeping the join in
+the worker is what stops a cross-repo build dependency sitting behind every
+query in the app; the facets route spreads `collectionFacets`' object and adds
+one key.
+
+### ⚠️ Nothing renders the absence of a universe
+
+Most books are in none and that is correct — **13 of 116 works** on the local
+snapshot resolve. No badge, no dash, no "not in a universe" filter option and no
+count of the remainder exists anywhere in the UI. Adding one would turn a shelf
+of correctly filed picture books into a worklist. Same reading as a NULL
+`cover_status` ("nobody looked") and a NULL `edition_kind` ("ordinary").
 
 ## 5. ⚠️ The lookup exists twice
 
@@ -110,6 +141,28 @@ fixtures, and `_lookup.order` in the data file.
 ## 7. Not verified
 
 The universe list's `measured` notes all cite `audiobook_catalog/site/catalog.csv`.
-**This repo's own rows were never queried** — they are in remote D1. The series
-spelling `Cradle` in the Will Wight refusal is asserted from the owner's
-wording, not observed here.
+The series spelling `Cradle` in the Will Wight refusal is asserted from the
+owner's wording, not observed here.
+
+**This repo's rows have now been queried, but only the LOCAL snapshot** — 116
+works, migrated to 0070 on 2026-08-11. Production D1 held more than twice that
+when last counted, so every figure here is a measurement with a timestamp and
+not a constant:
+
+| | local, 2026-08-11 |
+|---|---|
+| works | 116 |
+| resolve to a universe | 13 |
+| The Cosmere | 6 — four *Secret Projects* by title override, two with no series at all |
+| CAL Verse | 7 |
+| Runnerverse · Maasverse · Riordanverse · Solaria | 0 |
+
+That Cosmere split is worth keeping: two of its six books have **no series
+value**, and the server's series sort interleaves them alphabetically rather
+than grouping them — which is why `UniversePage` groups by key and not by
+consecutive runs.
+
+⚠️ **Not verified:** the same figures against production, and nothing has been
+rendered at 360px — `resize_window` reports success without resizing on this
+machine, so the phone layout rests on the new controls reusing `.field`,
+`.controls--filters` and `.stat-strip` unchanged, not on an observation.

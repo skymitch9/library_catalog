@@ -711,6 +711,70 @@ textarea {
 }
 .series-tag__link:hover { color: var(--accent); border-bottom-color: var(--accent); }
 
+/*
+ * The tier above a series: "Part of The Cosmere", on a book page.
+ *
+ * ⚠️ **Not a `.mark`, and not terracotta.** Both would be wrong for the same
+ * reason. `--warm` is reserved for the marks that *ask for something* — "Cover
+ * needed", "Check" — and a universe is a fact about the book, not a job; the
+ * rule is written out over `.mark--copies`. And `.mark` is `position: absolute`
+ * with uppercase 0.65rem type built for the corner of a cover, which is not
+ * what a sentence in a page header is.
+ *
+ * So: ordinary prose in the muted colour, with the world's name as the only
+ * coloured thing in it. It reads as one more line of the header rather than as
+ * a label stuck onto one, which is the honest weight — this is a fact about
+ * roughly one book in eight here, and it must never look like an annotation the
+ * other seven are missing.
+ *
+ * `--accent` and a dotted underline, matching `.series-tag__link` directly
+ * above it: the two links do the same kind of thing (go up a level) and are two
+ * lines apart, so they have to look related. The colour differs because the
+ * scope does — the spine label for the series, the cloth binding for the world
+ * the series sits in.
+ */
+.universe-tag {
+  margin: 0.1rem 0 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+  letter-spacing: 0.01em;
+}
+.universe-tag__link {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--accent);
+  /* Vertical only, for the reason `.series-tag__link` gives: a wider target
+     here would sit over a neighbouring tap area rather than beside it. */
+  display: inline-block;
+  padding: 3px 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+.universe-tag__link:hover { border-bottom-style: solid; }
+
+/*
+ * One series' worth of a universe, on the universe page.
+ *
+ * No card, no tint and no rule: the page is already a column of `WorkList`
+ * rows, and boxing each series would draw six frames around a list that reads
+ * perfectly well as headings over rows. The heading carries a link out to the
+ * series' own ladder — this page deliberately duplicates none of it.
+ */
+.universe-group { margin: 0 0 1.2rem; }
+.universe-group__head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin: 0 0 0.2rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--line);
+  font-size: 1rem;
+}
+
 /* Two marks the collection did not need. `--gap` is a certainty and reads as
    loudly as a Read mark; `--attested` rests on a source and is deliberately
    quieter — an outline rather than a fill, so a glance can tell them apart

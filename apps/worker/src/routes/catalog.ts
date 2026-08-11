@@ -36,7 +36,9 @@ import {
   updateWork,
   type CollectionQuery,
 } from '@lc/db';
+import { universeFor, universeIndex } from '@lc/universes';
 import type { AppBindings } from '../env.js';
+import { universeFacet, universeIdsFor } from '../lib/universes.js';
 import { requireCapability } from '../middleware/auth.js';
 
 /**
@@ -101,7 +103,18 @@ function collectionQueryFrom(c: {
  */
 export const catalogRoutes = new Hono<AppBindings>()
   .get('/collection', requireCapability('read'), async (c) => {
-    const query = collectionQueryFrom(c, c.get('user').id);
+    const base = collectionQueryFrom(c, c.get('user').id);
+    // ⚠️ Resolved before the statement is built, not inside it. A universe is a
+    // hand-written list in another repo keyed on series names and exact titles,
+    // so there is nothing to put in a WHERE clause until JavaScript has said
+    // which rows it means — see `apps/worker/src/lib/universes.ts`. An
+    // unrecognised name yields `undefined` and therefore no clause, so a stale
+    // link shows the collection rather than a 400, exactly as an unknown sort,
+    // medium, printing or needs value already does.
+    const query = {
+      ...base,
+      universeIds: await universeIdsFor(c.env.DB, base, c.req.query('universe')),
+    };
     const { rows, total } = await listCollection(c.env.DB, query);
     return c.json({
       rows,
@@ -121,9 +134,31 @@ export const catalogRoutes = new Hono<AppBindings>()
    * search, and the facets only need to change when a filter does. One response
    * would recompute three GROUP BYs per keystroke to send bytes nothing redrew.
    */
+  /**
+   * ⚠️ `universes` is added here rather than inside `collectionFacets`, and the
+   * seam is deliberate: `@lc/db` does not import `@lc/universes`, which is the
+   * one package in this repo that reads another checkout. Keeping the join in
+   * the worker is what stops catalog-platform ending up behind every query in
+   * the app. The counts drop the universe clause before counting, exactly as
+   * the series, media, needs and kind facets drop their own.
+   */
   .get('/collection/facets', requireCapability('read'), async (c) => {
-    const query = collectionQueryFrom(c, c.get('user').id);
-    return c.json(await collectionFacets(c.env.DB, query));
+    const base = collectionQueryFrom(c, c.get('user').id);
+    // ⚠️ Resolved here as well as on `/collection`, and it has to be: every
+    // other facet is counted against the filter that is actually applied, so a
+    // chosen universe must narrow "Edition (12)" the same way a chosen series
+    // does. Without this the list would show six books while the controls above
+    // it counted a hundred and sixteen.
+    const universeIds = await universeIdsFor(c.env.DB, base, c.req.query('universe'));
+    const [facets, universes] = await Promise.all([
+      collectionFacets(c.env.DB, { ...base, universeIds }),
+      // Its own clause dropped, exactly as `series`, `media`, `needs` and
+      // `kinds` drop theirs — `listUniverseKeys` does it — so "CAL Verse (7)"
+      // beside a selected "The Cosmere" is what picking it would give you and
+      // not the count of the books that are somehow both.
+      universeFacet(c.env.DB, base),
+    ]);
+    return c.json({ ...facets, universes });
   })
 
   /** Counted live on every request — never a literal written into the UI. */
@@ -203,7 +238,31 @@ export const catalogRoutes = new Hono<AppBindings>()
       listWatchesForWork(c.env.DB, id),
     ]);
 
-    return c.json({ work, editions, copies, reading, watches });
+    return c.json({
+      work,
+      editions,
+      copies,
+      reading,
+      watches,
+      /**
+       * Which shared world this book belongs to — the tier above its series —
+       * or null.
+       *
+       * ⚠️ **null is the ordinary answer and the page must render nothing for
+       * it.** Most of this catalog is children's picture books that belong to
+       * no universe and are perfectly filed; a badge, a dash or an "unknown"
+       * here would turn 90% of the shelf into a worklist. Same reading as a
+       * NULL `cover_status` ("nobody looked") and a NULL `edition_kind`
+       * ("ordinary").
+       *
+       * Resolved in memory from the prebuilt index — no query, no I/O. It rides
+       * along with the work rather than being a second request because it is a
+       * line in the page header, and a header that grew an extra fact after
+       * paint is the one place a late arrival misleads. Same argument
+       * `watches` makes above.
+       */
+      universe: universeFor(universeIndex, { title: work.title, series: work.series }),
+    });
   })
 
   .post('/works', requireCapability('editCatalog'), async (c) => {

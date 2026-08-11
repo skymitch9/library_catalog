@@ -27,6 +27,13 @@ import document from '../generated/universes.json' with { type: 'json' };
 import { buildUniverseIndex, type UniverseIndex, type UniversesDocument } from './lookup.js';
 
 export * from './lookup.js';
+/**
+ * ⚠️ `catalog.ts` is a *caller* of the lookup, not part of the two-repo
+ * contract. Read its header before adding to it: a function there costs nothing
+ * on the Python side, and a function in `lookup.ts` costs a change in four
+ * places.
+ */
+export * from './catalog.js';
 
 /** The parsed list, exactly as catalog-platform holds it — comment keys and all. */
 export const universesDocument = document as unknown as UniversesDocument;

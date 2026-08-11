@@ -23,6 +23,7 @@ import { researchRoutes } from './routes/research.js';
 import { reviewRoutes } from './routes/reviews.js';
 import { scanJobRoutes } from './routes/scan-jobs.js';
 import { seriesRoutes } from './routes/series.js';
+import { universeRoutes } from './routes/universes.js';
 import { userRoutes } from './routes/users.js';
 import { watchRoutes } from './routes/watches.js';
 
@@ -65,6 +66,10 @@ app.route('/api', coverRoutes);
 app.route('/api', watchRoutes);
 app.route('/api', exportRoutes);
 app.route('/api/series', seriesRoutes);
+// The tier above a series: one shared world, across the series in it. Mounted
+// beside /api/series and not under it — a universe is not a kind of series, and
+// nesting the address would suggest it was. See routes/universes.ts.
+app.route('/api/universes', universeRoutes);
 // Kickstarter / BackerKit / Indiegogo provenance and its physical-vs-digital
 // audit. Owner-only, including the reads — see routes/crowdfunding.ts.
 app.route('/api/crowdfunding', crowdfundingRoutes);

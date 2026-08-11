@@ -14,6 +14,7 @@ import { Reviews } from '../components/Reviews.js';
 import { Watches } from '../components/Watches.js';
 import { WorkFields } from '../components/WorkFields.js';
 import { formatLabel, shouldShowDriveLinks } from '../lib/formats.js';
+import { Link, universePath } from '../router.js';
 
 /**
  * One book: what it is, where the file is, which printings we hold, and what we
@@ -46,6 +47,16 @@ interface WorkDetail {
     coverStatus: 'ok' | 'standin' | null;
     workKey: string;
   };
+  /**
+   * The shared world this book belongs to, or null.
+   *
+   * ⚠️ **null is the ordinary answer.** Most of this catalog is children's
+   * picture books that belong to no universe and are correctly filed; the head
+   * renders nothing at all for them. Same reading as `coverStatus: null`
+   * ("nobody has looked") and a null `editionKind` ("ordinary") — an absence
+   * here is never a gap, a badge or a job.
+   */
+  universe: string | null;
   editions: EditionView[];
   copies: CopyView[];
   /** Open and resolved both — see `listWatchesForWork`. Rides along with the work. */
@@ -155,6 +166,36 @@ export function WorkPage({
                 {work.series}
                 {work.seriesIndexDisplay ? <b> {work.seriesIndexDisplay}</b> : null}
               </button>
+            </p>
+          )}
+          {/* ⚠️ The tier ABOVE the series, and shown only when it says
+              something the series does not. Directly under the series line
+              because that is the ladder of scope a reader is already reading
+              down — book, series, world — and because "Part of The Cosmere"
+              beside a *Secret Projects* volume is exactly the fact neither the
+              title nor the series carries.
+
+              ⚠️ Nothing is rendered when there is none, and that is the whole
+              rule. Most books here are in no universe and are correctly filed;
+              a dash, an "unknown" or a quiet badge would turn the majority of
+              the shelf into a worklist. Settled precedent: a NULL
+              `cover_status` means nobody looked, a NULL `edition_kind` means
+              ordinary, and neither is drawn.
+
+              A real anchor rather than the `onOpenSeries` callback beside it —
+              places have addresses now, so the status bar shows where this
+              goes and a long-press offers "open in new tab". The series link
+              above is still a button only because it predates that. */}
+          {detail.universe && (
+            <p className="universe-tag">
+              Part of{' '}
+              <Link
+                to={universePath(detail.universe)}
+                className="universe-tag__link"
+                title={`Everything this catalog holds from ${detail.universe}`}
+              >
+                {detail.universe}
+              </Link>
             </p>
           )}
           {work.firstPublished && <p className="muted small">First published {work.firstPublished}</p>}

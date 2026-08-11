@@ -53,6 +53,7 @@ import { DetailsQueuePage } from './pages/DetailsQueuePage.js';
 import { ScanPage } from './pages/ScanPage.js';
 import { SeriesDetailPage } from './pages/SeriesDetailPage.js';
 import { SeriesPage } from './pages/SeriesPage.js';
+import { UniversePage } from './pages/UniversePage.js';
 import { WishlistPage } from './pages/WishlistPage.js';
 import { WorkPage } from './pages/WorkPage.js';
 
@@ -330,6 +331,24 @@ function Screens({
           onBack={back.go}
           backLabel={back.label}
           onOpen={openWork}
+        />
+      );
+    }
+
+    case 'universe': {
+      // Falls back to the collection rather than to `/series`: a universe is
+      // the tier above a series, not one of them, and the way in is almost
+      // always a book page or the collection's own universe filter.
+      const back = backTarget('/');
+      return (
+        <UniversePage
+          // Keyed on the name, for the reason the series ladder is: arriving at
+          // a *different* universe has to be a new page rather than the old one
+          // holding the previous world's books while the fetch is in flight.
+          key={route.universe}
+          name={route.universe}
+          onBack={back.go}
+          backLabel={back.label}
         />
       );
     }
