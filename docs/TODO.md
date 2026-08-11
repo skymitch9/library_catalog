@@ -45,6 +45,60 @@
 | ⏸️ | **Kickstarter / Indiegogo / BackerKit ×2 scan** | Sign-in. Kickstarter is logged in as *Skylar M* but demands password re-verification; BackerKit and Indiegogo need a fresh login. Claude cannot enter credentials. The second BackerKit account needs the user to switch. |
 | ⏸️ | **Barnes & Noble scan** | Logged in ✅. Extraction in progress — its order list already carries a `Preorder` status, which is what prompted the preorder tag. |
 
+## Scan-path defects — one agent owns all four
+
+All four share a root cause: **button gating treats "the system has no answer" as
+"the user has no options."** Fixed together, not as four special cases.
+
+| | Item | The user's words |
+|---|---|---|
+| 🔨 | **First lookup pass must be automatic** | *"we keep having to manually engage the lookup feature, in the board game project the first pass was always automatic"* |
+| 🔨 | **A duplicate scan must offer a second copy** | *"instead of rejecting it right away, ask the user if they want to add another owned copy… its up to the end user to deal with duplicates not just the system"* — today `state === 'owned'` renders **zero** buttons, so the only route is to leave the scan page. |
+| 🔨 | **An unresolved barcode must still be addable** | *"Some baby boardbooks are showing up with isbn numbers but when scanned they arent populating with a title or author. we need these to be able to still be added"* — `Look up` and `Edit` are gated on `via === 'spine'`, so a barcode line gets neither; `Add` is gated on `state === 'found'`. Dead row. |
+| 🔨 | **SKU-only books** | *"some books have SKUs and not isbns, are these scannable to?"* — non-Bookland codes classify as `ignore/not_bookland` and are dropped. Question answered in the agent's report; treatment TBD. |
+
+## Purchase scan — findings
+
+Staged as JSON in the session scratchpad (never committed — it carries order
+data). Nothing imported to D1 yet; the provenance model has to land first.
+
+| Source | State | Books found |
+|---|---|---|
+| **Barnes & Noble** | ✅ Complete | 7 importable: 4× *The Wandering Inn* (paperback, 3 preordered), *Project Hail Mary* Deluxe, *Bad B\*tch in the Kitch*, *Sunrise on the Reaping* B&N Exclusive. 1 cancelled order skipped. |
+| **BackerKit acct 1** | ✅ Complete | 4 pledges + 28 survey entries. Books: Hoid's Storybook Collection, Primal Hunter trilogy, DCC CROCODILE, *Ascend Online: Legacy of the Fallen*. |
+| **Indiegogo** | ✅ Complete | *Space Knight* books 5 and 6, each bundling ebook + print + audiobook. |
+| **Kickstarter** | 🔨 Delegated | 61 successful pledges, 10 rendered at a time. Agent enumerating all. |
+| **BackerKit acct 2** | ⏸️ | Needs the user to switch logins. |
+| Gamefound | 💤 | Excluded — the user says it holds no books. |
+
+⚠️ **The Pledges tab showed 4 items; the Surveys tab showed 28.** *Ascend Online*
+appears only under Surveys. Any future BackerKit scan must read
+`/c/users/active_projects` under **all three** filters (Active / Needs action /
+Completed), not just `/c/users/pledges`.
+
+### Classification rules the user set (2026-08-10)
+
+- **RPG and D&D material → board game catalog, not here** — even bound hardcovers.
+  Affects Ryoko's Guide ($315), Starlight Arcana (€160), Cosmere RPG ($465),
+  $1 One Shot.
+- **Graphic novels → in the library, but tagged** so they don't distort series
+  completeness for prose series.
+- **Audiobooks → not categorised here.** Record that a pledge included one;
+  the cross-catalog pull handles the rest. See the series work above.
+- **Mixed pledges must be split**, never collapsed. *DCC RPG + Unstoppable* is an
+  RPG (board games) bundled with a novel (library).
+
+### Shapes the provenance model has to survive
+
+- One pledge routinely delivers ebook **+** print **+** audiobook (Space Knight ×2,
+  Tamer Bk 11, Fires of December).
+- A single line item can cover several works — "Collector's Edition Trilogy" is
+  three books.
+- Signed/numbered status arrives as reward *text*, not a field → `copy.is_signed`.
+- High-value pledges are mostly **accessories**: Primal Hunter is 1 book product
+  and ~23 pins, standees, plushies and bookmarks.
+- Some accessories are digital (an STL file, a concept-art PDF).
+
 ## Deferred
 
 | | Item | Notes |
