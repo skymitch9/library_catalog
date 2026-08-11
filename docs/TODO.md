@@ -31,6 +31,26 @@ Live version `86e453ed`. All of `/api/health` 200; `/api/series`, `/api/me`,
 afternoon of scanning. Any figure here is a measurement with a timestamp, never a
 constant. Re-measure before relying on one.
 
+## Rollback points
+
+The user permits pushing straight to `main` while this site is pre-release, **on
+condition that a rollback id is recorded**. Contrast the board game catalog,
+which has real users now and where changes are "more damning".
+
+| Date | Pushed | Roll back to | Worker version |
+|---|---|---|---|
+| 2026-08-10 | `4d19ae4` (16 commits: five agent branches, covers, formats, work log) | **`c75d174`** | `86e453ed` |
+
+To undo the code: `git reset --hard c75d174 && git push --force-with-lease`.
+⚠️ **That does not undo the database.** Migrations `0013`, `0020` and `0021` are
+applied to production and are additive; leaving them in place is safe and is the
+right call. The 99 board-book format corrections and the 40 audiobook holdings
+are data changes with no down-migration — re-running the scripts is the remedy,
+not a revert.
+
+To roll the Worker back without touching git, redeploy a prior version id from
+the Cloudflare dashboard.
+
 ---
 
 ## Blocked — the live list
