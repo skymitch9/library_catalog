@@ -244,6 +244,68 @@ covers and the two watches. Both are guarded (`edition_name`, and id + title
 together), so they write nothing in a database that does not hold those rows.
 Applied and re-run locally to confirm the selector picks the right works.
 
+## Every special edition in one bucket — 2026-08-11
+
+The ask, in the owner's words: *"Let's normalize any edition to collectors
+edition. Keep the original name on the visible listing but for our sanity all
+editions should be collectors and we can fix them one off if needed."*
+
+Built on `worktree-agent-a40181996e01c3a59`. Typecheck clean, **164 tests pass
+(was 150)**, exercised end to end against a local D1 with migration `0050`
+applied — the filter, the facets, `POST`/`PATCH /api/editions`, and the backfill
+run twice to prove it is idempotent.
+
+| | What |
+|---|---|
+| ✅ | **`edition.edition_kind`** — `'collectors'` or NULL. Migration **`0050`**, schema only, no CHECK (`gap_verdict.field`'s idiom). Partial index on the non-null side. |
+| ✅ | **`edition_name` is untouched** and stays what every listing prints. The kind sits beside it; the book page shows both. |
+| ✅ | **`classifyEdition`** in `@lc/core`, beside `suggestFormat` — the same reward prose, a different question. `suggestFormat('Deluxe Edition')` is null and `classifyEdition` is `'collectors'`, and both are right. |
+| ✅ | **Printing filter** on the collection — *Collector's edition* / *Named, not sorted*, with counts, in the URL as `?kind=` like every other filter. |
+| ✅ | **A select on the Editions panel**, so any row can be re-filed by hand. |
+| ✅ | The shop-order and pledge-edition importers set it on insert. |
+
+⚠️ **NULL means an ORDINARY printing here, NOT "unclassified"** — the opposite of
+`cover_status` one table over, deliberately. 220 editions have no name and are
+plain; filing them as unknown would mint 220 jobs nobody will do. The cost is
+that an unrecognised special edition is filed as ordinary in silence, and the
+thing that pays for it is the **"Named, not sorted"** filter: a special printing
+is always *named*, so that two-row list is the whole risk surface. Do not remove
+that control thinking it is a spare option.
+
+### ⚠️ Three rows deliberately NOT swept in
+
+- **"Omnibus - collects volumes 1-3"** and **"Volume 1"** — both *White Sand*.
+  They describe **what is inside the book**, not how it was printed. White Sand
+  is the original "alternate copies of stuff we already own" case the series
+  restructure was built around. Left NULL; they are the "Named, not sorted" list.
+- **"ebook"** — junk out of a reward name, on a row whose `format` is already
+  `ebook_epub`. The backfill **clears the name**, guarded on the format.
+- One extra: **"Book with sticker and bookmark tier"** is classified **by hand**
+  in the script, because no honest keyword reaches it — a bookmark is not a
+  binding, and adding 'sticker' to the rule would misfile the next
+  paperback-with-a-freebie.
+
+⚠️ **The brief's own figures do not reconcile** — it states 17 named rows across
+13 distinct names, then enumerates 12 names whose counts sum to 19. So a
+thirteenth name exists that has never been seen. **Read the dry run**; if it
+lands under "leaving as an ORDINARY printing", that is a decision worth a look.
+
+### Run these — ⚠️ migration BEFORE deploy
+
+```bash
+# 1. Schema only. No data in this one, unlike 0040.
+npx wrangler d1 migrations apply library-catalog --remote --config apps/worker/wrangler.toml
+
+# 2. Rehearse against production and READ THE THREE LISTS it prints.
+npm run backfill:edition-kinds -- --remote
+
+# 3. Apply. Confirms by re-reading the database, and fails loudly on bad arithmetic.
+npm run backfill:edition-kinds -- --remote --commit
+
+# 4. Then the code.
+npm run deploy
+```
+
 ## Staged, waiting on the user to run — 2026-08-10
 
 All dry-run and verified against production. **Nothing below has been written.**

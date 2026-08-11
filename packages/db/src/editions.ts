@@ -16,6 +16,16 @@ export interface EditionRow {
   asin: string | null;
   format: string;
   edition_name: string | null;
+  /**
+   * The canonical bucket beside the free-text name — `'collectors'` or null.
+   * Migration 0050.
+   *
+   * ⚠️ **NULL means an ORDINARY printing, not an unclassified one**, which is
+   * the opposite of what `work.cover_status` null means one table over. See
+   * `EDITION_KINDS` in `@lc/core` for why the two differ. Nothing may treat a
+   * null here as a question to be answered.
+   */
+  edition_kind: string | null;
   publisher: string | null;
   published_year: number | null;
   pages: number | null;
@@ -26,17 +36,17 @@ export interface EditionRow {
   cwa_book_id: number | null;
 }
 
-const EDITION_COLS = `id, work_id, isbn13, isbn10, asin, format, edition_name, publisher,
-                      published_year, pages, language, cover_url, source, source_url,
+const EDITION_COLS = `id, work_id, isbn13, isbn10, asin, format, edition_name, edition_kind,
+                      publisher, published_year, pages, language, cover_url, source, source_url,
                       cwa_book_id`;
 
 export async function createEdition(db: D1Database, input: CreateEdition): Promise<EditionRow> {
   const row = await db
     .prepare(
-      `INSERT INTO edition (work_id, isbn13, isbn10, asin, format, edition_name, publisher,
-                            published_year, pages, language, cover_url, source, source_url,
-                            cwa_book_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO edition (work_id, isbn13, isbn10, asin, format, edition_name, edition_kind,
+                            publisher, published_year, pages, language, cover_url, source,
+                            source_url, cwa_book_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        RETURNING ${EDITION_COLS}`,
     )
     .bind(
@@ -46,6 +56,7 @@ export async function createEdition(db: D1Database, input: CreateEdition): Promi
       input.asin ?? null,
       input.format,
       input.editionName ?? null,
+      input.editionKind ?? null,
       input.publisher ?? null,
       input.publishedYear ?? null,
       input.pages ?? null,
@@ -164,8 +175,8 @@ export async function updateEdition(
   return db
     .prepare(
       `UPDATE edition SET
-         isbn13 = ?, isbn10 = ?, asin = ?, format = ?, edition_name = ?, publisher = ?,
-         published_year = ?, pages = ?, language = ?, cover_url = ?, source = ?,
+         isbn13 = ?, isbn10 = ?, asin = ?, format = ?, edition_name = ?, edition_kind = ?,
+         publisher = ?, published_year = ?, pages = ?, language = ?, cover_url = ?, source = ?,
          source_url = ?, cwa_book_id = ?, updated_at = datetime('now')
        WHERE id = ?
        RETURNING ${EDITION_COLS}`,
@@ -176,6 +187,12 @@ export async function updateEdition(
       pick(patch.asin, current.asin),
       pick(patch.format, current.format),
       pick(patch.editionName, current.edition_name),
+      // ⚠️ Independent of `editionName`, deliberately. Renaming a printing must
+      // not re-run `classifyEdition` behind the caller's back, and clearing a
+      // name must not silently un-file the row — both are how a hand-made
+      // one-off correction gets undone by an unrelated edit. The form sends
+      // both, and each says exactly what it means.
+      pick(patch.editionKind, current.edition_kind),
       pick(patch.publisher, current.publisher),
       pick(patch.publishedYear, current.published_year),
       pick(patch.pages, current.pages),

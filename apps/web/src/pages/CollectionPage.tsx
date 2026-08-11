@@ -4,7 +4,7 @@ import { api, type CollectionFacets, type Me, type Stats, type WorkSummary } fro
 import { Pager } from '../components/Pager.js';
 import { Shelf } from '../components/Shelf.js';
 import { WorkList } from '../components/WorkList.js';
-import { formatLabel, mediumLabel } from '../lib/formats.js';
+import { editionKindLabel, formatLabel, mediumLabel } from '../lib/formats.js';
 import { loadPrefs, savePrefs } from '../lib/prefs.js';
 import { ON_THE_WAY, statusLabel } from '../lib/statuses.js';
 import { collectionPath, replaceUrl, type CollectionFilters } from '../router.js';
@@ -61,6 +61,8 @@ export function CollectionPage({
   const [series, setSeries] = useState(filters.series);
   const [medium, setMedium] = useState(filters.medium);
   const [format, setFormat] = useState(filters.format);
+  // The third format-ish axis — how fancy the printing is. Migration 0050.
+  const [editionKind, setEditionKind] = useState(filters.editionKind);
   const [status, setStatus] = useState(filters.status);
   // The one filter about us rather than about the books — see `NEEDS_FILTERS`.
   const [needs, setNeeds] = useState(filters.needs);
@@ -77,6 +79,7 @@ export function CollectionPage({
       filters.series ||
         filters.medium ||
         filters.format ||
+        filters.editionKind ||
         filters.status ||
         filters.needs ||
         filters.readState,
@@ -96,13 +99,18 @@ export function CollectionPage({
   const [error, setError] = useState<string | null>(null);
 
   const canEdit = me.capabilities.includes('editCatalog');
-  const filtered = Boolean(q || series || medium || format || status || needs || readState);
+  const filtered = Boolean(
+    q || series || medium || format || editionKind || status || needs || readState,
+  );
 
   useEffect(() => savePrefs({ sort, dir, pageSize, view }), [sort, dir, pageSize, view]);
 
   const params = useMemo(
-    () => ({ q, series, medium, format, status, needs, readState, sort, dir, page, pageSize }),
-    [q, series, medium, format, status, needs, readState, sort, dir, page, pageSize],
+    () => ({
+      q, series, medium, format, editionKind, status, needs, readState,
+      sort, dir, page, pageSize,
+    }),
+    [q, series, medium, format, editionKind, status, needs, readState, sort, dir, page, pageSize],
   );
 
   const reload = useCallback(() => {
@@ -138,6 +146,7 @@ export function CollectionPage({
     series,
     medium,
     format,
+    editionKind,
     status,
     needs,
     readState,
@@ -167,6 +176,7 @@ export function CollectionPage({
         series,
         medium,
         format,
+        editionKind,
         status,
         needs,
         readState,
@@ -176,14 +186,14 @@ export function CollectionPage({
         page: page + 1,
       }),
     );
-  }, [q, series, medium, format, status, needs, readState, sort, dir, pageSize, page]);
+  }, [q, series, medium, format, editionKind, status, needs, readState, sort, dir, pageSize, page]);
 
   useEffect(() => {
     api
-      .facets({ q, medium, format, status, needs, readState })
+      .facets({ q, medium, format, editionKind, status, needs, readState })
       .then(setFacets)
       .catch(() => setFacets(null));
-  }, [q, medium, format, status, needs, readState]);
+  }, [q, medium, format, editionKind, status, needs, readState]);
 
   const loadHeader = useCallback(() => {
     api.stats().then(setStats).catch(() => setStats(null));
@@ -361,6 +371,46 @@ export function CollectionPage({
             </select>
           </label>
 
+          {/* The third format-ish axis, and the one the owner asked for:
+              *"for our sanity all editions should be collectors"*. `Format` is
+              paper-or-file and `Edition` is the binding; this is whether the
+              printing was sold as better than the standard one, which neither of
+              the other two can express. A slipcased signed hardcover is all
+              three at once.
+
+              Called "Printing" and not "Edition" — that word is already two
+              controls up, and two selects labelled the same thing is how a
+              filter panel starts lying about itself. Same `<select>` in a
+              `.field` as everything else on this row, for the reason `Format`
+              gives: five dropdowns and one segmented button group would be two
+              idioms for one job, and a native select is the best thing a 360px
+              phone can be handed.
+
+              ⚠️ **"Named, not sorted" is not a spare option — it is what keeps
+              this column honest.** A NULL `edition_kind` means an *ordinary*
+              printing, not an unexamined one (`EDITION_KINDS` in `@lc/core`
+              argues it out), and the price of that rule is that an unrecognised
+              special edition is filed as ordinary in silence. The rows where
+              that could be wrong are the ones carrying a name with no kind, and
+              this is that list. It is normally two long. */}
+          <label className="field">
+            <span className="field__label">Printing</span>
+            <select
+              value={editionKind}
+              onChange={(e) => setEditionKind(e.target.value)}
+              title="How fancy the printing is, rather than what it is made of"
+            >
+              <option value="">Any printing</option>
+              <option value="collectors">
+                {editionKindLabel('collectors')}
+                {facets ? ` (${facets.kinds.collectors})` : ''}
+              </option>
+              <option value="unsorted">
+                Named, not sorted{facets ? ` (${facets.kinds.unsorted})` : ''}
+              </option>
+            </select>
+          </label>
+
           {/* ⚠️ Filters WORKS by whether any copy has this status — which is
               why the wishlist is its own screen and not this control. A wanted
               hardcover of a book already held as an EPUB is invisible here; the
@@ -437,6 +487,7 @@ export function CollectionPage({
                 setSeries('');
                 setMedium('');
                 setFormat('');
+                setEditionKind('');
                 setStatus('');
                 setNeeds('');
                 setReadState('');
@@ -464,6 +515,17 @@ export function CollectionPage({
           <p className="controls__note muted">
             <b>Cover needed</b> includes books wearing a stand-in — an image we know is not
             that book's own cover. <b>To check</b> is anything somebody left a note about.
+          </p>
+          {/* ⚠️ Same reason as the two notes above: the wrong guess is silent.
+              Somebody will read "Collector's edition" and expect only the books
+              whose printing was literally sold under that name, when it is the
+              one bucket every exclusive, deluxe, premium, signed and
+              leatherbound printing was normalised into — and the shop's own
+              wording is still printed on the book page, unchanged. */}
+          <p className="controls__note muted">
+            <b>Collector's edition</b> is one bucket for every special printing — exclusive,
+            deluxe, premium, signed, leatherbound. Each book page still shows the name the
+            shop gave it. <b>Named, not sorted</b> is the short list to look at by hand.
           </p>
         </div>
       )}

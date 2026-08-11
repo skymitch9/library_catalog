@@ -52,6 +52,29 @@ export function mediumLabel(medium: string): string {
   return MEDIUM_LABEL[medium] ?? medium;
 }
 
+/**
+ * How an `edition.edition_kind` is written for a person. Migration 0050.
+ *
+ * ⚠️ One entry, and the shortness is the feature rather than an oversight. The
+ * owner asked for exactly one bucket — *"all editions should be collectors"* —
+ * so thirteen vendor spellings ("Illumicrate Exclusive", "Year of Sanderson
+ * premium hardcover", "Signed Leatherbound"…) print here as one word. The
+ * spelling the shop used is not lost: `edition_name` still holds it verbatim and
+ * the Editions panel still prints it beside this label.
+ *
+ * ⚠️ There is deliberately no label for null. Null means an ordinary printing,
+ * which is what nearly every row is, and a chip saying "Standard" on 220
+ * editions is a label that stops being read — the rule `CollectionRow.preordered`
+ * states in `@lc/db`: only the exceptions earn a mark.
+ */
+export const EDITION_KIND_LABEL: Record<string, string> = {
+  collectors: "Collector's edition",
+};
+
+export function editionKindLabel(kind: string): string {
+  return EDITION_KIND_LABEL[kind] ?? kind;
+}
+
 /** A printing you can hold. The list itself lives in `@lc/core`, once. */
 export function isPhysicalFormat(format: string): boolean {
   return (PHYSICAL_FORMATS as readonly string[]).includes(format);

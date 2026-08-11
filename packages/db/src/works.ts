@@ -254,6 +254,20 @@ export interface CollectionQuery {
    * a real question and not a contradiction.
    */
   medium?: string | undefined;
+  /**
+   * How fancy the printing is — `collectors`, or `unsorted`. Migration 0050.
+   *
+   * ⚠️ A third axis, and it is genuinely orthogonal to the two above.
+   * `medium` is paper-or-file, `format` is the binding, and this is whether the
+   * object was sold as better than the standard one. A slipcased signed
+   * hardcover is `physical` + `hardcover` + `collectors`, and no two of those
+   * three can be derived from the other.
+   *
+   * `unsorted` is the odd one out and is not a stored value: it is "named, but
+   * nothing has said what kind", which is the review queue that keeps
+   * `edition_kind`'s NULL-means-ordinary rule honest. See `KIND_CLAUSE`.
+   */
+  editionKind?: string | undefined;
   status?: string | undefined;
   /**
    * "Show me what still wants attention" — `cover`, `watch` or `any`.
@@ -382,6 +396,39 @@ const MEDIUM_CLAUSE: Record<string, string> = {
 };
 
 /**
+ * "How fancy is the printing", as SQL. Migration 0050.
+ *
+ * ⚠️ **EXISTS, like every other filter on this page** — it means the book *has*
+ * such a printing, not that all of its printings are. A novel owned as a signed
+ * leatherbound and as an EPUB is under `collectors`, which is the honest answer:
+ * the household does own a collector's edition of it. `MEDIUM_CLAUSE` above
+ * makes the same choice and says why one exclusive filter among inclusive ones
+ * would be a trap.
+ *
+ * ⚠️ **`unsorted` is not a stored value and is the point of the control.**
+ * `EDITION_KINDS` in `@lc/core` decides that a NULL `edition_kind` means an
+ * *ordinary* printing rather than an unexamined one — which is right for the 220
+ * unnamed rows and is exactly what could go quietly wrong for a newly imported
+ * special edition nothing recognised. The rows where that risk lives are the
+ * named ones with no kind, and this is that query. It normally returns two
+ * (both *White Sand* — an omnibus and a "Volume 1", neither of which is a
+ * special printing) and it is how "we can fix them one off if needed" is
+ * actually done.
+ *
+ * No binds: both clauses are literals, and `edition_kind` values are compared
+ * against text written here rather than against anything a caller sent.
+ */
+const KIND_CLAUSE: Record<string, string> = {
+  collectors:
+    `EXISTS (SELECT 1 FROM edition e
+              WHERE e.work_id = w.id AND e.edition_kind = 'collectors')`,
+  unsorted:
+    `EXISTS (SELECT 1 FROM edition e
+              WHERE e.work_id = w.id AND e.edition_name IS NOT NULL
+                AND e.edition_name <> '' AND e.edition_kind IS NULL)`,
+};
+
+/**
  * "Still wants attention", as SQL. Migration 0040.
  *
  * ⚠️ **`cover` is not `cover_url IS NULL`, and that gap is the feature.** A
@@ -454,6 +501,12 @@ function collectionFilter(query: CollectionQuery): { sql: string; binds: unknown
     where.push('EXISTS (SELECT 1 FROM edition e WHERE e.work_id = w.id AND e.format = ?)');
     binds.push(query.format);
   }
+  // No binds: `KIND_CLAUSE` is a fixed map of literal SQL, and an unrecognised
+  // key adds no clause rather than erroring — the rule `MEDIUM_CLAUSE`, the sort
+  // allowlist and `NEEDS_CLAUSE` all follow, so a stale bookmark shows the
+  // collection instead of a 400.
+  const kind = query.editionKind ? KIND_CLAUSE[query.editionKind] : undefined;
+  if (kind) where.push(kind);
   if (query.status) {
     where.push('EXISTS (SELECT 1 FROM copy c WHERE c.work_id = w.id AND c.status = ?)');
     binds.push(query.status);
@@ -579,6 +632,21 @@ export interface CollectionFacets {
    * that are *both*, which is not what picking it would give you.
    */
   needs: { cover: number; watch: number };
+  /**
+   * How many books hold a special printing, and how many hold a *named* one
+   * nothing has sorted yet. Counted with the kind clause itself removed, exactly
+   * as `series`, `media` and `needs` drop their own.
+   *
+   * ⚠️ Two numbers rather than a breakdown, and they can overlap: a book with a
+   * signed leatherbound *and* an unrecognised second printing is in both. That
+   * is the same shape and the same reason as `needs` — a GROUP BY would have to
+   * pick one bucket for it.
+   *
+   * ⚠️ There is deliberately no `ordinary` count. It would be the whole
+   * collection minus a handful, it is the default, and `EDITION_KINDS` explains
+   * why "ordinary" is not a thing anybody filters for.
+   */
+  kinds: { collectors: number; unsorted: number };
 }
 
 /**
@@ -599,9 +667,13 @@ export async function collectionFacets(
   // count of books held *both* ways, which is not what picking it would give you.
   const withoutMedium = collectionFilter({ ...query, medium: undefined });
   const withoutNeeds = collectionFilter({ ...query, needs: undefined });
+  // And without its own kind clause, for the third time and the same reason:
+  // "Named, not sorted (2)" beside a selected "Collector's edition" would count
+  // the books that are BOTH, which is not what picking it would give you.
+  const withoutKind = collectionFilter({ ...query, editionKind: undefined });
   const all = collectionFilter(query);
 
-  const [series, media, formats, statuses, needs] = await Promise.all([
+  const [series, media, formats, statuses, needs, kinds] = await Promise.all([
     db
       .prepare(
         `SELECT w.series AS name, COUNT(*) AS count
@@ -655,6 +727,19 @@ export async function collectionFacets(
       )
       .bind(...withoutNeeds.binds)
       .first<{ cover: number | null; watch: number | null }>(),
+    // One row, two columns, for the third time — the two sets overlap (a book
+    // can hold a classified printing and an unsorted one) so a GROUP BY would
+    // have to choose a bucket for it. `KIND_CLAUSE` carries no binds, so
+    // `withoutKind.binds` is the whole bind list.
+    db
+      .prepare(
+        `SELECT
+            SUM(CASE WHEN ${KIND_CLAUSE.collectors} THEN 1 ELSE 0 END) AS collectors,
+            SUM(CASE WHEN ${KIND_CLAUSE.unsorted} THEN 1 ELSE 0 END) AS unsorted
+           FROM work w ${withoutKind.sql}`,
+      )
+      .bind(...withoutKind.binds)
+      .first<{ collectors: number | null; unsorted: number | null }>(),
   ]);
 
   return {
@@ -670,6 +755,10 @@ export async function collectionFacets(
     // it means nothing is outstanding — so the control stays put and reads
     // "Cover needed (0)" rather than vanishing, the rule `media` states.
     needs: { cover: needs?.cover ?? 0, watch: needs?.watch ?? 0 },
+    // `SUM` over no rows is NULL. Both stay put at zero rather than vanishing,
+    // the rule `media` states — and "Named, not sorted (0)" is the reading this
+    // control most wants to be able to give.
+    kinds: { collectors: kinds?.collectors ?? 0, unsorted: kinds?.unsorted ?? 0 },
   };
 }
 

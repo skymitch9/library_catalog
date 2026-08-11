@@ -1,0 +1,143 @@
+-- "All editions should be collectors, and we can fix them one off if needed."
+--
+-- One nullable column on `edition`. Additive only: no table rebuilt, no existing
+-- row's existing columns touched, and — unlike migration 0040 — **no data**. The
+-- backfill is `scripts/backfill-edition-kinds.mjs`, which dry-runs by default and
+-- confirms by re-reading the database; a handful of rows is not worth giving up
+-- the one thing a migration cannot do, which is be rehearsed against production
+-- before it lands.
+--
+-- ⚠️ Numbered 0050 rather than 0041 on purpose. `docs/TODO.md` records two agents
+-- both being told "0010 or higher", both taking 0010, and one of them already
+-- being applied to production. Wide gaps while several agents are running is the
+-- rule that came out of it.
+--
+-- ===========================================================================
+-- `edition.edition_kind` — what kind of printing this is
+-- ===========================================================================
+--
+-- The owner, 2026-08-11: *"Let's normalize any edition to collectors edition.
+-- Keep the original name on the visible listing but for our sanity all editions
+-- should be collectors and we can fix them one off if needed."*
+--
+-- ## The problem, counted
+--
+-- Measured against production the same day: **220 editions carry no
+-- `edition_name` at all** (115 `ebook_epub`, 101 `hardcover`, 4 `paperback`) and
+-- **17 carry one, across 13 distinct names.**
+--
+-- ⚠️ Twelve of those thirteen names were enumerated in the brief and are listed
+-- below; the counts beside them sum to more than 17, so treat the per-name
+-- figures as indicative and the shape as the fact. **The backfill's dry run
+-- prints the real rows** — including the thirteenth name, whatever it turns out
+-- to be — which is the reason the data is not carried in this migration.
+--
+--     5 × Illumicrate Exclusive
+--     4 × Year of Sanderson premium hardcover
+--     1 × B&N Exclusive Edition
+--     1 × Campaign-only exclusive hardcover, signed extras
+--     1 × Collector's Edition
+--     1 × Collector's Edition Trilogy — Book 1 Signed & Numbered
+--     1 × Deluxe Edition
+--     1 × Signed Leatherbound
+--     1 × Book with sticker and bookmark tier
+--     1 × Omnibus - collects volumes 1-3        ⚠️ not a special printing
+--     1 × Volume 1                              ⚠️ not a special printing
+--     1 × ebook                                 ⚠️ junk, cleared by the backfill
+--
+-- Every one of those strings is prose typed by a vendor or a crowdfunding
+-- campaign. `edition_name` is the right home for it and always was — the
+-- Editions panel says so in as many words, and the column has held the exclusive
+-- covers, the slipcases and the signed copies since migration 0001. What it
+-- cannot do is answer *"show me the fancy ones"*, because that question is
+-- thirteen `LIKE` patterns today and fourteen the next time a shop invents a
+-- word for "nice".
+--
+-- ## Why a second column and not a rewrite of the first
+--
+-- Because the owner asked for both halves and they are genuinely different
+-- facts. `edition_name` is **what the vendor called it** and stays byte-for-byte
+-- what the listing prints; `edition_kind` is **what it is** and is what filters
+-- and counts. Normalising the name itself would delete the only record of which
+-- box the book came out of — "Illumicrate Exclusive" and "B&N Exclusive Edition"
+-- are the same kind of thing bought from two different shops, and the shop is
+-- worth keeping.
+--
+-- It follows the provenance idiom this schema already uses rather than inventing
+-- one: `edition.source` (0001) records where a row's facts came from beside the
+-- facts, `research_finding.decided_how` (0013) records whether a value was read
+-- before it was written, and `work.cover_status` (0040) records whether the
+-- image we hold is really the book's. Same shape every time — a short canonical
+-- column standing next to the open-ended one it qualifies.
+--
+-- ## ⚠️ NULL means ORDINARY PRINTING, not "unclassified"
+--
+-- **This deliberately breaks the NULL rule that 0007, 0013 and 0040 all share,
+-- and the reason it is safe is that this column asks a different sort of
+-- question.** Those three record *whether somebody looked*, so NULL honestly
+-- means nobody has. This one records *what a book is*, and the default state of
+-- a book is ordinary.
+--
+-- 220 rows have no name at all: 115 `ebook_epub`, 101 `hardcover`, 4
+-- `paperback`. They are plain printings. Filing them as 'unknown' would create
+-- 220 pieces of work nobody will ever do and a review list that is 93% noise —
+-- and `DETAIL_FIELDS` in `packages/core/src/constants.ts` already records what
+-- happens to a queue built that way: it lists the whole catalog and tells nobody
+-- anything. `copy.is_signed` made the same choice in 0001 by defaulting to 0
+-- rather than NULL, for the same reason: **only the exceptions earn a mark.**
+--
+-- ⚠️ The cost is real, and it is paid for in the UI rather than here. Once NULL
+-- means ordinary, a newly imported special edition that nothing recognises is
+-- *silently* filed as ordinary. What makes that recoverable is that the two
+-- cases are not actually alike in the table — a special printing is **named**,
+-- because being named is how anyone knows it is special. So the rows where NULL
+-- might be wrong are exactly:
+--
+--     WHERE edition_name IS NOT NULL AND edition_kind IS NULL
+--
+-- and the collection page's Printing filter offers that query as **"Named, not
+-- sorted"**, with a count. After the backfill it should hold the two *White Sand*
+-- rows and nothing else. That control is not a nicety; it is the thing that
+-- makes this NULL rule honest.
+--
+-- ## Values
+--
+--   'collectors' — sold as better than the standard printing. Collector's,
+--                  deluxe, exclusive, premium, limited, signed, numbered,
+--                  leatherbound, slipcased. One bucket for all of it, because
+--                  collapsing the thirteen spellings is the entire ask.
+--   NULL         — an ordinary printing. **Not** "unknown".
+--
+-- Deliberately NO CHECK constraint, following `gap_verdict.field` (0007),
+-- `research_finding.decided_how` (0013) and `work.cover_status` (0040): the set
+-- may grow, a CHECK here would make each addition a table rebuild, and an
+-- unrecognised value simply fails to match any filter. `EDITION_KINDS` in
+-- `packages/core/src/constants.ts` is the list, and `classifyEdition` in
+-- `crowdfunding.ts` is the rule that assigns it.
+--
+-- ⚠️ **`omnibus` is the obvious next value and is deliberately NOT added now.**
+-- Two rows would take it — both *White Sand*, "Omnibus - collects volumes 1-3"
+-- and "Volume 1" — and both describe **what is inside the book** rather than how
+-- it was printed, which is a different axis from this column. They stay NULL,
+-- which is honest: an omnibus is an ordinary trade printing. If that axis is ever
+-- wanted it is a new column, not a new value here. What must never happen is the
+-- omnibus being swept into 'collectors' to make the number tidy — White Sand is
+-- the original "alternate copies of stuff we already own" case the series
+-- restructure was built around.
+
+ALTER TABLE edition ADD COLUMN edition_kind TEXT;
+
+-- "Which of my books are collector's editions" is the query this column exists
+-- to answer, and it is a table scan without an index.
+--
+-- ⚠️ Partial, unlike `idx_work_cover_status` in 0040, and the NULL rule above is
+-- why: NULL is the *majority* value here and is never searched for on its own —
+-- "ordinary printing" is not a question anybody asks. Indexing 220 rows that no
+-- query will ever look up is pure write cost. Same shape and same reasoning as
+-- `idx_work_watch_open`.
+--
+-- The other query the feature runs — "named, but not sorted yet" — is
+-- deliberately NOT indexed. It is a scan of a couple of hundred rows, it runs
+-- only when somebody opens the Printing filter, and a two-column index to serve it would cost more
+-- to maintain than it saves.
+CREATE INDEX idx_edition_kind ON edition(edition_kind) WHERE edition_kind IS NOT NULL;

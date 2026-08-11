@@ -18,6 +18,7 @@ import {
   PLEDGE_ITEM_VERDICTS,
   PLEDGE_STATUSES,
   EDITION_FORMATS,
+  EDITION_KINDS,
   EDITION_SOURCES,
   FINDING_REVIEW_STATES,
   GAP_VERDICTS,
@@ -40,6 +41,7 @@ export const conditionSchema = z.enum(CONDITIONS);
 export const readStateSchema = z.enum(READ_STATES);
 export const readFormatSchema = z.enum(READ_FORMATS);
 export const editionSourceSchema = z.enum(EDITION_SOURCES);
+export const editionKindSchema = z.enum(EDITION_KINDS);
 export const sourceTierSchema = z.enum(SOURCE_TIERS);
 export const runTierSchema = z.enum(RUN_TIERS);
 export const workRelationSchema = z.enum(WORK_RELATIONS);
@@ -157,6 +159,17 @@ export const createEditionSchema = z.object({
   asin: asinSchema.nullable().optional(),
   format: editionFormatSchema.default('paperback'),
   editionName: optionalText,
+  /**
+   * The canonical bucket beside the free-text name. Migration 0050.
+   *
+   * ⚠️ **No `.default()`, unlike `format` and `source`.** NULL is a real and
+   * common value here — it means an ordinary printing, which 220 of 237 rows in
+   * production are — so a default would be indistinguishable from the thing it
+   * defaults to and would only remove the caller's ability to say "clear it".
+   * `EDITION_KINDS` carries the full argument for why NULL means ordinary rather
+   * than unassessed.
+   */
+  editionKind: editionKindSchema.nullable().optional(),
   publisher: optionalText,
   publishedYear: z.number().int().min(1).max(2200).nullable().optional(),
   pages: z.number().int().positive().nullable().optional(),

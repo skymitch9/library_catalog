@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { EDITION_FORMATS, PHYSICAL_FORMATS } from '@lc/core';
+import { EDITION_FORMATS, EDITION_KINDS, PHYSICAL_FORMATS } from '@lc/core';
 import { ApiError, api } from '../api.js';
-import { formatLabel } from '../lib/formats.js';
+import { editionKindLabel, formatLabel } from '../lib/formats.js';
 
 /**
  * The printings of one book — and the only place `edition.format` has ever been
@@ -37,6 +37,11 @@ export interface EditionView {
   id: number;
   format: string;
   edition_name?: string | null;
+  /**
+   * The canonical bucket — `'collectors'` or null for an ordinary printing.
+   * Migration 0050. ⚠️ Null is NOT "unknown"; see `EDITION_KINDS` in `@lc/core`.
+   */
+  edition_kind?: string | null;
   isbn13: string | null;
   isbn10?: string | null;
   asin: string | null;
@@ -155,7 +160,21 @@ export function Editions({
               <li key={e.id}>
                 <div className="copy">
                   <div className="copy__text">
-                    <strong>{formatLabel(e.format)}</strong>
+                    {/* ⚠️ The canonical kind and the vendor's own words, side by
+                        side and both shown. The owner asked for exactly this:
+                        *"Keep the original name on the visible listing but for
+                        our sanity all editions should be collectors."* The chip
+                        is what the filter and the counts agree with; the line
+                        under it is still the shop's wording, unedited. Only the
+                        exceptions get a chip — an ordinary printing has a null
+                        kind and shows nothing, because a "Standard" badge on 220
+                        rows is a badge nobody reads. */}
+                    <strong className="edition-head">
+                      {formatLabel(e.format)}
+                      {e.edition_kind && (
+                        <span className="mark mark--kind">{editionKindLabel(e.edition_kind)}</span>
+                      )}
+                    </strong>
                     <span className="muted small">
                       {[
                         e.edition_name,
@@ -243,6 +262,7 @@ function EditionForm({
   const [form, setForm] = useState(() => ({
     format: edition.format,
     editionName: edition.edition_name ?? '',
+    editionKind: edition.edition_kind ?? '',
     publisher: edition.publisher ?? '',
     publishedYear: edition.published_year?.toString() ?? '',
     pages: edition.pages?.toString() ?? '',
@@ -270,6 +290,11 @@ function EditionForm({
       await api.updateEdition(edition.id, {
         format: form.format,
         editionName: text(form.editionName),
+        // '' is the "Ordinary printing" option and clears the column, which is
+        // a real answer here rather than an absence — see `EDITION_KINDS`. It
+        // has to travel as an explicit null for `updateEdition` in `@lc/db` to
+        // tell it from a field this form never mentioned.
+        editionKind: text(form.editionKind),
         publisher: text(form.publisher),
         publishedYear: num(form.publishedYear),
         pages: num(form.pages),
@@ -327,6 +352,35 @@ function EditionForm({
           onChange={(e) => set('editionName', e.target.value)}
           placeholder="“BN Exclusive”, “Deluxe”, “Signed and numbered”, “Slipcased”"
         />
+      </label>
+
+      {/*
+        ⚠️ **This control is the "fix them one off if needed" half of the ask**,
+        and the feature is not finished without it. `classifyEdition` in
+        `@lc/core` reads the name above and files almost every named printing in
+        this catalog automatically; it deliberately refuses the two *White Sand*
+        rows, because an omnibus and a "Volume 1" describe what is *inside* a
+        book rather than how it was printed. Every such judgement has
+        to be over-rulable from the page, or the rule becomes the only opinion
+        that exists.
+
+        Kept as its own field rather than derived from the name on save: renaming
+        a printing must not silently re-file it, and clearing a name must not
+        un-file it. `updateEdition` in `@lc/db` says the same thing from the
+        other side.
+
+        "Ordinary printing" is the empty value and is a real answer, not a blank.
+      */}
+      <label className="field">
+        <span className="field__label">Printing</span>
+        <select value={form.editionKind} onChange={(e) => set('editionKind', e.target.value)}>
+          <option value="">Ordinary printing</option>
+          {EDITION_KINDS.map((k) => (
+            <option key={k} value={k}>
+              {editionKindLabel(k)}
+            </option>
+          ))}
+        </select>
       </label>
 
       <div className="edition-form__pair">

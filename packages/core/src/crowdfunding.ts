@@ -37,7 +37,7 @@
  * a note. Silently choosing one is how the ebook goes missing.
  */
 
-import { PHYSICAL_FORMATS, type EditionFormat } from './constants.js';
+import { PHYSICAL_FORMATS, type EditionFormat, type EditionKind } from './constants.js';
 
 /** What one reward line turned out to be. */
 export type Medium = 'physical' | 'digital' | 'both' | 'unknown';
@@ -319,4 +319,90 @@ export function suggestFormat(hint: string | null | undefined): EditionFormat | 
   if (s.includes('leatherbound') || s.includes('leather-bound')) return 'hardcover';
 
   return null;
+}
+
+/**
+ * Words that mean *this printing was sold as better than the standard one*.
+ *
+ * Lower-cased, matched as substrings against a lower-cased and
+ * apostrophe-folded string, exactly like `PHYSICAL_HINTS` above. Substring and
+ * not word-boundary, for the same reason: "Exclusive", "exclusives" and
+ * "Campaign-only exclusive hardcover" all have to hit.
+ *
+ * ⚠️ **Every entry describes the OBJECT, and none describes its CONTENTS.**
+ * That line is what keeps `omnibus`, `volume`, `book 1`, `trilogy` and `boxed
+ * set` off this list — see the exclusions on `classifyEdition`. It is also why
+ * this is a separate list from `PHYSICAL_HINTS`, which shares four words with it
+ * and answers a completely different question: `deluxe edition` is on that list
+ * because it implies paper, and on this one because it implies fancy paper.
+ */
+export const COLLECTORS_HINTS: readonly string[] = [
+  "collector's",
+  'collectors edition',
+  'deluxe',
+  'exclusive',
+  'premium',
+  'limited edition',
+  'special edition',
+  'anniversary edition',
+  'signed',
+  'numbered',
+  'leatherbound',
+  'leather bound',
+  'leather-bound',
+  'slipcase',
+  'sprayed edge',
+];
+
+/**
+ * One canonical bucket for every way a vendor spells "fancy".
+ *
+ * ⚠️ **The counterpart to `suggestFormat`, and it answers a different question
+ * about the same string.** `suggestFormat` asks *what is this made of* and
+ * returns an `EDITION_FORMATS` value; this asks *what kind of printing is it*
+ * and returns an `EDITION_KINDS` value. They disagree on purpose and both are
+ * right: `"Deluxe Edition"` names no binding, so `suggestFormat` refuses it and
+ * returns null, while this returns `'collectors'` — the string says nothing
+ * about paper and everything about the tier.
+ *
+ * ⚠️ **Unlike `suggestFormat` this one IS applied automatically**, by the
+ * importers and by `scripts/backfill-edition-kinds.mjs`, and that is a departure
+ * from the propose/accept rule the rest of this module obeys. The reason is what
+ * is at stake in a wrong answer. A wrong `format` claims a fact about a physical
+ * object — that the hardcover on the shelf is a paperback — and `isbn-ladder.md`
+ * §4.4 records what confident guessing costs. A wrong `kind` claims only that a
+ * printing is or is not fancy, `edition_name` sits beside it holding the exact
+ * words the vendor used, and the collection has a filter for reviewing them. The
+ * owner asked for it in as many words: *"all editions should be collectors and
+ * we can fix them one off if needed."*
+ *
+ * ## ⚠️ What it refuses, and why the refusals are not pedantry
+ *
+ * Three real `edition_name` values in production must NOT become collector's
+ * editions, and all three were checked against this function by name:
+ *
+ *   * **"Omnibus - collects volumes 1-3"** and **"Volume 1"** — both *White
+ *     Sand*. They describe **what is inside the book**, not how it was printed.
+ *     An omnibus is an ordinary trade printing that happens to contain three
+ *     volumes, and White Sand is the original "alternate copies of stuff we
+ *     already own" case that the whole series restructure was built around, so
+ *     mislabelling it breaks the feature's own worked example.
+ *   * **"ebook"** — junk that leaked out of a crowdfunding reward name. The row's
+ *     `format` is already `ebook_epub`, so the name adds nothing; the backfill
+ *     clears it to NULL rather than categorising it.
+ *
+ * Nothing here vetoes: the refusals work because no contents word is on
+ * `COLLECTORS_HINTS` in the first place. That matters for the combination —
+ * "Omnibus Collector's Edition" is a real product and is correctly `'collectors'`,
+ * which a blacklist on the word "omnibus" would get wrong.
+ */
+export function classifyEdition(text: string | null | undefined): EditionKind | null {
+  if (!text) return null;
+  // ⚠️ The curly apostrophe is folded first. A vendor page that writes
+  // "Collector’s Edition" with U+2019 is the same product as one that writes
+  // "Collector's Edition", and a substring test that cannot see that would file
+  // half the shelf as ordinary. Measured names in this catalog use the ASCII
+  // form; the fold is here so the first one that does not still lands.
+  const s = text.toLowerCase().split('’').join("'");
+  return hits(s, COLLECTORS_HINTS) ? 'collectors' : null;
 }
