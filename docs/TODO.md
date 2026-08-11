@@ -113,7 +113,9 @@ which has real users now and where changes are "more damning".
 
 | Date | Pushed | Roll back to | Worker version |
 |---|---|---|---|
-| 2026-08-10 | `4d19ae4` (16 commits: five agent branches, covers, formats, work log) | **`c75d174`** | `86e453ed` |
+| 2026-08-10 | `4d19ae4` — five agent branches, covers, formats | `c75d174` | `86e453ed` |
+| 2026-08-11 | `3848593` — collector's-edition and bare-ebook format rules | `bb836dd` | `444d4562` |
+| 2026-08-11 | `75e650f` — cover status, watches, upload path, migration `0040` | **`3848593`** | **`05fdf2e3`** |
 
 To undo the code: `git reset --hard c75d174 && git push --force-with-lease`.
 ⚠️ **That does not undo the database.** Migrations `0013`, `0020` and `0021` are
