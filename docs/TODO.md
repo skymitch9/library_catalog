@@ -31,6 +31,24 @@ Live version `86e453ed`. All of `/api/health` 200; `/api/series`, `/api/me`,
 afternoon of scanning. Any figure here is a measurement with a timestamp, never a
 constant. Re-measure before relying on one.
 
+## Overnight autonomous run — started 2026-08-10 ~22:35
+
+The user went to bed with: *"keep the working going until everything on the todo
+list is done, take breaks as necessary to not hit usage limit but everytime it
+refreshes you keep going. if you need me to intervene set it aside and keep going
+on with other things."*
+
+Rules being followed: stop starting agents at **93% weekly**, keep working
+conversationally to **97%**; the session window is the cheap one (it resets in
+hours) and the weekly is the real ceiling. Anything needing the user goes in
+**Blocked** above rather than stalling the run.
+
+Five agents were in flight at bedtime: mark-as-arrived (+ clickable series on
+cards), audiobook matching + automatic covers, a browser verification sweep,
+and the bulk details-queue clear. ⚠️ The queue agent was told to **report the
+cost before spending it** — the research path is a paid API and the backlog is
+in the hundreds.
+
 ## Rollback points
 
 The user permits pushing straight to `main` while this site is pre-release, **on
@@ -59,9 +77,8 @@ the Cloudflare dashboard.
 |---|---|---|---|
 | ⏸️ | **Two pledge manifests never itemised** | The Words of Radiance tier says "+ Books" plural plus Radiant/Backer Packs and does not list them; the four Secret Novels titles are inferred from the well-known set, not read off a page. | Claude — needs pledge detail pages |
 | ⏸️ | **Kickstarter "DCC RPG + Unstoppable"** | Not on the Kickstarter account at all — 62 of 62 rows enumerated and it is absent. Almost certainly an Indiegogo pledge. | Claude — needs a second Indiegogo pass |
-| ⏸️ | **31 accessories and 5 books are stranded** | The BackerKit import ran (see below), but **5 of 6 pledges produced zero book lines** because their works are not in the catalog, and `book_accessory.work_id` is NOT NULL so every accessory on those pledges had nothing to attach to. Verified the five are genuinely absent, not differently spelled — no work exists by Zogarth, Dinniman or Chmilenko, and none matching Words of Radiance or Fires of December. | Create 5 works, then re-run the import (it upserts) |
-| ⏸️ | **4 reward lines have no printing** | The four Year-of-Sanderson hardcovers matched their works but no `edition` exists for a premium hardcover, so they landed with `edition_id NULL`. The importer never mints an edition — by design. | Create the editions in the app, then re-run |
-| ⏸️ | **Percy Jackson / Illumicrate** | Vendor page never lists the individual titles; the five standard titles are *supplied by Claude*, not read off the page. Confirm it is the 5-book original series. | User |
+| ⏸️ | **10 reward lines have no printing** | Lines matched their works but no `edition` exists for the specific printing a campaign delivered, so they landed with `edition_id NULL`. The importer never mints an edition — by design. | Create the editions in the app, then re-run the import |
+| ⏸️ | **Confirm the Percy Jackson set is the 5-book original series** | Imported, but the vendor page never lists the individual titles — the five are *supplied by Claude*, not read off the page. Low risk, still an assumption. | User, when awake |
 | ⏸️ | **12 works still have no cover from any source** | Not stranded — the backfill reports 0 stranded. Needs a genuinely different cover source. | Unassigned |
 
 ### Cleared since the last revision
