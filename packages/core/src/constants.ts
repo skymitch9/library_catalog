@@ -82,6 +82,18 @@ export const PHYSICAL_FORMATS: readonly EditionFormat[] = [
  * `PHYSICAL_FORMATS` is the closed list of things with mass. Everything else in
  * the enum is a file or a licence, which for the question this answers — *do we
  * have this on the shelf, or on a screen?* — are the same answer.
+ *
+ * ⚠️ **Derived from `PHYSICAL_FORMATS`, never listed twice.** `ebook` is defined
+ * as *not physical* rather than as its own list, so a format added to
+ * `EDITION_FORMATS` tomorrow lands on one side of this line without anybody
+ * remembering to widen a second array. That is also why `editionMedium` is
+ * total: every `EditionFormat` is one or the other, with no third bucket for a
+ * value to fall into unnoticed.
+ *
+ * ⚠️ This block was declared **twice** after two branches added it
+ * independently, and git merged both without raising a conflict — the duplicate
+ * only surfaced as `TS2451: Cannot redeclare`. If you are about to add a coarse
+ * medium helper, it already exists; use this one.
  */
 export const EDITION_MEDIA = ['physical', 'ebook'] as const;
 export type EditionMedium = (typeof EDITION_MEDIA)[number];
@@ -104,6 +116,16 @@ export const EBOOK_FILE_FORMATS: readonly EditionFormat[] = [
   'ebook_kepub',
   'ebook_pdf',
 ];
+
+/** Whether this is a thing you can hold. The one test; nothing re-lists it. */
+export function isPhysicalFormat(format: string): boolean {
+  return (PHYSICAL_FORMATS as readonly string[]).includes(format);
+}
+
+/** Which side of the line a format falls on. Total over `EditionFormat`. */
+export function mediumOf(format: string): EditionMedium {
+  return isPhysicalFormat(format) ? 'physical' : 'ebook';
+}
 
 export const COPY_STATUSES = [
   'owned',
@@ -377,6 +399,24 @@ export type GapVerdict = (typeof GAP_VERDICTS)[number];
 /** Where a `research_finding` stands. Must match the CHECK in migration 0001. */
 export const FINDING_REVIEW_STATES = ['pending', 'accepted', 'rejected'] as const;
 export type FindingReviewState = (typeof FINDING_REVIEW_STATES)[number];
+
+/**
+ * Whether a decision was read before it was made. Migration 0013.
+ *
+ * ⚠️ This is a different question from *who* decided, and the two must not be
+ * collapsed. `reviewed_by` / `decided_by` answer "on whose authority" — and
+ * under auto-apply that is still a real person, the one who pressed Look up.
+ * This answers "did anybody actually look at the value", and under auto-apply
+ * the answer is no.
+ *
+ * `accepted` used to imply both. Now it implies only the first, and anything
+ * auditing the catalog has to read this column to tell a machine's guess from a
+ * person's assertion. NULL means undecided, or decided before 0013 existed —
+ * deliberately not backfilled, because an invented 'human' would be
+ * indistinguishable from an observed one.
+ */
+export const DECISION_MODES = ['human', 'auto'] as const;
+export type DecisionMode = (typeof DECISION_MODES)[number];
 
 export const SCAN_MODES = ['shelf', 'single', 'isbn', 'file'] as const;
 export type ScanMode = (typeof SCAN_MODES)[number];

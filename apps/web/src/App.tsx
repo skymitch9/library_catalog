@@ -97,6 +97,27 @@ export function App() {
     }
   }, []);
 
+  /**
+   * Re-read `/api/me` for the nav's chore count, without disturbing sign-in.
+   *
+   * ⚠️ `useCallback` with no deps is load-bearing, not tidiness. This is passed
+   * to the details queue, which lists it as a dependency of its own `load`; an
+   * inline arrow would be a new function every render and would spin that page
+   * in a fetch loop.
+   *
+   * ⚠️ It also must not touch `status`. `check()` sets sign-in state from the
+   * same call, so reusing it here would let one stale response during a background
+   * refresh bounce a signed-in person to the sign-in screen. A failure here is
+   * simply ignored: the nav keeps its old count, which is a stale badge rather
+   * than a lost session.
+   */
+  const refreshChores = useCallback(() => {
+    void api
+      .me()
+      .then(setMe)
+      .catch(() => {});
+  }, []);
+
   // Re-check whenever Firebase's idea of the user changes, so signing in or out
   // takes effect without a reload.
   useEffect(
@@ -232,6 +253,10 @@ export function App() {
           navigate('/');
           void check();
         }}
+        // Just the nav's chore count, and deliberately NOT `check()`: the
+        // details queue calls this after every book it fills in, and `check()`
+        // sets sign-in status from the same response.
+        onChoresChanged={refreshChores}
       />
     </>
   );
@@ -253,10 +278,13 @@ function Screens({
   route,
   me,
   onSelfChanged,
+  onChoresChanged,
 }: {
   route: Route;
   me: Me;
   onSelfChanged: () => void;
+  /** Re-read the nav's "Missing (N)" count. Must be a stable reference. */
+  onChoresChanged: () => void;
 }) {
   switch (route.name) {
     case 'work': {
@@ -312,7 +340,14 @@ function Screens({
     case 'queue':
       // Keyed on the field so switching question remounts rather than keeping
       // the previous list's expanded rows and half-typed verdict forms.
-      return <DetailsQueuePage key={route.field ?? 'all'} me={me} field={route.field} />;
+      return (
+        <DetailsQueuePage
+          key={route.field ?? 'all'}
+          me={me}
+          field={route.field}
+          onChoresChanged={onChoresChanged}
+        />
+      );
 
     case 'add': {
       // Gated the same way the "+ Add books" button is. Without this, a reader

@@ -10,7 +10,8 @@ import { Enrich } from '../components/Enrich.js';
 import { Provenance } from '../components/Provenance.js';
 import { Related } from '../components/Related.js';
 import { Reviews } from '../components/Reviews.js';
-import { shouldShowDriveLinks } from '../lib/formats.js';
+import { WorkFields } from '../components/WorkFields.js';
+import { formatLabel, shouldShowDriveLinks } from '../lib/formats.js';
 
 /**
  * One book: what it is, where the file is, which printings we hold, and what we
@@ -34,6 +35,8 @@ interface WorkDetail {
     authors: string;
     series: string | null;
     seriesIndexDisplay: string | null;
+    /** Where it sorts. `seriesIndexDisplay` is what the cover says; see WorkFields. */
+    seriesIndexSort: number | null;
     firstPublished: number | null;
     description: string | null;
     coverUrl: string | null;
@@ -153,12 +156,18 @@ export function WorkPage({
         </div>
       </div>
 
-      {work.description && (
-        <section className="panel">
-          <h3>About</h3>
-          <p className="description">{work.description}</p>
-        </section>
-      )}
+      {/* ⚠️ Editable in place, and that is load-bearing rather than a nicety.
+          The details queue now writes these four fields without asking — see
+          `components/WorkFields.tsx` and `lib/research-run.ts`. The owner traded
+          confirming each value for correcting a wrong one when they meet it, so
+          meeting it has to lead somewhere. Until this, it did not: the page
+          printed the description and the app had no way to change it. */}
+      <WorkFields
+        workId={workId}
+        work={work}
+        canEdit={me.capabilities.includes('editCatalog')}
+        onSaved={load}
+      />
 
       {canTrack && (
         <section className="panel">

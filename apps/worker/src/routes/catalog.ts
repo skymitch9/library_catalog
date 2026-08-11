@@ -64,6 +64,10 @@ function collectionQueryFrom(c: {
     q: c.req.query('q'),
     series: c.req.query('series'),
     format: c.req.query('format'),
+    // Not validated here: `collectionFilter` looks the value up in a fixed map
+    // and adds no clause when it misses, so an unknown medium shows the
+    // collection rather than a 400. Same rule the sort allowlist follows.
+    medium: c.req.query('medium'),
     status: c.req.query('status'),
     readState: c.req.query('readState'),
     readerId,

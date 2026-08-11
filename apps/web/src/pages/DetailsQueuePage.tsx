@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   api,
+  type AutoApplied,
   type DetailField,
   type FieldGapCount,
   type Me,
@@ -35,14 +36,34 @@ import { Link, queuePath, workPath } from '../router.js';
  * source. **Look it up** spends 2–8¢ of Claude usage. The free one is listed
  * first on every row on purpose.
  *
- * ## Nothing here writes to the catalog on its own
+ * ## ⚠️ A lookup fills the answer in. It does not ask first.
  *
- * A lookup produces *proposals*. Each one shows its value, the page it came
- * from and what that page says, and a person presses Use. There is deliberately
- * **no confidence score** anywhere on this page: `docs/info/isbn-ladder.md` §4.4
- * records a wrong answer scoring 1.00 on title and 1.00 on author — twice, in
- * two different series — and only the publisher gave it away. A number invites
- * ranking and thresholding; the source and the sentence invite reading.
+ * This page used to show every found value with **Use it** and **Not this**
+ * beside it. The owner pressed Use on all of them, without reading, every time —
+ * so the gate was not buying scrutiny, it was buying taps, and four fields
+ * stayed blank across a hundred-odd books because filling them in was tedious
+ * rather than because anything was in doubt. In their words: *"I'd rather come
+ * across a book with a wrong desc and fix it then, than confirm each possible
+ * item each time."*
+ *
+ * So the confirmation is gone and the two things that make that trade honest are
+ * here instead:
+ *
+ * - **Recently filled in** below the worklist, with Undo on every row and on the
+ *   batch. Recoverability in place of a veto.
+ * - Every value carries `decided_how = 'auto'`, so *"did anybody read this?"*
+ *   stays answerable forever (migration 0013).
+ *
+ * And a third, which lives on the book page rather than here: the four fields
+ * are editable in place, because "fix it when I see it" has to be two taps or
+ * the bargain is not real.
+ *
+ * There is still deliberately **no confidence score** anywhere:
+ * `docs/info/isbn-ladder.md` §4.4 records a wrong answer scoring 1.00 on title
+ * and 1.00 on author — twice, in two different series — and only the publisher
+ * gave it away. That argument did not change when the gate went; if anything it
+ * is why nothing is silently dropped for scoring badly. Everything is applied,
+ * and everything that could not be is named.
  */
 
 /** Slow enough not to be a nuisance, quick enough that a run feels live. */
@@ -56,7 +77,24 @@ function formatCents(cents: number): string {
   return cents < 100 ? `${cents < 1 ? cents.toFixed(2) : Math.round(cents)}¢` : `$${(cents / 100).toFixed(2)}`;
 }
 
-export function DetailsQueuePage({ me, field }: { me: Me; field: string | null }) {
+export function DetailsQueuePage({
+  me,
+  field,
+  onChoresChanged,
+}: {
+  me: Me;
+  field: string | null;
+  /**
+   * ⚠️ Tells App to re-read `/api/me`.
+   *
+   * The nav's "Missing (N)" comes from `me.chores`, which is fetched once when
+   * the app mounts. Auto-apply drains the queue *while this page is open*, so
+   * without this the badge sits at its opening value until a reload — a count
+   * that says 116 over an empty worklist. `null` vs `0` is load-bearing there
+   * (see `/api/me`), so the fix is to re-read it, never to decrement it here.
+   */
+  onChoresChanged: () => void;
+}) {
   const [data, setData] = useState<QueueResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [runs, setRuns] = useState<Record<number, RunView>>({});
@@ -75,6 +113,20 @@ export function DetailsQueuePage({ me, field }: { me: Me; field: string | null }
    */
   const [inFlight, setInFlight] = useState<ReadonlySet<number>>(new Set());
 
+  /** What the machine has written lately. The undo list; see the note below. */
+  const [autoApplied, setAutoApplied] = useState<AutoApplied[]>([]);
+  const [undoing, setUndoing] = useState(false);
+  const [undoSaid, setUndoSaid] = useState<string | null>(null);
+
+  const loadAutoApplied = useCallback(async () => {
+    try {
+      const r = await api.autoApplied(50);
+      setAutoApplied(r.applied);
+    } catch {
+      // The worklist is the page; a failed history fetch must not blank it.
+    }
+  }, []);
+
   const load = useCallback(async () => {
     try {
       const next = await api.queue();
@@ -86,7 +138,12 @@ export function DetailsQueuePage({ me, field }: { me: Me; field: string | null }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, []);
+    // Reloaded together, always. These two views disagree the moment one is
+    // refreshed without the other — a book vanishing from the worklist with
+    // nothing appearing below to say what filled it in reads as data loss.
+    await loadAutoApplied();
+    onChoresChanged();
+  }, [loadAutoApplied, onChoresChanged]);
 
   useEffect(() => {
     void load();
@@ -127,8 +184,17 @@ export function DetailsQueuePage({ me, field }: { me: Me; field: string | null }
       try {
         const r = await api.runResearch(workId);
         setRuns((prev) => ({ ...prev, [workId]: r.run }));
-        setOpen((s) => new Set(s).add(workId));
+        // ⚠️ Only expand when something is left to decide. The row used to open
+        // every time because there was always something to read; now there
+        // almost never is, and popping open an empty panel after each book
+        // makes a 116-book sweep unreadable.
+        if ((r.findings?.length ?? 0) > 0) setOpen((s) => new Set(s).add(workId));
         await loadFindings(workId);
+        // The run just wrote to `work`, so both the undo list and the nav count
+        // are now stale. Refreshed per book rather than at the end of the sweep,
+        // so stopping halfway still leaves the page telling the truth.
+        await loadAutoApplied();
+        onChoresChanged();
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
         startedRef.current.delete(workId);
@@ -145,7 +211,7 @@ export function DetailsQueuePage({ me, field }: { me: Me; field: string | null }
         });
       }
     },
-    [load, loadFindings],
+    [load, loadFindings, loadAutoApplied, onChoresChanged],
   );
 
   const works = data?.works ?? [];
@@ -180,6 +246,44 @@ export function DetailsQueuePage({ me, field }: { me: Me; field: string | null }
   const canRun = me.capabilities.includes('runResearch');
   const canReview = me.capabilities.includes('reviewFindings');
 
+  /**
+   * Take back what the machine wrote.
+   *
+   * ⚠️ Chunked at ten, because the server refuses more in one call — each revert
+   * costs several D1 subrequests and a Worker that exceeds its ceiling is
+   * *terminated* rather than made to throw. Undoing a screenful therefore has to
+   * be several requests, and they run one after another for the same reason the
+   * server's loop does: two reverts against one book touch the same row.
+   */
+  const undo = useCallback(
+    async (ids: number[]) => {
+      if (ids.length === 0) return;
+      setUndoing(true);
+      setUndoSaid(null);
+      const reverted: string[] = [];
+      const skipped: string[] = [];
+      try {
+        for (let i = 0; i < ids.length; i += 10) {
+          const r = await api.undoAutoApplied(ids.slice(i, i + 10));
+          reverted.push(...r.reverted);
+          skipped.push(...r.skipped);
+        }
+        setUndoSaid(
+          `Took back ${reverted.length} ${reverted.length === 1 ? 'value' : 'values'}.` +
+            (skipped.length > 0 ? ` ${skipped.length} could not be: ${skipped.join(' ')}` : ''),
+        );
+      } catch (err) {
+        setUndoSaid(err instanceof Error ? err.message : String(err));
+      } finally {
+        setUndoing(false);
+        // The questions are open again, so the worklist, the tally and the nav
+        // count are all wrong until this lands.
+        await load();
+      }
+    },
+    [load],
+  );
+
   if (error && !data) {
     return <main className="notice notice--bad">Could not load the worklist: {error}</main>;
   }
@@ -198,6 +302,15 @@ export function DetailsQueuePage({ me, field }: { me: Me; field: string | null }
         Four questions are asked of every book, and only four. Everything else that is empty in
         this catalog is either an answer already, or a fact about a printing we do not own —
         see <em>what is not asked</em> below.
+      </p>
+
+      {/* ⚠️ The page says what it is about to do to the catalog, before it does
+          it. A screen that used to ask permission and now writes without asking
+          must not leave that change to be discovered. */}
+      <p className="muted small">
+        A lookup <strong>fills the answer in</strong> — it does not ask first. Everything it
+        writes is listed under <em>Recently filled in</em> at the bottom, with an Undo beside
+        it, and every one of the four fields can be edited on the book&apos;s own page.
       </p>
 
       {error && <p className="notice notice--bad">{error}</p>}
@@ -312,9 +425,17 @@ export function DetailsQueuePage({ me, field }: { me: Me; field: string | null }
 
       {shown.some((w) => runs[w.workId] != null) && (
         <p className="muted small">
-          A book stays listed until you press Refresh, so you can read what its lookup found.
+          A book stays listed until you press Refresh, so you can read what its lookup filled in.
         </p>
       )}
+
+      <AutoAppliedList
+        rows={autoApplied}
+        canReview={canReview}
+        busy={undoing}
+        said={undoSaid}
+        onUndo={(ids) => void undo(ids)}
+      />
 
       <details className="panel">
         <summary>What is not asked, and why</summary>
@@ -327,6 +448,102 @@ export function DetailsQueuePage({ me, field }: { me: Me; field: string | null }
         </ul>
       </details>
     </main>
+  );
+}
+
+const FIELD_LABEL: Record<string, string> = {
+  firstPublished: 'first published',
+  series: 'series',
+  seriesIndex: 'volume number',
+  description: 'description',
+};
+
+/**
+ * What the machine wrote, and the way back.
+ *
+ * ⚠️ **This section is the reason auto-apply is allowed to exist.** The owner
+ * traded reading each value beforehand for being able to spot a bad batch
+ * afterwards; delete this and the trade is one-sided — the gate gone, no remedy.
+ *
+ * Newest first, and it shows the *value* rather than a count, because the whole
+ * point is that a wrong one should be visible at a glance while scrolling past.
+ * The batch button undoes what is on screen; the per-row button exists because
+ * one wrong description among forty good ones is the ordinary case, not a
+ * reason to throw the forty away.
+ */
+function AutoAppliedList({
+  rows,
+  canReview,
+  busy,
+  said,
+  onUndo,
+}: {
+  rows: AutoApplied[];
+  canReview: boolean;
+  busy: boolean;
+  said: string | null;
+  onUndo: (ids: number[]) => void;
+}) {
+  if (rows.length === 0) return null;
+
+  return (
+    <details className="panel" open>
+      <summary>Recently filled in — {rows.length}</summary>
+      <p className="muted small">
+        Written by a lookup without being read first. Undo puts the value back to empty and the
+        question back on the list; it never touches anything typed by hand.
+      </p>
+
+      {canReview && (
+        <div className="controls">
+          <button disabled={busy} onClick={() => onUndo(rows.map((r) => r.findingId))}>
+            {busy ? 'Undoing…' : `Undo all ${rows.length}`}
+          </button>
+        </div>
+      )}
+      {said && <p className="muted small">{said}</p>}
+
+      <ul className="stack">
+        {rows.map((r) => (
+          <li key={r.findingId} className="proposal">
+            <div>
+              <strong>
+                <Link to={workPath(r.workId)}>{r.title}</Link>
+              </strong>{' '}
+              <span className="mark mark--relation">{FIELD_LABEL[r.field] ?? r.field}</span>
+            </div>
+            {/* A `none`/`unknown` wrote a verdict, not a value, and saying
+                "(nothing to record)" is more honest than printing an empty box. */}
+            <div className="proposal__value">
+              {r.value.kind === 'found'
+                ? String(r.value.value ?? '')
+                : r.value.kind === 'none'
+                  ? 'recorded as: this book has none'
+                  : 'recorded as: nobody knows'}
+            </div>
+            <div className="muted small">
+              {r.sourceTier}
+              {r.sourceUrl && (
+                <>
+                  {' · '}
+                  <a href={r.sourceUrl} target="_blank" rel="noreferrer noopener">
+                    {hostOf(r.sourceUrl)}
+                  </a>
+                </>
+              )}
+              {r.appliedAt ? ` · ${r.appliedAt}` : ''}
+            </div>
+            {canReview && (
+              <div className="controls">
+                <button disabled={busy} onClick={() => onUndo([r.findingId])}>
+                  Undo
+                </button>
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 
@@ -421,10 +638,13 @@ function QueueRow({
 }) {
   const active = pending || isActive(run);
   const failed = !pending && run?.status === 'error';
-  // The fetched list once the row is open; the server's count until then, so a
-  // closed row can still say how many decisions are waiting on it.
+  // ⚠️ Still pending now means "the lookup could not use this", not "waiting to
+  // be read" — a value that was not a usable year, or not a number. Auto-apply
+  // closes everything else, so this is normally zero and is the one case a
+  // person is still asked about. The count is the server's until the row is
+  // opened, so a closed row can still say it has something stuck on it.
   const proposals = (findings ?? []).filter((f) => f.reviewState === 'pending');
-  const waiting = findings === undefined ? work.pending : proposals.length;
+  const stuck = findings === undefined ? work.pending : proposals.length;
 
   return (
     <li>
@@ -434,8 +654,12 @@ function QueueRow({
             <Link to={workPath(work.workId)}>{work.title}</Link>
           </strong>
           {work.series && <span className="series-tag">{work.series}</span>}
-          {waiting > 0 && <span className="mark mark--gap">{waiting} to decide</span>}
-          {run?.status === 'done' && !active && <span className="mark mark--attested">asked</span>}
+          {stuck > 0 && <span className="mark mark--gap">{stuck} could not be used</span>}
+          {run?.status === 'done' && !active && (
+            <span className="mark mark--attested">
+              {run.applied > 0 ? `filled in ${run.applied}` : 'asked'}
+            </span>
+          )}
           {failed && <span className="mark mark--gap">failed</span>}
         </div>
         <div className="muted small">{work.authors}</div>
@@ -452,17 +676,22 @@ function QueueRow({
 
         {run && !active && (
           <div className="muted small">
+            {/* ⚠️ `run.detail` rather than a count assembled here. The server
+                writes the sentence, and it says what was WRITTEN — not what was
+                proposed. The two differ whenever a column filled in while the
+                lookup was out, and the old "Proposed 3 answers" would now be
+                describing work that may never have happened. */}
             {run.status === 'error'
               ? (run.errorMessage ?? 'The lookup failed.')
               : run.proposed > 0
-                ? `Proposed ${run.proposed} ${run.proposed === 1 ? 'answer' : 'answers'} · ${formatCents(run.estimatedCents)} · ${run.inputTokens ?? 0} in / ${run.outputTokens ?? 0} out`
+                ? `${run.detail ?? ''} · ${formatCents(run.estimatedCents)} · ${run.inputTokens ?? 0} in / ${run.outputTokens ?? 0} out`
                 : (run.detail ?? 'Nothing to propose.')}
           </div>
         )}
 
         <div className="controls">
           <button onClick={onToggle}>
-            {expanded ? 'Hide' : waiting > 0 ? `Review ${waiting}` : 'Say what you know'}
+            {expanded ? 'Hide' : stuck > 0 ? `Sort out ${stuck}` : 'Say what you know'}
           </button>
           {canRun && !active && (
             <button onClick={onRun} disabled={busy}>
@@ -476,8 +705,14 @@ function QueueRow({
             {proposals.map((f) => (
               <Proposal key={f.id} finding={f} canReview={canReview} onChanged={onChanged} />
             ))}
+            {proposals.length > 0 && (
+              <p className="muted small">
+                A lookup found these and could not write them — the value was not a usable
+                year, number or piece of text. They are the only thing left to decide by hand.
+              </p>
+            )}
             {findings != null && proposals.length === 0 && (
-              <p className="muted small">Nothing waiting on a decision for this book.</p>
+              <p className="muted small">Nothing is stuck on this book.</p>
             )}
             {canReview && <VerdictForm work={work} onChanged={onChanged} />}
           </div>

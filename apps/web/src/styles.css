@@ -36,6 +36,12 @@
   --accent-fg: #fffdf9;
   /* Spine label. */
   --warm: #a8553a;
+  /* Paid for, not here yet — and the one hue nothing else in this palette
+     claims. Ported from the sibling Board Game Catalog, where preorder was
+     given its own colour rather than sharing the wishlist's: they mean opposite
+     things about a wallet, and a crowdfunding import makes the paid-for one the
+     commoner state overnight. */
+  --transit: #2f6d74;
   --shadow: 0 1px 2px rgba(35, 31, 26, 0.10), 0 6px 16px rgba(35, 31, 26, 0.06);
   --shadow-lift: 0 2px 4px rgba(35, 31, 26, 0.14), 0 12px 28px rgba(35, 31, 26, 0.12);
   --radius: 10px;
@@ -55,6 +61,7 @@
     --accent: #8fbc8f;
     --accent-fg: #15130e;
     --warm: #d98f6e;
+    --transit: #78b6bb;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 6px 16px rgba(0, 0, 0, 0.35);
     --shadow-lift: 0 2px 4px rgba(0, 0, 0, 0.6), 0 12px 28px rgba(0, 0, 0, 0.45);
   }
@@ -214,6 +221,15 @@ a.topbar__brand { text-decoration: none; }
   color: var(--muted);
 }
 .field select { max-width: 14rem; }
+/* A line of explanation under the filter row rather than beside the last
+   control. `.controls--filters` wraps, so `flex-basis: 100%` is what puts this
+   on its own line at every width instead of only on a phone. */
+.controls__note {
+  flex-basis: 100%;
+  margin: 0.15rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
 
 /* --- stats --------------------------------------------------------------- */
 
@@ -349,6 +365,25 @@ a.topbar__brand { text-decoration: none; }
 }
 .mark--reading { background: var(--warm); color: #fff; }
 .mark--dnf, .mark--reference { background: var(--muted); color: var(--bg); }
+/* Paid for and not here yet. `color: var(--bg)` rather than a fixed white,
+   because `--transit` is a dark teal on paper and a pale one in the dark theme,
+   and only the flipping token stays legible against both. */
+.mark--preordered { background: var(--transit); color: var(--bg); }
+
+/* Two marks can land on one cover — a book already read as an ebook, with the
+   hardcover in the post, is the ordinary case in this house. `.mark` defaults to
+   the top-right corner on its own, so a second one would sit exactly on top of
+   the first; this stacks them instead. */
+.card__marks {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+.card__marks .mark { position: static; }
 
 /* --- list ---------------------------------------------------------------- */
 

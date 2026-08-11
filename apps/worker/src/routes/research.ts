@@ -9,18 +9,32 @@
  * exactly like a right one. Reading the queue needs neither — a reader may see
  * what is missing.
  *
- * ## ⚠️ Research proposes; a person accepts
+ * ⚠️ **Auto-apply makes `runResearch` imply the second risk as well**, since a
+ * lookup now writes what it finds. That is survivable only because both are
+ * `owner` today; if `runResearch` is ever widened to another role, it must gain
+ * a `reviewFindings` check or the split silently stops meaning anything.
  *
- * `POST /works/:id/run` writes to `research_run` and `research_finding` and
- * nowhere else. The catalog changes at exactly one place —
- * `PATCH /findings/:id` with `accepted` — and only because somebody pressed a
- * button. Same rule as `/api/enrich`, for the same measured reason: a wrong
- * answer scored 1.00 on title and 1.00 on author, twice. See
- * `docs/info/isbn-ladder.md` §4.4.
+ * ## ⚠️ Research now applies what it finds
  *
- * The free way to close a gap is `POST /works/:id/verdict`: a person writing
- * down "this is a standalone, and here is how I know". It costs nothing and it
- * demands a source.
+ * This used to read *"research proposes; a person accepts"*, and
+ * `POST /works/:id/run` touched only `research_run` and `research_finding`. The
+ * gate was retired because it was not being used — the owner pressed Use on
+ * everything without reading it, so the queue bought taps rather than scrutiny.
+ * `lib/research-run.ts` carries the full argument and the terms of the trade.
+ *
+ * What that means for the routes here:
+ *
+ * - `POST /works/:id/run` **writes to `work`**, and its response says what it
+ *   wrote. It is no longer a read-only operation on the catalog.
+ * - `PATCH /findings/:id` survives for the leftovers — a finding whose value
+ *   could not be used stays pending, and a person still decides those. It marks
+ *   its work `decided_how = 'human'`.
+ * - `GET /auto-applied` and `POST /undo` are the recoverability half of the
+ *   bargain: see the batch, throw it away.
+ *
+ * The free way to close a gap is unchanged: `POST /works/:id/verdict`, a person
+ * writing down "this is a standalone, and here is how I know". It costs nothing
+ * and it demands a source.
  */
 
 import { Hono } from 'hono';
@@ -34,6 +48,7 @@ import {
   gapSummary,
   getFinding,
   getWork,
+  listAutoApplied,
   listFindings,
   listGapVerdicts,
   listPendingFindings,
@@ -52,6 +67,7 @@ import {
   applyFinding,
   claimRun,
   gapsFor,
+  revertFinding,
   runDetailsResearch,
   toRunView,
 } from '../lib/research-run.js';
@@ -148,6 +164,80 @@ export const researchRoutes = new Hono<AppBindings>()
   })
 
   /**
+   * What the machine wrote lately, newest first.
+   *
+   * ⚠️ This route is the consideration in the auto-apply bargain, not a
+   * reporting extra. The owner gave up reading each value before it lands; this
+   * is what they got for it — a batch they can look over afterwards and throw
+   * away wholesale. Removing it would leave the trade one-sided.
+   *
+   * `read`, not `reviewFindings`: seeing what the catalog did to itself is not a
+   * privileged act, and the person who cannot undo it is exactly the person who
+   * most needs to be able to spot it and say something.
+   */
+  .get('/auto-applied', requireCapability('read'), async (c) => {
+    const asked = Number(c.req.query('limit'));
+    const limit = Number.isInteger(asked) && asked > 0 && asked <= 200 ? asked : 50;
+    return c.json({ applied: await listAutoApplied(c.env.DB, limit) });
+  })
+
+  /**
+   * Take back one auto-applied value, or a whole batch of them.
+   *
+   * One route for both, because a bulk undo is not a different operation from a
+   * single one — it is the same operation on a list, and two routes would be two
+   * places for the "only touch what the machine wrote" rule to be got wrong.
+   *
+   * ⚠️ Sequential, not `Promise.all`, and not a `batch`. Undoing a `series`
+   * finding also clears `seriesIndexSort` (see `revertFinding`), so two reverts
+   * against one book read and write the same row — in parallel the second would
+   * overwrite the first's clear with a stale value it read before it happened.
+   * D1's subrequest ceiling is also real here: each revert is ~4, so this caps
+   * the list rather than trusting the caller.
+   */
+  .post('/undo', requireCapability('reviewFindings'), async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as { ids?: unknown };
+    const ids = Array.isArray(body.ids)
+      ? body.ids.filter((n): n is number => Number.isInteger(n) && (n as number) > 0)
+      : [];
+
+    if (ids.length === 0) {
+      return c.json({ error: 'bad_request', detail: 'Send { ids: [number, …] }.' }, 400);
+    }
+    // 10 reverts is ~40 subrequests. The page undoes a screenful at a time and
+    // exceeding the ceiling terminates the invocation silently rather than
+    // throwing, so this refuses rather than truncating — a partial undo that
+    // reported success would be worse than a refusal.
+    if (ids.length > 10) {
+      return c.json(
+        { error: 'bad_request', detail: 'Undo at most 10 at a time.' },
+        400,
+      );
+    }
+
+    const reverted: string[] = [];
+    const skipped: string[] = [];
+    const works = new Set<number>();
+
+    for (const id of ids) {
+      const finding = await getFinding(c.env.DB, id);
+      if (!finding) {
+        skipped.push(`#${id} no longer exists.`);
+        continue;
+      }
+      const outcome = await revertFinding(c.env.DB, finding);
+      if (outcome.reverted) {
+        reverted.push(outcome.reverted);
+        works.add(finding.workId);
+      } else {
+        skipped.push(outcome.skipped ?? `#${id} could not be undone.`);
+      }
+    }
+
+    return c.json({ reverted, skipped, works: [...works] });
+  })
+
+  /**
    * Look one book up on the open web. Costs money; owner only.
    *
    * **Slow on purpose — twenty seconds to a minute and a half — and that is the
@@ -199,28 +289,43 @@ export const researchRoutes = new Hono<AppBindings>()
       return c.json({ run: toRunView(claim.run), alreadyRunning: true });
     }
 
-    const work = runDetailsResearch(c.env, claim.run.id, id, claim.fields);
+    const work = runDetailsResearch(c.env, claim.run.id, id, claim.fields, user.id);
     // Registered *and* awaited. The await is what buys the time; the
     // registration is what saves the answer if this caller vanishes.
+    //
+    // ⚠️ Now that the run applies what it finds, the registration matters more
+    // than it did: a caller that walks away mid-lookup must still get its
+    // findings written, or the money is spent and the columns stay blank.
     c.executionCtx.waitUntil(work);
     const finished = await work;
 
     return c.json({
       run: toRunView(finished ?? claim.run),
       alreadyRunning: false,
+      // Still pending after the run means "could not be applied" — a value that
+      // was not a usable year, or not a number. Those are the only ones left for
+      // a person, and there is normally nothing here.
       findings: await listFindings(c.env.DB, id, 'pending'),
+      /** What the catalog now says, so the page can redraw without refetching. */
+      missing: (await gapsFor(c.env.DB, id)) ?? [],
     });
   })
 
   /**
-   * Accept or reject one proposal.
+   * Accept or reject one proposal, by hand.
    *
-   * ⚠️ **Accepting applies it.** The sibling project stops at marking the row and
-   * leaves applying "for later", which means its queue never empties and the
-   * feature never pays for itself. Here, accepting *is* the human act the whole
-   * design waits for, so it does the write — and `applyFinding` still refuses to
-   * overwrite anything already recorded, refuses to touch title or authors, and
-   * turns a `none`/`unknown` into a verdict rather than a value.
+   * ⚠️ **This is now the exception path, not the main one.** Auto-apply closes
+   * almost everything inside the run; what reaches here is a finding whose value
+   * could not be used — not a four-digit year, not a number — which stays
+   * `pending` precisely so a person still gets asked. Kept rather than deleted
+   * because those genuinely need a human, and because a reader may still want to
+   * reject something they disagree with.
+   *
+   * Accepting applies it. `applyFinding` refuses to overwrite anything already
+   * recorded, refuses to touch title or authors, and turns a `none`/`unknown`
+   * into a verdict rather than a value. Both writes are stamped
+   * `decided_how = 'human'` — the whole point of the column is that this route
+   * and the automatic one are distinguishable afterwards.
    *
    * The response says what changed in a sentence, because "accepted" alone does
    * not tell you whether anything happened.
@@ -246,10 +351,10 @@ export const researchRoutes = new Hono<AppBindings>()
     const user = c.get('user');
     const outcome =
       parsed.data.reviewState === 'accepted'
-        ? await applyFinding(c.env.DB, finding, user.id)
+        ? await applyFinding(c.env.DB, finding, user.id, 'human')
         : { applied: null, skipped: null };
 
-    const marked = await markFinding(c.env.DB, id, parsed.data.reviewState, user.id);
+    const marked = await markFinding(c.env.DB, id, parsed.data.reviewState, user.id, 'human');
 
     return c.json({
       finding: marked,

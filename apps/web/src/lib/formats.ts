@@ -30,6 +30,11 @@ export function formatLabel(format: string): string {
  * How a *medium* is written for a person — the coarse question, one step above
  * `formatLabel`.
  *
+ * "Ebook" and not "Digital": a Kindle licence and an EPUB file are both books
+ * you read on a screen, and the word the household uses for both is ebook. The
+ * sibling Board Game Catalog says "digital" because a D&D Beyond licence is not
+ * a book at all — same line, different domain, different word.
+ *
  * ⚠️ `audio` appears here and NOT in `EditionMedium`, and the asymmetry is on
  * purpose. `@lc/core` has two media because an audiobook is not an edition of
  * anything in this database; this map has three because the series page shows

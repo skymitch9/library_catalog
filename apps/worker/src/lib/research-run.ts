@@ -1,10 +1,37 @@
 /**
- * Running one research pass, and applying one finding a person accepted.
+ * Running one research pass, and writing what it found into the catalog.
  *
- * Two jobs, kept in one file because they are the two halves of the same rule:
- * **the run proposes, the person disposes.** Nothing in `runDetailsResearch`
- * writes to `work`; nothing in `applyFinding` runs without somebody having
- * pressed a button.
+ * ## ⚠️ The rule this file used to enforce has been deliberately retired
+ *
+ * It read: *the run proposes, the person disposes.* Every finding waited in
+ * `research_finding` until somebody read it and pressed Use. That was the right
+ * default and it is documented at length in `isbn-ladder.md` §4.4 — a wrong
+ * answer scored 1.00 on title and 1.00 on author, twice, and only a human
+ * reading the publisher caught it.
+ *
+ * **It was retired because the gate was not being used.** The owner pressed Use
+ * on everything, without reading, every time — so the queue was not buying
+ * scrutiny, it was buying taps. A gate nobody looks through is not a safeguard;
+ * it is a cost with a safeguard's reputation, and it was keeping four fields
+ * blank across a hundred-odd books rather than keeping them right.
+ *
+ * The trade made in its place, in the owner's words: *"I'd rather come across a
+ * book with a wrong desc and fix it then, than confirm each possible item."*
+ * That bargain only holds if **both** halves are real, so both are built here:
+ *
+ * | Given up | Given back |
+ * |---|---|
+ * | Reading each value before it lands | `decided_how = 'auto'` on every row, so an audit can always separate a machine's guess from a person's assertion (migration 0013) |
+ * | The chance to reject one proposal | `listAutoApplied` + `revertFinding` — see a batch afterwards and throw it away wholesale |
+ * | | Fields editable in place on the book page, so "fix it then" is two taps |
+ *
+ * ⚠️ **Do not add a confidence threshold to this.** The temptation is obvious
+ * and the codebase already argues against it in three places: `ResearchFinding.confidence`
+ * is permanently null on purpose, the queue page shows a source instead of a
+ * score, and `scanjobs.ts` carries a weak match rather than hiding it. Auto-apply
+ * is the owner's explicit call; silently dropping the findings a number disliked
+ * would be a *different* feature, unrequested, and unauditable. Everything gets
+ * applied, and everything that could not be is reported by name.
  *
  * ## Where the work runs, and the mistake worth not repeating
  *
@@ -41,11 +68,20 @@
  * is ~70, past the cap, and exceeding it *terminates* the invocation rather than
  * throwing — a silent failure. The queue page drives the list one book at a time
  * from the browser for exactly that reason, and that page is the bulk mechanism.
+ *
+ * Auto-apply adds to that arithmetic and it was checked rather than assumed:
+ * listing the pending findings (1) plus, per field, `getWork` + `updateWork`'s
+ * own read + the UPDATE + `markFinding` (4). Four fields is the most that can
+ * ever be asked, so the worst case is 1 + 16 = 17 on top of ~7, or **~24 of 50**.
+ * Still one book per invocation, and the headroom is now half what it was — a
+ * fifth `DETAIL_FIELDS` entry costs 4 more and is fine; a loop over books is not.
  */
 
 import {
+  DETAIL_FIELDS,
   detailGaps,
   verdictFor,
+  type DecisionMode,
   type DetailField,
   type FindingValue,
   type GapSubject,
@@ -54,9 +90,12 @@ import {
   activeRun,
   closeStaleRuns,
   createRun,
+  deleteAutoVerdict,
   finishRun,
   getWork,
+  listFindings,
   listGapVerdicts,
+  markFinding,
   saveFindings,
   setGapVerdict,
   updateWork,
@@ -93,6 +132,8 @@ export interface RunView {
   asked: string[];
   /** How many proposals it came back with. */
   proposed: number;
+  /** How many of them were written into the catalog. Not the same number. */
+  applied: number;
   detail: string | null;
   model: string | null;
   effort: string | null;
@@ -111,12 +152,48 @@ export function toRunView(run: ResearchRun): RunView {
     estimatedCents: estimateCents(run.inputTokens ?? 0, run.outputTokens ?? 0),
     asked: run.unfilled,
     proposed: run.result?.proposed ?? 0,
+    applied: run.result?.applied ?? 0,
     detail: run.result?.detail ?? null,
     model: run.model,
     effort: run.effort,
     startedAt: run.startedAt,
     finishedAt: run.finishedAt,
   };
+}
+
+/**
+ * The sentence a finished run shows for itself.
+ *
+ * ⚠️ Says what was **written**, not what was proposed. Under the old flow
+ * "Proposed 3 answers" was the whole story, because the next step was a person
+ * reading them. Now the next step is nothing, so a run that says "proposed 3"
+ * and silently wrote 1 would be actively misleading — and the two really do
+ * differ, whenever a column filled in while the lookup was out.
+ *
+ * Skips are named rather than counted, per the no-silent-drops rule at the head
+ * of this file.
+ */
+function describeRun(
+  proposed: number,
+  report: AutoApplyReport,
+  note: string | null | undefined,
+): string {
+  if (proposed === 0) return note ?? 'Nothing to propose.';
+
+  const parts: string[] = [];
+  if (report.applied.length > 0) {
+    parts.push(`Filled in ${report.applied.length} of ${proposed}: ${report.applied.join(' ')}`);
+  } else {
+    parts.push(`Nothing could be filled in from ${proposed} ${proposed === 1 ? 'answer' : 'answers'}.`);
+  }
+  if (report.skipped.length > 0) parts.push(`Skipped — ${report.skipped.join('; ')}.`);
+  if (report.unusable > 0) {
+    parts.push(
+      `${report.unusable} still needs a decision because the value could not be used.`,
+    );
+  }
+  if (note) parts.push(note);
+  return parts.join(' ');
 }
 
 /** What a work still owes, decided by the one policy that decides it. */
@@ -203,6 +280,12 @@ export async function runDetailsResearch(
   runId: number,
   workId: number,
   fields: readonly DetailField[],
+  /**
+   * Who asked. Recorded as the authority behind every value this run applies —
+   * `decided_how` says nobody *read* them, `reviewed_by` says whose request
+   * wrote them. See migration 0013 for why both are kept.
+   */
+  triggeredBy: number | null,
 ): Promise<ResearchRun | null> {
   try {
     const work = await getWork(env.DB, workId);
@@ -260,13 +343,21 @@ export async function runDetailsResearch(
 
     const saved = await saveFindings(env.DB, runId, workId, proposals);
 
+    // ⚠️ Applied here, inside the run, rather than left for the browser to do.
+    // A page that fetched findings and PATCHed each one would be the old gate
+    // with the confirmation removed — the same round trips, the same chance to
+    // be interrupted halfway, and a book left half-filled if the tab closes.
+    // Doing it here means a run either lands or does not.
+    const report = await autoApplyFindings(env.DB, workId, triggeredBy);
+
     return await finishRun(env.DB, runId, {
       status: 'done',
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
       result: {
         proposed: saved,
-        detail: saved === 0 ? (answer.note ?? 'Nothing to propose.') : answer.note,
+        applied: report.applied.length,
+        detail: describeRun(saved, report, answer.note),
       },
     });
   } catch (err) {
@@ -288,6 +379,22 @@ export interface ApplyOutcome {
   applied: string | null;
   /** Why nothing changed, when nothing did. */
   skipped: string | null;
+  /**
+   * Which of three quite different non-events a skip was.
+   *
+   * ⚠️ The distinction drives what happens to the finding afterwards, and
+   * getting it wrong is how a queue either nags forever or goes quiet about a
+   * real gap:
+   *
+   * - `already` — the column was filled while the run was out. Nothing to
+   *   decide, so the finding is closed. Leaving it open would show "1 to
+   *   decide" against a question that already has an answer.
+   * - `unusable` — the model returned something that is not a year, not a
+   *   number, not text. The gap is still a gap, so the finding stays **pending**
+   *   and gets reported. This is the one case auto-apply cannot swallow.
+   * - `gone` — the book was deleted mid-run.
+   */
+  reason: 'applied' | 'already' | 'unusable' | 'gone';
 }
 
 /**
@@ -329,6 +436,12 @@ export async function applyFinding(
   db: D1Database,
   finding: ResearchFinding,
   userId: number | null,
+  /**
+   * Whether a person read this value first. Passed through to `gap_verdict` so
+   * a silenced question carries the same provenance the finding does — see
+   * migration 0013. Not defaulted: every caller must state which it is.
+   */
+  decidedHow: DecisionMode,
 ): Promise<ApplyOutcome> {
   const field = finding.field as DetailField;
   const verdict = verdictFor(finding.value.kind);
@@ -348,6 +461,7 @@ export async function applyFinding(
       note: finding.value.basis,
       runId: finding.runId,
       decidedBy: userId,
+      decidedHow,
     });
     return {
       applied:
@@ -355,11 +469,12 @@ export async function applyFinding(
           ? `Recorded: this book has no ${field}. It will not be asked again.`
           : `Recorded: nobody knows this book's ${field}. It will not be asked again.`,
       skipped: null,
+      reason: 'applied',
     };
   }
 
   const work = await getWork(db, finding.workId);
-  if (!work) return { applied: null, skipped: 'That book no longer exists.' };
+  if (!work) return { applied: null, skipped: 'That book no longer exists.', reason: 'gone' };
 
   const blank = (v: string | number | null) =>
     v == null || (typeof v === 'string' && v.trim() === '');
@@ -367,51 +482,231 @@ export async function applyFinding(
   switch (field) {
     case 'firstPublished': {
       if (!blank(work.firstPublished)) {
-        return { applied: null, skipped: `Already recorded as ${work.firstPublished}.` };
+        return {
+          applied: null,
+          skipped: `Already recorded as ${work.firstPublished}.`,
+          reason: 'already',
+        };
       }
       const year = asYear(finding.value.value);
-      if (year == null) return { applied: null, skipped: 'That is not a usable year.' };
+      if (year == null) {
+        return { applied: null, skipped: 'That is not a usable year.', reason: 'unusable' };
+      }
       await updateWork(db, work.id, { firstPublished: year });
-      return { applied: `First published set to ${year}.`, skipped: null };
+      return { applied: `First published set to ${year}.`, skipped: null, reason: 'applied' };
     }
 
     case 'series': {
       if (!blank(work.series)) {
-        return { applied: null, skipped: `Already in the series ${work.series}.` };
+        return {
+          applied: null,
+          skipped: `Already in the series ${work.series}.`,
+          reason: 'already',
+        };
       }
       const name = String(finding.value.value ?? '').trim();
-      if (!name) return { applied: null, skipped: 'No series name to write.' };
+      if (!name) return { applied: null, skipped: 'No series name to write.', reason: 'unusable' };
       await updateWork(db, work.id, { series: name });
-      return { applied: `Series set to ${name}.`, skipped: null };
+      return { applied: `Series set to ${name}.`, skipped: null, reason: 'applied' };
     }
 
     case 'seriesIndex': {
       if (work.seriesIndexSort != null) {
-        return { applied: null, skipped: `Already volume ${work.seriesIndexSort}.` };
+        return {
+          applied: null,
+          skipped: `Already volume ${work.seriesIndexSort}.`,
+          reason: 'already',
+        };
       }
       if (blank(work.series)) {
-        return { applied: null, skipped: 'This book has no series to be a volume of.' };
+        // ⚠️ Not 'unusable'. The volume number may be perfectly good; it has
+        // nowhere to hang until a series exists. `autoApplyFindings` orders
+        // `series` ahead of this one so the ordinary case never lands here.
+        return {
+          applied: null,
+          skipped: 'This book has no series to be a volume of.',
+          reason: 'already',
+        };
       }
       const index = asIndex(finding.value.value);
-      if (index == null) return { applied: null, skipped: 'That is not a usable volume number.' };
+      if (index == null) {
+        return {
+          applied: null,
+          skipped: 'That is not a usable volume number.',
+          reason: 'unusable',
+        };
+      }
       // ⚠️ `series_index_sort` only. `series_index_display` is what the COVER
       // says — "Book 2", "Volume 07", "Prequel" — and research read a web page,
       // not a cover. Filling it with "Book 2" would be inventing the one field
       // in this trio whose entire job is to quote something.
       await updateWork(db, work.id, { seriesIndexSort: index });
-      return { applied: `Volume number set to ${index}.`, skipped: null };
+      return { applied: `Volume number set to ${index}.`, skipped: null, reason: 'applied' };
     }
 
     case 'description': {
       if (!blank(work.description)) {
-        return { applied: null, skipped: 'A description is already recorded.' };
+        return {
+          applied: null,
+          skipped: 'A description is already recorded.',
+          reason: 'already',
+        };
       }
       const text = String(finding.value.value ?? '').trim();
-      if (!text) return { applied: null, skipped: 'No description to write.' };
+      if (!text) {
+        return { applied: null, skipped: 'No description to write.', reason: 'unusable' };
+      }
       await updateWork(db, work.id, { description: text });
-      return { applied: 'Description saved.', skipped: null };
+      return { applied: 'Description saved.', skipped: null, reason: 'applied' };
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Applying everything a run found, without asking
+// ---------------------------------------------------------------------------
+
+export interface AutoApplyReport {
+  /** One sentence per value written, ready to show. */
+  applied: string[];
+  /**
+   * ⚠️ Reported by name, never swallowed. Constraint of the design: auto-apply
+   * may not quietly discard a finding. Anything here either needed no action or
+   * could not be written, and the second kind is still pending.
+   */
+  skipped: string[];
+  /** Findings left `pending` because their value was not usable. */
+  unusable: number;
+}
+
+/**
+ * Apply every pending finding this book has, in the order they depend on.
+ *
+ * ⚠️ **`DETAIL_FIELDS` order, not insertion order, and that is a real bug
+ * avoided rather than a tidiness preference.** `applyFinding` re-reads the work
+ * each time, and refuses `seriesIndex` when the work has no series. A model that
+ * returns the volume number before the series name — which it is free to do —
+ * would have its volume number dropped on every book that had both to learn.
+ * `DETAIL_FIELDS` puts `series` ahead of `seriesIndex` precisely so this
+ * sequencing works, so this sorts by that list rather than trusting the array.
+ *
+ * Everything pending for the work is applied, not only what this run produced.
+ * A finding left over from an earlier pass is a value the owner has already
+ * declined to read once; leaving it queued forever helps nobody.
+ */
+export async function autoApplyFindings(
+  db: D1Database,
+  workId: number,
+  userId: number | null,
+): Promise<AutoApplyReport> {
+  const pending = await listFindings(db, workId, 'pending');
+
+  const order = (f: ResearchFinding) => {
+    const i = (DETAIL_FIELDS as readonly string[]).indexOf(f.field);
+    // An unrecognised field sorts last rather than first. It cannot be depended
+    // on by anything, and putting it ahead of `series` would be the one way to
+    // reintroduce the bug this sort exists to prevent.
+    return i === -1 ? DETAIL_FIELDS.length : i;
+  };
+  const ordered = [...pending].sort((a, b) => order(a) - order(b) || a.id - b.id);
+
+  const report: AutoApplyReport = { applied: [], skipped: [], unusable: 0 };
+
+  for (const finding of ordered) {
+    const outcome = await applyFinding(db, finding, userId, 'auto');
+
+    if (outcome.applied) {
+      report.applied.push(outcome.applied);
+      await markFinding(db, finding.id, 'accepted', userId, 'auto');
+      continue;
+    }
+
+    report.skipped.push(`${finding.field}: ${outcome.skipped ?? 'nothing to do'}`);
+
+    // ⚠️ Only `unusable` stays pending. The gap is still open, so the queue must
+    // keep saying so — this is the one thing auto-apply refuses to paper over.
+    // Everything else is closed, or the page nags about questions that already
+    // have answers.
+    if (outcome.reason === 'unusable') {
+      report.unusable += 1;
+    } else {
+      await markFinding(db, finding.id, 'accepted', userId, 'auto');
+    }
+  }
+
+  return report;
+}
+
+// ---------------------------------------------------------------------------
+// Taking it back
+// ---------------------------------------------------------------------------
+
+/**
+ * Un-apply one auto-applied finding.
+ *
+ * ## Why this can simply write null, and could not if anything else changed
+ *
+ * `applyFinding` writes **only into a blank** — every branch above refuses a
+ * column that already had something in it. So the value before an auto-apply is
+ * always known without storing it: it was empty. That is what makes undo a
+ * one-liner instead of an audit log, and it is load-bearing. ⚠️ If a future
+ * change ever lets `applyFinding` overwrite a non-blank column, this becomes
+ * wrong and starts destroying data — the previous value would have to be
+ * recorded at write time instead.
+ *
+ * ## Two invariants it has to keep
+ *
+ * 1. **A volume number cannot outlive its series.** `applyFinding` refuses to
+ *    set `seriesIndexSort` when `series` is blank, so undoing a series must take
+ *    the index with it or leave a state the forward path would never create.
+ * 2. **Only the machine's own work is reachable.** `decided_how = 'auto'` gates
+ *    both the finding lookup and `deleteAutoVerdict`, so a bulk undo can never
+ *    reach a verdict somebody wrote by hand.
+ */
+export async function revertFinding(
+  db: D1Database,
+  finding: ResearchFinding,
+): Promise<{ reverted: string | null; skipped: string | null }> {
+  if (finding.decidedHow !== 'auto' || finding.reviewState !== 'accepted') {
+    return { reverted: null, skipped: 'That was not applied automatically.' };
+  }
+
+  const field = finding.field as DetailField;
+
+  // A `none`/`unknown` finding became a verdict, not a column. Withdrawing it
+  // puts the question back on the worklist, which is exactly what undo means.
+  if (verdictFor(finding.value.kind)) {
+    const gone = await deleteAutoVerdict(db, finding.workId, field);
+    await markFinding(db, finding.id, 'rejected', null, 'human');
+    return gone
+      ? { reverted: `Withdrew the recorded answer for ${field}.`, skipped: null }
+      : { reverted: null, skipped: 'That answer had already been changed by hand.' };
+  }
+
+  const work = await getWork(db, finding.workId);
+  if (!work) return { reverted: null, skipped: 'That book no longer exists.' };
+
+  switch (field) {
+    case 'firstPublished':
+      await updateWork(db, work.id, { firstPublished: null });
+      break;
+    case 'series':
+      // See invariant 1. Both, together, or neither.
+      await updateWork(db, work.id, { series: null, seriesIndexSort: null });
+      break;
+    case 'seriesIndex':
+      await updateWork(db, work.id, { seriesIndexSort: null });
+      break;
+    case 'description':
+      await updateWork(db, work.id, { description: null });
+      break;
+  }
+
+  // Rejected, so a later run proposes it again rather than treating the question
+  // as settled. Marked `human`, because throwing it away *is* a person's act —
+  // the one act this whole feature preserved.
+  await markFinding(db, finding.id, 'rejected', null, 'human');
+  return { reverted: `Cleared ${field}.`, skipped: null };
 }
 
 export { ResearchError };
