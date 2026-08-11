@@ -190,6 +190,30 @@ export interface Stats {
  * `gapEvidenceLabel` — rather than re-wording anything here, so the sentence a
  * page prints and the arithmetic behind it cannot drift.
  */
+/**
+ * An audiobook the household owns at a rung with no work row — migration 0080.
+ *
+ * ⚠️ `matchedVia` is the honesty rail and not decoration. `'fold'` means only
+ * the series name connects the two catalogs, and the ladder must render it as
+ * AUDIO? rather than AUDIO.
+ */
+export interface SeriesGapAudio {
+  index: number;
+  title: string;
+  authors: string | null;
+  audiobookSeries: string;
+  indexDisplay: string | null;
+  matchedVia: 'work_match' | 'fold';
+}
+
+/** The owner's decision never to own one rung — migration 0081. */
+export interface SeriesGapSkip {
+  index: number;
+  reason: string;
+  note: string | null;
+  decidedAt: string | null;
+}
+
 export interface SeriesGap {
   index: number;
   volumeId: number | null;
@@ -203,6 +227,10 @@ export interface SeriesGap {
   sourceUrl: string | null;
   note: string | null;
   staleAt: string | null;
+  /** Absent from this catalog, present in the house. See `SeriesGapAudio`. */
+  audio: SeriesGapAudio | null;
+  /** Set only on a rung in `skipped`, never on one in `gaps`. */
+  skipped: SeriesGapSkip | null;
 }
 
 export interface SeriesCompleteness {
@@ -213,9 +241,15 @@ export interface SeriesCompleteness {
   highestOwned: number | null;
   highestKnown: number | null;
   gaps: SeriesGap[];
+  /** Rungs the owner has decided never to own. Not in `gaps`. */
+  skipped: SeriesGap[];
   wanted: number;
+  /** ⚠️ Excludes rungs confidently held on audio. See `@lc/core`. */
   certainGaps: number;
   attestedGaps: number;
+  onAudio: number;
+  /** Still inside the two counts above — a hedge does not cross a book off. */
+  maybeOnAudio: number;
   knownTotal: number | null;
   knownTotalSource: string | null;
   openEnded: boolean;
@@ -856,6 +890,25 @@ export const api = {
     request<SeriesReport>(`/api/series/${encodeURIComponent(name)}/total`, {
       method: 'PUT',
       body: JSON.stringify(body),
+    }),
+
+  /**
+   * "I am never buying that one."
+   *
+   * ⚠️ Costs a `reason` but no *source*, unlike every other write above it. It
+   * is a decision about intent, not a claim about the world — see migration
+   * 0081. An upsert, so re-recording with a better reason is the same call.
+   */
+  skipSeriesGap: (name: string, body: { indexSort: number; reason: string; note?: string | null }) =>
+    request<SeriesReport>(`/api/series/${encodeURIComponent(name)}/skips`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  /** Change your mind. The rung goes back to being missing. */
+  unskipSeriesGap: (name: string, index: number) =>
+    request<SeriesReport>(`/api/series/${encodeURIComponent(name)}/skips/${index}`, {
+      method: 'DELETE',
     }),
 
   // -------------------------------------------------------------------------

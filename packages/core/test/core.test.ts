@@ -65,7 +65,9 @@ import { SHELF_SCHEMA } from '../src/vision.ts';
 import { REFUSED_FIELDS, detailGaps, verdictFor } from '../src/gaps.ts';
 import {
   completenessSentence,
+  gapAudioLabel,
   gapEvidenceLabel,
+  gapSkipLabel,
   seriesCompleteness,
 } from '../src/completeness.ts';
 import {
@@ -664,6 +666,219 @@ describe('series completeness — what we may and may not claim', () => {
     });
     assert.equal(looked.checked, true);
     assert.equal(looked.checkOutcome, 'not_found');
+  });
+});
+
+describe('series completeness — a rung we own, but not in this catalog', () => {
+  const own = (index: number, id = index) => ({ index, workId: id });
+  const said = (index: number, extra: Record<string, unknown> = {}) => ({
+    index,
+    workId: null,
+    source: 'audiobook_catalog',
+    ...extra,
+  });
+  /** A migration 0080 row. `work_match` unless a test says otherwise. */
+  const onAudio = (index: number, extra: Record<string, unknown> = {}) => ({
+    index,
+    title: `Volume ${index}`,
+    authors: 'Brandon Sanderson',
+    audiobookSeries: 'The Stormlight Archive',
+    indexDisplay: null,
+    matchedVia: 'work_match' as const,
+    ...extra,
+  });
+
+  /**
+   * THE test for this feature, and the shape of the real bug.
+   *
+   * The household owns every Stormlight Archive audiobook — 1, 2, 2.5, 3, 3.5, 4
+   * and 5, verified against `audiobook_catalog/site/catalog.csv` on 2026-08-11 —
+   * and this catalog holds one of those titles, *Words of Radiance*, as an ebook.
+   *
+   * `audiobook_holding` is keyed on `work_id`, so the other six could not be
+   * represented at all, and the page read "1 book of at least 5 — 6 missing from
+   * the run itself". Six books, every one of them in the house. Telling somebody
+   * they lack a book they own is how they buy it twice.
+   */
+  it('⚠️ does not call a book missing when the household owns it on audio', () => {
+    const volumes = [own(2), ...[1, 2.5, 3, 3.5, 4, 5].map((n) => said(n))];
+    const audio = [1, 2.5, 3, 3.5, 4, 5].map((n) => onAudio(n));
+    const c = seriesCompleteness('The Stormlight Archive', volumes, {}, { audio });
+
+    // Still rungs, still absent from THIS catalog — buying the paperback is a
+    // real decision. What they have stopped being is missing.
+    assert.equal(c.gaps.length, 6);
+    assert.equal(c.certainGaps, 0);
+    assert.equal(c.attestedGaps, 0);
+    assert.equal(c.onAudio, 6);
+
+    const sentence = completenessSentence(c);
+    assert.match(sentence, /nothing here is missing/);
+    assert.match(sentence, /6 more you own on audio/);
+    assert.doesNotMatch(sentence, /missing from the run itself/);
+  });
+
+  it('⚠️ a match on the folded series name alone stays counted as missing', () => {
+    // The honesty rail. `'fold'` means nothing but two series names folding
+    // together connects the two catalogs — no book was ever identified, and the
+    // numbering has never been seen to agree. `matching.ts` opens with three
+    // wrong matches the sibling project shipped, every one of which would have
+    // read fine as a flat claim.
+    const c = seriesCompleteness(
+      'Dark Healer',
+      [own(1), said(2), said(3)],
+      {},
+      { audio: [onAudio(2, { matchedVia: 'fold' }), onAudio(3, { matchedVia: 'fold' })] },
+    );
+    assert.equal(c.onAudio, 0);
+    assert.equal(c.maybeOnAudio, 2);
+    // Both are still on the missing side of the ledger.
+    assert.equal(c.certainGaps + c.attestedGaps, 2);
+    assert.match(completenessSentence(c), /2 possibly on audio/);
+    assert.doesNotMatch(completenessSentence(c), /you own on audio/);
+  });
+
+  it('says which claim it is making, on the rung itself', () => {
+    const c = seriesCompleteness(
+      'The Stormlight Archive',
+      [own(2), said(1, { title: 'The Way of Kings' }), said(3, { title: 'Oathbringer' })],
+      {},
+      { audio: [onAudio(1), onAudio(3, { matchedVia: 'fold' })] },
+    );
+    assert.match(gapAudioLabel(c.gaps[0]!)!, /^you own this on audio/);
+    assert.match(gapAudioLabel(c.gaps[1]!)!, /^possibly on audio/);
+    // ⚠️ Names what was actually compared. A hedge that does not say what is
+    // uncertain is a certainty in a quieter font.
+    assert.match(gapAudioLabel(c.gaps[1]!)!, /only the series name connects/);
+  });
+
+  it('keeps our source’s title, and only borrows theirs when we have none', () => {
+    // The two catalogs spell it differently — "Dawnshard - Stormlight Archive"
+    // there — and a rung that renames itself the day an audio match lands reads
+    // as a different book.
+    const c = seriesCompleteness(
+      'The Stormlight Archive',
+      [own(1), said(2, { title: 'Words of Radiance' }), said(3)],
+      {},
+      {
+        audio: [
+          onAudio(2, { title: 'Words of Radiance - The Stormlight Archive, Book 2' }),
+          onAudio(3, { title: 'Oathbringer' }),
+        ],
+      },
+    );
+    assert.equal(c.gaps[0]?.title, 'Words of Radiance');
+    assert.equal(c.gaps[1]?.title, 'Oathbringer');
+  });
+
+  it('⚠️ audio can never raise the ceiling, so it can never invent a volume', () => {
+    // The whole module's safety property, restated for the new input. We own
+    // Cradle 1–12 and nothing attests a 13; a stray audio row at 13 must not
+    // conjure a rung, because `highestKnown` is what stops this fabricating.
+    const c = seriesCompleteness(
+      'Cradle',
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => own(n)),
+      {},
+      { audio: [onAudio(13)] },
+    );
+    assert.deepEqual(c.gaps, []);
+    assert.equal(c.highestKnown, 12);
+    assert.equal(c.onAudio, 0);
+  });
+});
+
+describe('series completeness — “I am never buying that one”', () => {
+  const own = (index: number, id = index) => ({ index, workId: id });
+  const said = (index: number, extra: Record<string, unknown> = {}) => ({
+    index,
+    workId: null,
+    source: 'audiobook_catalog',
+    ...extra,
+  });
+  const skip = (index: number, reason = 'Patreon-only short, never sold') => ({ index, reason });
+
+  /**
+   * The real case: the three Patreon-era Completionist Chronicles shorts — 6.5
+   * *Havoc in the Deathyards*, 11.5 *Jaxon's New Clients*, 13.5 *Poppy's
+   * Promise* — are not sold, so the series read incomplete for ever.
+   */
+  it('moves a skipped rung out of gaps entirely, rather than flagging it inside', () => {
+    const volumes = [
+      ...[12, 13, 14].map((n) => own(n)),
+      ...[6.5, 11.5, 13.5].map((n) => said(n, { title: `Short ${n}` })),
+    ];
+    const c = seriesCompleteness(
+      'The Completionist Chronicles',
+      volumes,
+      {},
+      { skipped: [6.5, 11.5, 13.5].map((n) => skip(n)) },
+    );
+
+    assert.deepEqual(c.skipped.map((g) => g.index), [6.5, 11.5, 13.5]);
+    // ⚠️ Not in `gaps`, so every count derived from it — and both chips on the
+    // series list, and the "only series with gaps" filter — stop seeing them
+    // with no edit to any of those.
+    assert.equal(c.gaps.some((g) => g.index === 6.5), false);
+    assert.equal(c.gaps.every((g) => g.skipped == null), true);
+    assert.equal(gapSkipLabel(c.skipped[0]!), 'skipped — Patreon-only short, never sold');
+    assert.equal(gapSkipLabel(c.gaps[0]!), null);
+  });
+
+  it('⚠️ says "12 of 15, 3 skipped" and never "12 of 12"', () => {
+    // The two readings that were on the table. Shortening the series is a claim
+    // about how long it is, and only a sourced `series_check.known_total` may
+    // make one — deciding not to buy book 13 does not un-publish it.
+    const volumes = [...Array(12)].map((_, i) => own(i + 1));
+    const withTotal = { knownTotal: 15, knownTotalSource: "the author's site" };
+    const c = seriesCompleteness('S', [...volumes, said(13), said(14), said(15)], withTotal, {
+      skipped: [13, 14, 15].map((n) => skip(n, 'novellas, not reading them')),
+    });
+
+    const sentence = completenessSentence(c);
+    assert.match(sentence, /All 15 accounted for/);
+    assert.match(sentence, /12 here/);
+    assert.match(sentence, /3 deliberately skipped/);
+    // ⚠️ The total is untouched. "12 of 12" would be this app inventing a
+    // shorter series, which is the one thing the whole feature refuses.
+    assert.equal(c.knownTotal, 15);
+    assert.doesNotMatch(sentence, /of 12/);
+    assert.doesNotMatch(sentence, /to go/);
+  });
+
+  it('still counts what is genuinely outstanding beside what was skipped', () => {
+    const c = seriesCompleteness(
+      'S',
+      [own(1), own(2), said(3), said(4)],
+      { knownTotal: 4, knownTotalSource: 'the publisher' },
+      { skipped: [skip(4)] },
+    );
+    assert.match(completenessSentence(c), /2 of 4, per the publisher — 1 to go\./);
+    assert.match(completenessSentence(c), /1 deliberately skipped\./);
+  });
+
+  it('⚠️ "unbroken" is withdrawn once a rung is skipped', () => {
+    // With every remaining hole skipped there is nothing missing, but the run is
+    // not unbroken and must not claim to be.
+    const c = seriesCompleteness('S', [own(1), own(2), said(3), own(4)], {}, { skipped: [skip(3)] });
+    assert.deepEqual(c.gaps, []);
+    const sentence = completenessSentence(c);
+    assert.doesNotMatch(sentence, /unbroken/);
+    assert.match(sentence, /nothing else is missing/);
+    assert.match(sentence, /1 deliberately skipped/);
+    assert.match(sentence, /Nothing says whether the series goes further/);
+  });
+
+  it('skips a rung that no source ever attested, because arithmetic made it', () => {
+    // An `earlier` gap exists in no table at all — it is implied by owning book
+    // 7. `gap_verdict` could not express this even if it were not keyed on a
+    // work id, and it is why skips arrive through `GapContext` rather than
+    // through the volume list.
+    const c = seriesCompleteness('High School DxD', [7, 8].map((n) => own(n)), {}, {
+      skipped: [1, 2, 3].map((n) => skip(n, 'starting at 7 on purpose')),
+    });
+    assert.deepEqual(c.gaps.map((g) => g.index), [4, 5, 6]);
+    assert.deepEqual(c.skipped.map((g) => g.index), [1, 2, 3]);
+    assert.equal(c.certainGaps, 3);
   });
 });
 

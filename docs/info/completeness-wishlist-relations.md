@@ -3,7 +3,11 @@
 > **Audience:** Claude sessions. **Status:** TRACKED.
 > Last verified: **2026-08-10**, except §3.2a (the scan-time overlap warning),
 > verified **2026-08-11** through a running Worker against a local fixture —
-> both directions, and a wished-for container correctly producing no warning.
+> both directions, and a wished-for container correctly producing no warning;
+> and §§1.4a–1.4b, added **2026-08-11** and verified the same day by driving the
+> real `getSeriesReport` against a fresh local D1 with migrations 0080 and 0081
+> applied. See §5's third trap for why that went through `@lc/db` rather than
+> through a running Worker.
 >
 > Every figure below is a **measured run on that date** against the local D1
 > (115 works; production held 117 at the same moment, differing by two
@@ -102,6 +106,122 @@ Series where its highest volume is **below** ours — Arcane Pathfinder, Space
 Knight, The Completionist Chronicles. That is not an error and not a gap; the
 script prints it as a warning because a source topping out below the shelf is
 also the shape of a bad name match, and the two need telling apart by eye.
+
+### 1.4a ⚠️ A "missing" book the household already owns — fixed 2026-08-11
+
+**The app was telling the owner they lacked books that are in the house.** That is
+the one failure a completeness feature cannot survive, because it ends with
+somebody buying a second copy.
+
+`audiobook_holding` (migration 0010) is keyed
+`work_id INTEGER PRIMARY KEY REFERENCES work(id)`. That key is not a backfill
+gap, it is a structural one: **a book owned only on audio has no work row here,
+so it cannot be represented at all.** Measured against
+`audiobook_catalog/site/catalog.csv` on 2026-08-11:
+
+| | |
+|---|---|
+| Stormlight Archive audiobooks the household holds | **7** — 1, 2, 2.5, 3, 3.5, 4, 5 |
+| …of those, catalogued here | **1**, *Words of Radiance*, as an EPUB |
+| what `/series/The Stormlight Archive` said | *"1 book of at least 5 — **6 missing** from the run itself"* |
+| audiobook rows with no work row at all | **~397**, so this is systemic |
+
+**Migration 0080 (`audiobook_series_holding`) is the fix, and it is a second
+cache table rather than ~400 new `work` rows.** Minting works was the obvious
+option and contradicts all three of migration 0010's stated rules — an audiobook
+is *a different object in a different catalog*, the table is *a cache, never a
+source of truth*, and *`copy` deliberately cannot reference it* — plus §2.3's
+lesson below, that a `work` row already means two things and must not be made to
+mean a third.
+
+The key is `(series, index_sort)`, **which is the whole safety argument**: a gap
+rung is a series and a number and nothing else, so there is no title to compare
+and therefore **no containment guessing** — the rung that produced the old flat
+*"All 5 held on audio"* lie on `/series/Tamer: King of Dinosaurs`.
+
+⚠️ **The table adds no rungs to any ladder; it annotates existing ones.** Every
+row it writes has a matching `series_volume` row by construction — same CSV, same
+fold, same one-row-per-index rule — so `highestKnown`, the ceiling
+`completeness.ts` calls "what stops this fabricating", is untouched.
+
+**The fold is `normaliseTitle`**, at script time only, and nothing folded is
+stored: `audiobook_series_holding.series` holds *our* spelling, so the Worker
+joins `work.series` exactly. Three folds exist and only one is right here:
+
+| Fold | Verdict |
+|---|---|
+| `normaliseTitle` | ✅ Already the series-name fold — `backfill-series-volumes.mjs` has resolved "All the Skills" onto "All The Skills" with it since it was written, and this table annotates the rows that produces. A second rule would be the second-matching-function mistake `matching.ts` opens with. |
+| `normaliseUniverseText` | ❌ Keeps leading articles **on purpose** (the universe list holds "The Cosmere" and "Cosmere" as different entries). Measured, that is disqualifying: `Dark Healer` and `The Dark Healer` are one series written twice. |
+| `bookIdFromTitle` | ❌ A Firestore document id, not a comparison. |
+
+Measured over that CSV's **331 distinct series spellings**: the fold produces
+**329 keys**, and both collisions — `Star Justice, Book`/`Star Justice Book` and
+`Dark Healer`/`The Dark Healer` — are one series spelled two ways. **Nothing
+distinct was conflated.**
+
+⚠️ **The honesty rail is `series_matched_via`.** A folded name is not proof that
+two catalogs mean one series, or that they number it alike.
+
+| Value | Earned by | Rendered |
+|---|---|---|
+| `work_match` | a work we hold was matched by `matching.ts` on **title and author**, is filed under that audiobook series, **and carries the same volume number on both sides** | `AUDIO`, and the rung stops counting as missing |
+| `fold` | the names merely fold onto one key | `AUDIO?`, and the rung **stays counted as missing** |
+
+A hedge does not cross a book off a list — `maybeOnAudio` is reported separately
+and stays inside `certainGaps`/`attestedGaps`.
+
+Verified end to end on 2026-08-11 against a fresh local D1 (both migrations
+applied) seeded with *Words of Radiance*, after `backfill:series-volumes` and
+`backfill:audiobooks`:
+
+```
+1 book of at least 5 — nothing here is missing. 6 more you own on audio.
+onAudio=6  certainGaps=0  attestedGaps=0
+```
+
+and, for a series with no corroborating work, the hedge holding:
+
+```
+1 book of at least 9 — 8 missing from the run itself. 6 possibly on audio.
+onAudio=0  maybeOnAudio=6  certainGaps=8
+```
+
+**Not verified:** nothing has run against production, and neither migration is
+applied there. The local D1 in the main checkout is behind the repo and holds no
+Stormlight rows, so the seven-audiobook figure comes from the CSV, not from a
+production read.
+
+### 1.4b "I am never buying that one" — migration 0081
+
+The Completionist Chronicles has three Patreon-era shorts — **6.5** *Havoc in the
+Deathyards*, **11.5** *Jaxon's New Clients*, **13.5** *Poppy's Promise* — that
+will never be bought, so the series read incomplete for ever.
+
+⚠️ **`gap_verdict` cannot answer this.** It is keyed `(work_id, field)` and
+answers a **detail** gap on a book we own. A series gap is definitionally a
+volume with **no work row** — that is what makes it a gap — so the key has to be
+`(series, index_sort)`, the only thing a rung is guaranteed to have. Skips also
+reach rungs that exist in no table at all: an `earlier` gap is pure arithmetic.
+
+⚠️ **It is the one write in this feature that costs no source.** Every other
+assertion here could be false; a preference cannot be. `reason` is still
+required, as the answer to "why is 11.5 greyed out" six months from now.
+
+**How completion reads afterwards.** Two phrasings were on the table and only one
+is honest:
+
+| | |
+|---|---|
+| *"you own 12 of 12, 3 skipped"* | ❌ Shortens the series. Only a sourced `series_check.known_total` may say how long a series is, and skipping a book does not un-publish it. |
+| *"12 of 15 — 3 deliberately skipped, so nothing else is missing"* | ✅ Keeps the length, moves the three out of *missing*. |
+
+Mechanically, a skipped rung **leaves `SeriesCompleteness.gaps` for `skipped`**,
+so every count derived from `gaps` — both chips on the series list, the
+"only series with gaps" filter, `certainGaps`, `attestedGaps` — stops seeing it
+with no edit to any of them. The ladder still draws it, greyed, with the reason
+and a *Put it back*. With a total recorded the sentence becomes
+`All 15 accounted for, per … — 12 here. 3 deliberately skipped.`; without one,
+`"unbroken"` is withdrawn in favour of `"nothing else is missing"`.
 
 ### 1.5 Sources that cannot fire here, and why
 
@@ -267,11 +387,25 @@ a typo mint a second copy of a book already on the shelf.
 ## 4. Running it
 
 ```bash
-npm run db:migrate:local                       # 0003 + 0004
+npm run db:migrate:local                       # 0003 + 0004, and now 0080 + 0081
 npm run backfill:series-volumes                # dry run, LOCAL — read the per-series lines
 npm run backfill:series-volumes -- --commit
-npm test                                       # 55 core-rule tests
+npm run backfill:audiobooks                    # dry run — ⚠️ READ THE `fold` LIST
+npm run backfill:audiobooks -- --commit
+npm test                                       # 266 core-rule tests
 ```
+
+⚠️ From a git worktree both backfills need `LC_AUDIOBOOK_ROOT` pointing at the
+`audiobook_catalog` checkout — `../audiobook_catalog` lands three directories too
+deep and a zero-row read looks exactly like "the sibling catalog knows nothing".
+`backfill:audiobooks` fails loudly on that rather than marking every holding
+stale; `backfill:series-volumes` does not.
+
+⚠️ **Read the `fold` list in `backfill:audiobooks` before committing.** Those are
+the series whose only connection to the audiobook catalog is a folded name; every
+rung of one renders `AUDIO?` and is still counted as missing. The
+`work_match` list needs no such reading — each of those had a book identified by
+title, author and volume number.
 
 Idempotent: a second run reports `0 volume(s) this run has not seen before`.
 It never overwrites a `manual` row.
@@ -279,7 +413,7 @@ It never overwrites a `manual` row.
 ⚠️ **Migrate before deploying.** New code must never meet an old schema, and
 `/api/series` queries three tables that do not exist in production yet.
 
-## 5. Two traps found while building this
+## 5. Three traps found while building this
 
 **A backtick inside SQL inside a template literal.** `packages/db/src/series.ts`
 had a comment reading ``-- the `copy` table``, which closed the template string.
@@ -296,3 +430,27 @@ body with no console error at all. Check
 `curl -s -o /dev/null -w '%{size_download}' localhost:PORT/assets/index-*.js`
 against the real file size before debugging anything else. The fix is the same:
 restart `wrangler dev` after `npm run build`.
+
+**⚠️ `curl localhost:<port>` can reach SOMEBODY ELSE'S worker.** Found
+2026-08-11, and it cost an hour of chasing a phantom wrangler bug. A worktree
+`wrangler dev` on port 8791 answered `/api/health` with 200 and then failed every
+query with `no such table: audiobook_holding` — a table that demonstrably existed
+in the database it had been pointed at. The conclusion drawn was "`wrangler dev`
+ignores `--persist-to` in a worktree". **It does not.** Several parallel agents
+were each running `wrangler dev` from the *main* checkout, whose local D1 is
+behind the repo, and the curl was being answered by one of theirs. `/api/me`
+returning a fully populated user nobody had seeded was the clue that went unread.
+
+Two things follow, and both are cheap:
+
+- **Check what is already listening before believing a local response**:
+  `netstat -ano | grep LISTENING | grep :<port>`. More than one PID on your port
+  means the answer is not necessarily yours.
+- **Kill by command line, never by port.** `Get-CimInstance Win32_Process` and
+  match on your worktree path — killing whatever holds the port kills another
+  agent's session.
+
+Where a Worker cannot be trusted, drive `@lc/db` directly: a ~40-line shim giving
+`prepare/bind/all/first` over `wrangler d1 execute` runs every real query, join
+and row converter, and is what verified §1.4a. ⚠️ Strip `--` line comments before
+flattening the SQL to one line, or the first comment swallows the statement.

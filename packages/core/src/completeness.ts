@@ -31,6 +31,30 @@
  * continues. Measured against this catalog on 2026-08-10, that distinction is
  * the difference between 3 honest gaps in *Beneath the Dragoneye Moons* and a
  * fabricated claim about every unfinished series on the shelf.
+ *
+ * ## ⚠️ Two ways a "missing" volume is not missing — added 2026-08-11
+ *
+ * Both are the same failure as the third sentence above, from the other side:
+ * the app saying something untrue about the shelf. Both arrive through
+ * `GapContext` rather than through `volumes`, because **neither is a claim that
+ * a volume exists** — the volume's existence is already settled by the time
+ * either is consulted, and letting them into `volumes` would let them raise
+ * `highestKnown` and start inventing books.
+ *
+ * | | What it is | What it does to the arithmetic |
+ * |---|---|---|
+ * | `audio` | the household owns that volume, in the sibling audiobook catalog (migration 0080) | the rung stays a gap — it IS absent from *this* catalog — but stops being counted as missing |
+ * | `skipped` | the owner has decided never to own it (migration 0081) | the rung leaves `gaps` for `skipped`, so nothing derived from `gaps` counts it |
+ *
+ * The audio case is the one that was actively lying. The household holds all
+ * seven Stormlight Archive audiobooks and this catalog holds one of those titles
+ * as an ebook; the page read *"1 book of at least 5 — 6 missing from the run
+ * itself"*, and every one of the six is in the house. See migration 0080.
+ *
+ * ⚠️ **An unconfirmed audio match stays counted as missing.** `matchedVia` is
+ * `'fold'` when nothing but a folded series name connects the two catalogs, and
+ * a hedge that removed a book from the missing list would be a certainty wearing
+ * a question mark. It earns a separate, quieter clause instead.
  */
 
 /** A volume of a series, owned or merely attested. */
@@ -111,6 +135,59 @@ export type GapEvidence =
    */
   | 'implied';
 
+/**
+ * How firmly the two catalogs' series names were shown to mean one series.
+ *
+ * ⚠️ Not the same question as migration 0010's `matched_via`, which is one title
+ * meeting another. See migration 0080 for both values in full.
+ */
+export type AudioSeriesMatch =
+  /** A work we hold corroborated the name mapping AND the numbering. Firm. */
+  | 'work_match'
+  /** The names merely fold onto one key. Nothing confirmed it. Hedged. */
+  | 'fold';
+
+/**
+ * A volume of this series the household owns on audio — cached by migration
+ * 0080, because the Worker cannot read the sibling catalog's CSV.
+ *
+ * ⚠️ It never says a volume *exists*; `series_volume` does that, from the same
+ * file, and by construction there is a row there for every row here. This only
+ * answers "that one, you have".
+ */
+export interface SeriesAudioInput {
+  index: number;
+  /** Its title over there, which is not always the one we would print. */
+  title: string;
+  authors: string | null;
+  /** That catalog's own series spelling. Shown when it differs from ours. */
+  audiobookSeries: string;
+  indexDisplay: string | null;
+  matchedVia: AudioSeriesMatch;
+}
+
+/** The owner's decision never to own one rung. Migration 0081. */
+export interface SeriesSkipInput {
+  index: number;
+  /** Why, in their words. Not evidence — a reminder. See migration 0081. */
+  reason: string;
+  note?: string | null;
+  decidedAt?: string | null;
+}
+
+/**
+ * Facts about rungs that are neither "we hold it" nor "a source named it".
+ *
+ * ⚠️ Deliberately a fourth argument and not part of `volumes`. Nothing in here
+ * may raise `highestKnown` — see the header. An `earlier` gap is also reachable
+ * from here and from nowhere else: it is pure arithmetic, so it has no
+ * `series_volume` row to hang a flag on.
+ */
+export interface GapContext {
+  audio?: readonly SeriesAudioInput[];
+  skipped?: readonly SeriesSkipInput[];
+}
+
 export interface SeriesGap {
   index: number;
   /** The `series_volume` row behind it, when a source named this volume. */
@@ -128,6 +205,16 @@ export interface SeriesGap {
   sourceUrl: string | null;
   note: string | null;
   staleAt: string | null;
+  /**
+   * ⚠️ Owned on audio — absent from THIS catalog, present in the house.
+   *
+   * The rung stays a gap because it genuinely is one: there is no ebook and no
+   * printing here, and "buy the paperback" is still a decision somebody might
+   * make. What it stops being is *missing*, which is the word that was wrong.
+   */
+  audio: SeriesAudioInput | null;
+  /** Set only on a rung in `skipped`. Never on one in `gaps`. */
+  skipped: SeriesSkipInput | null;
 }
 
 export interface SeriesCompleteness {
@@ -147,13 +234,43 @@ export interface SeriesCompleteness {
   highestOwned: number | null;
   /** The highest volume anything — us or a source — says exists. */
   highestKnown: number | null;
+  /**
+   * Volumes we do not have here. ⚠️ Skipped rungs are NOT in this list.
+   *
+   * Every count in this object that is about absence is derived from it, so
+   * moving a rung out of it is the one edit that keeps two screens agreeing.
+   */
   gaps: SeriesGap[];
+  /**
+   * Rungs the owner has decided never to own. Migration 0081.
+   *
+   * Kept as full rungs rather than a count so the ladder can still draw them,
+   * with their reason and an undo. A skipped book that vanishes from the page is
+   * indistinguishable from one nobody has noticed.
+   */
+  skipped: SeriesGap[];
   /** Missing volumes already on the wishlist. A subset of `gaps`. */
   wanted: number;
-  /** Gaps we worked out ourselves. Cannot be wrong. */
+  /**
+   * Gaps we worked out ourselves. Cannot be wrong.
+   *
+   * ⚠️ Excludes rungs confidently held on audio, and that is the fix for the
+   * whole bug: this number is what the series list prints as "N missing", and
+   * counting a book the owner owns was the lie. `gaps.length` is still the
+   * count of rungs absent from *this* catalog, which is a different question.
+   */
   certainGaps: number;
-  /** Gaps that rest on a source. Named in the UI. */
+  /** Gaps that rest on a source. Named in the UI. Same audio exclusion. */
   attestedGaps: number;
+  /** Gaps the household owns on audio — `matchedVia: 'work_match'`. */
+  onAudio: number;
+  /**
+   * Gaps that *may* be held on audio — `matchedVia: 'fold'`.
+   *
+   * ⚠️ These are still inside `certainGaps` / `attestedGaps`. A hedge does not
+   * cross a book off a list.
+   */
+  maybeOnAudio: number;
   /**
    * A total, if and only if a person typed one with a source.
    *
@@ -199,7 +316,10 @@ export function seriesCompleteness(
   series: string,
   volumes: SeriesVolumeInput[],
   check: SeriesCheckInput = {},
+  context: GapContext = {},
 ): SeriesCompleteness {
+  const audioByIndex = new Map((context.audio ?? []).map((a) => [a.index, a]));
+  const skipByIndex = new Map((context.skipped ?? []).map((s) => [s.index, s]));
   // Held, not merely catalogued. See `SeriesVolumeInput.wanted`.
   const owned = volumes.filter((v) => v.workId != null && !v.wanted);
   const ownedPositions = owned.map((v) => v.index).filter(isPosition);
@@ -217,7 +337,10 @@ export function seriesCompleteness(
   const highestKnown = knownPositions.length ? Math.max(...knownPositions) : null;
 
   const ownedSet = new Set(ownedPositions);
-  const gaps: SeriesGap[] = [];
+  /** Every rung we do not hold here, skipped ones included. Partitioned below. */
+  const absent: SeriesGap[] = [];
+  const toGap = (index: number, row: SeriesVolumeInput | undefined, evidence: GapEvidence) =>
+    gapFrom(index, row, evidence, audioByIndex.get(index) ?? null, skipByIndex.get(index) ?? null);
 
   if (highestKnown != null && knownPositions.length) {
     // The floor is 1 for an ordinarily numbered series. It drops only if
@@ -245,7 +368,7 @@ export function seriesCompleteness(
             : row
               ? 'attested'
               : 'implied';
-      gaps.push(toGap(p, row, evidence));
+      absent.push(toGap(p, row, evidence));
     }
   }
 
@@ -254,10 +377,21 @@ export function seriesCompleteness(
   for (const v of attested) {
     if (isPosition(v.index)) continue;
     if (owned.some((o) => o.index === v.index)) continue;
-    gaps.push(toGap(v.index, v, 'attested'));
+    absent.push(toGap(v.index, v, 'attested'));
   }
 
-  gaps.sort((a, b) => a.index - b.index);
+  absent.sort((a, b) => a.index - b.index);
+
+  // ⚠️ The partition, and it is the whole of bug 2's arithmetic. A skipped rung
+  // leaves `gaps`, so every count below — and both chips on the series list, and
+  // the "only series with gaps" filter — stop seeing it, with no edit to any of
+  // them. It is still a rung and the ladder still draws it.
+  const gaps = absent.filter((g) => g.skipped == null);
+  const skipped = absent.filter((g) => g.skipped != null);
+
+  // Owned on audio, and evidenced. `'fold'` is deliberately not in here — see
+  // the header: a hedge does not cross a book off a list.
+  const held = (g: SeriesGap) => g.audio?.matchedVia === 'work_match';
 
   const knownTotal = check.knownTotal ?? null;
 
@@ -269,9 +403,16 @@ export function seriesCompleteness(
     highestOwned,
     highestKnown,
     gaps,
+    skipped,
     wanted: volumes.filter((v) => v.wanted).length,
-    certainGaps: gaps.filter((g) => g.evidence === 'interior' || g.evidence === 'earlier').length,
-    attestedGaps: gaps.filter((g) => g.evidence === 'attested' || g.evidence === 'implied').length,
+    certainGaps: gaps.filter(
+      (g) => !held(g) && (g.evidence === 'interior' || g.evidence === 'earlier'),
+    ).length,
+    attestedGaps: gaps.filter(
+      (g) => !held(g) && (g.evidence === 'attested' || g.evidence === 'implied'),
+    ).length,
+    onAudio: gaps.filter(held).length,
+    maybeOnAudio: gaps.filter((g) => g.audio?.matchedVia === 'fold').length,
     knownTotal,
     knownTotalSource: check.knownTotalSource ?? null,
     openEnded: knownTotal == null,
@@ -281,10 +422,12 @@ export function seriesCompleteness(
   };
 }
 
-function toGap(
+function gapFrom(
   index: number,
   row: SeriesVolumeInput | undefined,
   evidence: GapEvidence,
+  audio: SeriesAudioInput | null,
+  skipped: SeriesSkipInput | null,
 ): SeriesGap {
   return {
     index,
@@ -292,13 +435,20 @@ function toGap(
     workId: row?.workId ?? null,
     wanted: row?.wanted ?? false,
     evidence,
-    title: row?.title ?? null,
-    authors: row?.authors ?? null,
+    // ⚠️ Our attesting row first; the audiobook catalog's name only when we have
+    // none at all. The two spellings differ — "Dawnshard - Stormlight Archive"
+    // there — and a rung that renames itself the day an audio match lands reads
+    // as a different book. `audio.title` is shown beside it, never instead of
+    // it, so a wrong mapping stays visible.
+    title: row?.title ?? audio?.title ?? null,
+    authors: row?.authors ?? audio?.authors ?? null,
     display: row?.display ?? null,
     source: row?.source ?? null,
     sourceUrl: row?.sourceUrl ?? null,
     note: row?.note ?? null,
     staleAt: row?.staleAt ?? null,
+    audio,
+    skipped,
   };
 }
 
@@ -311,30 +461,74 @@ function toGap(
  */
 export function completenessSentence(c: SeriesCompleteness): string {
   const held = `${c.owned} ${c.owned === 1 ? 'book' : 'books'}`;
+  const skips = c.skipped.length;
+  const source = c.knownTotalSource ?? 'a recorded source';
+
+  /**
+   * The clauses that follow the main claim, in order of how much they change it.
+   *
+   * Kept in one place because they are the same three sentences on every branch,
+   * and the last time a branch grew its own copy of one of them the two screens
+   * that print it disagreed about which books they were counting.
+   */
+  const tail = () => {
+    const extra: string[] = [];
+    // ⚠️ "you own", said outright. This clause is the fix for the whole bug:
+    // before it existed these books were counted as missing, and telling
+    // somebody they lack a book they own is how they buy it twice.
+    // ⚠️ "more", not "of those". Read in a rendered sentence: with every gap
+    // covered the clause before this one is "nothing here is missing", and
+    // "6 of those" then refers to nothing at all.
+    if (c.onAudio) extra.push(`${c.onAudio} more you own on audio.`);
+    // The hedge. Separate sentence, weaker verb, and the book is STILL counted
+    // as missing above — see `maybeOnAudio`.
+    if (c.maybeOnAudio) extra.push(`${c.maybeOnAudio} possibly on audio.`);
+    if (skips) extra.push(`${skips} deliberately skipped.`);
+    if (c.wanted) extra.push(`${c.wanted} already on the wishlist.`);
+    return extra.length ? ` ${extra.join(' ')}` : '';
+  };
 
   if (c.knownTotal != null) {
-    const missing = c.knownTotal - c.owned;
-    return missing <= 0
-      ? `All ${c.knownTotal}. Complete, per ${c.knownTotalSource ?? 'a recorded source'}.`
-      : `${c.owned} of ${c.knownTotal}, per ${c.knownTotalSource ?? 'a recorded source'} — ${missing} to go.`;
+    // ⚠️ Skips come off the outstanding count, never off the total. Deciding not
+    // to buy book 13 does not un-publish it, and only a sourced
+    // `series_check.known_total` may say how long a series is — migration 0081.
+    const missing = c.knownTotal - c.owned - skips - c.onAudio;
+    if (missing > 0) {
+      return `${c.owned} of ${c.knownTotal}, per ${source} — ${missing} to go.${tail()}`;
+    }
+    // Every volume accounted for, but "Complete" is only honest when they are
+    // all actually here. Anything else has to say how it is accounted for.
+    return skips || c.onAudio
+      ? `All ${c.knownTotal} accounted for, per ${source} — ${c.owned} here.${tail()}`
+      : `All ${c.knownTotal}. Complete, per ${source}.`;
   }
 
   if (c.highestKnown == null) return `${held}, none of them numbered.`;
 
   if (c.gaps.length === 0) {
     // The honest version of "complete". We hold an unbroken run, and we do not
-    // know whether the author has written a fifteenth.
-    return `${held}, 1–${c.highestKnown} unbroken. Nothing says whether the series goes further.`;
+    // know whether the author has written a fifteenth. With skips it is not
+    // unbroken and must not claim to be.
+    const run = skips
+      ? `${held} of at least ${c.highestKnown}, and nothing else is missing.`
+      : `${held}, 1–${c.highestKnown} unbroken.`;
+    return `${run}${tail()} Nothing says whether the series goes further.`;
   }
 
   // ⚠️ "of at least". Never "of". The number after it is the highest volume
   // anything has claimed to exist, which is a floor and not a total — see the
   // note on `series_check.known_total` in migration 0003.
   const parts = [`${held} of at least ${c.highestKnown}`];
+  // ⚠️ `certainGaps` and `attestedGaps` already exclude the rungs held on audio.
+  // Subtracting here instead would be a second copy of that rule, free to drift
+  // from the one the series list prints its chips from.
   if (c.certainGaps) parts.push(`${c.certainGaps} missing from the run itself`);
   if (c.attestedGaps) parts.push(`${c.attestedGaps} more beyond it, on a source's word`);
-  const sentence = `${parts.join(' — ')}.`;
-  return c.wanted ? `${sentence} ${c.wanted} already on the wishlist.` : sentence;
+  // Every remaining gap turned out to be one we own on audio: there is nothing
+  // left to call missing, so the sentence must not lead with a dash and a count
+  // of zero.
+  if (parts.length === 1) parts.push('nothing here is missing');
+  return `${parts.join(' — ')}.${tail()}`;
 }
 
 /**
@@ -354,6 +548,33 @@ export function gapEvidenceLabel(gap: SeriesGap): string {
     case 'implied':
       return 'implied by a later volume on the list';
   }
+}
+
+/**
+ * "You have this one on audio" — or the hedged form, when we cannot prove it.
+ *
+ * ⚠️ Lives here, next to the rule that decides which gaps count as missing, for
+ * the same reason `gapEvidenceLabel` does. The two must agree: a rung the
+ * arithmetic has stopped calling missing and a rung whose caption still hedges
+ * would be one screen contradicting itself.
+ *
+ * Null when there is no audio at all, so a caller cannot print an empty caption.
+ */
+export function gapAudioLabel(gap: SeriesGap): string | null {
+  if (!gap.audio) return null;
+  const named = `“${gap.audio.title}”`;
+  return gap.audio.matchedVia === 'work_match'
+    ? `you own this on audio, as ${named}`
+    : // The whole hedge in one clause: what was actually compared, and what was
+      // not. `matching.ts` opens with three wrong matches the sibling project
+      // shipped, every one of which would have read fine as a flat claim.
+      `possibly on audio — ${named} is filed under “${gap.audio.audiobookSeries}” there,` +
+        ' and only the series name connects the two catalogs';
+}
+
+/** Why a rung is greyed out. The owner's words, never the app's guess. */
+export function gapSkipLabel(gap: SeriesGap): string | null {
+  return gap.skipped ? `skipped — ${gap.skipped.reason}` : null;
 }
 
 function sourceLabel(source: string | null): string {

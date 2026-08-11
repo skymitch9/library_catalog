@@ -4,9 +4,12 @@ import {
   heldCopies,
   ownedMoreThanOnce,
   seriesCompleteness,
+  type AudioSeriesMatch,
   type CreateSeriesVolume,
   type EditionMedium,
+  type SeriesAudioInput,
   type SeriesCompleteness,
+  type SeriesSkipInput,
   type SeriesVolumeInput,
 } from '@lc/core';
 
@@ -239,6 +242,29 @@ interface AudioRow {
   via_alias: string | null;
 }
 
+/**
+ * An audiobook the household holds at a rung with no `work` row — migration
+ * 0080. Keyed on `(series, index_sort)`, because that is all a gap has.
+ */
+interface AudioRungRow {
+  series: string;
+  index_sort: number;
+  title: string;
+  authors: string | null;
+  audiobook_series: string;
+  index_display: string | null;
+  series_matched_via: string;
+}
+
+/** A rung the owner has decided never to own — migration 0081. */
+interface SkipRow {
+  series: string;
+  index_sort: number;
+  reason: string;
+  note: string | null;
+  decided_at: string;
+}
+
 /** `work_id` -> its rows, for a table read whole and grouped in memory. */
 function groupBy<T extends { work_id: number }>(rows: T[]): Map<number, T[]> {
   const out = new Map<number, T[]>();
@@ -246,6 +272,17 @@ function groupBy<T extends { work_id: number }>(rows: T[]): Map<number, T[]> {
     const list = out.get(r.work_id);
     if (list) list.push(r);
     else out.set(r.work_id, [r]);
+  }
+  return out;
+}
+
+/** The same, for the two tables keyed on a series name rather than a work. */
+function groupBySeries<T extends { series: string }>(rows: T[]): Map<string, T[]> {
+  const out = new Map<string, T[]>();
+  for (const r of rows) {
+    const list = out.get(r.series);
+    if (list) list.push(r);
+    else out.set(r.series, [r]);
   }
   return out;
 }
@@ -261,6 +298,8 @@ async function loadAll(
   editions: Map<number, EditionRow[]>;
   copies: Map<number, CopyRow[]>;
   audio: Map<number, AudioRow>;
+  audioRungs: Map<string, AudioRungRow[]>;
+  skips: Map<string, SkipRow[]>;
 }> {
   const scope = onlySeries ? 'AND w.series = ?2' : '';
   const volumeScope = onlySeries ? 'WHERE series = ?1' : '';
@@ -273,7 +312,7 @@ async function loadAll(
   // whole catalog to a series called "owned" and quietly returned nothing.
   const copyScope = onlySeries ? `AND w.series = ?${HELD_STATUSES.length + 1}` : '';
 
-  const [owned, volumes, checks, editions, copies, audio] = await Promise.all([
+  const [owned, volumes, checks, editions, copies, audio, audioRungs, skips] = await Promise.all([
     db
       .prepare(
         `SELECT w.id, w.series, w.series_index_sort, w.series_index_display,
@@ -362,6 +401,32 @@ async function loadAll(
       )
       .bind(...(onlySeries ? [onlySeries] : []))
       .all<AudioRow>(),
+    // ⚠️ Requires migration 0080, and it is the fix for the worse of the two
+    // bugs: `audiobook_holding` above can only speak for a work that EXISTS
+    // here, so a book owned only on audio was invisible and the ladder drew it
+    // as a hole. This table is keyed on the series and the number, which is all
+    // a gap rung has.
+    //
+    // Scoped by its own `series` column — our spelling, exactly as
+    // `series_volume` stores it — so the bound parameter is ?1 like the two
+    // above it and no fold runs here. See migration 0080.
+    db
+      .prepare(
+        `SELECT series, index_sort, title, authors, audiobook_series, index_display,
+                series_matched_via
+           FROM audiobook_series_holding
+          WHERE stale_at IS NULL ${onlySeries ? 'AND series = ?1' : ''}`,
+      )
+      .bind(...(onlySeries ? [onlySeries] : []))
+      .all<AudioRungRow>(),
+    // ⚠️ Requires migration 0081. "I am never buying that one."
+    db
+      .prepare(
+        `SELECT series, index_sort, reason, note, decided_at
+           FROM series_gap_skip ${onlySeries ? 'WHERE series = ?1' : ''}`,
+      )
+      .bind(...(onlySeries ? [onlySeries] : []))
+      .all<SkipRow>(),
   ]);
 
   return {
@@ -372,6 +437,8 @@ async function loadAll(
     copies: groupBy(copies.results),
     // One row per work — `audiobook_holding.work_id` is the primary key.
     audio: new Map(audio.results.map((a) => [a.work_id, a])),
+    audioRungs: groupBySeries(audioRungs.results),
+    skips: groupBySeries(skips.results),
   };
 }
 
@@ -439,6 +506,31 @@ function toAudiobookRef(a: AudioRow): AudiobookRef {
   };
 }
 
+/**
+ * A migration 0080 row as the arithmetic wants it.
+ *
+ * ⚠️ `series_matched_via` is narrowed with a comparison rather than a cast. The
+ * column has a CHECK constraint, but a database predating it — or one restored
+ * from elsewhere — would hand `undefined` to a union type and the hedge would
+ * silently become a certainty. Anything unrecognised falls to `'fold'`, which is
+ * the answer that claims less.
+ */
+function toAudioRungInput(a: AudioRungRow): SeriesAudioInput {
+  const matchedVia: AudioSeriesMatch = a.series_matched_via === 'work_match' ? 'work_match' : 'fold';
+  return {
+    index: a.index_sort,
+    title: a.title,
+    authors: a.authors,
+    audiobookSeries: a.audiobook_series,
+    indexDisplay: a.index_display,
+    matchedVia,
+  };
+}
+
+function toSkipInput(s: SkipRow): SeriesSkipInput {
+  return { index: s.index_sort, reason: s.reason, note: s.note, decidedAt: s.decided_at };
+}
+
 function reportFor(
   series: string,
   owned: OwnedRow[],
@@ -447,6 +539,8 @@ function reportFor(
   editionsByWork: Map<number, EditionRow[]>,
   copiesByWork: Map<number, CopyRow[]>,
   audioByWork: Map<number, AudioRow>,
+  audioRungs: AudioRungRow[],
+  skipRows: SkipRow[],
 ): SeriesReport {
   // ⚠️ Narrow on purpose — see the long note on `SeriesVolumeInput.wanted`.
   // A work with an edition is a work something on our side knows about; only a
@@ -481,6 +575,14 @@ function reportFor(
   // absence. The catalog row wins: it carries a cover, a link and a read state,
   // and a CSV row for the same number would only duplicate the rung.
   const catalogued = new Set(workInputs.map((v) => v.index));
+  /**
+   * Rungs whose audio answer comes from `audiobook_holding` instead.
+   *
+   * ⚠️ Held works only, NOT everything catalogued. A wished-for volume has a
+   * work row and is still a gap, and "you already own this on audio" is exactly
+   * what somebody about to buy it needs to be told.
+   */
+  const heldIndexes = new Set(workInputs.filter((v) => !v.wanted).map((v) => v.index));
   const attestedInputs: SeriesVolumeInput[] = volumes
     .filter((v) => !catalogued.has(v.index_sort))
     .map((v) => ({
@@ -518,6 +620,21 @@ function reportFor(
       source: check?.source ?? null,
       knownTotal: check?.known_total ?? null,
       knownTotalSource: check?.known_total_source ?? null,
+    },
+    // ⚠️ A fourth argument and not more `volumes`, on purpose. Neither of these
+    // claims a volume exists, and letting either into the volume list would let
+    // it raise `highestKnown` — the ceiling `completeness.ts` calls "what stops
+    // this fabricating". See its header.
+    //
+    // ⚠️ Held rungs are filtered OUT of the audio list. A work we hold already
+    // gets its audio from `audiobook_holding`, matched on title AND author,
+    // which is the stronger claim; feeding the series-level row in as well would
+    // give one rung two answers that can disagree.
+    {
+      audio: audioRungs
+        .filter((a) => !heldIndexes.has(a.index_sort))
+        .map(toAudioRungInput),
+      skipped: skipRows.map(toSkipInput),
     },
   );
 
@@ -634,7 +751,10 @@ export async function listSeries(
   db: D1Database,
   readerId: number,
 ): Promise<{ series: SeriesSummary[]; withoutSeries: number }> {
-  const { owned, volumes, checks, editions, copies, audio } = await loadAll(db, readerId);
+  const { owned, volumes, checks, editions, copies, audio, audioRungs, skips } = await loadAll(
+    db,
+    readerId,
+  );
 
   const byName = new Map<string, OwnedRow[]>();
   for (const w of owned) {
@@ -664,6 +784,8 @@ export async function listSeries(
         editions,
         copies,
         audio,
+        audioRungs.get(name) ?? [],
+        skips.get(name) ?? [],
       );
       return { ...report.completeness, holdings: report.holdings };
     })
@@ -685,9 +807,23 @@ export async function getSeriesReport(
   readerId: number,
   name: string,
 ): Promise<SeriesReport | null> {
-  const { owned, volumes, checks, editions, copies, audio } = await loadAll(db, readerId, name);
+  const { owned, volumes, checks, editions, copies, audio, audioRungs, skips } = await loadAll(
+    db,
+    readerId,
+    name,
+  );
   if (owned.length === 0 && volumes.length === 0) return null;
-  return reportFor(name, owned, volumes, checks.get(name), editions, copies, audio);
+  return reportFor(
+    name,
+    owned,
+    volumes,
+    checks.get(name),
+    editions,
+    copies,
+    audio,
+    audioRungs.get(name) ?? [],
+    skips.get(name) ?? [],
+  );
 }
 
 /**
@@ -777,6 +913,56 @@ export async function setSeriesTotal(
     )
     .bind(series, knownTotal, knownTotal == null ? null : knownTotalSource, note)
     .run();
+}
+
+/**
+ * "I am never buying that one." — migration 0081.
+ *
+ * An upsert on `(series, index_sort)`, so changing the reason is one row and not
+ * two contradicting decisions. Nothing here checks that the rung is *currently*
+ * a gap: an `earlier` gap is pure arithmetic and exists in no table, and a
+ * skip on a volume that later turns up on the shelf is simply inert.
+ */
+export async function skipSeriesGap(
+  db: D1Database,
+  series: string,
+  indexSort: number,
+  reason: string,
+  note: string | null,
+  decidedBy: number | null,
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO series_gap_skip (series, index_sort, reason, note, decided_by)
+       VALUES (?1, ?2, ?3, ?4, ?5)
+       ON CONFLICT(series, index_sort) DO UPDATE SET
+         reason     = ?3,
+         note       = ?4,
+         decided_by = ?5,
+         decided_at = datetime('now')`,
+    )
+    .bind(series, indexSort, reason, note, decidedBy)
+    .run();
+}
+
+/**
+ * Change your mind about a skipped rung.
+ *
+ * ⚠️ A real DELETE, unlike `deleteManualSeriesVolume`'s narrow one. That rule
+ * exists because an imported row disappearing is indistinguishable from the book
+ * having been bought; nothing imports these, so there is no such ambiguity and
+ * no reason to keep a withdrawn decision on file.
+ */
+export async function unskipSeriesGap(
+  db: D1Database,
+  series: string,
+  indexSort: number,
+): Promise<boolean> {
+  const res = await db
+    .prepare('DELETE FROM series_gap_skip WHERE series = ?1 AND index_sort = ?2')
+    .bind(series, indexSort)
+    .run();
+  return (res.meta.changes ?? 0) > 0;
 }
 
 /** Record that a source was consulted about a series, and what it said. */

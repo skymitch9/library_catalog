@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { completenessSentence, gapEvidenceLabel } from '@lc/core';
+import { completenessSentence, gapAudioLabel, gapEvidenceLabel, gapSkipLabel } from '@lc/core';
 import {
   api,
   type EditionRef,
@@ -37,6 +37,32 @@ import { formatLabel, mediumLabel } from '../lib/formats.js';
  *
  * The wording lives in `gapEvidenceLabel` in `@lc/core`, beside the arithmetic
  * that produces it, so the explanation and the rule cannot drift apart.
+ *
+ * ## ⚠️ A missing rung may be a book the owner already has — on audio
+ *
+ * Added 2026-08-11, and it is a bug fix rather than a feature. A book owned only
+ * on audio has no `work` row here — migration 0010's `audiobook_holding` is
+ * keyed on one — so it could not be represented and the ladder drew it as a
+ * hole. `/series/The Stormlight Archive` read *"1 book of at least 5 — 6
+ * missing"* while the household owned all seven of them. Migration 0080 caches
+ * the answer on `(series, index)`, which is all a gap rung has, and the rungs
+ * below now say so.
+ *
+ * ⚠️ **The rung stays on the missing side of the ladder**, and that is
+ * deliberate: it genuinely is absent from *this* catalog, and "buy the
+ * paperback" is still a decision somebody might make. What changes is the word
+ * *missing* and the counts behind it.
+ *
+ * ⚠️ **A match that rests only on a folded series name renders AUDIO?**, the
+ * same hedge a containment match already wears — see `signatureOf` below for the
+ * flat claim that hedge exists to prevent.
+ *
+ * ## ⚠️ A rung can also be one the owner has decided never to own
+ *
+ * The three Patreon-era Completionist Chronicles shorts are not sold, so that
+ * series read incomplete for ever. `completeness.skipped` holds those rungs;
+ * they are drawn greyed, with the owner's reason and an undo, and they are out
+ * of `gaps` so nothing counts them as missing. Migration 0081.
  *
  * ## What form we hold each rung in — and ⚠️ why it is not on every rung
  *
@@ -92,18 +118,26 @@ export function SeriesDetailPage({
 
   const { completeness: c, ladder, unnumbered, holdings, ownedTwice } = report;
 
-  // The rungs, in order: everything we hold, plus everything reported missing.
+  // The rungs, in order: everything we hold, plus everything reported missing,
+  // plus the ones deliberately skipped.
   //
-  // ⚠️ Built from `ladder` (held only) and `gaps`, and NOT from every ladder
-  // entry with a workId. A volume put on the wishlist gains a work row, so the
-  // second version of this line drew it as owned the moment it was wished for —
-  // the gap closed because you said you wanted it. Found in a browser; nothing
-  // else would have caught it.
+  // ⚠️ Built from `ladder` (held only), `gaps` and `skipped`, and NOT from every
+  // ladder entry with a workId. A volume put on the wishlist gains a work row,
+  // so the second version of this line drew it as owned the moment it was wished
+  // for — the gap closed because you said you wanted it. Found in a browser;
+  // nothing else would have caught it.
+  //
+  // ⚠️ `c.skipped` is a THIRD source and not a filter over `c.gaps`. The two
+  // arrays are disjoint by construction in `@lc/core`, which is what keeps every
+  // count there — and both chips on the series list — from seeing a skipped
+  // rung. Reconstituting them here with a flag would put that rule in two
+  // places.
   const rungs = [
     ...ladder
       .filter((v) => v.workId != null && !v.wanted)
       .map((v) => ({ index: v.index, entry: v, gap: null })),
     ...c.gaps.map((g) => ({ index: g.index, entry: null, gap: g })),
+    ...c.skipped.map((g) => ({ index: g.index, entry: null, gap: g })),
   ].sort((a, b) => a.index - b.index);
 
   // The one answer every held rung gives, when they all give the same one. See
@@ -121,7 +155,12 @@ export function SeriesDetailPage({
       <h2 className="page-title">{name}</h2>
       <p className="series-claim">{completenessSentence(c)}</p>
 
-      <Holdings holdings={holdings} uniform={uniformMedia} heldCount={held.length} />
+      <Holdings
+        holdings={holdings}
+        uniform={uniformMedia}
+        heldCount={held.length}
+        audioGaps={c.onAudio + c.maybeOnAudio}
+      />
 
       <p className="muted small">
         {c.knownTotal != null ? (
@@ -141,7 +180,20 @@ export function SeriesDetailPage({
 
       <ol className="ladder">
         {rungs.map(({ index, entry, gap }) => (
-          <li key={index} className={entry ? 'ladder__have' : `ladder__gap ladder__gap--${gap?.evidence}`}>
+          <li
+            key={index}
+            className={
+              entry
+                ? 'ladder__have'
+                : gap?.skipped
+                  ? 'ladder__gap ladder__gap--skipped'
+                  : // A rung we own on audio is still a gap, but it must not
+                    // wear the same red as one nobody in the house has.
+                    gap?.audio?.matchedVia === 'work_match'
+                    ? 'ladder__gap ladder__gap--audio'
+                    : `ladder__gap ladder__gap--${gap?.evidence}`
+            }
+          >
             <span className="ladder__no">{entry?.display ?? gap?.display ?? index}</span>
             {entry ? (
               <button className="ladder__book" onClick={() => entry.workId && onOpen(entry.workId)}>
@@ -395,9 +447,18 @@ function Holdings({
   holdings: h,
   uniform,
   heldCount,
+  audioGaps,
 }: {
   holdings: SeriesHoldings;
   uniform: string | null;
+  /**
+   * ⚠️ Rungs held on audio that are NOT works here — migration 0080.
+   *
+   * `SeriesHoldings` counts works in this catalog and cannot see them, which is
+   * the whole bug. Without this the line below said "None of them are in the
+   * audiobook catalog" over a ladder whose every gap rung said the opposite.
+   */
+  audioGaps: number;
   /**
    * ⚠️ How many works the `uniform` signature actually speaks for.
    *
@@ -428,11 +489,22 @@ function Holdings({
         : parts.length > 0
           ? `Held: ${parts.join(' · ')}.`
           : null}
-      {h.audio === 0 && h.works > 0 && (
+      {audioGaps > 0 && (
+        <>
+          {' '}
+          {/* The books that are in the house but not in this catalog. Said here
+              as well as on the rungs, because the summary is the only line
+              somebody scanning the series list will read. */}
+          {audioGaps} more of this series {audioGaps === 1 ? 'is' : 'are'} on audio only.
+        </>
+      )}
+      {h.audio === 0 && audioGaps === 0 && h.works > 0 && (
         <>
           {' '}
           {/* Said out loud, because a silent absence and "we never asked" look
-              identical — the same distinction `series_check` exists to draw. */}
+              identical — the same distinction `series_check` exists to draw.
+              ⚠️ Suppressed once any rung is held on audio: it was flatly
+              contradicting the ladder underneath it. */}
           None of them are in the audiobook catalog.
         </>
       )}
@@ -528,6 +600,7 @@ function MissingRung({
 }) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [skipping, setSkipping] = useState(false);
 
   /**
    * Put the missing volume on the wishlist.
@@ -569,6 +642,19 @@ function MissingRung({
     }
   }
 
+  /** Skip it, or take the skip back. Both re-render the whole report. */
+  function decide(run: () => Promise<unknown>) {
+    setBusy(true);
+    setNote(null);
+    run()
+      .then(() => onChanged())
+      .catch((err: unknown) => setNote(err instanceof Error ? err.message : String(err)))
+      .finally(() => setBusy(false));
+  }
+
+  const audioNote = gapAudioLabel(gap);
+  const skipNote = gapSkipLabel(gap);
+
   return (
     <div className="ladder__missing">
       <div className="ladder__text">
@@ -579,19 +665,60 @@ function MissingRung({
         ) : (
           <strong>{gap.title ?? 'Not known by name'}</strong>
         )}
+        {/* ⚠️ The audio answer comes FIRST, before the evidence for the gap.
+            "you own this on audio" is the fact that changes what somebody does
+            next; "earlier than the lowest you own" is why the rung is drawn at
+            all, and reading it first is what made the page feel like a
+            reproach for books already in the house. */}
+        {audioNote && (
+          <span className={gap.audio?.matchedVia === 'work_match' ? 'small' : 'muted small'}>
+            {audioNote}
+          </span>
+        )}
         <span className="muted small">
           {/* Still missing, and the evidence for that has not changed — a wish
               is not a book. Both facts are shown because both are true. */}
-          {gap.wanted ? 'on the wishlist' : gapEvidenceLabel(gap)}
+          {skipNote ?? (gap.wanted ? 'on the wishlist' : gapEvidenceLabel(gap))}
           {gap.wanted && gap.source ? ` · ${gapEvidenceLabel({ ...gap, evidence: 'attested' })}` : ''}
           {gap.staleAt && ' · the source has stopped listing it'}
           {gap.note && ` · ${gap.note}`}
+          {gap.skipped?.note && ` · ${gap.skipped.note}`}
         </span>
       </div>
-      {canEdit && !gap.wanted && gap.title && gap.authors && (
+      {/* ⚠️ No "Want it" on a skipped rung, and no "Want it" on one we already
+          own on audio without the reason being visible first — the button is
+          the one action that costs money. A skipped rung offers only the undo. */}
+      {canEdit && !gap.skipped && !gap.wanted && gap.title && gap.authors && (
         <button className="chip" onClick={() => void wishFor()} disabled={busy}>
           {busy ? '…' : 'Want it'}
         </button>
+      )}
+      {canEdit && !gap.skipped && !skipping && (
+        <button className="chip" onClick={() => setSkipping(true)} disabled={busy}>
+          Never buying it
+        </button>
+      )}
+      {canEdit && gap.skipped && (
+        <button
+          className="chip"
+          disabled={busy}
+          onClick={() => decide(() => api.unskipSeriesGap(series, gap.index))}
+        >
+          Put it back
+        </button>
+      )}
+      {skipping && (
+        <SkipReason
+          busy={busy}
+          onCancel={() => setSkipping(false)}
+          onSave={(reason) =>
+            decide(() =>
+              api.skipSeriesGap(series, { indexSort: gap.index, reason }).then(() => {
+                setSkipping(false);
+              }),
+            )
+          }
+        />
       )}
       {/* ⚠️ Only a hand-entered row can be withdrawn. An imported one is marked,
           never deleted (migration 0003): deleting it makes it reappear on the
@@ -614,6 +741,48 @@ function MissingRung({
         </button>
       )}
       {note && <span className="muted small">{note}</span>}
+    </div>
+  );
+}
+
+/**
+ * Why this one is never being bought.
+ *
+ * ⚠️ Required, and the button stays dark until it is filled in — the same shape
+ * `AddVolume` uses for its source. The job here is different, though: this is
+ * not evidence, because a preference cannot be wrong. It is the answer to "why
+ * is 11.5 greyed out" six months from now, and without it a skipped rung and a
+ * misfiled one look identical. See migration 0081.
+ */
+function SkipReason({
+  busy,
+  onCancel,
+  onSave,
+}: {
+  busy: boolean;
+  onCancel: () => void;
+  onSave: (reason: string) => void;
+}) {
+  const [reason, setReason] = useState('');
+  const valid = reason.trim().length >= 2;
+
+  return (
+    <div className="stack">
+      <input
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        placeholder="Why not — “Patreon-only short, never sold”"
+        aria-label="Why you are not buying it"
+        autoFocus
+      />
+      <div className="row-tight">
+        <button className="primary" disabled={busy || !valid} onClick={() => onSave(reason.trim())}>
+          Skip it
+        </button>
+        <button onClick={onCancel} disabled={busy}>
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }
