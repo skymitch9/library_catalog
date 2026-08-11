@@ -285,5 +285,38 @@ export function suggestFormat(hint: string | null | undefined): EditionFormat | 
   if (s.includes('kepub')) return 'ebook_kepub';
   if (s.includes('pdf')) return 'ebook_pdf';
   if (s.includes('kindle')) return 'ebook_kindle';
+
+  /*
+   * A bare "ebook" names no file type, and the owner's rule is that a campaign
+   * offering one is offering a **choice**: "Ebook can be assumed epub. It
+   * usually means I have a choice." EPUB is the one every such tier includes.
+   * Kept below the specific matches so "Kindle edition" still wins.
+   */
+  if (s.includes('ebook') || s.includes('e-book')) return 'ebook_epub';
+
+  /*
+   * ⚠️ These name a *tier*, not a binding — and are answered anyway.
+   *
+   * "Collector's Edition" does not say hardcover, and this function used to
+   * refuse it for that reason: a collector's edition is *usually* a hardcover,
+   * and usually is not a fact. The owner overruled that on 2026-08-11 —
+   * "Collector's edition is almost always hard cover books" — and they are
+   * right about their own shelf: every such tier in this catalog turned out to
+   * be one.
+   *
+   * What changed is the cost of being wrong. When this rule was written there
+   * was **no way to edit an edition at all**, so a bad guess was permanent and
+   * invisible. Editing shipped the same day (`PATCH /api/editions/:id`), so a
+   * wrong format is now a two-tap correction — the same argument that makes the
+   * barcode path's `paperback` default defensible.
+   *
+   * ⚠️ Still a guess, and it must stay visible as one. `edition.source` records
+   * where a row came from, and the importer prints the hint beside the proposal
+   * rather than swallowing it. If a paperback collector's edition ever turns up,
+   * this line is why — not a data-entry mistake.
+   */
+  if (s.includes("collector's edition") || s.includes('collectors edition')) return 'hardcover';
+  if (s.includes('leatherbound') || s.includes('leather-bound')) return 'hardcover';
+
   return null;
 }

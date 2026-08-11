@@ -1339,6 +1339,28 @@ describe('crowdfunding — the physical/digital split', () => {
     assert.equal(suggestFormat('Mass market paperback'), 'mass_market');
     assert.equal(suggestFormat('All-In Tier'), null);
     assert.equal(suggestFormat(null), null);
+
+    // The owner's rules, added 2026-08-11 after five real reward lines had to be
+    // answered by hand. Each is a guess the owner endorsed, not a fact the
+    // string states — see the comments in `suggestFormat`.
+    assert.equal(suggestFormat("Collector's Edition"), 'hardcover');
+    assert.equal(suggestFormat('Collectors Edition Trilogy'), 'hardcover');
+    assert.equal(suggestFormat('Signed Leatherbound'), 'hardcover');
+    // A bare "ebook" is a choice of file, and EPUB is the one always offered.
+    assert.equal(suggestFormat('ebook'), 'ebook_epub');
+
+    // ⚠️ Order matters: a tier can name BOTH a binding and a tier word, and the
+    // binding must win. "Collector's Edition Paperback" is a paperback.
+    assert.equal(suggestFormat("Collector's Edition Paperback"), 'paperback');
+    assert.equal(suggestFormat('Collectors Edition — Mass market'), 'mass_market');
+    // And a specific file type still beats the bare-ebook fallback.
+    assert.equal(suggestFormat('Ebook (Kindle)'), 'ebook_kindle');
+
+    // ⚠️ Still refused, and deliberately: these name no format at all. If this
+    // ever starts answering, the propose/accept rule has quietly become
+    // guess-and-apply.
+    assert.equal(suggestFormat('Deluxe Edition'), null);
+    assert.equal(suggestFormat('Backer Pack'), null);
   });
 });
 
