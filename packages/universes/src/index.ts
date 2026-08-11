@@ -27,6 +27,7 @@ import document from '../generated/universes.json' with { type: 'json' };
 import { buildUniverseIndex, type UniverseIndex, type UniversesDocument } from './lookup.js';
 
 export * from './lookup.js';
+export * from './assign.js';
 
 /** The parsed list, exactly as catalog-platform holds it — comment keys and all. */
 export const universesDocument = document as unknown as UniversesDocument;

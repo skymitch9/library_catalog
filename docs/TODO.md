@@ -61,8 +61,32 @@ drift, and that is the failure the move exists to prevent.
 
 ⚠️ **`catalog-platform` is now a build dependency of this repo.** `prebuild`,
 `pretest` and `pretypecheck` all run `scripts/sync-universes.mjs`, which fails
-loudly — naming `CATALOG_PLATFORM_DIR` — if it cannot find that checkout. No UI
-reads universes yet; that is a separate job.
+loudly — naming `CATALOG_PLATFORM_DIR` — if it cannot find that checkout.
+
+### ✅ A book is filed in its verse when it enters — migration 0080, 2026-08-11
+
+The owner: *"when a book enters it's automatically added to its verse especially
+if it's a copy of an ebook audiobook or physical."*
+
+`work.universe` + `work.universe_how`, **derived on write in
+`packages/db/src/works.ts`**, so all five ways a book can enter are covered
+rather than only the scan path. Details in
+[`docs/info/universes.md`](info/universes.md) §4.1.
+
+| case | cost |
+|---|---|
+| another format of a book already held | **zero lookups** — formats are editions of one `work`, and the work already carries it |
+| a new book in a known series | one Map lookup in bundled JSON, no network |
+| a series or title the list has never heard of | resolves to nothing, which is the **correct answer** |
+
+⚠️ **A scan carries no series**, so a scanned book is filed on its title alone at
+add time and re-resolved when `backfill:series` supplies the series. ⚠️
+`universe_how = 'human'` is never overwritten, including a human *"in no
+verse"*. ⚠️ The add path never calls a model — a universe is invented by a
+person in `catalog-platform/tools/universes.mjs`, not by a sweep.
+
+Not run yet: **`npm run backfill:universes --remote`** (dry run first). It
+re-resolves machine rows when the list grows and skips human ones.
 
 **Feasibility was proved by hand, at no API cost.** A 15-case probe
 (`scripts/probe-universes.mjs`) scored **13/15 with zero false positives** at

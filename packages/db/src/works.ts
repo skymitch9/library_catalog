@@ -6,7 +6,17 @@ import {
   workKeyFor,
   type CoverStatus,
   type CreateWork,
+  type UniverseSource,
+  type UpdateWork,
 } from '@lc/core';
+import {
+  canonicalUniverseName,
+  universeAsserted,
+  universeIndex,
+  universeOnCreate,
+  universeOnUpdate,
+  type UniverseAssignment,
+} from '@lc/universes';
 
 /**
  * Works, editions and copies.
@@ -14,10 +24,20 @@ import {
  * Every function takes the database as its first argument — no globals, no
  * singletons — so the same query runs under the Worker, the CLI and a test.
  *
- * ⚠️ **`work_key`, `sort_title` and `primary_author` are derived on write, in
- * this file, and nowhere else.** They are the columns the audiobook bridge joins
- * on; a second place that computes them is a second place that can compute them
- * differently. If a caller hands you a work_key, ignore it.
+ * ⚠️ **`work_key`, `sort_title`, `primary_author` and `universe` are derived on
+ * write, in this file, and nowhere else.** They are the columns the audiobook
+ * bridge joins on and the shelf is grouped by; a second place that computes them
+ * is a second place that can compute them differently. If a caller hands you a
+ * work_key, ignore it.
+ *
+ * ⚠️ **`universe` is derived HERE rather than in the add path, and that is the
+ * whole of "a book is added to its verse when it enters".** Five callers create
+ * works — the barcode/spine scan (`apps/web/src/lib/catalog-add.ts`), the manual
+ * Add form, the series-gap wishlist, the ebook importer's `/api/ingest`, and
+ * `POST /api/works` — and the owner asked for *when a book enters*, not *when a
+ * book is scanned*. Resolving it in the add path would have answered one of the
+ * five and left the ebook importer, which is where most of this catalog came
+ * from, silently unassigned.
  */
 
 export interface WorkRow {
@@ -37,6 +57,10 @@ export interface WorkRow {
   cover_url: string | null;
   /** 'ok' | 'standin' | NULL (nobody has looked). Migration 0040. */
   cover_status: string | null;
+  /** The owner's canonical universe name, or NULL for *in no universe*. Migration 0080. */
+  universe: string | null;
+  /** 'list' | 'human' | NULL (nobody and nothing has decided). Migration 0080. */
+  universe_how: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -61,6 +85,21 @@ export interface Work {
    * says. ⚠️ `null` is NOT 'ok'; see `COVER_STATUSES`.
    */
   coverStatus: CoverStatus | null;
+  /**
+   * The shared fictional universe this book belongs to — 'The Cosmere',
+   * 'Runnerverse' — or null. Migration 0080.
+   *
+   * ⚠️ Null is the ORDINARY answer, not a gap. Six universes cover the real
+   * cases across the whole catalog; most books are in none and must never render
+   * as something to fix. Same rule as `edition_kind` NULL meaning "ordinary".
+   */
+  universe: string | null;
+  /**
+   * Who decided — `'list'`, `'human'`, or null for nobody. ⚠️ Read it before
+   * overwriting `universe`: `'human'` is an answer nothing may overrule, and it
+   * is meaningful with a null universe (a person saying "in no universe").
+   */
+  universeHow: UniverseSource | null;
   /** When this row was catalogued. Drives the "recently added" view. */
   createdAt: string;
 }
@@ -82,23 +121,52 @@ export function toWork(row: WorkRow): Work {
     description: row.description,
     coverUrl: row.cover_url,
     coverStatus: (row.cover_status as CoverStatus | null) ?? null,
+    universe: row.universe,
+    universeHow: (row.universe_how as UniverseSource | null) ?? null,
     createdAt: row.created_at,
   };
+}
+
+/** The stored pair, read back off a row. */
+function assignmentOf(work: Work): UniverseAssignment {
+  return { universe: work.universe, how: work.universeHow };
 }
 
 const WORK_COLS = `id, title, subtitle, sort_title, authors, primary_author, work_key,
                    series, series_index_sort, series_index_display, first_published,
                    openlibrary_work_id, description, cover_url, cover_status,
-                   created_at, updated_at`;
+                   universe, universe_how, created_at, updated_at`;
 
 export async function createWork(db: D1Database, input: CreateWork): Promise<Work> {
   const author = primaryAuthor(input.authors);
+  /*
+   * ⚠️ **The universe is decided here, from bundled JSON, and costs no I/O.**
+   *
+   * One Map lookup against `catalog-platform/data/universes.json` as it was at
+   * build time — no network call, and emphatically **no model**. The list is
+   * curated by hand and refuses an edit that cannot say why it happened; a book
+   * arriving on a shelf is not where a universe gets invented. Most books
+   * resolve to null and that is the correct answer, not a failure.
+   *
+   * ⚠️ It reads the **title as well as the series**, and both are load-bearing.
+   * Three real cases in this catalog break a series-keyed lookup: *Secret
+   * Projects* has four Cosmere books and one that is not, the *Otherlife*
+   * trilogy carries no series value at all, and *Fires of December* is a
+   * seriesless standalone that is Cosmere. `universeFor` encodes the precedence
+   * — exclusions, then title overrides, then series — so the answer never
+   * depends on which rule fires first.
+   */
+  const verse = universeOnCreate(universeIndex, {
+    title: input.title,
+    series: input.series ?? null,
+  });
   const res = await db
     .prepare(
       `INSERT INTO work (title, subtitle, sort_title, authors, primary_author, work_key,
                          series, series_index_sort, series_index_display, first_published,
-                         openlibrary_work_id, description, cover_url, cover_status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         openlibrary_work_id, description, cover_url, cover_status,
+                         universe, universe_how)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        RETURNING ${WORK_COLS}`,
     )
     .bind(
@@ -116,6 +184,8 @@ export async function createWork(db: D1Database, input: CreateWork): Promise<Wor
       input.description ?? null,
       input.coverUrl ?? null,
       input.coverStatus ?? null,
+      verse.universe,
+      verse.how,
     )
     .first<WorkRow>();
   if (!res) throw new Error('insert returned no row');
@@ -140,17 +210,47 @@ export async function getWork(db: D1Database, id: number): Promise<Work | null> 
  *
  * ⚠️ The same rule now applies to the cover: **`cover_status` moves with
  * `cover_url` or not at all.** See `coverStatus` below.
+ *
+ * ⚠️ And to the universe, with one difference: **`universe_how = 'human'` stops
+ * the re-derivation dead.** See `verse` below.
  */
 export async function updateWork(
   db: D1Database,
   id: number,
-  patch: Partial<CreateWork>,
+  patch: UpdateWork,
 ): Promise<Work | null> {
   const current = await getWork(db, id);
   if (!current) return null;
 
   const title = patch.title ?? current.title;
   const authors = patch.authors ?? current.authors;
+  const series = patch.series !== undefined ? patch.series : current.series;
+
+  /**
+   * ⚠️ **This is where case two of the owner's ask actually lands.**
+   *
+   * A scanned book has no series — `ScanLine` has no such field, and a barcode
+   * does not carry one — so it is created with whatever its *title* can prove
+   * and nothing else. The series arrives later, from `backfill:series` or the
+   * details queue, as a PATCH through here. Without re-derivation, "a new book
+   * in a series we already know" would resolve for the ebook importer and never
+   * once for a book scanned off a shelf.
+   *
+   * Three cases, and the first is the reason the `how` column exists:
+   *
+   *   1. the patch names a universe → a person is answering; stamp 'human' and
+   *      pin the row. `null` here means *in no universe* and is pinned too
+   *   2. `universe_how` is already 'human' → leave it entirely alone, whatever
+   *      moved. A title edit must never put the list's opinion back over a
+   *      correction the owner made
+   *   3. otherwise → re-resolve from the new title and series
+   *
+   * Costs one Map lookup in cases 2 and 3, and none in case 1.
+   */
+  const verse =
+    patch.universe !== undefined
+      ? universeAsserted((name) => canonicalUniverseName(universeIndex, name), patch.universe)
+      : universeOnUpdate(universeIndex, assignmentOf(current), { title, series });
 
   /**
    * ⚠️ **A new cover with nothing said about it is unassessed, never
@@ -181,6 +281,7 @@ export async function updateWork(
          title = ?, subtitle = ?, sort_title = ?, authors = ?, primary_author = ?, work_key = ?,
          series = ?, series_index_sort = ?, series_index_display = ?, first_published = ?,
          openlibrary_work_id = ?, description = ?, cover_url = ?, cover_status = ?,
+         universe = ?, universe_how = ?,
          updated_at = datetime('now')
        WHERE id = ?
        RETURNING ${WORK_COLS}`,
@@ -192,7 +293,7 @@ export async function updateWork(
       authors,
       primaryAuthor(authors),
       workKeyFor(title, authors),
-      patch.series !== undefined ? patch.series : current.series,
+      series,
       patch.seriesIndexSort !== undefined ? patch.seriesIndexSort : current.seriesIndexSort,
       patch.seriesIndexDisplay !== undefined
         ? patch.seriesIndexDisplay
@@ -204,6 +305,8 @@ export async function updateWork(
       patch.description !== undefined ? patch.description : current.description,
       patch.coverUrl !== undefined ? patch.coverUrl : current.coverUrl,
       coverStatus,
+      verse.universe,
+      verse.how,
       id,
     )
     .first<WorkRow>();

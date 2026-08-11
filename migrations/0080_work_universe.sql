@@ -1,0 +1,114 @@
+-- Which shared fictional universe a book belongs to, and who said so.
+--
+-- The owner's ask: *"when a book enters it's automatically added to its verse
+-- especially if it's a copy of an ebook audiobook or physical."*
+--
+-- ⚠️ Additive only. Two nullable columns and one partial index. No table is
+-- rebuilt and no existing row is touched.
+--
+-- ## ⚠️ On the WORK, never the edition
+--
+-- Stated in `docs/TODO.md` and worth repeating where the column lives: **an
+-- omnibus can collect works from different universes.** `Firstborn / Defending
+-- Elysium` is the real one in this catalog — one two-novella volume, neither
+-- novella Cosmere. A universe on `edition` would have to be wrong about at least
+-- one of the things inside it; a universe on `work` never has to.
+--
+-- That is also what makes the owner's "*especially if it's a copy of an ebook
+-- audiobook or physical*" free rather than three cases. A second format is a new
+-- `edition` and a new `copy` hanging off a `work` that already carries its
+-- universe, so the paperback of an ebook we hold inherits the answer by being
+-- the same row — no lookup, no second decision that could disagree with the
+-- first.
+--
+-- ## Why stored and not recomputed on read
+--
+-- `universeFor` is pure, the list is bundled at build time, and the resolution
+-- costs a Map lookup — so recomputing on every read would be *cheap*. It is
+-- still wrong, for one reason: **a recomputed value has nowhere to put a human
+-- answer.** The list is hand-curated and will be incomplete for a long time
+-- (six universes; the owner is still holding five subjects out for
+-- verification), so "this book is Cosmere and the list does not know yet" has to
+-- be sayable, and it has to survive the next render. Recompute-on-read discards
+-- it silently, which is the one failure mode this estate keeps writing
+-- migrations to prevent.
+--
+-- The price is staleness: a universe added in `catalog-platform` does not reach
+-- rows that were resolved before it existed. That is bounded and visible — the
+-- list changes about monthly and ships in a build — and
+-- `scripts/backfill-universes.mjs` re-resolves exactly the machine-decided rows
+-- while leaving the human ones alone. `universe_how` is what makes that
+-- re-resolution safe to run unattended.
+--
+-- This is the fourth time this project has made that move, deliberately the
+-- same way each time:
+--
+--   research_finding.decided_how  (0013) — was this value read before it landed?
+--   work.cover_status             (0040) — is this picture actually the book?
+--   user_book.read_state_how      (0070) — did a person say this, or a rating?
+--   work.universe_how             (here) — did a person say this, or the list?
+--
+-- ## Values
+--
+--   universe      The owner's canonical universe name, exactly as
+--                 `catalog-platform/data/universes.json` spells it — 'The
+--                 Cosmere', 'Runnerverse', 'CAL Verse'. ⚠️ NOT a foreign key and
+--                 not a series: the list lives in another repo and cannot be a
+--                 table here (`docs/info/universes.md` §1).
+--
+--   universe_how  'list'  — resolved by `universeFor` against the shared list.
+--                           Safe to re-resolve; the backfill rewrites these.
+--                 'human' — somebody said so. ⚠️ Nothing may overrule it, and it
+--                           is meaningful even when `universe` is NULL: that
+--                           combination is a person saying "this book is in no
+--                           universe", which must survive a later title edit.
+--                 NULL    — nobody has decided. Every row that exists today.
+--
+-- ⚠️ Not 'auto', for the reason migration 0070 gives at length: 'auto' answers
+-- "was it reviewed before it applied", this answers "on what evidence". A second
+-- machine source is foreseeable — an LLM pass over the seriesless remainder is
+-- the obvious one — and it must stay distinguishable from the curated list.
+-- `UNIVERSE_SOURCES` in packages/core/src/constants.ts holds the list, and
+-- following `read_state_how` and `research_finding.decided_how` there is
+-- deliberately no CHECK constraint: the set will grow and a CHECK makes each
+-- addition a table rebuild.
+--
+-- ## ⚠️ What this migration deliberately does NOT do
+--
+-- It backfills nothing, mints no queue and adds no badge. **Most books are in no
+-- universe and that is the ordinary case, not a gap** — the same trap
+-- `cover_status` NULL ("nobody looked", not "wrong") and `edition_kind` NULL
+-- ("ordinary", not "unclassified") were each shaped to avoid. Six universes
+-- cover the real cases across 224 works; a "needs a universe" list would be
+-- ~90% noise on the day it was built, and a list that is mostly noise is a list
+-- that gets ignored.
+--
+-- It also adds no column to `edition` and no `universe` table. See above, and
+-- `docs/info/universes.md` §1 for why the list is not library data.
+
+ALTER TABLE work ADD COLUMN universe TEXT;
+ALTER TABLE work ADD COLUMN universe_how TEXT;
+
+-- "Show me the Cosmere shelf" is the read this exists for, and it is a full scan
+-- without an index. Partial on the non-null side, following `idx_edition_kind`
+-- (0050) and `idx_user_book_read_state_how` (0070): the interesting rows are the
+-- resolved ones and they will stay the minority — six universes over a catalog
+-- that is mostly standalones.
+--
+-- ⚠️ `universe_how` rides along as a second column rather than getting its own
+-- index. It is never queried alone — "which rows may the backfill re-resolve"
+-- reads both, and "which did a person decide" reads both — so one covering index
+-- answers every question this pair is asked, and a second index would only cost
+-- writes.
+CREATE INDEX idx_work_universe
+  ON work(universe, universe_how)
+  WHERE universe IS NOT NULL;
+
+-- The other half of the pair, and NOT redundant with the index above: a human
+-- "no universe" row has `universe IS NULL`, so the partial index above cannot
+-- see it — and that is exactly the row the backfill must not touch. Without
+-- this, "which rows did a person decide" is a full scan, and it is the question
+-- asked once per backfill run.
+CREATE INDEX idx_work_universe_human
+  ON work(universe_how)
+  WHERE universe_how = 'human';

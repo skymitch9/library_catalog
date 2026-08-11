@@ -29,11 +29,15 @@ import {
   canonicalUniverseName,
   membersOf,
   normaliseUniverseText,
+  universeAsserted,
   universeFor,
   universeIndex,
   universeNames,
+  universeOnCreate,
+  universeOnUpdate,
   universesDocument,
   assertSchemaVersion,
+  type UniverseAssignment,
 } from '../../universes/src/index.ts';
 import { platformPaths, resolvePlatformRepo } from '../../../scripts/lib/platform-repo.mjs';
 
@@ -270,6 +274,151 @@ describe('the approved content, so an edit in catalog-platform cannot land unnot
 
   it('the schema version is the one this repo was written against', () => {
     assertSchemaVersion();
+  });
+});
+
+/* -------------------------------------------------------------------------- *
+ * What gets STORED when a book enters — migration 0080
+ *
+ * The owner's ask: *"when a book enters it's automatically added to its verse
+ * especially if it's a copy of an ebook audiobook or physical."*
+ *
+ * `universeFor` above decides WHICH universe. These decide what is written to
+ * the row and, more importantly, what is NOT overwritten. `@lc/db`'s createWork
+ * and updateWork are thin wrappers over exactly these three functions.
+ * -------------------------------------------------------------------------- */
+
+const created = (title: string, series: string | null) =>
+  universeOnCreate(universeIndex, { title, series });
+
+describe('a book entering the catalog is filed in its verse', () => {
+  it('a new book in a series the list knows resolves, and records that the LIST said so', () => {
+    assert.deepEqual(created('Some Book Nobody Listed', 'The Stormlight Archive'), {
+      universe: 'The Cosmere',
+      how: 'list',
+    });
+  });
+
+  it('⚠️ a seriesless book still resolves, which is why the title is read too', () => {
+    // Fires of December and the Otherlife trilogy are the two shapes that a
+    // series-keyed add path would have missed entirely.
+    assert.deepEqual(created('Fires of December', null), {
+      universe: 'The Cosmere',
+      how: 'list',
+    });
+    assert.deepEqual(created('Otherlife Dreams - The Selfless Hero Trilogy', ''), {
+      universe: 'Runnerverse',
+      how: 'list',
+    });
+  });
+
+  it('⚠️ the excluded member of a mixed series is filed in NO universe', () => {
+    // Curly apostrophe, as the row is really stored. This is the single row the
+    // whole design rests on.
+    assert.deepEqual(created('The Frugal Wizard’s Handbook for Surviving Medieval England', ''), {
+      universe: null,
+      how: null,
+    });
+  });
+
+  it('⚠️ an unknown book stores { null, null } — NOT a stamped miss', () => {
+    // The tempting alternative is `how: 'list'`, meaning "we looked and found
+    // nothing". It would turn the ordinary case into a stored decision, and the
+    // backfill would have to re-examine those rows anyway. Recording a negative
+    // nothing observed is what migration 0070 refused to do with read states.
+    assert.deepEqual(created('A Book Of No Fixed Universe', 'Some Series'), {
+      universe: null,
+      how: null,
+    });
+  });
+
+  it('no universe is the ordinary answer, for most of the catalog', () => {
+    assert.equal(created('Dune', 'Dune').universe, null);
+    assert.equal(created('', null).universe, null);
+  });
+});
+
+describe('⚠️ re-resolving an existing row — and the one row it must never touch', () => {
+  const human = (universe: string | null): UniverseAssignment => ({ universe, how: 'human' });
+
+  it('the series arriving later is what files a SCANNED book — it has no series at add time', () => {
+    // A barcode carries no series. `ScanLine` has no such field, so the book is
+    // created on its title alone and the series lands later from
+    // `backfill:series` or the details queue. Without this step, "a new book in
+    // a series we know" would never fire for anything scanned off a shelf.
+    const atScanTime = created('Rhythm of War', null);
+    assert.deepEqual(atScanTime, { universe: null, how: null });
+    assert.deepEqual(
+      universeOnUpdate(universeIndex, atScanTime, {
+        title: 'Rhythm of War',
+        series: 'The Stormlight Archive',
+      }),
+      { universe: 'The Cosmere', how: 'list' },
+    );
+  });
+
+  it('a row the list decided is re-resolved when the list grows', () => {
+    assert.deepEqual(
+      universeOnUpdate(
+        universeIndex,
+        { universe: 'Runnerverse', how: 'list' },
+        { title: 'Elantris', series: null },
+      ),
+      { universe: 'The Cosmere', how: 'list' },
+    );
+  });
+
+  it("⚠️ a person's answer is never overwritten, however wrong the list thinks it is", () => {
+    assert.deepEqual(
+      universeOnUpdate(universeIndex, human('Cytoverse'), {
+        title: 'Elantris',
+        series: 'The Stormlight Archive',
+      }),
+      human('Cytoverse'),
+    );
+  });
+
+  it('⚠️ a human "in NO universe" survives too — the case that needs the how column', () => {
+    // Without `how`, this row is indistinguishable from "nobody has looked", and
+    // the next title edit would silently put The Cosmere back over a correction
+    // the owner had just made.
+    assert.deepEqual(
+      universeOnUpdate(universeIndex, human(null), {
+        title: 'Fires of December',
+        series: null,
+      }),
+      human(null),
+    );
+  });
+});
+
+describe('a person naming a universe', () => {
+  const canonicalise = (name: string) => canonicalUniverseName(universeIndex, name);
+
+  it('is folded onto the owner\'s spelling, so one shelf does not become two', () => {
+    // 'Cosmere' and 'The Cosmere' already exist in this estate as two spellings
+    // of one thing — as SERIES values on two different works.
+    assert.deepEqual(universeAsserted(canonicalise, 'Cosmere'), {
+      universe: 'The Cosmere',
+      how: 'human',
+    });
+    assert.deepEqual(universeAsserted(canonicalise, 'arandverse'), {
+      universe: 'Runnerverse',
+      how: 'human',
+    });
+  });
+
+  it('⚠️ but a name the list has never heard of is kept verbatim, not refused', () => {
+    // Naming a universe the list has not got yet is the reason a human answer is
+    // storable at all. Refusing it would defeat the point.
+    assert.deepEqual(universeAsserted(canonicalise, 'Cytoverse'), {
+      universe: 'Cytoverse',
+      how: 'human',
+    });
+  });
+
+  it('null is an answer — "this book is in no universe" — and is stamped as one', () => {
+    assert.deepEqual(universeAsserted(canonicalise, null), { universe: null, how: 'human' });
   });
 });
 

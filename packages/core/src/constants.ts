@@ -345,6 +345,33 @@ export const READ_STATE_SOURCES = ['human', 'rating'] as const;
 export type ReadStateSource = (typeof READ_STATE_SOURCES)[number];
 
 /**
+ * How a work's shared fictional universe came to say what it says. Migration
+ * 0080.
+ *
+ * Same shape and the same reasoning as `READ_STATE_SOURCES` above — the evidence
+ * kind, not `DECISION_MODES`' "was it reviewed". A second machine source is
+ * foreseeable here (an LLM pass over the seriesless remainder is the obvious
+ * one) and it has to stay distinguishable from the hand-curated list.
+ *
+ * - `'list'`  — `universeFor` matched `catalog-platform/data/universes.json`.
+ *               Re-resolvable: `scripts/backfill-universes.mjs` rewrites exactly
+ *               these rows when the list grows.
+ * - `'human'` — somebody said so. Nothing may overrule it. ⚠️ Meaningful even
+ *               when the universe is NULL — that pair is a person saying "this
+ *               book is in no universe", and it must survive a later title or
+ *               series edit that would otherwise re-resolve the row.
+ * - `NULL`    — nobody has decided. Every row that predates 0080, and every row
+ *               the list has nothing to say about.
+ *
+ * ⚠️ The *values* this describes are universe names owned by another repo, so
+ * there is deliberately no enum of them here — see `docs/info/universes.md` §1.
+ * `universeNames` in `@lc/universes` is the live list; a copy in this leaf would
+ * be the drift that moving the list out of this repo exists to prevent.
+ */
+export const UNIVERSE_SOURCES = ['list', 'human'] as const;
+export type UniverseSource = (typeof UNIVERSE_SOURCES)[number];
+
+/**
  * Which catalog a review was written from, and therefore what it is a review
  * *of*. Stored on the shared Firestore document as `source`.
  *
