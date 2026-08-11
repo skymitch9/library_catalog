@@ -69,6 +69,9 @@ import path from 'node:path';
 
 import { execute, lit, parseFlags, query, ROOT } from './lib/d1.mjs';
 import { coverFrom, resolveIsbn, verifyCoverUrl } from '../packages/isbn/src/resolve.ts';
+import { searchOpenLibrary } from '../packages/isbn/src/search.ts';
+import { titleSimilarity } from '../packages/core/src/matching.ts';
+import { normaliseTitle } from '../packages/core/src/titles.ts';
 import { COVER_CENTS_EACH, findCover } from '../packages/research/src/covers.ts';
 
 const flags = parseFlags();
@@ -212,6 +215,71 @@ if (empty.length) {
 }
 
 // ---------------------------------------------------------------------------
+// Rung 3, free: Open Library searched by TITLE AND AUTHOR rather than by ISBN
+// ---------------------------------------------------------------------------
+
+/*
+ * ## Why this rung had to exist
+ *
+ * Every rung above is keyed on an ISBN, and that quietly decided which books
+ * could ever get a cover. Measured after the first full sweep: the books left
+ * without one included *The Sea of Monsters*, *The Nightmare Before Christmas*
+ * and *The Day the Crayons Made Friends* — titles every cover database on earth
+ * holds. They failed for a reason that has nothing to do with the books: their
+ * editions carry no ISBN, because they were hand-created (the Illumicrate Percy
+ * Jackson set) or scanned from a code that resolved to nothing.
+ *
+ * So the paid LLM rung was being asked to do work a free search could do. That
+ * is the wrong shape: money spent to cover a gap in the ladder.
+ *
+ * ⚠️ **A title search is weaker evidence than an ISBN and is treated as such.**
+ * `searchOpenLibrary` exists precisely because the right answer is not reliably
+ * first — the comment there records "Firefight" + Brandon Sanderson returning a
+ * different 2001 Firefight at the top. So every candidate goes through the same
+ * similarity gate a spine read gets, and a weak match is skipped rather than
+ * guessed. Free-text is deliberately NOT used: it is the rung that answered
+ * "The Wandering Inn" with a different book by the same author.
+ */
+
+const titleFound = [];
+const stillEmpty = [...empty, ...withoutIsbn];
+
+if (stillEmpty.length) {
+  console.log(`\nRung 3 (free): searching Open Library by title for ${stillEmpty.length} book(s).`);
+  for (const r of stillEmpty) {
+    let candidates = [];
+    try {
+      candidates = await searchOpenLibrary(r.title, r.authors ?? null, { userAgent: UA });
+    } catch (err) {
+      console.log(`  ERROR  ${r.title.slice(0, 44)} — ${err?.message ?? err}`);
+      await sleep(PAUSE_MS);
+      continue;
+    }
+
+    const hit = candidates.find(
+      (c) => c.coverUrl && titleSimilarity(normaliseTitle(c.title), normaliseTitle(r.title)) >= 0.85,
+    );
+    await sleep(PAUSE_MS);
+    if (!hit) continue;
+
+    // Same verifier as every other rung. Open Library answers a missing cover
+    // with a 1x1 placeholder and HTTP 200 unless asked not to, so a URL that
+    // exists is not yet a cover that exists.
+    const check = await verifyCoverUrl(hit.coverUrl, { userAgent: UA });
+    if (!check.ok) {
+      console.log(`  rejected ${r.title.slice(0, 40)} — ${check.reason}`);
+      continue;
+    }
+    console.log(`  ✓ ${String(r.id).padStart(4)}  ${r.title.slice(0, 44)}  (${check.bytes}B)`);
+    titleFound.push({ ...r, url: hit.coverUrl, bytes: check.bytes, rung: 'ol-title' });
+  }
+  console.log(`Rung 3 found ${titleFound.length} of ${stillEmpty.length}.`);
+}
+
+/** What the paid rung should still be asked about — never what rung 3 just got. */
+const titleFoundIds = new Set(titleFound.map((f) => f.id));
+
+// ---------------------------------------------------------------------------
 // --llm: the paid rung, for what the free ones could not reach
 // ---------------------------------------------------------------------------
 
@@ -219,7 +287,9 @@ const llmFound = [];
 if (useLlm) {
   // Everything the ladder missed, including works with no ISBN — this rung
   // searches by title and author, so a missing ISBN is not disqualifying.
-  const remaining = [...empty, ...withoutIsbn];
+  // ⚠️ Skip anything rung 3 just covered for free — otherwise the paid rung
+  // re-buys a cover we already hold, which is the exact waste it exists to avoid.
+  const remaining = [...empty, ...withoutIsbn].filter((r) => !titleFoundIds.has(r.id));
   const worst = ((remaining.length * COVER_CENTS_EACH) / 100).toFixed(2);
 
   console.log('');
@@ -306,7 +376,7 @@ if (repair) {
 
 // ---------------------------------------------------------------------------
 
-const statements = [...found, ...llmFound].map(
+const statements = [...found, ...titleFound, ...llmFound].map(
   (f) =>
     `UPDATE work SET cover_url = ${lit(f.url)}, updated_at = datetime('now')` +
     ` WHERE id = ${lit(f.id)} AND (cover_url IS NULL OR cover_url = '');`,
