@@ -148,14 +148,53 @@
       "confirmed": "Owner confirmed 2026-08-11, after reviewing the full list, with three held out for verification."
     },
     {
-      "name": "Divine Dungeon",
-      "decidedHow": "proposed",
+      "name": "CAL Verse",
+      "decidedHow": "human",
       "series": [
-        "The Divine Dungeon",
         "The Completionist Chronicles",
-        "Artorian's Archives"
+        "The Divine Dungeon",
+        "Artorian's Archives",
+        "Full Murderhobo",
+        "Chance Encounter",
+        "Year of the Sword",
+        "Cooking with Disaster",
+        "Damsels of Distress",
+        "Wolfman Warlock"
       ],
-      "notes": "Krout's shared world. Chance Encounter, Cooking with Disaster, Damsels of Distress, Full Murderhobo and Year of the Sword are also his and NOT included — unconfirmed, so left out rather than swept in."
+      "notes": "Krout's shared world. Chance Encounter, Cooking with Disaster, Damsels of Distress, Full Murderhobo and Year of the Sword are also his and NOT included — unconfirmed, so left out rather than swept in.",
+      "confirmed": "Owner, 2026-08-11: 'everything Krout has written to this point that is a litrpg has been tied to the CAL Verse so for now, group them all together. I can tell you if we need to ungroup them later.' Grouped broadly by instruction; over-inclusion is accepted and reversible.",
+      "evidence": "Artorian's Archives is the strongest evidence in the whole list and it comes from the owner's own catalog, not recall: every volume is literally subtitled 'A Divine Dungeon Series' — Alumni, Anima, Annex, Axiom.",
+      "watch": [
+        "Damsels of Distress — fairy-tale retellings; the least obviously LitRPG of the nine and the first candidate to ungroup.",
+        "Wolfman Warlock — co-authored with James Hunter, same caution as Turncoat's Truth."
+      ],
+      "seriesToFix": {
+        "series": "The Completionist Chronicles",
+        "shouldBe": 14,
+        "why": "⚠️ Filed as 7 in the audiobook catalog. The owner said it should be 'like 14 or 15 books maybe with some side stories' and was right. Seven more belong to it: Implode, Tenacity, Thesaurize and Thunderplump (owner-identified), plus Uncapped, Unmapped and Untapped — and those last three the LIBRARY catalog already files as Completionist Chronicles while the audiobook catalog leaves them seriesless. The two catalogs disagree, and the library is right.",
+        "add": [
+          "Implode",
+          "Tenacity",
+          "Thesaurize",
+          "Thunderplump",
+          "Uncapped",
+          "Unmapped",
+          "Untapped"
+        ],
+        "alsoCheck": "'Invent' (audio) and 'Invent Short Story' (library) are probably the same book under two names."
+      },
+      "notThisSeries": [
+        {
+          "title": "Everything",
+          "belongsTo": "Full Murderhobo",
+          "why": "sits alongside Anything and Something"
+        },
+        {
+          "title": "World's Only Hero",
+          "belongsTo": "Chance Encounter",
+          "why": "the library files it there; the audio row is seriesless"
+        }
+      ]
     },
     {
       "name": "Maasverse",
