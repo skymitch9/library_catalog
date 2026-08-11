@@ -121,7 +121,7 @@ export function SeriesDetailPage({
       <h2 className="page-title">{name}</h2>
       <p className="series-claim">{completenessSentence(c)}</p>
 
-      <Holdings holdings={holdings} uniform={uniformMedia} />
+      <Holdings holdings={holdings} uniform={uniformMedia} heldCount={held.length} />
 
       <p className="muted small">
         {c.knownTotal != null ? (
@@ -280,7 +280,21 @@ export function SeriesDetailPage({
  * concern. Nothing in `@lc/core` counts three media; see `MEDIUM_LABEL`.
  */
 function signatureOf(entry: SeriesLadderEntry): string {
-  return [...entry.media, ...(entry.audiobook ? ['audio'] : [])].join('+');
+  /*
+   * ⚠️ An uncertain audiobook match must NOT read as a certain one.
+   *
+   * The per-rung chip already hedges a containment match with a `?`, but that
+   * chip is suppressed when every rung agrees — and folding `matchedVia` away
+   * here made every rung agree. The result was the flat claim this whole
+   * feature was built to avoid: `/series/Tamer: King of Dinosaurs` read "All 5
+   * held as ebooks and on audio" when in truth all five had matched the SAME
+   * generic series-level row by containment, and book 11 probably has no
+   * audiobook at all. Found in a browser; nothing else would have caught it,
+   * because both the chip and the sentence are individually correct.
+   */
+  const audio =
+    entry.audiobook == null ? [] : [entry.audiobook.matchedVia === 'containment' ? 'audio?' : 'audio'];
+  return [...entry.media, ...audio].join('+');
 }
 
 /** True when every held rung gives the same answer — and there is one to give. */
@@ -353,6 +367,9 @@ function mediumPhrase(medium: string): string {
   if (medium === 'physical') return 'in print';
   if (medium === 'ebook') return 'as ebooks';
   if (medium === 'audio') return 'on audio';
+  // The hedged form. A containment match is a guess at which audiobook row a
+  // volume means, and the sentence has to say so rather than round it up.
+  if (medium === 'audio?') return 'possibly on audio';
   return mediumLabel(medium);
 }
 
@@ -370,7 +387,26 @@ function andList(items: string[]): string {
  * out whether that is a fact or a gap in the data, and on this catalog it is
  * both at once.
  */
-function Holdings({ holdings: h, uniform }: { holdings: SeriesHoldings; uniform: string | null }) {
+function Holdings({
+  holdings: h,
+  uniform,
+  heldCount,
+}: {
+  holdings: SeriesHoldings;
+  uniform: string | null;
+  /**
+   * ⚠️ How many works the `uniform` signature actually speaks for.
+   *
+   * It is NOT `h.works`. `uniform` is computed from the ladder rungs, which
+   * exclude wishlist entries and works that sit off the number line, while
+   * `h.works` counts the whole series. Saying "All 4" on the strength of three
+   * agreeing rungs is how `/series/The Completionist Chronicles` came to read
+   * "All 4 held as ebooks and on audio" while the series list said "3 on audio"
+   * — the fourth being an off-ladder short story. Two screens, one truth,
+   * different answers.
+   */
+  heldCount: number;
+}) {
   if (h.works === 0) return null;
 
   const parts = [
@@ -383,7 +419,7 @@ function Holdings({ holdings: h, uniform }: { holdings: SeriesHoldings; uniform:
     <p className="muted small">
       {/* When every rung is the same, this sentence is the only place the answer
           appears, so it has to be unambiguous rather than merely short. */}
-      {uniform && h.works > 1
+      {uniform && h.works > 1 && heldCount === h.works
         ? `All ${h.works} held ${andList(uniform.split('+').map(mediumPhrase))}.`
         : parts.length > 0
           ? `Held: ${parts.join(' · ')}.`

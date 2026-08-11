@@ -77,7 +77,12 @@ const ADD_MODES: { id: AddMode; label: string; blurb: string; costs?: true }[] =
   { id: 'scan', label: 'Barcode', blurb: 'Exact, free, and keeps scanning. Best when the book has one.' },
   { id: 'photo', label: 'Shelf photo', blurb: 'Reads every spine at once. Best for bulk.', costs: true },
   { id: 'single', label: 'One book', blurb: 'Reads the title off a single cover.', costs: true },
-  { id: 'type', label: 'Type a title', blurb: 'No code, no book to hand. Looks the rest up as you type.' },
+  { id: 'type', label: 'Type a title', // ⚠️ Was "Looks the rest up as you type." There is no title-search endpoint and
+// no as-you-type request — verified in a browser: typing a title produced no
+// suggestions and no network call. The tab offers an ISBN lookup button and
+// free-text fields, which the old blurb both overstated and contradicted (it
+// promised "no code" and then the only lookup was by code).
+blurb: 'No code, no book to hand. Type what you know and save it.' },
 ];
 
 export function ScanPage({
