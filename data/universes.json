@@ -23,7 +23,84 @@
         "Reckoners",
         "The Skyward Series"
       ],
-      "notes": "⚠️ 'Cosmere' and 'The Cosmere' currently exist as SERIES values on two different works — a universe masquerading as a series, spelled two ways. Those two works need a real series (or none) once this lands. Reckoners and Skyward are the same author and deliberately excluded; Skyward is the Cytoverse."
+      "notes": "⚠️ 'Cosmere' and 'The Cosmere' currently exist as SERIES values on two different works — a universe masquerading as a series, spelled two ways. Those two works need a real series (or none) once this lands. Reckoners and Skyward are the same author and deliberately excluded; Skyward is the Cytoverse.",
+      "confirmed": "Owner approved 2026-08-11, series and book-level, after reviewing all 19 unclassified titles.",
+      "bookOverrides": [
+        {
+          "title": "Warbreaker",
+          "why": "Nalthis"
+        },
+        {
+          "title": "Elantris",
+          "why": "Sel — an audio row filed with no series, duplicating the Elantris series entry"
+        },
+        {
+          "title": "The Hope of Elantris",
+          "why": "Sel, short story"
+        },
+        {
+          "title": "Sixth of the Dusk",
+          "why": "First of the Sun"
+        },
+        {
+          "title": "Dragonsteel Prime",
+          "why": "early Cosmere novel"
+        },
+        {
+          "title": "Tress of the Emerald Sea",
+          "why": "Secret Projects 1"
+        },
+        {
+          "title": "Yumi and the Nightmare Painter",
+          "why": "Secret Projects 3"
+        },
+        {
+          "title": "The Sunlit Man",
+          "why": "Secret Projects 4"
+        },
+        {
+          "title": "Isles of the Emberdark",
+          "why": "Secret Projects 5"
+        },
+        {
+          "title": "Fires of December",
+          "why": "⚠️ Standalone with NO series, narrated by Hoid. Publisher copy via Books-A-Million (9781250462657) calls it 'a standalone Cosmere novel'; the owner's Hoid's Storybook Collection pledge corroborates it — chasmfiend plush, The Girl Who Looked Up figurine, Hoid's Flute. THE example of the owner's own rule: in a universe, not connected by series."
+        }
+      ],
+      "bookExclusions": [
+        {
+          "title": "The Frugal Wizard’s Handbook for Surviving Medieval England",
+          "why": "⚠️ Secret Projects 2 — the one of five that is NOT Cosmere. This single row is the proof that a series-level mapping cannot work."
+        },
+        {
+          "title": "Snapshot",
+          "why": "standalone thriller"
+        },
+        {
+          "title": "Perfect State",
+          "why": "standalone novella"
+        },
+        {
+          "title": "Dreamer",
+          "why": "short story"
+        },
+        {
+          "title": "Long Chills and Case Dough",
+          "why": "noir short"
+        },
+        {
+          "title": "The Most Boring Book Ever",
+          "why": "children's picture book"
+        },
+        {
+          "title": "Firstborn / Defending Elysium",
+          "why": "⚠️ ONE catalog row holding TWO works. Defending Elysium is Cytoverse (Skyward). A per-book override still cannot express this — the row needs splitting."
+        },
+        {
+          "title": "Lux - A Texas Reckoners Novel",
+          "why": "Reckoners spin-off. Also note 'Texas Reckoners series' is a separate series value from 'Reckoners' — likely the same thing split in two."
+        }
+      ]
     },
     {
       "name": "Runnerverse",
@@ -139,6 +216,12 @@
       "decidedHow": "human",
       "decision": "LEAVE OUT until verified",
       "why": "Owner's call: 'Cultivating and axe falls should be excluded until I can verify.' ⚠️ Both are SINGLE-BOOK series, so there is no internal evidence of a shared world — only the author, and author alone is never sufficient here. That is the same reasoning that keeps Reckoners out of the Cosmere."
+    },
+    {
+      "subject": "Tailored Realities — Brandon Sanderson",
+      "decidedHow": "human",
+      "decision": "LEAVE BLANK pending owner check",
+      "why": "Believed to be a short-fiction collection, which would make it a mixed bag rather than a clean yes or no. Flagged rather than guessed, same treatment as Will Wight."
     }
   ]
 }
