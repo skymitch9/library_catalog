@@ -479,6 +479,28 @@ promising "no code" when the only lookup offered is by ISBN.
   `UNCLASSIFIED` chip that is accurate but the only jargon in an otherwise
   plain-English panel.
 
+## An omnibus is not an edition — noted 2026-08-11, not yet acted on
+
+While bucketing edition names the user observed: *"Omnibus is not edition
+correct"*. They are right, and the schema already agrees with them.
+
+`WORK_RELATIONS` has carried **`contains`** since migration 0004 — its own
+comment reads *"An omnibus or a bind-up, and the books printed inside it"* — and
+every value in that list was chosen from a pair of works actually in this
+catalog. But `work_relation` holds **0 rows**, so the one omnibus we own is
+recorded as `edition_name = 'Omnibus - collects volumes 1-3'` instead: a
+*relationship between works* smuggled into a field about *printings*.
+
+⚠️ **Do not "fix" this casually.** Those two White Sand rows — the omnibus and
+`Volume 1` — are the only reason White Sand appears under "Bought more than
+once", which is the worked example the entire series restructure was built
+around. Moving them to `work_relation` without giving that section another way
+to see them would silently empty the feature's own demo.
+
+The right shape, when someone does it: the omnibus is a work that `contains`
+the volumes, the volumes stay their own works, and "bought more than once"
+learns to read relations as well as editions.
+
 ## Known-imperfect, carried forward
 
 - ⚠️ **Audiobook match rate is 19% — 43 of 224.** The rate fell because the
