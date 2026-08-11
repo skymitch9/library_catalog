@@ -76,10 +76,37 @@ it is alone on purpose. `@lc/core` promises *"no I/O — safe to import anywhere
 a build-generated file with cross-repo provenance does not belong inside that
 promise. `grep -r '@lc/universes'` finds every consumer.
 
-**Nothing surfaces universes in the UI yet** — that is a separate job. The one
-live consumer is `/api/health`, which reports `{ count, schemaVersion }`. That
-line exists so a missing or empty list is visible in one curl instead of months
-later: a dependency nobody exercises is a dependency that breaks quietly.
+`/api/health` reports `{ count, schemaVersion }`. That line exists so a missing
+or empty list is visible in one curl instead of months later: a dependency
+nobody exercises is a dependency that breaks quietly.
+
+### 4.1 Books are filed on the way in — migration 0080
+
+`work.universe` and `work.universe_how`, **derived on write in
+`packages/db/src/works.ts`** beside `work_key` and `sort_title` — not in the add
+path. Five callers create works (scan, manual Add, series-gap wishlist,
+`/api/ingest`, `POST /api/works`) and the owner asked for *when a book enters*;
+doing it in `catalog-add.ts` would have answered one of the five.
+
+| | |
+|---|---|
+| Deciding | `universeFor` — **the** lookup, never reimplemented |
+| Storing | `universeOnCreate` / `universeOnUpdate` / `universeAsserted` in `packages/universes/src/assign.ts` |
+| Cost | one Map lookup against bundled JSON. No network. ⚠️ **Never a model** |
+| Second format of a held book | **zero lookups** — an ebook, an audiobook and a paperback are editions of one `work`, which already carries the answer |
+| Re-resolving when the list grows | `npm run backfill:universes` |
+
+⚠️ **`assign.ts` has no Python twin, and that is correct.** Only `lookup.ts` is
+the cross-repo contract (§5). Storage provenance is a question only a database
+has, and the audiobook side is a static build with no rows to stamp.
+
+⚠️ **`universe_how = 'human'` is never overwritten, including with a NULL
+universe** — that pair is a person saying *in no verse*, and without the `how`
+column the next title edit would silently put the list's opinion back over it.
+The backfill guards on it twice: in the loop and in the `WHERE` clause.
+
+⚠️ **A miss stores `{ null, null }`, not a stamped `'list'` miss.** Most books
+are in no universe; that is the ordinary case and never a queue.
 
 ## 5. ⚠️ The lookup exists twice
 

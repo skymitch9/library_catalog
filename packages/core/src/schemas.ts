@@ -108,7 +108,31 @@ export const createWorkSchema = z.object({
 });
 export type CreateWork = z.infer<typeof createWorkSchema>;
 
-export const updateWorkSchema = createWorkSchema.partial();
+/**
+ * ⚠️ `universe` is on the *update* contract and deliberately not on the create
+ * one, and the asymmetry is the design rather than an oversight.
+ *
+ * On create it is **derived**: `createWork` in `@lc/db` resolves it from the
+ * title and series against the shared list, the same way it derives `work_key`
+ * and `sort_title`. A caller cannot name one, so no importer, scan or form can
+ * write a universe the list has never heard of by accident.
+ *
+ * On update it is **assertable**, because the list is hand-curated and will be
+ * incomplete for a long time — "this book is Cosmere and the list does not know
+ * yet" has to be sayable. Sending it stamps `universe_how = 'human'` and pins
+ * the row against re-resolution; `null` is a real answer meaning *in no
+ * universe*, not "clear this and re-derive". Migration 0080.
+ */
+export const updateWorkSchema = createWorkSchema.partial().extend({
+  universe: optionalText,
+});
+
+/**
+ * ⚠️ Not `Partial<CreateWork>`. That was true until 0080 and is now a subset —
+ * `universe` exists only here. `updateWork` in `@lc/db` takes this type so a
+ * patch that names a universe cannot be silently dropped on the way through.
+ */
+export type UpdateWork = z.infer<typeof updateWorkSchema>;
 
 // ---------------------------------------------------------------------------
 // Covers and watches — "this is not right, and I know it"

@@ -19,6 +19,33 @@ export interface AddedWork {
 /**
  * Add a reviewed line to the catalog.
  *
+ * ## ⚠️ The universe is not decided here, and that is deliberate
+ *
+ * *"When a book enters it's automatically added to its verse"* is answered by
+ * `createWork` / `updateWork` in `@lc/db`, beside `work_key` and `sort_title`,
+ * because this is one of five ways a book enters — the others are the manual Add
+ * form, the series-gap wishlist, the ebook importer's `/api/ingest` and
+ * `POST /api/works`, and the ebook importer is where most of this catalog came
+ * from. Deciding it here would have answered one fifth of the ask.
+ *
+ * What that buys the three cases this function actually distinguishes:
+ *
+ *   * **a second format of a book we already hold** — the early return below and
+ *     the `existing.work` branch further down both attach to a row that already
+ *     carries its universe. **Zero lookups**, because there is no new work
+ *     — an ebook, an audiobook and a paperback are editions and copies of one
+ *     `work`, and the universe lives on the work. Migration 0080 says why;
+ *     an omnibus can collect works from different universes, so it could never
+ *     have lived on the edition
+ *   * **a genuinely new book** — one Map lookup against bundled JSON inside
+ *     `createWork`. No extra request from here, and ⚠️ **never a model**
+ *   * **a book the list has never heard of** — resolves to nothing, which is the
+ *     ordinary answer for most books and is not a failure
+ *
+ * ⚠️ A scan carries **no series** — `ScanLine` has no such field — so a scanned
+ * book resolves on its title alone at this moment. The series arrives later, and
+ * `updateWork` re-resolves when it does. Nothing to do here either way.
+ *
  * ⚠️ **Match before creating.** `POST /api/works` deliberately does not dedupe
  * — migration 0001 explains why the database stays permissive — so it is the
  * caller's job to ask. This catalog already holds 117 works imported from
