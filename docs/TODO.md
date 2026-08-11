@@ -57,7 +57,7 @@ the Cloudflare dashboard.
 
 | | Item | Blocker | Who clears it |
 |---|---|---|---|
-| ⏸️ | **BackerKit account 2** | User has just swapped logins; scrape not yet run. | Claude, next |
+| ⏸️ | **Two pledge manifests never itemised** | The Words of Radiance tier says "+ Books" plural plus Radiant/Backer Packs and does not list them; the four Secret Novels titles are inferred from the well-known set, not read off a page. | Claude — needs pledge detail pages |
 | ⏸️ | **Kickstarter "DCC RPG + Unstoppable"** | Not on the Kickstarter account at all — 62 of 62 rows enumerated and it is absent. Almost certainly an Indiegogo pledge. | Claude — needs a second Indiegogo pass |
 | ⏸️ | **Importing any purchase data** | Nothing is in D1 yet. The importer exists and the tables are live, but the input file `scripts/crowdfunding-scan.json` has not been written from the scraped JSON. **The user gates the `--commit`.** | User approves, Claude runs |
 | ⏸️ | **Percy Jackson / Illumicrate** | Vendor page never lists the individual titles; the five standard titles are *supplied by Claude*, not read off the page. Confirm it is the 5-book original series. | User |
@@ -121,8 +121,16 @@ data). `scripts/crowdfunding-scan.json` is gitignored for the same reason.
 | BackerKit acct 1 | ✅ | 4 pledges + 28 survey entries |
 | Indiegogo | ✅ | Space Knight 5 and 6 |
 | Kickstarter | ✅ | 15 pledges containing books |
-| BackerKit acct 2 | ⏸️ | Swapped, not yet scraped |
+| BackerKit acct 2 | ✅ | The games-heavy account. 3 books: **Words of Radiance Leatherbound** ($650, genuinely signed), **Surprise! Four Secret Novels** ($620, one line = four works), **Ascend Online Bk 1 Collector's** |
 | Illumicrate | ✅ | One-off Percy Jackson set — do NOT scan the rest of that site |
+
+⚠️ **The two BackerKit accounts and Kickstarter overlap.** *Four Secret Novels*,
+*Ascend Online Book 1*, *An Unexpected Wedding Invitation* and *Coral Island*
+appear in **both** the Kickstarter enumeration and BackerKit account 2 — same
+pledges, campaign run on Kickstarter and fulfilled through BackerKit. Importing
+both sources naively double-counts every one. The importer must match on campaign
+`externalId`, and a pledge's `platform` should record where *our pledge* lives
+separately from where the survey lives.
 
 ⚠️ **The BackerKit trap:** the Pledges tab showed 4 items; the Surveys tab showed
 28. *Ascend Online* appears only under Surveys. Any BackerKit scan must read
