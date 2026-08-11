@@ -4,10 +4,11 @@ import { Aliases } from '../components/Aliases.js';
 import { Copies, type CopyView } from '../components/Copies.js';
 import { Cover } from '../components/Cover.js';
 import { DriveLinks } from '../components/DriveLinks.js';
+import { Editions, type EditionView } from '../components/Editions.js';
 import { Enrich } from '../components/Enrich.js';
 import { Related } from '../components/Related.js';
 import { Reviews } from '../components/Reviews.js';
-import { formatLabel } from '../lib/formats.js';
+import { shouldShowDriveLinks } from '../lib/formats.js';
 
 /**
  * One book: what it is, where the file is, which printings we hold, and what we
@@ -36,17 +37,7 @@ interface WorkDetail {
     coverUrl: string | null;
     workKey: string;
   };
-  editions: {
-    id: number;
-    format: string;
-    isbn13: string | null;
-    asin: string | null;
-    publisher: string | null;
-    published_year: number | null;
-    pages: number | null;
-    source: string;
-    source_url: string | null;
-  }[];
+  editions: EditionView[];
   copies: CopyView[];
   reading: {
     read_state: string;
@@ -122,6 +113,7 @@ export function WorkPage({
   // The first edition that names a file. Whichever format it is, its name is the
   // best search term Drive will ever get for this book.
   const fileEdition = editions.find((e) => e.source_url) ?? null;
+  const showDrive = shouldShowDriveLinks(editions);
 
   return (
     <main>
@@ -146,11 +138,16 @@ export function WorkPage({
             </p>
           )}
           {work.firstPublished && <p className="muted small">First published {work.firstPublished}</p>}
-          <DriveLinks
-            title={work.title}
-            authors={work.authors}
-            sourceUrl={fileEdition?.source_url ?? null}
-          />
+          {/* ⚠️ Not shown for a book that only exists on paper — it is on a
+              shelf, and there is no file to open. `shouldShowDriveLinks` carries
+              the rule and, more importantly, why an ISBN is not part of it. */}
+          {showDrive && (
+            <DriveLinks
+              title={work.title}
+              authors={work.authors}
+              sourceUrl={fileEdition?.source_url ?? null}
+            />
+          )}
         </div>
       </div>
 
@@ -185,33 +182,11 @@ export function WorkPage({
         </section>
       )}
 
-      <section className="panel">
-        <h3>Editions</h3>
-        {editions.length === 0 ? (
-          <p className="muted small">No printing recorded yet.</p>
-        ) : (
-          <ul className="plain">
-            {editions.map((e) => (
-              <li key={e.id}>
-                <strong>{formatLabel(e.format)}</strong>
-                <span className="muted small">
-                  {[e.publisher, e.published_year, e.pages ? `${e.pages}pp` : null]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </span>
-                <div className="muted small">
-                  {e.isbn13 && <>ISBN {e.isbn13} </>}
-                  {e.asin && <>ASIN {e.asin} </>}
-                  {/* Where the row came from, because a re-sync may overwrite an
-                      imported row and must never overwrite a typed one. */}
-                  <em>from {e.source}</em>
-                </div>
-                {e.source_url && <div className="path small muted">{e.source_url}</div>}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <Editions
+        editions={editions}
+        canEdit={me.capabilities.includes('editCatalog')}
+        onChanged={load}
+      />
 
       <Copies
         workId={workId}

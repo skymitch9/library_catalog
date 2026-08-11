@@ -106,7 +106,32 @@ export const createEditionSchema = z.object({
 });
 export type CreateEdition = z.infer<typeof createEditionSchema>;
 
+/**
+ * Change a printing in place — which is how a hardcover stops being filed as a
+ * paperback.
+ *
+ * ⚠️ **This is the fix for a wrong `format`, and a wrong `format` is not an edge
+ * case.** `addLineToCatalog` writes `format: 'paperback'` for every barcode,
+ * because a barcode proves a printing exists and not which one it is. That guess
+ * is right more often than not and wrong often enough that it must be
+ * correctable; until this schema was wired up there was no route, no query and
+ * no control that could change it.
+ *
+ * `workId` is omitted rather than made optional. Moving a printing to a
+ * different book is not an edit — the copies, the reviews and the read-state all
+ * hang off the work, and re-pointing one column would leave every one of them
+ * behind. Delete it and add it to the right book.
+ *
+ * `.partial()` over a schema carrying `.default()`s, exactly as
+ * `updateCopySchema` does. ⚠️ Zod wraps each field as
+ * `ZodOptional<ZodDefault<…>>` and an absent key short-circuits at the
+ * `ZodOptional`, so the default never fires: `{ format: 'hardcover' }` changes
+ * the format and does **not** silently reset `source` to `manual`. That
+ * behaviour is what makes a one-field PATCH safe, and it is the same behaviour
+ * the wishlist's `{ status: 'owned' }` promotion already depends on.
+ */
 export const updateEditionSchema = createEditionSchema.omit({ workId: true }).partial();
+export type UpdateEdition = z.infer<typeof updateEditionSchema>;
 
 export const createCopySchema = z.object({
   workId: z.number().int().positive(),
