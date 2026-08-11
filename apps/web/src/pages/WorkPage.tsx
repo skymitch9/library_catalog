@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react';
-import { api, type Me } from '../api.js';
+import { api, type Me, type Watch } from '../api.js';
 import { Accessories } from '../components/Accessories.js';
 import { Aliases } from '../components/Aliases.js';
 import { Copies, type CopyView } from '../components/Copies.js';
 import { Cover } from '../components/Cover.js';
+import { CoverPanel } from '../components/CoverPanel.js';
 import { DriveLinks } from '../components/DriveLinks.js';
 import { Editions, type EditionView } from '../components/Editions.js';
 import { Enrich } from '../components/Enrich.js';
 import { Provenance } from '../components/Provenance.js';
 import { Related } from '../components/Related.js';
 import { Reviews } from '../components/Reviews.js';
+import { Watches } from '../components/Watches.js';
 import { WorkFields } from '../components/WorkFields.js';
 import { formatLabel, shouldShowDriveLinks } from '../lib/formats.js';
 
@@ -40,10 +42,14 @@ interface WorkDetail {
     firstPublished: number | null;
     description: string | null;
     coverUrl: string | null;
+    /** 'ok' | 'standin' | null. ⚠️ null is "nobody has looked", not "fine". */
+    coverStatus: 'ok' | 'standin' | null;
     workKey: string;
   };
   editions: EditionView[];
   copies: CopyView[];
+  /** Open and resolved both — see `listWatchesForWork`. Rides along with the work. */
+  watches: Watch[];
   reading: {
     read_state: string;
     started_on: string | null;
@@ -114,6 +120,7 @@ export function WorkPage({
   if (!detail) return <main className="muted">Loading…</main>;
 
   const { work, editions, copies, reading } = detail;
+  const watches = detail.watches ?? [];
   const canTrack = me.capabilities.includes('trackReading');
   // The first edition that names a file. Whichever format it is, its name is the
   // best search term Drive will ever get for this book.
@@ -162,6 +169,26 @@ export function WorkPage({
           confirming each value for correcting a wrong one when they meet it, so
           meeting it has to lead somewhere. Until this, it did not: the page
           printed the description and the app had no way to change it. */}
+      {/* ⚠️ Directly under the head, above every other panel, and that
+          placement is the point of both of them. They are the two things that
+          say "what you just read may be wrong" — a cover that is a stand-in,
+          and a note somebody left about the record. Put below the editions and
+          the copies they would be found by somebody who had already believed
+          the page. */}
+      <Watches
+        workId={workId}
+        watches={watches}
+        canEdit={me.capabilities.includes('editCatalog')}
+        onChanged={load}
+      />
+
+      <CoverPanel
+        workId={workId}
+        work={work}
+        canEdit={me.capabilities.includes('editCatalog')}
+        onChanged={load}
+      />
+
       <WorkFields
         workId={workId}
         work={work}

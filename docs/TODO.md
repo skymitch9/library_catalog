@@ -131,10 +131,11 @@ the Cloudflare dashboard.
 
 | | Item | Blocker | Who clears it |
 |---|---|---|---|
-| 🔨 | **Covers that are missing or wrong need a label and an upload path** | Three asks folded into one agent: upload-your-own covers (R2), a concise **"cover needed"** label for coverless *and* stand-in covers, and a **watch flag** for data to verify later. The Percy Jackson five get the Illumicrate marketing lineup as a deliberate stand-in — ⚠️ the same image on five books is wrong on purpose, and the label is the point. Watch flag seeded on #213/#215. | Agent in flight |
-| ⏸️ | **10 reward lines have no printing** | Lines matched their works but no `edition` exists for the specific printing a campaign delivered, so they landed with `edition_id NULL`. The importer never mints an edition — by design. | Create the editions in the app, then re-run the import |
-| ⏸️ | **Three books the model refused to identify** | #141 *Touch and Explore* (Scholastic), #160 *Bizzy Bear* (Nosy Crow), #174 *I love you, little bear* (Judi Abbot) — bare **series-line** titles, so a lookup returns the range rather than the book. All three have ISBNs and they did not resolve. It declined rather than guessing, which is the behaviour we want. **Re-running will not help; a subtitle will** — e.g. *Bizzy Bear: Fire Rescue*. | User, from the covers |
-| ⏸️ | **4 works have no cover, and they are genuinely obscure** | **57 → 4** overnight: 12 stranded, 20 Google Books, 33 LLM, 4 from a new free title-search rung. What is left: a Paw Patrol shaped board book, *Home Sweet Home*, a Korean Tinyping board book, and *The Nightmare Before Christmas*. No rung reached them. This is the real floor. | Nobody — accept, or hand-supply a URL |
+| ✅ | ~~**Percy Jackson covers: no per-book images exist**~~ | **Answered and built.** User: *"use the marketing image now but put a label on them."* Migration `0040` sets all five to the plain-background lineup and flags them `cover_status = 'standin'`, so they wear the picture **and** stay on the "Cover needed" list. ⚠️ The five identical URLs are deliberate — nothing may dedupe them. Selected by `edition_name`, not by id. | Done |
+| ⏸️ | **Two books claim contradictory series** | #213 *Secret Ingredient* records series "The Pengrooms"; #215 *Pengrooms* records "Pringle & Finn". Both by Paul Castle, both auto-filled, both sourced — and they cannot both be right. **Both now carry a `work_watch` row**, so they wear a **Check** mark and appear under `Needs → To check`. The question is recorded; it still wants the user's eyes. | User — said they will verify later |
+| ⏸️ | **Three books the model refused to identify** | #141 *Touch and Explore* (Scholastic), #160 *Bizzy Bear* (Nosy Crow), #174 *I love you, little bear* (Judi Abbot) — bare **series-line** titles, so a lookup returns the range rather than the book. All three have ISBNs and they did not resolve. Declining beat guessing. **Re-running will not help; a subtitle will** — e.g. *Bizzy Bear: Fire Rescue*. | User, from the covers |
+| ⏸️ | **4 works have no cover any rung can reach** | A Paw Patrol shaped board book, *Home Sweet Home*, a Korean Tinyping board book, *The Nightmare Before Christmas*. **There is now a way in**: the book page's Cover panel accepts a link to any image, verified before storing. Uploading a *file* additionally needs the R2 binding below. | User — paste four links |
+| ⏸️ | **Cover *file* upload needs an R2 binding this Worker lacks** | `POST /api/works/:id/cover` is written and answers **501 naming what is missing** rather than falling back to bytes in D1; the UI hides the picker. Needs a `COVERS` R2Bucket + `COVERS_BASE_URL`. ⚠️ The "no R2 bucket, deliberately" rule in `cloudflare.md` §7 was about **scan photographs** — write-only objects meant to be deleted. A cover is read on every page load forever. §7.1 now carries the create/custom-domain/Cache-Rule steps. | Claude, once the user okays creating a bucket |
 
 ### Answered by the user 2026-08-11
 
@@ -190,6 +191,55 @@ the Cloudflare dashboard.
 | ✅ | A card's series is a link | `6593a7e`. ⚠️ The card had to stop being a `<button>` first — an `<a>` inside one is invalid HTML. Title is now a stretched link; series sits above it on z-index. |
 
 ---
+
+## Covers you can fix yourself, and one label — 2026-08-11
+
+Three asks, one feature: *"this cover is not really the right cover, and I know
+it."* Built on `worktree-agent-ab5f1d6d24c0a09ed`. Typecheck clean, **150 tests
+pass (was 140)**, exercised end-to-end against a local D1 with the migration
+applied — including the real Illumicrate URL, which fetched **198,624 bytes**.
+
+| | What |
+|---|---|
+| ✅ | **`work.cover_status`** — `'ok'` / `'standin'` / NULL. ⚠️ NULL is *unassessed*, not *fine*. Migration `0040`, no CHECK (`gap_verdict.field`'s idiom). |
+| ✅ | **"Cover needed"** on cards and the book page = no cover **or** a known stand-in. One rule, `coverNeeded` in `@lc/core`, shared by the mark and the SQL. |
+| ✅ | **`work_watch`** — "needs my eyes, and here is why". Note required; resolved rather than deleted; `raised_how` is `decided_how`'s counterpart so a run can later flag its own guesses. |
+| ✅ | **`Needs` filter** on the collection — *Cover needed* / *To check* / *Either*, with counts, in the URL like every other filter. |
+| ✅ | **Cover panel** on the book page: link an image, mark it a stand-in, remove it, or upload a file. |
+| ✅ | **Percy Jackson** — five works set to the Illumicrate lineup and flagged `standin`, by the migration. |
+| ✅ | **#213 / #215** — both get a `work_watch` row explaining the contradiction, by the migration. |
+| ⏸️ | **Uploading a file needs an R2 binding this Worker does not have.** The route is complete and answers **501** with a sentence naming what is missing; the UI hides the picker. |
+
+### ⚠️ The R2 question, and why §7 does not forbid it
+
+`wrangler.toml` and `docs/access/cloudflare.md` §7 say "no R2 bucket,
+deliberately". **That decision is about scan photographs** — write-only objects
+whose only purpose was to be deleted later. A cover is the opposite: read on
+every page load, forever, and deleting it is the bug. Both rules now stand
+side by side in §7, and §7.1 has the exact `wrangler r2 bucket create`,
+custom-domain and Cache Rule steps. ⚠️ The `r2.dev` URL is rate-limited and
+uncacheable — the custom domain is the whole point, as it is on the audiobook
+catalog.
+
+Nothing was half-wired: with no binding, every other part of the feature works.
+
+### Run these — ⚠️ migration BEFORE deploy
+
+```bash
+# 1. Schema + the two data corrections, against production.
+npx wrangler d1 migrations apply library-catalog --remote --config apps/worker/wrangler.toml
+
+# 2. Then the code.
+npm run deploy
+
+# 3. Confirm. Expect enabled:false until the bucket exists — that is correct.
+curl -s https://library.heygabi.ai/api/cover-storage
+```
+
+⚠️ **Migration `0040` carries data, exceptionally**: the five Percy Jackson
+covers and the two watches. Both are guarded (`edition_name`, and id + title
+together), so they write nothing in a database that does not hold those rows.
+Applied and re-run locally to confirm the selector picks the right works.
 
 ## Staged, waiting on the user to run — 2026-08-10
 

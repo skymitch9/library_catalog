@@ -130,7 +130,7 @@ the number that matters.
 | | |
 |---|---|
 | Cost | **3–7¢** per shelf, shown on screen. The unreadable path costs 1¢ |
-| Photos | **Never stored.** No R2 binding, and there must not be one |
+| Photos | **Never stored.** No binding this path can reach, and there must not be one. ⚠️ The optional `COVERS` bucket (migration 0040) is for book covers and is not it |
 | Writes | **None.** Every line is a proposal; `addedWorkId` records that a person pressed Add |
 | Gate | `runResearch`, not `scan` — the tab is hidden from anyone who cannot spend |
 ## 🟡 In flight — `feature/research-details`

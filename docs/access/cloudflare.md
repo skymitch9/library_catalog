@@ -27,7 +27,7 @@ Everything else in this file is optional, or is a runbook for later.
 | D1 database | `library-catalog` · `6022ea5e-2510-450e-81ce-7d847fa31379` · region **WNAM** |
 | Migrations applied | `0001_init.sql` (39 statements), `0002_cwa_ebook_formats.sql` (12) |
 | Static assets | 5 files, 302 KiB, served by the Worker's `[assets]` binding |
-| R2 bucket | **none, deliberately** — see §7 |
+| R2 bucket | **none.** For scan photos that is permanent; for covers it is ⚠️ **pending owner action** — see §7 and §7.1 |
 | Cron triggers | **none yet** — phase 5 adds one |
 | Secrets set | **none yet** — see §4 |
 
@@ -275,11 +275,64 @@ account. Two things must follow, or sign-in breaks:
 
 ## 7. Two absences that are decisions, not omissions
 
-**No R2 bucket.** Scan photos go from the upload request straight into the vision
-call and are dropped. The sibling project deleted its bucket for exactly this
-reason: nothing ever read an object back, so the bucket's entire purpose was to
-be emptied later, and one code path forgetting to delete was all it would have
-taken to keep photos indefinitely. Do not add one for phase 4.
+**No R2 bucket for scan photos, and there must not be one.** Photos go from the
+upload request straight into the vision call and are dropped. The sibling project
+deleted its bucket for exactly this reason: nothing ever read an object back, so
+the bucket's entire purpose was to be emptied later, and one code path forgetting
+to delete was all it would have taken to keep photos indefinitely.
+
+⚠️ **That decision is about photographs, not about R2.** Migration 0040 added a
+cover-upload path, and a cover is the opposite kind of object: it is read on
+every page load, forever, and *deleting* it is the bug. Do not read the rule
+above as forbidding the bucket below — and do not read the bucket below as
+permission to store a scan frame. Nothing does, and nothing should.
+
+### 7.1 The covers bucket — ⚠️ NOT PROVISIONED. Owner action required.
+
+`apps/worker/src/routes/covers.ts` is written, tested and mounted. Without the
+binding, `POST /api/works/:id/cover` answers **501** with a sentence naming what
+is missing, and the web UI hides the file picker rather than offering a control
+that can only fail. Everything else in the feature — linking an image somebody
+else hosts, marking a cover as a stand-in, the "Cover needed" label and its
+filter — works today with no bucket at all.
+
+To switch uploading on:
+
+```bash
+# 1. The bucket.
+wrangler r2 bucket create library-covers
+
+# 2. A PUBLIC hostname for it. ⚠️ THIS STEP IS NOT OPTIONAL.
+#    Dashboard → R2 → library-covers → Settings → Public access →
+#    Connect a custom domain → covers.heygabi.ai
+#
+#    The `*.r2.dev` URL is rate-limited and explicitly not for production; it is
+#    also uncacheable, so every cover on every page load would go to origin.
+#    The sibling audiobook catalog fronts its bucket with a custom domain for
+#    exactly this reason — that is the whole point of that setup, not a nicety.
+#
+# 3. A Cache Rule on the zone, same as the audiobook catalog's:
+#    covers.heygabi.ai/*  →  Eligible for cache, Edge TTL 1 year.
+#    ⚠️ Safe here in a way it is NOT for /covers/* on the Worker: these object
+#    names are a hash of the FILE CONTENTS, so a replaced cover is a different
+#    URL and a cached copy can never be stale. See `coverObjectKey`.
+```
+
+Then in `apps/worker/wrangler.toml`:
+
+```toml
+[[r2_buckets]]
+binding = "COVERS"
+bucket_name = "library-covers"
+
+[vars]
+COVERS_BASE_URL = "https://covers.heygabi.ai"
+```
+
+⚠️ **Both, or neither.** The route refuses to write unless the binding *and* the
+base URL are set, rather than storing an object and then being unable to record
+where it went. `npx wrangler deploy` after, then `GET /api/cover-storage` should
+answer `{"enabled":true}` — that endpoint exists to be curled for this.
 
 **No Cloudflare Access.** Identity is Firebase, so that one Google account is one
 person across both catalogs. Access would be a second, unrelated Google SSO and

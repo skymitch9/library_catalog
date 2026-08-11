@@ -418,6 +418,47 @@ export type FindingReviewState = (typeof FINDING_REVIEW_STATES)[number];
 export const DECISION_MODES = ['human', 'auto'] as const;
 export type DecisionMode = (typeof DECISION_MODES)[number];
 
+/**
+ * Whether the image we hold is really this book's cover. Migration 0040.
+ *
+ * ⚠️ **"Has a cover" and "has the right cover" are different questions**, and
+ * everything written before 0040 could only ask the first. `collectionStats`
+ * counts `cover_url IS NOT NULL`, the backfills skip a filled column, and
+ * `Enrich` refuses to overwrite one — all correct for a *missing* cover and all
+ * silently wrong for a *wrong* one. A stand-in has a URL and passes every one of
+ * those tests.
+ *
+ * NULL means nobody has assessed it, and is **not** 'ok'. Same rule
+ * `GAP_VERDICTS` and `DECISION_MODES` follow: "we looked and it is fine" and
+ * "nobody has looked" are different facts, and only one of them is a reason to
+ * look again. Nothing was backfilled to 'ok' by the migration.
+ */
+export const COVER_STATUSES = [
+  /** Somebody looked, and this is the book's own cover. */
+  'ok',
+  /** We know it is not the right image, and are holding it until one exists. */
+  'standin',
+] as const;
+export type CoverStatus = (typeof COVER_STATUSES)[number];
+
+/**
+ * Image types an uploaded cover may be, checked against the file's own **magic
+ * bytes** and never against the type the browser declared.
+ *
+ * ⚠️ A `Content-Type` on a multipart part is a claim by the client, so it can
+ * say `image/jpeg` over an HTML error page, a PDF, or a script. It is used only
+ * to fail fast; `sniffImageType` is what decides. SVG is deliberately absent —
+ * it is a document that can carry script, and nothing here needs a vector cover.
+ */
+export const COVER_IMAGE_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'image/avif',
+] as const;
+export type CoverImageType = (typeof COVER_IMAGE_TYPES)[number];
+
 export const SCAN_MODES = ['shelf', 'single', 'isbn', 'file'] as const;
 export type ScanMode = (typeof SCAN_MODES)[number];
 

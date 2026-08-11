@@ -12,6 +12,7 @@ import {
   ACCESSORY_KINDS,
   CONDITIONS,
   COPY_STATUSES,
+  COVER_STATUSES,
   CROWDFUNDING_PLATFORMS,
   DETAIL_FIELDS,
   PLEDGE_ITEM_VERDICTS,
@@ -51,6 +52,7 @@ export const pledgeStatusSchema = z.enum(PLEDGE_STATUSES);
 export const pledgeItemVerdictSchema = z.enum(PLEDGE_ITEM_VERDICTS);
 export const gapVerdictSchema = z.enum(GAP_VERDICTS);
 export const findingReviewStateSchema = z.enum(FINDING_REVIEW_STATES);
+export const coverStatusSchema = z.enum(COVER_STATUSES);
 
 /** Trim, and treat an empty string as absent — a blank form field is not a value. */
 const optionalText = z
@@ -90,10 +92,63 @@ export const createWorkSchema = z.object({
   openlibraryWorkId: optionalText,
   description: optionalText,
   coverUrl: optionalText,
+  /**
+   * Whether the cover we hold is really this book's. Migration 0040.
+   *
+   * ⚠️ **Only ever meaningful alongside `coverUrl`.** `updateWork` pairs them:
+   * a patch that moves the URL without saying the status clears the status, so
+   * a 'standin' can never survive onto a replacement image. Sending a status
+   * with no URL still works and is the ordinary case — marking a cover that is
+   * already there as wrong.
+   */
+  coverStatus: coverStatusSchema.nullable().optional(),
 });
 export type CreateWork = z.infer<typeof createWorkSchema>;
 
 export const updateWorkSchema = createWorkSchema.partial();
+
+// ---------------------------------------------------------------------------
+// Covers and watches — "this is not right, and I know it"
+// ---------------------------------------------------------------------------
+
+/**
+ * Point a book at a cover somebody found, without hosting the image.
+ *
+ * ⚠️ The URL is **fetched and checked** before it is stored — see the route.
+ * `docs/info/covers-and-series.md` and `verifyCoverUrl` both state the rule this
+ * enforces: nothing in this system ever revisits a cover column, so an
+ * unverified URL is a dead link that is permanent in a way a blank is not.
+ *
+ * `status` travels with the URL rather than being a second call, because that
+ * pairing is the entire point of migration 0040 — the Percy Jackson case is
+ * "set this image AND record that it is wrong", and two requests could do the
+ * first and fail the second.
+ */
+export const setCoverSchema = z.object({
+  url: z.string().trim().url('that is not a URL'),
+  status: coverStatusSchema.nullable().optional(),
+});
+export type SetCover = z.infer<typeof setCoverSchema>;
+
+/** Mark the cover already on a book as right, wrong, or unassessed again. */
+export const setCoverStatusSchema = z.object({
+  status: coverStatusSchema.nullable(),
+});
+export type SetCoverStatus = z.infer<typeof setCoverStatusSchema>;
+
+/**
+ * "Needs my eyes, and here is why."
+ *
+ * ⚠️ `note` is required and non-empty, for the same reason `setGapVerdictSchema`
+ * requires a source: the note IS the watch. A mark with no reason is one the
+ * owner finds weeks later and cannot act on, so the schema refuses to create
+ * one rather than storing a mark that will have to be re-investigated from
+ * scratch.
+ */
+export const createWatchSchema = z.object({
+  note: z.string().trim().min(1, 'say what needs checking — the note is the whole point'),
+});
+export type CreateWatch = z.infer<typeof createWatchSchema>;
 
 export const createEditionSchema = z.object({
   workId: z.number().int().positive(),

@@ -349,8 +349,11 @@ provenance is the exception and carries no amount.
   that could mint a campaign beside an imported one is how the two get out of
   step. Unlinking a wrong reward line **is** offered, because a scan makes
   mistakes.
-- **No accessory images.** There is no upload path in this app and no R2 bucket,
-  deliberately (`wrangler.toml`).
+- **No accessory images.** ⚠️ Updated 2026-08-11: there *is* now an upload path,
+  but it is for **book covers only** and it is gated on an R2 binding this Worker
+  does not yet have (migration 0040, `routes/covers.ts`). Nothing here reaches
+  it, and pointing accessories at it would be a new decision, not a free
+  extension of that one.
 
 ---
 

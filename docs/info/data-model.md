@@ -128,7 +128,12 @@ which is the only defence against a wrong ISBN returning a confident wrong book.
 Recording it as a photo job would make the queue lie about where its titles came
 from.
 
-**Photos are never stored.** No R2 bucket exists in this project, deliberately.
+**Photos are never stored.** ⚠️ Since migration 0040 that sentence needs its
+scope said out loud: **no scan photograph is ever stored, and no bucket for one
+may exist.** A *covers* bucket is a different object with the opposite lifetime
+(read on every page load, forever) and is a separate, permitted decision — see
+`docs/access/cloudflare.md` §7 and §7.1. Nothing in the scan path writes an
+object either way.
 
 ### `lookup_cache`, `research_run`, `research_finding`
 

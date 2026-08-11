@@ -80,6 +80,33 @@ export interface WorkSummary {
   createdAt: string;
   /** This reader's state, not the household's. Null when nobody has set one. */
   readState: string | null;
+  /**
+   * Whether the cover we hold is really this book's — `'ok'`, `'standin'`, or
+   * `null` for "nobody has looked".
+   *
+   * ⚠️ `null` is NOT `'ok'`. It is true of nearly every row and means only that
+   * the question has not been asked; `coverNeeded` in `@lc/core` is the one
+   * place that decides what the combination of this and `coverUrl` means, and
+   * both the card mark and the server's filter go through it.
+   */
+  coverStatus: 'ok' | 'standin' | null;
+  /** Open "check this later" notes. `0` for almost everything. */
+  openWatches: number;
+}
+
+/** One "needs my eyes" note. Mirrors `Watch` in `@lc/db`. */
+export interface Watch {
+  id: number;
+  workId: number;
+  note: string;
+  /** `'human'` — a person raised it. `'auto'` — a run raised it about its own guess. */
+  raisedHow: 'human' | 'auto';
+  raisedBy: number | null;
+  raisedByName: string | null;
+  createdAt: string;
+  /** Null while open. Set means somebody has said they looked. */
+  resolvedAt: string | null;
+  resolvedBy: number | null;
 }
 
 /**
@@ -97,6 +124,8 @@ export interface CollectionParams {
   /** The coarse axis: `physical` or `ebook`. Composes with `format`. */
   medium?: string;
   status?: string;
+  /** `cover`, `watch` or `any` — what is still outstanding. Migration 0040. */
+  needs?: string;
   readState?: string;
   sort?: string;
   dir?: 'asc' | 'desc';
@@ -114,6 +143,11 @@ export interface CollectionFacets {
   media: { medium: string; count: number }[];
   formats: { format: string; count: number }[];
   statuses: { status: string; count: number }[];
+  /**
+   * How much is still outstanding. The two overlap — a book can want a cover
+   * *and* be on watch — so they are two numbers rather than a breakdown.
+   */
+  needs: { cover: number; watch: number };
 }
 
 export interface Stats {
@@ -631,6 +665,90 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(body),
     }),
+
+  /* -- covers ------------------------------------------------------------- */
+
+  /** Is an R2 bucket bound? Asked once, so the panel can hide what cannot work. */
+  coverStorage: () =>
+    request<{ enabled: boolean; maxBytes: number; reason?: string }>('/api/cover-storage'),
+
+  /**
+   * Point a book at an image somebody else hosts.
+   *
+   * ⚠️ The Worker **fetches and checks** the URL before storing it, so this can
+   * fail with 422 on a link that looks perfectly good. That is the feature —
+   * nothing revisits a cover column, so a dead link would be permanent.
+   */
+  setCover: (id: number, body: { url: string; status?: 'ok' | 'standin' | null }) =>
+    request<{ work: WorkSummary; bytes: number }>(`/api/works/${id}/cover`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+
+  /** Mark the cover already there as a stand-in, as right, or as unassessed. */
+  setCoverStatus: (id: number, status: 'ok' | 'standin' | null) =>
+    request<{ work: WorkSummary }>(`/api/works/${id}/cover-status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    }),
+
+  removeCover: (id: number) =>
+    request<{ work: WorkSummary }>(`/api/works/${id}/cover`, { method: 'DELETE' }),
+
+  /**
+   * Upload a file the app then serves.
+   *
+   * ⚠️ **Not `request()`** — that helper sets `Content-Type: application/json`
+   * on every call, and setting any content type by hand on a `FormData` body
+   * strips the multipart boundary the browser was about to generate, so the
+   * server receives a body it cannot parse. The boundary is why this is the one
+   * call that builds its own fetch.
+   *
+   * ⚠️ Answers **501** when no R2 bucket is bound, which is the state of this
+   * Worker today. `coverStorage()` is how the UI avoids offering it.
+   */
+  uploadCover: async (id: number, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    const token = await getIdToken();
+    const res = await fetch(`/api/works/${id}/cover`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as { error?: string; detail?: unknown } | null;
+      throw new ApiError(
+        res.status,
+        body?.detail,
+        typeof body?.detail === 'string' ? body.detail : (body?.error ?? `HTTP ${res.status}`),
+      );
+    }
+    return (await res.json()) as { work: WorkSummary; key: string; bytes: number };
+  },
+
+  /* -- watches ------------------------------------------------------------ */
+
+  /** Everything still open, across the catalog. */
+  watches: () => request<{ watches: (Watch & { title: string; authors: string; coverUrl: string | null })[] }>(
+    '/api/watches',
+  ),
+
+  workWatches: (id: number) => request<{ watches: Watch[] }>(`/api/works/${id}/watches`),
+
+  addWatch: (id: number, note: string) =>
+    request<{ watches: Watch[] }>(`/api/works/${id}/watches`, {
+      method: 'POST',
+      body: JSON.stringify({ note }),
+    }),
+
+  /** "I have looked at this." Kept as history rather than deleted. */
+  resolveWatch: (id: number, watchId: number) =>
+    request<{ watches: Watch[] }>(`/api/works/${id}/watches/${watchId}/resolve`, { method: 'POST' }),
+
+  /** Raised by mistake — distinct from resolving, which asserts somebody looked. */
+  deleteWatch: (id: number, watchId: number) =>
+    request<{ watches: Watch[] }>(`/api/works/${id}/watches/${watchId}`, { method: 'DELETE' }),
 
   /** The Worker builds the review document; the browser writes it. See routes/reviews.ts. */
   reviewDraft: (workId: number, body: { rating: number; text: string; editionLabel?: string }) =>

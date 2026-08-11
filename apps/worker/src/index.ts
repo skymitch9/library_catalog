@@ -11,6 +11,7 @@ import { requireAuth } from './middleware/auth.js';
 import { accessoryRoutes } from './routes/accessories.js';
 import { aliasRoutes } from './routes/aliases.js';
 import { catalogRoutes } from './routes/catalog.js';
+import { coverRoutes } from './routes/covers.js';
 import { crowdfundingRoutes, provenanceRoutes } from './routes/crowdfunding.js';
 import { enrichRoutes } from './routes/enrich.js';
 import { exportRoutes } from './routes/export.js';
@@ -23,6 +24,7 @@ import { reviewRoutes } from './routes/reviews.js';
 import { scanJobRoutes } from './routes/scan-jobs.js';
 import { seriesRoutes } from './routes/series.js';
 import { userRoutes } from './routes/users.js';
+import { watchRoutes } from './routes/watches.js';
 
 const app = new Hono<AppBindings>();
 
@@ -53,6 +55,14 @@ app.route('/api', aliasRoutes);
 // main page, and the surest way to keep it off is for nothing to be able to ask.
 app.route('/api', accessoryRoutes);
 app.route('/api', provenanceRoutes);
+// "This cover is not really the right cover, and I know it." Migration 0040.
+// `/works/:id/cover` and `/works/:id/watches` are each one segment longer than
+// catalogRoutes' `/works/:id`, so the same non-shadowing argument holds as for
+// aliases and relations. ⚠️ The upload half needs an R2 binding this Worker does
+// not have and answers 501 without it — see `env.ts` on `COVERS`, and note that
+// this is NOT the scan-photo bucket that must never exist.
+app.route('/api', coverRoutes);
+app.route('/api', watchRoutes);
 app.route('/api', exportRoutes);
 app.route('/api/series', seriesRoutes);
 // Kickstarter / BackerKit / Indiegogo provenance and its physical-vs-digital

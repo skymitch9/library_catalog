@@ -62,6 +62,8 @@ export function CollectionPage({
   const [medium, setMedium] = useState(filters.medium);
   const [format, setFormat] = useState(filters.format);
   const [status, setStatus] = useState(filters.status);
+  // The one filter about us rather than about the books — see `NEEDS_FILTERS`.
+  const [needs, setNeeds] = useState(filters.needs);
   const [readState, setReadState] = useState(filters.readState);
   const [sort, setSort] = useState(filters.sort ?? prefs.sort);
   const [dir, setDir] = useState<'asc' | 'desc'>(filters.dir ?? prefs.dir);
@@ -72,7 +74,12 @@ export function CollectionPage({
   // just applied and not enough of an explanation for a page somebody sent you.
   const [showFilters, setShowFilters] = useState(
     Boolean(
-      filters.series || filters.medium || filters.format || filters.status || filters.readState,
+      filters.series ||
+        filters.medium ||
+        filters.format ||
+        filters.status ||
+        filters.needs ||
+        filters.readState,
     ),
   );
 
@@ -89,13 +96,13 @@ export function CollectionPage({
   const [error, setError] = useState<string | null>(null);
 
   const canEdit = me.capabilities.includes('editCatalog');
-  const filtered = Boolean(q || series || medium || format || status || readState);
+  const filtered = Boolean(q || series || medium || format || status || needs || readState);
 
   useEffect(() => savePrefs({ sort, dir, pageSize, view }), [sort, dir, pageSize, view]);
 
   const params = useMemo(
-    () => ({ q, series, medium, format, status, readState, sort, dir, page, pageSize }),
-    [q, series, medium, format, status, readState, sort, dir, page, pageSize],
+    () => ({ q, series, medium, format, status, needs, readState, sort, dir, page, pageSize }),
+    [q, series, medium, format, status, needs, readState, sort, dir, page, pageSize],
   );
 
   const reload = useCallback(() => {
@@ -132,6 +139,7 @@ export function CollectionPage({
     medium,
     format,
     status,
+    needs,
     readState,
     sort,
     dir,
@@ -160,6 +168,7 @@ export function CollectionPage({
         medium,
         format,
         status,
+        needs,
         readState,
         sort,
         dir,
@@ -167,14 +176,14 @@ export function CollectionPage({
         page: page + 1,
       }),
     );
-  }, [q, series, medium, format, status, readState, sort, dir, pageSize, page]);
+  }, [q, series, medium, format, status, needs, readState, sort, dir, pageSize, page]);
 
   useEffect(() => {
     api
-      .facets({ q, medium, format, status, readState })
+      .facets({ q, medium, format, status, needs, readState })
       .then(setFacets)
       .catch(() => setFacets(null));
-  }, [q, medium, format, status, readState]);
+  }, [q, medium, format, status, needs, readState]);
 
   const loadHeader = useCallback(() => {
     api.stats().then(setStats).catch(() => setStats(null));
@@ -378,6 +387,37 @@ export function CollectionPage({
             </select>
           </label>
 
+          {/* ⚠️ The one control here that asks about US, not about the books.
+              Everything else narrows the collection to a kind of book; this
+              narrows it to the books whose record is not finished — and it is
+              the way the owner works through them, so it lives beside the rest
+              rather than on a screen of its own.
+
+              A `<select>` in a `.field`, like every other filter on this row,
+              because a segmented button group among five dropdowns would be a
+              second idiom for one job and a native select is the best thing a
+              360px phone can be handed.
+
+              ⚠️ "Cover needed" is NOT "no cover". A stand-in has a URL and is
+              still wrong — five books share one Illumicrate marketing
+              photograph on purpose — and that is exactly the set this exists to
+              surface. The note under the panel says so in words. */}
+          <label className="field">
+            <span className="field__label">Needs</span>
+            <select
+              value={needs}
+              onChange={(e) => setNeeds(e.target.value)}
+              title="Books whose record is not finished"
+            >
+              <option value="">Anything</option>
+              <option value="cover">
+                Cover needed{facets ? ` (${facets.needs.cover})` : ''}
+              </option>
+              <option value="watch">To check{facets ? ` (${facets.needs.watch})` : ''}</option>
+              <option value="any">Either</option>
+            </select>
+          </label>
+
           <label className="field">
             <span className="field__label">Read</span>
             <select value={readState} onChange={(e) => setReadState(e.target.value)}>
@@ -398,6 +438,7 @@ export function CollectionPage({
                 setMedium('');
                 setFormat('');
                 setStatus('');
+                setNeeds('');
                 setReadState('');
               }}
             >
@@ -414,6 +455,15 @@ export function CollectionPage({
           <p className="controls__note muted">
             Format and Edition match a book that <b>has</b> one, not one that has only that.
             A book held on the shelf and on a screen is under both.
+          </p>
+          {/* ⚠️ Written down for the same reason the sentence above it is: the
+              answer is not guessable and the wrong guess is silent. Somebody
+              reading "Cover needed" will assume it means an empty cover, and
+              the books it is most important to reach are the ones that have an
+              image already. */}
+          <p className="controls__note muted">
+            <b>Cover needed</b> includes books wearing a stand-in — an image we know is not
+            that book's own cover. <b>To check</b> is anything somebody left a note about.
           </p>
         </div>
       )}

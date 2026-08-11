@@ -20,6 +20,7 @@ import { ROLES, type Role, type SourceTier } from './constants.js';
 export * from './constants.js';
 export * from './capabilities.js';
 export * from './completeness.js';
+export * from './covers.js';
 export * from './gaps.js';
 export * from './isbn.js';
 export * from './titles.js';

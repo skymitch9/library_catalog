@@ -403,6 +403,40 @@ a.topbar__brand { text-decoration: none; }
    and only the flipping token stays legible against both. */
 .mark--preordered { background: var(--transit); color: var(--bg); }
 
+/*
+ * "This record is not finished." Migration 0040.
+ *
+ * ⚠️ Both wear `--warm`, the spine-label terracotta, and that is the only place
+ * in this stylesheet where two different marks share a colour. It is deliberate:
+ * every other mark states a *fact* about the book (read, on the way, held as an
+ * ebook), and these two alone are a *request to the owner*. Giving them one hue
+ * is what lets "there is something to do on this card" be read without reading
+ * the words — which on a 150px tile at arm's length is the whole job.
+ *
+ * They differ by fill, following the grammar the format chips already use: solid
+ * is the stronger claim.
+ *
+ *   filled outline   Cover needed — we know the image is wrong or absent
+ *   outlined         Check — somebody suspects something and wrote down what
+ *
+ * ⚠️ `--warm` also carries `.mark--reading` and `.mark--gap`. Neither collides:
+ * a read-state mark and a needs mark stack in `.card__marks` rather than
+ * replacing each other, and `.mark--gap` only ever appears in a series ladder,
+ * which has no covers on it.
+ */
+.mark--needs {
+  background: var(--warm);
+  color: #fff;
+}
+.mark--watch {
+  background: var(--panel);
+  color: var(--warm);
+  border: 1px solid var(--warm);
+  /* The border eats 2px the filled marks do not spend, and without this the two
+     sit at different heights when they stack. */
+  padding: 1px 5px;
+}
+
 /* Two marks can land on one cover — a book already read as an ebook, with the
    hardcover in the post, is the ordinary case in this house. `.mark` defaults to
    the top-right corner on its own, so a second one would sit exactly on top of

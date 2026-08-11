@@ -63,6 +63,18 @@ const ADD_MODES: readonly AddMode[] = ['scan', 'single', 'photo', 'type'];
  * preference rather than a thing to serialise. `pageSize` is here precisely
  * because something does depend on it — `?page=3` means nothing without it.
  */
+/**
+ * The values the "needs attention" control accepts.
+ *
+ * ⚠️ Kept here rather than in `@lc/core` on purpose: unlike `EDITION_FORMATS` or
+ * `COPY_STATUSES` these are not a domain vocabulary that anything stores — they
+ * are three canned queries, defined once as SQL in `NEEDS_CLAUSE`
+ * (`packages/db/src/works.ts`) and once as a URL word here. Promoting them to a
+ * shared constant would imply a column somewhere holds one, and none does.
+ */
+export const NEEDS_FILTERS = ['cover', 'watch', 'any'] as const;
+export type NeedsFilter = (typeof NEEDS_FILTERS)[number];
+
 export interface CollectionFilters {
   q: string;
   series: string;
@@ -70,6 +82,14 @@ export interface CollectionFilters {
   medium: string;
   format: string;
   status: string;
+  /**
+   * What is still outstanding — `cover`, `watch`, `any`, or empty.
+   *
+   * ⚠️ The one filter that is about **us** rather than about the books. It is in
+   * the URL like the rest so "the books still needing a cover" is a link that
+   * can be sent, bookmarked, or come back to after pressing Back out of one.
+   */
+  needs: string;
   readState: string;
   sort: string | null;
   dir: 'asc' | 'desc' | null;
@@ -177,6 +197,7 @@ function parseCollection(search: string): CollectionFilters {
     medium: pick(search, 'medium', EDITION_MEDIA) ?? '',
     format: pick(search, 'format', EDITION_FORMATS) ?? '',
     status: pick(search, 'status', COPY_STATUSES) ?? '',
+    needs: pick(search, 'needs', NEEDS_FILTERS) ?? '',
     readState: pick(search, 'read', READ_STATES) ?? '',
     sort: pick(search, 'sort', SORTS),
     dir: pick(search, 'dir', ['asc', 'desc'] as const),
@@ -202,6 +223,7 @@ export function collectionPath(f: CollectionFilters): string {
   if (f.medium) p.set('medium', f.medium);
   if (f.format) p.set('format', f.format);
   if (f.status) p.set('status', f.status);
+  if (f.needs) p.set('needs', f.needs);
   if (f.readState) p.set('read', f.readState);
   if (f.sort && f.sort !== DEFAULT_PREFS.sort) p.set('sort', f.sort);
   if (f.dir && f.dir !== DEFAULT_PREFS.dir) p.set('dir', f.dir);
