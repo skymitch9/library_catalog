@@ -232,15 +232,29 @@ export function ScanLines({
         {left === 0 ? 'all sorted' : `${left} still to sort`}
       </p>
       <ul className="works scan-lines">
-        {job.lines.map((line, i) => (
-          <LineRow
-            key={`${line.via}-${line.code ?? line.text}-${i}`}
-            line={line}
-            index={i}
-            jobId={job.id}
-            onJob={onJob}
-          />
-        ))}
+        {/*
+         * Newest first. A sweep appends, so the book just scanned landed at the
+         * end of the array and sat below the fold — exactly the one you want to
+         * confirm while it is still in your hand.
+         *
+         * ⚠️ Pair the position BEFORE reversing. `index` is the array offset the
+         * server patches (`patchScanLine`/`lookupScanLine` take it verbatim), so
+         * a display-order index would confirm, rename or dismiss a different
+         * book than the row you tapped. `.map()` builds a new array, so the
+         * `.reverse()` below mutates that copy and never `job.lines` itself.
+         */}
+        {job.lines
+          .map((line, i) => ({ line, i }))
+          .reverse()
+          .map(({ line, i }) => (
+            <LineRow
+              key={`${line.via}-${line.code ?? line.text}-${i}`}
+              line={line}
+              index={i}
+              jobId={job.id}
+              onJob={onJob}
+            />
+          ))}
       </ul>
     </>
   );
