@@ -325,6 +325,8 @@ a.topbar__brand { text-decoration: none; }
   border: 0;
   background: none;
   color: inherit;
+  /* The anchor for `.card__open::after`. */
+  position: relative;
 }
 .card__art { position: relative; }
 .card:hover .cover { box-shadow: var(--shadow-lift); }
@@ -340,12 +342,43 @@ a.topbar__brand { text-decoration: none; }
   -webkit-box-orient: vertical;
 }
 
+/*
+ * The title link, stretched over its whole card or row.
+ *
+ * ⚠️ This is what keeps the tap target the size of the card now that the card is
+ * not a `<button>` — see the note at the top of `WorkList`. The pseudo-element
+ * is the entire mechanism: the anchor itself stays the size of its text, so the
+ * line-clamp and the flex layout are unaffected, while `::after` covers the
+ * positioned ancestor and takes the taps.
+ *
+ * Anything else inside the card that must remain clickable has to be lifted
+ * above this overlay — `.series-tag__link` below is the one that is.
+ */
+.card__open { color: inherit; text-decoration: none; }
+.card__open::after { content: ''; position: absolute; inset: 0; }
+.card__open:hover { color: var(--accent); }
+/* The focus ring lands on the title text rather than the card, which is where
+   the tab stop actually is. */
+.card__open:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 .series-tag {
   font-size: 0.75rem;
   color: var(--warm);
   letter-spacing: 0.01em;
+  /* Above the stretched title overlay, so tapping the series reaches the series
+     and not the book behind it. Without this the link is drawn, is announced,
+     and does nothing at all when touched. */
+  position: relative;
+  z-index: 1;
+  max-width: 100%;
 }
 .series-tag b { font-weight: 700; }
+/* Only as wide as its own text. In the card's column flex it would otherwise
+   stretch the full width and sit over the title's tap overlay for the rest of
+   the line, swallowing presses meant for the book. Scoped to the card: in
+   `.row-open__meta` the parent is a row flex that aligns on the baseline, and a
+   blanket `align-self` here would quietly undo that. */
+.card__text .series-tag { align-self: flex-start; }
 
 /* A read mark sits ON the cover in the grid, where there is no room for a row
    of text, and beside the title in the list, where there is. */
@@ -392,8 +425,14 @@ ul.works li { border-bottom: 1px solid var(--line); }
 ul.works li:last-child { border-bottom: 0; }
 
 /* The whole row is the tap target. A 44px-tall link inside a row is a miss on a
-   phone; the row is ~74px and the entire thing opens the book. */
-button.row-open {
+   phone; the row is ~74px and the entire thing opens the book.
+ *
+ * ⚠️ `.row-open`, not `button.row-open`. The collection's rows are containers
+ * holding a stretched title link (see `WorkList`), while the series list still
+ * spells its row as a `<button>` — one class dresses both, and the button-only
+ * resets below are harmless on a div. `position: relative` is what
+ * `.card__open::after` stretches against. */
+.row-open {
   display: flex;
   gap: 0.75rem;
   align-items: flex-start;
@@ -406,8 +445,9 @@ button.row-open {
   background: none;
   color: inherit;
   font: inherit;
+  position: relative;
 }
-button.row-open:hover { background: var(--bg-tint); }
+.row-open:hover { background: var(--bg-tint); }
 .row-open__text { min-width: 0; flex: 1; }
 .row-open__head { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
 .row-open__head strong { font-family: var(--serif); font-size: 1rem; }
@@ -532,6 +572,10 @@ button.row-open:hover { background: var(--bg-tint); }
   background: var(--bg-tint);
 }
 .notice--bad { border-left: 3px solid var(--warm); }
+/* Something landed. `--accent` is the cloth binding — this palette's positive —
+   rather than a green invented for the occasion; the design has two accents and
+   both already mean something. */
+.notice--good { border-left: 3px solid var(--accent); }
 
 h3 { margin: 0 0 0.5rem; font-size: 1rem; }
 
@@ -601,12 +645,37 @@ textarea {
 
 .stack { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.6rem; }
 
-button.link.series-tag__link {
+/*
+ * The way into a series, from a book page and from a collection card.
+ *
+ * ⚠️ Not `button.link.series-tag__link`, which is what this was. The book page
+ * spells it as a `<button>` (it has a callback to hand) and a collection card
+ * spells it as an `<a>` (it is inside a card that must not nest a control) — one
+ * class has to dress both, or the same affordance grows two appearances.
+ *
+ * The dotted underline rather than a solid one: this sits directly beneath a
+ * title that is itself a link, and two identical underlines two lines apart read
+ * as one control wrapped onto a second line.
+ */
+.series-tag__link {
   font-size: inherit;
   color: var(--warm);
   text-decoration: none;
   border-bottom: 1px dotted var(--warm);
+  /* A 0.75rem target is small for a thumb. The padding is vertical only —
+     widening it horizontally would push the link out over the card's tap
+     overlay and steal presses meant for the book. */
+  display: inline-block;
+  padding: 3px 0;
+  /* Long series names — "Beneath the Dragoneye Moons" — must not widen the grid
+     column; the card clamps its title for the same reason. */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
 }
+.series-tag__link:hover { color: var(--accent); border-bottom-color: var(--accent); }
 
 /* Two marks the collection did not need. `--gap` is a certainty and reads as
    loudly as a Read mark; `--attested` rests on a source and is deliberately
@@ -768,6 +837,133 @@ ol.ladder > li::before {
 .wish__book:hover { background: var(--bg-tint); }
 .wish__book .row-open__text { display: flex; flex-direction: column; }
 .wish__actions { display: flex; flex-wrap: wrap; gap: 0.3rem; flex: none; }
+
+/* --- a parcel turning up -------------------------------------------------- */
+
+/*
+ * Wears `--transit`, the colour `preordered` already has on every badge and
+ * wishlist row — this panel is that badge grown into a section, and giving it a
+ * colour of its own would make one fact look like two. The left rule is the
+ * whole decoration: it sits above the fold on the screen that has it, and a
+ * fully tinted panel there would shout over the list it introduces.
+ *
+ * Ported from the sibling Board Game Catalog, minus its starburst: that flourish
+ * belongs to a design with a printed-object metaphor and two flat shadows, and
+ * this stylesheet is paper and ink with no such motif to hang it on.
+ */
+.arrivals { border-left: 3px solid var(--transit); }
+
+/* Heading and the one control on the same line — the sibling's `.section-head`,
+   which this stylesheet had no equivalent of because `.panel` is a column. */
+.panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.panel__head h3 { margin: 0; }
+
+.arrivals__count {
+  color: var(--transit);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Said once above the list instead of on all twenty rows — see `commonValue`.
+   One line, because it is context and not a decision. */
+.arrivals__shared {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.arrivals__list { list-style: none; margin: 0; padding: 0; }
+.arrival { border-bottom: 1px solid var(--line); }
+.arrival:last-child { border-bottom: 0; }
+/* ⚠️ The whole row is the tap target, not the 16px checkbox — the rule
+   `WorkList` states for the collection, and this list is read on a phone with a
+   parcel in the other hand. ~40px tall at this padding. */
+.arrival label {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.arrival input { width: auto; flex-shrink: 0; margin: 0; }
+/* The title is the only thing on the row anyone decides with; everything in
+   `.arrival__meta` merely qualifies it. */
+.arrival__title { flex: 1 1 10rem; min-width: 0; }
+/* Unticked is "did not turn up", not "disabled" — still legible, visibly set
+   aside, and one tap from coming back. */
+.arrival--held label { opacity: 0.5; }
+.arrival--held .arrival__title { text-decoration: line-through; }
+
+/*
+ * Everything qualifying the title, kept together so the phone can move it to a
+ * line of its own in one rule rather than three.
+ *
+ * ⚠️ `max-width` is doing real work. A note is `nowrap`, so its natural basis is
+ * enormous, and flexbox shrinks items in proportion to that basis — uncapped,
+ * the meta block keeps most of the row and squeezes the title into a three-line
+ * column beside a one-line note.
+ */
+.arrival__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 45%;
+}
+.arrival__note {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/*
+ * The action row follows a list that can run to twenty rows, so it is pinned to
+ * the bottom of the viewport rather than left at the end of the scroll.
+ * `sticky`, not `fixed`: it belongs to the panel and must stop existing the
+ * moment the panel is closed or scrolled past. The negative margins bleed it to
+ * the panel's edges and assume `.panel`'s 1rem padding.
+ */
+.arrivals__actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  margin: 0 -1rem -1rem;
+  padding: 0.7rem 1rem;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 26rem) {
+  /*
+   * The row stacks: title on the first line, everything qualifying it on the
+   * second, aligned past the checkbox so the column of boxes stays a column.
+   * At 360px a title beside its vendor gets about eight characters; stacked it
+   * gets the line.
+   */
+  .arrival label { flex-wrap: wrap; row-gap: 0.15rem; }
+  /*
+   * ⚠️ `1 1 0`, not `1 1 10rem`. With a basis that wide a long title is wider
+   * than what is left beside the checkbox, so the whole span wraps to the next
+   * flex line and strands the checkbox on a line of its own — a column of tick
+   * boxes with holes in it. A zero basis makes it wrap *inside* its own column,
+   * level with the checkbox and with the meta line below it.
+   */
+  .arrival__title { flex: 1 1 0; }
+  /* The cap above is a desktop rule — on its own line the meta wants the width,
+     and the note truncating against the screen edge is the intended behaviour. */
+  .arrival__meta { flex-basis: 100%; max-width: none; padding-left: 1.6rem; }
+}
 
 /* --- copies -------------------------------------------------------------- */
 

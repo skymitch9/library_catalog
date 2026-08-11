@@ -114,6 +114,8 @@ the Cloudflare dashboard.
 | 🚢 | **Auto-apply missing details** | The queue writes what it finds instead of asking. Migration `0013` adds `decided_how`, so machine-written values stay distinguishable from asserted ones. `GET /auto-applied` + `POST /undo` give bulk recoverability. |
 | 🚢 | Accessories + crowdfunding provenance | Migrations `0020`, `0021`. Four tables; campaign/pledge split so **two BackerKit accounts** can back one campaign. |
 | ✅ | All 62 Kickstarter pledges enumerated | 15 library, 45 board games, 2 neither, 8 mixed, 6 flagged ambiguous rather than guessed. |
+| ✅ | **Mark as arrived, in batches** | `6593a7e`. Ported from the sibling onto the **wishlist**, not a book page — a pledge delivers several *works*, so no work page can hold the batch. No migration, no bulk endpoint: N × `PATCH /api/copies/:id`, `allSettled`. ⚠️ `arrivedPatch` also dates the copy, which the sibling does not — it dropped `acquired_on`; we kept it. Only when empty, so a known date is never overwritten. |
+| ✅ | A card's series is a link | `6593a7e`. ⚠️ The card had to stop being a `<button>` first — an `<a>` inside one is invalid HTML. Title is now a stretched link; series sits above it on z-index. |
 
 ---
 
@@ -162,7 +164,6 @@ nothing", not "stored a dead link".
 
 | | Item |
 |---|---|
-| 🔨 | **Mark as arrived, manually** — port from the board game catalog. 4 B&N preorders and most pledges are waiting on exactly this transition. |
 | 🔨 | **Keep GitHub current** — the user permits pushing straight to `main` while this site is pre-release, *provided a rollback id is recorded*. Contrast the board game catalog, which has real users now and where changes are "more damning". |
 | 💤 | **Cross-project TODO page on heygabi.ai** — all projects, tagged one/some/all/landing. Explicitly deferred: "we will swap to it later". |
 | 💤 | Gamefound — excluded, no books. |
@@ -312,6 +313,12 @@ promising "no code" when the only lookup offered is by ISBN.
 - ⚠️ **A false positive that was caught:** "An Unexpected Wedding Invitation (5e)"
   has add-ons literally labelled "(Book)" that are 5e modules. Would have
   polluted the library silently.
+- ⚠️ **The top bar overflows at 360px** — pre-existing, found while measuring the
+  arrivals panel. At a 356px viewport `Sign out` sits at `right: 414`, so the
+  document scrolls sideways on every screen. The `@media (max-width: 26rem)` rule
+  shrinks `.topbar__brand` and that is not enough. Deliberately **not** fixed
+  here: the owner has asked that the header and nav stay identical to the board
+  game catalog's, so it is a decision, not a tidy-up.
 - **"Digitally signed" is not signed** — Illumicrate. Goes in `edition_notes`, per
   the user, not `copy.is_signed`.
 - **The "Type a title" tab is unfinished** — its blurb promises lookup-as-you-type

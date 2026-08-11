@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { CONDITIONS, COPY_STATUSES, EDITION_FORMATS, PHYSICAL_FORMATS } from '@lc/core';
 import { api } from '../api.js';
 import { formatLabel } from '../lib/formats.js';
+import { STATUS_LABEL, arrivedPatch } from '../lib/statuses.js';
 
 /**
  * The copies of one book — and the only place `copy.status` has ever been
@@ -28,15 +29,6 @@ import { formatLabel } from '../lib/formats.js';
  * with no format is "I want this book, in whatever comes".
  */
 
-const STATUS_LABEL: Record<string, string> = {
-  owned: 'On the shelf',
-  wanted: 'Wanted',
-  preordered: 'Pre-ordered',
-  lent: 'Lent out',
-  sold: 'Sold',
-  borrowed: 'Borrowed',
-};
-
 export interface CopyView {
   id: number;
   status: string;
@@ -46,6 +38,8 @@ export interface CopyView {
   is_signed: number;
   edition_id: number | null;
   notes: string | null;
+  /** Null until it turns up. `arrivedPatch` fills it, and only when it is null. */
+  acquired_on: string | null;
 }
 
 export function Copies({
@@ -126,6 +120,20 @@ export function Copies({
                 </div>
                 {canEdit && (
                   <div className="copy__actions">
+                    {/* ⚠️ Offered only on a copy that is actually on its way, and
+                        it is not a shortcut for the select beside it: the select
+                        writes `status` alone, where arriving also dates the copy.
+                        The wishlist's checklist is where a whole parcel is
+                        settled; this is for meeting one book on its own page. */}
+                    {c.status === 'preordered' && (
+                      <button
+                        className="chip primary"
+                        disabled={busy === c.id}
+                        onClick={() => void change(c.id, arrivedPatch(c.acquired_on))}
+                      >
+                        It arrived
+                      </button>
+                    )}
                     <label className="field">
                       <span className="field__label">Status</span>
                       <select

@@ -450,7 +450,9 @@ export function CollectionPage({
       ) : (
         <div className={loading ? 'results results--stale' : 'results'}>
           <Pager page={page} pageSize={pageSize} total={total} onPage={setPage} />
-          <WorkList rows={rows} view={view} onOpen={onOpen} />
+          {/* No `onOpen`: the cards are real links now — see `WorkList`. The
+              prop is still threaded to `Shelf`, which is still a button. */}
+          <WorkList rows={rows} view={view} />
           <Pager page={page} pageSize={pageSize} total={total} onPage={setPage} />
         </div>
       )}
