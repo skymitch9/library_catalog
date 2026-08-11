@@ -26,6 +26,10 @@
 | 🚢 | **Newest scanned book appears at the top of the queue** | Deployed `6732f331`. A sweep appends, so the book just scanned sat below the fold — the one you most want to confirm while it is still in your hand. ⚠️ The row/index pairing happens *before* the reverse: `index` is the array offset the server patches, so a display-order index would confirm the wrong book. |
 | ✅ | **Covers reach the work, not just the edition** | Commit `74ddd86`. The add path created the work from `{title, authors}` alone while the edition beside it took `line.coverUrl`. Every list renders `work.cover_url`, so scanned books stored a good cover one table away and showed a blank tile. Not yet deployed — see blockers. |
 | ✅ | **Stranded covers backfilled in production** | `scripts/backfill-work-covers.mjs`, commit `2c59196`. 35 works filled, **0 left stranded**, 150 works had a cover afterwards. Safe to re-run: fills empty covers only, never overwrites. |
+| 🚢 | **Series restructure** | Merged, migrated (`0010_audiobook_holding`), deployed as `2995ff70`. Per-rung Print/Ebook/Audio chips, a "Bought more than once" section, and a searchable/sortable series list. 95 tests. Verified live: `/api/health` 200, `/api/series` 401 (auth, not 500). |
+| ✅ | **Audiobook holdings backfilled** | `npm run backfill:audiobooks -- --remote --commit`. **40 holdings written**, confirmed by re-read. ⚠️ From a worktree this needs `LC_AUDIOBOOK_ROOT`; from the main checkout it does not. |
+| 🚢 | **Format filter + preorder tag** | Commits `1fcf2c7`, `d887438` — merged with the above. Filter means **"has a physical edition"**, not "physical only", because a book held on the shelf *and* on the Kindle is the ordinary case and an exclusive filter would hide exactly those from both sides. Fixed a real bug: `stats.wanted` was summing `wanted + preordered` under one word. |
+| ✅ | **The "unclaimed" manager-role work is resolved** | It was the people/roles feature from earlier in the session. It committed itself as `a138019` + `c75d174`; main is clean and typechecks. Not a rogue agent. |
 
 ## In flight — five agents, parallel worktrees
 
@@ -106,6 +110,26 @@ Completed), not just `/c/users/pledges`.
 | 💤 | **Cross-project TODO page on heygabi.ai** | All projects, with tags for one project / some projects / all projects / the landing site. User's instruction: do it *after* categorising this project's todos — "we will swap to it later". Do not start early. |
 
 ## Known-imperfect, carried forward
+
+- ⚠️ **Audiobook match rate is 25% — 40 of 157 works.** Honest ceiling: ~35 misses
+  are children's board books and 38 are fan-translated light novels with no
+  English audio. **The group worth chasing is Cradle** — 12 works owned on audio
+  that need `work_alias` rows, not a looser matcher. 5 matches already come only
+  through existing aliases.
+- ⚠️ **The five *Tamer* volumes all matched the same generic audiobook row** by
+  containment. The audiobook catalog does hold individual volumes (7, 8, 9, 10),
+  so the matcher preferred a series-level row over the correct numbered one, and
+  Book 11 probably has no audiobook at all. These render as `AUDIO?` with a
+  tooltip rather than a flat claim, so the uncertainty is visible — but it is
+  wrong and wants an alias fix.
+- **"Digitally signed" is not signed.** The Illumicrate Percy Jackson set is
+  digitally signed by Riordan; setting `copy.is_signed` would overstate it.
+  Recommend `edition_notes`. Ask before importing.
+- **Two multi-edition works now exist**, not one: *White Sand* and *Dinosaur
+  Dance!*.
+- **Format chips are hidden when every rung in a series matches**, replaced by one
+  sentence, because all physical editions currently sit on works with no series.
+  One condition in `SeriesDetailPage` reverses it.
 
 - **12 works still have no cover at all** (of 162). These are books with no cover anywhere upstream, not stranded ones — the backfill reports 0 stranded. Needs a genuine second cover source, not another backfill.
 - **Gamefound is explicitly excluded** from the purchase scan — the user says it has no books.
