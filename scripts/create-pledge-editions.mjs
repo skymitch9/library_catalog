@@ -56,7 +56,7 @@ for (const l of lines) {
   // of, `classifyEdition` says whether it was sold as better than standard.
   // "Collector's Edition Trilogy — Book 1 Signed & Numbered" is a hardcover AND
   // a collector's edition, and both facts come out of one string. Migration 0050.
-  (format ? doable : declined).push({ ...l, format, kind: classifyEdition(l.hint) });
+  (format ? doable : declined).push({ ...l, format, kind: classifyEdition(l.hint, format) });
 }
 
 console.log(`\n${remote ? 'production' : 'local'}: ${lines.length} line(s) with no printing`);

@@ -396,8 +396,34 @@ export const COLLECTORS_HINTS: readonly string[] = [
  * "Omnibus Collector's Edition" is a real product and is correctly `'collectors'`,
  * which a blacklist on the word "omnibus" would get wrong.
  */
-export function classifyEdition(text: string | null | undefined): EditionKind | null {
+export function classifyEdition(
+  text: string | null | undefined,
+  /**
+   * ⚠️ **An ebook is an ordinary printing unless a person says otherwise.**
+   *
+   * The owner's rule, 2026-08-11: *"basically all ebooks are going to be normal
+   * editions and not special editions unless we state otherwise."* And they are
+   * right about what these strings mean — a file is a file. The words that make
+   * a printing collectible are all about the *object*: leatherbound, sprayed
+   * edges, a slipcase, a signature. A reward tier named "Deluxe Edition" that
+   * delivers an EPUB is describing the pledge, not the bytes.
+   *
+   * So format vetoes the keywords, rather than the keywords being trimmed. The
+   * hint list stays honest about physical books, and a campaign's marketing
+   * language cannot leak a "collector's" EPUB into the filter.
+   *
+   * ⚠️ This is a veto on **automatic** classification only. `PATCH
+   * /api/editions/:id` still accepts a hand-set kind, which is exactly what
+   * "unless we state otherwise" means — a numbered digital art book is a real
+   * thing and a person can say so.
+   *
+   * Omitted entirely means "format unknown", and the keywords decide as before;
+   * callers that have a format should pass it.
+   */
+  format?: string | null,
+): EditionKind | null {
   if (!text) return null;
+  if (format && !(PHYSICAL_FORMATS as readonly string[]).includes(format)) return null;
   // ⚠️ The curly apostrophe is folded first. A vendor page that writes
   // "Collector’s Edition" with U+2019 is the same product as one that writes
   // "Collector's Edition", and a substring test that cannot see that would file

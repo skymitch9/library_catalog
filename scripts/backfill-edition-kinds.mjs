@@ -126,8 +126,8 @@ for (const r of rows) {
     clear.push(r);
     continue;
   }
-  const kind = classifyEdition(r.name) ?? HAND_CLASSIFIED.get(r.name) ?? null;
-  if (kind) classify.push({ ...r, kind, byHand: !classifyEdition(r.name) });
+  const kind = classifyEdition(r.name, r.format) ?? HAND_CLASSIFIED.get(r.name) ?? null;
+  if (kind) classify.push({ ...r, kind, byHand: !classifyEdition(r.name, r.format) });
   else leaving.push(r);
 }
 

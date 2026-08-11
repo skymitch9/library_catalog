@@ -69,7 +69,8 @@ function formatOf(item) {
  * Null — an ordinary printing — is the common and correct answer.
  */
 function kindOf(item) {
-  return classifyEdition(item.editionName) ?? classifyEdition(item.bnFormat);
+  const fmt = formatOf(item);
+  return classifyEdition(item.editionName, fmt) ?? classifyEdition(item.bnFormat, fmt);
 }
 
 const items = (scan.items ?? []).filter((i) => !i.skipImport);

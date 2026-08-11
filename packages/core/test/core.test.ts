@@ -1492,6 +1492,35 @@ describe('edition kind — one bucket for every way a shop spells "fancy"', () =
     assert.equal(classifyEdition('All-In Tier'), null);
     assert.equal(classifyEdition('Backer Pack'), null);
   });
+
+  it('never auto-classifies an ebook, whatever the campaign called it', () => {
+    /*
+     * The owner's rule, 2026-08-11: "basically all ebooks are going to be normal
+     * editions and not special editions unless we state otherwise."
+     *
+     * ⚠️ The words that make a printing collectible are all about the OBJECT —
+     * leatherbound, sprayed edges, a slipcase, a signature. A reward tier called
+     * "Deluxe Edition" that delivers an EPUB is describing the pledge, not the
+     * bytes. Format vetoes the keywords rather than the keyword list being
+     * trimmed, so the hints stay honest about physical books.
+     */
+    for (const fmt of ['ebook_epub', 'ebook_mobi', 'ebook_azw3', 'ebook_kepub', 'ebook_pdf', 'ebook_kindle']) {
+      assert.equal(classifyEdition("Collector's Edition", fmt), null, fmt);
+      assert.equal(classifyEdition('Signed Leatherbound', fmt), null, fmt);
+      assert.equal(classifyEdition('Deluxe Edition', fmt), null, fmt);
+    }
+
+    // The same strings on a physical printing still classify.
+    for (const fmt of ['hardcover', 'paperback', 'mass_market']) {
+      assert.equal(classifyEdition("Collector's Edition", fmt), 'collectors', fmt);
+    }
+
+    // ⚠️ Format omitted means "unknown", NOT "ebook" — a caller that has no
+    // format must still get the keyword answer, or every hint-only path
+    // (the import audit, which runs before any edition row exists) goes blank.
+    assert.equal(classifyEdition("Collector's Edition"), 'collectors');
+    assert.equal(classifyEdition("Collector's Edition", null), 'collectors');
+  });
 });
 
 describe('updateEditionSchema — the kind travels beside the name, separately', () => {
