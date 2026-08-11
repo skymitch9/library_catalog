@@ -59,7 +59,8 @@ the Cloudflare dashboard.
 |---|---|---|---|
 | ⏸️ | **Two pledge manifests never itemised** | The Words of Radiance tier says "+ Books" plural plus Radiant/Backer Packs and does not list them; the four Secret Novels titles are inferred from the well-known set, not read off a page. | Claude — needs pledge detail pages |
 | ⏸️ | **Kickstarter "DCC RPG + Unstoppable"** | Not on the Kickstarter account at all — 62 of 62 rows enumerated and it is absent. Almost certainly an Indiegogo pledge. | Claude — needs a second Indiegogo pass |
-| ⏸️ | **Importing any purchase data** | Nothing is in D1 yet. The importer exists and the tables are live, but the input file `scripts/crowdfunding-scan.json` has not been written from the scraped JSON. **The user gates the `--commit`.** | User approves, Claude runs |
+| ⏸️ | **31 accessories and 5 books are stranded** | The BackerKit import ran (see below), but **5 of 6 pledges produced zero book lines** because their works are not in the catalog, and `book_accessory.work_id` is NOT NULL so every accessory on those pledges had nothing to attach to. Verified the five are genuinely absent, not differently spelled — no work exists by Zogarth, Dinniman or Chmilenko, and none matching Words of Radiance or Fires of December. | Create 5 works, then re-run the import (it upserts) |
+| ⏸️ | **4 reward lines have no printing** | The four Year-of-Sanderson hardcovers matched their works but no `edition` exists for a premium hardcover, so they landed with `edition_id NULL`. The importer never mints an edition — by design. | Create the editions in the app, then re-run |
 | ⏸️ | **Percy Jackson / Illumicrate** | Vendor page never lists the individual titles; the five standard titles are *supplied by Claude*, not read off the page. Confirm it is the 5-book original series. | User |
 | ⏸️ | **12 works still have no cover from any source** | Not stranded — the backfill reports 0 stranded. Needs a genuinely different cover source. | Unassigned |
 
@@ -110,7 +111,38 @@ the Cloudflare dashboard.
 
 ---
 
-## Purchase scan — staged, not imported
+## BackerKit import — RUN against production 2026-08-10
+
+`npm run import:crowdfunding -- --remote --commit`. Written: **6 campaigns, 6
+pledges, 4 reward lines across 4 books, 0 accessories.**
+
+Per-pledge, verified by re-reading the database:
+
+| Campaign | Account | Lines |
+|---|---|---|
+| Surprise! Four Secret Novels | acct 2 | **4** ✅ |
+| Hoid's Storybook Collection | acct 1 | 0 |
+| The Primal Hunter Deluxe Box | acct 1 | 0 |
+| DCC: CROCODILE | acct 1 | 0 |
+| Ascend Online: Legacy of the Fallen | acct 1 | 0 |
+| Words of Radiance Leatherbound | acct 2 | 0 |
+
+⚠️ **The five zeroes are the importer working as designed, not failing.** It
+creates no `work` and no `edition`, because a campaign's spelling of a title is
+exactly what mints a duplicate. Five books must be created by hand first, then
+the import re-run — it is an idempotent upsert keyed on campaign `externalId`,
+so a second run adds the missing lines without duplicating the six pledges.
+
+Books to create: *Fires of December* (Sanderson), *The Primal Hunter* (Zogarth),
+*Dungeon Crawler Carl: Crocodile* (Dinniman), *Ascend Online: Legacy of the
+Fallen* (Chmilenko), *Words of Radiance* (Sanderson).
+
+Kickstarter, Indiegogo and Barnes & Noble are **deliberately not in the input
+file**. B&N is a shop, not a promise — `copy.vendor` covers it. Four Kickstarter
+pledges are the same pledges as BackerKit account 2's, so *Four Secret Novels*
+is recorded once, under `platform: kickstarter`.
+
+## Purchase scan — staged
 
 JSON lives in the session scratchpad and is **never committed** (it carries order
 data). `scripts/crowdfunding-scan.json` is gitignored for the same reason.
