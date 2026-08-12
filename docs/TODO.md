@@ -23,28 +23,38 @@
 
 ## Production right now
 
-Measured **2026-08-11 late**, live version `8c8b4e76`:
+Measured **2026-08-12**, live version `8c8b4e76`:
 
-| works | editions | copies | audiobook_holding | audio rungs | series_volume | accessories | no cover |
-|---|---|---|---|---|---|---|---|
-| **233** | 241 | 117 | **53** live | **134** live | **147** | 32 | **6** |
+| works | editions | owned copies | preordered | audio rungs | series_volume |
+|---|---|---|---|---|---|
+| **258** | 288 | **152** | **12** | 134 | 147 |
 
-Movement since the overnight run: works 224 → 233, audiobook holdings 46 → 53,
-and two tables that did not exist that morning — `audiobook_series_holding`
-(134 rungs) and `series_volume` grown to 147 attested volumes across 20 series.
-Audio corroboration: **17 series confident (`AUDIO`), 2 hedged (`AUDIO?`)**.
+Movement since the crowdfunding rescan landed: works 233 → 258, owned copies
+117 → 152. Audio corroboration: **17 series confident, 2 hedged**.
 
-`/api/health` 200; authed routes return 401 rather than 500.
+### ✅ 870 review keys backfilled — 2026-08-12
 
-⚠️ **`work.universe` is populated on 0 of 233 rows.** Migration 0080 is applied
-to production and the write path is live, but **`npm run backfill:universes --
---remote` has never been run**, so every existing row is still NULL and the
-universe UI has nothing to show. Dry-run it first. This is the single largest
-"built but not switched on" item in the repo.
+`scripts/backfill-review-keys.mjs` had **never** been run with `--commit`, and
+every review the household had written was invisible to this catalog:
+`bookIdFromTitle` slugs the audiobook's decorated title, so the print
+*Oathbound Healer* and `oathbound-healer-beneath-the-dragoneye-moons-book-1`
+never met. **870 written, 0 unmatched**, ratings and text untouched.
 
-⚠️ These numbers move *during* sessions — works went 120 → 140 → 162 → 214 in one
-afternoon of scanning. Any figure here is a measurement with a timestamp, never a
-constant. Re-measure before relying on one.
+⚠️ Stripping the `- MM` suffix was the PREREQUISITE, discovered by accident.
+Oathbound Healer's reviews key to `oathbound healer|selkie myth`; with the
+suffix still on, the work's key was `oathbound healer mm|selkie myth` and all
+three would have stayed orphaned. This also unblocks **#31** (a rating means
+you read it), which needed exactly this bridge.
+
+### ⚠️ `work.universe` — 5 of 258, and that is not the backfill
+
+The five Completionist Chronicles works carry `CAL Verse` / `universe_how =
+'list'`, stamped when the research queue called `updateWork`. So the #33 write
+path is proven live — it simply only fires on works that pass through
+`createWork`/`updateWork`, and rows inserted by script do not.
+
+**`npm run backfill:universes -- --remote` has still never been run.** 253 rows
+are NULL and the universe UI has almost nothing to show. Dry-run it first.
 
 ## Universes — the list has MOVED OUT of this repo, 2026-08-11
 
