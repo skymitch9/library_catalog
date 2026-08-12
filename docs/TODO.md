@@ -235,7 +235,8 @@ below). Nothing else is running.
 | **Crowdfunding rescan** | Kickstarter shows **61** successful pledges; we hold **11** pledge items. In progress |
 | **#43 preorder-arrival prompt** | new ask, not started |
 | **#37 editable audiobook listings** | largest remaining build; cheaper now the corrections layer exists |
-| **#29** how duplicates count · **#30** B&N covers · **#31** rating ⇒ read | unchanged |
+| **#29** how duplicates count · **#31** rating ⇒ read | unchanged |
+| ✅ ~~**#30** B&N covers~~ | **Done 2026-08-12, and mostly already done.** All 7 had covers on 2026-08-11 from `apply-bn-details.mjs`; #30 was a stale entry. What was left was §2.5's other half — all seven images were *viewed*, six are the book's own jacket, and Project Hail Mary's stand-in was replaced with the **Deluxe Edition's own art**. `scripts/assess-bn-covers.mjs`, written to production. "Cover needed" among the seven: **0, was 1.** |
 
 **Wants a human — nothing here is waiting on more work:**
 

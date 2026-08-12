@@ -110,6 +110,52 @@ https://us.illumicrate.com/cdn/shop/files/ef4a309d-7981-48e0-b0b2-db9456075c9a__
 that later notices "five books, one image" and tidies it away is destroying the
 record, not cleaning it.
 
+### ⚠️ The Barnes & Noble seven — the same distinction, from the other side
+
+> Measured **2026-08-12** against **production**, and written there. Every URL
+> below was fetched *and the image viewed*, not merely byte-counted.
+
+Task #30 was on the work log as *"pull covers for the 7 B&N books"*. Measured
+first: **all seven already had one.** `apply-bn-details.mjs` filled them from
+the product pages on 2026-08-11, hours after the import, and the log never
+caught up. ⚠️ **This is §1's mistake with the sign flipped** — §1 warns against
+reaching for a rung that cannot fire; here a whole scraper was nearly built for
+a job already finished. Measure before building.
+
+What *was* left is this section's distinction. `cover_status` was NULL on all
+seven, which means **nobody had looked**:
+
+| Works | Verdict on looking |
+|---|---|
+| 229–232 The Wandering Inn split-parts, 234 *Bad B\*tch in the Kitch* | the book's own jacket → `'ok'` |
+| 235 *Sunrise on the Reaping* | ⚠️ genuinely the **B&N Exclusive** art — it carries the gold "Barnes & Noble Exclusive / includes special content" seal, matching `edition_name` → `'ok'` |
+| 233 *Project Hail Mary* | **wrong edition**, and correctly flagged `'standin'`. Owner preordered the **Deluxe** (`9798217374274`); the stored jacket was the standard 2021 hardcover (`9780593135204`). Replaced with the Deluxe's own art → `'ok'` |
+
+"Cover needed" among the seven went **1 → 0**. `work.cover_status` in production
+is now `ok` 7, `standin` 5 (the Percy Jackson set, untouched), NULL for the rest.
+
+### ⚠️ B&N's covers come from a Shopify CDN, and that is not a typo
+
+```
+https://cdn.shopify.com/s/files/1/0674/5433/7265/files/{ean}_p0.jpg
+```
+
+**That host is barnesandnoble.com's own image CDN** — B&N runs its storefront on
+Shopify. It looks exactly like a guessed URL and is not: the product page for
+each EAN was fetched and serves precisely that path as its primary image, and a
+**bogus EAN 404s**, so the path is keyed to a real product rather than served
+blind. `_p1` … `_p5` are the additional product shots.
+
+⚠️ **`prodimage.images.bn.com` — B&N's old image host, and the one every cached
+snippet still uses — no longer resolves at all.** Fourteen probes, all DNS
+failures. Anything reaching for it is dead code.
+
+So the standing rule (*a cover comes from wherever the ISBN came from*) is
+satisfiable for any B&N book with one fetch and no fallback rung. ⚠️ It is
+**not** in `backfill-missing-covers.mjs`'s ladder, deliberately: that script only
+looks at works with **no** cover, and these had one. The B&N rung belongs in a
+scan-time path, not a backfill, if it is ever wanted generally.
+
 ### The column
 
 `work.cover_status`, nullable, no CHECK (`gap_verdict.field`'s idiom — the set
