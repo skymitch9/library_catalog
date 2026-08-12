@@ -184,17 +184,33 @@ export function App() {
             screen it leads to. Hoisting it up here as well makes the top bar a
             second, competing menu for the same job; the sibling Board Game
             Catalog reached five equal-weight entry points that way and had to
-            unpick them. Series and Wishlist stay because they are views you go
-            to, not things you do.
+            unpick them. Wishlist stays because it is a view you go to, not a
+            thing you do.
+
+            ⚠️ SERIES WAS HERE AND WAS REMOVED, 2026-08-11, at the owner's ask:
+            *"remove the series button from the top of the page ... and place
+            that information inside of each clickable series instead"*, then
+            *"what if just hid the page and then ported the data"*.
+
+            It cost almost nothing to remove because both halves already
+            existed: a book page opens its own series through `onOpenSeries`
+            (WorkPage's series-tag button), and SeriesDetailPage already draws
+            the ladder, the gaps, the skipped rungs and the on-audio counts. So
+            a series is reached from the book that prompted the question, which
+            is where the question is actually asked.
+
+            ⚠️ `/series` IS STILL A LIVE ROUTE and must stay one — deep links,
+            bookmarks, the back button out of a series page, and `backTarget`
+            below all resolve to it. This removed the *button*, not the page.
+            What has no home in the nav any more is the cross-series view: the
+            four aggregate stats and the search / sort / gaps-only filters on
+            SeriesPage. Reachable by typing /series, not by browsing.
 
             Real anchors rather than buttons, now that places have addresses:
             the target shows in the status bar and a long-press or middle-click
             opens it in its own tab. `a.chip` in styles.css keeps them looking
             exactly like the buttons they replaced. */}
         <nav className="topbar__nav">
-          <Link to="/series" className={route.name === 'series' ? 'primary chip' : 'chip'}>
-            Series
-          </Link>
           {/* A place, like the others: "what is missing" is a view of the
               catalog, not an action performed on it. Shown to readers as well as
               owners — seeing what the shelf does not know costs nothing; the
