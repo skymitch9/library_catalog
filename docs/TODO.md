@@ -342,12 +342,22 @@ below). Nothing else is running.
    card-crafting deck-builder; the pledge is two tabletop games and is out of
    scope entirely.
 4. Resolve *Secret Ingredient* vs *Pengrooms*, which claim contradictory series.
-5. Give five reward lines a format — the hints name none, and `suggestFormat`
-   rightly declined to guess.
+5. ~~Give five reward lines a format~~ — ✅ **RETIRED 2026-08-12: nothing to do.**
+   Checked three places: all 11 `pledge_item` rows carry a `format_hint`, all 11
+   book lines in the staged scan carry an `editionFormat`, and nothing is marked
+   unresolved. The only formatless line is the Fires of December AUDIOBOOK, which
+   is deliberate — `editionVerdict: "none"`, because an audiobook is not a
+   printing and would otherwise sit in the no-printing queue forever.
 6. Add subtitles to three board books so they become identifiable.
 7. Decide whether the heygabi.ai `/todo` page should be public. Built and pushed,
    **deliberately not deployed** — the user has since said to keep it private.
-8. Paste four cover links for the books no rung can reach.
+8. ~~Paste four cover links~~ — **moved into the scan backlog 2026-08-12.** The
+   owner has those four pulled in a physical stack to re-scan, so they are not a
+   paste-a-URL job. ⚠️ Separately, coverless works went 6 → 32 because scripts
+   that mint works bypass the cover pipeline; 21 were then filled from the
+   sibling audiobook catalog as **stand-ins**, leaving 11 — the four originals
+   plus Tamer 2-6, Space Knight 7 and Worlds Beyond Number, all print-only or
+   unreleased so there is no audiobook art to borrow.
 9. **Sign in to BackerKit as `nbaslamking@gmail.com`** so the second account can
    be scanned. `aim.com` is signed in and holds only Words of Radiance.
 
