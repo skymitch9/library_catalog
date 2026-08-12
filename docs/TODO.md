@@ -233,8 +233,10 @@ below). Nothing else is running.
    Truth, Cultivating Chaos + The Axe Falls, Tailored Realities.
 2. Say what "+ Books" meant in the Words of Radiance tier — BackerKit holds no
    itemisation for that pledge at all.
-3. Confirm the published title of the *Unstoppable* novel so it can be split out
-   of the DCC RPG pledge.
+3. ~~Confirm the published title of the *Unstoppable* novel~~ — ✅ **RETIRED
+   2026-08-11. There is no novel.** *Dungeon Crawler Carl: Unstoppable* is a
+   card-crafting deck-builder; the pledge is two tabletop games and is out of
+   scope entirely.
 4. Resolve *Secret Ingredient* vs *Pengrooms*, which claim contradictory series.
 5. Give five reward lines a format — the hints name none, and `suggestFormat`
    rightly declined to guess.
@@ -436,7 +438,7 @@ Editions* ($164), *Tamer: King of Dinosaurs Book 11* ($90, signed paperback),
 Scope: books only; board games belong to the sibling catalog but get listed as
 excluded so the judgement can be checked.
 
-### Result — **16 unrecorded book pledges**. COMPLETE. Report in the session scratchpad.
+### Result — **15 unrecorded book pledges**. COMPLETE. Report in the session scratchpad.
 
 | account | coverage |
 |---|---|
@@ -454,8 +456,7 @@ a sixth of the truth. Look for pagination on every list, every time.
 the book-7 tier was "WHOLE SERIES SIGNED PAPERBACKS", confirmed by the owner,
 and no hardcover exists · **Beneath the Dragoneye Moons Complete Realmkeeper
 Set** ($670, shipped) · **Cosmere RPG** ($465 — the owner confirms it carries
-books, so it is NOT excluded) · **DCC RPG + Unstoppable** (contains the novel
-*Unstoppable*) · *Worlds Beyond Number* graphic novel · *Monster Empire 2* ·
+books, so it is NOT excluded) · *Worlds Beyond Number* graphic novel · *Monster Empire 2* ·
 *Ascend Online Book 1* · and from Indiegogo **Space Knight 5 and 6**, which is
 where the existing unattributed Space Knight EPUBs came from.
 
