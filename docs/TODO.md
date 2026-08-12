@@ -392,6 +392,55 @@ below). Nothing else is running.
 ✅ Cleared today: the Illumicrate Percy Jackson set was confirmed *and*
 independently verified against the campaign photo.
 
+### ✅ Four items closed 2026-08-12 — and two of them were already done
+
+The owner asked what was still outstanding, said *"30 i thought we did this"* and
+*"31 I thought we did this too"*, and was right on both counts. Checked against
+the live database rather than the task list, which is the point of writing this
+down: **two of the four open items had been finished and never marked.**
+
+| # | Outcome |
+|---|---|
+| **30** B&N covers | **Already done.** All 7 works bought from Barnes & Noble carry `cover_status='ok'` and a real URL. None outstanding. |
+| **31** rated → read | **Already done.** All 35 `user_book` rows are `read_state='read'`, `read_state_how='rating'`, synced 18:01:39. |
+| **44** Realmkeeper pairing | **Confirmed by the owner** — "1,2/3,4/etc." The stored `collects` strings were already right, so no data changed; only the provenance moved from *assumed* to *verified*. |
+| **29** duplicate counting | **Decided and implemented** (commit `8099bb7`). ⚠️ **Not deployed** — the worker deploy is manual. |
+
+⚠️ **On #31, do not mistake this for incomplete:** 47 works sit under a series
+with an audio rung but carry no read state. That is correct. The signal is a
+**rating**, not ownership — an unrated audiobook says nothing about whether it
+was read, and inferring "read" from "owned on audio" would be inventing data.
+
+**The #29 rule, in two halves that look alike and are opposites:**
+
+1. **Own it N times → it counts N times.** The owner's reason is the design
+   brief: *"This will make giving books away."* So it is an inventory count, not
+   a bibliography — and it counts `copy` rows, so two copies of ONE edition
+   still count as two. This half needed **no change**: `heldCopies` already
+   counts copies rather than editions, and `WorkList` already renders the ×N
+   mark. DCC shows ×2 and becomes ×3 when the third is scanned.
+2. **An omnibus of five books is still ONE object.** It counts once, on its own
+   line; the volumes inside are not counted again but each carries a
+   *non-counted* cross-reference. The `contains` relation already existed and
+   rendered as "Part of" — but a bare "Part of" chip reads as *another thing on
+   the shelf*, the exact misreading the rule exists to prevent. It now states
+   the consequence from both ends.
+
+⚠️ **The Divine Dungeon omnibus collects books 1–5, but books 2–5 do not exist
+as works in this catalog** — only *Dungeon Born* does, and it already has the
+link. The whole catalog has exactly **one** `contains` relation, so there were
+no missing overlap notes to write.
+
+Also fixed while in there: `collectionStats` counted `status='owned'` while
+every other "do we have it" decision routes through `HELD_STATUSES`, which also
+counts `lent`. Lending a book would have shrunk the shelf total while the ×N
+mark beside it kept saying two. No row is lent today, so no number moved — the
+disagreement was waiting for a first loan.
+
+⚠️ **Build trap, now recorded in the code:** that stats SQL is a template
+literal, so a backtick inside a `-- comment` closes it. It broke the build on
+the first attempt.
+
 ### ⚠️ THE PHYSICAL STACK — one trip clears all of it
 
 The owner has these pulled as a physical stack. Consolidated 2026-08-12 so
