@@ -341,14 +341,14 @@ below). Nothing else is running.
    2026-08-11. There is no novel.** *Dungeon Crawler Carl: Unstoppable* is a
    card-crafting deck-builder; the pledge is two tabletop games and is out of
    scope entirely.
-4. Resolve *Secret Ingredient* vs *Pengrooms*, which claim contradictory series.
+4. Resolve *Secret Ingredient* vs *Pengrooms* — **see THE PHYSICAL STACK below.**
 5. ~~Give five reward lines a format~~ — ✅ **RETIRED 2026-08-12: nothing to do.**
    Checked three places: all 11 `pledge_item` rows carry a `format_hint`, all 11
    book lines in the staged scan carry an `editionFormat`, and nothing is marked
    unresolved. The only formatless line is the Fires of December AUDIOBOOK, which
    is deliberate — `editionVerdict: "none"`, because an audiobook is not a
    printing and would otherwise sit in the no-printing queue forever.
-6. Add subtitles to three board books so they become identifiable.
+6. Add subtitles to three board books — **see THE PHYSICAL STACK below.**
 7. Decide whether the heygabi.ai `/todo` page should be public. Built and pushed,
    **deliberately not deployed** — the user has since said to keep it private.
 8. ~~Paste four cover links~~ — **moved into the scan backlog 2026-08-12.** The
@@ -363,6 +363,18 @@ below). Nothing else is running.
 
 ✅ Cleared today: the Illumicrate Percy Jackson set was confirmed *and*
 independently verified against the campaign photo.
+
+### ⚠️ THE PHYSICAL STACK — one trip clears all of it
+
+The owner has these pulled as a physical stack. Consolidated 2026-08-12 so
+they are answered together rather than raised one at a time. **Remind them of
+this whole list when they next mention the pulled books.**
+
+| | needs | why nothing else will do |
+|---|---|---|
+| #141 *Touch and Explore* · #160 *Bizzy Bear* · #174 *I love you, little bear* | a **subtitle** | bare series-line titles; a lookup returns the range, not the book. All three have ISBNs that did not resolve. Re-running research will not help |
+| #137 Paw Patrol shaped board book · #171 *Home Sweet Home* · #195 Korean Tinyping · #197 *The Nightmare Before Christmas* | a **rescan** | no cover any rung can reach, and no audiobook to borrow one from. Not a paste-a-URL job |
+| #215 *Pengrooms* · #213 *Secret Ingredient* | the **series name off the cover or spine** | contradictory auto-fills. Both star Pringle and Finn; "Pengrooms" reads as the 2021 book's TITLE, not a series. Theory: series is *Pringle & Finn*, books 1 and 2 — unverified, and a self-published picture book may have no formal series at all. Both wear a Check mark; clear the `work_watch` rows when resolved |
 
 ## Overnight autonomous run — started 2026-08-10 ~22:35
 
