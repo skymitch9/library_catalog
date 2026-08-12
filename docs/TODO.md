@@ -102,6 +102,43 @@ alternative to step 2 and is no longer needed — it writes the same rows by the
 same rule. ⚠️ It is **not** redundant for the household members who have never
 signed in here: the sweep only ever runs for whoever is looking at the screen.
 
+### ✅ #43 — an arriving pre-order is a question, not a guess — 2026-08-12
+
+*"We also need a feature where if I add a book that's in pre-order status there
+is a prompt asking me if this is the received pre-order or different."* Built on
+`feature/preorder-arrival-prompt`. **Not deployed, no migration.**
+
+Production holds **12 pre-ordered copies** — Completionist Chronicles 2–5, Tamer
+11, three *Worlds Beyond Number* variant covers — several shipping within months,
+so this gets exercised soon.
+
+| Answer | Write | The failure it prevents |
+|---|---|---|
+| the pre-order arrived | that copy `preordered` → `owned`, via `arrivedPatch` | a phantom pre-order inflating "on the way" for ever, because nothing re-checks it |
+| a different copy | a new `owned` copy; pre-order untouched | silently losing a copy the household owns |
+
+⚠️ **Asked before the first write, not between two of them.** `addLineToCatalog`
+returns `{ status: 'ask-preorder' }` and writes nothing; answering re-runs it
+from the top, and the work match is idempotent. A prompt nobody answers leaves
+the catalog exactly as it was.
+
+⚠️ **One button per pre-ordered copy.** *Worlds Beyond Number* is **one work with
+three pre-orders**, one per variant cover — "the pre-order" cannot be resolved
+without asking which, so each choice is labelled with its edition name.
+
+| | |
+|---|---|
+| covered | the scan review row (`ScanLines`), and the manual Add form's **have it** intent |
+| ⚠️ not covered, deliberately | `POST /api/works` — it writes no copy, so there is no arrival to confuse. The Copies panel and the arrivals checklist already show the pre-order on screen; nothing there is a guess |
+| cost | one `GET /api/works/:id`, **on the Add tap only** — not per row |
+| ⚠️ `wanted` stays apart | `preorderedCopies` tests one status. `CollectionStats` in `@lc/db` carries the sibling's 262-vs-25 bug |
+| new files | `packages/core/src/preorders.ts` (rule + wording, 9 tests), `apps/web/src/lib/preorders.ts`, `components/PreorderPrompt.tsx` |
+
+⚠️ **The manual Add form now matches before saving, and only for "have it".** It
+still creates a work per save otherwise — `POST /api/works` does not dedupe on
+purpose — so answering *a different copy* does exactly what Save did before.
+General de-duplication of that form is a separate, larger change.
+
 ### ⚠️ `work.universe` — 5 of 258, and that is not the backfill
 
 The five Completionist Chronicles works carry `CAL Verse` / `universe_how =
@@ -289,7 +326,7 @@ below). Nothing else is running.
 |---|---|
 | **`backfill:universes` has never run against production** | 0 of 233 rows have a universe. Biggest built-but-not-switched-on item |
 | **Crowdfunding rescan** | Kickstarter shows **61** successful pledges; we hold **11** pledge items. In progress |
-| **#43 preorder-arrival prompt** | new ask, not started |
+| ✅ ~~**#43 preorder-arrival prompt**~~ | **Built 2026-08-12** on `feature/preorder-arrival-prompt`, not deployed. Section below |
 | **#37 editable audiobook listings** | largest remaining build; cheaper now the corrections layer exists |
 | **#29** how duplicates count · **#31** rating ⇒ read | unchanged |
 | ✅ ~~**#30** B&N covers~~ | **Done 2026-08-12, and mostly already done.** All 7 had covers on 2026-08-11 from `apply-bn-details.mjs`; #30 was a stale entry. What was left was §2.5's other half — all seven images were *viewed*, six are the book's own jacket, and Project Hail Mary's stand-in was replaced with the **Deluxe Edition's own art**. `scripts/assess-bn-covers.mjs`, written to production. "Cover needed" among the seven: **0, was 1.** |
