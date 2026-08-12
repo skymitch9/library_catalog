@@ -436,30 +436,35 @@ Editions* ($164), *Tamer: King of Dinosaurs Book 11* ($90, signed paperback),
 Scope: books only; board games belong to the sibling catalog but get listed as
 excluded so the judgement can be checked.
 
-### Result — **14 unrecorded book pledges**. Full report in the session scratchpad.
+### Result — **16 unrecorded book pledges**. COMPLETE. Report in the session scratchpad.
 
 | account | coverage |
 |---|---|
-| Kickstarter | ✅ all 61 successful + 1 active, after clicking "Show more pledges" 5× |
-| Indiegogo | ✅ complete — only 3 pledges exist; 2 are books |
-| BackerKit `aim.com` — **Surveys** | ✅ Completed p1+p2, Active, Needs action, Digital rewards |
-| BackerKit `aim.com` — **Pledges** | ✅ re-verified after re-auth: one pledge, **no pagination**. Gap closed |
-| BackerKit `gmail.com` | ⚠️ not signed in, not scanned |
+| Kickstarter | ✅ 61 successful + 1 active, after "Show more pledges" ×5 |
+| Indiegogo | ✅ all 3 pledges; 2 are books |
+| BackerKit `aim.com` | ✅ Pledges (1, no pagination) + Surveys p1+p2 + Active + Digital rewards |
+| BackerKit `gmail.com` | ✅ Pledges (4) + Surveys Completed p1+p2 + Active p1+p2 + Digital rewards |
 
-The finds: **Completionist Chronicles 1-5 in physical Grimoire editions** (the
-*Ritualist* box has SHIPPED), **five Tamer pledges** — book 7's tier is "WHOLE
-SERIES SIGNED PAPERBACKS", so 1-7 in print, not one book — **Beneath the
-Dragoneye Moons Complete Realmkeeper Set** ($670, shipped), *Worlds Beyond
-Number* graphic novel, *Monster Empire 2*, *Ascend Online Book 1*, and from
-Indiegogo **Space Knight 5 and 6** — which is where the existing Space Knight
-EPUBs came from, provenance never recorded.
+⚠️ **Two pagination traps.** Kickstarter renders 10 of 61 by default; **every**
+BackerKit survey list is `1 / 2`. Trusting the first screen would have reported
+a sixth of the truth. Look for pagination on every list, every time.
+
+**The finds:** Completionist Chronicles **1–5 in physical Grimoire editions**
+(*Ritualist* box SHIPPED) · **Tamer 1–10 in paperback plus 11 on preorder** —
+the book-7 tier was "WHOLE SERIES SIGNED PAPERBACKS", confirmed by the owner,
+and no hardcover exists · **Beneath the Dragoneye Moons Complete Realmkeeper
+Set** ($670, shipped) · **Cosmere RPG** ($465 — the owner confirms it carries
+books, so it is NOT excluded) · **DCC RPG + Unstoppable** (contains the novel
+*Unstoppable*) · *Worlds Beyond Number* graphic novel · *Monster Empire 2* ·
+*Ascend Online Book 1* · and from Indiegogo **Space Knight 5 and 6**, which is
+where the existing unattributed Space Knight EPUBs came from.
 
 ⚠️ **Nothing has been written to the database.** The owner asked to verify first.
 
-Four questions for the owner: is the **Cosmere RPG** ($465 "The Collector")
-carrying books? How many books came in **Tamer 7's** whole-series tier, and in
-the **Realmkeeper Set**? Do the Grimoire "Legendary Book Box" tiers hold two
-books each or two plus extras?
+Still needs the owner: how many volumes in the Realmkeeper Set; what the two
+Grimoire "Legendary Book Box" tiers contain; which books the Cosmere RPG
+carries; whether *Unstoppable* is the published title; and what "+ Books" meant
+in the Words of Radiance tier — that order detail refused to open twice.
 
 ## Shipped this session
 
