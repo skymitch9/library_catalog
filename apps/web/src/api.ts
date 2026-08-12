@@ -224,6 +224,16 @@ export interface Stats {
   wanted: number;
   /** Copies paid for and on the way. Shown as "N on the way", never "preordered". */
   preordered: number;
+  /**
+   * Series with anything missing from this catalog. Computed by `listSeries` in
+   * the Worker, not by a `COUNT(*)`, so it can never disagree with the Series
+   * screen's own "with gaps" chip.
+   *
+   * ⚠️ The one number on this screen about books you do NOT have. It exists
+   * because the top-bar Series button was removed on 2026-08-11; without it the
+   * cross-series view is reachable only by typing the URL.
+   */
+  seriesWithGaps: number;
   formats: { format: string; count: number }[];
   readStates: { readState: string; count: number }[];
 }

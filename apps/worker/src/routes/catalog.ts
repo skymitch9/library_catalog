@@ -28,6 +28,7 @@ import {
   listCollection,
   listCopiesForWork,
   listEditionsForWork,
+  listSeries,
   listWatchesForWork,
   listWishlist,
   setReadState,
@@ -161,10 +162,36 @@ export const catalogRoutes = new Hono<AppBindings>()
     return c.json({ ...facets, universes });
   })
 
-  /** Counted live on every request — never a literal written into the UI. */
-  .get('/stats', requireCapability('read'), async (c) =>
-    c.json(await collectionStats(c.env.DB, c.get('user').id)),
-  )
+  /**
+   * Counted live on every request — never a literal written into the UI.
+   *
+   * ⚠️ `seriesWithGaps` is joined on HERE rather than inside `collectionStats`,
+   * the same seam and the same reason as `universes` on `/collection/facets`
+   * above: the count is not a `COUNT(*)`, it is the output of
+   * `completeness.ts`, and pushing it into a stats SQL block would be a second
+   * implementation of "what counts as a gap" — the one thing that module exists
+   * to own. `listSeries` is the function the Series screen already uses, so the
+   * number here and the number there cannot disagree.
+   *
+   * It exists because removing the Series button from the top bar (2026-08-11)
+   * left the cross-series view with no home: the collection page can only show
+   * books you HAVE, and this is the one number that says something about the
+   * books you do not. It is a link, not a badge — the whole point is to get you
+   * to the list it counts.
+   */
+  .get('/stats', requireCapability('read'), async (c) => {
+    const [stats, series] = await Promise.all([
+      collectionStats(c.env.DB, c.get('user').id),
+      listSeries(c.env.DB, c.get('user').id),
+    ]);
+    return c.json({
+      ...stats,
+      // ⚠️ `gaps.length`, not `certainGaps + attestedGaps`. Those two exclude
+      // rungs held on audio; this is "series with anything missing from THIS
+      // catalog", which is what the Series screen's own "with gaps" chip counts.
+      seriesWithGaps: series.series.filter((s) => s.gaps.length > 0).length,
+    });
+  })
 
   /**
    * The wishlist: copies we want and do not hold.

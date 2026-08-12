@@ -252,6 +252,19 @@ a.topbar__brand { text-decoration: none; }
 .stat b { font-family: var(--serif); font-size: 1.05rem; }
 .stat span { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
 
+/*
+ * A stat that is also a way somewhere. Only "series with gaps" uses this today.
+ * It keeps the exact shape of its siblings on purpose — one number, one label,
+ * same box — because it is a stat first; the affordance is the pointer and the
+ * hover, not a different silhouette that would read as a button in a row of
+ * facts. `a.chip` in the top bar made the same choice for the same reason.
+ */
+a.stat--link { text-decoration: none; color: inherit; cursor: pointer; }
+a.stat--link:hover,
+a.stat--link:focus-visible { border-color: var(--accent); background: var(--bg); }
+a.stat--link:hover span,
+a.stat--link:focus-visible span { color: var(--fg); }
+
 /* --- covers -------------------------------------------------------------- */
 
 /*

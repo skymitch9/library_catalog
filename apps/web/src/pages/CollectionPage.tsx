@@ -241,6 +241,20 @@ export function CollectionPage({
               what somebody would say out loud. */}
           {stats.wanted > 0 && <Stat n={stats.wanted} label="wanted" />}
           {stats.preordered > 0 && <Stat n={stats.preordered} label={ON_THE_WAY} />}
+          {/* ⚠️ The only figure here about books you do NOT have, and the only
+              one that is a link. Every other stat describes the shelf; this one
+              is the way back to the cross-series view, which lost its home when
+              the Series button left the top bar on 2026-08-11. It goes straight
+              to the filtered list rather than the series index, because the
+              number is the question — "which ones?" — and the unfiltered list
+              does not answer it. Hidden at zero, like `wanted` above: a nothing
+              to do is not worth a chip. */}
+          {stats.seriesWithGaps > 0 && (
+            <Link to="/series?gaps=1" className="stat stat--link">
+              <b>{stats.seriesWithGaps.toLocaleString()}</b>
+              <span>series with gaps</span>
+            </Link>
+          )}
           {stats.readStates
             .filter((r) => r.readState === 'read')
             .map((r) => (
