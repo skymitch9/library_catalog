@@ -49,6 +49,33 @@ function label(r: RelatedWork): string {
   return r.outgoing ? pair[0] : pair[1];
 }
 
+/**
+ * ⚠️ What a `contains` link does NOT mean: a second copy.
+ *
+ * The owner set the counting rule on 2026-08-12, and it splits in two directions
+ * that look similar and are opposites:
+ *
+ * - Own a book three times → it counts three times. Three objects are three
+ *   things you could give away, which is the stated reason the count exists.
+ *   That rule lives in `ownedMoreThanOnce`/`heldCopies` and renders as the ×N
+ *   mark on the collection.
+ * - An omnibus holding five books is still **one object**. It counts once, as
+ *   its own line, and the five volumes inside it do not each earn a count. The
+ *   owner's words: *"count an Omnibus as its own line item but leave a non
+ *   counted addition in each book the omnibus overlaps with."*
+ *
+ * This sentence is that "non counted addition". Without it the panel shows a
+ * bare "Part of" chip, which reads as *another thing on the shelf* — the exact
+ * misreading the rule exists to prevent. Saying it in the UI beats leaving it in
+ * a note field, because a hand-typed note is only as good as whoever typed it.
+ */
+function countingNote(r: RelatedWork): string | null {
+  if (r.relation !== 'contains') return null;
+  return r.outgoing
+    ? 'One object on the shelf, counted once — the books it collects are not counted again.'
+    : 'The text is inside that book. A cross-reference, not a second copy, so it is not counted.';
+}
+
 export function Related({
   workId,
   workTitle,
@@ -114,6 +141,9 @@ export function Related({
                       </span>
                     )}
                     {r.note && <span className="muted small">{r.note}</span>}
+                    {countingNote(r) && (
+                      <span className="muted small">{countingNote(r)}</span>
+                    )}
                   </span>
                 </button>
                 {canEdit && (

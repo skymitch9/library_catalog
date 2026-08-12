@@ -1,4 +1,5 @@
 import {
+  HELD_STATUSES,
   PHYSICAL_FORMATS,
   normaliseTitle,
   primaryAuthor,
@@ -1010,12 +1011,26 @@ export async function collectionStats(
   db: D1Database,
   readerId: number,
 ): Promise<CollectionStats> {
+  // ⚠️ `copies` counts HELD_STATUSES, not `status = 'owned'` alone.
+  //
+  // `heldCopies` in @lc/core is the one definition of "an object we have", and
+  // it deliberately counts a lent book — two of it still left the house. This
+  // figure read `'owned'` only until 2026-08-12, so lending a book would have
+  // silently shrunk the shelf total while the ×N mark beside that same book —
+  // built on `heldCopies` — kept saying two. No row is `lent` today, so the
+  // number does not move; the disagreement was simply waiting for a first loan.
+  //
+  // ⚠️ Keep this expression OUT of the SQL comment. The query is a template
+  // literal, and a backtick in a `-- comment` closes it — that mistake is what
+  // broke the build the first time this note was written.
   const [totals, formats, readStates] = await Promise.all([
     db
       .prepare(
         `SELECT (SELECT COUNT(*) FROM work) AS works,
                 (SELECT COUNT(*) FROM edition) AS editions,
-                (SELECT COUNT(*) FROM copy WHERE status = 'owned') AS copies,
+                -- HELD_STATUSES, not 'owned' alone. See the note above.
+                (SELECT COUNT(*) FROM copy
+                  WHERE status IN (${HELD_STATUSES.map((s) => `'${s}'`).join(', ')})) AS copies,
                 (SELECT COUNT(DISTINCT series) FROM work WHERE series IS NOT NULL) AS series,
                 (SELECT COUNT(DISTINCT primary_author) FROM work) AS authors,
                 (SELECT COUNT(cover_url) FROM work) AS with_cover,
