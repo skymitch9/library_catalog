@@ -368,13 +368,77 @@ rather than reporting a tidy zero. Second, `scripts/lib/d1.mjs` returned **0
 works** against a live 231 on one run and 231 a minute later; the script now
 refuses to proceed on a zero-row read for the same reason.
 
-### 7.6 Running the review-key backfill would improve this
+### 7.6 ~~Running the review-key backfill would improve this~~ — ✅ RUN 2026-08-12
 
-`scripts/backfill-review-keys.mjs --commit` has still never been run. Doing so
-stamps `workKey` **and** `source: 'audio'` onto all 869, after which the browser
-path gets the audio signal from the field instead of by inference, and
-`fetchReviews` can eventually drop its legacy `bookId` query (§6). The two
-backfills are independent and may run in either order.
+`scripts/backfill-review-keys.mjs --commit` was run for the first time on
+2026-08-12: **870 written, 0 unmatched**, ratings and text untouched. Every
+review document now carries `workKey` and `source: 'audio'`, so the browser path
+reads the audio signal from the field instead of inferring it, and `fetchReviews`
+could drop its legacy `bookId` query (§6) once the count is stable.
+
+⚠️ **Do not drop it yet.** The audiobook site writes no `workKey`, so every
+review written there *after* that backfill has only `bookId` again. The legacy
+query is what finds those, and §7.7 depends on nobody having removed it.
+
+### 7.7 The whole shelf at once — the sweep, 2026-08-12
+
+§7.1 covers a book the moment somebody opens it and covers nothing otherwise.
+Nobody opens 258 book pages, and the unattended answer (§7.5) needs a checkout
+of the sibling repo to turn a `bookId` into a `workKey` — a maintainer's tool,
+not something the household has. So production had **zero** derived read states.
+
+The sweep closes that. One Firestore query for the signed-in person's own
+reviews, once per browser session, and one call that applies all of them.
+
+| | |
+|---|---|
+| **Where** | `apps/web/src/lib/read-sync.ts`, called from the collection page — the landing screen, and the owner of both things the answer changes: the "read" stat and the Read filter |
+| **The rule** | `observedRatingsFromReviews` in `@lc/core`. Keeps mine via the existing `isMyReview`, drops anything off the half-star scale, drops a document with no `workKey` |
+| **The write** | `POST /api/reviews/observed` → `applyObservedRatings` in `@lc/db`. `applyObservedRating` (§7.1's endpoint) now **delegates** to it rather than keeping a second copy |
+| **The lane** | `GET /api/reviews/collection`. A sweep has no `workId` to ask it from, and a dev browser reading the live collection would look exactly like the feature working |
+| **Migration** | **None.** `read_state_how` is 0070 and nothing new is stored |
+
+#### ⚠️ Why this could not have been built before 2026-08-12
+
+It joins on the `workKey` **stored on the document**, and until §7.6 ran there
+was not one. The per-book path can paper over a missing key because it knows
+which book it is looking at, so it has a legacy `bookId` to ask with. A sweep
+starts from the *person*: a document with no `workKey` names no book it can
+reach, and is skipped.
+
+⚠️ **Which means a review written on the audiobook site since that backfill is
+invisible to the sweep** until §7.6 is run again. It is still picked up the
+moment its book page is opened. **The per-book derivation is the safety net, not
+a duplicate of this**, and neither may be deleted as redundant.
+
+#### What did not change
+
+Every protection in §7.2 holds unaltered, because the sweep reaches the database
+through the same `deriveReadState`: a `'human'` row is refused outright, a `dnf`
+is never promoted, an existing `read_format` is never overwritten, `finished_on`
+is never invented, and the returned list is only what actually changed — empty
+on every session after the first, which is what keeps a per-session sweep from
+redrawing anything or writing twice.
+
+⚠️ **The `workKey` comes from the client here**, which §7.1's endpoint does not
+allow. It is matched, never trusted: it joins against `work.work_key`, an
+unknown key is a silent no-op — the ordinary case, since the household owns
+~1,075 audiobooks against 258 works — and every write is scoped to the `user.id`
+on the verified token. The same capability already permits `PUT
+/works/:id/reading`, which sets 'read' outright.
+
+#### Said out loud
+
+The collection page prints *"Marked N books read, from M ratings you have
+written on the audiobook site"* only when something actually changed, and names
+where to undo it. Same reasoning as the book page's caption: a read state that
+appears without explanation reads as the app claiming you asserted something you
+did not.
+
+⚠️ **Somebody with no `review_name` sweeps nothing.** The audiobook site writes
+no `email`, so the folded display name is the only key that reaches those
+documents. That is a data problem with a screen for it (People), not a code one,
+and `backfill-read-from-ratings.mjs` prints the same warning.
 
 ## 8. Where each fact lives
 
@@ -385,5 +449,6 @@ backfills are independent and may run in either order.
 | What you own, where it is | D1 `work`/`edition`/`copy` | this app |
 | Whether *this copy* is read | D1 `user_book` | this app |
 | **How that read state was decided** | D1 `user_book.read_state_how` | this app |
+| Which book a review is about | Firestore `reviews.workKey` — stamped 2026-08-12 | **both**, and §7.7 cannot work without it |
 | Whether the book was any good | Firestore `reviews` | **both** |
 | The rating, for sorting | D1 `user_book.rating_cached` | this app, never authoritative |

@@ -8,13 +8,16 @@ import {
   overlapSentence,
   proposedTitle,
   searchText,
+  type PreorderAnswer,
   type ScanJob,
   type ScanLine,
   type ScanStatus,
 } from '@lc/core';
 import { api } from '../api.js';
 import { addLineToCatalog } from '../lib/catalog-add.js';
+import type { PreorderQuestion } from '../lib/preorders.js';
 import { Link, workPath } from '../router.js';
+import { PreorderPrompt } from './PreorderPrompt.js';
 
 /**
  * The review list — one row per book a sweep found, and the only place a book
@@ -63,6 +66,17 @@ import { Link, workPath } from '../router.js';
  * ordinary, and the scan is how you would say so. So the row now names the book
  * it matched, links to it, and offers a second owned copy inline — one tap on a
  * button that says what it does, never automatically.
+ *
+ * ## ⚠️ A pre-order on file is a THIRD reason to stop, and the only one that BLOCKS
+ *
+ * The owner again, in the same shape as the duplicate ask: *"if I add a book
+ * that's in pre-order status there is a prompt asking me if this is the received
+ * pre-order or different."* Unlike the two prompts above it is not a warning with
+ * the ordinary buttons underneath — **both answers write, and they write different
+ * rows** — so it replaces the buttons until it is answered. Nothing has been
+ * written when it appears; see `addLineToCatalog`, which returns the question
+ * instead of a work. `@lc/core/preorders.ts` carries what guessing either way
+ * costs, and `PreorderPrompt.tsx` why there is no way to dismiss it.
  *
  * ## ⚠️ An overlap raises the SAME prompt, for a different reason
  *
@@ -136,6 +150,16 @@ function LineRow({
   // catalog a book by that name.
   const [draft, setDraft] = useState(proposedTitle(line) ?? '');
   const [draftAuthor, setDraftAuthor] = useState(line.author ?? '');
+  /**
+   * The pre-order question, raised by an Add that found one and wrote nothing.
+   *
+   * ⚠️ Row state rather than page state, and it has to be: a sweep can hold two
+   * books that each have a pre-order on file, and a single shared prompt would
+   * answer for whichever row was tapped last.
+   */
+  const [preorder, setPreorder] = useState<PreorderQuestion | null>(null);
+  /** Said after the fact, because "Copy added" would be the wrong sentence. */
+  const [arrived, setArrived] = useState(false);
 
   async function run(what: string, fn: () => Promise<void>) {
     setBusy(what);
@@ -149,15 +173,30 @@ function LineRow({
     }
   }
 
-  const add = () =>
+  /**
+   * Add this row — or discover that it needs a question answered first.
+   *
+   * ⚠️ Still ONE path for every kind of row, including the duplicate and the
+   * arriving pre-order. See `catalog-add.ts`: a line that already names a work
+   * adds a second copy to it rather than matching or creating anything, and a
+   * work with a pre-order on file comes back as a question with **nothing
+   * written**. `answer` is that question coming back; the second call runs the
+   * same function from the top.
+   */
+  const add = (answer?: PreorderAnswer) =>
     run('add', async () => {
-      // ⚠️ One path for every kind of row, including the duplicate. See
-      // `catalog-add.ts`: a line that already names a work adds a second copy
-      // to it rather than matching or creating anything.
-      const { workId } = await addLineToCatalog(line);
+      const outcome = await addLineToCatalog(line, answer);
+      if (outcome.status === 'ask-preorder') {
+        // Nothing was written, so nothing is recorded on the line either. The
+        // row now shows the prompt in place of its buttons.
+        setPreorder(outcome.question);
+        return;
+      }
+      setPreorder(null);
+      setArrived(outcome.added.preorderArrived);
       // Recorded on the line only after the catalog write succeeded. The other
       // order would mark a book added that is not in the catalog.
-      onJob((await api.patchScanLine(jobId, index, { addedWorkId: workId })).job);
+      onJob((await api.patchScanLine(jobId, index, { addedWorkId: outcome.added.workId })).job);
     });
 
   const lookup = (q?: string) =>
@@ -311,6 +350,22 @@ function LineRow({
           </div>
         )}
 
+        {/*
+          ⚠️ Raised by pressing Add, not by the row arriving, and the difference
+          is deliberate. It costs a request to find out whether a book has a
+          pre-order, and asking that of fifteen rows on a shelf sweep would spend
+          fifteen requests to warn about none. It is asked once, of the one book
+          somebody has just said they are adding — and at that moment nothing has
+          been written, so the two answers are still both available.
+        */}
+        {preorder && !settled && (
+          <PreorderPrompt
+            question={preorder}
+            busy={busy !== null}
+            onAnswer={(answer) => void add(answer)}
+          />
+        )}
+
         {/* While the pass owns this line, its `detail` is the *previous*
             answer — or the placeholder written when the photo was read — and
             showing it beside "Looking up…" says two contradictory things. */}
@@ -342,8 +397,17 @@ function LineRow({
       <div className="row-tight" style={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>
         {line.addedWorkId !== null ? (
           <Link to={workPath(line.addedWorkId)} className="chip">
-            {owned ? 'Copy added' : 'Added'}
+            {/* ⚠️ Three outcomes, three words. "Copy added" over a received
+                pre-order would report the very thing the prompt was asked to
+                prevent — a second copy — and the person would have no way to
+                tell from the row which of the two they had chosen. */}
+            {arrived ? 'Pre-order received' : owned ? 'Copy added' : 'Added'}
           </Link>
+        ) : preorder ? (
+          /* The prompt above is the row's only control while it is up. Leaving
+             Add beside it would offer a third answer to a two-answer question,
+             and pressing it would simply raise the same prompt again. */
+          <span className="muted small">Answer above</span>
         ) : awaiting ? (
           /* The automatic pass has this row. No buttons: every one of them
              would race a write that is already in flight, and the answer is

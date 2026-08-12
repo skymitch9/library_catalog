@@ -6,6 +6,7 @@ import { Shelf } from '../components/Shelf.js';
 import { WorkList } from '../components/WorkList.js';
 import { editionKindLabel, formatLabel, mediumLabel } from '../lib/formats.js';
 import { loadPrefs, savePrefs } from '../lib/prefs.js';
+import { syncReadStatesFromRatings, type ReadSyncResult } from '../lib/read-sync.js';
 import { ON_THE_WAY, statusLabel } from '../lib/statuses.js';
 import {
   Link,
@@ -216,6 +217,46 @@ export function CollectionPage({
 
   useEffect(loadHeader, [loadHeader]);
 
+  /**
+   * ⚠️ A rating on the audiobook site means the book was read, and this is the
+   * only place that can find that out for the whole shelf at once.
+   *
+   * The book page derives it for one book when you open it; nobody opens 258
+   * book pages. `lib/read-sync.ts` carries the reasoning, the once-per-session
+   * guard and every reason a failure here is silent. This page is where it runs
+   * because it is the landing screen and it owns both things the answer changes:
+   * the "read" stat above and the Read filter below.
+   *
+   * ⚠️ Refs for the two reloaders. `reload` is rebuilt whenever a filter or a
+   * keystroke changes `params`, and listing it as a dependency would restart
+   * this effect on every character typed — the sweep itself would no-op on the
+   * session flag, but the effect churn is the kind of thing that later grows a
+   * real request inside it.
+   */
+  const reloadRef = useRef(reload);
+  const loadHeaderRef = useRef(loadHeader);
+  useEffect(() => {
+    reloadRef.current = reload;
+    loadHeaderRef.current = loadHeader;
+  }, [reload, loadHeader]);
+
+  const [readSync, setReadSync] = useState<ReadSyncResult | null>(null);
+  useEffect(() => {
+    void syncReadStatesFromRatings(me)
+      .then((result) => {
+        // `null` is "did not run"; an empty `marked` is "ran, nothing to say",
+        // which is the answer on every session after the first. Neither is worth
+        // a line on screen or a refetch.
+        if (!result || result.marked.length === 0) return;
+        setReadSync(result);
+        loadHeaderRef.current();
+        reloadRef.current();
+      })
+      .catch(() => {
+        /* Firestore unreachable, or the API refused. The shelf is still the shelf. */
+      });
+  }, [me]);
+
   // There is no afterWrite() any more. Adding happens on the scan screen now,
   // and coming back unmounts it and mounts this page fresh, so the list and the
   // stat strip refetch on their own — a manual refresh here would be a second
@@ -261,6 +302,21 @@ export function CollectionPage({
               <Stat key={r.readState} n={r.count} label="read" />
             ))}
         </div>
+      )}
+
+      {/* ⚠️ Said out loud, and only when something actually changed. A read
+          state that appeared without explanation reads as the app claiming you
+          asserted something you did not — the same reason the book page prints
+          "Marked read from your audiobook rating" rather than quietly showing a
+          chip. It names where to undo it, because the undo is real: pressing any
+          chip on a book page stamps 'human' and no sweep may touch it again. */}
+      {readSync && readSync.marked.length > 0 && (
+        <p className="muted small">
+          Marked {readSync.marked.length}{' '}
+          {readSync.marked.length === 1 ? 'book' : 'books'} read, from{' '}
+          {readSync.considered.toLocaleString()} ratings you have written on the audiobook
+          site. Change any of them on the book&rsquo;s own page and it stays changed.
+        </p>
       )}
 
       <div className="toolbar">

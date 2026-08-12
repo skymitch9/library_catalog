@@ -1,4 +1,9 @@
-import { deriveReadState, type ObservedRating, type SetReadState } from '@lc/core';
+import {
+  deriveReadState,
+  type ObservedRating,
+  type ObservedWorkRating,
+  type SetReadState,
+} from '@lc/core';
 
 /**
  * Per-person reading state, and the cached mirror of a Firestore rating.
@@ -169,26 +174,85 @@ export async function applyObservedRating(
   userId: number,
   observed: ObservedRating,
 ): Promise<DerivedRead[]> {
-  const { results } = await db
-    .prepare(
-      `SELECT w.id AS work_id, w.title AS title,
-              ub.read_state, ub.read_state_how, ub.read_format
-         FROM work w
-         LEFT JOIN user_book ub ON ub.work_id = w.id AND ub.user_id = ?
-        WHERE w.work_key = ?
-        ORDER BY w.id`,
-    )
-    .bind(userId, workKey)
-    .all<{
-      work_id: number;
-      title: string;
-      read_state: string | null;
-      read_state_how: string | null;
-      read_format: string | null;
-    }>();
+  // ⚠️ Delegates rather than repeats. The batch below is the one implementation
+  // of this rule against the database; two copies of "which works does this
+  // rating reach, and may it write there" is precisely the drift `@lc/core`'s
+  // `deriveReadState` exists to prevent one layer up.
+  return applyObservedRatings(db, userId, [{ workKey, ...observed }]);
+}
+
+/**
+ * ⚠️ Bound parameters per statement, not a page size.
+ *
+ * D1 caps them at 100. One is spent on `user_id`, so the `IN (…)` list gets 90
+ * with room to spare. A sweep of 400 ratings is five SELECTs, not four hundred.
+ */
+const KEYS_PER_QUERY = 90;
+
+/** Statements per `batch()`. Chunked on WORK boundaries — see the note below. */
+const WRITES_PER_BATCH = 100;
+
+/**
+ * Every rating one person has written, applied in a handful of queries.
+ *
+ * This is `applyObservedRating` for the whole library at once, and it exists
+ * because the per-book path only ever fires on a book somebody opens. See
+ * `observedRatingsFromReviews` in `@lc/core` for what the browser sends and why
+ * a sweep only became possible once the review documents carried `workKey`.
+ *
+ * Everything the single-work version promises holds here unchanged: a `'human'`
+ * row is refused, `finished_on` is never invented, `rating_cached` is written by
+ * its own statement, and the returned list is only what actually changed — which
+ * is empty on every run after the first, and is what keeps a per-session sweep
+ * from redrawing anything.
+ *
+ * ⚠️ A key naming no work in this catalog matches nothing and costs nothing.
+ * That is the ordinary case rather than a failure: the household owns roughly
+ * 1,075 audiobooks against 258 works here, so most ratings are of books this
+ * catalog does not hold.
+ */
+export async function applyObservedRatings(
+  db: D1Database,
+  userId: number,
+  observed: readonly ObservedWorkRating[],
+): Promise<DerivedRead[]> {
+  // First wins, defensively — `observedRatingsFromReviews` has already
+  // deduplicated, and a second rule here that disagreed with it would be worse
+  // than this one being redundant.
+  const byKey = new Map<string, ObservedWorkRating>();
+  for (const o of observed) if (!byKey.has(o.workKey)) byKey.set(o.workKey, o);
+  const keys = [...byKey.keys()];
+  if (keys.length === 0) return [];
+
+  interface Row {
+    work_id: number;
+    work_key: string;
+    title: string;
+    read_state: string | null;
+    read_state_how: string | null;
+    read_format: string | null;
+  }
+
+  const rows: Row[] = [];
+  for (let i = 0; i < keys.length; i += KEYS_PER_QUERY) {
+    const chunk = keys.slice(i, i + KEYS_PER_QUERY);
+    const { results } = await db
+      .prepare(
+        `SELECT w.id AS work_id, w.work_key AS work_key, w.title AS title,
+                ub.read_state, ub.read_state_how, ub.read_format
+           FROM work w
+           LEFT JOIN user_book ub ON ub.work_id = w.id AND ub.user_id = ?
+          WHERE w.work_key IN (${chunk.map(() => '?').join(', ')})
+          ORDER BY w.id`,
+      )
+      .bind(userId, ...chunk)
+      .all<Row>();
+    rows.push(...(results ?? []));
+  }
 
   const changed: DerivedRead[] = [];
-  const writes: D1PreparedStatement[] = [];
+  /** One entry per work: the statements that work needs, in order. */
+  const perWork: D1PreparedStatement[][] = [];
 
   const cache = db.prepare(
     `INSERT INTO user_book (work_id, user_id, rating_cached, rating_synced_at)
@@ -209,11 +273,16 @@ export async function applyObservedRating(
       WHERE work_id = ? AND user_id = ?`,
   );
 
-  for (const row of results ?? []) {
-    writes.push(cache.bind(row.work_id, userId, observed.rating));
+  for (const row of rows) {
+    const seen = byKey.get(row.work_key);
+    // Cannot happen — the rows came back from an `IN` over these very keys — but
+    // a silent `undefined.rating` here would write a NULL rating over a real one.
+    if (!seen) continue;
+
+    const writes = [cache.bind(row.work_id, userId, seen.rating)];
 
     const next = deriveReadState(
-      observed,
+      seen,
       row.read_state === null
         ? null
         : {
@@ -222,20 +291,31 @@ export async function applyObservedRating(
             readFormat: row.read_format,
           },
     );
-    if (!next) continue;
-
-    writes.push(mark.bind(next.readState, next.readFormat, row.work_id, userId));
-    changed.push({
-      workId: row.work_id,
-      title: row.title,
-      readState: next.readState,
-      readFormat: next.readFormat,
-    });
+    if (next) {
+      writes.push(mark.bind(next.readState, next.readFormat, row.work_id, userId));
+      changed.push({
+        workId: row.work_id,
+        title: row.title,
+        readState: next.readState,
+        readFormat: next.readFormat,
+      });
+    }
+    perWork.push(writes);
   }
 
   // ⚠️ Order matters inside the batch: the cache upsert creates the row that the
   // mark UPDATE then edits. `batch` runs statements in sequence, so pairing them
-  // per work rather than grouping by kind is what keeps that true.
-  if (writes.length) await db.batch(writes);
+  // per work rather than grouping by kind is what keeps that true — and it is
+  // why the chunking below splits between works and never inside one.
+  let pending: D1PreparedStatement[] = [];
+  for (const writes of perWork) {
+    if (pending.length && pending.length + writes.length > WRITES_PER_BATCH) {
+      await db.batch(pending);
+      pending = [];
+    }
+    pending.push(...writes);
+  }
+  if (pending.length) await db.batch(pending);
+
   return changed;
 }

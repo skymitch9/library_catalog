@@ -281,6 +281,30 @@ point, since each is now a question.
 ⚠️ **The price add-on stays `skipped`, settled and silent.** Five digits beside
 the real barcode is never a book, and there is no question to ask about it.
 
+### ⚠️ A pre-order on file BLOCKS the add until somebody answers — 2026-08-12
+
+The third reason a row stops, and the only one where **both answers write**. The
+owner: *"if I add a book that's in pre-order status there is a prompt asking me if
+this is the received pre-order or different."*
+
+| Answer | What happens | What must NOT happen |
+|---|---|---|
+| the pre-order arrived | `PATCH /api/copies/:id` → `arrivedPatch`, that row goes `preordered` → `owned` | a second copy — the phantom pre-order then inflates "on the way" forever |
+| a different copy | `POST /api/copies` `owned`, pre-order untouched | flipping the pre-order — a copy the household owns is silently lost |
+
+| | |
+|---|---|
+| where it is asked | `addLineToCatalog` returns `{ status: 'ask-preorder' }` **before its first write**, so an unanswered prompt leaves nothing behind. Answering re-runs it from the top; the match is idempotent |
+| which paths | the scan review row, and the manual Add form's **have it** intent. `POST /api/works` needs nothing — it writes no copy |
+| cost | one `GET /api/works/:id`, **on the Add tap only**. Not per row: fifteen spines would spend fifteen requests to warn about none |
+| ⚠️ several pre-orders | one button each, labelled by edition name. *Worlds Beyond Number* is one work with **three**, one per variant cover — "the pre-order" is not resolvable without asking which |
+| ⚠️ `wanted` | never included. `preorderedCopies` tests one status; see `CollectionStats` in `@lc/db` for the 262-vs-25 bug that folding them caused in the sibling |
+| the arriving copy's edition | left alone. A pre-ordered copy usually already names its printing, and the `paperback` an ISBN scan guesses is worse information |
+
+Rule and wording in `@lc/core/preorders.ts`, the network half in
+`apps/web/src/lib/preorders.ts`, one shared prompt in
+`components/PreorderPrompt.tsx`.
+
 ---
 
 ## 4. Money and consent

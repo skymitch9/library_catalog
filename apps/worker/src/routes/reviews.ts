@@ -1,8 +1,26 @@
 import { Hono } from 'hono';
-import { observedRatingSchema, reviewDocFor, submitReviewSchema, workKeyFor } from '@lc/core';
-import { applyObservedRating, cacheRating, getWork } from '@lc/db';
+import {
+  observedRatingSchema,
+  observedRatingsSchema,
+  reviewDocFor,
+  submitReviewSchema,
+  workKeyFor,
+} from '@lc/core';
+import { applyObservedRating, applyObservedRatings, cacheRating, getWork } from '@lc/db';
 import type { AppBindings } from '../env.js';
 import { requireCapability } from '../middleware/auth.js';
+
+/**
+ * Which collection this deployment reads and writes, mirroring `col()` in
+ * `audiobook_catalog/site/fb-env.js`.
+ *
+ * ⚠️ One function rather than the four copies of the ternary this file grew. A
+ * dev deployment must never write into the collection the live site reads, and
+ * getting it wrong is silent in both directions — so it is worth there being
+ * exactly one place that can be wrong.
+ */
+const reviewCollection = (env: { ENVIRONMENT?: string }) =>
+  env.ENVIRONMENT === 'production' ? 'reviews' : 'reviews_dev';
 
 /**
  * The review bridge, server side.
@@ -68,15 +86,21 @@ export const reviewRoutes = new Hono<AppBindings>()
     // page is the only thing that reads it.
     await cacheRating(c.env.DB, workId, user.id, parsed.data.rating);
 
-    return c.json({
-      // The lane switch, mirroring `col()` in audiobook_catalog/site/fb-env.js.
-      // A dev deployment must never write into the collection the live site
-      // reads, and getting this wrong is silent in both directions.
-      collection: c.env.ENVIRONMENT === 'production' ? 'reviews' : 'reviews_dev',
-      docId: id,
-      doc,
-    });
+    return c.json({ collection: reviewCollection(c.env), docId: id, doc });
   })
+
+  /**
+   * Which collection to read, for a caller that is not looking at one book.
+   *
+   * The per-book endpoints answer this as part of their reply, which is enough
+   * for `Reviews.tsx`. The whole-library sweep has no `workId` to ask about and
+   * must not guess the lane — a dev browser reading `reviews` would derive read
+   * states in the dev database from the live site's ratings, which looks exactly
+   * like the feature working.
+   */
+  .get('/collection', requireCapability('read'), (c) =>
+    c.json({ collection: reviewCollection(c.env) }),
+  )
 
   /**
    * The `workKey` for a work, so the browser can query Firestore for every
@@ -104,7 +128,7 @@ export const reviewRoutes = new Hono<AppBindings>()
     });
 
     return c.json({
-      collection: c.env.ENVIRONMENT === 'production' ? 'reviews' : 'reviews_dev',
+      collection: reviewCollection(c.env),
       workKey: workKeyFor(work.title, work.authors),
       legacyBookId: doc.bookId,
     });
@@ -181,4 +205,55 @@ export const reviewRoutes = new Hono<AppBindings>()
     // The client uses it to decide whether to reload, so a second call costing
     // nothing is what keeps this off the critical path.
     return c.json({ marked });
+  })
+
+  /**
+   * The same thing for every rating this person has ever written — the sweep.
+   *
+   * ## Why this exists on top of `/:workId/observed`
+   *
+   * That endpoint fires when somebody opens a book page, so it covers a book the
+   * moment it is looked at and covers nothing otherwise. Nobody opens 258 book
+   * pages. The alternative already in the repo,
+   * `scripts/backfill-read-from-ratings.mjs`, is a Node script that needs a
+   * checkout of the sibling audiobook repo to turn a `bookId` into a `workKey`,
+   * so it is a thing a maintainer runs once, not a thing the household has.
+   *
+   * ⚠️ **It became possible on 2026-08-12**, when `backfill-review-keys.mjs`
+   * was run with `--commit` for the first time and stamped `workKey` onto all
+   * 870 documents. A sweep starts from the person rather than from a book, so
+   * unlike `/keys` it has no legacy `bookId` to fall back on: a document with no
+   * `workKey` names no book it can reach. `observedRatingsFromReviews` drops
+   * those, and the per-book path remains the safety net for reviews written on
+   * the audiobook site since that backfill.
+   *
+   * ## ⚠️ It grants nothing new
+   *
+   * Every write is scoped to `user.id` from the verified token — the body cannot
+   * name a person — and the same capability already permits
+   * `PUT /works/:id/reading`. The keys are matched against `work.work_key`, so
+   * an unknown one is a no-op rather than an error, which is the ordinary case:
+   * most of the household's audiobook reviews are of books this catalog does not
+   * hold.
+   */
+  .post('/observed', requireCapability('trackReading'), async (c) => {
+    const body = await c.req.json().catch(() => null);
+    const parsed = observedRatingsSchema.safeParse(body ?? {});
+    if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues }, 400);
+
+    const user = c.get('user');
+    const marked = await applyObservedRatings(
+      c.env.DB,
+      user.id,
+      parsed.data.ratings.map((r) => ({
+        workKey: r.workKey,
+        rating: r.rating,
+        source: r.source ?? null,
+      })),
+    );
+
+    // `considered` is the honest denominator for the sentence the browser draws:
+    // "N of your M ratings are of books on these shelves" is a very different
+    // claim from "N books were marked read", and only the server knows both.
+    return c.json({ marked, considered: parsed.data.ratings.length });
   });

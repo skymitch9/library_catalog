@@ -263,7 +263,7 @@ describe('universes over catalog rows', () => {
     assert.deepEqual(tally.map((t) => t.name), universeNames);
     assert.deepEqual(
       tally.filter((t) => t.count === 0).map((t) => t.name),
-      ['Runnerverse', 'Maasverse', 'Riordanverse', 'Solaria'],
+      ['Runnerverse', 'Maasverse', 'Riordanverse', 'Solaria', 'Willverse'],
     );
   });
 
@@ -306,8 +306,14 @@ describe('universes over catalog rows', () => {
  * -------------------------------------------------------------------------- */
 
 describe('the approved content, so an edit in catalog-platform cannot land unnoticed', () => {
-  it('six universes, in the order the owner approved them', () => {
-    assert.deepEqual(universeNames, ['The Cosmere', 'Runnerverse', 'CAL Verse', 'Maasverse', 'Riordanverse', 'Solaria']);
+  it('seven universes, in the order the owner approved them', () => {
+    // ⚠️ Willverse was added 2026-08-12 and is the SEVENTH. It is also the first
+    // reversed refusal: held out twice — once as an unconfirmed hint, once because
+    // the household appeared to own only one member series — and admitted only when
+    // The Last Horizon was confirmed as Iteration 119, giving it two owned series to
+    // span. This assertion failing is this file WORKING: a universe cannot appear in
+    // catalog-platform without a decision landing here too.
+    assert.deepEqual(universeNames, ['The Cosmere', 'Runnerverse', 'CAL Verse', 'Maasverse', 'Riordanverse', 'Solaria', 'Willverse']);
   });
 
   it('the counts the owner signed off', () => {
@@ -324,6 +330,9 @@ describe('the approved content, so an edit in catalog-platform cannot land unnot
       Maasverse: [3, 0, 0],
       Riordanverse: [3, 0, 0],
       Solaria: [2, 0, 0],
+      // Cradle and The Last Horizon are owned; The Elder Empire and The
+      // Traveler's Gate are listed so a future purchase files itself.
+      Willverse: [4, 0, 0],
     });
   });
 
@@ -343,9 +352,13 @@ describe('the approved content, so an edit in catalog-platform cannot land unnot
     }
   });
 
-  it('the five held-out subjects are still recorded as refusals', () => {
+  it('the four held-out subjects are still recorded as refusals', () => {
+    // ⚠️ Will Wight was the FIFTH and is deliberately gone — the refusal was
+    // answered on 2026-08-12 and became the Willverse. Removing it here is the
+    // other half of that decision; leaving it would assert a refusal that no
+    // longer exists.
     const subjects = (universesDocument._refused ?? []).map((r) => String(r['subject']));
-    for (const needle of ['Will Wight', "Turncoat's Truth", 'Cultivating Chaos', 'The Axe Falls', 'Tailored Realities']) {
+    for (const needle of ["Turncoat's Truth", 'Cultivating Chaos', 'The Axe Falls', 'Tailored Realities']) {
       assert.ok(
         subjects.some((s) => s.includes(needle)),
         `no refusal mentions ${needle}`,

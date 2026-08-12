@@ -81,7 +81,7 @@ import {
   editionMedium,
   isDirectionalRelation,
 } from '../src/constants.ts';
-import { updateEditionSchema } from '../src/schemas.ts';
+import { observedRatingsSchema, updateEditionSchema } from '../src/schemas.ts';
 import {
   bookIdFromTitle,
   reviewDocFor,
@@ -91,6 +91,7 @@ import {
 import {
   deriveReadState,
   isMyReview,
+  observedRatingsFromReviews,
   ratingImpliesRead,
   readFormatFromReviewSource,
 } from '../src/readstate.ts';
@@ -2320,5 +2321,147 @@ describe('read state from a rating — what it may overwrite', () => {
   it('a non-rating changes nothing, whatever the row says', () => {
     assert.equal(deriveReadState({ rating: 0 }, null), null);
     assert.equal(deriveReadState({ rating: 3.3 }, null), null);
+  });
+});
+
+/**
+ * The whole-library sweep's half of the rule. What it *refuses* is the part
+ * worth guarding: every one of these was a way to mark the wrong person's books
+ * read, or to mark the right person's wrong book read.
+ */
+describe('a sweep of one person’s ratings', () => {
+  const me = { email: 'nb@example.com', reviewName: 'Skylar' };
+
+  it('keeps my ratings and drops everybody else’s', () => {
+    const out = observedRatingsFromReviews(
+      [
+        { displayName: 'Skylar', rating: 4, workKey: 'dungeon born|dakota krout', source: 'audio' },
+        // ⚠️ The housemate case. 457 of the 869 documents belong to people who
+        // have never signed in here, and this is the whole point of the owner's
+        // refinement: their rating must not mark MY book read.
+        { displayName: 'Samantha Hardman', rating: 5, workKey: 'moonfall|k f breene' },
+      ],
+      me,
+    );
+    assert.deepEqual(out, [
+      { workKey: 'dungeon born|dakota krout', rating: 4, source: 'audio' },
+    ]);
+  });
+
+  it('matches on email where the document has one, and on the folded name where it does not', () => {
+    const out = observedRatingsFromReviews(
+      [
+        { email: 'NB@Example.com', displayName: 'someone else entirely', rating: 3, workKey: 'a|b' },
+        { displayName: '  skylar ', rating: 2, workKey: 'c|d' },
+      ],
+      me,
+    );
+    assert.deepEqual(out.map((o) => o.workKey), ['a|b', 'c|d']);
+  });
+
+  it('⚠️ drops a review with no workKey — a sweep has no book to fall back on', () => {
+    // The per-book path can ask Firestore for the audiobook site's `bookId`
+    // because it knows which book it is looking at. This starts from the person,
+    // so a document the review-key backfill has not stamped names nothing.
+    assert.deepEqual(
+      observedRatingsFromReviews(
+        [
+          { displayName: 'Skylar', rating: 4, bookId: 'firefight-the-reckoners-book-2' } as never,
+          // Nor is a bare title a key: `workKeyFor` always joins with a `|`, and
+          // two different books called "Gold" would share the half of it.
+          { displayName: 'Skylar', rating: 4, workKey: 'gold' },
+        ],
+        me,
+      ),
+      [],
+    );
+  });
+
+  it('drops anything that is not a rating on the shared scale', () => {
+    assert.deepEqual(
+      observedRatingsFromReviews(
+        [
+          { displayName: 'Skylar', rating: 0, workKey: 'a|b' },
+          { displayName: 'Skylar', rating: 3.3, workKey: 'c|d' },
+          { displayName: 'Skylar', rating: '5' as never, workKey: 'e|f' },
+          { displayName: 'Skylar', workKey: 'g|h' },
+        ],
+        me,
+      ),
+      [],
+    );
+    // ⚠️ But 0.5 is a rating. A book somebody hated is a book they finished.
+    assert.equal(observedRatingsFromReviews([{ displayName: 'Skylar', rating: 0.5, workKey: 'a|b' }], me).length, 1);
+  });
+
+  it('⚠️ one key twice: an audio source anywhere wins, because format is what the choice changes', () => {
+    const out = observedRatingsFromReviews(
+      [
+        { displayName: 'Skylar', rating: 4, workKey: 'tamer|michael james ploof', source: 'library' },
+        { displayName: 'Skylar', rating: 5, workKey: 'tamer|michael james ploof', source: 'audio' },
+      ],
+      me,
+    );
+    assert.equal(out.length, 1);
+    assert.equal(out[0].source, 'audio');
+  });
+
+  it('reads an unstamped document as an audiobook review, exactly as the per-book path does', () => {
+    // Belt and braces on `reviewSourceOf`: no `source` AND no `workKey` means
+    // the audiobook site wrote it. Such a document is dropped for having no key
+    // — so the only way a *kept* document is unsourced is one carrying a key
+    // this catalog wrote, which is answered `null` rather than guessed at.
+    const out = observedRatingsFromReviews(
+      [{ displayName: 'Skylar', rating: 4, workKey: 'a|b' }],
+      me,
+    );
+    assert.equal(out[0].source, null);
+  });
+
+  it('nobody matches nobody — an unsigned-in reader sweeps nothing', () => {
+    assert.deepEqual(
+      observedRatingsFromReviews([{ displayName: 'Skylar', rating: 4, workKey: 'a|b' }], {
+        email: null,
+        reviewName: null,
+      }),
+      [],
+    );
+  });
+});
+
+describe('the sweep’s write contract', () => {
+  const one = { workKey: 'dungeon born|dakota krout', rating: 4, source: 'audio' as const };
+
+  it('accepts what the browser sends', () => {
+    assert.equal(observedRatingsSchema.safeParse({ ratings: [one] }).success, true);
+    assert.equal(
+      observedRatingsSchema.safeParse({ ratings: [{ workKey: 'a|b', rating: 0.5 }] }).success,
+      true,
+    );
+  });
+
+  it('⚠️ refuses a key that is not a key', () => {
+    assert.equal(observedRatingsSchema.safeParse({ ratings: [{ ...one, workKey: 'gold' }] }).success, false);
+  });
+
+  it('refuses a rating off the shared half-star scale', () => {
+    assert.equal(observedRatingsSchema.safeParse({ ratings: [{ ...one, rating: 3.3 }] }).success, false);
+    assert.equal(observedRatingsSchema.safeParse({ ratings: [{ ...one, rating: 6 }] }).success, false);
+  });
+
+  it('⚠️ refuses a field it does not model rather than stripping it', () => {
+    // The `.strict()` lesson from `submitReviewSchema`: zod silently *stripped* a
+    // stray `rating` once, and the endpoint looked like it worked.
+    assert.equal(
+      observedRatingsSchema.safeParse({ ratings: [{ ...one, userId: 3 }] }).success,
+      false,
+    );
+    assert.equal(observedRatingsSchema.safeParse({ ratings: [one], userId: 3 }).success, false);
+  });
+
+  it('refuses an empty list and one longer than the stated cap', () => {
+    assert.equal(observedRatingsSchema.safeParse({ ratings: [] }).success, false);
+    const many = Array.from({ length: 501 }, (_, i) => ({ ...one, workKey: `k${i}|a` }));
+    assert.equal(observedRatingsSchema.safeParse({ ratings: many }).success, false);
   });
 });

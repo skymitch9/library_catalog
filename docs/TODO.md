@@ -46,6 +46,99 @@ suffix still on, the work's key was `oathbound healer mm|selkie myth` and all
 three would have stayed orphaned. This also unblocks **#31** (a rating means
 you read it), which needed exactly this bridge.
 
+### ✅ #31 — a rating marks the book read, for the whole shelf — 2026-08-12
+
+The rule, the column and the per-book derivation all shipped on 2026-08-11 (see
+the section further down) and were **unreachable**: every review was keyed on
+the audiobook site's `bookId`, so nothing but a coincidence of spelling ever
+matched. The key backfill above is what turned that on, and this is the half
+that was still missing — **reach, not rule**.
+
+`Reviews.tsx` derives a read state when somebody opens a book page. Nobody opens
+258 book pages, and `backfill-read-from-ratings.mjs` needs a checkout of the
+sibling repo to run, so production had **zero** derived read states. Now: one
+Firestore query for the signed-in person's own reviews, **once per browser
+session**, and one call that applies all of them.
+
+| | What |
+|---|---|
+| ✅ | **`observedRatingsFromReviews`** in `@lc/core` — the pure half. Keeps mine via the existing `isMyReview`, drops anything off the half-star scale, drops a document with no `workKey` |
+| ✅ | **`applyObservedRatings`** in `@lc/db`, and **`applyObservedRating` now delegates to it** rather than keeping a second copy of the same join. Chunked at 90 keys a statement — D1 caps bound parameters at 100 — so 400 ratings are five SELECTs, not four hundred round trips |
+| ✅ | **`POST /api/reviews/observed`** and **`GET /api/reviews/collection`** |
+| ✅ | **`apps/web/src/lib/read-sync.ts`**, run from the collection page, guarded by `sessionStorage` and silent on every failure |
+| ✅ | The page says *"Marked N books read, from M ratings you have written on the audiobook site"* — **only when something changed** — and names where to undo it |
+| ✅ | **No migration.** `read_state_how` is 0070 and nothing new is stored |
+
+⚠️ **A sweep has no legacy key to fall back on.** It starts from the person, not
+from a book, so a review written on the audiobook site *since* the key backfill
+carries no `workKey` and is skipped — and is still picked up when its own book
+page is opened. **The per-book path is the safety net, not a duplicate**, and
+`fetchReviews`' legacy `bookId` query must not be dropped. Full reasoning in
+[`docs/info/identity-and-reviews.md`](info/identity-and-reviews.md) §7.7.
+
+**Measured:** 299 tests (was 287). Typecheck clean for `@lc/core`, `@lc/db` and
+`@lc/worker`; the web build bundles. The SELECT and the write pair were run by
+hand against the local D1 — a three-key `IN` list matched its two works and
+ignored the unknown one, the pair produced `read` / `rating` / `audio` / 4.5,
+and the probe row was deleted afterwards.
+
+⚠️ **Not verified:** nothing has been run against production and no browser has
+executed the sweep. The numbers it will write are the ones the 2026-08-11 dry
+run predicted — **15 works, every one `read_format = 'audio'`** — and that dry
+run predates 25 new works and the key backfill, so expect it to differ.
+
+**Pending, in this order — nothing below has been run:**
+
+```bash
+# 1. Code only. There is NO migration for this one.
+npm run deploy
+
+# 2. Then simply open the collection page while signed in. The sweep runs
+#    itself, once per session, and says what it did.
+```
+
+Running `npm run backfill:read-states -- --remote --commit` is still an
+alternative to step 2 and is no longer needed — it writes the same rows by the
+same rule. ⚠️ It is **not** redundant for the household members who have never
+signed in here: the sweep only ever runs for whoever is looking at the screen.
+
+### ✅ #43 — an arriving pre-order is a question, not a guess — 2026-08-12
+
+*"We also need a feature where if I add a book that's in pre-order status there
+is a prompt asking me if this is the received pre-order or different."* Built on
+`feature/preorder-arrival-prompt`. **Not deployed, no migration.**
+
+Production holds **12 pre-ordered copies** — Completionist Chronicles 2–5, Tamer
+11, three *Worlds Beyond Number* variant covers — several shipping within months,
+so this gets exercised soon.
+
+| Answer | Write | The failure it prevents |
+|---|---|---|
+| the pre-order arrived | that copy `preordered` → `owned`, via `arrivedPatch` | a phantom pre-order inflating "on the way" for ever, because nothing re-checks it |
+| a different copy | a new `owned` copy; pre-order untouched | silently losing a copy the household owns |
+
+⚠️ **Asked before the first write, not between two of them.** `addLineToCatalog`
+returns `{ status: 'ask-preorder' }` and writes nothing; answering re-runs it
+from the top, and the work match is idempotent. A prompt nobody answers leaves
+the catalog exactly as it was.
+
+⚠️ **One button per pre-ordered copy.** *Worlds Beyond Number* is **one work with
+three pre-orders**, one per variant cover — "the pre-order" cannot be resolved
+without asking which, so each choice is labelled with its edition name.
+
+| | |
+|---|---|
+| covered | the scan review row (`ScanLines`), and the manual Add form's **have it** intent |
+| ⚠️ not covered, deliberately | `POST /api/works` — it writes no copy, so there is no arrival to confuse. The Copies panel and the arrivals checklist already show the pre-order on screen; nothing there is a guess |
+| cost | one `GET /api/works/:id`, **on the Add tap only** — not per row |
+| ⚠️ `wanted` stays apart | `preorderedCopies` tests one status. `CollectionStats` in `@lc/db` carries the sibling's 262-vs-25 bug |
+| new files | `packages/core/src/preorders.ts` (rule + wording, 9 tests), `apps/web/src/lib/preorders.ts`, `components/PreorderPrompt.tsx` |
+
+⚠️ **The manual Add form now matches before saving, and only for "have it".** It
+still creates a work per save otherwise — `POST /api/works` does not dedupe on
+purpose — so answering *a different copy* does exactly what Save did before.
+General de-duplication of that form is a separate, larger change.
+
 ### ⚠️ `work.universe` — 5 of 258, and that is not the backfill
 
 The five Completionist Chronicles works carry `CAL Verse` / `universe_how =
@@ -233,9 +326,10 @@ below). Nothing else is running.
 |---|---|
 | **`backfill:universes` has never run against production** | 0 of 233 rows have a universe. Biggest built-but-not-switched-on item |
 | **Crowdfunding rescan** | Kickstarter shows **61** successful pledges; we hold **11** pledge items. In progress |
-| **#43 preorder-arrival prompt** | new ask, not started |
+| ✅ ~~**#43 preorder-arrival prompt**~~ | **Built 2026-08-12** on `feature/preorder-arrival-prompt`, not deployed. Section below |
 | **#37 editable audiobook listings** | largest remaining build; cheaper now the corrections layer exists |
-| **#29** how duplicates count · **#30** B&N covers · **#31** rating ⇒ read | unchanged |
+| **#29** how duplicates count · **#31** rating ⇒ read | unchanged |
+| ✅ ~~**#30** B&N covers~~ | **Done 2026-08-12, and mostly already done.** All 7 had covers on 2026-08-11 from `apply-bn-details.mjs`; #30 was a stale entry. What was left was §2.5's other half — all seven images were *viewed*, six are the book's own jacket, and Project Hail Mary's stand-in was replaced with the **Deluxe Edition's own art**. `scripts/assess-bn-covers.mjs`, written to production. "Cover needed" among the seven: **0, was 1.** |
 
 **Wants a human — nothing here is waiting on more work:**
 

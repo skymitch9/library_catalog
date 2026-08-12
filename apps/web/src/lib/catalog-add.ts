@@ -1,5 +1,7 @@
-import { proposedAuthors, proposedTitle, type ScanLine } from '@lc/core';
+import { proposedAuthors, proposedTitle, type PreorderAnswer, type ScanLine } from '@lc/core';
 import { api } from '../api.js';
+import { arrivedPatch } from './statuses.js';
+import { preorderQuestionFor, type PreorderQuestion } from './preorders.js';
 
 /**
  * Turning one reviewed line into catalog rows.
@@ -14,7 +16,27 @@ export interface AddedWork {
   workId: number;
   /** The title of the work we attached to, when we attached rather than created. */
   attachedTo: string | null;
+  /**
+   * A copy already on file was flipped `preordered` → `owned` instead of a new
+   * copy being written. The caller says so on the row: "Copy added" would be a
+   * lie, and the difference is the entire point of having asked.
+   */
+  preorderArrived: boolean;
 }
+
+/**
+ * ⚠️ **Adding can stop and ask.** One outcome writes rows; the other writes
+ * nothing at all and hands back a question.
+ *
+ * A discriminated union rather than a thrown signal or an `onAsk` callback, for
+ * the reason the rest of this file is shaped the way it is: the caller is a button
+ * handler, and a button handler that must catch a control-flow exception to stay
+ * correct is one refactor away from swallowing it. This shape makes the second
+ * case impossible to ignore — TypeScript will not let `workId` be read off it.
+ */
+export type AddOutcome =
+  | { status: 'added'; added: AddedWork }
+  | { status: 'ask-preorder'; question: PreorderQuestion };
 
 /**
  * Add a reviewed line to the catalog.
@@ -53,8 +75,26 @@ export interface AddedWork {
  * the check and every sweep quietly grows a second row for a book already on
  * the shelf, which is the "filed under already-yours, where it is lost" failure
  * the matcher exists to prevent, arriving through the front door.
+ *
+ * ## ⚠️ A book with a pre-order on file stops here and asks
+ *
+ * Called with no `answer` and pointed at a work that has a `preordered` copy, this
+ * function **writes nothing** and returns `ask-preorder`. Call it again with the
+ * person's answer to finish. The two outcomes are not interchangeable — see
+ * `@lc/core/preorders.ts` for what each one costs when guessed — and this is the
+ * same "a duplicate is a question, not a refusal" ruling applied to a second case.
+ *
+ * ⚠️ **The question is raised before the first write, never between two of them.**
+ * The early return sits after the match and before `createWork`, so a prompt
+ * nobody answers leaves the catalog exactly as it was. Answering re-runs this
+ * function from the top: the match is idempotent — a work that matched once
+ * matches again, so nothing is created twice — and a second `GET /works/match` is
+ * cheaper than carrying half-written state across a button press.
  */
-export async function addLineToCatalog(line: ScanLine): Promise<AddedWork> {
+export async function addLineToCatalog(
+  line: ScanLine,
+  answer?: PreorderAnswer,
+): Promise<AddOutcome> {
   /*
    * ⚠️ The duplicate case — a book we already hold, scanned again on purpose.
    *
@@ -73,8 +113,18 @@ export async function addLineToCatalog(line: ScanLine): Promise<AddedWork> {
    * before its exact printing is known".
    */
   if (line.existingWorkId !== null) {
-    await api.createCopy({ workId: line.existingWorkId, status: 'owned' });
-    return { workId: line.existingWorkId, attachedTo: line.existingTitle };
+    if (!answer) {
+      const question = await preorderQuestionFor(line.existingWorkId, line.existingTitle);
+      if (question) return { status: 'ask-preorder', question };
+    }
+    return {
+      status: 'added',
+      added: {
+        workId: line.existingWorkId,
+        attachedTo: line.existingTitle,
+        preorderArrived: await recordArrival(line.existingWorkId, answer),
+      },
+    };
   }
 
   /*
@@ -94,6 +144,26 @@ export async function addLineToCatalog(line: ScanLine): Promise<AddedWork> {
   }
 
   const existing = await api.matchWork(title, authors);
+
+  /*
+   * ⚠️ Asked HERE — after the match, before the first write.
+   *
+   * Only a work that already exists can have a pre-order against it, so the
+   * `existing.work` branch is the only one that can ask, and a genuinely new book
+   * pays nothing for this feature. Placed above `createWork` on purpose: the
+   * question must never leave a half-added book behind if it goes unanswered.
+   *
+   * This is also the branch the arriving pre-orders in production will actually
+   * come through. A pre-ordered hardcover has a *different* ISBN from any printing
+   * on file, so `findEditionByIsbn13` misses and the line never reaches the review
+   * screen as `owned` — it resolves through Open Library and matches on the work
+   * key instead, exactly as the paperback-of-an-ebook case does.
+   */
+  if (existing.work && !answer) {
+    const question = await preorderQuestionFor(existing.work.id, existing.work.title);
+    if (question) return { status: 'ask-preorder', question };
+  }
+
   /*
    * The cover rides along with the work, not only with the edition.
    *
@@ -160,7 +230,42 @@ export async function addLineToCatalog(line: ScanLine): Promise<AddedWork> {
   // A copy, because a person scanning a barcode or photographing a shelf is
   // looking at the book. This is the one place that inference is safe — unlike
   // the ebook importer, where a file existing says nothing about a shelf.
-  await api.createCopy({ workId: work.id, status: 'owned' });
+  const preorderArrived = await recordArrival(work.id, answer);
 
-  return { workId: work.id, attachedTo: existing.work ? work.title : null };
+  return {
+    status: 'added',
+    added: {
+      workId: work.id,
+      attachedTo: existing.work ? work.title : null,
+      preorderArrived,
+    },
+  };
+}
+
+/**
+ * The book is in the person's hands. Say so, in whichever of the two ways is true.
+ *
+ * ⚠️ **`arrived` is a PATCH of the row that already exists, never a new copy plus
+ * a tidy-up.** `updateCopy` in `@lc/db` spells out what a delete-and-recreate
+ * would throw away — when it was ordered, what was paid, which shop, and the
+ * `created_at` that makes "how long was this on the way" answerable — and
+ * `arrivedPatch` is the one spelling of that transition, shared with the arrivals
+ * checklist and the copies panel. A third spelling here is exactly the mistake
+ * `STATUS_LABEL` exists to record.
+ *
+ * ⚠️ The arriving copy is **not** repointed at any edition created above. A
+ * pre-ordered copy usually already names its printing — that is how the three
+ * *Worlds Beyond Number* variant covers are told apart — and overwriting that with
+ * the `paperback` an ISBN scan guesses would destroy better information than it
+ * writes. The Editions panel is where a printing gets corrected.
+ *
+ * Returns whether a pre-order was received, so the caller can say the right thing.
+ */
+async function recordArrival(workId: number, answer: PreorderAnswer | undefined): Promise<boolean> {
+  if (answer?.kind === 'arrived') {
+    await api.updateCopy(answer.copyId, arrivedPatch(answer.acquiredOn));
+    return true;
+  }
+  await api.createCopy({ workId, status: 'owned' });
+  return false;
 }
