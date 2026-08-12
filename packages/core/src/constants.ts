@@ -649,3 +649,17 @@ export const COLLECTION_PAGE_SIZES: readonly number[] = [10, 25, 50, 100, 200];
 export const RATING_MIN = 0.5;
 export const RATING_MAX = 5;
 export const RATING_STEP = 0.5;
+
+/**
+ * How many observed ratings one `POST /api/reviews/observed` may carry.
+ *
+ * The whole-library sweep sends every rating the signed-in person has written,
+ * which is 383 for the heaviest reviewer in the house today and grows slowly.
+ * A cap exists so the endpoint has a stated shape rather than an implied one;
+ * the browser chunks at this number rather than assuming it will never be hit.
+ *
+ * ⚠️ Not a D1 limit and must not be confused with one. `applyObservedRatings`
+ * chunks its own `IN (…)` lists far smaller than this, because bound parameters
+ * per statement are the constraint there and this is a payload size.
+ */
+export const OBSERVED_RATINGS_MAX = 500;

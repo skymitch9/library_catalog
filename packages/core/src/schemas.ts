@@ -22,6 +22,7 @@ import {
   EDITION_SOURCES,
   FINDING_REVIEW_STATES,
   GAP_VERDICTS,
+  OBSERVED_RATINGS_MAX,
   RATING_MAX,
   RATING_MIN,
   READ_FORMATS,
@@ -367,6 +368,55 @@ export const observedRatingSchema = z
   })
   .strict();
 export type ObservedRatingInput = z.infer<typeof observedRatingSchema>;
+
+/**
+ * The same thing for the whole library at once: every rating the signed-in
+ * person has written, each naming its book by `work_key`.
+ *
+ * ## ⚠️ Why the key comes from the client here, and why that is not a hole
+ *
+ * The per-book endpoint takes a `workId` and looks the key up server-side, which
+ * is stricter and is right there — the browser is on one book's page. A sweep
+ * starts from the *person*, and the browser holds review documents that name
+ * their book only by the `workKey` the review-key backfill stamped on them.
+ * Turning 400 keys back into ids client-side would mean 400 requests.
+ *
+ * The key is matched, never trusted: `applyObservedRatings` joins it against
+ * `work.work_key` and a key naming no work in this catalog does nothing at all
+ * — which is the ordinary case, since the household owns ~1,075 audiobooks
+ * against 258 works here. And it grants no authority the caller lacks: writes
+ * are scoped to `user.id` from the verified token, and `PUT /works/:id/reading`
+ * already lets the same capability set 'read' outright.
+ */
+export const observedRatingsSchema = z
+  .object({
+    ratings: z
+      .array(
+        z
+          .object({
+            /**
+             * ⚠️ Must contain the `|`. `workKeyFor` always joins a folded title
+             * and a folded author with it, so a bare title is not one of our
+             * keys — and a bare title is exactly the collision the composite key
+             * exists to prevent (two different books called "Gold").
+             */
+            workKey: z.string().min(3).max(300).refine((k) => k.includes('|'), {
+              message: 'a workKey is title|author',
+            }),
+            rating: z
+              .number()
+              .min(RATING_MIN)
+              .max(RATING_MAX)
+              .refine((r) => (r * 2) % 1 === 0, 'ratings are in half-star steps'),
+            source: z.enum(REVIEW_SOURCES).nullable().optional(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(OBSERVED_RATINGS_MAX),
+  })
+  .strict();
+export type ObservedRatingsInput = z.infer<typeof observedRatingsSchema>;
 
 export const updateRoleSchema = z.object({ role: roleSchema });
 

@@ -37,7 +37,7 @@
  */
 
 import type { ReadFormat, ReadState, ReadStateSource, ReviewSource } from './constants.js';
-import { isValidRating } from './reviews.js';
+import { isValidRating, reviewSourceOf } from './reviews.js';
 
 /** A rating this app has actually *seen* in Firestore, and what it is a review of. */
 export interface ObservedRating {
@@ -182,4 +182,95 @@ export function deriveReadState(
     return null;
   }
   return next;
+}
+
+/** An observed rating that names the book it is about, by `work_key`. */
+export interface ObservedWorkRating extends ObservedRating {
+  /** `normaliseTitle(cleanTitle)|normaliseTitle(primaryAuthor)`. */
+  workKey: string;
+}
+
+/** The fields of a Firestore review document this rule reads. Nothing else. */
+export interface ReviewLike {
+  workKey?: string | null;
+  source?: string | null;
+  rating?: unknown;
+  displayName?: string | null;
+  email?: string | null;
+}
+
+/**
+ * Every rating in this pile that is the signed-in person's own, ready to be
+ * reported to `POST /api/reviews/observed`.
+ *
+ * ## Why a whole-library sweep exists as well as the per-book one
+ *
+ * `Reviews.tsx` derives a read state when somebody opens a book page, and that
+ * is the only automatic path this feature had. It covers a book the moment it
+ * is looked at and covers nothing otherwise — nobody opens 258 book pages, and
+ * `scripts/backfill-read-from-ratings.mjs` is a Node script needing a checkout
+ * of the sibling repo, so it is not something the household runs. One Firestore
+ * query for *this person's* reviews answers the same question for the whole
+ * catalog at once.
+ *
+ * ## ⚠️ This became possible on 2026-08-12 and not before
+ *
+ * It joins on the `workKey` **stored on the document**, and until
+ * `backfill-review-keys.mjs --commit` was run for the first time that day, not
+ * one of the 870 documents carried one. The per-book path could paper over that
+ * by asking Firestore for the audiobook site's `bookId` as well — it knows which
+ * book it is looking at, so it has a legacy key to ask with. A sweep does not:
+ * it starts from the person, not from the book, so a document with no `workKey`
+ * names no book it can reach and is skipped.
+ *
+ * ⚠️ **Which means a review written on the audiobook site *after* that backfill
+ * is invisible here until the backfill is run again.** It is still picked up the
+ * moment its book page is opened, which is the safety net; the sweep is a bulk
+ * catch-up, not a replacement for the per-book derivation.
+ *
+ * ## What it refuses
+ *
+ * - Somebody else's review. `isMyReview` is the one implementation and the whole
+ *   point of the owner's refinement — a housemate's rating must never mark the
+ *   caller's books read.
+ * - Anything that is not a rating on the shared 0.5–5 half-star scale.
+ * - A document with no `workKey`, per the note above.
+ *
+ * ## Duplicates
+ *
+ * Two documents can clean to one `workKey` — the audiobook catalog spells the
+ * same book two ways often enough that the review-key backfill was written for
+ * it. First wins, **except** that an `'audio'` source anywhere in the group wins
+ * for the whole group: `read_format` is the one field the choice can change, and
+ * evidence of a listen is not cancelled by a document that is silent about
+ * format. The rating itself only reaches `rating_cached`, which is a sort key
+ * and never authoritative.
+ */
+export function observedRatingsFromReviews(
+  reviews: readonly ReviewLike[],
+  me: { email?: string | null; reviewName?: string | null },
+): ObservedWorkRating[] {
+  const byKey = new Map<string, ObservedWorkRating>();
+
+  for (const review of reviews) {
+    if (!isMyReview(review, me)) continue;
+    const rating = review.rating;
+    if (!ratingImpliesRead(typeof rating === 'number' ? rating : null)) continue;
+
+    const workKey = typeof review.workKey === 'string' ? review.workKey.trim() : '';
+    // A key with no `|` is not one of ours — `workKeyFor` always joins a title
+    // and an author with it — and a bare title would collide two books called
+    // "Gold". Refusing beats landing a rating on the wrong shelf.
+    if (!workKey.includes('|')) continue;
+
+    const source = reviewSourceOf(review);
+    const seen = byKey.get(workKey);
+    if (!seen) {
+      byKey.set(workKey, { workKey, rating: rating as number, source });
+    } else if (source === 'audio' && seen.source !== 'audio') {
+      seen.source = 'audio';
+    }
+  }
+
+  return [...byKey.values()];
 }

@@ -110,6 +110,20 @@ export interface Watch {
 }
 
 /**
+ * One work a rating marked read, and how.
+ *
+ * ⚠️ Only ever the works that **changed**. An empty list is the ordinary answer
+ * on every call after the first, and the caller reads it as "nothing to redraw"
+ * rather than as a failure.
+ */
+export interface DerivedRead {
+  workId: number;
+  title: string;
+  readState: string;
+  readFormat: string | null;
+}
+
+/**
  * What the collection screen can ask for.
  *
  * ⚠️ Every one of these is *validated again on the server* — the sort key
@@ -907,10 +921,30 @@ export const api = {
    * the first. That is what the caller uses to decide whether to reload.
    */
   reviewObserved: (workId: number, body: { rating: number; source?: 'audio' | 'library' | null }) =>
-    request<{ marked: { workId: number; title: string; readState: string; readFormat: string | null }[] }>(
-      `/api/reviews/${workId}/observed`,
-      { method: 'POST', body: JSON.stringify(body) },
-    ),
+    request<{ marked: DerivedRead[] }>(`/api/reviews/${workId}/observed`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  /**
+   * Which review collection this deployment uses. The per-book calls answer it
+   * as part of their reply; the sweep has no book to ask about and must not
+   * guess — see `routes/reviews.ts`.
+   */
+  reviewCollection: () => request<{ collection: string }>('/api/reviews/collection'),
+
+  /**
+   * Every rating this person has written, in one call. See `lib/read-sync.ts`
+   * for what reads them out of Firestore and `routes/reviews.ts` for why the
+   * browser is the only thing that can.
+   */
+  reviewsObserved: (
+    ratings: { workKey: string; rating: number; source?: 'audio' | 'library' | null }[],
+  ) =>
+    request<{ marked: DerivedRead[]; considered: number }>('/api/reviews/observed', {
+      method: 'POST',
+      body: JSON.stringify({ ratings }),
+    }),
 
   // -------------------------------------------------------------------------
   // Series completeness
