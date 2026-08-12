@@ -1,7 +1,7 @@
 # library_catalog — work log
 
 > **Audience:** Claude sessions first, the user second. **Status:** TRACKED.
-> Last verified: **2026-08-10**, against production.
+> Last verified: **2026-08-11 late**, against production.
 >
 > ⚠️ **Keeping this current is a standing instruction, not a courtesy.** Every
 > ask goes in the moment it is made. The user relies on this file as the record,
@@ -23,17 +23,24 @@
 
 ## Production right now
 
-Measured 2026-08-11 at the end of the overnight run, live version `b82ac811`:
+Measured **2026-08-11 late**, live version `8c8b4e76`:
 
-| works | editions | copies | audiobook holdings | accessories | no cover | paperback |
-|---|---|---|---|---|---|---|
-| **224** | 227 | 108 | **46** live | 32 | **6** | **0** |
+| works | editions | copies | audiobook_holding | audio rungs | series_volume | accessories | no cover |
+|---|---|---|---|---|---|---|---|
+| **233** | 241 | 117 | **53** live | **134** live | **147** | 32 | **6** |
 
-Overnight movement: covers **57 → 6**, details queue **78 questions → 7**,
-audiobook holdings **40 → 46** with the false claims removed.
+Movement since the overnight run: works 224 → 233, audiobook holdings 46 → 53,
+and two tables that did not exist that morning — `audiobook_series_holding`
+(134 rungs) and `series_volume` grown to 147 attested volumes across 20 series.
+Audio corroboration: **17 series confident (`AUDIO`), 2 hedged (`AUDIO?`)**.
 
-`/api/health` 200; `/api/series`, `/api/me`, `/api/crowdfunding` return 401
-(auth) rather than 500.
+`/api/health` 200; authed routes return 401 rather than 500.
+
+⚠️ **`work.universe` is populated on 0 of 233 rows.** Migration 0080 is applied
+to production and the write path is live, but **`npm run backfill:universes --
+--remote` has never been run**, so every existing row is still NULL and the
+universe UI has nothing to show. Dry-run it first. This is the single largest
+"built but not switched on" item in the repo.
 
 ⚠️ These numbers move *during* sessions — works went 120 → 140 → 162 → 214 in one
 afternoon of scanning. Any figure here is a measurement with a timestamp, never a
@@ -200,16 +207,30 @@ Cheapest fixes, in order: lengthen the Discord poll from 15 min to 30–60 (save
 same job, or move both to Cloudflare Cron Triggers — the estate already runs
 Workers, and Cloudflare's scheduler is free.
 
-## ⚠️ Read this first: the run is finished
+## ⚠️ Read this first — state at the end of 2026-08-11
 
-**Every actionable item on this list is done.** What is left in **Blocked**
-below is blocked on the *user* — questions only they can answer about physical
-objects in their house, or judgement calls about their own data. Nothing there
-is waiting on more work, and re-running the tooling will not clear any of it.
+> The "the run is finished" banner that used to sit here was written at the end
+> of the overnight run and was **stale within hours**. A full day of work
+> followed it. Treat any "everything is done" claim in this file as a timestamp,
+> not a status.
 
-Seven things want a human:
+**In flight right now:** a full crowdfunding rescan (§Crowdfunding rescan
+below). Nothing else is running.
 
-1. Confirm the Illumicrate Percy Jackson set is the 5-book original series.
+**Open and actionable without the user:**
+
+| | |
+|---|---|
+| **`backfill:universes` has never run against production** | 0 of 233 rows have a universe. Biggest built-but-not-switched-on item |
+| **Crowdfunding rescan** | Kickstarter shows **61** successful pledges; we hold **11** pledge items. In progress |
+| **#43 preorder-arrival prompt** | new ask, not started |
+| **#37 editable audiobook listings** | largest remaining build; cheaper now the corrections layer exists |
+| **#29** how duplicates count · **#30** B&N covers · **#31** rating ⇒ read | unchanged |
+
+**Wants a human — nothing here is waiting on more work:**
+
+1. Four universe verifications — Will Wight (Cradle, Last Horizon), Turncoat's
+   Truth, Cultivating Chaos + The Axe Falls, Tailored Realities.
 2. Say what "+ Books" meant in the Words of Radiance tier — BackerKit holds no
    itemisation for that pledge at all.
 3. Confirm the published title of the *Unstoppable* novel so it can be split out
@@ -218,8 +239,14 @@ Seven things want a human:
 5. Give five reward lines a format — the hints name none, and `suggestFormat`
    rightly declined to guess.
 6. Add subtitles to three board books so they become identifiable.
-7. Decide whether the heygabi.ai `/todo` page should be public. It is built and
-   pushed but **deliberately not deployed**.
+7. Decide whether the heygabi.ai `/todo` page should be public. Built and pushed,
+   **deliberately not deployed** — the user has since said to keep it private.
+8. Paste four cover links for the books no rung can reach.
+9. **Sign in to BackerKit as `nbaslamking@gmail.com`** so the second account can
+   be scanned. `aim.com` is signed in and holds only Words of Radiance.
+
+✅ Cleared today: the Illumicrate Percy Jackson set was confirmed *and*
+independently verified against the campaign photo.
 
 ## Overnight autonomous run — started 2026-08-10 ~22:35
 
@@ -267,6 +294,10 @@ the Cloudflare dashboard.
 
 | | Item | Blocker | Who clears it |
 |---|---|---|---|
+| ⏸️ | **BackerKit `nbaslamking@gmail.com` is not signed in** | The browser holds `aim.com`, which has only *Words of Radiance*. The gmail account has at least the DCC Croc Box and probably more. ⚠️ **Never sign in on the user's behalf.** | User — said "we will do nbaslamking@gmail.com next" |
+| ⏸️ | **Four universe calls held for verification** | Will Wight (Cradle, The Last Horizon) — the author has *hinted* at a multiverse and nothing is established; Turncoat's Truth; Cultivating Chaos + The Axe Falls; Tailored Realities. All recorded in `_refused` in the shared list so they are not re-litigated. | User |
+| ⏸️ | **Two series stay hedged at AUDIO?, and cannot be fixed by code** | *Arcane Pathfinder* (we hold 5, audio has 1–4) and *Legion* (we hold 1–2, audio has only the omnibus at rung 4). No volume is owned in both formats, so nothing can corroborate the numbering. ⚠️ Loosening the matcher would turn a hedge into a lie. | User — a purchase, or nothing |
+| 💤 | **~100 physical books unscanned** | Standing backlog, **explicitly not a blocker**: *"Don't wait for books to be scanned to move on."* A book missing from the catalog usually means unscanned, ranked above "not owned" and well above "bug". | User, over time |
 | ✅ | ~~**Percy Jackson covers: no per-book images exist**~~ | **Answered and built.** User: *"use the marketing image now but put a label on them."* Migration `0040` sets all five to the plain-background lineup and flags them `cover_status = 'standin'`, so they wear the picture **and** stay on the "Cover needed" list. ⚠️ The five identical URLs are deliberate — nothing may dedupe them. Selected by `edition_name`, not by id. | Done |
 | ⏸️ | **Two books claim contradictory series** | #213 *Secret Ingredient* records series "The Pengrooms"; #215 *Pengrooms* records "Pringle & Finn". Both by Paul Castle, both auto-filled, both sourced — and they cannot both be right. **Both now carry a `work_watch` row**, so they wear a **Check** mark and appear under `Needs → To check`. The question is recorded; it still wants the user's eyes. | User — said they will verify later |
 | ⏸️ | **Three books the model refused to identify** | #141 *Touch and Explore* (Scholastic), #160 *Bizzy Bear* (Nosy Crow), #174 *I love you, little bear* (Judi Abbot) — bare **series-line** titles, so a lookup returns the range rather than the book. All three have ISBNs and they did not resolve. Declining beat guessing. **Re-running will not help; a subtitle will** — e.g. *Bizzy Bear: Fire Rescue*. | User, from the covers |
@@ -305,6 +336,106 @@ the Cloudflare dashboard.
   fixes it. All five agents confirmed.
 
 ---
+
+## 2026-08-11, second half — series, audio and the duplicate cleanup
+
+Everything below is **live**. Data-only items needed no deploy; code items are
+in version `8c8b4e76`.
+
+### ✅ Three agent branches merged, and a migration collision caught
+
+Universe auto-assign (0080), the universe UI, and the audio-gap fixes. ⚠️ **Two
+agents independently created `migrations/0080`** — git merged both cleanly
+because the filenames differ, but wrangler tracks migrations by NAME, so it
+would have marked 0080 applied and **silently skipped** the audiobook one.
+Renumbered to `0090_audiobook_series_holding` and `0100_series_gap_skip`. All
+three applied to production. 287 tests.
+
+### ✅ The ladder now tells the truth about audio — 0090
+
+`audiobook_series_holding`, keyed `(series, index_sort)`. `work_match` renders
+**AUDIO** and stops counting as missing; `fold` renders **AUDIO?** and *stays*
+missing, because a hedge does not cross a book off a list.
+
+⚠️ **Agent a3a4426 claimed "every row has a matching `series_volume` row by
+construction, and there is a test".** That was true of its fixture and **false
+in production** — 52 of 113 rungs had no backing, and Percy Jackson had none at
+all, so the page read *"5 of at least 5, nothing missing"* while books 6 and 7
+sat in the audiobook catalog. Fixed by running `backfill:series-volumes`, which
+already existed. **Lesson: a subagent's "verified" can be true of its fixture
+and false of production.**
+
+### ✅ Series completed from the audiobook side
+
+A full sweep of all 1,075 audiobook rows: 85 books were seriesless while their
+own `©alb` held a series the pipeline never reads. 71 were standalones (correctly
+seriesless). The rest completed six series — Lion's Quest 1–6, Space Knight
+1–10, Jackal Among Snakes 1–3, Millennial Mage 1–2, Monster Empire 1–2, Tamer
+7–10 — plus the Full Murderhobo #3 gap.
+
+- **Lion's Quest volume 5 is spelled `Lions Quest`** in its `©alb`, the only book
+  in the series spelled that way, which is why it split off and looked like a
+  hole. Now fixed **at source**: `SRNM`/`SRSQ` written to all six files so the
+  `canonical_series` fold is no longer load-bearing.
+- **Tamer volume 1 exists twice and that is correct** — two narrations, 762.8 MB
+  and 333.8 MB. Recorded in `_not_corrected_on_purpose`; the sweep will keep
+  reporting `DUPLICATE_VOLUME` for them and **that report should be ignored**.
+
+### ✅ Dungeon Crawler Carl promoted, without touching the matcher
+
+Added the Kickstarter V2 & V3 limited hardcovers (*Carl's Doomsday Scenario* #2,
+*The Dungeon Anarchist's Cookbook* #3). That was the missing corroboration — all
+8 rungs went `AUDIO?` → `AUDIO`. The hedge had been **correct**: the only DCC row
+we held was *Crocodile*, a Florin DuPont side-story, deliberately unnumbered.
+
+### ✅ Smaller, all live
+
+- **24 children's titles title-cased** (`123s of art` → `123s of Art`). Safe
+  because `normaliseTitle` lowercases, so `work_key` and the Firestore review id
+  are byte-identical — and the script **checks** that rather than asserting it.
+- **Series button removed from the top bar**; a series is reached from its book.
+  `/series` is still a live route.
+- **"N series with gaps" stat** on the collection page, linking to
+  `/series?gaps=1` — computed by `listSeries`, not a `COUNT(*)`.
+- **Divine Dungeon omnibus**: 2,258 pages (a *convention* — the epub declares no
+  page count), `collects`, and a `contains` relation.
+
+### ✅ 34.9 GB of duplicate audio removed
+
+58 files across four causes: two stray nested folders, and two co-author folders
+already handled by `author_aliases.json` (`Dennis Vanderkerken → Dakota Krout`,
+`Alexey Kovtunov → Oleg Sapphire`). Every deletion was preceded by a byte-level
+check that an identical twin survives — **zero unique, zero mismatches**.
+⚠️ `zzzz_Books_to_be_Converted` is a staging pile of part-files and must always
+be excluded from sweeps.
+
+### 💤 The uncurated m4b repair path is DISARMED
+
+Scrapped by the owner after the full dry run proposed 128 writes of which **7**
+were plausible. `--commit` without `--from-overrides-only` now exits 2.
+Reasoning in `audiobook_catalog/docs/info/catalog-corrections.md` §8.2.
+
+## Crowdfunding rescan — 2026-08-11, IN PROGRESS
+
+The owner: *"I'm feeling dodgey about our scanned material from kickstarter and
+related sites. Let's just do a full rescan and present me the list for
+verification. Do a thorough reading not just high level."*
+
+They are right. **Kickstarter shows 1 active + 61 successful pledges; the
+database holds 11 pledge items.**
+
+⚠️ **The list view paginates — there is a "Show more pledges" button and it must
+be clicked until exhausted.** A first pass read only the visible 10 and would
+have reported a fraction as if it were the whole.
+
+Already visible and **not** recorded: *Raze & Ruthless: The Grimoire Editions*
+($190, Legendary Book Box, uniquely numbered), *Regicide & Rexus: The Grimoire
+Editions* ($164), *Tamer: King of Dinosaurs Book 11* ($90, signed paperback),
+*Worlds Beyond Number: The Official Graphic Novel* ($435).
+
+Scope: books only; board games belong to the sibling catalog but get listed as
+excluded so the judgement can be checked. Signed in: **Kickstarter, Indiegogo,
+BackerKit (`aim.com`)**. **`gmail.com` is next and holds at least the Croc Box.**
 
 ## Shipped this session
 
