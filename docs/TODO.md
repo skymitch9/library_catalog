@@ -46,6 +46,62 @@ suffix still on, the work's key was `oathbound healer mm|selkie myth` and all
 three would have stayed orphaned. This also unblocks **#31** (a rating means
 you read it), which needed exactly this bridge.
 
+### ✅ #31 — a rating marks the book read, for the whole shelf — 2026-08-12
+
+The rule, the column and the per-book derivation all shipped on 2026-08-11 (see
+the section further down) and were **unreachable**: every review was keyed on
+the audiobook site's `bookId`, so nothing but a coincidence of spelling ever
+matched. The key backfill above is what turned that on, and this is the half
+that was still missing — **reach, not rule**.
+
+`Reviews.tsx` derives a read state when somebody opens a book page. Nobody opens
+258 book pages, and `backfill-read-from-ratings.mjs` needs a checkout of the
+sibling repo to run, so production had **zero** derived read states. Now: one
+Firestore query for the signed-in person's own reviews, **once per browser
+session**, and one call that applies all of them.
+
+| | What |
+|---|---|
+| ✅ | **`observedRatingsFromReviews`** in `@lc/core` — the pure half. Keeps mine via the existing `isMyReview`, drops anything off the half-star scale, drops a document with no `workKey` |
+| ✅ | **`applyObservedRatings`** in `@lc/db`, and **`applyObservedRating` now delegates to it** rather than keeping a second copy of the same join. Chunked at 90 keys a statement — D1 caps bound parameters at 100 — so 400 ratings are five SELECTs, not four hundred round trips |
+| ✅ | **`POST /api/reviews/observed`** and **`GET /api/reviews/collection`** |
+| ✅ | **`apps/web/src/lib/read-sync.ts`**, run from the collection page, guarded by `sessionStorage` and silent on every failure |
+| ✅ | The page says *"Marked N books read, from M ratings you have written on the audiobook site"* — **only when something changed** — and names where to undo it |
+| ✅ | **No migration.** `read_state_how` is 0070 and nothing new is stored |
+
+⚠️ **A sweep has no legacy key to fall back on.** It starts from the person, not
+from a book, so a review written on the audiobook site *since* the key backfill
+carries no `workKey` and is skipped — and is still picked up when its own book
+page is opened. **The per-book path is the safety net, not a duplicate**, and
+`fetchReviews`' legacy `bookId` query must not be dropped. Full reasoning in
+[`docs/info/identity-and-reviews.md`](info/identity-and-reviews.md) §7.7.
+
+**Measured:** 299 tests (was 287). Typecheck clean for `@lc/core`, `@lc/db` and
+`@lc/worker`; the web build bundles. The SELECT and the write pair were run by
+hand against the local D1 — a three-key `IN` list matched its two works and
+ignored the unknown one, the pair produced `read` / `rating` / `audio` / 4.5,
+and the probe row was deleted afterwards.
+
+⚠️ **Not verified:** nothing has been run against production and no browser has
+executed the sweep. The numbers it will write are the ones the 2026-08-11 dry
+run predicted — **15 works, every one `read_format = 'audio'`** — and that dry
+run predates 25 new works and the key backfill, so expect it to differ.
+
+**Pending, in this order — nothing below has been run:**
+
+```bash
+# 1. Code only. There is NO migration for this one.
+npm run deploy
+
+# 2. Then simply open the collection page while signed in. The sweep runs
+#    itself, once per session, and says what it did.
+```
+
+Running `npm run backfill:read-states -- --remote --commit` is still an
+alternative to step 2 and is no longer needed — it writes the same rows by the
+same rule. ⚠️ It is **not** redundant for the household members who have never
+signed in here: the sweep only ever runs for whoever is looking at the screen.
+
 ### ⚠️ `work.universe` — 5 of 258, and that is not the backfill
 
 The five Completionist Chronicles works carry `CAL Verse` / `universe_how =
