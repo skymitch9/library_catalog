@@ -86,6 +86,23 @@ const NEW = [
 
   { t: 'Monster Empire Book 1', a: EARLE, s: 'Monster Empire', i: 1, f: 'paperback', k: null, n: SIGNED_PB, st: 'owned' },
   { t: 'Ascend Online', a: CHMIL, s: 'Ascend Online', i: 1, f: 'hardcover', k: 'collectors', n: "Kickstarter Collector's Edition", st: 'owned' },
+
+  /**
+   * ⚠️ Added 2026-08-12, once the owner supplied the author. It was held out of
+   * the first run for exactly that reason: `work_key` is
+   * `normaliseTitle(title)|normaliseTitle(primaryAuthor(authors))`, so a guessed
+   * author is a wrong key that silently fails to join and cannot be repaired by
+   * editing the row.
+   *
+   * The illustrator is listed second and costs nothing: `workKeyFor` folds only
+   * the PRIMARY author, so "Jadzia Axelrod, Sarah Webb" and "Jadzia Axelrod"
+   * produce the identical key. Naming the artist on a graphic novel is worth a
+   * field that changes no behaviour.
+   *
+   * Standalone — no series, no volume. Hardcover, and still a preorder.
+   */
+  { t: 'Worlds Beyond Number: The Official Graphic Novel', a: 'Jadzia Axelrod, Sarah Webb',
+    s: null, i: null, f: 'hardcover', k: null, n: 'Kickstarter hardcover', st: 'preordered' },
 ];
 
 /** EXISTING works that gain a print edition. Keyed by id, guarded on title. */
@@ -148,9 +165,12 @@ if (toCreate.length) {
   execute(
     toCreate.map(
       (w) =>
+        // ⚠️ `lit(String(w.i))` would write the TEXT 'null' for a standalone —
+        // String(null) is "null", and lit quotes it. Worlds Beyond Number is the
+        // first entry here with no series, which is what surfaced it.
         `INSERT INTO work (title, authors, primary_author, work_key, sort_title, series, series_index_sort, series_index_display)
          VALUES (${lit(w.t)}, ${lit(w.a)}, ${lit(w.primary)}, ${lit(w.key)}, ${lit(w.sort)},
-                 ${lit(w.s)}, ${w.i}, ${lit(String(w.i))});`,
+                 ${lit(w.s)}, ${w.i == null ? 'NULL' : w.i}, ${w.i == null ? 'NULL' : lit(String(w.i))});`,
     ),
     { remote: flags.remote },
   );
