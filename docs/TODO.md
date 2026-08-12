@@ -434,8 +434,32 @@ Editions* ($164), *Tamer: King of Dinosaurs Book 11* ($90, signed paperback),
 *Worlds Beyond Number: The Official Graphic Novel* ($435).
 
 Scope: books only; board games belong to the sibling catalog but get listed as
-excluded so the judgement can be checked. Signed in: **Kickstarter, Indiegogo,
-BackerKit (`aim.com`)**. **`gmail.com` is next and holds at least the Croc Box.**
+excluded so the judgement can be checked.
+
+### Result — **14 unrecorded book pledges**. Full report in the session scratchpad.
+
+| account | coverage |
+|---|---|
+| Kickstarter | ✅ all 61 successful + 1 active, after clicking "Show more pledges" 5× |
+| Indiegogo | ✅ complete — only 3 pledges exist; 2 are books |
+| BackerKit `aim.com` — **Surveys** | ✅ Completed p1+p2, Active, Needs action, Digital rewards |
+| BackerKit `aim.com` — **Pledges** | ⚠️ **PARTIAL — pagination never checked**, session expired before re-verifying |
+| BackerKit `gmail.com` | ⚠️ not signed in, not scanned |
+
+The finds: **Completionist Chronicles 1-5 in physical Grimoire editions** (the
+*Ritualist* box has SHIPPED), **five Tamer pledges** — book 7's tier is "WHOLE
+SERIES SIGNED PAPERBACKS", so 1-7 in print, not one book — **Beneath the
+Dragoneye Moons Complete Realmkeeper Set** ($670, shipped), *Worlds Beyond
+Number* graphic novel, *Monster Empire 2*, *Ascend Online Book 1*, and from
+Indiegogo **Space Knight 5 and 6** — which is where the existing Space Knight
+EPUBs came from, provenance never recorded.
+
+⚠️ **Nothing has been written to the database.** The owner asked to verify first.
+
+Four questions for the owner: is the **Cosmere RPG** ($465 "The Collector")
+carrying books? How many books came in **Tamer 7's** whole-series tier, and in
+the **Realmkeeper Set**? Do the Grimoire "Legendary Book Box" tiers hold two
+books each or two plus extras?
 
 ## Shipped this session
 
