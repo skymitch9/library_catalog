@@ -358,6 +358,34 @@ below). Nothing else is running.
    sibling audiobook catalog as **stand-ins**, leaving 11 — the four originals
    plus Tamer 2-6, Space Knight 7 and Worlds Beyond Number, all print-only or
    unreleased so there is no audiobook art to borrow.
+
+   **✅ Done 2026-08-12 — Space Knight 7 was never print-only.** The m4b was
+   sitting loose at the `books/` root instead of in `Michael-Scott Earle/`, so
+   the library walk never saw it and every listing read the series as 1–6, 8–10.
+   Ran `scripts/sync_to_drive.py` by hand: sorted, 612.7 MB to Drive, 25
+   chapters, cover to R2, catalog 1076 → **1077**.
+
+   It still landed seriesless, for the same reason its six siblings did — the
+   file is ffmpeg-made (`©too=Lavf61.1.100`), so it carries no `SRNM`/`SRSQ` and
+   no `CDEK`, only `©alb` and `trkn`, neither of which the pipeline reads. Only
+   books 1 and 2 are real Audible downloads with genuine `SRNM`. Added the
+   matching `catalog_overrides.json` entry; all ten volumes now carry series and
+   volume. Then, downstream: `covers-from-audiobooks.mjs` → **11 coverless works
+   → 10**, and `backfill-audiobook-holdings.mjs` → Space Knight rungs
+   **[1,2,3,4,5,6,7,8,9,10], 1 new**, every other series `0 new`.
+
+   ⚠️ **Two lessons, and the second one cost the most time.**
+
+   1. *"No audio for this volume"* was inferred from a catalog listing, and the
+      catalog only sees files the sorter has filed. A loose file in the drop
+      folder is invisible and looks exactly like an absent one. **Check the raw
+      `books/` root before recording an audio gap.**
+   2. The owner reported the live site showing series for only books 1–2 while
+      the deployed `catalog.csv` demonstrably had 1–6 and 8–10 correct. That was
+      a **stale browser cache of `catalog.csv`**, not a data fault — it cleared
+      on the next deploy. ⚠️ Before debugging a data bug from what the page
+      shows, fetch the underlying CSV with a cache-buster and compare. The two
+      disagreeing is itself the diagnosis.
 9. **Sign in to BackerKit as `nbaslamking@gmail.com`** so the second account can
    be scanned. `aim.com` is signed in and holds only Words of Radiance.
 
@@ -585,6 +613,19 @@ Set** ($670, shipped) · *Worlds Beyond Number* graphic novel · *Monster Empire
 *Ascend Online Book 1* · and from Indiegogo **Space Knight 5 and 6** — which is where the
 existing unattributed Space Knight EPUBs came from. ⚠️ The owner confirms print
 copies exist and they own **Space Knight 1–9**, so that is 9 paperbacks, not 2.
+
+**Tamer audio, settled by the owner 2026-08-12:**
+
+| Volumes | Audio | Note |
+|---|---|---|
+| 2–6 | **not owned** | Confirmed correct — a real gap, not a filing error. Stop re-checking. |
+| 11 | **owned** | ⚠️ But **BookFunnel will not serve the download at this time**, so no m4b exists locally and the audiobook catalog cannot see it. |
+
+⚠️ Tamer 11 is the case the schema handles badly: *owned but unobtainable*. It
+is not a gap to chase and not a file the pipeline can ever acquire — any audit
+that walks the library will keep reporting it missing. Treat a future "Tamer 11
+audio missing" finding as already answered, and retry BookFunnel occasionally
+rather than the acquisition pipeline.
 
 ⚠️ **Nothing has been written to the database.** The owner asked to verify first.
 
