@@ -438,7 +438,7 @@ Editions* ($164), *Tamer: King of Dinosaurs Book 11* ($90, signed paperback),
 Scope: books only; board games belong to the sibling catalog but get listed as
 excluded so the judgement can be checked.
 
-### Result — **15 unrecorded book pledges**. COMPLETE. Report in the session scratchpad.
+### Result — **14 unrecorded book pledges**. COMPLETE. Report in the session scratchpad.
 
 | account | coverage |
 |---|---|
@@ -455,16 +455,15 @@ a sixth of the truth. Look for pagination on every list, every time.
 (*Ritualist* box SHIPPED) · **Tamer 1–10 in paperback plus 11 on preorder** —
 the book-7 tier was "WHOLE SERIES SIGNED PAPERBACKS", confirmed by the owner,
 and no hardcover exists · **Beneath the Dragoneye Moons Complete Realmkeeper
-Set** ($670, shipped) · **Cosmere RPG** ($465 — the owner confirms it carries
-books, so it is NOT excluded) · *Worlds Beyond Number* graphic novel · *Monster Empire 2* ·
-*Ascend Online Book 1* · and from Indiegogo **Space Knight 5 and 6**, which is
-where the existing unattributed Space Knight EPUBs came from.
+Set** ($670, shipped) · *Worlds Beyond Number* graphic novel · *Monster Empire 2* ·
+*Ascend Online Book 1* · and from Indiegogo **Space Knight 5 and 6** — which is where the
+existing unattributed Space Knight EPUBs came from. ⚠️ The owner confirms print
+copies exist and they own **Space Knight 1–9**, so that is 9 paperbacks, not 2.
 
 ⚠️ **Nothing has been written to the database.** The owner asked to verify first.
 
 Still needs the owner: how many volumes in the Realmkeeper Set; what the two
-Grimoire "Legendary Book Box" tiers contain; which books the Cosmere RPG
-carries; whether *Unstoppable* is the published title; and what "+ Books" meant
+Grimoire "Legendary Book Box" tiers contain; whether *Unstoppable* is the published title; and what "+ Books" meant
 in the Words of Radiance tier — that order detail refused to open twice.
 
 ## Shipped this session
