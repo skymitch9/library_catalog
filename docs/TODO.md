@@ -443,7 +443,7 @@ excluded so the judgement can be checked.
 | Kickstarter | ✅ all 61 successful + 1 active, after clicking "Show more pledges" 5× |
 | Indiegogo | ✅ complete — only 3 pledges exist; 2 are books |
 | BackerKit `aim.com` — **Surveys** | ✅ Completed p1+p2, Active, Needs action, Digital rewards |
-| BackerKit `aim.com` — **Pledges** | ⚠️ **PARTIAL — pagination never checked**, session expired before re-verifying |
+| BackerKit `aim.com` — **Pledges** | ✅ re-verified after re-auth: one pledge, **no pagination**. Gap closed |
 | BackerKit `gmail.com` | ⚠️ not signed in, not scanned |
 
 The finds: **Completionist Chronicles 1-5 in physical Grimoire editions** (the
