@@ -412,6 +412,28 @@ describe('the provisional key — a book with no author (migration 0120)', () =>
     // And authorless stays explicit: omitting the field entirely is refused.
     assert.equal(createWorkSchema.safeParse({ ...base }).success, false);
   });
+
+  it('⚠️ illustrator is a free field, and it can never reach the key', () => {
+    // Migration 0130. Accepted on create and update, blank folds to null —
+    // and it is NOT frozen, NOT ceremonial: no keyMove needed, ever.
+    const created = createWorkSchema.safeParse({
+      title: 'Who Goes Roar?',
+      authors: 'Christie Hainsby',
+      illustrator: 'Shannon Hays',
+    });
+    assert.equal(created.success && created.data.illustrator, 'Shannon Hays');
+    const blank = createWorkSchema.safeParse({ title: 'x', authors: 'y', illustrator: '' });
+    assert.equal(blank.success && blank.data.illustrator, null);
+    const patched = updateWorkSchema.safeParse({ illustrator: 'Judi Abbot' });
+    assert.equal(patched.success, true);
+    const cleared = updateWorkSchema.safeParse({ illustrator: null });
+    assert.equal(cleared.success, true);
+    // THE ONE RULE: the key is title|primaryAuthor and nothing else — it joins
+    // ~860 reviews across two catalogs, and folding the illustrator in would
+    // make correcting one orphan them. The two-argument signature is the
+    // guard; this assertion is the tripwire against widening it.
+    assert.equal(workKeyFor.length, 2);
+  });
 });
 
 describe('reviews — the document the other site already writes', () => {

@@ -60,6 +60,8 @@ export interface WorkRow {
   cover_url: string | null;
   /** 'ok' | 'standin' | NULL (nobody has looked). Migration 0040. */
   cover_status: string | null;
+  /** The illustrator credit, or NULL (nobody has recorded one). Migration 0130. */
+  illustrator: string | null;
   /** The owner's canonical universe name, or NULL for *in no universe*. Migration 0080. */
   universe: string | null;
   /** 'list' | 'human' | NULL (nobody and nothing has decided). Migration 0080. */
@@ -106,6 +108,24 @@ export interface Work {
    */
   coverStatus: CoverStatus | null;
   /**
+   * The illustrator credit, as printed — or null for *nobody has recorded
+   * one*. Migration 0130. Picture and board books are why it exists: on some
+   * of them the illustrator is the only human credited (#174 Judi Abbot,
+   * #269 Shannon Hays), and before this column those credits survived only as
+   * `change_log` notes.
+   *
+   * ⚠️ **THE ONE RULE: this value MUST NEVER ENTER `work_key`.** The key is
+   * `title|primaryAuthor` and joins ~860 reviews across two catalogs — fold
+   * the illustrator in and correcting an illustrator moves the key and
+   * orphans reviews. `workKeyFor`'s two-argument signature is the guard.
+   * Display and edit only; a free field, never key-moving, never frozen.
+   *
+   * Null is *unrecorded*, not *none* — most novels stay null and must render
+   * as nothing at all (0040's reading of NULL; no not-applicable sentinel,
+   * because absence already says it).
+   */
+  illustrator: string | null;
+  /**
    * The shared fictional universe this book belongs to — 'The Cosmere',
    * 'Runnerverse' — or null. Migration 0080.
    *
@@ -143,6 +163,7 @@ export function toWork(row: WorkRow): Work {
     description: row.description,
     coverUrl: row.cover_url,
     coverStatus: (row.cover_status as CoverStatus | null) ?? null,
+    illustrator: row.illustrator,
     universe: row.universe,
     universeHow: (row.universe_how as UniverseSource | null) ?? null,
     createdAt: row.created_at,
@@ -156,7 +177,7 @@ function assignmentOf(work: Work): UniverseAssignment {
 
 const WORK_COLS = `id, title, subtitle, sort_title, authors, primary_author, work_key,
                    series, series_index_sort, series_index_display, first_published,
-                   openlibrary_work_id, description, cover_url, cover_status,
+                   openlibrary_work_id, description, cover_url, cover_status, illustrator,
                    universe, universe_how, created_at, updated_at`;
 
 export async function createWork(
@@ -200,9 +221,9 @@ export async function createWork(
     .prepare(
       `INSERT INTO work (title, subtitle, sort_title, authors, primary_author, work_key,
                          series, series_index_sort, series_index_display, first_published,
-                         openlibrary_work_id, description, cover_url, cover_status,
+                         openlibrary_work_id, description, cover_url, cover_status, illustrator,
                          universe, universe_how)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        RETURNING ${WORK_COLS}`,
     )
     .bind(
@@ -220,6 +241,7 @@ export async function createWork(
       input.description ?? null,
       input.coverUrl ?? null,
       input.coverStatus ?? null,
+      input.illustrator ?? null,
       verse.universe,
       verse.how,
     );
@@ -252,6 +274,7 @@ export async function createWork(
       description: input.description ?? null,
       coverUrl: input.coverUrl ?? null,
       coverStatus: input.coverStatus ?? null,
+      illustrator: input.illustrator ?? null,
       universe: verse.universe,
       universeHow: verse.how,
     }),
@@ -385,6 +408,10 @@ export async function updateWork(
     description: patch.description !== undefined ? patch.description : current.description,
     coverUrl: patch.coverUrl !== undefined ? patch.coverUrl : current.coverUrl,
     coverStatus,
+    // ⚠️ A free field — it feeds nothing derived, and above all it must never
+    // feed `workKeyFor`. Correcting an illustrator moves no key and needs no
+    // ceremony; that is the whole design of the column (migration 0130).
+    illustrator: patch.illustrator !== undefined ? patch.illustrator : current.illustrator,
     universe: verse.universe,
   };
 
@@ -417,6 +444,7 @@ export async function updateWork(
   consider('description', current.description, next.description);
   consider('coverUrl', current.coverUrl, next.coverUrl);
   consider('coverStatus', current.coverStatus, next.coverStatus);
+  consider('illustrator', current.illustrator, next.illustrator);
   if (patch.universe !== undefined) consider('universe', current.universe, next.universe);
 
   const update = db
@@ -425,7 +453,7 @@ export async function updateWork(
          title = ?, subtitle = ?, sort_title = ?, authors = ?, primary_author = ?, work_key = ?,
          series = ?, series_index_sort = ?, series_index_display = ?, first_published = ?,
          openlibrary_work_id = ?, description = ?, cover_url = ?, cover_status = ?,
-         universe = ?, universe_how = ?,
+         illustrator = ?, universe = ?, universe_how = ?,
          updated_at = datetime('now')
        WHERE id = ?
        RETURNING ${WORK_COLS}`,
@@ -445,6 +473,7 @@ export async function updateWork(
       next.description,
       next.coverUrl,
       next.coverStatus,
+      next.illustrator,
       verse.universe,
       verse.how,
       id,

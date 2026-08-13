@@ -585,6 +585,44 @@ ul.works li:last-child { border-bottom: 0; }
 .work-head h2 { margin: 0 0 0.2rem; font-size: 1.5rem; line-height: 1.2; }
 .work-head p { margin: 0 0 0.25rem; }
 .work-head__authors { font-family: var(--serif); font-size: 1.02rem; }
+
+/*
+ * The book's number, above the title — "#269", the identifier the household
+ * quotes in conversation and queries.
+ *
+ * ⚠️ Unmistakably an identifier and visually QUIET: small, muted, monospace,
+ * so it reads as a catalog number and never competes with the title below it.
+ *
+ * ⚠️ `user-select: all` is load-bearing, not a flourish. The number's entire
+ * purpose is being pasted somewhere else, so one click/tap selects the whole
+ * token — which is also the fallback when the clipboard API is refused. The
+ * value is a real text node (never a ::before), or it could not be selected
+ * at all.
+ */
+.work-id-row { margin: 0 0 0.1rem; line-height: 1; }
+.work-id {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  color: var(--muted);
+  background: none;
+  border: none;
+  padding: 2px 0;
+  cursor: pointer;
+  user-select: all;
+  -webkit-user-select: all;
+}
+.work-id:hover { color: var(--accent); }
+.work-id:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.work-id__said { margin-left: 0.4rem; }
+
+/*
+ * The illustrator credit, directly under the byline — where a cover would
+ * print it. Serif like the byline (it is the same kind of fact) but smaller
+ * and quieter, because the author stays the primary credit when both exist.
+ * Rendered ONLY when recorded: an absent illustrator is nothing, never an
+ * empty label — most novels have none and absence already says it.
+ */
+.work-head__illustrator { font-family: var(--serif); font-size: 0.9rem; color: var(--muted); }
 @media (max-width: 26rem) {
   .cover--large { width: 104px; }
   .work-head h2 { font-size: 1.25rem; }

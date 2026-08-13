@@ -48,6 +48,12 @@ interface WorkDetail {
     coverUrl: string | null;
     /** 'ok' | 'standin' | null. ⚠️ null is "nobody has looked", not "fine". */
     coverStatus: 'ok' | 'standin' | null;
+    /**
+     * The illustrator credit, or null for *unrecorded*. Migration 0130.
+     * ⚠️ Null renders as NOTHING — not an empty label. Most novels have none,
+     * and absence already says it; same rule as `universe: null` below.
+     */
+    illustrator: string | null;
     workKey: string;
   };
   /**
@@ -78,6 +84,59 @@ interface WorkDetail {
      */
     read_state_how: string | null;
   } | null;
+}
+
+/**
+ * The book's number — `#269` — the identifier this household actually uses in
+ * conversation and queries, which until now existed only in the URL.
+ *
+ * ⚠️ Its entire purpose is being quoted somewhere else, so it must be EASY TO
+ * TAKE: a click copies it, and the markup is a real text node with
+ * `user-select: all` (one tap selects the whole token), never a `::before`
+ * that cannot be highlighted. `<code role="button">` rather than `<button>`,
+ * because several browsers make button text unselectable and the selection is
+ * the fallback when the clipboard API is unavailable.
+ *
+ * Visually quiet on purpose — small, muted, monospace, above the title. It is
+ * a catalog number, not a rival heading.
+ */
+function WorkIdTag({ id }: { id: number }) {
+  const [copied, setCopied] = useState(false);
+  const tag = `#${id}`;
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(tag);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard can be refused (permissions, non-secure context). Say
+      // nothing: the click also selected the text, so Ctrl+C still works.
+    }
+  };
+  return (
+    <p className="work-id-row">
+      <code
+        className="work-id"
+        role="button"
+        tabIndex={0}
+        title="Book number — click to copy"
+        aria-label={`Book number ${id} — click to copy`}
+        onClick={() => void copy()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            void copy();
+          }
+        }}
+      >
+        {tag}
+      </code>
+      {/* aria-live so a screen reader hears the confirmation it cannot see. */}
+      <span className="muted small work-id__said" aria-live="polite">
+        {copied ? 'copied' : ''}
+      </span>
+    </p>
+  );
 }
 
 const READ_STATES = [
@@ -158,6 +217,10 @@ export function WorkPage({
       <div className="work-head">
         <Cover src={work.coverUrl} title={work.title} authors={work.authors ?? undefined} size="large" />
         <div className="work-head__text">
+          {/* Above the title rather than beside it: it must be near the title
+              (the owner's ask) without competing with it, and a corner
+              placement collides with the title's wrap on a phone. */}
+          <WorkIdTag id={work.id} />
           <h2>{work.title}</h2>
           {work.subtitle && <p className="muted">{work.subtitle}</p>}
           {/* An authorless book says so in words, here where the byline would
@@ -166,6 +229,15 @@ export function WorkPage({
           <p className="work-head__authors">
             {work.authors ?? <span className="muted">Author not recorded yet</span>}
           </p>
+          {/* The illustrator, where a cover would print it — directly under the
+              byline. #269 is the shape this exists for: author Christie
+              Hainsby, illustrator Shannon Hays, publisher on the edition —
+              three credits, three homes. ⚠️ Null renders NOTHING: most novels
+              have none, absence already says it, and there is no
+              not-applicable sentinel to draw. */}
+          {work.illustrator && (
+            <p className="work-head__illustrator">Illustrated by {work.illustrator}</p>
+          )}
           {work.series && (
             <p className="series-tag">
               {/* A way into "what am I missing" from the book that prompted the

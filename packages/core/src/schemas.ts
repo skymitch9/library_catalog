@@ -107,6 +107,23 @@ export const createWorkSchema = z.object({
       message: 'send null for a book with no recorded author — the sentinel is not API vocabulary',
     })
     .nullable(),
+  /**
+   * The illustrator credit, as printed. Migration 0130. Picture and board books
+   * are where it matters — on some of them the illustrator is the only human
+   * credited (#174 Judi Abbot, #269 Shannon Hays), and before this column those
+   * credits survived only as `change_log` notes.
+   *
+   * ⚠️ A **free field** — `optionalText`, no ceremony, never frozen, and it
+   * MUST NEVER ENTER `work_key`. The key is `title|primaryAuthor` and joins
+   * ~860 reviews across two catalogs; folding the illustrator in would mean
+   * correcting an illustrator moves the key and orphans reviews. `workKeyFor`'s
+   * two-argument signature is the guard — do not widen it.
+   *
+   * Absent/null means *nobody has recorded one*, not *there is none* — most
+   * novels stay null and there is no not-applicable sentinel, because absence
+   * already says it (0040's reading of NULL).
+   */
+  illustrator: optionalText,
   series: optionalText,
   seriesIndexSort: z.number().nullable().optional(),
   seriesIndexDisplay: optionalText,

@@ -70,6 +70,13 @@ export function WorkFields({
   workId: number;
   work: {
     subtitle: string | null;
+    /**
+     * The illustrator credit (migration 0130). Editable HERE and not in
+     * EditTitleAuthor, because it is a **free field**: `work_key` derives from
+     * title and authors only, so correcting an illustrator moves no key and
+     * must not go through that panel's ceremony.
+     */
+    illustrator: string | null;
     series: string | null;
     seriesIndexSort: number | null;
     firstPublished: number | null;
@@ -80,6 +87,7 @@ export function WorkFields({
 }) {
   const [open, setOpen] = useState(false);
   const [subtitle, setSubtitle] = useState(work.subtitle ?? '');
+  const [illustrator, setIllustrator] = useState(work.illustrator ?? '');
   const [series, setSeries] = useState(work.series ?? '');
   const [index, setIndex] = useState(
     work.seriesIndexSort == null ? '' : String(work.seriesIndexSort),
@@ -94,7 +102,11 @@ export function WorkFields({
   // behind `work.description &&`, which meant the books most in need of a
   // description were the ones with nowhere to type one.
   const nothingYet =
-    !work.description && !work.series && work.firstPublished == null && !work.subtitle;
+    !work.description &&
+    !work.series &&
+    work.firstPublished == null &&
+    !work.subtitle &&
+    !work.illustrator;
 
   if (!canEdit) {
     return work.description ? (
@@ -127,6 +139,9 @@ export function WorkFields({
         // the guard: `work_key` follows title and authors, so naming either here
         // would orphan the book's reviews on the audiobook side.
         subtitle: orNull(subtitle),
+        // A free field, like subtitle: work_key derives from title and authors
+        // only, so this never moves the review join. Migration 0130.
+        illustrator: orNull(illustrator),
         series: orNull(series),
         seriesIndexSort: i,
         firstPublished: y,
@@ -177,6 +192,23 @@ export function WorkFields({
                   and somebody will otherwise try to fix the title from this
                   panel and conclude the app is broken. */}{' '}
               The title itself is not editable — it is the join to your audiobook reviews.
+            </span>
+          </label>
+
+          {/* Here and not in the title/author panel, because it is a FREE
+              field: work_key never contains the illustrator, so correcting one
+              needs no ceremony and must not be given one. On a board book it is
+              often the only human credited — that is why the column exists. */}
+          <label className="field">
+            <span className="field__label">Illustrator</span>
+            <input
+              value={illustrator}
+              onChange={(e) => setIllustrator(e.target.value)}
+              placeholder="Shannon Hays"
+            />
+            <span className="muted small">
+              Shown with the credits. Leave blank for a book without one — most novels — and
+              nothing is shown at all.
             </span>
           </label>
 
