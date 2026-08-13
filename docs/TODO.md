@@ -151,6 +151,47 @@ paperback" is still a decision somebody might make. `gaps.length` vs
 `certainGaps`/`attestedGaps` is exactly that distinction, and `completeness.ts`
 keeps them apart on purpose.
 
+### 🔨 Completionist Chronicles 12 & 13 — signed, in BOTH formats, 2026-08-13
+
+Owner: *"These are a part of completionist chronicles. The pictures I uploaded are
+paperback copies that are signed we also have hardcover versions of each of these
+signed too."*
+
+⚠️ **Both works already exist and both are ebook-only**, so this is four copies to
+record, not two books to add:
+
+| work | title | vol | has | needs |
+|---|---|---|---|---|
+| **#34** | Untapped | 12 | `ebook_epub`, **0 copies** | signed **paperback** + signed **hardcover** |
+| **#33** | Unmapped | 13 | `ebook_epub`, **0 copies** | signed **paperback** + signed **hardcover** |
+
+Both Dakota Krout / **Mountaindale Press**. No ISBNs — the photographs are front
+covers and back blurbs, no barcodes — so the editions go in without one and a
+barcode scan can fill them later.
+
+⚠️ **`copy.is_signed` is the whole point of this entry.** It is one of the fields
+`docs/info/crowdfunding-and-accessories.md` says *only a person can fill* — no
+importer or lookup will ever set it — so if these four copies are recorded without
+ticking **Signed**, the fact is lost and nothing will flag it. The **Record a copy**
+panel is the right tool: it creates the edition, the copy, and carries the Signed
+checkbox in one go.
+
+⚠️ Note the rest of the series for contrast: works **238–242** (*Ritualist*…
+*Ruthless*) each hold a hardcover with **`signed = 0`**.
+
+**✅ And that question is now partly answered — #238 *Ritualist*'s hardcover IS
+signed.** Owner, with a photo of the hardcover: *"Another for completionist
+chronicles this book is hard cover signed."* So this is **not** a new copy to add
+— #238 already holds the hardcover, and its existing copy needs `is_signed`
+flipped to true.
+
+⏳ **Still unknown for 239–242** (*Regicide*, *Rexus: Side Quest*, *Raze*,
+*Ruthless*) — all four hold a hardcover with `signed = 0`. If the whole
+Kickstarter set is signed then all four are wrong, but ⚠️ **do not infer it from
+#238** — one confirmed book is not evidence about four others, and this is exactly
+the kind of "it was probably the same" guess the catalog refuses elsewhere. Ask,
+or look.
+
 ### ⚠️ THE 1PASSWORD OVERLAY WAS EATING THE SAVE CLICK — found 2026-08-13
 
 **This explains most of tonight's "silent save failures", and it is not a bug in
