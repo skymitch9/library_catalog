@@ -151,6 +151,53 @@ paperback" is still a decision somebody might make. `gaps.length` vs
 `certainGaps`/`attestedGaps` is exactly that distinction, and `completeness.ts`
 keeps them apart on purpose.
 
+### 🔨 Scanning session — 2026-08-13
+
+**The pull list is built and verified against production.** 14 books, grouped by
+what each needs; published as a phone checklist artifact for the owner to work
+through at the shelf. Two corrections to the old notes, both from live reads:
+
+- ⚠️ **All 14 already have ISBNs.** The older note in this file claimed three of
+  them had none — wrong. The ISBNs are on file and the lookups already failed on
+  them, so **a barcode rescan returns the same nothing**; what is needed is the
+  printed subtitle, or a photo.
+- ⚠️ **#258 *The Wizard, The Witch, The Wild One* is NOT a shelf job.** It has no
+  cover and was on the coverless list, but all three copies are still
+  `preordered` — nothing has arrived. Do not send anyone hunting for it.
+
+Verified: 9 works need a cover photo (the 4 originals + Tamer 2–6, all held), 3
+need a subtitle (#141, #160, #174 — all already have covers), 2 need the series
+line (#213/#215, the two live `work_watch` rows).
+
+**⏳ In flight: ISBN 9781601304193, *There's a Mouse About the House!*** Added by
+hand through `/add?mode=scan`. The ladder resolved **the title but no author**, so
+the row has no **Add** button — `isAddable` in `ScanLines.tsx` requires a title
+*and* an author. The proposal is parked in **scan job #20** (server-side, so it
+survives a reload; reachable from "Unfinished sweeps"). ⚠️ **Waiting on the owner
+for the author off the cover — deliberately not guessed**, since a wrong author is
+a permanent wrong fact and `POST /api/works` does not dedupe.
+
+### ⚠️ `wrangler dev` leaks — 212 processes, 15.6 GB, cleared 2026-08-13
+
+The owner noticed the local dev server still up "almost 3 hours" after this
+session had stopped using it. ⚠️ I had reported it stopped: the harness task did
+stop, the `workerd` behind it did not. It was also much worse than one server.
+
+**Diagnosis:** `wrangler dev` does not die with whatever started it. Killing the
+shell/task/agent leaves `wrangler` **and** its `workerd` child alive, still
+holding the port. Accumulated over days: **212 processes, 15.64 GB**, ~30 leaked
+dev servers on ports 8787–8910 — **124 from the main checkout, 20 from another
+session's scratchpad, and the rest one per `.claude/worktrees/agent-*`**, i.e.
+every subagent that ever started a dev server left one behind.
+
+**Cleared:** 191 killed, 21 already gone as children of a killed parent. 0
+node/workerd left, no dev port held, **16.34 GB free of 63.18 GB**.
+
+⚠️ Claude Code runs as **`claude.exe`, not `node.exe`** — verified by walking the
+parent chain — so a node/workerd sweep cannot kill the session. The editor's
+language servers *are* node, so `kiro|tsserver|extensionHost` were excluded.
+The kill one-liner is now in `CLAUDE.md` under "Verifying anything".
+
 ### 🚢 Gaps chip removed from the collection stat strip — 2026-08-12
 
 **The ask:** *"I thought we had opted to move all information from that gap

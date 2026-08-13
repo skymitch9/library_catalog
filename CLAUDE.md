@@ -56,6 +56,28 @@ curl -s localhost:8787/api/isbn/9780765326355     # live Open Library
 
 `npm test` runs the core rules (26 tests, no framework, via tsx).
 
+⚠️ **`wrangler dev` does NOT die with whatever started it, and it leaks badly.**
+Killing the shell, the task or the agent that ran `npm run dev:worker` leaves
+`wrangler` and its `workerd` child running and still holding the port. Measured
+2026-08-13: **212 orphaned processes holding 15.6 GB**, across ~30 leaked dev
+servers on ports 8787–8910 — 124 from the main checkout, the rest one per
+`.claude/worktrees/agent-*`, because every subagent that started a dev server
+left one behind when it finished.
+
+So **stop it by name, not by stopping the caller**:
+
+```bash
+# PowerShell. Nothing here is precious — no dev server holds state worth keeping.
+Get-Process node,workerd -ErrorAction SilentlyContinue |
+  Where-Object { $_.Name -eq 'workerd' -or (Get-CimInstance Win32_Process -Filter "ProcessId=$($_.Id)").CommandLine -match 'wrangler|miniflare|vite' } |
+  Stop-Process -Force
+```
+
+⚠️ Claude Code itself runs as **`claude.exe`**, not `node.exe`, so a sweep of
+node/workerd cannot kill the session — verified by walking the parent chain. Do
+still exclude anything matching `kiro|tsserver|extensionHost`: the editor's
+language servers *are* node.
+
 Prefer exercising a change locally over reasoning about it. Both real defects
 found while building this were found that way and by nothing else: zod silently
 **stripping** a stray `rating` instead of rejecting it, and the review backfill
