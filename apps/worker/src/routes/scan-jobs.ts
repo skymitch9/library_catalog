@@ -32,7 +32,7 @@ import {
   loadContainmentIndex,
   updateScanJob,
 } from '@lc/db';
-import { coverFrom, resolveIsbn, searchOpenLibrary, type BookCandidate } from '@lc/isbn';
+import { coverFrom, resolveIsbn, searchOpenLibrary, wasRefused, type BookCandidate } from '@lc/isbn';
 import type { AppBindings, Env } from '../env.js';
 import { isPhotoMediaType, readShelf, VisionError } from '../lib/vision.js';
 import { requireCapability } from '../middleware/auth.js';
@@ -307,7 +307,7 @@ async function resolveBarcode(env: Env, position: number, code: string): Promise
   const owned = await findEditionByIsbn13(env.DB, classified.isbn13);
   if (owned) return { ...withCode, ...(await ownedBy(env, owned.work_id)) };
 
-  const { candidates } = await resolveIsbn(classified.isbn13, {
+  const { candidates, trace } = await resolveIsbn(classified.isbn13, {
     googleBooksKey: env.GOOGLE_BOOKS_API_KEY,
     userAgent: UA,
   });
@@ -329,6 +329,29 @@ async function resolveBarcode(env: Env, position: number, code: string): Promise
     ? { ...candidates[0], coverUrl: candidates[0].coverUrl ?? coverFrom(candidates) }
     : undefined;
   if (!best) {
+    /*
+     * ⚠️ The one-barcode-one-edition refusal, said in the line's own words.
+     *
+     * `wasRefused` means a database ANSWERED — with a work-level aggregate or
+     * an answer carrying several distinct ISBN-13s — and `@lc/isbn` refused it
+     * rather than trimming it (matching-thresholds.md §6 tier 1; the phantom
+     * *Space Knight* that gained 6 editions and 6 copies from scanned barcodes
+     * on 2026-08-13 is why). That is a different fact from "not indexed", and
+     * showing the board-book message for it would send the person hunting a
+     * typo in a barcode that read perfectly. The remediation is the same —
+     * type the title and author in — but the reason must be the true one.
+     */
+    if (wasRefused(trace)) {
+      return {
+        ...withCode,
+        state: 'not_found',
+        lookedUp: true,
+        detail:
+          'That barcode answered with a series-level record — several printings under one ' +
+          'title, which one scan must never become. Type the exact title and author in, ' +
+          'and it can still be added with this ISBN.',
+      };
+    }
     return {
       ...withCode,
       state: 'not_found',

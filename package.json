@@ -25,7 +25,7 @@
     "pretypecheck": "node scripts/sync-universes.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "pretest": "node scripts/sync-universes.mjs",
-    "test": "tsx --test packages/core/test/*.test.ts",
+    "test": "tsx --test packages/core/test/*.test.ts packages/isbn/test/*.test.ts",
     "universes:sync": "node scripts/sync-universes.mjs",
     "backfill:reviews": "tsx scripts/backfill-review-keys.mjs",
     "backfill:read-states": "tsx scripts/backfill-read-from-ratings.mjs",

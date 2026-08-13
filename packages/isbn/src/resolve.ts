@@ -65,8 +65,45 @@ export interface RungTrace {
   ok: boolean;
   found: number;
   ms: number;
-  /** HTTP status or error message. 429 here means "quota", not "not found". */
+  /**
+   * HTTP status or error message. 429 here means "quota", not "not found".
+   * A detail starting with `REFUSED_PREFIX` means the rung ANSWERED and the
+   * answer was refused as an aggregate — see the guard below.
+   */
   detail?: string;
+}
+
+/**
+ * ⚠️ The one-barcode-one-edition guard — the marker a refusal carries in the
+ * trace, so callers can tell "the database has nothing" from "the database
+ * answered with something that must not become an edition".
+ *
+ * The rule it enforces (`catalog-platform/docs/info/matching-thresholds.md`
+ * §6, tier 1 — mechanical, no judgement):
+ *
+ *   - One barcode may create at most one edition and one copy. A lookup
+ *     answer carrying more than one distinct ISBN-13 for one scanned barcode
+ *     is refused outright, **not trimmed to its first entry**.
+ *   - An Open Library `/works/…` (work-level) record may never be an edition
+ *     source. Only edition-level (`/books/…`) records carry a printing's
+ *     identity.
+ *
+ * Why: on 2026-08-13 barcodes resolved to work-level aggregates and produced
+ * a phantom *Space Knight* carrying **6 editions with 6 unrelated ISBNs and
+ * 6 copies** (works #300–#302, all three corrupted the same evening). An OL
+ * work record aggregates every printing of every volume of a series, so any
+ * series filed that way will do it again — this refusal is what stops it.
+ */
+export const REFUSED_PREFIX = 'refused:';
+
+/** Did any rung refuse its answer as an aggregate? For the caller's message. */
+export function wasRefused(trace: readonly RungTrace[]): boolean {
+  return trace.some((t) => t.detail?.startsWith(REFUSED_PREFIX) ?? false);
+}
+
+/** Fold `978-1-63849-345-7`, `9781638493457` and stray spaces to one spelling. */
+function foldIsbn(raw: string): string {
+  return raw.replace(/[-\s]/g, '').toUpperCase();
 }
 
 export interface ResolveResult {
@@ -153,6 +190,33 @@ export async function lookupOpenLibraryByIsbn(
   const rec = body[`ISBN:${isbn13}`];
   if (!rec) return [];
 
+  /*
+   * ⚠️ The one-barcode-one-edition guard (see REFUSED_PREFIX above).
+   *
+   * A refusal is a THROW, not an empty return, on purpose: `timed` records it
+   * in the trace with the `refused:` detail, which is how the scan path tells
+   * the person what happened instead of showing the generic "not indexed" row.
+   * An empty return here would be indistinguishable from "Open Library has
+   * never heard of it", and the whole point is that it ANSWERED — wrongly for
+   * this purpose — and must not be trimmed into looking like a clean hit.
+   */
+  const workLevel =
+    /\/works\//.test(rec.url ?? '') ||
+    (rec.identifiers?.openlibrary ?? []).some((k) => /^OL\d+W$/.test(k.replace(/^\/?works\//, '')));
+  if (workLevel) {
+    throw new Error(
+      `${REFUSED_PREFIX} Open Library answered ISBN ${isbn13} with a work-level record, ` +
+        'which aggregates every printing of every volume. Never an edition source.',
+    );
+  }
+  const distinctIsbns = new Set((rec.identifiers?.isbn_13 ?? []).map(foldIsbn).filter(Boolean));
+  if (distinctIsbns.size > 1) {
+    throw new Error(
+      `${REFUSED_PREFIX} Open Library answered one barcode with ${distinctIsbns.size} distinct ` +
+        'ISBN-13s. One barcode is one printing; an answer carrying several is an aggregate.',
+    );
+  }
+
   const title = rec.subtitle ? `${rec.title ?? ''}` : (rec.title ?? '');
   if (!title) return [];
 
@@ -211,6 +275,24 @@ export async function lookupGoogleBooksByIsbn(
   if (!vi?.title) return [];
 
   const ids = vi.industryIdentifiers ?? [];
+
+  // ⚠️ The one-barcode-one-edition guard, same rule as the Open Library rung
+  // above (see REFUSED_PREFIX): a record answering one barcode with several
+  // distinct ISBN-13s is an aggregate, and refusing beats trimming. Google's
+  // records normally carry exactly one ISBN_13 beside an ISBN_10; more than
+  // one 13 is the work-level shape wearing a different provider's clothes.
+  const distinctIsbns = new Set(
+    ids
+      .filter((i) => i.type === 'ISBN_13')
+      .map((i) => foldIsbn(i.identifier ?? ''))
+      .filter(Boolean),
+  );
+  if (distinctIsbns.size > 1) {
+    throw new Error(
+      `${REFUSED_PREFIX} Google Books answered one barcode with ${distinctIsbns.size} distinct ` +
+        'ISBN-13s. One barcode is one printing; an answer carrying several is an aggregate.',
+    );
+  }
   return [
     {
       isbn13: ids.find((i) => i.type === 'ISBN_13')?.identifier ?? isbn13,

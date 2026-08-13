@@ -108,7 +108,14 @@ export async function editionsOfWork(
   });
   if (!res.ok) throw new Error(`openlibrary editions ${res.status}`);
   const body = (await res.json()) as { entries?: RawEdition[] };
-  return (body.entries ?? []).map(toEdition);
+  // ⚠️ One-barcode-one-edition guard, defensive half: an entry keyed under
+  // /works/ is a work-level record and may never be an edition source
+  // (matching-thresholds.md §6 tier 1). The editions endpoint should only
+  // ever return /books/ keys; if OL ever slips a work record in, dropping it
+  // here is what keeps every consumer of this function honest at once.
+  return (body.entries ?? [])
+    .filter((e) => !/^\/?works\//.test((e.key ?? '').replace(/^\/+/, '')))
+    .map(toEdition);
 }
 
 /** What an ISBN resolved to, at the work level. */
@@ -158,11 +165,34 @@ export async function workKeyForIsbn(
     works?: { key?: string }[];
     authors?: { key?: string }[];
   };
+  const authorKeys = (rec.authors ?? [])
+    .map((a) => (a.key ?? '').replace('/authors/', ''))
+    .filter(Boolean);
+
+  /*
+   * ⚠️ One-barcode-one-edition guard: `redirect: 'follow'` means this request
+   * can land on a WORK record when Open Library has filed the ISBN against the
+   * work rather than a printing — the exact shape that minted a phantom
+   * *Space Knight* with six editions from scanned barcodes on 2026-08-13. A
+   * /works/ record may never be an edition source (matching-thresholds.md §6
+   * tier 1), so the work key — the one thing such a record legitimately knows —
+   * is returned, and `edition`/`editionKey` stay null rather than dressing an
+   * aggregate up as a printing.
+   */
+  if (rec.key && /^works\//.test(rec.key.replace(/^\/+/, ''))) {
+    return {
+      workKey: bareWorkKey(rec.key),
+      editionKey: null,
+      edition: null,
+      authorKeys,
+    };
+  }
+
   const work = rec.works?.[0]?.key ?? null;
   return {
     workKey: work ? bareWorkKey(work) : null,
     editionKey: rec.key ? bareWorkKey(rec.key).replace(/^books\//, '') : null,
     edition: toEdition(rec),
-    authorKeys: (rec.authors ?? []).map((a) => (a.key ?? '').replace('/authors/', '')).filter(Boolean),
+    authorKeys,
   };
 }
