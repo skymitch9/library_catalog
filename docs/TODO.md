@@ -438,6 +438,29 @@ records that it was attempted, which a tidy log does not.
 - `2026-08-13T06:30Z` **~~UNSOLVED~~ superseded** format on those five editions — recorded as `paperback`, which is the app's own documented convention (*"a scanned book is recorded as a paperback until someone says otherwise"*). ⚠️ Four of the five are **board books**, so paperback is probably wrong; the catalog's other board books came from Open Library as `hardcover`. I did not assert a format I had not verified. Worth a sweep once the edition picker exists.
 - `2026-08-13T06:30Z` **CLAIM** Fable dispatched on (a) edit-any-detail + audit-log design, (b) re-measuring the matching thresholds — see FABLE5.md §7 for their side
 
+### ⚠️ THE SCANNING IS NOT FINISHED — more books arrive tomorrow
+
+Owner, on going to bed 2026-08-13: *"be aware we're not done scanning books, just
+done for the night, more will come tomorrow."*
+
+**This reprioritises the overnight list.** The catalog went 258 → 342 works in one
+evening and will keep growing, so **a fix on the intake path pays off repeatedly
+while a one-off data correction pays off once.** Prefer, in this order:
+
+1. **Intake-path fixes** — the edition picker, a format question at intake (a board
+   book still lands as `paperback` through `AddWork`, the scan path and any
+   importer — see the standing rule in `docs/info/series-formats-and-audiobooks.md`),
+   and anything that stops the Open Library **work-level aggregate** bug recurring.
+   ⚠️ That last one corrupted three works tonight and *will* fire again on the next
+   series whose OL record is filed that way.
+2. **Cover swap** — 147 covers are third-party hotlinks and every new book adds more.
+3. **One-off data cleanup** — last, and never at the cost of 1 or 2.
+
+⚠️ **Do not treat the catalog as final.** Anything that assumes a fixed row count, a
+complete series, or an empty queue will be wrong by tomorrow afternoon. The
+`/queue` residue in particular will grow again — an empty queue tonight is not a
+finished job.
+
 ### 🌙 OVERNIGHT AUTONOMOUS RUN — the plan, 2026-08-13
 
 Owner: *"once i go to bed you'll work through all the remaining todos with
