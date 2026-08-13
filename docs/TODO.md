@@ -23,6 +23,99 @@
 | ⏸️ | Blocked — the blocker is named |
 | 💤 | Deliberately deferred |
 
+## ⚠️ Read this first — state at 2026-08-13 08:00Z (end of the overnight run)
+
+**Branch:** `main`, pushed through `b617c80`. **Working tree: NOT clean** — a Fable
+build agent is mid-flight in *this* checkout (see below). Do not assume the tree
+is yours until it lands.
+
+**Usage at 08:00Z:** session **90%** (over the 89% threshold, resets in ~31 min),
+weekly all-models **57%**, **weekly Fable 9%**. So the overnight plan worked as
+intended — Fable's separate allowance is barely touched.
+
+### What is DONE and committed
+
+| Thing | Where | State |
+|---|---|---|
+| Frozen-field guard on `PATCH /works/:id` (title, authors) | `apps/worker/src/routes/catalog.ts` | **DEPLOYED** `1a78c0b8`; Fable exercised it with 13 live probes |
+| Audio-hedge fix — owned audio no longer says "you might own this" | `packages/core/src/completeness.ts`, migration 0110 | deployed |
+| Gaps chip removed from the collection stat strip | `apps/worker/src/routes/catalog.ts` `/stats` | deployed |
+| Intake fixes: typed ISBN persists as an edition; `intent` defaults to `owned` | `apps/web/src/components/AddWork.tsx` | deployed |
+| Board books count as hardcover | data | applied |
+| Deploy guard (lock + git-ancestry) | `scripts/deploy-guard.mjs`, `scripts/deploy-done.mjs` | has now run on itself twice |
+| **Migration 0120** — `change_log`, `reviews_seen_*`, authorless index | `migrations/0120_change_log_and_authorless.sql` | ⚠️ **LOCAL D1 ONLY — NOT applied to production** |
+| All four edit-and-audit decisions approved by the owner | `docs/TODO.md` top, `catalog-platform/docs/PLATFORM.md` §4a | recorded |
+
+### ⚠️ What is IN FLIGHT — read before touching code
+
+A **Fable 5 agent is implementing the edit-and-audit design in this working
+tree** (no worktree isolation — my dispatch error). It is working through
+`docs/info/edit-and-audit-design.md` §7's "code changes riding along" table, in
+priority order: `@lc/core` (`constants.ts` `UNKNOWN_AUTHOR`, `titles.ts`
+`workKeyFor` sentinel branch, `reviews.ts` `reviewDocFor` throw, `schemas.ts`,
+`core.test.ts`) → `@lc/db` `works.ts` → worker `catalog.ts`/`reviews.ts` → web UI.
+It commits and pushes to `main`; **it must not deploy and must not run the remote
+migration.** Its progress log is `docs/FABLE5.md` §7.
+
+**If it did not finish:** finish fewer things completely rather than leaving a
+half-written route. Check `git status` and `docs/FABLE5.md` §7 first.
+
+### Pending commands the OWNER must run (nothing here is automated)
+
+```bash
+# 1. Production migration for 0120 — ONLY after reviewing the code that rides along,
+#    so new code never meets an old schema (CLAUDE.md: migrate, THEN deploy).
+npm run db:migrate            # remote; additive only, no table rebuild
+
+# 2. Then, and only then:
+node scripts/deploy-guard.mjs && npm run deploy && node scripts/deploy-done.mjs
+```
+
+Leaving 0120 unapplied is **safe indefinitely** — it is purely additive, so
+production stays self-consistent (old schema + old code).
+
+### ⚠️ Gotchas discovered that will cost you time
+
+- **The sentinel's collision proof needs BOTH halves.** `normaliseTitle` emitting
+  only `[a-z0-9 ]` (verified over an 8448-codepoint sweep) is necessary but **not
+  sufficient**: `normaliseTitle('?unknown') == normaliseTitle('Unknown') ==
+  'unknown'`. The proof also requires `workKeyFor` to **bypass the fold** for the
+  sentinel. Deleting that branch reads as a harmless simplification and would
+  silently collide every authorless book with real "Unknown"-credited ones.
+- **The one-barcode-one-edition guard is specced but ABSENT FROM CODE** — no OL
+  `/works/` refusal exists anywhere under `packages/`. This is the defect that
+  corrupted #300/#301/#302 from single barcodes. ⚠️ **Scanning resumes today with
+  ~100 books left, so fix this before scanning.**
+- **A rescan writes a second copy + a second same-format edition**, silently. 71
+  physical editions carry no ISBN and the documented answer ("a barcode scan will
+  fill it in later") describes a path that does not exist. Residue is already live
+  at work #139.
+- **`wrangler dev` does not die with its parent and leaks badly** — 212 orphaned
+  processes holding 15.6 GB, one leak per agent worktree. Kill by name.
+- **Local D1 commands run from `apps/worker`,** not the repo root, and
+  `--command` must be **single-line** — multi-line crashes wrangler with a libuv
+  assertion and silently executes nothing.
+- `curl -o /dev/null` reports status `000`/exit 43 on a healthy host in Git Bash.
+  Use `-o NUL`, or PowerShell `Invoke-WebRequest`.
+
+### Verification commands
+
+```bash
+npm test && npm run typecheck                    # core rules + types, both must be green
+cd apps/worker && npx wrangler d1 execute library-catalog --local   --command "SELECT COUNT(*) FROM change_log"    # 0 rows locally; probes were cleaned up
+curl -s localhost:8787/api/health                # dev worker, no sign-in needed
+```
+
+### The one thing still owed to the owner
+
+The `/queue` residue research (~190 records) was claimed but **not started** — the
+session threshold arrived first. The owner asked to be told about it today. Method
+recorded: group by what is missing, publisher's own site first, apply only what a
+source states, and write up the unfindable **with the dead ends** — what cannot be
+found is a result, not a failure.
+
+---
+
 ## Production right now
 
 Measured **2026-08-12**, live version `d441ecd1`:
@@ -1331,7 +1424,7 @@ Cheapest fixes, in order: lengthen the Discord poll from 15 min to 30–60 (save
 same job, or move both to Cloudflare Cron Triggers — the estate already runs
 Workers, and Cloudflare's scheduler is free.
 
-## ⚠️ Read this first — state at the end of 2026-08-11
+## Read this — state at the end of 2026-08-11 (SUPERSEDED by the 2026-08-13 section above)
 
 > The "the run is finished" banner that used to sit here was written at the end
 > of the overnight run and was **stale within hours**. A full day of work
