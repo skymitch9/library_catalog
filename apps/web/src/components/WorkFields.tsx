@@ -26,8 +26,27 @@ import { api } from '../api.js';
  * `title` and `authors`. `updateWork` re-derives `work_key` from those two, and
  * `work_key` is the join to 860 audiobook reviews in the sibling catalog —
  * renaming a book here silently orphans its reviews. Same rule `applyFinding`
- * follows, and for the same reason: the patch object below names four fields and
- * cannot name a fifth.
+ * follows, and for the same reason: the patch object below names its fields
+ * explicitly and cannot name `title`.
+ *
+ * ## ⚠️ `subtitle` IS reachable, and it is the answer to "which one is this?"
+ *
+ * Added 2026-08-13, and the distinction is the whole reason it is allowed where
+ * `title` is not: **`work_key` derives from `title` and `authors` only.** A
+ * subtitle displays under the title, says which book this is, and moves no join.
+ *
+ * It exists because of a real and repeating case. Board books are shelved under
+ * a bare series line — three separate *Bizzy Bear* rows, a *Touch and Explore*,
+ * an *I love you, little bear* — so a lookup returns the range rather than the
+ * volume, and the shelf shows several identical titles. `docs/TODO.md` records
+ * the fix as *"adding the subtitle, not re-running"*, and until now there was
+ * nowhere to type one: the remedy was a `wrangler d1 execute`, which is exactly
+ * what this component's header says it exists to avoid.
+ *
+ * ⚠️ **Not the same field as a series.** *Ambulance Rescue* is which Bizzy Bear
+ * this is; *Bizzy Bear* is the series. Recording the subtitle in `title` would
+ * move `work_key`; recording it in `series` would file one book as its own
+ * series. Both were considered and both are wrong.
  *
  * ⚠️ `seriesIndexDisplay` is also absent, and that is not an oversight. It is
  * what the COVER says — "Book 2", "Volume 07", "Prequel" — while
@@ -50,6 +69,7 @@ export function WorkFields({
 }: {
   workId: number;
   work: {
+    subtitle: string | null;
     series: string | null;
     seriesIndexSort: number | null;
     firstPublished: number | null;
@@ -59,6 +79,7 @@ export function WorkFields({
   onSaved: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [subtitle, setSubtitle] = useState(work.subtitle ?? '');
   const [series, setSeries] = useState(work.series ?? '');
   const [index, setIndex] = useState(
     work.seriesIndexSort == null ? '' : String(work.seriesIndexSort),
@@ -73,7 +94,7 @@ export function WorkFields({
   // behind `work.description &&`, which meant the books most in need of a
   // description were the ones with nowhere to type one.
   const nothingYet =
-    !work.description && !work.series && work.firstPublished == null;
+    !work.description && !work.series && work.firstPublished == null && !work.subtitle;
 
   if (!canEdit) {
     return work.description ? (
@@ -102,6 +123,10 @@ export function WorkFields({
       }
 
       await api.updateWork(workId, {
+        // ⚠️ `subtitle` and NOT `title` — see the header. This patch object is
+        // the guard: `work_key` follows title and authors, so naming either here
+        // would orphan the book's reviews on the audiobook side.
+        subtitle: orNull(subtitle),
         series: orNull(series),
         seriesIndexSort: i,
         firstPublished: y,
@@ -136,6 +161,25 @@ export function WorkFields({
 
       {open && (
         <div className="stack">
+          {/* First, because it is the only field here that answers "which book is
+              this?" rather than describing one. A bare series line on the shelf
+              is the case it exists for. */}
+          <label className="field">
+            <span className="field__label">Subtitle</span>
+            <input
+              value={subtitle}
+              onChange={(e) => setSubtitle(e.target.value)}
+              placeholder="Ambulance Rescue"
+            />
+            <span className="muted small">
+              Which one this is, when the title is only the series line. Shown under the title.
+              {/* ⚠️ Said here because the restriction looks arbitrary on screen,
+                  and somebody will otherwise try to fix the title from this
+                  panel and conclude the app is broken. */}{' '}
+              The title itself is not editable — it is the join to your audiobook reviews.
+            </span>
+          </label>
+
           <label className="field">
             <span className="field__label">Description</span>
             <textarea
