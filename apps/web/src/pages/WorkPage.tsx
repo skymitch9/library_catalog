@@ -377,6 +377,7 @@ export function WorkPage({
       )}
 
       <Editions
+        workId={workId}
         editions={editions}
         canEdit={me.capabilities.includes('editCatalog')}
         onChanged={load}

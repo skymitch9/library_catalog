@@ -1,6 +1,6 @@
 import { rescanChoices } from '@lc/core';
 import { ApiError, api } from '../api.js';
-import { formatLabel } from './formats.js';
+import { editionKindLabel, formatLabel } from './formats.js';
 
 /**
  * "This barcode is not on file, but the book is — what am I holding?" — asked
@@ -43,13 +43,43 @@ export interface RescanQuestion {
 /** The shape of `GET /api/works/:id` this module reads. Narrower than the wire. */
 interface WorkDetail {
   work?: { title?: string | null };
-  editions?: { id: number; format: string; isbn13: string | null; edition_name?: string | null }[];
+  editions?: {
+    id: number;
+    format: string;
+    isbn13: string | null;
+    edition_name?: string | null;
+    edition_kind?: string | null;
+  }[];
   copies?: { id: number; status: string; edition_id: number | null }[];
 }
 
-function labelFor(edition: { format: string; edition_name?: string | null }): string {
+/**
+ * One printing, in enough words to tell it from its siblings — name, kind,
+ * format, ISBN.
+ *
+ * ⚠️ The ONE label both prompts use (the rescan's fill buttons and the manual
+ * picker's candidate buttons). Two label builders would be two ideas of what
+ * distinguishes a printing, and the person at the shelf would be shown
+ * different vocabulary for the same row depending on which door they came in.
+ * The rescan's fill targets are ISBN-less by construction, so the ISBN part
+ * simply never renders there; the picker is where it earns its place, because
+ * "which of these two hardcovers?" is often answered by nothing else.
+ */
+export function printingLabel(edition: {
+  format: string;
+  edition_name?: string | null;
+  edition_kind?: string | null;
+  isbn13?: string | null;
+}): string {
   const name = edition.edition_name?.trim();
-  return name ? `${name} · ${formatLabel(edition.format)}` : formatLabel(edition.format);
+  return [
+    name || null,
+    edition.edition_kind ? editionKindLabel(edition.edition_kind) : null,
+    formatLabel(edition.format),
+    edition.isbn13 ? `ISBN ${edition.isbn13}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 }
 
 /**
@@ -78,7 +108,7 @@ export async function rescanQuestionFor(
     isbn13,
     fillTargets: choices.fillTargets.map((e) => ({
       editionId: e.id,
-      label: labelFor(editions.find((row) => row.id === e.id) ?? e),
+      label: printingLabel(editions.find((row) => row.id === e.id) ?? e),
     })),
     bareCopy: choices.bareCopy,
     linkCopyId: choices.linkCopyId,

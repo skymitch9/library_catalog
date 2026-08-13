@@ -16,10 +16,18 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  NO_BARCODE_NOTE,
+  appendNoBarcodeNote,
   appendSharedIsbnNote,
+  blankSiblingOf,
+  hasNoBarcodeNote,
+  newPrintingNeedsName,
+  printingCandidates,
+  printingQuestionText,
   rescanChoices,
   rescanQuestionText,
   rescanSentence,
+  stripNoBarcodeNote,
 } from '../src/rescan.ts';
 
 const edition = (id: number, format: string, isbn13: string | null) => ({ id, format, isbn13 });
@@ -139,5 +147,114 @@ describe('rescan — the slipcase treatment for a shared ISBN', () => {
       appendSharedIsbnNote('Set volume', '9781938570308', null),
       /shares ISBN 9781938570308 with another printing/,
     );
+  });
+});
+
+describe('manual picker — which printings a copy could be', () => {
+  it('a named format offers every edition of that format, ISBN or not', () => {
+    // ⚠️ Unlike the rescan's fillTargets: a barcode can only belong to an
+    // ISBN-less row, but a COPY can be of any row — owning the Open
+    // Library-recorded printing is the common case.
+    const out = printingCandidates(
+      [
+        edition(1, 'hardcover', '9781638493457'),
+        edition(2, 'hardcover', null),
+        edition(3, 'paperback', null),
+      ],
+      'hardcover',
+    );
+    assert.deepEqual(out.map((e) => e.id), [1, 2]);
+  });
+
+  it('no format (linking an existing copy) offers everything, physical first', () => {
+    // An owned EPUB licence is a real copy; hiding ebook rows would make it
+    // permanently unlinkable. But the shelf is the ordinary case, so physical
+    // printings come first.
+    const out = printingCandidates(
+      [edition(1, 'ebook_epub', null), edition(2, 'hardcover', null), edition(3, 'paperback', null)],
+      null,
+    );
+    assert.deepEqual(out.map((e) => e.id), [2, 3, 1]);
+  });
+
+  it('a same-format sibling needs a name; the first of its format does not', () => {
+    const editions = [edition(1, 'hardcover', null)];
+    assert.equal(newPrintingNeedsName(editions, 'hardcover'), true);
+    assert.equal(newPrintingNeedsName(editions, 'paperback'), false);
+    assert.equal(newPrintingNeedsName([], 'hardcover'), false);
+  });
+});
+
+describe('manual picker — the blank-sibling refusal (#139 residue shape)', () => {
+  const shelf = [edition(7, 'hardcover', '9781638493457'), edition(8, 'paperback', null)];
+
+  it('refuses a same-format row carrying nothing to tell it apart', () => {
+    assert.equal(blankSiblingOf(shelf, { format: 'hardcover' })?.id, 7);
+  });
+
+  it('any single distinguishing mark defuses it', () => {
+    // Each of these is "a genuinely different printing has something to say
+    // about itself" — the refusal only ever hits pure residue.
+    const marks: Partial<Record<string, unknown>>[] = [
+      { isbn13: '9781638494362' },
+      { isbn10: '163849436X' },
+      { asin: 'B0ABCDEFGH' },
+      { editionName: 'Target exclusive — foil case wrap' },
+      { collects: 'Volumes 1-3' },
+      { publisher: 'Dragonsteel' },
+      { publishedYear: 2023 },
+      { sourceUrl: 'https://example.com/listing' },
+      { cwaBookId: 12 },
+    ];
+    for (const mark of marks) {
+      assert.equal(blankSiblingOf(shelf, { format: 'hardcover', ...mark }), null);
+    }
+  });
+
+  it('empty strings are not distinguishing marks', () => {
+    // A form that submits '' for every untouched field must not slip past the
+    // refusal on a technicality.
+    assert.equal(
+      blankSiblingOf(shelf, { format: 'hardcover', editionName: '', publisher: '' })?.id,
+      7,
+    );
+  });
+
+  it('the first printing of a format is never refused', () => {
+    assert.equal(blankSiblingOf(shelf, { format: 'audiobook_cd' }), null);
+    assert.equal(blankSiblingOf([], { format: 'hardcover' }), null);
+  });
+
+  it('asks its question with no verdict in it', () => {
+    assert.match(printingQuestionText(), /\?$/);
+    assert.doesNotMatch(printingQuestionText(), /duplicate|error|wrong/i);
+  });
+});
+
+describe('manual picker — "no barcode" as an observed fact', () => {
+  it('⚠️ spells the note exactly as the owner-verified production rows do', () => {
+    // Editions 450 and 470 (Dungeon Born PB, Unmapped PB) were settled at the
+    // shelf on 2026-08-13 with this exact string. Every future recording must
+    // grep identically, or "no barcode" becomes several facts instead of one.
+    assert.equal(NO_BARCODE_NOTE, 'No barcode printed on this copy (owner-verified)');
+    assert.equal(appendNoBarcodeNote(null), NO_BARCODE_NOTE);
+  });
+
+  it('appends after an em dash when a name exists, and is idempotent', () => {
+    const named = appendNoBarcodeNote('Kickstarter Grimoire Edition');
+    assert.equal(named, `Kickstarter Grimoire Edition — ${NO_BARCODE_NOTE}`);
+    assert.equal(appendNoBarcodeNote(named), named);
+    assert.equal(hasNoBarcodeNote(named), true);
+    assert.equal(hasNoBarcodeNote('Kickstarter Grimoire Edition'), false);
+  });
+
+  it('strips cleanly back to what the name was — or to null when it was only the note', () => {
+    assert.equal(
+      stripNoBarcodeNote(`Kickstarter Grimoire Edition — ${NO_BARCODE_NOTE}`),
+      'Kickstarter Grimoire Edition',
+    );
+    assert.equal(stripNoBarcodeNote(NO_BARCODE_NOTE), null);
+    assert.equal(stripNoBarcodeNote(null), null);
+    assert.equal(stripNoBarcodeNote('Deluxe'), 'Deluxe');
   });
 });

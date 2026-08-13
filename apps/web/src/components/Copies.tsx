@@ -1,8 +1,17 @@
 import { useState } from 'react';
-import { CONDITIONS, COPY_STATUSES, EDITION_FORMATS, PHYSICAL_FORMATS } from '@lc/core';
+import {
+  CONDITIONS,
+  COPY_STATUSES,
+  EDITION_FORMATS,
+  PHYSICAL_FORMATS,
+  printingCandidates,
+} from '@lc/core';
 import { api } from '../api.js';
 import { formatLabel } from '../lib/formats.js';
+import { printingLabel } from '../lib/rescans.js';
 import { STATUS_LABEL, arrivedPatch } from '../lib/statuses.js';
+import { describeError, type EditionView } from './Editions.js';
+import { EditionPickerPrompt, type NewPrintingDetails } from './RescanPrompt.js';
 
 /**
  * The copies of one book — and the only place `copy.status` has ever been
@@ -51,22 +60,55 @@ export function Copies({
 }: {
   workId: number;
   copies: CopyView[];
-  editions: { id: number; format: string }[];
+  /** The full rows — the picker's labels need name, kind and ISBN to tell printings apart. */
+  editions: EditionView[];
   canEdit: boolean;
   onChanged: () => void;
 }) {
   const [adding, setAdding] = useState<null | 'owned' | 'wanted'>(null);
   const [busy, setBusy] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** The copy whose "which printing is this?" question is open, if any. */
+  const [linking, setLinking] = useState<number | null>(null);
 
   async function change(copyId: number, body: Record<string, unknown>) {
     setBusy(copyId);
     setError(null);
     try {
       await api.updateCopy(copyId, body);
+      setLinking(null);
       onChanged();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeError(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /**
+   * The picker's "a different printing" answer for an EXISTING copy: create
+   * the described edition, then link. Two writes, create first — if the link
+   * then fails, the printing row is real and the copy is still honestly
+   * unlinked, which the panel shows; the reverse order could not exist (there
+   * is nothing to link to yet).
+   */
+  async function createAndLink(copyId: number, details: NewPrintingDetails) {
+    setBusy(copyId);
+    setError(null);
+    try {
+      const created = await api.createEdition({
+        workId,
+        format: details.format,
+        editionName: details.editionName,
+        publisher: details.publisher,
+        publishedYear: details.publishedYear,
+        source: 'manual',
+      });
+      await api.updateCopy(copyId, { editionId: created.edition.id });
+      setLinking(null);
+      onChanged();
+    } catch (err) {
+      setError(describeError(err));
     } finally {
       setBusy(null);
     }
@@ -148,12 +190,46 @@ export function Copies({
                         ))}
                       </select>
                     </label>
+                    {/* ⚠️ "Which printing do I own?" — the question 172 copies
+                        could not answer (67% of production copies carried a
+                        NULL edition_id when the rescan flow started closing
+                        it). A barcode scan answers it for books that have
+                        one; this is the only route for the Kickstarter and
+                        Illumicrate printings that never did. Same question,
+                        same vocabulary: the picker is the rescan prompt's
+                        sibling, not a third protocol. */}
+                    <button
+                      className="chip"
+                      disabled={busy === c.id}
+                      onClick={() => setLinking(linking === c.id ? null : c.id)}
+                    >
+                      {linking === c.id
+                        ? 'Cancel'
+                        : c.edition_id
+                          ? 'Change printing'
+                          : 'Which printing?'}
+                    </button>
                     <button className="chip" disabled={busy === c.id} onClick={() => void remove(c.id)}>
                       Remove
                     </button>
                   </div>
                 )}
               </div>
+              {linking === c.id && (
+                <EditionPickerPrompt
+                  candidates={printingCandidates(editions, null).map((e) => ({
+                    editionId: e.id,
+                    label: printingLabel(e),
+                  }))}
+                  editions={editions}
+                  fixedFormat={null}
+                  allowUnlinked={false}
+                  busy={busy === c.id}
+                  onPick={(editionId) => void change(c.id, { editionId })}
+                  onNewPrinting={(details) => void createAndLink(c.id, details)}
+                  onDismiss={() => setLinking(null)}
+                />
+              )}
             </li>
           ))}
         </ul>
@@ -201,6 +277,12 @@ export function Copies({
  * which fields are worth asking for. Two forms would be two places to fix the
  * "create the edition first" step below.
  */
+/** The person's answer to "which printing is this?", carried into the save. */
+type PrintingAnswer =
+  | { kind: 'existing'; editionId: number }
+  | { kind: 'new'; details: NewPrintingDetails }
+  | { kind: 'unlinked' };
+
 function AddCopy({
   workId,
   intent,
@@ -209,7 +291,7 @@ function AddCopy({
 }: {
   workId: number;
   intent: 'owned' | 'wanted';
-  editions: { id: number; format: string }[];
+  editions: EditionView[];
   onSaved: () => void;
 }) {
   const [format, setFormat] = useState('');
@@ -220,16 +302,26 @@ function AddCopy({
   const [signed, setSigned] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** "Record it" stopped and asked which printing — the rescan contract, no barcode. */
+  const [asking, setAsking] = useState(false);
 
-  async function save() {
+  async function save(answer?: PrintingAnswer) {
     setBusy(true);
     setError(null);
     try {
       // ⚠️ A format names a *printing*, so an owned copy has to point at an
-      // `edition` row. Reusing an existing edition of the same format rather
-      // than minting a second one: this catalog learned that lesson the
-      // expensive way — `findEditionBySourceUrl` in `@lc/db` exists because an
-      // importer created 83 duplicate editions by not checking.
+      // `edition` row.
+      //
+      // ⚠️ **This used to reuse any existing edition of the same format
+      // silently** — which made "a second, different printing of the same
+      // format" literally unsayable and is what forced #341 (two different
+      // hardcovers of one book) into raw SQL. Now it stops and ASKS, the
+      // rescan prompt's contract with no barcode in hand: nothing is written
+      // until a button that names its writes is pressed, and "not sure"
+      // records the copy honestly unlinked. The 83-duplicate-editions lesson
+      // (`findEditionBySourceUrl` in `@lc/db`) still holds — only a person
+      // choosing may create a same-format sibling, and the server refuses a
+      // sibling carrying nothing to tell it apart.
       //
       // ⚠️ **A wish creates no edition**, and that is load-bearing rather than
       // lazy. `reportFor` in `@lc/db` decides whether a work is held or merely
@@ -240,10 +332,32 @@ function AddCopy({
       // instead, which is where a fact about one specific copy belongs.
       let editionId: number | null = null;
       if (format && intent === 'owned') {
-        const existing = editions.find((e) => e.format === format);
-        editionId =
-          existing?.id ??
-          (await api.createEdition({ workId, format, source: 'manual' })).edition.id;
+        const candidates = printingCandidates(editions, format);
+        if (candidates.length > 0 && !answer) {
+          // Asked BEFORE the first write, exactly as the rescan prompt is:
+          // an unanswered question leaves the catalog untouched.
+          setBusy(false);
+          setAsking(true);
+          return;
+        }
+        if (answer?.kind === 'existing') {
+          editionId = answer.editionId;
+        } else if (answer?.kind === 'new') {
+          editionId = (
+            await api.createEdition({
+              workId,
+              format: answer.details.format,
+              editionName: answer.details.editionName,
+              publisher: answer.details.publisher,
+              publishedYear: answer.details.publishedYear,
+              source: 'manual',
+            })
+          ).edition.id;
+        } else if (answer?.kind !== 'unlinked') {
+          // First printing of this format — nothing to confuse it with, so
+          // it is created without a question, as it always was.
+          editionId = (await api.createEdition({ workId, format, source: 'manual' })).edition.id;
+        }
       }
 
       await api.createCopy({
@@ -259,7 +373,7 @@ function AddCopy({
       });
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeError(err));
     } finally {
       setBusy(false);
     }
@@ -269,7 +383,15 @@ function AddCopy({
     <div className="stack">
       <label className="field">
         <span className="field__label">Format</span>
-        <select value={format} onChange={(e) => setFormat(e.target.value)}>
+        {/* Changing the format retracts an open printing question — its
+            candidates belonged to the old format. */}
+        <select
+          value={format}
+          onChange={(e) => {
+            setFormat(e.target.value);
+            setAsking(false);
+          }}
+        >
           <option value="">
             {intent === 'wanted' ? 'Any — whatever comes' : 'Not recorded'}
           </option>
@@ -332,9 +454,32 @@ function AddCopy({
       />
 
       {error && <p className="notice notice--bad small">{error}</p>}
-      <button className="primary" onClick={() => void save()} disabled={busy}>
-        {busy ? 'Saving…' : intent === 'wanted' ? 'Add to the wishlist' : 'Record it'}
-      </button>
+
+      {asking ? (
+        /* "Record it" stopped here: a printing of this format is already on
+           file, and which one this copy is cannot be guessed — guessing is
+           how a second Target hardcover used to be erased into the trade
+           row. Every button names its writes; "never mind" returns to the
+           form with nothing written. */
+        <EditionPickerPrompt
+          candidates={printingCandidates(editions, format).map((e) => ({
+            editionId: e.id,
+            label: printingLabel(e),
+          }))}
+          editions={editions}
+          fixedFormat={format}
+          allowUnlinked
+          busy={busy}
+          onPick={(editionId) => void save({ kind: 'existing', editionId })}
+          onNewPrinting={(details) => void save({ kind: 'new', details })}
+          onUnlinked={() => void save({ kind: 'unlinked' })}
+          onDismiss={() => setAsking(false)}
+        />
+      ) : (
+        <button className="primary" onClick={() => void save()} disabled={busy}>
+          {busy ? 'Saving…' : intent === 'wanted' ? 'Add to the wishlist' : 'Record it'}
+        </button>
+      )}
     </div>
   );
 }

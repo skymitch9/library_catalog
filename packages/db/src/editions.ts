@@ -390,11 +390,52 @@ export interface CopyRow {
 const COPY_COLS = `id, work_id, edition_id, status, location, acquired_on, price_paid_cents,
                    currency, vendor, condition, is_signed, edition_notes, lent_to, notes`;
 
+/**
+ * A copy write that states a falsehood, refused with a status the route can
+ * relay. The `AccessoryError` shape from `accessories.ts`, for the same
+ * reason it exists there.
+ */
+export class CopyLinkError extends Error {
+  constructor(
+    message: string,
+    readonly status: 400 | 404,
+  ) {
+    super(message);
+    this.name = 'CopyLinkError';
+  }
+}
+
+/**
+ * ⚠️ The check migration 0001's FK cannot make: `copy.edition_id` references
+ * *an* edition, not an edition *of this copy's work*. A link to another book's
+ * printing is a false statement, not an untidy one — the `assertCopyBelongs`
+ * argument from `accessories.ts`, one table over. It went unchecked while the
+ * rescan flow was the only writer (it derives ids from the same work's own
+ * rows); the manual picker multiplies the writers, so the floor goes in with
+ * it.
+ */
+async function assertEditionBelongs(
+  db: D1Database,
+  workId: number,
+  editionId: number | null | undefined,
+): Promise<void> {
+  if (editionId == null) return;
+  const row = await db
+    .prepare('SELECT work_id FROM edition WHERE id = ?')
+    .bind(editionId)
+    .first<{ work_id: number }>();
+  if (!row) throw new CopyLinkError('That printing is not in the catalog', 404);
+  if (row.work_id !== workId) {
+    throw new CopyLinkError('That printing belongs to a different book', 400);
+  }
+}
+
 export async function createCopy(
   db: D1Database,
   input: CreateCopy,
   actor?: Actor,
 ): Promise<CopyRow> {
+  await assertEditionBelongs(db, input.workId, input.editionId);
   const insert = db
     .prepare(
       `INSERT INTO copy (work_id, edition_id, status, location, acquired_on, price_paid_cents,
@@ -484,6 +525,9 @@ export async function updateCopy(
 ): Promise<CopyRow | null> {
   const current = await getCopy(db, id);
   if (!current) return null;
+
+  // The link write the picker makes — checked against THIS copy's work.
+  await assertEditionBelongs(db, current.work_id, patch.editionId);
 
   const pick = <T>(next: T | undefined, fallback: T): T => (next === undefined ? fallback : next);
 

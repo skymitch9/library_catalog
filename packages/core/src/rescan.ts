@@ -171,3 +171,156 @@ export function appendSharedIsbnNote(
     ? `${existingName.trim()} — ${note}`
     : `Shares ISBN ${isbn13}${holderTitle ? ` with “${holderTitle}”` : ''}`;
 }
+
+// ---------------------------------------------------------------------------
+// The manual picker — the same question, asked with no barcode in hand
+// ---------------------------------------------------------------------------
+//
+// ⚠️ **This is the rescan question's third caller, NOT a third protocol.** The
+// scan path answers "which printing is this?" when a barcode resolves; the
+// rescan prompt answers it when the barcode is new; this answers it when there
+// is no barcode at all — 70 physical editions carry no ISBN, several verified
+// to carry no barcode ever (Kickstarter and Illumicrate printings). All three
+// must keep using this module's vocabulary, or they drift into three subtly
+// different ideas of what an edition is.
+//
+// Two writes hang off the question:
+//
+//  * `copy.edition_id` — "which printing do I own?", the column that was 67%
+//    NULL when the rescan flow started repairing it and still names nothing on
+//    172 copies. The picker is how those get answered without a barcode.
+//  * a new same-format sibling edition — the #341 case (`Copies.tsx` reuses
+//    any edition of the same format, so "a second, different hardcover" was
+//    literally unsayable). ⚠️ Only a person choosing may create one, and it
+//    must carry something that tells it apart — see `blankSiblingOf`.
+
+/**
+ * The printings a copy could be.
+ *
+ * `format` given (recording a copy that named its format): candidates are that
+ * format's editions, all of them — including the ones that already carry an
+ * ISBN, because owning the Open Library-recorded printing is the common case,
+ * not the exception. This is where the rescan's `fillTargets` filter would be
+ * wrong: a barcode can only belong to an ISBN-less row, but a copy can be of
+ * any row.
+ *
+ * `format` null (linking an existing copy, which names no format of its own):
+ * every edition is a candidate, physical first — a copy is usually an object
+ * on a shelf, but an owned EPUB licence is a real copy too and hiding its row
+ * would make that copy permanently unlinkable.
+ */
+export function printingCandidates<E extends RescanEdition>(
+  editions: readonly E[],
+  format: string | null,
+): E[] {
+  if (format !== null) return editions.filter((e) => e.format === format);
+  return [
+    ...editions.filter((e) => isPhysicalFormat(e.format)),
+    ...editions.filter((e) => !isPhysicalFormat(e.format)),
+  ];
+}
+
+/**
+ * Must a new printing of this format carry a distinguishing name?
+ *
+ * True exactly when a same-format edition already exists: two rows both saying
+ * only "hardcover" are indistinguishable forever, which is the #139 residue
+ * shape — a blank `manual` row beside a real one, and nobody able to say which
+ * was which without the audit log. The first printing of a format needs no
+ * name; the format IS its description.
+ */
+export function newPrintingNeedsName(
+  editions: readonly RescanEdition[],
+  format: string,
+): boolean {
+  return editions.some((e) => e.format === format);
+}
+
+/** What a hand-described new printing may carry. Everything optional but the format. */
+export interface ProposedPrinting {
+  format: string;
+  isbn13?: string | null;
+  isbn10?: string | null;
+  asin?: string | null;
+  editionName?: string | null;
+  collects?: string | null;
+  publisher?: string | null;
+  publishedYear?: number | null;
+  sourceUrl?: string | null;
+  cwaBookId?: number | null;
+}
+
+/**
+ * The same-format sibling a proposed edition could never be told apart from —
+ * or null when the proposal is distinguishable (or the first of its format).
+ *
+ * ⚠️ **This is the server-side floor under "only a person choosing may create
+ * a same-format sibling."** The 83-duplicate-editions guard
+ * (`findEditionBySourceUrl`) protects the importer path and the rescan
+ * question protects the scan path; this closes the last silent minting point,
+ * the raw POST. It fires ONLY on a row carrying nothing at all — no
+ * identifier, no name, no contents, no publisher, no year, no provenance —
+ * beside an existing row of the same format, because such a row is not a
+ * different printing being recorded, it is residue being minted (#139's
+ * second edition was exactly this shape). A genuinely different printing
+ * always has *something* to say about itself; requiring that is not a burden,
+ * it is the point.
+ */
+export function blankSiblingOf<E extends { id: number; format: string }>(
+  editions: readonly E[],
+  proposed: ProposedPrinting,
+): E | null {
+  const marks = [
+    proposed.isbn13,
+    proposed.isbn10,
+    proposed.asin,
+    proposed.editionName,
+    proposed.collects,
+    proposed.publisher,
+    proposed.publishedYear,
+    proposed.sourceUrl,
+    proposed.cwaBookId,
+  ];
+  const distinguishable = marks.some((m) => m !== null && m !== undefined && m !== '');
+  if (distinguishable) return null;
+  return editions.find((e) => e.format === proposed.format) ?? null;
+}
+
+/** The picker's question, one spelling — the rescan rule (`rescanQuestionText`). */
+export function printingQuestionText(): string {
+  return 'Which printing is this — one already on file, or a different one?';
+}
+
+/**
+ * "The object carries no barcode" — recorded as an observed fact, not left as
+ * a blank that reads as an unanswered question.
+ *
+ * ⚠️ The spelling matches the two rows the owner already verified at the shelf
+ * (Dungeon Born PB and Unmapped PB, 2026-08-13): checked against production —
+ * `edition_name = 'No barcode printed on this copy (owner-verified)'` — so
+ * every recording of this fact greps identically and no future pass re-asks a
+ * settled row. It lives in `edition_name` because `edition` has no notes
+ * column (that lives on `copy`), the same reasoning as the slipcase ISBNs and
+ * `appendSharedIsbnNote` above. The distinction is 0040's: NULL means nobody
+ * looked; this note means somebody looked and there is nothing to scan.
+ */
+export const NO_BARCODE_NOTE = 'No barcode printed on this copy (owner-verified)';
+
+export function hasNoBarcodeNote(name: string | null): boolean {
+  return name !== null && name.includes(NO_BARCODE_NOTE);
+}
+
+/** Idempotent: a name already carrying the note comes back unchanged. */
+export function appendNoBarcodeNote(existingName: string | null): string {
+  if (hasNoBarcodeNote(existingName)) return existingName as string;
+  return existingName && existingName.trim() !== ''
+    ? `${existingName.trim()} — ${NO_BARCODE_NOTE}`
+    : NO_BARCODE_NOTE;
+}
+
+/** Undo of the above — unticking the box. A name that was only the note goes back to null. */
+export function stripNoBarcodeNote(name: string | null): string | null {
+  if (name === null) return null;
+  const stripped = name.replace(` — ${NO_BARCODE_NOTE}`, '').replace(NO_BARCODE_NOTE, '').trim();
+  return stripped === '' ? null : stripped;
+}

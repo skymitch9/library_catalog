@@ -4,6 +4,7 @@ import {
   COLLECTION_PAGE_SIZES,
   UNKNOWN_AUTHOR,
   WISHLIST_STATUSES,
+  blankSiblingOf,
   workKeyFor,
   createCopySchema,
   createEditionSchema,
@@ -15,6 +16,7 @@ import {
   updateWorkSchema,
 } from '@lc/core';
 import {
+  CopyLinkError,
   collectionFacets,
   collectionStats,
   createCopy,
@@ -631,6 +633,38 @@ export const catalogRoutes = new Hono<AppBindings>()
     const taken = await isbnTakenBody(c.env.DB, parsed.data.isbn13 ?? null);
     if (taken) return c.json(taken, 409);
 
+    // ⚠️ The blank-sibling refusal — the last silent minting point for #139's
+    // residue shape. A second edition of a format already on file must carry
+    // SOMETHING that tells it apart (a name, an identifier, a publisher —
+    // `blankSiblingOf` lists the marks); a row carrying nothing is not a
+    // different printing being recorded, it is a duplicate being minted. The
+    // importer path has `findEditionBySourceUrl` and the scan path has the
+    // rescan question; this covers the raw POST, which the manual picker now
+    // uses. Same body convention as `isbn_taken`: the holder is named so the
+    // client can say which row this cannot be told apart from.
+    const twin = blankSiblingOf(
+      await listEditionsForWork(c.env.DB, parsed.data.workId),
+      parsed.data,
+    );
+    if (twin) {
+      return c.json(
+        {
+          error: 'indistinguishable_printing',
+          detail:
+            `A ${twin.format} of this book is already on file` +
+            `${twin.edition_name ? ` (“${twin.edition_name}”)` : ''}, and this new one carries ` +
+            'nothing to tell it apart. Give it an edition name — or an identifier, publisher ' +
+            'or year — that says what makes it different.',
+          holder: {
+            editionId: twin.id,
+            format: twin.format,
+            editionName: twin.edition_name,
+          },
+        },
+        409,
+      );
+    }
+
     const actor: Actor = { userId: c.get('user').id, how: 'human' };
     return c.json({ edition: await createEdition(c.env.DB, parsed.data, actor) }, 201);
   })
@@ -711,7 +745,17 @@ export const catalogRoutes = new Hono<AppBindings>()
     const parsed = createCopySchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues }, 400);
     const actor: Actor = { userId: c.get('user').id, how: 'human' };
-    return c.json({ copy: await createCopy(c.env.DB, parsed.data, actor) }, 201);
+    // `CopyLinkError`: an `editionId` naming another book's printing is a false
+    // statement refused in `@lc/db`, not stored — the accessories rule, one
+    // table over. Mapped here exactly as `AccessoryError` is in its routes.
+    try {
+      return c.json({ copy: await createCopy(c.env.DB, parsed.data, actor) }, 201);
+    } catch (err) {
+      if (err instanceof CopyLinkError) {
+        return c.json({ error: 'bad_request', detail: err.message }, err.status);
+      }
+      throw err;
+    }
   })
 
   /**
@@ -729,10 +773,19 @@ export const catalogRoutes = new Hono<AppBindings>()
     const parsed = updateCopySchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues }, 400);
 
-    const copy = await updateCopy(c.env.DB, id, parsed.data, {
-      userId: c.get('user').id,
-      how: 'human',
-    });
+    // See POST /copies: a cross-work `editionId` is refused, never stored.
+    let copy;
+    try {
+      copy = await updateCopy(c.env.DB, id, parsed.data, {
+        userId: c.get('user').id,
+        how: 'human',
+      });
+    } catch (err) {
+      if (err instanceof CopyLinkError) {
+        return c.json({ error: 'bad_request', detail: err.message }, err.status);
+      }
+      throw err;
+    }
     if (!copy) return c.json({ error: 'not_found' }, 404);
     return c.json({ copy });
   })

@@ -1,5 +1,12 @@
 import { useState } from 'react';
-import { EDITION_FORMATS, EDITION_KINDS, PHYSICAL_FORMATS } from '@lc/core';
+import {
+  EDITION_FORMATS,
+  EDITION_KINDS,
+  PHYSICAL_FORMATS,
+  appendNoBarcodeNote,
+  hasNoBarcodeNote,
+  stripNoBarcodeNote,
+} from '@lc/core';
 import { ApiError, api } from '../api.js';
 import { editionKindLabel, formatLabel } from '../lib/formats.js';
 
@@ -62,8 +69,13 @@ export interface EditionView {
   source_url: string | null;
 }
 
-/** Zod issues, a friendly conflict string, or nothing useful — say the best of them. */
-function describe(err: unknown): string {
+/**
+ * Zod issues, a friendly conflict string, or nothing useful — say the best of
+ * them. Exported for `Copies.tsx`: the picker's writes hit the same routes and
+ * their 409s (`isbn_taken`, `indistinguishable_printing`) carry their advice
+ * in `detail`, which a bare `err.message` would swallow.
+ */
+export function describeError(err: unknown): string {
   if (err instanceof ApiError) {
     if (typeof err.detail === 'string') return err.detail;
     if (Array.isArray(err.detail)) {
@@ -120,15 +132,18 @@ function ConfirmButton({
 }
 
 export function Editions({
+  workId,
   editions,
   canEdit,
   onChanged,
 }: {
+  workId: number;
   editions: EditionView[];
   canEdit: boolean;
   onChanged: () => void;
 }) {
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [addingNew, setAddingNew] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -140,7 +155,7 @@ export function Editions({
       if (editingId === id) setEditingId(null);
       onChanged();
     } catch (err) {
-      setError(describe(err));
+      setError(describeError(err));
     } finally {
       setBusyId(null);
     }
@@ -253,12 +268,43 @@ export function Editions({
           A scanned book is recorded as a paperback until someone says otherwise.
         </p>
       )}
+
+      {/* ⚠️ The by-hand door — for the printings that can never be scanned in.
+          70 physical editions carry no ISBN (Kickstarter and campaign
+          printings mostly), and several verified copies carry no barcode at
+          all; describing those was an ask-for-SQL job until this button. No
+          field but the format is required — an ISBN-less printing is a normal
+          row here, not a defective one — and a same-format sibling that
+          carries nothing to tell it apart is refused by the server with
+          advice, not stored. */}
+      {canEdit &&
+        (addingNew ? (
+          <EditionForm
+            edition={null}
+            workId={workId}
+            onCancel={() => setAddingNew(false)}
+            onSaved={() => {
+              setAddingNew(false);
+              onChanged();
+            }}
+          />
+        ) : (
+          <div className="row-tight">
+            <button onClick={() => setAddingNew(true)}>Add a printing</button>
+          </div>
+        ))}
     </section>
   );
 }
 
 /**
- * Correct one printing.
+ * Correct one printing — or describe a brand-new one (`edition: null`).
+ *
+ * One component for both, the sibling catalog's pattern this file's header
+ * already names; two forms would be two places for the field reasoning below
+ * to drift apart. Create mode requires only the format — an ISBN-less printing
+ * is the *normal* case for the crowdfunded half of this shelf, so nothing here
+ * may treat a blank identifier as an error.
  *
  * Every field is held as a string and converted on the way out, which is the
  * sibling catalog's form pattern and is what makes "cleared" expressible: an
@@ -268,24 +314,28 @@ export function Editions({
  */
 function EditionForm({
   edition,
+  workId,
   onCancel,
   onSaved,
 }: {
-  edition: EditionView;
+  /** Null means "describe a new printing" — create instead of correct. */
+  edition: EditionView | null;
+  /** Required when `edition` is null; the create needs a work to belong to. */
+  workId?: number;
   onCancel: () => void;
   onSaved: () => void;
 }) {
   const [form, setForm] = useState(() => ({
-    format: edition.format,
-    editionName: edition.edition_name ?? '',
-    editionKind: edition.edition_kind ?? '',
-    collects: edition.collects ?? '',
-    publisher: edition.publisher ?? '',
-    publishedYear: edition.published_year?.toString() ?? '',
-    pages: edition.pages?.toString() ?? '',
-    isbn13: edition.isbn13 ?? '',
-    isbn10: edition.isbn10 ?? '',
-    asin: edition.asin ?? '',
+    format: edition?.format ?? '',
+    editionName: edition?.edition_name ?? '',
+    editionKind: edition?.edition_kind ?? '',
+    collects: edition?.collects ?? '',
+    publisher: edition?.publisher ?? '',
+    publishedYear: edition?.published_year?.toString() ?? '',
+    pages: edition?.pages?.toString() ?? '',
+    isbn13: edition?.isbn13 ?? '',
+    isbn10: edition?.isbn10 ?? '',
+    asin: edition?.asin ?? '',
   }));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -294,6 +344,10 @@ function EditionForm({
     setForm((f) => ({ ...f, [k]: v }));
 
   async function save() {
+    if (edition === null && form.format === '') {
+      setError('Say what kind of object it is — the format is the one required fact.');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -304,7 +358,7 @@ function EditionForm({
       const text = (s: string) => (s.trim() === '' ? null : s.trim());
       const num = (s: string) => (s.trim() === '' ? null : Number(s));
 
-      await api.updateEdition(edition.id, {
+      const fields = {
         format: form.format,
         editionName: text(form.editionName),
         // '' is the "Ordinary printing" option and clears the column, which is
@@ -319,10 +373,18 @@ function EditionForm({
         isbn13: text(form.isbn13),
         isbn10: text(form.isbn10),
         asin: text(form.asin),
-      });
+      };
+
+      if (edition === null) {
+        // A person typing IS the manual source — the provenance rank that no
+        // importer may overwrite (`EDITION_SOURCES`).
+        await api.createEdition({ workId, source: 'manual', ...fields });
+      } else {
+        await api.updateEdition(edition.id, fields);
+      }
       onSaved();
     } catch (err) {
-      setError(describe(err));
+      setError(describeError(err));
     } finally {
       setBusy(false);
     }
@@ -333,6 +395,11 @@ function EditionForm({
       <label className="field">
         <span className="field__label">Format</span>
         <select value={form.format} onChange={(e) => set('format', e.target.value)}>
+          {/* Create mode starts unchosen and stays honest about it: defaulting
+              a hand-described printing to paperback would be the scan path's
+              guess repeated where nothing forces a guess. Edit mode never
+              renders this option — the row already has a format. */}
+          {edition === null && <option value="">Choose…</option>}
           {/* Physical first — this is the group somebody is reaching for when
               they open this form, because a wrong format is nearly always a
               hardcover that a barcode called a paperback. */}
@@ -476,17 +543,64 @@ function EditionForm({
         </label>
       </div>
 
+      {/*
+        ⚠️ "No barcode on the object" recorded as an OBSERVED fact — 0040's
+        distinction, one row over: a blank isbn13 means nobody has looked, and
+        this note means somebody looked and there is nothing to scan. The
+        crowdfunded printings this shelf is full of frequently carry none, and
+        without the note every blank reads as an unanswered question that
+        future passes keep re-asking. The tick writes into the edition name
+        (`edition` has no notes column) in the ONE spelling `@lc/core` owns,
+        matching the rows the owner already verified at the shelf — so the
+        checkbox state IS the name text, visible above, never a hidden flag
+        travelling apart from its value.
+        Offered only while it can be true: a physical format with no ISBN-13
+        typed. Ticked rows keep showing it even mid-edit of the ISBN field so
+        unticking stays possible.
+      */}
+      {(PHYSICAL_FORMATS as readonly string[]).includes(form.format) &&
+        (form.isbn13.trim() === '' || hasNoBarcodeNote(form.editionName)) && (
+          <label className="row-tight">
+            <input
+              type="checkbox"
+              checked={hasNoBarcodeNote(form.editionName)}
+              onChange={(e) =>
+                set(
+                  'editionName',
+                  e.target.checked
+                    ? appendNoBarcodeNote(form.editionName.trim() === '' ? null : form.editionName)
+                    : (stripNoBarcodeNote(form.editionName) ?? ''),
+                )
+              }
+            />
+            <span>
+              No barcode printed on this copy — checked the object. The blank ISBN becomes a
+              recorded fact instead of a gap.
+            </span>
+          </label>
+        )}
+
       {/* Shown, not editable. `EDITION_SOURCES` says `manual` outranks every
           importer and is never overwritten — correcting an Open Library row by
           hand does not make it a hand-typed row, and rewriting the provenance
           would lose the only record of where the untouched columns came from. */}
-      <p className="muted small">Recorded from {edition.source}. Correcting it does not change that.</p>
+      {edition !== null && (
+        <p className="muted small">
+          Recorded from {edition.source}. Correcting it does not change that.
+        </p>
+      )}
 
       {error && <p className="notice notice--bad small">{error}</p>}
 
       <div className="row-tight">
         <button className="primary" onClick={() => void save()} disabled={busy}>
-          {busy ? 'Saving…' : 'Save edition'}
+          {busy
+            ? edition === null
+              ? 'Adding…'
+              : 'Saving…'
+            : edition === null
+              ? 'Add printing'
+              : 'Save edition'}
         </button>
         <button onClick={onCancel} disabled={busy}>
           Cancel
