@@ -8,6 +8,11 @@ dist/
 .dev.vars
 .DS_Store
 *.log
+# ⚠️ …EXCEPT the deploy record. `*.log` above would swallow it, and this file is
+# the shared state two concurrent runs use to avoid deploying over each other —
+# see scripts/deploy-guard.mjs. Caught 2026-08-13 only because the commit that
+# was supposed to publish it reported "nothing to commit".
+!docs/deploys.log
 .vscode/
 !.vscode/extensions.json
 
