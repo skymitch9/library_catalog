@@ -56,3 +56,8 @@ scripts/crowdfunding-scan.*.json
 # fails loudly, naming CATALOG_PLATFORM_DIR, if it cannot find the platform repo.
 # See docs/info/universes.md.
 packages/universes/generated/
+
+# ⚠️ The deploy coordination lock — see scripts/deploy-guard.mjs. Local by
+# design: it is about one machine at one moment. The SHARED record is
+# docs/deploys.log, which IS tracked.
+.deploy.lock
