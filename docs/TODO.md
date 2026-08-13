@@ -423,6 +423,39 @@ cost is invisible until it lands — one landed at 372k tokens in a single lump 
 whenever an agent is in flight and state the figure when reporting. A full session
 ≈ 9 weekly points, so ~5 sessions of headroom remain at 52%.
 
+#### 🎭 Fable 5 gets its own allowance — spend it, 2026-08-13
+
+Owner: *"we haven't used any fable 5 usage this month, we should plan to use that
+for something. its waste to leave our powerhouse on the table unused."* The usage
+page carries **Fable weekly at 0%** as a **separate line from the 52% all-models
+pool**, so Fable work does not draw down the main budget. Dispatch it with the
+`Agent` tool's `model: 'fable'`.
+
+**Chosen split — a review gate, not just more building:**
+
+| Fable 5 | Opus (me) |
+|---|---|
+| **Adversarially review every change before it deploys** | Build **cover swap** and the **record-delete button** |
+| **Design the edit-any-detail + audit log** feature | ISBN backfills, #269, the two Goodreads covers, subtitles, volume numbers, Cal universe |
+| **Review migration 0110+ before it runs** | Apply Fable's design **only after the owner approves it** |
+
+⚠️ **Why review and not only building — stated plainly, because it is the reason
+this split was chosen.** In one attended evening I got three things wrong and
+caught each only afterwards: I diagnosed the silent save failures as React
+hydration when it was the **1Password overlay**; I told the owner retitling a work
+was safe when `WorkFields` explicitly guards against it (`work_key` ↔ 860
+audiobook reviews); and I entered *Who Goes Roar?* with the publisher as author
+when **Christie Hainsby** is credited. All were cheap because the owner was awake
+to correct them. **Unattended, that class of error compounds** — which is exactly
+what an independent model on a separate budget is for.
+
+⚠️ **The migration does NOT go to production unattended.** The edit-any-detail
+feature needs `authors`/`primary_author` nullable and a decision about what
+`work_key` is with no author — the schema's own comment warns title-only keys
+"collide across authors constantly". Design it overnight, have Fable review it,
+present it in the morning, apply on the owner's word. Nothing else in this plan
+touches the schema.
+
 #### ✅ Agent-safe — no physical book, no owner decision
 
 1. **Cover swap feature** (see its own entry) — read the Board Game Catalog's implementation first. Biggest win, and it also unblocks moving 147 hotlinked covers into R2.
