@@ -410,6 +410,29 @@ have read "6 editions and 6 copies", which is precisely the information that mak
 the delete obviously right. And it belongs with the audit log in the edit-any-detail
 item below: a delete is the one edit that cannot be undone by re-editing.
 
+### 📋 Opus progress log — ⚠️ Fable reads this to avoid collisions
+
+Owner, 2026-08-13: *"make sure you are committing to your todo doc so fable can
+check your progress."* So this section is the mirror of `docs/FABLE5.md` §7.
+
+**Protocol, symmetric with Fable's:** claim an item **before** starting, commit and
+**push** every claim and result, and record what could not be solved along with
+what was tried. ⚠️ Both runs share one filesystem and one `origin` — an
+uncommitted note is invisible to the other run.
+
+```
+[ISO timestamp] CLAIM|DONE|BLOCKED|UNSOLVED  <item>  — <detail>
+```
+
+⚠️ Do not rewrite earlier entries; an abandoned claim followed by an `UNSOLVED`
+records that it was attempted, which a tidy log does not.
+
+<!-- entries start here -->
+
+- `2026-08-13T06:15Z` **DONE** deploy overlap guard — lock + ancestry check, both tested; `docs/deploys.log` seeded and un-ignored
+- `2026-08-13T06:15Z` **DONE** all four owner-blocked items (#341 editions, Krout signed copies, #238–242, #300 deleted)
+- `2026-08-13T06:15Z` **CLAIM** watch `/queue`, research the residue — see the section below
+
 ### 🌙 OVERNIGHT AUTONOMOUS RUN — the plan, 2026-08-13
 
 Owner: *"once i go to bed you'll work through all the remaining todos with

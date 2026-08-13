@@ -186,7 +186,85 @@ titles fine") does not transfer, because book spines are narrower and denser.
    useful ended with an explicit "could not verify" list. A confident report with
    a silent gap is worse than a hedged one.
 
-## 6. Budget rules
+## 5a. ⚠️ Fable owns the app being down
+
+Owner, 2026-08-13: *"if the app goes down fable will be in charge of saving it."*
+
+So this is Fable's call, not the dispatcher's. **Recovery beats everything else on
+the list** — drop the review queue and the design work until the site is back.
+
+**How to tell it is actually down** — the site *looked* down to the owner once this
+session and was fine from the server side, so check before acting:
+
+```bash
+curl -s https://library.heygabi.ai/api/health          # expect ok:true, database:up
+```
+⚠️ Do **not** trust `curl -o NUL -w '%{http_code}'` in Git Bash — it reports
+`000` / exit 43 on a perfectly healthy host. Use PowerShell `Invoke-WebRequest`
+for status codes, or read the body as above.
+
+⚠️ A **200 on `/` is not proof the app works** — the shell can serve while the
+bundle white-screens. Load a real page and check the console before declaring it
+healthy, and remember the PWA can serve a stale bundle from cache on one device
+while the server is fine.
+
+**If it really is down, the rollback target is in the repo:**
+
+```bash
+tail -3 docs/deploys.log        # ISO<TAB>commit<TAB>holder<TAB>version
+```
+Each line is a commit that was live and the Cloudflare version it produced. Roll
+back with `npx wrangler rollback --config apps/worker/wrangler.toml` (or redeploy a
+known-good commit from that log). ⚠️ **Never kill a deploy mid-flight** — a killed
+deploy can leave the live version out of step with the repo, which is the one
+genuinely expensive state.
+
+⚠️ **Write the incident up in §7 as it happens, not afterwards.** If Fable is
+mid-recovery when the dispatcher next looks, the log is the only way to avoid two
+runs both trying to fix it.
+
+## 6. Progress log — ⚠️ both runs write, so neither collides
+
+Owner: *"add to the fable doc that it needs to track its process in that doc so you
+can be aware of where it is to help with overlaps too."*
+
+**The protocol, and it is symmetric:**
+
+| Run | Writes progress to | So the other can |
+|---|---|---|
+| **Fable** | **§7 of this file** | see what is claimed, in flight, done, or abandoned |
+| **Opus** | `docs/TODO.md` | same, from the other side |
+
+**Rules for both:**
+
+1. **Claim before starting.** Append a line naming the item *before* work begins,
+   not after. A half-done item nobody claimed is how two runs rebuild the same
+   thing.
+2. **Commit and push every claim and every result.** ⚠️ Both runs share one
+   filesystem *and* one `origin`, so an uncommitted note is invisible. `git add`,
+   commit, `git push origin main`.
+3. ⚠️ **Write down what you could NOT solve** — the owner asked for this
+   explicitly. Name the item, what was tried, and what would settle it. An
+   unsolved item recorded with its dead ends is useful; an unsolved item silently
+   dropped costs the next run the same search. *"Could not find"* is a result.
+4. **Pull before deploying.** `deploy-guard.mjs` will refuse if the live commit is
+   not in your tree, which is the same instruction enforced mechanically.
+
+## 7. Fable's progress log — append below this line
+
+Format, one line or short block per entry:
+
+```
+[ISO timestamp] CLAIM|DONE|BLOCKED|UNSOLVED|INCIDENT  <item>  — <detail>
+```
+
+⚠️ Do not rewrite earlier entries. An abandoned claim followed by a later
+`UNSOLVED` is more useful than a tidy log, because the pair records that it was
+attempted.
+
+<!-- entries start here -->
+
+## 8. Budget rules
 
 From the global usage rules, and they are not optional:
 
