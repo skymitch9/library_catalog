@@ -151,7 +151,74 @@ paperback" is still a decision somebody might make. `gaps.length` vs
 `certainGaps`/`attestedGaps` is exactly that distinction, and `completeness.ts`
 keeps them apart on purpose.
 
-### ⚠️⚠️ THREE BUGS found while adding books by hand — 2026-08-13, all unfixed
+### 🔨 LIVE QUEUE — the scanning session of 2026-08-13
+
+⚠️ **Standing instruction from the owner:** *"Keep adding whatever I queue for you
+to the todo list so nothing is lost and keep working through them as I queue them
+up."* So this list is appended to as things are called out, and ticked as they
+land. It is the session's working queue, not a summary.
+
+**Done**
+
+- ✅ Tamer 2–6 print covers uploaded to R2 (works 244–248), each verified against its volume number
+- ✅ #265 *There's a Mouse About the House!* added — Richard Fowler verified
+- ✅ #266 *Don't Tickle the Dinosaur!* added — Sam Taplin / Ana Martín Larrañaga
+- ✅ #267 *Richard Scarry's Busy Busy Farm* added — Richard Scarry
+- ✅ #269 *Who Goes Roar?* added ⚠️ but see the repair list — wrong author, no copy, no ISBN
+- ✅ Subtitles: #141 Ocean Tails · #160 Ambulance Rescue · #186 Dinosaur Safari
+- ✅ #213/#215 Pringle & Finn resolved and verified; both `work_watch` notes cleared
+- ✅ #132 + #186 moved to the publisher's series name, *The Wonderful World of Bizzy Bear*
+- ✅ **Entry-form fixes deployed** (`54a1c94f`) — typed ISBN now stored, "have it" now the default
+- ✅ #274 *My First Toys*, #287 *My First Farm Animals* — #287 confirms the fix: copy **and** ISBN both recorded
+
+**Still queued**
+
+- ⏳ 3 of the Autumn set: *My First Wild Animals* `9781839035951`, *My First Ocean Animals* `9781839035937`, *My First Food* `9781839035913`
+- ⏳ The Korean *하츄핑의 눈물* — `9791165384678`, author **SAMG Entertainment**, series **하츄핑 마음 동화**, volume **2**
+- ⏳ Cover for **#266** from `goodreads.com/en/book/show/48837075-don-t-tickle-the-dinosaur`
+- ⏳ Cover for **#267** from `goodreads.com/book/show/43744333-richard-scarry-s-busy-busy-farm`
+- ⏳ ISBN backfill: #265 `9781601304193`, #266 `9780794549503`, #267 `9781984894236`, #269 `9781836422808`, #274 `9781839035944`
+- ⏳ #269 needs a **copy** (it is owned) and its author corrected to **Christie Hainsby**
+- ⏳ #160 series → *The Wonderful World of Bizzy Bear*, volume **15**; #186 volume **11**; #132 volume 2 already right
+- ⏳ #195 volume → **8** of *마음을 채우는 동화*
+- ⏸️ #174 author → **Parragon Books** — blocked on the authors edit
+- 💤 *Fire Rescue* title pattern — owner said leave it
+
+### ⚠️ Two research findings that CORRECT earlier assumptions — 2026-08-13
+
+Both came back from a research agent and both reverse something already recorded.
+
+**1. ⚠️ The two Korean Teenieping series are DIFFERENT. Do not merge them.**
+The publisher 아이휴먼 runs a separately numbered 동화 line per sub-brand:
+| sub-brand | series | 
+|---|---|
+| 슈팅스타 캐치! 티니핑 | 마음을 **채우는** 동화 |
+| 하츄핑 캐치! 티니핑 | **하츄핑 마음 동화** |
+| 프린세스 / 반짝반짝 / 알쏭달쏭 | 마음을 가꾸는 / 마음 성장 / 마음을 여는 동화 |
+
+So **#195** (`9791165384548`) is *마음을 채우는 동화* — its current filing is
+**correct** — and it is **volume 8**, not unnumbered. The new book
+(`9791165384678`) is *하츄핑 마음 동화* **volume 2**, a different line only two
+volumes deep. The shared `979-11-6538` prefix is a **publisher block, not a series
+marker** — that was the trap.
+
+**2. ⚠️ *Who Goes Roar?* is NOT publisher-authored — the writer is Christie Hainsby.**
+Make Believe Ideas' own site credits "Writer: Christie Hainsby, Illustrator:
+Shannon Hays". MBI's house style omits the writer from the cover while crediting
+the illustrator, so the physical book showing only "Illustrated by Shannon Hays"
+is **expected, not evidence of publisher authorship**. My `Make Believe Ideas` on
+#269 is wrong and should be **Christie Hainsby**.
+
+Series is probably **Busy Bees** (MBI's UK site titles it so) but ⚠️ unnumbered,
+and possibly UK-edition-only — our copy carries no Busy Bees branding, so treat it
+as probable, not settled.
+
+⚠️ ISBN `9781836422808` returns **zero** results anywhere, yet both check digits
+are valid and `978-1-83642` is MBI's current prefix — so it is a **2024–25 reprint
+too new to be indexed**, not a bad number. Catalog the year as **2019** (first
+publication, and what the copyright page says).
+
+### ⚠️⚠️ THREE BUGS found while adding books by hand — 2026-08-13, two now FIXED
 
 Discovered by adding five books and then reading the rows back. **Read this before
 typing in a scanning backlog**, because two of the three lose data silently.
