@@ -23,7 +23,7 @@
 
 ## Production right now
 
-Measured **2026-08-12**, live version `a06b2ead`:
+Measured **2026-08-12**, live version `d441ecd1`:
 
 | works | editions | owned copies | preordered | audio rungs | series_volume |
 |---|---|---|---|---|---|
@@ -149,7 +149,7 @@ paperback" is still a decision somebody might make. `gaps.length` vs
 `certainGaps`/`attestedGaps` is exactly that distinction, and `completeness.ts`
 keeps them apart on purpose.
 
-### 🔨 Gaps chip removed from the collection stat strip — 2026-08-12
+### 🚢 Gaps chip removed from the collection stat strip — 2026-08-12
 
 **The ask:** *"I thought we had opted to move all information from that gap
 section into the individual book series… just get rid of the gaps button and
@@ -185,6 +185,13 @@ it. This removed an *entry point*, not the page. Both removals did.
 `docs/info/completeness-wishlist-relations.md` §1.7**, with both build-and-remove
 cycles in a table, because a bare count of what you lack reads as a missing
 feature to anyone who has not seen it removed twice.
+
+**✅ Deployed and read back from the live site**, version `d441ecd1`:
+
+- The stat strip is now **259 books · 81 series · 104 authors · 290 editions ·
+  15 on the way · 34 read** — no gaps chip.
+- `/series?gaps=1` still works as a deep link: 26 of 81 series, the gaps-only
+  filter active with its "Clear" button. The page survived; only the way in went.
 
 ### ✅ 870 review keys backfilled — 2026-08-12
 
