@@ -205,6 +205,9 @@ export async function gapsFor(db: D1Database, workId: number): Promise<DetailFie
     firstPublished: work.firstPublished,
     series: work.series,
     seriesIndexSort: work.seriesIndexSort,
+    // ⚠️ Both halves of the volume number, or the gap test is blind to a row
+    // that sorts correctly and prints nothing (22 works, 2026-08-13).
+    seriesIndexDisplay: work.seriesIndexDisplay,
     description: work.description,
     verdicts: verdicts.map((v) => v.field),
   };
@@ -516,9 +519,20 @@ export async function applyFinding(
 
     case 'seriesIndex': {
       if (work.seriesIndexSort != null) {
+        // ⚠️ Two messages, because the gap test now reads both columns. With
+        // the sort set and the display blank the book still shows a
+        // volume-number gap — it sorts correctly and prints nothing — and
+        // research cannot close it (the display quotes the cover, and
+        // research read a web page). Saying only "already volume N" here
+        // would leave a person staring at a queue row research claims is done.
+        const displayStillNeeded =
+          work.seriesIndexDisplay == null || work.seriesIndexDisplay.trim() === '';
         return {
           applied: null,
-          skipped: `Already volume ${work.seriesIndexSort}.`,
+          skipped: displayStillNeeded
+            ? `Already volume ${work.seriesIndexSort} in the ladder — but the printed form ` +
+              `(what the cover actually says) is blank, and only a person with the book can fill it.`
+            : `Already volume ${work.seriesIndexSort}.`,
           reason: 'already',
         };
       }
@@ -545,7 +559,14 @@ export async function applyFinding(
       // not a cover. Filling it with "Book 2" would be inventing the one field
       // in this trio whose entire job is to quote something.
       await updateWork(db, work.id, { seriesIndexSort: index });
-      return { applied: `Volume number set to ${index}.`, skipped: null, reason: 'applied' };
+      // Honest about what was and was not filled: the row now SORTS as volume
+      // N, but the printed form is still blank and the gap stays open until a
+      // person quotes the cover. See `seriesIndexIncomplete`.
+      return {
+        applied: `Volume number set to ${index} (sorts correctly; the printed form still needs a person).`,
+        skipped: null,
+        reason: 'applied',
+      };
     }
 
     case 'description': {

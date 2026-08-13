@@ -118,6 +118,17 @@ export interface GapSubject {
   firstPublished?: number | null;
   series?: string | null;
   seriesIndexSort?: number | null;
+  /**
+   * ⚠️ The volume number is TWO columns, and both matter here. `sort` (REAL)
+   * is where the book files in the ladder; `display` (TEXT) is what actually
+   * prints on the page. A row with sort set and display NULL sorts into
+   * exactly the right position and prints nothing at all — 22 works were in
+   * that state in production on 2026-08-13 while this queue reported zero
+   * gaps, because the old predicate looked only at `seriesIndexSort`. A field
+   * whose absence is only visible from one direction, same class as
+   * `copy.edition_id` NULL.
+   */
+  seriesIndexDisplay?: string | null;
   description?: string | null;
   /**
    * Fields this work has already been answered about, found or not.
@@ -127,6 +138,31 @@ export interface GapSubject {
    * catalog already has written down with a source.
    */
   verdicts?: readonly DetailField[];
+}
+
+/**
+ * Is the volume number missing — in either of its two halves?
+ *
+ * `sort == null` means the book files nowhere in the ladder; a blank `display`
+ * means the page prints nothing. Both states are a gap: a number nobody can
+ * read is not an answer, and a printed number that sorts nowhere is not one
+ * either. ⚠️ `gapSummary` in `@lc/db` uses this too — the tally and the queue
+ * must agree on what "filled" means, or the summary claims work the rows still
+ * owe.
+ *
+ * ⚠️ Note the interaction with `applyFinding` (research-run.ts): research
+ * fills `sort` only, deliberately — `display` quotes the cover, and research
+ * read a web page, not a cover. So a research-filled volume number keeps this
+ * gap open until a person confirms what the cover says. That is the honest
+ * state: the ladder is ordered, the page still shows nothing, and the queue
+ * says so. `applyFinding`'s "already volume N" refusal stops it re-buying the
+ * answer meanwhile.
+ */
+export function seriesIndexIncomplete(
+  sort: number | null | undefined,
+  display: string | null | undefined,
+): boolean {
+  return sort == null || isBlankDetail(display);
 }
 
 /** True for null, undefined, and a string of nothing but spaces. */
@@ -164,7 +200,10 @@ export function detailGaps(subject: GapSubject): DetailField[] {
       case 'series':
         return isBlankDetail(subject.series);
       case 'seriesIndex':
-        return subject.seriesIndexSort == null;
+        // ⚠️ Both columns, not one — see `seriesIndexIncomplete`. The old
+        // `seriesIndexSort == null` test was blind to a row that sorts
+        // correctly and prints nothing.
+        return seriesIndexIncomplete(subject.seriesIndexSort, subject.seriesIndexDisplay);
       case 'description':
         return isBlankDetail(subject.description);
     }

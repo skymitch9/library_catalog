@@ -26,6 +26,7 @@ import {
   DETAIL_FIELDS,
   UNKNOWN_AUTHOR,
   detailGaps,
+  seriesIndexIncomplete,
   type DecisionMode,
   type DetailField,
   type FindingReviewState,
@@ -703,6 +704,9 @@ interface QueueRow {
   authors: string;
   series: string | null;
   series_index_sort: number | null;
+  /** ⚠️ Travels with sort everywhere the gap test runs — the volume number is
+   *  two columns, and a row with sort set and display NULL prints nothing. */
+  series_index_display: string | null;
   first_published: number | null;
   description: string | null;
   /** Comma-joined `gap_verdict.field` values, or null when there are none. */
@@ -739,7 +743,7 @@ export async function listWorksNeedingDetails(db: D1Database): Promise<NeedsDeta
   const { results } = await db
     .prepare(
       `SELECT w.id, w.title, NULLIF(w.authors, '${UNKNOWN_AUTHOR}') AS authors, w.series, w.series_index_sort,
-              w.first_published, w.description,
+              w.series_index_display, w.first_published, w.description,
               (SELECT group_concat(field) FROM gap_verdict g WHERE g.work_id = w.id) AS verdicts
          FROM work w
         ORDER BY w.sort_title, w.id`,
@@ -753,6 +757,7 @@ export async function listWorksNeedingDetails(db: D1Database): Promise<NeedsDeta
       firstPublished: row.first_published,
       series: row.series,
       seriesIndexSort: row.series_index_sort,
+      seriesIndexDisplay: row.series_index_display,
       description: row.description,
       verdicts: answered,
     };
@@ -801,7 +806,7 @@ export async function gapSummary(db: D1Database): Promise<FieldGapCount[]> {
   const { results } = await db
     .prepare(
       `SELECT w.id, w.title, w.authors, w.series, w.series_index_sort,
-              w.first_published, w.description,
+              w.series_index_display, w.first_published, w.description,
               (SELECT group_concat(field || ':' || verdict) FROM gap_verdict g WHERE g.work_id = w.id) AS verdicts
          FROM work w`,
     )
@@ -841,8 +846,18 @@ export async function gapSummary(db: D1Database): Promise<FieldGapCount[]> {
         bump(field, 'notApplicable');
         continue;
       }
-      const v = value[field];
-      if (v != null && !(typeof v === 'string' && v.trim() === '')) {
+      // ⚠️ The volume number is filled only when BOTH columns are — the one
+      // policy in `seriesIndexIncomplete`, so this tally can never claim work
+      // the queue's rows still owe. A sort with no display sorts correctly
+      // and prints nothing; that is a gap, not a fill.
+      const filled =
+        field === 'seriesIndex'
+          ? !seriesIndexIncomplete(row.series_index_sort, row.series_index_display)
+          : (() => {
+              const v = value[field];
+              return v != null && !(typeof v === 'string' && v.trim() === '');
+            })();
+      if (filled) {
         bump(field, 'filled');
         continue;
       }

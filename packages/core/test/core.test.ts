@@ -1437,7 +1437,7 @@ describe('gaps — what is a question, and what is already an answer', () => {
   it('asks every book for its year and its description', () => {
     // Measured against production 2026-08-10: 116 of 116 works have neither.
     // If this ever stops being true the queue has quietly stopped asking.
-    assert.deepEqual(detailGaps({ series: 'Cradle', seriesIndexSort: 1 }), [
+    assert.deepEqual(detailGaps({ series: 'Cradle', seriesIndexSort: 1, seriesIndexDisplay: '1' }), [
       'firstPublished',
       'description',
     ]);
@@ -1476,6 +1476,7 @@ describe('gaps — what is a question, and what is already an answer', () => {
         firstPublished: 2016,
         series: 'Cradle',
         seriesIndexSort: 1,
+        seriesIndexDisplay: '1',
         description: 'A boy from a doomed valley learns the sacred arts.',
       }),
       [],
@@ -1490,7 +1491,44 @@ describe('gaps — what is a question, and what is already an answer', () => {
   it('a volume 0 is a position, not a missing one', () => {
     // `!subject.seriesIndexSort` would call volume 0 a gap. Prequels numbered 0
     // exist and are already in this catalog's series ladders.
-    assert.ok(!detailGaps({ series: 'X', seriesIndexSort: 0 }).includes('seriesIndex'));
+    assert.ok(
+      !detailGaps({ series: 'X', seriesIndexSort: 0, seriesIndexDisplay: '0' }).includes(
+        'seriesIndex',
+      ),
+    );
+  });
+
+  it('⚠️ a volume number nobody can read is not an answer — both columns, or it is a gap', () => {
+    // The two-column trap, found live 2026-08-13: 22 works had `sort` set and
+    // `display` NULL. They filed into exactly the right ladder position and
+    // PRINTED NOTHING — and the old `seriesIndexSort == null` test reported
+    // zero gaps for all of them. A field whose absence is only visible from
+    // one direction. Production was backfilled; this is what stops the state
+    // being silently readmitted.
+    assert.ok(
+      detailGaps({ series: 'He Who Fights with Monsters', seriesIndexSort: 1 }).includes(
+        'seriesIndex',
+      ),
+    );
+    // Whitespace display is no more readable than a NULL one.
+    assert.ok(
+      detailGaps({ series: 'X', seriesIndexSort: 8, seriesIndexDisplay: '  ' }).includes(
+        'seriesIndex',
+      ),
+    );
+    // The mirror state: a printed number that files nowhere is a gap too —
+    // the ladder would shove it to the end as if unnumbered.
+    assert.ok(
+      detailGaps({ series: 'X', seriesIndexSort: null, seriesIndexDisplay: 'Book 2' }).includes(
+        'seriesIndex',
+      ),
+    );
+    // Both halves present closes it, whatever unusual form the cover printed.
+    assert.ok(
+      !detailGaps({ series: 'X', seriesIndexSort: 2.5, seriesIndexDisplay: 'Vol. 2.5' }).includes(
+        'seriesIndex',
+      ),
+    );
   });
 
   it('reports gaps in DETAIL_FIELDS order, so two rows read identically', () => {
