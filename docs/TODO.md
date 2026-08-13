@@ -151,6 +151,80 @@ paperback" is still a decision somebody might make. `gaps.length` vs
 `certainGaps`/`attestedGaps` is exactly that distinction, and `completeness.ts`
 keeps them apart on purpose.
 
+### 🔨 #341 *He Who Fights with Monsters* book 1 — THREE hardcovers, TWO or THREE editions
+
+Owner: *"we have the target edition with no dust jacket and the barnes and noble
+one with a dust jacket that is signed, we also have a 2nd barnes and noble one
+that is not signed with a dust jacket."*
+
+**✅ Already done:** #341 is filed as **series "He Who Fights with Monsters",
+volume 1**, so it now sits with the ebooks of 2, 3, 5, 6 and 10 and their matched
+audiobooks. It previously had no series at all and was floating free.
+
+**Researched 2026-08-13 — the editions, with sources read directly:**
+
+| | Edition A — in hand, dust jacket | Edition B — Target exclusive, no dust jacket |
+|---|---|---|
+| ISBN | **9781638493457** (off the barcode) | **9781638494362** |
+| publisher | AETHON: Vault (dist. Simon & Schuster) | same |
+| published | 2026-07-07 | 2026-07-07 |
+| pages | **768** ⚠️ contested, see below | not published |
+| price | $32.00, list $35.00 | $24.50, MSRP $35.00 |
+| features | bonus story *"When Farrah Met Gary"*, **sprayed edges (first two printings ONLY)**, spot-gloss dust cover, foil-stamped case + spine, custom art endpapers | **gold foil case wrap**, sprayed **and stencilled** edges, Target-exclusive letter from the author |
+
+⚠️ **Edition B's ISBN is genuinely its own.** It was read out of Target's embedded
+product data (`"primary_barcode":"9781638494362"`), and Target's *separate*
+non-exclusive listing carries `9781638493457` — so Target itself distinguishes
+the two. That is the strongest corroboration available.
+
+⚠️⚠️ **THERE IS A THIRD HARDCOVER, AND IT MAY BE ONE OF THE OWNER'S TWO B&N
+COPIES.** ISBN **9781638494355** — AETHON: Vault, published **2026-04-28**, **704
+pages**, format label "Special", whose own blurb reads *"Now through July 6th, this
+hardcover edition is only available at Barnes & Noble."* **B&N stocks exactly two
+hardcovers — `…3457` and `…4355` — and nothing else.** The owner has **two** B&N
+copies with dust jackets, so they are plausibly the two *different* B&N ISBNs
+rather than two copies of one.
+
+**→ Before creating edition rows: read the barcode on the SECOND B&N copy.** If it
+is `…4355`, that is a third edition row, not a second copy. Recording two copies
+of `…3457` when one is really `…4355` would merge two printings, which is the
+`edition` table's one job to keep apart.
+
+**What to record once that is known:**
+- Edition `9781638493457` — hardcover, dust jacket → **1 signed copy** (and a second unsigned copy *only if* the 2nd B&N book is the same ISBN)
+- Edition `9781638494362` — hardcover, no dust jacket, Target exclusive → **1 copy**
+- Edition `9781638494355` — **only if** the 2nd B&N copy scans as this → 1 unsigned copy
+- ⚠️ #341 currently has **one bare copy with no edition** and **no edition rows at all** — reuse or clear that copy rather than ending up with a phantom fourth.
+
+**Also from the research, worth fixing:**
+- ⚠️ **Book 1's subtitle is "Outworlder"** — the canonical hardcover title is *He Who Fights With Monsters, Book 1: Outworlder*. The catalog's other volumes use `…N: A LitRPG Adventure`, which belongs to the **older 2021 ebook/audio line**, not the hardcovers. Do not retro-fit "A LitRPG Adventure" onto book 1.
+- **First published 9 March 2021** (Aethon, ebook). The 2026 date is this hardcover line.
+- ⚠️ **#341's cover art is the TARGET edition** — the thumbnail carries an "only at Target" badge — while the record is meant to be the dust-jacket edition. Swap it once the editions are split.
+- ⚠️ **Page count unresolved:** B&N, Goodreads and Book Loft say **768** for `…3457`; Target's non-exclusive listing for the same ISBN says **704**, as does the `…4355` variant. Record 768 and treat 704 as retailer data bleed — but it is not settled.
+- ⚠️ **Sprayed edges are NOT a Target-only feature** — the trade hardcover has them on printings 1–2. So "sprayed edges" alone does not identify which edition a copy is; the ISBN does.
+
+### 🔨 Cover swap — port it from the Board Game Catalog
+
+Owner: *"like the board game site can we just get the cover swap feature if we
+don't already have it."*
+
+⚠️ **We do not have it.** What exists today (`routes/covers.ts`) is: `PUT` a URL,
+`POST` an upload, `PATCH` a status, `DELETE`. All of those *replace* the one
+`work.cover_url`. There is **no** notion of holding several candidate covers and
+choosing between them, and no way to see the alternatives you are choosing from.
+
+Why it matters here specifically: **147 of this catalog's covers are hotlinks** —
+106 Open Library, 41 Google Books — which fetch fine server-side but render
+unreliably in a browser, and only **11** live in our own R2. A swap UI is also the
+natural place to move a hotlink into R2 permanently.
+
+⚠️ Read the sibling implementation before designing: the Board Game Catalog has
+this feature and this repo's cover rules were largely ported from it, so the
+candidate-list shape and the "which one is canonical" decision are already solved
+there. Also honour migration 0040 — **`cover_status` travels with `cover_url` or
+not at all** — a swap must carry the status across, or a "stand-in" flag survives
+onto its replacement.
+
 ### 🔨 Completionist Chronicles 12 & 13 — signed, in BOTH formats, 2026-08-13
 
 Owner: *"These are a part of completionist chronicles. The pictures I uploaded are
@@ -335,6 +409,45 @@ aliases, watches and read-state without orphans.
 have read "6 editions and 6 copies", which is precisely the information that makes
 the delete obviously right. And it belongs with the audit log in the edit-any-detail
 item below: a delete is the one edit that cannot be undone by re-editing.
+
+### 🌙 OVERNIGHT AUTONOMOUS RUN — the plan, 2026-08-13
+
+Owner: *"once i go to bed you'll work through all the remaining todos with
+subagents."* Usage at hand-off: **session 34%, weekly 52%** (resets Sun 16:00).
+
+⚠️ **Guardrails, from the global usage rules — these are not optional.**
+Pause the *session* at **89%**. On the **weekly** limit, **stop starting new
+subagents at 93%** and keep working conversationally only to 97%. ⚠️ A subagent's
+cost is invisible until it lands — one landed at 372k tokens in a single lump — so
+**the granularity of risk is one agent, not one tool call**. Pulse-check usage
+whenever an agent is in flight and state the figure when reporting. A full session
+≈ 9 weekly points, so ~5 sessions of headroom remain at 52%.
+
+#### ✅ Agent-safe — no physical book, no owner decision
+
+1. **Cover swap feature** (see its own entry) — read the Board Game Catalog's implementation first. Biggest win, and it also unblocks moving 147 hotlinked covers into R2.
+2. **Record-delete button** — route already exists, nothing calls it, all 15 FKs cascade. Wants a confirm that names what goes with it.
+3. **ISBN backfill** on works **265, 266, 267, 269, 274** — ISBNs are all recorded in this file.
+4. **#269** — add the missing copy (it is owned) and correct the author to **Christie Hainsby**.
+5. **Covers for #266 and #267** from the Goodreads URLs in the queue — download, then upload to R2 rather than hotlinking.
+6. **#186 volume 11**, **#195 volume 8** — both verified against publishers.
+7. **Subtitles** — *Last Child in the Woods* → "Saving Our Children from Nature-Deficit Disorder"; *Possibility & Promise* → "Echoes of the Unknown"; #341 → "Outworlder".
+8. **#7 *Dungeon Born*** — confirm the audiobook link shows, and file the series into the **Cal** universe ⚠️ using whatever name `catalog-platform` actually holds; do not invent it.
+9. **#174** author → **Parragon Books** — needs the authors-edit capability, so it lands with item 10.
+10. **Edit-any-detail + audit log** — the large one. Read its entry for the measured constraints before designing.
+
+#### ⛔ CANNOT be done without the owner — do not guess these
+
+- **The 2nd B&N copy's barcode** on #341 — decides whether it is a second copy or a third edition. Everything else about #341 is ready and waiting on this one scan.
+- **Signed flags** — *Untapped* ×2, *Unmapped* ×2 (paperback + hardcover each), and flipping #238's existing hardcover. `copy.is_signed` is a person-only field by design.
+- **Whether 239–242 are signed** — all read `signed = 0`; one confirmed book is not evidence about four.
+- **Monster Empire #300** — same OL-aggregate bug as the deleted 301/302, left alive pending a word.
+- **Subtitles/photos** still needing the physical book — the pull-list items.
+
+#### ⚠️ Two working notes for whoever picks this up
+
+- **Press `Escape` before clicking Save** in the web UI. The 1Password overlay swallows the click; this caused most of the session's silent failures.
+- **Per-field edits through the book page cost 5–10 tool calls each and land maybe half the time.** Prefer the API or a script for bulk data. The UI is for things only the UI can do.
 
 ### 🔨 LIVE QUEUE — the scanning session of 2026-08-13
 
