@@ -2,11 +2,13 @@ import { Hono } from 'hono';
 import {
   COLLECTION_PAGE_SIZE,
   COLLECTION_PAGE_SIZES,
+  UNKNOWN_AUTHOR,
   WISHLIST_STATUSES,
   workKeyFor,
   createCopySchema,
   createEditionSchema,
   createWorkSchema,
+  reviewsSeenSchema,
   setReadStateSchema,
   updateCopySchema,
   updateEditionSchema,
@@ -21,19 +23,24 @@ import {
   deleteCopy,
   deleteEdition,
   deleteWork,
+  evidenceSaysReviews,
   findWorkByKey,
   getReadState,
   getWork,
   isCollectionSort,
+  keyMoveEvidence,
+  listChangesForEntity,
   listCollection,
   listCopiesForWork,
   listEditionsForWork,
   listWatchesForWork,
   listWishlist,
+  recordReviewsSeen,
   setReadState,
   updateCopy,
   updateEdition,
   updateWork,
+  type Actor,
   type CollectionQuery,
 } from '@lc/db';
 import { universeFor, universeIndex } from '@lc/universes';
@@ -287,87 +294,223 @@ export const catalogRoutes = new Hono<AppBindings>()
   .post('/works', requireCapability('editCatalog'), async (c) => {
     const parsed = createWorkSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues }, 400);
-    return c.json({ work: await createWork(c.env.DB, parsed.data) }, 201);
+    // Who added it — the `__row__` creation row in change_log. 'human' because
+    // this route is only ever a person's form or a person's scan-review tap;
+    // importers go through /api/ingest and scripts write SQL, both 'auto'.
+    const actor: Actor = { userId: c.get('user').id, how: 'human' };
+    return c.json({ work: await createWork(c.env.DB, parsed.data, actor) }, 201);
   })
 
   /**
-   * ⚠️ **`title` and `authors` are refused here, on the server.**
+   * ⚠️ **The key-move gate.** This block REPLACED the blanket
+   * `400 frozen_field` refusal of `title`/`authors` on 2026-08-13, exactly as
+   * that refusal's own comment instructed: the ceremony arrives through THIS
+   * route, not beside it — two routes able to write `title` would be two
+   * places to keep the review-carry rule.
    *
-   * They were accepted until 2026-08-13. `updateWorkSchema` is
-   * `createWorkSchema.partial()`, so both fields pass validation, and this route
-   * added no check of its own — which meant **the only thing protecting the
-   * review join was that the web UI's patch object happened not to send them.**
+   * The stakes, unchanged: `work_key` is derived from `title` + `authors` and
+   * is the join to **~870 audiobook reviews** in the shared Firestore store.
+   * The Worker cannot see Firestore (no service account, deliberately), so it
+   * can never verify a review count itself. What it enforces instead
+   * (edit-and-audit-design.md §5):
    *
-   * That is a convention, not a guard. `WorkFields`' header describes itself as
-   * refusing `title`/`authors` because `work_key` is derived from them and is the
-   * join to **~870 audiobook reviews** in the sibling catalog; but any other
-   * caller — a script, a curl with a token, a future feature written by someone
-   * who read the schema rather than that comment — could move the key and orphan
-   * every review for that book. Nothing would have reported it.
+   *  - a patch that would move a **real** key without a `keyMove` attestation
+   *    → `409 key_move_requires_check` with `{ oldKey, newKey, evidence }`.
+   *    The browser then runs the live Firestore check, restamps the docs
+   *    (Firestore FIRST — a half-done move degrades to legacy-query
+   *    visibility, not loss), and resends with `keyMove`.
+   *  - a stale `expectedOldKey` → `409 stale_key`: two editors collide loudly
+   *    rather than interleave silently.
+   *  - an attestation whose numbers disagree with themselves → 400.
+   *  - `reviewsFound: 0` against contrary D1 evidence (`reviews_seen_*`,
+   *    rating rows, a prior carried move) → `409 evidence_mismatch`. The
+   *    floor can force the careful path; it can never authorise skipping it.
+   *  - clearing `authors` back to null while anything says reviews exist
+   *    → `409 reviews_would_detach`: the sentinel may never be carried onto
+   *    documents, so there is nothing to carry them to.
+   *  - a move FROM a provisional key (authors still null) is **free by
+   *    construction** — zero documents can carry a provisional key, so zero
+   *    can be orphaned. No ceremony, including fixing a typo'd title. This is
+   *    what makes remediation always safe.
    *
-   * ⚠️ **A refusal, not a silent drop.** Zod's `.strip()` behaviour would have
-   * been the tempting fix and is worse: the caller would get HTTP 200 and believe
-   * the rename happened. `identity-and-reviews.md` §5 records the review backfill
-   * reporting 860/860 matched while writing keys no print edition could meet —
-   * the same shape of lie. So this answers 400 and says why.
+   * A retitle that does not move the folded key ("gold" → "Gold") is an
+   * ordinary edit: the key is the join, not the spelling.
    *
-   * This is deliberately a **dead end rather than a locked door**: renaming a
-   * work is a real need (see `docs/info/edit-and-audit-design.md`), and the
-   * feature that grants it must arrive with the review-carry ceremony attached.
+   * ⚠️ Unknown fields in the body are a 400 from `.strict()`, never a silent
+   * strip — with an audit log, a stripped field would manufacture evidence
+   * that a save happened while change_log recorded that nothing did.
    *
-   * ⚠️ **When it does, REPLACE this block — do not add an endpoint beside it.**
-   * The design routes the ceremony through *this same* PATCH, carrying a
-   * `keyMove` payload, so this `400 frozen_field` becomes the
-   * `409 key_move_requires_check` branch **in place**. An earlier draft of this
-   * comment said the feature "opens its own guarded path", which reads as
-   * *build a second route* — corrected after review, because two routes able to
-   * write `title` would mean two places to keep the review-carry rule, and this
-   * file's whole point is that there is one.
-   *
-   * ⚠️ Do **not** copy this pattern onto `PATCH /editions/:id` for `isbn13`.
-   * Measured during review: `Editions.tsx`'s form sends `isbn13`/`isbn10`/`asin`
-   * on **every** save, changed or not, so a presence check there would refuse
-   * every edition edit in the app. Freezing edition identifiers has to arrive in
-   * the same commit that makes that form delta-only. The risk asymmetry allows
-   * the wait: a wrong ISBN is one visible, UNIQUE-guarded row, while a moved
-   * `work_key` silently orphans ~870 reviews.
+   * ⚠️ Do **not** copy the old frozen-field pattern onto `PATCH /editions/:id`
+   * for `isbn13`. Measured during review: `Editions.tsx`'s form sends
+   * `isbn13`/`isbn10`/`asin` on **every** save, changed or not, so a presence
+   * check there would refuse every edition edit in the app. Freezing edition
+   * identifiers has to arrive in the same commit that makes that form
+   * delta-only.
    */
   .patch('/works/:id', requireCapability('editCatalog'), async (c) => {
     const id = Number(c.req.param('id'));
     if (!Number.isInteger(id)) return c.json({ error: 'bad_request' }, 400);
 
     const body = await c.req.json().catch(() => null);
-    // Checked on the RAW body, before Zod, because parsing is where a stripped
-    // field would vanish without trace.
-    const frozen = ['title', 'authors'].filter(
-      (f) => body != null && typeof body === 'object' && f in (body as Record<string, unknown>),
-    );
-    if (frozen.length > 0) {
+    const parsed = updateWorkSchema.safeParse(body);
+    if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues }, 400);
+    const { keyMove, ...patch } = parsed.data;
+
+    const current = await getWork(c.env.DB, id);
+    if (!current) return c.json({ error: 'not_found' }, 404);
+
+    const actor: Actor = { userId: c.get('user').id, how: 'human' };
+
+    // Would this patch move the key? Derived exactly as `updateWork` derives
+    // it — same inputs, same one implementation — so the gate and the write
+    // cannot disagree about what is about to happen.
+    const nextTitle = patch.title ?? current.title;
+    const nextAuthors = patch.authors !== undefined ? patch.authors : current.authors;
+    const newKey = workKeyFor(nextTitle, nextAuthors ?? UNKNOWN_AUTHOR);
+    const oldKey = current.workKey;
+
+    if (newKey === oldKey) {
+      const work = await updateWork(c.env.DB, id, patch, actor);
+      if (!work) return c.json({ error: 'not_found' }, 404);
+      return c.json({ work });
+    }
+
+    // A provisional key (authors never recorded) joins zero review documents
+    // BY CONSTRUCTION — `reviewDocFor` refuses the sentinel, so nothing in
+    // Firestore can carry it. Filling in the author — remediation, the whole
+    // point of "Add without an author" — is therefore always a free move.
+    if (current.authors === null) {
+      const work = await updateWork(
+        c.env.DB,
+        id,
+        patch,
+        actor,
+        'moved from provisional key (free by construction)',
+      );
+      if (!work) return c.json({ error: 'not_found' }, 404);
+      return c.json({ work });
+    }
+
+    // The old key is real: reviews may follow it. The ceremony applies.
+    const evidence = await keyMoveEvidence(c.env.DB, id);
+
+    if (!keyMove) {
       return c.json(
         {
-          error: 'frozen_field',
+          error: 'key_move_requires_check',
           detail:
-            `${frozen.join(' and ')} cannot be changed here: work_key is derived from them ` +
-            'and is the join to the audiobook catalog’s reviews, so moving it orphans them. ' +
-            'Everything else in this patch was refused too — resend without those fields.',
-          fields: frozen,
+            'This edit moves the review join. Run the live review check and resend with keyMove — ' +
+            'the server cannot see Firestore and never moves a real key on faith.',
+          oldKey,
+          newKey,
+          evidence,
+        },
+        409,
+      );
+    }
+    if (keyMove.expectedOldKey !== oldKey) {
+      return c.json(
+        {
+          error: 'stale_key',
+          detail:
+            'The work’s key changed since you looked — someone else edited this book. ' +
+            'Reload and start the edit again.',
+          oldKey,
+        },
+        409,
+      );
+    }
+    if (keyMove.restamped !== keyMove.reviewsFound) {
+      return c.json(
+        {
+          error: 'bad_request',
+          detail:
+            `keyMove is inconsistent: reviewsFound ${keyMove.reviewsFound} but restamped ` +
+            `${keyMove.restamped}. Reviews move with the key, or the key does not move.`,
         },
         400,
       );
     }
+    if (keyMove.reviewsFound === 0 && evidenceSaysReviews(evidence)) {
+      return c.json(
+        {
+          error: 'evidence_mismatch',
+          detail:
+            'The check counted zero reviews, but this database holds evidence some exist — ' +
+            'a stale page, a failed read miscoded as zero, or a browser on the wrong lane. ' +
+            'Reload the book page and try again.',
+          evidence,
+        },
+        409,
+      );
+    }
+    // Clearing the author back to unknown moves the key TO the provisional
+    // sentinel — which no review document may ever carry, so there is nothing
+    // to carry the reviews to. Refused whenever anything says reviews exist.
+    if (nextAuthors === null && (keyMove.reviewsFound > 0 || evidenceSaysReviews(evidence))) {
+      return c.json(
+        {
+          error: 'reviews_would_detach',
+          detail:
+            'This book has reviews, and a book with no author cannot hold them — ' +
+            'the provisional key is never written onto review documents. Fix the author ' +
+            'instead of clearing it.',
+          evidence,
+        },
+        409,
+      );
+    }
 
-    const parsed = updateWorkSchema.safeParse(body);
-    if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues }, 400);
-
-    const work = await updateWork(c.env.DB, id, parsed.data);
+    const work = await updateWork(
+      c.env.DB,
+      id,
+      patch,
+      actor,
+      // One leg of the evidence floor for the NEXT move: 'reviews restamped: N'
+      // with N > 0 is proof reviews existed here once.
+      `reviews restamped: ${keyMove.restamped}`,
+    );
     if (!work) return c.json({ error: 'not_found' }, 404);
     return c.json({ work });
+  })
+
+  /**
+   * The browser reporting what its review fetch just returned — the write side
+   * of the key-move evidence floor. Piggybacked on the book page's ordinary
+   * review load, 'read' capability (design §5.2): it records an observation,
+   * grants nothing, and is never authoritative. The server stamps the
+   * timestamp so count and time cannot travel apart (0040's pairing rule).
+   */
+  .post('/works/:id/reviews-seen', requireCapability('read'), async (c) => {
+    const id = Number(c.req.param('id'));
+    if (!Number.isInteger(id)) return c.json({ error: 'bad_request' }, 400);
+
+    const parsed = reviewsSeenSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues }, 400);
+
+    const ok = await recordReviewsSeen(c.env.DB, id, parsed.data.count);
+    return ok ? c.json({ ok: true }) : c.json({ error: 'not_found' }, 404);
+  })
+
+  /**
+   * The Changes panel — who changed what, when, and what it said before.
+   * Read-only and 'read'-capability: it is a household, and the log is written
+   * by no one directly (`change_log` has no write route; rows land only in the
+   * same batch as the mutation they describe).
+   */
+  .get('/works/:id/changes', requireCapability('read'), async (c) => {
+    const id = Number(c.req.param('id'));
+    if (!Number.isInteger(id)) return c.json({ error: 'bad_request' }, 400);
+    return c.json({ changes: await listChangesForEntity(c.env.DB, 'work', id) });
   })
 
   .delete('/works/:id', requireCapability('editCatalog'), async (c) => {
     const id = Number(c.req.param('id'));
     if (!Number.isInteger(id)) return c.json({ error: 'bad_request' }, 400);
-    const ok = await deleteWork(c.env.DB, id);
+    // Who deleted it — the whole-row `__row__` audit entry is the undo
+    // material, and "who deleted this and what did it say" is the question an
+    // audit log most exists to answer.
+    const ok = await deleteWork(c.env.DB, id, { userId: c.get('user').id, how: 'human' });
     return ok ? c.json({ ok: true }) : c.json({ error: 'not_found' }, 404);
   })
 

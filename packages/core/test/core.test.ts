@@ -85,7 +85,13 @@ import {
   editionMedium,
   isDirectionalRelation,
 } from '../src/constants.ts';
-import { createWorkSchema, observedRatingsSchema, updateEditionSchema } from '../src/schemas.ts';
+import {
+  createWorkSchema,
+  observedRatingsSchema,
+  updateCopySchema,
+  updateEditionSchema,
+  updateWorkSchema,
+} from '../src/schemas.ts';
 import {
   bookIdFromTitle,
   reviewDocFor,
@@ -1527,9 +1533,32 @@ describe('updateEditionSchema — correcting a printing without disturbing it', 
 
   // Moving a printing to another book is not an edit: the copies, reviews and
   // read-state all hang off the work and would be left behind. `workId` is
-  // omitted from the schema, so a caller sending one is ignored, not obeyed.
-  it('⚠️ will not re-point an edition at a different work', () => {
-    assert.equal('workId' in updateEditionSchema.parse({ workId: 9 }), false);
+  // omitted from the schema — and since `.strict()` (2026-08-13) a caller
+  // sending one is REFUSED, not silently ignored. The old behaviour (strip
+  // and 200) was the lie this estate documents: the caller believed the
+  // re-point happened. A 400 naming the key is a bug report.
+  it('⚠️ will not re-point an edition at a different work — and says so', () => {
+    const res = updateEditionSchema.safeParse({ workId: 9 });
+    assert.equal(res.success, false);
+    assert.match(JSON.stringify(res.success ? [] : res.error.issues), /workId/);
+  });
+
+  // The strip-lie in general: an unknown or misspelled key is a 400 that names
+  // it, never a 200 that changed nothing. With an audit log the strip would be
+  // worse than a lie — change_log would truthfully record that nothing
+  // changed while the caller was told it did.
+  it('⚠️ refuses unknown keys by name instead of stripping them', () => {
+    for (const [schema, body] of [
+      [updateEditionSchema, { Format: 'hardcover' }],
+      [updateWorkSchema, { Title: 'x' }],
+      [updateCopySchema, { Status: 'owned' }],
+    ] as const) {
+      const res = schema.safeParse(body);
+      assert.equal(res.success, false);
+      const said = JSON.stringify(res.success ? [] : res.error.issues);
+      assert.match(said, /unrecognized_keys/);
+      assert.match(said, new RegExp(Object.keys(body)[0]!));
+    }
   });
 });
 

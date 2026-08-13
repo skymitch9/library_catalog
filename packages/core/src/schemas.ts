@@ -167,17 +167,32 @@ export const keyMoveSchema = z
   .strict();
 export type KeyMove = z.infer<typeof keyMoveSchema>;
 
-export const updateWorkSchema = createWorkSchema.partial().extend({
-  universe: optionalText,
+export const updateWorkSchema = createWorkSchema
+  .partial()
+  .extend({
+    universe: optionalText,
+    /**
+     * ⚠️ Required (by the route, not the schema) whenever the patch would move a
+     * non-provisional `work_key`. A patch that moves a real key without it is
+     * answered 409 `key_move_requires_check` — which is what closed the 2026-08-13
+     * unguarded-PATCH gap for good. Moves *from* a provisional key are free by
+     * construction and need no attestation.
+     */
+    keyMove: keyMoveSchema.optional(),
+  })
   /**
-   * ⚠️ Required (by the route, not the schema) whenever the patch would move a
-   * non-provisional `work_key`. A patch that moves a real key without it is
-   * answered 409 `key_move_requires_check` — which is what closed the 2026-08-13
-   * unguarded-PATCH gap for good. Moves *from* a provisional key are free by
-   * construction and need no attestation.
+   * ⚠️ `.strict()` — an unknown key is a 400 naming the field, never a silent
+   * strip. Zod's default strip meant `{"Title": "..."}` or any misspelled field
+   * returned 200 having changed nothing — indistinguishable from success, so
+   * the edit looked applied while `change_log` correctly recorded that nothing
+   * changed, and the two disagreed forever with no error anywhere. An audit
+   * log makes the strip-lie WORSE, not better: it manufactures evidence the
+   * save happened. Same rule and same reason as `setReadStateSchema`, which
+   * watched a `rating` vanish this way. Client sweep 2026-08-13: every
+   * `api.updateWork` caller (`WorkFields`, `Enrich`, `catalog-add`) sends only
+   * modeled fields.
    */
-  keyMove: keyMoveSchema.optional(),
-});
+  .strict();
 
 /**
  * ⚠️ Not `Partial<CreateWork>`. That was true until 0080 and is now a subset —
@@ -185,6 +200,22 @@ export const updateWorkSchema = createWorkSchema.partial().extend({
  * patch that names a universe cannot be silently dropped on the way through.
  */
 export type UpdateWork = z.infer<typeof updateWorkSchema>;
+
+/**
+ * The browser reporting what its review fetch just returned — the write side
+ * of the key-move evidence floor (migration 0120, design §5.2).
+ *
+ * A count of what the two Firestore queries (workKey + legacy bookId,
+ * deduplicated on doc id) actually returned. Never authoritative — a
+ * read-model of Firestore like `user_book.rating_cached` — and the pair of
+ * columns it lands in move together or not at all (0040's pairing rule; the
+ * server stamps the timestamp itself). `.strict()` like every schema here
+ * whose silent strip would be a lie.
+ */
+export const reviewsSeenSchema = z
+  .object({ count: z.number().int().nonnegative().max(10000) })
+  .strict();
+export type ReviewsSeen = z.infer<typeof reviewsSeenSchema>;
 
 // ---------------------------------------------------------------------------
 // Covers and watches — "this is not right, and I know it"
@@ -299,7 +330,13 @@ export type CreateEdition = z.infer<typeof createEditionSchema>;
  * behaviour is what makes a one-field PATCH safe, and it is the same behaviour
  * the wishlist's `{ status: 'owned' }` promotion already depends on.
  */
-export const updateEditionSchema = createEditionSchema.omit({ workId: true }).partial();
+// ⚠️ `.strict()` — unknown keys are refused with a 400 naming the field, for
+// the reason `updateWorkSchema` states at length: a silently stripped field
+// returns 200 having changed nothing, which an audit log turns from a lie
+// into manufactured evidence. Client sweep 2026-08-13: `Editions.tsx`'s form
+// is the only PATCH caller and every key it sends (including the deliberate
+// unconditional `isbn13`/`isbn10`/`asin`) is modeled here.
+export const updateEditionSchema = createEditionSchema.omit({ workId: true }).partial().strict();
 export type UpdateEdition = z.infer<typeof updateEditionSchema>;
 
 export const createCopySchema = z.object({
@@ -328,7 +365,10 @@ export type CreateCopy = z.infer<typeof createCopySchema>;
  * accumulates facts over its life (price, vendor, condition, where it ended up)
  * and a promotion must not be a way to lose them.
  */
-export const updateCopySchema = createCopySchema.omit({ workId: true }).partial();
+// ⚠️ `.strict()` — see `updateWorkSchema`. Client sweep 2026-08-13: the copy
+// PATCH bodies are `arrivedPatch` (`status` + `acquiredOn`), the status
+// select (`status`), and the wishlist promotion (`status`) — all modeled.
+export const updateCopySchema = createCopySchema.omit({ workId: true }).partial().strict();
 export type UpdateCopy = z.infer<typeof updateCopySchema>;
 
 /**

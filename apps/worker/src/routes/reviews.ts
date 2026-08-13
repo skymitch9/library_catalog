@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import {
+  UNKNOWN_AUTHOR,
   observedRatingSchema,
   observedRatingsSchema,
   reviewDocFor,
@@ -227,6 +228,27 @@ export const reviewRoutes = new Hono<AppBindings>()
     const work = await getWork(c.env.DB, workId);
     if (!work) return c.json({ error: 'not_found' }, 404);
 
+    // ⚠️ Guard 3 of the design's §3.4. The sweep below cannot reach a
+    // provisional work (no Firestore document ever carries the sentinel key,
+    // so the join finds nothing), but THIS path can: the browser hands it a
+    // rating it matched itself, and on an authorless book the only match it
+    // could have made is the legacy title-only one — which may be a
+    // stranger's review of a different book with the same name ("two books
+    // called Gold", with no author left to disambiguate). Accepting it would
+    // pollute `rating_cached` and derive a read state from someone else's
+    // review. Refused with the same shape as `/draft`'s guard 1.
+    if (work.authors === null) {
+      return c.json(
+        {
+          error: 'author_required',
+          detail:
+            'This book has no author recorded, so a rating cannot be safely matched to it — ' +
+            'a title-only match may be someone else’s book. Add the author first.',
+        },
+        409,
+      );
+    }
+
     const user = c.get('user');
     // ⚠️ By `work_key`, not by `workId`. That is the "all three copies" half of
     // the ask: a book scanned in twice under two spellings is two `work` rows
@@ -282,11 +304,19 @@ export const reviewRoutes = new Hono<AppBindings>()
     const marked = await applyObservedRatings(
       c.env.DB,
       user.id,
-      parsed.data.ratings.map((r) => ({
-        workKey: r.workKey,
-        rating: r.rating,
-        source: r.source ?? null,
-      })),
+      parsed.data.ratings
+        // ⚠️ Guard 3's belt for the sweep: no Firestore document can carry a
+        // provisional key (`reviewDocFor` refuses the sentinel), so a key
+        // naming one here did not come from a review document — it is a
+        // crafted or buggy client, and honouring it would stamp read state
+        // onto an authorless book from evidence that cannot exist. Dropped,
+        // not 400d: one bad key must not fail the other 399 in the batch.
+        .filter((r) => !r.workKey.endsWith(`|${UNKNOWN_AUTHOR}`))
+        .map((r) => ({
+          workKey: r.workKey,
+          rating: r.rating,
+          source: r.source ?? null,
+        })),
     );
 
     // `considered` is the honest denominator for the sentence the browser draws:
