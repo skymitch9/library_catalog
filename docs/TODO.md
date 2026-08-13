@@ -522,6 +522,8 @@ records that it was attempted, which a tidy log does not.
 
 <!-- entries start here -->
 
+- `2026-08-13T19:55Z` **DONE** ✅ **Details queue empty again — 0 descriptions, 0 gaps of any kind.** The 7 outstanding were **not residue**: they were the works *created today* by splitting the Cooper and Card slipcase sets, which arrived with titles, authors, series, volumes and years but no descriptions — the expected consequence of turning 2 records into 9. Written as **brief factual summaries in the catalog's own voice** (matching #269's style), ⚠️ **deliberately not publisher jacket copy**, which is copyrighted text and not something to paste into a database by reflex.
+
 - `2026-08-13T19:41Z` **DEPLOYED** ✅ **Version `dded6f29`** — the illustrator credit and the book number are live. Health green, **347 tests pass**, typecheck clean.
   **Illustrator** renders as *"Illustrated by Shannon Hays"* directly under the byline — same serif, smaller and muted so the author stays primary — and a null renders **nothing at all**. Editable from **About → Edit**, deliberately **not** from the ceremony panel: putting a Free field behind the key-move UI would mislabel it as dangerous.
   ⚠️ **The one rule held with ZERO route changes**, which is the good kind of outcome: an illustrator-only PATCH computes `newKey === oldKey`, so the plain path takes it and **the ceremony never fires**. A new core test pins **`workKeyFor.length === 2`** as a tripwire — a literal guard against anyone widening the signature to include the illustrator.
