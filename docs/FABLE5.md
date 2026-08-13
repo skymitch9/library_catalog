@@ -71,6 +71,31 @@ estate has already shipped or narrowly avoided.
    exactly like a saved one on 2026-08-13 and lost a book.
 7. **Does it need a migration?** If so, it does **not** ship unattended. See §5.
 
+## 3a. Scope: the whole `heygabi-ai` workspace, not one repo
+
+The owner put **`catalog-platform`, `boardbuddy` and `bookbuddy`** into one VS Code
+workspace called **`heygabi-ai`** and asked for Fable to *"clear a lot of todos from
+all of these projects."* So this brief is estate-wide. The work logs to read:
+
+| Repo | Work log | State (2026-08-13) |
+|---|---|---|
+| `bookbuddy/library_catalog` | `docs/TODO.md` | the big queue — this session's |
+| `bookbuddy/audiobook_catalog` | `docs/TODO.md` ⚠️ **gitignored, local only** | pending/decisions + the shared edit-any-detail ask |
+| `boardbuddy/Board_Game_Catalog` | `docs/TODO.md` | **healthy** — clean tree, only **3** open items |
+| `catalog-platform` | `docs/TODO.md`, `docs/PLATFORM.md` | CI gap + sequencing |
+
+### ⚠️ The three repos converge — do not treat this as triple the work
+
+`Board_Game_Catalog`'s **entire** open list is three items: **scan history**,
+**splitting a shelf photograph**, and **the two thresholds worth re-measuring**.
+Those are precisely the three that `PLATFORM.md` §7 Stage 1 already identifies as
+**shared wheels**. So the same three fixes clear boardbuddy's backlog *and* unblock
+the fork. Fix them once, in a form that ports.
+
+⚠️ `audiobook_catalog/docs/` is **gitignored**, so its work log is a local-only
+file. Read it, but do not expect to commit changes to it — and say so if you write
+there, because a future session will not find it in git history.
+
 ## 4. Fable's work queue, in priority order
 
 ### 4.1 Review gate — continuous, highest priority
@@ -95,6 +120,42 @@ author"* for the measured constraints before proposing anything. The short form:
 shares the review store. Design the audit-log table and the `work_key`-move rules
 **once, for both**. `catalog-platform/docs/PLATFORM.md` §2.2 governs what may
 cross the boundary.
+
+### 4.2a Design: an edition picker — ⚠️ #341 was NOT a one-off
+
+Owner, 2026-08-13: *"the 341 editions wont be a 1 off so maybe add that to the
+fable workflow."* They are right, and it is a structural gap rather than a chore.
+
+**The case.** *He Who Fights with Monsters* book 1 exists as **two different
+hardcover printings** the household owns — a dust-jacketed trade edition
+(`9781638493457`) and a Target exclusive with a foil case wrap and no dust jacket
+(`9781638494362`). Recording both required raw SQL, because:
+
+⚠️ **`Copies.tsx` deliberately reuses an existing edition of the same format** —
+`editions.find((e) => e.format === format)` — and its comment explains why: *"this
+catalog learned that lesson the expensive way — `findEditionBySourceUrl` exists
+because an importer created 83 duplicate editions by not checking."* That guard is
+correct for its case and makes **"a second, different printing of the same
+format"** literally unsayable through the UI.
+
+**Why it recurs.** The catalog already holds Kickstarter hardcovers, Target
+exclusives, B&N exclusives, signed printings, sprayed-edge variants and a
+`collectors` edition kind on **43 rows**. The docs' own "Owned more than once"
+section says outright that *"a Target edition and a Barnes & Noble edition are two
+objects on the shelf."* The data model supports it; only the UI cannot express it.
+
+**Design it as a picker, not a new form.** When recording a copy of a format that
+already has an edition, the person needs to *choose* — this printing, or a new one —
+and to see enough to tell them apart (ISBN, edition name, kind). ⚠️ Note the
+overlap with **cover swap**: both are "several candidates exist for this book,
+which one is this?" and they may want to be one component.
+
+⚠️ Constraints that must survive the design:
+- The **83-duplicate-editions** guard must still hold for importers and the scan
+  path. Only a person choosing may create a same-format sibling.
+- `edition_kind` has **no CHECK** on purpose (migration 0050) — do not add one.
+- A wish must still create **no edition**: `reportFor` decides held-vs-wished by
+  whether a work has any edition at all.
 
 ### 4.3 Platform work — genuinely suited to Fable
 
@@ -138,3 +199,22 @@ From the global usage rules, and they are not optional:
   reporting so a stale or failed read is visible rather than assumed fine.
 - Fable's own allowance is separate; the rules above still apply to the
   all-models pool that the dispatching session spends.
+
+### ⚠️ 6.1 Fable does NOT watch its own usage — the dispatcher does
+
+Asked directly by the owner, 2026-08-13, and the answer is no. Two reasons, and
+they are the reason the rule is written the way it is:
+
+1. **The cost is invisible until the agent lands** — that is the entire failure
+   mode, and it is invisible *to the dispatcher*. An agent that reads the usage
+   page mid-run reports a figure that does not yet include its own consumption, so
+   a self-check is structurally incapable of catching the thing being guarded
+   against.
+2. The global rules say outright to **use a background timer rather than a
+   dedicated monitor agent**, because an agent costs more context than the tool
+   calls it would replace. A self-monitoring agent is that anti-pattern twice.
+
+**So: the dispatching session pulse-checks between dispatches and states the
+figure when reporting.** ⚠️ And note that Fable being on a separate allowance makes
+its work *cheap on the main pool, not free* — the dispatcher still pays for the
+prompts it sends and the reports it reads.
