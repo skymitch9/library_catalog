@@ -1,6 +1,7 @@
 import {
   HELD_STATUSES,
   PHYSICAL_FORMATS,
+  UNKNOWN_AUTHOR,
   normaliseTitle,
   primaryAuthor,
   sortTitleFor,
@@ -10,6 +11,7 @@ import {
   type UniverseSource,
   type UpdateWork,
 } from '@lc/core';
+import { ROW_FIELD, changeLogInsert, type Actor } from './changes.js';
 import {
   canonicalUniverseName,
   universeAsserted,
@@ -71,8 +73,25 @@ export interface Work {
   title: string;
   subtitle: string | null;
   sortTitle: string | null;
-  authors: string;
-  primaryAuthor: string;
+  /**
+   * As printed — or **`null` for a book whose author is not yet recorded**
+   * (migration 0120). The row itself stores the `UNKNOWN_AUTHOR` sentinel
+   * (`work.authors` is NOT NULL on purpose — a rebuild of `work` is the
+   * riskiest migration this estate could write, see 0008); `toWork` is the one
+   * place the sentinel becomes an honest null, so the compiler finds every
+   * reader that must handle an unknown author. Null here is what "flagged for
+   * remediation" *is* — the flag is derived from the value, never stored
+   * beside it.
+   */
+  authors: string | null;
+  /** Null exactly when `authors` is. Same sentinel mapping. */
+  primaryAuthor: string | null;
+  /**
+   * ⚠️ For an authorless book this ends `|?unknown` — a **provisional key**.
+   * `normaliseTitle` can never emit `?`, so a provisional key equals no real
+   * key, and `reviewDocFor` refuses to stamp one onto a review document —
+   * which is why filling the author in later is always a free key move.
+   */
   workKey: string;
   series: string | null;
   seriesIndexSort: number | null;
@@ -111,8 +130,10 @@ export function toWork(row: WorkRow): Work {
     title: row.title,
     subtitle: row.subtitle,
     sortTitle: row.sort_title,
-    authors: row.authors,
-    primaryAuthor: row.primary_author,
+    // The one place the stored sentinel becomes an honest null. Its inverse
+    // lives in createWork/updateWork; nothing else may spell '?unknown'.
+    authors: row.authors === UNKNOWN_AUTHOR ? null : row.authors,
+    primaryAuthor: row.primary_author === UNKNOWN_AUTHOR ? null : row.primary_author,
     workKey: row.work_key,
     series: row.series,
     seriesIndexSort: row.series_index_sort,
@@ -138,8 +159,20 @@ const WORK_COLS = `id, title, subtitle, sort_title, authors, primary_author, wor
                    openlibrary_work_id, description, cover_url, cover_status,
                    universe, universe_how, created_at, updated_at`;
 
-export async function createWork(db: D1Database, input: CreateWork): Promise<Work> {
-  const author = primaryAuthor(input.authors);
+export async function createWork(
+  db: D1Database,
+  input: CreateWork,
+  /**
+   * Who is adding it. Optional so importers keep compiling; absent means
+   * `changed_how: 'auto'`, `changed_by: NULL` — recorded, never skipped.
+   */
+  actor?: Actor,
+): Promise<Work> {
+  // `null` authors is the deliberate "add without an author" case: the stored
+  // column stays NOT NULL by holding the sentinel, and `workKeyFor`'s sentinel
+  // branch gives the row a provisional key no real book can collide with.
+  const storedAuthors = input.authors ?? UNKNOWN_AUTHOR;
+  const author = primaryAuthor(storedAuthors);
   /*
    * ⚠️ **The universe is decided here, from bundled JSON, and costs no I/O.**
    *
@@ -161,7 +194,9 @@ export async function createWork(db: D1Database, input: CreateWork): Promise<Wor
     title: input.title,
     series: input.series ?? null,
   });
-  const res = await db
+  const workKey = workKeyFor(input.title, storedAuthors);
+
+  const insert = db
     .prepare(
       `INSERT INTO work (title, subtitle, sort_title, authors, primary_author, work_key,
                          series, series_index_sort, series_index_display, first_published,
@@ -174,9 +209,9 @@ export async function createWork(db: D1Database, input: CreateWork): Promise<Wor
       input.title,
       input.subtitle ?? null,
       sortTitleFor(input.title),
-      input.authors,
+      storedAuthors,
       author,
-      workKeyFor(input.title, input.authors),
+      workKey,
       input.series ?? null,
       input.seriesIndexSort ?? null,
       input.seriesIndexDisplay ?? null,
@@ -187,8 +222,44 @@ export async function createWork(db: D1Database, input: CreateWork): Promise<Wor
       input.coverStatus ?? null,
       verse.universe,
       verse.how,
-    )
-    .first<WorkRow>();
+    );
+
+  /*
+   * Creation logs one `__row__` audit row, in the SAME batch as the insert —
+   * atomically or not at all (design §4.2). The id does not exist until the
+   * insert runs, so the audit row binds `last_insert_rowid()`, which D1
+   * evaluates sequentially on one session within a batch. `new_json` is the
+   * app-shape input plus the derived key — everything needed to answer "who
+   * added this book and as what". The sentinel is NOT in it: the app shape is
+   * `authors: null`.
+   */
+  const audit = changeLogInsert(db, {
+    batchId: crypto.randomUUID(),
+    entity: 'work',
+    entityId: 'last_insert_rowid()',
+    field: ROW_FIELD,
+    oldJson: 'null',
+    newJson: JSON.stringify({
+      title: input.title,
+      subtitle: input.subtitle ?? null,
+      authors: input.authors ?? null,
+      workKey,
+      series: input.series ?? null,
+      seriesIndexSort: input.seriesIndexSort ?? null,
+      seriesIndexDisplay: input.seriesIndexDisplay ?? null,
+      firstPublished: input.firstPublished ?? null,
+      openlibraryWorkId: input.openlibraryWorkId ?? null,
+      description: input.description ?? null,
+      coverUrl: input.coverUrl ?? null,
+      coverStatus: input.coverStatus ?? null,
+      universe: verse.universe,
+      universeHow: verse.how,
+    }),
+    actor,
+  });
+
+  const [inserted] = await db.batch<WorkRow>([insert, audit]);
+  const res = inserted?.results?.[0];
   if (!res) throw new Error('insert returned no row');
   return toWork(res);
 }
@@ -214,17 +285,34 @@ export async function getWork(db: D1Database, id: number): Promise<Work | null> 
  *
  * ⚠️ And to the universe, with one difference: **`universe_how = 'human'` stops
  * the re-derivation dead.** See `verse` below.
+ *
+ * ⚠️ **This function moves the key when told to; the ROUTE decides whether it
+ * may be told to.** The key-move ceremony — the live Firestore check, the
+ * attestation, the evidence floor — lives on `PATCH /api/works/:id`
+ * (edit-and-audit-design.md §5). Every change and its audit rows land in one
+ * `db.batch()`.
  */
 export async function updateWork(
   db: D1Database,
   id: number,
   patch: UpdateWork,
+  actor?: Actor,
+  /**
+   * The note for the `work_key` audit row when the key moves — the route
+   * writes 'reviews restamped: N' here, which is one leg of the evidence
+   * floor for the NEXT move. Separate from `actor.note` so a general note
+   * does not masquerade as a carry record.
+   */
+  keyMoveNote?: string,
 ): Promise<Work | null> {
   const current = await getWork(db, id);
   if (!current) return null;
 
   const title = patch.title ?? current.title;
-  const authors = patch.authors ?? current.authors;
+  // App shape: `null` means unknown; `undefined` means untouched. The stored
+  // column gets the sentinel back — the inverse of `toWork`'s mapping.
+  const nextAuthors = patch.authors !== undefined ? patch.authors : current.authors;
+  const storedAuthors = nextAuthors ?? UNKNOWN_AUTHOR;
   const series = patch.series !== undefined ? patch.series : current.series;
 
   /**
@@ -276,7 +364,62 @@ export async function updateWork(
         ? null
         : current.coverStatus;
 
-  const row = await db
+  // The next app-shape values, used both to bind the UPDATE and to diff for
+  // the audit rows — one derivation, so the log cannot disagree with the write.
+  const next = {
+    title,
+    subtitle: patch.subtitle !== undefined ? patch.subtitle : current.subtitle,
+    authors: nextAuthors,
+    workKey: workKeyFor(title, storedAuthors),
+    series,
+    seriesIndexSort:
+      patch.seriesIndexSort !== undefined ? patch.seriesIndexSort : current.seriesIndexSort,
+    seriesIndexDisplay:
+      patch.seriesIndexDisplay !== undefined
+        ? patch.seriesIndexDisplay
+        : current.seriesIndexDisplay,
+    firstPublished:
+      patch.firstPublished !== undefined ? patch.firstPublished : current.firstPublished,
+    openlibraryWorkId:
+      patch.openlibraryWorkId !== undefined ? patch.openlibraryWorkId : current.openlibraryWorkId,
+    description: patch.description !== undefined ? patch.description : current.description,
+    coverUrl: patch.coverUrl !== undefined ? patch.coverUrl : current.coverUrl,
+    coverStatus,
+    universe: verse.universe,
+  };
+
+  /*
+   * The audit diff — one row per field that actually changed (design §4.2):
+   *   - no-op fields are not logged, or every save is noise;
+   *   - derived columns (`sort_title`, `primary_author`, re-derived `universe`)
+   *     are not logged — they move mechanically with their inputs. EXCEPT
+   *     `work_key`: a key move is the event the whole §5 ceremony exists for,
+   *     so it gets its own row, with the carry note;
+   *   - `universe` IS logged when a person asserted it (patch named it) —
+   *     that is an edit, not a derivation;
+   *   - values are logged in APP shape, so the sentinel never appears in the
+   *     log a person reads (`authors: null` is the honest spelling).
+   */
+  const batchId = crypto.randomUUID();
+  const diffs: { field: string; oldValue: unknown; newValue: unknown; note?: string | null }[] = [];
+  const consider = (field: string, oldValue: unknown, newValue: unknown, note?: string | null) => {
+    if (oldValue !== newValue) diffs.push({ field, oldValue, newValue, note: note ?? null });
+  };
+  consider('title', current.title, next.title);
+  consider('subtitle', current.subtitle, next.subtitle);
+  consider('authors', current.authors, next.authors);
+  consider('work_key', current.workKey, next.workKey, keyMoveNote ?? actor?.note ?? null);
+  consider('series', current.series, next.series);
+  consider('seriesIndexSort', current.seriesIndexSort, next.seriesIndexSort);
+  consider('seriesIndexDisplay', current.seriesIndexDisplay, next.seriesIndexDisplay);
+  consider('firstPublished', current.firstPublished, next.firstPublished);
+  consider('openlibraryWorkId', current.openlibraryWorkId, next.openlibraryWorkId);
+  consider('description', current.description, next.description);
+  consider('coverUrl', current.coverUrl, next.coverUrl);
+  consider('coverStatus', current.coverStatus, next.coverStatus);
+  if (patch.universe !== undefined) consider('universe', current.universe, next.universe);
+
+  const update = db
     .prepare(
       `UPDATE work SET
          title = ?, subtitle = ?, sort_title = ?, authors = ?, primary_author = ?, work_key = ?,
@@ -288,35 +431,76 @@ export async function updateWork(
        RETURNING ${WORK_COLS}`,
     )
     .bind(
-      title,
-      patch.subtitle !== undefined ? patch.subtitle : current.subtitle,
-      sortTitleFor(title),
-      authors,
-      primaryAuthor(authors),
-      workKeyFor(title, authors),
-      series,
-      patch.seriesIndexSort !== undefined ? patch.seriesIndexSort : current.seriesIndexSort,
-      patch.seriesIndexDisplay !== undefined
-        ? patch.seriesIndexDisplay
-        : current.seriesIndexDisplay,
-      patch.firstPublished !== undefined ? patch.firstPublished : current.firstPublished,
-      patch.openlibraryWorkId !== undefined
-        ? patch.openlibraryWorkId
-        : current.openlibraryWorkId,
-      patch.description !== undefined ? patch.description : current.description,
-      patch.coverUrl !== undefined ? patch.coverUrl : current.coverUrl,
-      coverStatus,
+      next.title,
+      next.subtitle,
+      sortTitleFor(next.title),
+      storedAuthors,
+      primaryAuthor(storedAuthors),
+      next.workKey,
+      next.series,
+      next.seriesIndexSort,
+      next.seriesIndexDisplay,
+      next.firstPublished,
+      next.openlibraryWorkId,
+      next.description,
+      next.coverUrl,
+      next.coverStatus,
       verse.universe,
       verse.how,
       id,
-    )
-    .first<WorkRow>();
+    );
+
+  const statements: D1PreparedStatement[] = [
+    update,
+    ...diffs.map((d) =>
+      changeLogInsert(db, {
+        batchId,
+        entity: 'work',
+        entityId: id,
+        field: d.field,
+        oldJson: JSON.stringify(d.oldValue === undefined ? null : d.oldValue),
+        newJson: JSON.stringify(d.newValue === undefined ? null : d.newValue),
+        actor,
+        // The work_key row carries the carry note ('reviews restamped: N');
+        // ordinary field rows carry the actor's general note when there is one
+        // ('finding 412' on an auto-apply), else nothing.
+        note: d.field === 'work_key' ? d.note : (actor?.note ?? null),
+      }),
+    ),
+  ];
+
+  const [updated] = await db.batch<WorkRow>(statements);
+  const row = updated?.results?.[0];
   return row ? toWork(row) : null;
 }
 
-export async function deleteWork(db: D1Database, id: number): Promise<boolean> {
-  const res = await db.prepare('DELETE FROM work WHERE id = ?').bind(id).run();
-  return (res.meta.changes ?? 0) > 0;
+/**
+ * Delete a work — and log the whole row as the undo material.
+ *
+ * The audit row is deliberately NOT a foreign key (migration 0120), so it
+ * survives the row it describes: "who deleted this, and what did it say?" is
+ * the question an audit log most exists to answer. `old_json` is the app-shape
+ * row (`authors: null` for a provisional book, never the sentinel).
+ */
+export async function deleteWork(db: D1Database, id: number, actor?: Actor): Promise<boolean> {
+  const row = await db
+    .prepare(`SELECT ${WORK_COLS} FROM work WHERE id = ?`)
+    .bind(id)
+    .first<WorkRow>();
+  if (!row) return false;
+
+  const del = db.prepare('DELETE FROM work WHERE id = ?').bind(id);
+  const audit = changeLogInsert(db, {
+    batchId: crypto.randomUUID(),
+    entity: 'work',
+    entityId: id,
+    field: ROW_FIELD,
+    oldJson: JSON.stringify(toWork(row)),
+    newJson: 'null',
+    actor,
+  });
+  const [res] = await db.batch([del, audit]);
+  return ((res?.meta as { changes?: number } | undefined)?.changes ?? 0) > 0;
 }
 
 /**
@@ -574,11 +758,22 @@ const KIND_CLAUSE: Record<string, string> = {
 const NEEDS_COVER = "(w.cover_url IS NULL OR w.cover_status = 'standin')";
 const NEEDS_WATCH =
   'EXISTS (SELECT 1 FROM work_watch ww WHERE ww.work_id = w.id AND ww.resolved_at IS NULL)';
+/**
+ * "Still needs an author" — migration 0120. ⚠️ DERIVED from the value, not a
+ * stored flag: `authors = '?unknown'` IS the remediation queue, so the mark
+ * and the fact cannot diverge (0040's rule, the way `NEEDS_COVER` derives from
+ * the cover columns rather than storing "needs a cover"). The sentinel is
+ * inlined as a literal — it is a constant written in `@lc/core`, never caller
+ * text — and `idx_work_unknown_author` is the partial index for exactly this
+ * clause.
+ */
+const NEEDS_AUTHOR = `w.authors = '${UNKNOWN_AUTHOR}'`;
 
 const NEEDS_CLAUSE: Record<string, string> = {
   cover: NEEDS_COVER,
   watch: NEEDS_WATCH,
-  any: `(${NEEDS_COVER} OR ${NEEDS_WATCH})`,
+  author: NEEDS_AUTHOR,
+  any: `(${NEEDS_COVER} OR ${NEEDS_WATCH} OR ${NEEDS_AUTHOR})`,
 };
 
 /**
@@ -820,7 +1015,7 @@ export interface CollectionFacets {
    * "Cover needed (4)" beside a selected "Watch" would be the count of books
    * that are *both*, which is not what picking it would give you.
    */
-  needs: { cover: number; watch: number };
+  needs: { cover: number; watch: number; author: number };
   /**
    * How many books hold a special printing, and how many hold a *named* one
    * nothing has sorted yet. Counted with the kind clause itself removed, exactly
@@ -923,11 +1118,12 @@ export async function collectionFacets(
       .prepare(
         `SELECT
             SUM(CASE WHEN ${NEEDS_COVER} THEN 1 ELSE 0 END) AS cover,
-            SUM(CASE WHEN ${NEEDS_WATCH} THEN 1 ELSE 0 END) AS watch
+            SUM(CASE WHEN ${NEEDS_WATCH} THEN 1 ELSE 0 END) AS watch,
+            SUM(CASE WHEN ${NEEDS_AUTHOR} THEN 1 ELSE 0 END) AS author
            FROM work w ${withoutNeeds.sql}`,
       )
       .bind(...withoutNeeds.binds)
-      .first<{ cover: number | null; watch: number | null }>(),
+      .first<{ cover: number | null; watch: number | null; author: number | null }>(),
     // One row, two columns, for the third time — the two sets overlap (a book
     // can hold a classified printing and an unsorted one) so a GROUP BY would
     // have to choose a bucket for it. `KIND_CLAUSE` carries no binds, so
@@ -955,7 +1151,7 @@ export async function collectionFacets(
     // `SUM` over no rows is NULL. A zero here is a real and welcome answer —
     // it means nothing is outstanding — so the control stays put and reads
     // "Cover needed (0)" rather than vanishing, the rule `media` states.
-    needs: { cover: needs?.cover ?? 0, watch: needs?.watch ?? 0 },
+    needs: { cover: needs?.cover ?? 0, watch: needs?.watch ?? 0, author: needs?.author ?? 0 },
     // `SUM` over no rows is NULL. Both stay put at zero rather than vanishing,
     // the rule `media` states — and "Named, not sorted (0)" is the reading this
     // control most wants to be able to give.

@@ -68,11 +68,34 @@ export const enrichRoutes = new Hono<AppBindings>().get(
     // name is first in both lists, so a work with no aliases behaves exactly as
     // it did before this paragraph existed.
     const queryTitles = [work.title, ...titleAliases];
-    const queryAuthors = [primaryAuthor(work.authors), ...authorAliases.map(primaryAuthor)];
+    // ⚠️ A provisional work — no author recorded yet — searches by TITLE ALONE
+    // rather than being refused. Enrichment is *how the missing author gets
+    // found*, so blocking it here would make remediation impossible, which is
+    // the opposite of what "Add without an author" exists for. The other three
+    // guards in the design's §3.4 all refuse; this one deliberately does not,
+    // and that asymmetry is the point rather than an oversight.
+    //
+    // `searchOpenLibrary` already takes `string | null` and omits the author
+    // parameter when it is null, so this needs no change there.
+    //
+    // Author agreement then scores 0 against every candidate — `foldAuthorNames`
+    // drops blanks, so `ourAuthorKeys` is empty and `bestSimilarity` returns 0,
+    // with no NaN reaching the JSON. That is honest and harmless *because this
+    // route only proposes*: the filter gates on TITLE similarity and a person
+    // accepts the finding. Auto-accepting findings was considered and rejected
+    // (catalog-platform improvement-proposals.md §5), which is what keeps a
+    // title-only match from ever being applied unread.
+    const queryAuthors: (string | null)[] =
+      work.authors === null && authorAliases.length === 0
+        ? [null]
+        : [
+            ...(work.authors === null ? [] : [primaryAuthor(work.authors)]),
+            ...authorAliases.map(primaryAuthor),
+          ];
     const ourTitleKeys = foldTitleNames(work.title, titleAliases);
-    const ourAuthorKeys = foldAuthorNames(work.authors, authorAliases);
+    const ourAuthorKeys = foldAuthorNames(work.authors ?? '', authorAliases);
 
-    const pairs: { title: string; author: string }[] = [];
+    const pairs: { title: string; author: string | null }[] = [];
     for (const title of queryTitles) {
       for (const author of queryAuthors) {
         if (pairs.length < MAX_QUERIES) pairs.push({ title, author });

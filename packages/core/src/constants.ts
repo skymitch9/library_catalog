@@ -12,6 +12,33 @@
  */
 
 /**
+ * ⚠️ The stored stand-in for "no author recorded". Migration 0120.
+ *
+ * Chosen to be impossible: `normaliseTitle`'s output alphabet is [a-z0-9 ]
+ * (titles.ts — every other character is folded to a space or dropped), so no
+ * real author can ever fold to a string containing '?'. That single character
+ * is the entire collision proof: `gold|?unknown` cannot equal any key
+ * `workKeyFor` derives from a real author, **including an author literally
+ * credited as "Unknown" or "Author Unknown"** — those fold to 'unknown',
+ * without the '?'. The proof needs `workKeyFor`'s sentinel branch to hold
+ * (folding the sentinel itself would yield plain 'unknown'); `core.test.ts`
+ * asserts both halves, so deleting the branch fails a test rather than
+ * silently colliding every authorless book with real "Unknown"-credited ones.
+ *
+ * It exists in exactly three places: this constant, the two mapping points in
+ * `@lc/db` (`toWork` reads it out as null; `createWork`/`updateWork` write
+ * null back in as it), and the database file itself. Above the row boundary
+ * the app type is `string | null`, so the compiler finds every reader that
+ * must handle an unknown author.
+ *
+ * ⚠️ It must NEVER appear in Firestore. `reviewDocFor` throws on it, and that
+ * refusal is what makes filling the author in later a free key move — zero
+ * review documents can ever carry a provisional key, so zero can be orphaned.
+ * See docs/info/edit-and-audit-design.md §3.
+ */
+export const UNKNOWN_AUTHOR = '?unknown';
+
+/**
  * ⚠️ Mirrored by a CHECK constraint on `app_user.role` — migration 0008 is the
  * current definition. Adding a value here without a migration means the role is
  * assignable in the UI, passes zod, and then fails at the write with a bare

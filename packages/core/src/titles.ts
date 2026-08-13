@@ -3,7 +3,7 @@
  *
  * **This is the one implementation.** Everything that needs a folded title, a
  * split author list or a work key calls in here — the Worker, the CLI, the
- * review bridge, the web app. Imports nothing. No I/O.
+ * review bridge, the web app. Imports only the `constants.ts` leaf. No I/O.
  *
  * ## Why "the one implementation" is written in bold
  *
@@ -36,6 +36,8 @@
  * again, bring that parity check back with it** — it is not optional, and it
  * caught nothing only because it existed.
  */
+
+import { UNKNOWN_AUTHOR } from './constants.js';
 
 /**
  * Fold a title down to something comparable.
@@ -111,6 +113,18 @@ export function primaryAuthor(raw: string): string {
  * back into its two parts, which the backfill needs and a hyphen would not give.
  */
 export function workKeyFor(title: string, authors: string): string {
+  // ⚠️ The sentinel bypasses the fold ON PURPOSE, and this branch is
+  // load-bearing rather than an optimisation. Folding '?unknown' would yield
+  // plain 'unknown' — which a real credited author can legitimately produce
+  // ("Author Unknown" is printed on real folk-tale covers, and
+  // normaliseTitle('Unknown') === normaliseTitle('?unknown') === 'unknown').
+  // The unfolded '?' is the entire collision proof for provisional keys, so it
+  // must survive into the key verbatim. Deleting this branch would silently
+  // collide every authorless book with every real "Unknown"-credited one;
+  // core.test.ts asserts it stays.
+  if (authors === UNKNOWN_AUTHOR) {
+    return `${normaliseTitle(title)}|${UNKNOWN_AUTHOR}`;
+  }
   return `${normaliseTitle(title)}|${normaliseTitle(primaryAuthor(authors))}`;
 }
 

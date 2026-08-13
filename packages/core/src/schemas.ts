@@ -10,6 +10,7 @@
 import { z } from 'zod';
 import {
   ACCESSORY_KINDS,
+  UNKNOWN_AUTHOR,
   CONDITIONS,
   COPY_STATUSES,
   COVER_STATUSES,
@@ -87,8 +88,25 @@ export const asinSchema = z
 export const createWorkSchema = z.object({
   title: z.string().trim().min(1),
   subtitle: optionalText,
-  /** As printed, in the order printed. Split by `splitAuthors`, never by the caller. */
-  authors: z.string().trim().min(1),
+  /**
+   * As printed, in the order printed. Split by `splitAuthors`, never by the
+   * caller.
+   *
+   * ⚠️ `null` means **no author recorded** — the deliberate "add without an
+   * author" case (migration 0120). The field is required-but-nullable rather
+   * than optional, so authorless is always an explicit statement and never an
+   * accident of a missing key. `@lc/db` stores the `UNKNOWN_AUTHOR` sentinel
+   * for it; the sentinel itself is refused here because it is a storage
+   * detail, not API vocabulary — a caller that has no author says `null`.
+   */
+  authors: z
+    .string()
+    .trim()
+    .min(1)
+    .refine((a) => a !== UNKNOWN_AUTHOR, {
+      message: 'send null for a book with no recorded author — the sentinel is not API vocabulary',
+    })
+    .nullable(),
   series: optionalText,
   seriesIndexSort: z.number().nullable().optional(),
   seriesIndexDisplay: optionalText,
@@ -124,8 +142,41 @@ export type CreateWork = z.infer<typeof createWorkSchema>;
  * the row against re-resolution; `null` is a real answer meaning *in no
  * universe*, not "clear this and re-derive". Migration 0080.
  */
+/**
+ * The key-move attestation — what the browser must say before a PATCH may move
+ * a non-provisional `work_key`. Migration 0120 / edit-and-audit-design.md §5.2.
+ *
+ * The Worker cannot see Firestore (no service account, deliberately), so it can
+ * never verify these numbers; what it can do is refuse an attestation that is
+ * internally inconsistent (`restamped !== reviewsFound`), stale
+ * (`expectedOldKey` no longer the row's key), or contradicted by the D1
+ * evidence floor (`reviews_seen_count`, rating evidence, a prior carried
+ * key-move). `.strict()` so a misspelled field is a 400, not a silent pass.
+ */
+export const keyMoveSchema = z
+  .object({
+    /** Optimistic concurrency: 409 if the work's key changed since the client looked. */
+    expectedOldKey: z.string().min(3).refine((k) => k.includes('|'), {
+      message: 'a workKey is title|author',
+    }),
+    /** What the live Firestore check counted (workKey + legacy bookId queries, deduplicated). */
+    reviewsFound: z.number().int().nonnegative(),
+    /** How many docs were re-pointed to the new key. Must equal `reviewsFound`. */
+    restamped: z.number().int().nonnegative(),
+  })
+  .strict();
+export type KeyMove = z.infer<typeof keyMoveSchema>;
+
 export const updateWorkSchema = createWorkSchema.partial().extend({
   universe: optionalText,
+  /**
+   * ⚠️ Required (by the route, not the schema) whenever the patch would move a
+   * non-provisional `work_key`. A patch that moves a real key without it is
+   * answered 409 `key_move_requires_check` — which is what closed the 2026-08-13
+   * unguarded-PATCH gap for good. Moves *from* a provisional key are free by
+   * construction and need no attestation.
+   */
+  keyMove: keyMoveSchema.optional(),
 });
 
 /**

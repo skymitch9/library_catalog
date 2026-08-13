@@ -54,7 +54,7 @@
  * bridge is additive, and nothing on that side has to change for it to be safe.
  */
 
-import type { ReviewSource } from './constants.js';
+import { UNKNOWN_AUTHOR, type ReviewSource } from './constants.js';
 import { cleanAudiobookTitle, cleanTitleWithSeries, workKeyFor } from './titles.js';
 
 /**
@@ -181,6 +181,15 @@ export function reviewSourceOf(doc: {
  * stripper runs anyway, defensively: a title typed from an Audible listing is
  * a normal way for a row to arrive here, and a `workKey` built from a decorated
  * title matches nothing.
+ *
+ * ⚠️ **Throws on `UNKNOWN_AUTHOR`.** A review written against a provisional
+ * (authorless) work would be stamped with the provisional key and detach the
+ * day the author arrives — and, worse, the sentinel would exist in Firestore,
+ * which is the one place it must never appear: "zero documents can carry a
+ * provisional key" is the entire proof that filling in an author later is a
+ * free key move (docs/info/edit-and-audit-design.md §3.4, §5.1). The `/draft`
+ * route answers a friendly 409 before this is ever reached; the throw is the
+ * backstop for any future caller that skips the route.
  */
 export function reviewDocFor(params: {
   title: string;
@@ -191,6 +200,11 @@ export function reviewDocFor(params: {
   text: string;
   editionLabel?: string | null;
 }): { id: string; doc: ReviewDoc } {
+  if (params.authors === UNKNOWN_AUTHOR) {
+    throw new Error(
+      'reviewDocFor refuses a provisional work: add the author first — a review written now would come loose when it arrives.',
+    );
+  }
   const clean = cleanAudiobookTitle(params.title);
   // ⚠️ bookId off the title as *given*, not the cleaned one. If this row came
   // from the audiobook catalog its decorated title is what built the existing

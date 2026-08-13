@@ -67,6 +67,21 @@ export const reviewRoutes = new Hono<AppBindings>()
     const work = await getWork(c.env.DB, workId);
     if (!work) return c.json({ error: 'not_found' }, 404);
 
+    // ⚠️ Guard 1 of the design's §3.4. `reviewDocFor` throws on the sentinel, but
+    // a thrown error here would surface as a 500 and read as a broken site. The
+    // friendly refusal comes first and says WHY, because the reason is the whole
+    // point: a review written now would carry the provisional key and come loose
+    // from this book the moment the author arrives.
+    if (work.authors === null) {
+      return c.json(
+        {
+          error: 'author_required',
+          detail: 'Add the author first — a review written now would come loose when it arrives.',
+        },
+        409,
+      );
+    }
+
     const user = c.get('user');
     const displayName = user.reviewName ?? user.displayName ?? user.email;
 
@@ -118,6 +133,28 @@ export const reviewRoutes = new Hono<AppBindings>()
 
     const work = await getWork(c.env.DB, workId);
     if (!work) return c.json({ error: 'not_found' }, 404);
+
+    // ⚠️ Guard 2 of the design's §3.4, and the dangerous half of it. Suppressing
+    // the `workKey` query is merely tidy — no Firestore document can carry the
+    // sentinel, because `reviewDocFor` refuses to write one, so that query would
+    // just match nothing. `legacyBookId` is the risk: it is derived from the
+    // TITLE ALONE, so for a book with no author it can surface A STRANGER'S
+    // reviews of a different book with the same name. "Two books called Gold" is
+    // the exact case migration 0001 warns about, and with no author recorded
+    // there is nothing left to disambiguate them with.
+    //
+    // Answered as a held STATE rather than an error, because the book page still
+    // has to render, and "held" is a true thing to say about this book. The cost
+    // — a real audiobook review staying invisible until the author is filled in
+    // — is accepted deliberately and stated in the design's §8.
+    if (work.authors === null) {
+      return c.json({
+        collection: reviewCollection(c.env),
+        workKey: null,
+        legacyBookId: null,
+        held: 'Reviews are held until the author is known.',
+      });
+    }
 
     const { doc } = reviewDocFor({
       title: work.title,

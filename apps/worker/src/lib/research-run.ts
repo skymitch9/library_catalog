@@ -298,7 +298,11 @@ export async function runDetailsResearch(
 
     const { answer, usage } = await researchDetails(env.ANTHROPIC_API_KEY, {
       title: work.title,
-      authors: work.authors,
+      // A provisional (authorless) work sends an empty author line rather than
+      // a guess — migration 0120. The model is told less, which is honest;
+      // its identification gate answers `identified: false` when the title
+      // alone is ambiguous, which is the right outcome for exactly that book.
+      authors: work.authors ?? '',
       series: work.series,
       fields,
     });

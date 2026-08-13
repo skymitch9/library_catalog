@@ -20,6 +20,7 @@ import {
   detectSeriesFromTitle,
   parseSeriesFromTitle,
   parseVolumeNumber,
+  parseWorkKey,
   primaryAuthor,
   splitAuthors,
   workKeyFor,
@@ -77,11 +78,12 @@ import {
   EDITION_MEDIA,
   HELD_STATUSES,
   PHYSICAL_FORMATS,
+  UNKNOWN_AUTHOR,
   WISHLIST_STATUSES,
   editionMedium,
   isDirectionalRelation,
 } from '../src/constants.ts';
-import { observedRatingsSchema, updateEditionSchema } from '../src/schemas.ts';
+import { createWorkSchema, observedRatingsSchema, updateEditionSchema } from '../src/schemas.ts';
 import {
   bookIdFromTitle,
   reviewDocFor,
@@ -332,6 +334,75 @@ describe('workKey — the bridge to the audiobook catalog', () => {
       workKeyFor('Warrior Fae', 'Caroline Peckham, Susanne Valenti'),
       workKeyFor('Warrior Fae', 'Caroline Peckham and Susanne Valenti'),
     );
+  });
+});
+
+describe('the provisional key — a book with no author (migration 0120)', () => {
+  it('normaliseTitle emits only [a-z0-9 ], so no real author can produce a ?', () => {
+    // The collision proof's first half, exercised rather than asserted in a
+    // comment: sweep the whole Basic Multilingual Plane through the fold and
+    // check the output alphabet. Verified independently over an 8,448-codepoint
+    // sweep on 2026-08-13; this pins it against any future "improvement" to
+    // the fold.
+    const allowed = /^[a-z0-9 ]*$/;
+    for (let cp = 0; cp <= 0xffff; cp++) {
+      // Skip lone surrogates — not real characters, and String.fromCharCode on
+      // them makes .normalize() throw on some engines.
+      if (cp >= 0xd800 && cp <= 0xdfff) continue;
+      const folded = normaliseTitle(`x${String.fromCharCode(cp)}x`);
+      assert.ok(
+        allowed.test(folded),
+        `normaliseTitle leaked a character outside [a-z0-9 ] for codepoint U+${cp.toString(16)}: ${JSON.stringify(folded)}`,
+      );
+    }
+  });
+
+  it('workKeyFor carries the sentinel through UNFOLDED — the branch is load-bearing', () => {
+    // ⚠️ The alphabet proof above is necessary but NOT sufficient:
+    // normaliseTitle('?unknown') === normaliseTitle('Unknown') === 'unknown',
+    // so if workKeyFor's sentinel branch were deleted ("harmless
+    // simplification"), every authorless book would silently collide with any
+    // book genuinely credited to "Unknown". This test fails if the branch goes.
+    const key = workKeyFor('Who Goes Roar?', UNKNOWN_AUTHOR);
+    assert.ok(key.endsWith(`|${UNKNOWN_AUTHOR}`), `provisional key must end |?unknown, got ${key}`);
+    assert.equal(key, 'who goes roar|?unknown');
+
+    // The credited-"Unknown" cases a folded sentinel would collide with.
+    assert.notEqual(key, workKeyFor('Who Goes Roar?', 'Unknown'));
+    assert.notEqual(key, workKeyFor('Who Goes Roar?', 'Author Unknown'));
+    assert.equal(workKeyFor('Who Goes Roar?', 'Unknown'), 'who goes roar|unknown');
+  });
+
+  it('a provisional key still splits cleanly', () => {
+    const parsed = parseWorkKey('who goes roar|?unknown');
+    assert.deepEqual(parsed, { title: 'who goes roar', author: UNKNOWN_AUTHOR });
+  });
+
+  it('reviewDocFor throws on the sentinel — it must never reach Firestore', () => {
+    // The refusal is the entire reason remediation is a free move: zero review
+    // documents can carry a provisional key, so zero can be orphaned when the
+    // author arrives and the key moves. Asserted, not left as a comment.
+    assert.throws(
+      () =>
+        reviewDocFor({
+          title: 'Who Goes Roar?',
+          authors: UNKNOWN_AUTHOR,
+          displayName: 'Skylar',
+          rating: 4,
+          text: '',
+        }),
+      /provisional/i,
+    );
+  });
+
+  it('the create schema refuses the sentinel as caller vocabulary, but accepts null', () => {
+    const base = { title: 'Who Goes Roar?' };
+    assert.equal(createWorkSchema.safeParse({ ...base, authors: UNKNOWN_AUTHOR }).success, false);
+    const ok = createWorkSchema.safeParse({ ...base, authors: null });
+    assert.equal(ok.success, true);
+    assert.equal(ok.success ? ok.data.authors : 'x', null);
+    // And authorless stays explicit: omitting the field entirely is refused.
+    assert.equal(createWorkSchema.safeParse({ ...base }).success, false);
   });
 });
 
