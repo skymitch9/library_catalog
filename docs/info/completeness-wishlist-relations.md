@@ -9,6 +9,12 @@
 > applied. See §5's third trap for why that went through `@lc/db` rather than
 > through a running Worker.
 >
+> **§1.4c added 2026-08-12** (migration 0110, the owner-confirmed series link) and
+> verified that day through a **running Worker** against a local D1 carrying the
+> production Legion fixture. ⚠️ Its measured counts — 5 hedged rungs in 2 series,
+> 17 corroborated, 70 `exact` audiobook holdings and zero `containment` — are a
+> **production** read, unlike §1.4a's, which came from the CSV.
+>
 > Every figure below is a **measured run on that date** against the local D1
 > (115 works; production held 117 at the same moment, differing by two
 > hand-added test rows) and against `audiobook_catalog/site/catalog.csv`
@@ -222,6 +228,71 @@ with no edit to any of them. The ladder still draws it, greyed, with the reason
 and a *Put it back*. With a total recorded the sentence becomes
 `All 15 accounted for, per … — 12 here. 3 deliberately skipped.`; without one,
 `"unbroken"` is withdrawn in favour of `"nothing else is missing"`.
+
+### 1.4c ⚠️ The hedge that could never lift itself — migration 0110, 2026-08-12
+
+**`work_match` is unreachable for exactly the series that most need it, and that
+is the rule eating itself.** It requires one volume present in **both** catalogs,
+matched on title and author, agreeing on its number. The entire purpose of
+`audiobook_series_holding` is the volumes the two catalogs do **not** share. So a
+series whose overlap is empty can never corroborate itself, no matter how many
+times `backfill:audiobooks` runs.
+
+Measured against **production** on 2026-08-12 — this is a production read, unlike
+§1.4a's figures:
+
+| Series | Hedged rungs | We hold | They hold |
+|---|---|---|---|
+| Arcane Pathfinder | 1, 2, 3, 4 | book **5** only | 1–4 |
+| Legion | 4 | 1 and 2 | **4** only, the omnibus *The Many Lives of Stephen Leeds* |
+
+Five rungs, two series, **17 series corroborated** — and both hedged series have
+an empty overlap and byte-identical names on the two sides. Also measured: **all
+70 live `audiobook_holding` rows are `exact`, zero `containment`**, so those 5
+rungs were the only source of "possibly on audio" anywhere in production.
+
+The owner had checked each one by hand and been right every time. That is a
+source, so migration 0110 is where it goes: `audiobook_series_link`, one row per
+series, and a button on the series page.
+
+⚠️ **A third `AudioSeriesMatch` value, `'owner'` — NOT a promotion to
+`work_match`.** Both stop a rung being counted as missing; only one of them is
+re-checkable. *A book was independently identified in both catalogs* and *somebody
+vouched for it* are different facts, and laundering the second into the first is
+what every rail in this feature exists to prevent. `gapAudioLabel` says which.
+
+| Value | Earned by | Rendered |
+|---|---|---|
+| `work_match` | a corroborating work — see §1.4a | `AUDIO` · *"you own this on audio, as …"* |
+| `owner` | the owner confirmed the two series names mean one series | `AUDIO` · *"…— you confirmed the series match"* |
+| `fold` | the names merely fold onto one key | `AUDIO?`, still counted as missing |
+
+⚠️ **It could not live in `audiobook_series_holding.series_matched_via`.**
+`backfill-audiobook-holdings.mjs` upserts that column with
+`series_matched_via = excluded.series_matched_via`, so a value written there
+survives until the next script run and then silently reverts. **A script-owned
+column cannot hold a human decision.** `series_volume` protects `source =
+'manual'` with a CASE in its own upsert for the same reason; a separate table
+needs no such guard.
+
+⚠️ **`audiobook_series` is stored as a GUARD, not a label.** The confirmation is
+about a **pair of names**. A rung is upgraded only while the stored spelling still
+matches the live row, so a rename in the sibling catalog reverts those rungs to
+`AUDIO?` and asks again rather than silently authorising a mapping nobody has
+looked at. Verified: renaming the rung behind a standing confirmation dropped
+`onAudio` 1 → 0 and put `maybeOnAudio` back to 1, with the stale link still on the
+report so the page can say it is holding nothing up.
+
+⚠️ **`held()` in `completeness.ts` is now "not the hedge", not a list of the values
+that count.** The failure modes are asymmetric: a value missing from an allow-list
+silently keeps counting a book the owner owns as missing — §1.4a's whole bug —
+whereas an unrecognised value is already forced to `'fold'` at the `@lc/db`
+boundary, which is the one place the narrowing happens. Two UI branches carried
+the same equality test and both would have kept a confirmed rung painted red.
+
+Verified end to end against a local D1 with the production Legion fixture: the
+hedge before, **404 on a mapping no live rung carries**, `owner` and attested gaps
+2 → 1 after confirming, and back to 2 after the undo. 313 core tests pass.
 
 ### 1.5 Sources that cannot fire here, and why
 

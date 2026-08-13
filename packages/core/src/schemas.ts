@@ -531,6 +531,28 @@ export const skipSeriesGapSchema = z.object({
 });
 export type SkipSeriesGap = z.infer<typeof skipSeriesGapSchema>;
 
+/**
+ * "That IS the same series — I own those on audio." — see migration 0110.
+ *
+ * ⚠️ `audiobookSeries` is required, and it is the only field. It is not a
+ * convenience: the confirmation is about a **pair of names**, and sending back
+ * the one the owner actually read is what lets the server refuse a mapping that
+ * has since changed. Deriving it server-side would confirm whatever the sibling
+ * catalog happens to say *now*, which is a different question from the one the
+ * owner was shown and answered.
+ *
+ * ⚠️ Unlike `skipSeriesGapSchema` there is no required `reason`, and the asymmetry
+ * is deliberate. A skip needs one because a greyed-out rung is otherwise
+ * unexplainable six months on; a confirmed rung prints both series names beside
+ * each other, so the page already answers "why is this unhedged". `note` is there
+ * for the case that wants a word anyway — *"audiobook 4 is the omnibus of 1–3"*.
+ */
+export const confirmAudioSeriesSchema = z.object({
+  audiobookSeries: z.string().trim().min(1).max(300),
+  note: optionalText,
+});
+export type ConfirmAudioSeries = z.infer<typeof confirmAudioSeriesSchema>;
+
 // ---------------------------------------------------------------------------
 // Research and gap verdicts
 // ---------------------------------------------------------------------------

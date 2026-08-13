@@ -1,11 +1,18 @@
 import { Hono } from 'hono';
-import { createSeriesVolumeSchema, setSeriesTotalSchema, skipSeriesGapSchema } from '@lc/core';
 import {
+  confirmAudioSeriesSchema,
+  createSeriesVolumeSchema,
+  setSeriesTotalSchema,
+  skipSeriesGapSchema,
+} from '@lc/core';
+import {
+  confirmAudioSeries,
   deleteManualSeriesVolume,
   getSeriesReport,
   listSeries,
   setSeriesTotal,
   skipSeriesGap,
+  unconfirmAudioSeries,
   unskipSeriesGap,
   upsertSeriesVolume,
 } from '@lc/db';
@@ -153,6 +160,50 @@ export const seriesRoutes = new Hono<AppBindings>()
     if (!Number.isFinite(index)) return c.json({ error: 'bad_request' }, 400);
     const name = decodeURIComponent(c.req.param('name'));
     const ok = await unskipSeriesGap(c.env.DB, name, index);
+    if (!ok) return c.json({ error: 'not_found' }, 404);
+    return c.json(await getSeriesReport(c.env.DB, c.get('user').id, name));
+  })
+
+  /**
+   * "That IS the same series — I own those on audio." — migration 0110.
+   *
+   * ⚠️ The one write in this file that asserts something checkable **and takes
+   * the owner's word for it**, and the reason it is allowed is that no automatic
+   * rule can reach the answer. `series_matched_via = 'work_match'` needs a volume
+   * present in *both* catalogs agreeing on its number, and the whole purpose of
+   * `audiobook_series_holding` is the volumes they do not share — so the series
+   * that most need the answer are structurally the least able to earn it. Both
+   * hedged series measured on 2026-08-12 had an empty overlap.
+   *
+   * ⚠️ It does NOT become `work_match`. `AudioSeriesMatch` gains `'owner'`, the
+   * rung leaves the missing count, and `gapAudioLabel` says who settled it — the
+   * standing rule that a claim the app cannot evidence must look different from
+   * one it can.
+   *
+   * ⚠️ The body's `audiobookSeries` is checked against a live rung and a mapping
+   * no rung carries is a 404. Without that this endpoint would unhedge books
+   * against a series name the sibling catalog has never used.
+   */
+  .post('/:name/audio-link', requireCapability('editCatalog'), async (c) => {
+    const name = decodeURIComponent(c.req.param('name'));
+    const parsed = confirmAudioSeriesSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues }, 400);
+
+    const ok = await confirmAudioSeries(
+      c.env.DB,
+      name,
+      parsed.data.audiobookSeries,
+      parsed.data.note ?? null,
+      c.get('user').id,
+    );
+    if (!ok) return c.json({ error: 'not_found', detail: 'no live audio rung for that mapping' }, 404);
+    return c.json(await getSeriesReport(c.env.DB, c.get('user').id, name));
+  })
+
+  /** Withdraw it — every rung it was holding up goes back to being missing. */
+  .delete('/:name/audio-link', requireCapability('editCatalog'), async (c) => {
+    const name = decodeURIComponent(c.req.param('name'));
+    const ok = await unconfirmAudioSeries(c.env.DB, name);
     if (!ok) return c.json({ error: 'not_found' }, 404);
     return c.json(await getSeriesReport(c.env.DB, c.get('user').id, name));
   });

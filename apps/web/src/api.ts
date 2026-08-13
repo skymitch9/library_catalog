@@ -273,7 +273,12 @@ export interface SeriesGapAudio {
   authors: string | null;
   audiobookSeries: string;
   indexDisplay: string | null;
-  matchedVia: 'work_match' | 'fold';
+  /**
+   * `'work_match'` a book proved it · `'owner'` you confirmed it (migration 0110)
+   * · `'fold'` only the series names fold together, so it is still hedged and
+   * still counted as missing.
+   */
+  matchedVia: 'work_match' | 'owner' | 'fold';
 }
 
 /** The owner's decision never to own one rung — migration 0100. */
@@ -317,6 +322,7 @@ export interface SeriesCompleteness {
   /** ⚠️ Excludes rungs confidently held on audio. See `@lc/core`. */
   certainGaps: number;
   attestedGaps: number;
+  /** Held on audio — a work proved it, or you confirmed the series. */
   onAudio: number;
   /** Still inside the two counts above — a hedge does not cross a book off. */
   maybeOnAudio: number;
@@ -409,12 +415,27 @@ export interface SeriesHoldings {
   ownedTwice: number;
 }
 
+/**
+ * Your standing confirmation that this series and an audiobook series are one —
+ * migration 0110. Null when you have not been asked.
+ *
+ * ⚠️ Sent on the report rather than left to be inferred from the rungs, because
+ * once it is in force every rung reads `'owner'` and nothing on the page can tell
+ * that a decision is what put it there. The undo needs this to exist at all.
+ */
+export interface AudioSeriesLink {
+  audiobookSeries: string;
+  note: string | null;
+  confirmedAt: string;
+}
+
 export interface SeriesReport {
   completeness: SeriesCompleteness;
   holdings: SeriesHoldings;
   ladder: SeriesLadderEntry[];
   unnumbered: { workId: number; title: string; display: string | null }[];
   ownedTwice: OwnedTwice[];
+  audioLink: AudioSeriesLink | null;
 }
 
 /** A row of the series list. */
@@ -1008,6 +1029,25 @@ export const api = {
   /** Change your mind. The rung goes back to being missing. */
   unskipSeriesGap: (name: string, index: number) =>
     request<SeriesReport>(`/api/series/${encodeURIComponent(name)}/skips/${index}`, {
+      method: 'DELETE',
+    }),
+
+  /**
+   * "That IS the same series — I own those on audio." — migration 0110.
+   *
+   * ⚠️ `audiobookSeries` is **their** spelling, taken from the rung the page just
+   * showed. Sending it back is what lets the server refuse a mapping that has
+   * since changed; it is not a convenience field.
+   */
+  confirmAudioSeries: (name: string, body: { audiobookSeries: string; note?: string | null }) =>
+    request<SeriesReport>(`/api/series/${encodeURIComponent(name)}/audio-link`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  /** Withdraw it. Every rung it was holding up is missing again. */
+  unconfirmAudioSeries: (name: string) =>
+    request<SeriesReport>(`/api/series/${encodeURIComponent(name)}/audio-link`, {
       method: 'DELETE',
     }),
 

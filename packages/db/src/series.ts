@@ -159,6 +159,23 @@ export interface SeriesHoldings {
   ownedTwice: number;
 }
 
+/**
+ * The owner's standing confirmation that this series and an audiobook series are
+ * one series — migration 0110. Null when they have not been asked or said no.
+ *
+ * ⚠️ On the report rather than derived from the rungs, and it has to be: once a
+ * confirmation is in force every rung reads `'owner'` and nothing on the page can
+ * tell that a decision is what put it there. Without this the undo would be
+ * unreachable — the state that makes the button unnecessary is the same state
+ * that hides it.
+ */
+export interface AudioSeriesLink {
+  /** Their spelling, as confirmed. Compared against the live rung; see the read path. */
+  audiobookSeries: string;
+  note: string | null;
+  confirmedAt: string;
+}
+
 export interface SeriesReport {
   completeness: SeriesCompleteness;
   holdings: SeriesHoldings;
@@ -168,6 +185,8 @@ export interface SeriesReport {
   unnumbered: { workId: number; title: string; display: string | null }[];
   /** Works we own two or more copies of. Usually empty; see the type. */
   ownedTwice: OwnedTwice[];
+  /** The owner's confirmed audio-series mapping, when there is one. */
+  audioLink: AudioSeriesLink | null;
 }
 
 /** One row of the series list: the arithmetic, plus what is on the shelf. */
@@ -256,6 +275,22 @@ interface AudioRungRow {
   series_matched_via: string;
 }
 
+/**
+ * The owner's confirmation that our series name and the audiobook catalog's mean
+ * one series — migration 0110.
+ *
+ * ⚠️ `audiobook_series` is a guard, not a label. It is compared against the live
+ * rung before anything is upgraded, so a rename in the sibling catalog reverts
+ * those rungs to the hedge and asks again rather than silently inheriting a
+ * confirmation nobody gave.
+ */
+interface AudioLinkRow {
+  series: string;
+  audiobook_series: string;
+  note: string | null;
+  confirmed_at: string;
+}
+
 /** A rung the owner has decided never to own — migration 0100. */
 interface SkipRow {
   series: string;
@@ -299,6 +334,7 @@ async function loadAll(
   copies: Map<number, CopyRow[]>;
   audio: Map<number, AudioRow>;
   audioRungs: Map<string, AudioRungRow[]>;
+  audioLinks: Map<string, AudioLinkRow>;
   skips: Map<string, SkipRow[]>;
 }> {
   const scope = onlySeries ? 'AND w.series = ?2' : '';
@@ -312,122 +348,137 @@ async function loadAll(
   // whole catalog to a series called "owned" and quietly returned nothing.
   const copyScope = onlySeries ? `AND w.series = ?${HELD_STATUSES.length + 1}` : '';
 
-  const [owned, volumes, checks, editions, copies, audio, audioRungs, skips] = await Promise.all([
-    db
-      .prepare(
-        `SELECT w.id, w.series, w.series_index_sort, w.series_index_display,
-                w.title, w.authors, w.cover_url,
-                (SELECT ub.read_state FROM user_book ub
-                  WHERE ub.work_id = w.id AND ub.user_id = ?1) AS read_state,
-                -- ⚠️ Held vs merely wished for. The copy table held 0 rows of
-                -- any status on 2026-08-10, so "no owned copy" says nothing at
-                -- all — every one of the 117 imported works looks like that.
-                -- The edition count is what separates them from a row the
-                -- wishlist button just created, which has neither.
-                -- (No backticks in here: this is inside a template literal.)
-                (SELECT COUNT(*) FROM copy c WHERE c.work_id = w.id) AS copies,
-                (SELECT COUNT(*) FROM copy c
-                  WHERE c.work_id = w.id AND c.status IN ('wanted','preordered'))
-                  AS wanted_copies,
-                (SELECT COUNT(*) FROM edition e WHERE e.work_id = w.id) AS editions
-           FROM work w
-          WHERE w.series IS NOT NULL ${scope}`,
-      )
-      .bind(...(onlySeries ? [readerId, onlySeries] : [readerId]))
-      .all<OwnedRow>(),
-    db
-      .prepare(
-        `SELECT id, series, index_sort, index_display, title, authors, source, source_url,
-                note, stale_at
-           FROM series_volume ${volumeScope}`,
-      )
-      .bind(...(onlySeries ? [onlySeries] : []))
-      .all<VolumeRow>(),
-    db
-      .prepare(
-        `SELECT series, outcome, source, known_total, known_total_source, note
-           FROM series_check ${checkScope}`,
-      )
-      .bind(...(onlySeries ? [onlySeries] : []))
-      .all<CheckRow>(),
-    // Every printing of every work in scope. This is what makes "we have it as
-    // an ebook but not on paper" answerable, and what surfaces the works held in
-    // more than one printing.
-    db
-      .prepare(
-        `SELECT e.work_id, e.id, e.format, e.edition_name, e.publisher,
-                e.published_year, e.isbn13
-           FROM edition e
-           JOIN work w ON w.id = e.work_id
-          WHERE w.series IS NOT NULL ${joinScope}
-          ORDER BY e.work_id, e.id`,
-      )
-      .bind(...(onlySeries ? [onlySeries] : []))
-      .all<EditionRow>(),
-    // Every copy on the shelf, which is what "owned more than once" now counts.
-    //
-    // ⚠️ Filtered to `HELD_STATUSES` in SQL rather than in the loop, so a series
-    // whose only extra copies are wishes does not carry them across the wire at
-    // all. `ownedMoreThanOnce` applies the same filter again on what arrives —
-    // belt and braces, and it is the pure function that has the tests.
-    //
-    // Small: production held 108 copies in total on 2026-08-11, against 224
-    // works, and this is narrowed to the ones with a series.
-    db
-      .prepare(
-        `SELECT c.work_id, c.id, c.status, c.edition_id, c.location, c.vendor,
-                c.acquired_on, c.is_signed, c.edition_notes
-           FROM copy c
-           JOIN work w ON w.id = c.work_id
-          WHERE w.series IS NOT NULL
-            AND c.status IN (${HELD_STATUSES.map((_, i) => `?${i + 1}`).join(', ')}) ${copyScope}
-          ORDER BY c.work_id, c.id`,
-      )
-      .bind(...HELD_STATUSES, ...(onlySeries ? [onlySeries] : []))
-      .all<CopyRow>(),
-    // ⚠️ Requires migration 0010. Deploying this code against a database without
-    // `audiobook_holding` makes every request to /api/series a 500 — the same
-    // trap migrations 0003 and 0005 each carried, recorded again because it is
-    // the one that keeps recurring in this project.
-    //
-    // `stale_at IS NULL` because a holding is marked and never deleted; a stale
-    // row is history, not a book we have.
-    db
-      .prepare(
-        `SELECT a.work_id, a.title, a.series, a.index_display, a.matched_via, a.via_alias
-           FROM audiobook_holding a
-           JOIN work w ON w.id = a.work_id
-          WHERE w.series IS NOT NULL AND a.stale_at IS NULL ${joinScope}`,
-      )
-      .bind(...(onlySeries ? [onlySeries] : []))
-      .all<AudioRow>(),
-    // ⚠️ Requires migration 0090, and it is the fix for the worse of the two
-    // bugs: `audiobook_holding` above can only speak for a work that EXISTS
-    // here, so a book owned only on audio was invisible and the ladder drew it
-    // as a hole. This table is keyed on the series and the number, which is all
-    // a gap rung has.
-    //
-    // Scoped by its own `series` column — our spelling, exactly as
-    // `series_volume` stores it — so the bound parameter is ?1 like the two
-    // above it and no fold runs here. See migration 0090.
-    db
-      .prepare(
-        `SELECT series, index_sort, title, authors, audiobook_series, index_display,
-                series_matched_via
-           FROM audiobook_series_holding
-          WHERE stale_at IS NULL ${onlySeries ? 'AND series = ?1' : ''}`,
-      )
-      .bind(...(onlySeries ? [onlySeries] : []))
-      .all<AudioRungRow>(),
-    // ⚠️ Requires migration 0100. "I am never buying that one."
-    db
-      .prepare(
-        `SELECT series, index_sort, reason, note, decided_at
-           FROM series_gap_skip ${onlySeries ? 'WHERE series = ?1' : ''}`,
-      )
-      .bind(...(onlySeries ? [onlySeries] : []))
-      .all<SkipRow>(),
-  ]);
+  const [owned, volumes, checks, editions, copies, audio, audioRungs, audioLinks, skips] =
+    await Promise.all([
+      db
+        .prepare(
+          `SELECT w.id, w.series, w.series_index_sort, w.series_index_display,
+                  w.title, w.authors, w.cover_url,
+                  (SELECT ub.read_state FROM user_book ub
+                    WHERE ub.work_id = w.id AND ub.user_id = ?1) AS read_state,
+                  -- ⚠️ Held vs merely wished for. The copy table held 0 rows of
+                  -- any status on 2026-08-10, so "no owned copy" says nothing at
+                  -- all — every one of the 117 imported works looks like that.
+                  -- The edition count is what separates them from a row the
+                  -- wishlist button just created, which has neither.
+                  -- (No backticks in here: this is inside a template literal.)
+                  (SELECT COUNT(*) FROM copy c WHERE c.work_id = w.id) AS copies,
+                  (SELECT COUNT(*) FROM copy c
+                    WHERE c.work_id = w.id AND c.status IN ('wanted','preordered'))
+                    AS wanted_copies,
+                  (SELECT COUNT(*) FROM edition e WHERE e.work_id = w.id) AS editions
+             FROM work w
+            WHERE w.series IS NOT NULL ${scope}`,
+        )
+        .bind(...(onlySeries ? [readerId, onlySeries] : [readerId]))
+        .all<OwnedRow>(),
+      db
+        .prepare(
+          `SELECT id, series, index_sort, index_display, title, authors, source, source_url,
+                  note, stale_at
+             FROM series_volume ${volumeScope}`,
+        )
+        .bind(...(onlySeries ? [onlySeries] : []))
+        .all<VolumeRow>(),
+      db
+        .prepare(
+          `SELECT series, outcome, source, known_total, known_total_source, note
+             FROM series_check ${checkScope}`,
+        )
+        .bind(...(onlySeries ? [onlySeries] : []))
+        .all<CheckRow>(),
+      // Every printing of every work in scope. This is what makes "we have it as
+      // an ebook but not on paper" answerable, and what surfaces the works held in
+      // more than one printing.
+      db
+        .prepare(
+          `SELECT e.work_id, e.id, e.format, e.edition_name, e.publisher,
+                  e.published_year, e.isbn13
+             FROM edition e
+             JOIN work w ON w.id = e.work_id
+            WHERE w.series IS NOT NULL ${joinScope}
+            ORDER BY e.work_id, e.id`,
+        )
+        .bind(...(onlySeries ? [onlySeries] : []))
+        .all<EditionRow>(),
+      // Every copy on the shelf, which is what "owned more than once" now counts.
+      //
+      // ⚠️ Filtered to `HELD_STATUSES` in SQL rather than in the loop, so a series
+      // whose only extra copies are wishes does not carry them across the wire at
+      // all. `ownedMoreThanOnce` applies the same filter again on what arrives —
+      // belt and braces, and it is the pure function that has the tests.
+      //
+      // Small: production held 108 copies in total on 2026-08-11, against 224
+      // works, and this is narrowed to the ones with a series.
+      db
+        .prepare(
+          `SELECT c.work_id, c.id, c.status, c.edition_id, c.location, c.vendor,
+                  c.acquired_on, c.is_signed, c.edition_notes
+             FROM copy c
+             JOIN work w ON w.id = c.work_id
+            WHERE w.series IS NOT NULL
+              AND c.status IN (${HELD_STATUSES.map((_, i) => `?${i + 1}`).join(', ')}) ${copyScope}
+            ORDER BY c.work_id, c.id`,
+        )
+        .bind(...HELD_STATUSES, ...(onlySeries ? [onlySeries] : []))
+        .all<CopyRow>(),
+      // ⚠️ Requires migration 0010. Deploying this code against a database without
+      // `audiobook_holding` makes every request to /api/series a 500 — the same
+      // trap migrations 0003 and 0005 each carried, recorded again because it is
+      // the one that keeps recurring in this project.
+      //
+      // `stale_at IS NULL` because a holding is marked and never deleted; a stale
+      // row is history, not a book we have.
+      db
+        .prepare(
+          `SELECT a.work_id, a.title, a.series, a.index_display, a.matched_via, a.via_alias
+             FROM audiobook_holding a
+             JOIN work w ON w.id = a.work_id
+            WHERE w.series IS NOT NULL AND a.stale_at IS NULL ${joinScope}`,
+        )
+        .bind(...(onlySeries ? [onlySeries] : []))
+        .all<AudioRow>(),
+      // ⚠️ Requires migration 0090, and it is the fix for the worse of the two
+      // bugs: `audiobook_holding` above can only speak for a work that EXISTS
+      // here, so a book owned only on audio was invisible and the ladder drew it
+      // as a hole. This table is keyed on the series and the number, which is all
+      // a gap rung has.
+      //
+      // Scoped by its own `series` column — our spelling, exactly as
+      // `series_volume` stores it — so the bound parameter is ?1 like the two
+      // above it and no fold runs here. See migration 0090.
+      db
+        .prepare(
+          `SELECT series, index_sort, title, authors, audiobook_series, index_display,
+                  series_matched_via
+             FROM audiobook_series_holding
+            WHERE stale_at IS NULL ${onlySeries ? 'AND series = ?1' : ''}`,
+        )
+        .bind(...(onlySeries ? [onlySeries] : []))
+        .all<AudioRungRow>(),
+      // ⚠️ Requires migration 0110. "That IS the same series — I own those."
+      //
+      // The rows above are graded by a script and the grade is `fold` whenever
+      // nothing but a folded name connects the two catalogs. For a series whose
+      // volumes the two catalogs do not share at all, that grade is unreachable
+      // by any re-run — so this table is where the owner settles it. Migration
+      // 0110's header carries the two series it was built for.
+      db
+        .prepare(
+          `SELECT series, audiobook_series, note, confirmed_at
+             FROM audiobook_series_link ${onlySeries ? 'WHERE series = ?1' : ''}`,
+        )
+        .bind(...(onlySeries ? [onlySeries] : []))
+        .all<AudioLinkRow>(),
+      // ⚠️ Requires migration 0100. "I am never buying that one."
+      db
+        .prepare(
+          `SELECT series, index_sort, reason, note, decided_at
+             FROM series_gap_skip ${onlySeries ? 'WHERE series = ?1' : ''}`,
+        )
+        .bind(...(onlySeries ? [onlySeries] : []))
+        .all<SkipRow>(),
+    ]);
 
   return {
     owned: owned.results,
@@ -438,6 +489,8 @@ async function loadAll(
     // One row per work — `audiobook_holding.work_id` is the primary key.
     audio: new Map(audio.results.map((a) => [a.work_id, a])),
     audioRungs: groupBySeries(audioRungs.results),
+    // One row per series — `audiobook_series_link.series` is the primary key.
+    audioLinks: new Map(audioLinks.results.map((l) => [l.series, l])),
     skips: groupBySeries(skips.results),
   };
 }
@@ -507,23 +560,40 @@ function toAudiobookRef(a: AudioRow): AudiobookRef {
 }
 
 /**
- * A migration 0090 row as the arithmetic wants it.
+ * A migration 0090 row as the arithmetic wants it, with migration 0110's
+ * confirmation applied.
  *
  * ⚠️ `series_matched_via` is narrowed with a comparison rather than a cast. The
  * column has a CHECK constraint, but a database predating it — or one restored
  * from elsewhere — would hand `undefined` to a union type and the hedge would
  * silently become a certainty. Anything unrecognised falls to `'fold'`, which is
- * the answer that claims less.
+ * the answer that claims less. This is the ONE boundary where that narrowing
+ * happens, which is why `held()` in `@lc/core` is free to test "not the hedge".
+ *
+ * ## ⚠️ The confirmation is applied HERE and is guarded on the name
+ *
+ * `link` upgrades `'fold'` to `'owner'` **only while it still names the audiobook
+ * series the rung actually carries.** The owner confirmed a pair of names; if the
+ * sibling catalog refiles the books under a different series, the fold produces
+ * rows for a mapping nobody has ever looked at, and inheriting the old
+ * confirmation would be the app claiming ownership on nobody's authority. A
+ * rename therefore reverts those rungs to AUDIO? and asks again. See migration
+ * 0110.
+ *
+ * ⚠️ A `'work_match'` row is left exactly as it is. It already claims as much,
+ * and it claims it on evidence that can be re-checked, so overwriting it with the
+ * owner's word would lose the stronger provenance for no gain.
  */
-function toAudioRungInput(a: AudioRungRow): SeriesAudioInput {
-  const matchedVia: AudioSeriesMatch = a.series_matched_via === 'work_match' ? 'work_match' : 'fold';
+function toAudioRungInput(a: AudioRungRow, link: AudioLinkRow | undefined): SeriesAudioInput {
+  const graded: AudioSeriesMatch = a.series_matched_via === 'work_match' ? 'work_match' : 'fold';
+  const confirmed = link != null && link.audiobook_series === a.audiobook_series;
   return {
     index: a.index_sort,
     title: a.title,
     authors: a.authors,
     audiobookSeries: a.audiobook_series,
     indexDisplay: a.index_display,
-    matchedVia,
+    matchedVia: graded === 'fold' && confirmed ? 'owner' : graded,
   };
 }
 
@@ -540,6 +610,7 @@ function reportFor(
   copiesByWork: Map<number, CopyRow[]>,
   audioByWork: Map<number, AudioRow>,
   audioRungs: AudioRungRow[],
+  audioLink: AudioLinkRow | undefined,
   skipRows: SkipRow[],
 ): SeriesReport {
   // ⚠️ Narrow on purpose — see the long note on `SeriesVolumeInput.wanted`.
@@ -633,7 +704,7 @@ function reportFor(
     {
       audio: audioRungs
         .filter((a) => !heldIndexes.has(a.index_sort))
-        .map(toAudioRungInput),
+        .map((a) => toAudioRungInput(a, audioLink)),
       skipped: skipRows.map(toSkipInput),
     },
   );
@@ -737,6 +808,13 @@ function reportFor(
       display: w.series_index_display,
     })),
     ownedTwice,
+    audioLink: audioLink
+      ? {
+          audiobookSeries: audioLink.audiobook_series,
+          note: audioLink.note,
+          confirmedAt: audioLink.confirmed_at,
+        }
+      : null,
   };
 }
 
@@ -751,10 +829,8 @@ export async function listSeries(
   db: D1Database,
   readerId: number,
 ): Promise<{ series: SeriesSummary[]; withoutSeries: number }> {
-  const { owned, volumes, checks, editions, copies, audio, audioRungs, skips } = await loadAll(
-    db,
-    readerId,
-  );
+  const { owned, volumes, checks, editions, copies, audio, audioRungs, audioLinks, skips } =
+    await loadAll(db, readerId);
 
   const byName = new Map<string, OwnedRow[]>();
   for (const w of owned) {
@@ -785,6 +861,7 @@ export async function listSeries(
         copies,
         audio,
         audioRungs.get(name) ?? [],
+        audioLinks.get(name),
         skips.get(name) ?? [],
       );
       return { ...report.completeness, holdings: report.holdings };
@@ -807,11 +884,8 @@ export async function getSeriesReport(
   readerId: number,
   name: string,
 ): Promise<SeriesReport | null> {
-  const { owned, volumes, checks, editions, copies, audio, audioRungs, skips } = await loadAll(
-    db,
-    readerId,
-    name,
-  );
+  const { owned, volumes, checks, editions, copies, audio, audioRungs, audioLinks, skips } =
+    await loadAll(db, readerId, name);
   if (owned.length === 0 && volumes.length === 0) return null;
   return reportFor(
     name,
@@ -822,6 +896,7 @@ export async function getSeriesReport(
     copies,
     audio,
     audioRungs.get(name) ?? [],
+    audioLinks.get(name),
     skips.get(name) ?? [],
   );
 }
@@ -961,6 +1036,69 @@ export async function unskipSeriesGap(
   const res = await db
     .prepare('DELETE FROM series_gap_skip WHERE series = ?1 AND index_sort = ?2')
     .bind(series, indexSort)
+    .run();
+  return (res.meta.changes ?? 0) > 0;
+}
+
+/**
+ * "That IS the same series — I own those on audio." — migration 0110.
+ *
+ * ⚠️ **Refuses a mapping no live rung carries**, and that guard is the whole
+ * integrity of the feature. Without it this endpoint would accept any pair of
+ * strings and unhedge rungs against a series name the audiobook catalog has never
+ * used — the app claiming ownership on the strength of a typo. Returning `false`
+ * rather than throwing lets the route answer 404, which is the honest reply:
+ * there is nothing here to confirm.
+ *
+ * ⚠️ It deliberately does NOT require the rungs to be `fold`. Confirming a series
+ * already corroborated by a work is inert — `toAudioRungInput` leaves a
+ * `work_match` alone — and refusing it would mean the answer depended on a grade
+ * the person clicking cannot see. An upsert, so re-confirming with a note is this
+ * same request.
+ */
+export async function confirmAudioSeries(
+  db: D1Database,
+  series: string,
+  audiobookSeries: string,
+  note: string | null,
+  confirmedBy: number | null,
+): Promise<boolean> {
+  const rung = await db
+    .prepare(
+      `SELECT 1 AS ok FROM audiobook_series_holding
+        WHERE series = ?1 AND audiobook_series = ?2 AND stale_at IS NULL
+        LIMIT 1`,
+    )
+    .bind(series, audiobookSeries)
+    .first<{ ok: number }>();
+  if (!rung) return false;
+
+  await db
+    .prepare(
+      `INSERT INTO audiobook_series_link (series, audiobook_series, note, confirmed_by)
+       VALUES (?1, ?2, ?3, ?4)
+       ON CONFLICT(series) DO UPDATE SET
+         audiobook_series = ?2,
+         note             = ?3,
+         confirmed_by     = ?4,
+         confirmed_at     = datetime('now')`,
+    )
+    .bind(series, audiobookSeries, note, confirmedBy)
+    .run();
+  return true;
+}
+
+/**
+ * Take the confirmation back — every rung it was holding up goes back to AUDIO?
+ * and back into the missing count.
+ *
+ * A plain DELETE, as in `unskipSeriesGap` and for the same reason: nothing imports
+ * these rows, so a row disappearing cannot be mistaken for anything else.
+ */
+export async function unconfirmAudioSeries(db: D1Database, series: string): Promise<boolean> {
+  const res = await db
+    .prepare('DELETE FROM audiobook_series_link WHERE series = ?1')
+    .bind(series)
     .run();
   return (res.meta.changes ?? 0) > 0;
 }

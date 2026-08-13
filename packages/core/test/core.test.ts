@@ -753,6 +753,59 @@ describe('series completeness — a rung we own, but not in this catalog', () =>
     assert.match(gapAudioLabel(c.gaps[1]!)!, /only the series name connects/);
   });
 
+  /**
+   * Migration 0110, and the case is *Legion*.
+   *
+   * This catalog holds books 1 and 2; the sibling catalog's only Legion audiobook
+   * is **4**, the omnibus *The Many Lives of Stephen Leeds*. So the two catalogs
+   * share no volume, `work_match` — which needs one volume in BOTH, agreeing on
+   * its number — is unreachable for ever, and rung 4 hedged permanently over a
+   * book the owner had checked by hand and found in the house.
+   *
+   * ⚠️ The point of the test is the arithmetic, not the wording: an `'owner'` rung
+   * must leave the missing count exactly as a `'work_match'` rung does. `held()`
+   * in `completeness.ts` is written as "not the hedge" so that adding a value
+   * cannot silently keep counting an owned book as missing, and this is what would
+   * fail if somebody rewrote it as a list of the values that count.
+   */
+  it('⚠️ the owner confirming the series match takes the rung out of missing', () => {
+    const c = seriesCompleteness(
+      'Legion',
+      [own(1), own(2), said(4, { title: 'Legion: The Many Lives of Stephen Leeds' })],
+      {},
+      { audio: [onAudio(4, { matchedVia: 'owner' })] },
+    );
+
+    // Still a rung, still absent from this catalog — buying the print omnibus is
+    // a real decision. It has stopped being *missing*.
+    assert.equal(c.gaps.length, 2);
+    assert.equal(c.onAudio, 1);
+    assert.equal(c.maybeOnAudio, 0);
+    // Rung 3 is still genuinely missing: implied by a volume 4 and owned nowhere.
+    assert.equal(c.certainGaps + c.attestedGaps, 1);
+
+    const sentence = completenessSentence(c);
+    assert.match(sentence, /1 more you own on audio/);
+    assert.doesNotMatch(sentence, /possibly on audio/);
+  });
+
+  it('⚠️ says the owner is what settled it, and does not claim a book proved it', () => {
+    // The rail, restated for the third value. Both rungs read as owned; only one
+    // of them rests on something re-checkable, and the page must not launder the
+    // owner's word into evidence — migration 0110.
+    const c = seriesCompleteness(
+      'Arcane Pathfinder',
+      [own(5), said(1, { title: 'Arcane Pathfinder' }), said(2, { title: 'The Beastlands' })],
+      {},
+      { audio: [onAudio(1, { matchedVia: 'owner' }), onAudio(2)] },
+    );
+    assert.match(gapAudioLabel(c.gaps[0]!)!, /^you own this on audio/);
+    assert.match(gapAudioLabel(c.gaps[0]!)!, /you confirmed the series match/);
+    // The corroborated one says nothing about anybody confirming anything.
+    assert.match(gapAudioLabel(c.gaps[1]!)!, /^you own this on audio, as “Volume 2”$/);
+    assert.equal(c.onAudio, 2);
+  });
+
   it('keeps our source’s title, and only borrows theirs when we have none', () => {
     // The two catalogs spell it differently — "Dawnshard - Stormlight Archive"
     // there — and a rung that renames itself the day an audio match lands reads

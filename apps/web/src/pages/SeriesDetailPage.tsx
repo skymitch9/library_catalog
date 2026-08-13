@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { completenessSentence, gapAudioLabel, gapEvidenceLabel, gapSkipLabel } from '@lc/core';
 import {
   api,
+  type AudioSeriesLink,
   type EditionRef,
   type OwnedTwice,
   type Me,
@@ -56,6 +57,13 @@ import { formatLabel, mediumLabel } from '../lib/formats.js';
  * ⚠️ **A match that rests only on a folded series name renders AUDIO?**, the
  * same hedge a containment match already wears — see `signatureOf` below for the
  * flat claim that hedge exists to prevent.
+ *
+ * ⚠️ **…and since 2026-08-12 the owner can settle it** — `AudioLink` below, and
+ * migration 0110. Not a loosening of the rail: the hedge exists because nothing
+ * had corroborated the mapping, and for a series whose volumes the two catalogs
+ * do not share *nothing ever can*, so the alternative was a permanent hedge on
+ * books the owner had verified by hand. The rung then reads `'owner'` rather than
+ * `'work_match'`, and says which.
  *
  * ## ⚠️ A rung can also be one the owner has decided never to own
  *
@@ -162,6 +170,14 @@ export function SeriesDetailPage({
         audioGaps={c.onAudio + c.maybeOnAudio}
       />
 
+      <AudioLink
+        series={name}
+        gaps={c.gaps}
+        link={report.audioLink}
+        canEdit={canEdit}
+        onChanged={load}
+      />
+
       <p className="muted small">
         {c.knownTotal != null ? (
           <>Length recorded by hand: {c.knownTotal} books, per {c.knownTotalSource}.</>
@@ -189,7 +205,14 @@ export function SeriesDetailPage({
                   ? 'ladder__gap ladder__gap--skipped'
                   : // A rung we own on audio is still a gap, but it must not
                     // wear the same red as one nobody in the house has.
-                    gap?.audio?.matchedVia === 'work_match'
+                    //
+                    // ⚠️ "not the hedge", matching `held()` in `@lc/core`. A rung
+                    // the arithmetic has stopped counting as missing while the
+                    // ladder still paints it red is the two disagreeing on
+                    // screen, and this is the branch that would drift: migration
+                    // 0110 added `'owner'`, and an equality test here would have
+                    // silently kept every confirmed rung red.
+                    gap?.audio != null && gap.audio.matchedVia !== 'fold'
                     ? 'ladder__gap ladder__gap--audio'
                     : `ladder__gap ladder__gap--${gap?.evidence}`
             }
@@ -324,6 +347,162 @@ export function SeriesDetailPage({
         </section>
       )}
     </main>
+  );
+}
+
+/* -- is it the same series? ------------------------------------------------- */
+
+/**
+ * The one question the two catalogs cannot answer between themselves, asked of
+ * the only person who can — and the undo for the answer. Migration 0110.
+ *
+ * ## ⚠️ Why a person is being asked at all
+ *
+ * A rung reads *"possibly on audio"* when `series_matched_via` is `'fold'`: the
+ * two catalogs' series names fold onto one key and **nothing else** connects
+ * them. The grade that removes the hedge, `'work_match'`, needs one volume
+ * present in *both* catalogs, matched by title and author, agreeing on its
+ * number.
+ *
+ * ⚠️ **For the series that need it most that grade is unreachable, and not by
+ * accident.** The entire purpose of `audiobook_series_holding` is the volumes the
+ * two catalogs do *not* share, so a series with an empty overlap can never
+ * corroborate itself. Measured 2026-08-12, both hedged series were exactly that:
+ * this catalog holds *Arcane Pathfinder* 5 against audiobooks 1–4, and *Legion*
+ * 1–2 against an audiobook 4. No number of `backfill:audiobooks` runs would have
+ * moved either. The owner had checked both by hand and been right every time —
+ * which is a source, and this is where it goes.
+ *
+ * ## ⚠️ What the button must NOT look like
+ *
+ * It says *"the same series"*, never *"I own these"*. The books' presence in the
+ * house is not in question — `audiobook_series_holding` read it out of the
+ * sibling catalog's curated `series`/`series_index_sort` columns. The only thing
+ * in doubt is whether that catalog's series is this one, and asking the broader
+ * question would collect an answer to something the person was not shown.
+ *
+ * Both spellings are printed for the same reason. An eyeball on the pair is the
+ * whole of the evidence, so hiding either half would make the confirmation a
+ * blind click — and *"Dark Healer"* / *"The Dark Healer"* in that catalog is the
+ * standing proof that two spellings can be one series and two series can nearly
+ * share a spelling.
+ *
+ * ⚠️ **One button per distinct audiobook spelling.** The rungs of one series can
+ * carry more than one — the fold is what merged them — and the confirmation is
+ * keyed on the exact string, so a single button would silently unhedge one
+ * spelling's rungs and leave the other's. Ordinarily there is exactly one.
+ */
+function AudioLink({
+  series,
+  gaps,
+  link,
+  canEdit,
+  onChanged,
+}: {
+  series: string;
+  gaps: SeriesGap[];
+  link: AudioSeriesLink | null;
+  canEdit: boolean;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Their spelling -> the rungs still hedged under it.
+  const hedged = new Map<string, SeriesGap[]>();
+  for (const g of gaps) {
+    if (g.audio?.matchedVia !== 'fold') continue;
+    const list = hedged.get(g.audio.audiobookSeries);
+    if (list) list.push(g);
+    else hedged.set(g.audio.audiobookSeries, [g]);
+  }
+  // What the standing confirmation is currently holding up. ⚠️ Counted from the
+  // rungs and not from `completeness.onAudio`, which also counts rungs a work
+  // corroborated — those would survive the undo, so naming them here would
+  // overstate what the button takes away.
+  const upheld = gaps.filter((g) => g.audio?.matchedVia === 'owner').length;
+
+  if (hedged.size === 0 && link == null) return null;
+
+  function run(action: () => Promise<unknown>) {
+    setBusy(true);
+    setError(null);
+    action()
+      .then(() => onChanged())
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setBusy(false));
+  }
+
+  return (
+    <section className="panel">
+      <h3>The audiobook catalog</h3>
+
+      {[...hedged].map(([audiobookSeries, rungs]) => (
+        <div key={audiobookSeries} className="stack">
+          <p className="muted small">
+            {rungs.length === 1 ? 'One volume' : `${rungs.length} volumes`} filed under{' '}
+            <strong>“{audiobookSeries}”</strong> in the audiobook catalog{' '}
+            {rungs.length === 1 ? 'lines up' : 'line up'} with{' '}
+            {rungs.length === 1 ? 'a rung' : 'rungs'} below — {rungs.map((r) => r.index).join(', ')}.
+            {/* The state of the evidence, said plainly, because the person is
+                being asked to supply what is missing from it. */}{' '}
+            Nothing but the series name connects it to <strong>“{series}”</strong> here: you hold no
+            volume of this series that the audiobook catalog also has, so nothing can corroborate the
+            match on its own. Until you say otherwise {rungs.length === 1 ? 'it stays' : 'they stay'}{' '}
+            counted as missing.
+          </p>
+          {canEdit && (
+            <div className="row-tight">
+              <button
+                className="primary"
+                disabled={busy}
+                onClick={() => run(() => api.confirmAudioSeries(series, { audiobookSeries }))}
+              >
+                {busy ? '…' : 'Same series — I own these'}
+              </button>
+            </div>
+          )}
+        </div>
+      ))}
+
+      {link && (
+        <div className="stack">
+          <p className="muted small">
+            You confirmed that <strong>“{link.audiobookSeries}”</strong> there is this series
+            {link.confirmedAt && ` on ${link.confirmedAt.slice(0, 10)}`}
+            {upheld > 0 && (
+              <>
+                {' '}
+                — {upheld} {upheld === 1 ? 'rung is' : 'rungs are'} no longer counted as missing
+                because of it
+              </>
+            )}
+            .{link.note && ` ${link.note}`}
+            {/* ⚠️ Said out loud when the confirmation has stopped applying. It is
+                not a fault: the read path only upgrades a rung while this
+                spelling still matches the live row, so a rename in that catalog
+                correctly reverts the rungs and asks again. Silence here would
+                leave a confirmation that visibly does nothing. */}
+            {upheld === 0 && (
+              <>
+                {' '}
+                ⚠️ It is holding nothing up at present — either those volumes are now catalogued
+                here, or that catalog has refiled them under another name.
+              </>
+            )}
+          </p>
+          {canEdit && (
+            <div className="row-tight">
+              <button disabled={busy} onClick={() => run(() => api.unconfirmAudioSeries(series))}>
+                {busy ? '…' : 'Take that back'}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {error && <p className="notice notice--bad">{error}</p>}
+    </section>
   );
 }
 
@@ -671,7 +850,9 @@ function MissingRung({
             all, and reading it first is what made the page feel like a
             reproach for books already in the house. */}
         {audioNote && (
-          <span className={gap.audio?.matchedVia === 'work_match' ? 'small' : 'muted small'}>
+          // Muted only while it is still a guess — the same "not the hedge" test
+          // as the rung's colour and as `held()` in `@lc/core`.
+          <span className={gap.audio?.matchedVia !== 'fold' ? 'small' : 'muted small'}>
             {audioNote}
           </span>
         )}

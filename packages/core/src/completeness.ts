@@ -55,6 +55,23 @@
  * `'fold'` when nothing but a folded series name connects the two catalogs, and
  * a hedge that removed a book from the missing list would be a certainty wearing
  * a question mark. It earns a separate, quieter clause instead.
+ *
+ * ## ⚠️ …and a third way, added 2026-08-12: the owner says so
+ *
+ * `matchedVia: 'owner'` — migration 0110. It counts as held, exactly as
+ * `'work_match'` does, and it exists because **`'work_match'` is unreachable for
+ * the series that need it most.** That grade requires one volume present in
+ * *both* catalogs, agreeing on its number; the entire purpose of
+ * `audiobook_series_holding` is the volumes they do *not* share. Measured
+ * 2026-08-12, both hedged series had an empty overlap — this catalog holds
+ * *Arcane Pathfinder* 5 against audiobooks 1–4, and *Legion* 1–2 against an
+ * audiobook 4 — so no re-run of the backfill could ever have settled either.
+ *
+ * ⚠️ Kept as its own value rather than promoted to `'work_match'`, and the
+ * distinction is the same one this whole module is made of: *a book was
+ * identified in both catalogs* is checkable, *somebody vouched for it* is not.
+ * Both are good enough to stop calling a book missing. Only one of them may claim
+ * to be evidence, so `gapAudioLabel` names which it is.
  */
 
 /** A volume of a series, owned or merely attested. */
@@ -144,6 +161,23 @@ export type GapEvidence =
 export type AudioSeriesMatch =
   /** A work we hold corroborated the name mapping AND the numbering. Firm. */
   | 'work_match'
+  /**
+   * The owner looked at the two names and said they are the same series.
+   * Migration 0110. Firm — and named, because it is not the same fact.
+   *
+   * ⚠️ Deliberately not folded into `work_match`. That value means *a book was
+   * independently identified in both catalogs*, which is checkable; this one
+   * means *somebody vouched for it*, which is not. Both stop a rung being
+   * counted as missing — and the page still says which of the two it is, because
+   * laundering the second into the first is precisely the move every rail in
+   * this module exists to prevent.
+   *
+   * It exists because `work_match` is unreachable for the series that need it
+   * most: it requires a volume present in BOTH catalogs, and the whole purpose
+   * of `audiobook_series_holding` is the volumes they do not share. See
+   * migration 0110 for the two series measured, and why no re-run can help them.
+   */
+  | 'owner'
   /** The names merely fold onto one key. Nothing confirmed it. Hedged. */
   | 'fold';
 
@@ -262,7 +296,14 @@ export interface SeriesCompleteness {
   certainGaps: number;
   /** Gaps that rest on a source. Named in the UI. Same audio exclusion. */
   attestedGaps: number;
-  /** Gaps the household owns on audio — `matchedVia: 'work_match'`. */
+  /**
+   * Gaps the household owns on audio — anything but `matchedVia: 'fold'`.
+   *
+   * ⚠️ Counts `'owner'` rungs alongside `'work_match'` ones, because the question
+   * this number answers is "how many of these are in the house", and the owner's
+   * confirmation answers it as well as a corroborating work does. *Which* of the
+   * two settled it is a display concern, and `gapAudioLabel` is where it is said.
+   */
   onAudio: number;
   /**
    * Gaps that *may* be held on audio — `matchedVia: 'fold'`.
@@ -389,9 +430,16 @@ export function seriesCompleteness(
   const gaps = absent.filter((g) => g.skipped == null);
   const skipped = absent.filter((g) => g.skipped != null);
 
-  // Owned on audio, and evidenced. `'fold'` is deliberately not in here — see
-  // the header: a hedge does not cross a book off a list.
-  const held = (g: SeriesGap) => g.audio?.matchedVia === 'work_match';
+  // Owned on audio, and settled — by a corroborating work or by the owner.
+  //
+  // ⚠️ Written as "not the hedge" rather than as a list of the values that count,
+  // because those are the two failure modes and only one of them is safe. A
+  // missing value here silently keeps counting a book the owner owns as missing —
+  // the bug this whole feature exists to remove — whereas an unrecognised value
+  // reaching `toAudioRungInput` in `@lc/db` is already forced to `'fold'` there,
+  // on purpose. So the narrowing happens once, at the boundary, and the
+  // arithmetic trusts it.
+  const held = (g: SeriesGap) => g.audio != null && g.audio.matchedVia !== 'fold';
 
   const knownTotal = check.knownTotal ?? null;
 
@@ -563,13 +611,25 @@ export function gapEvidenceLabel(gap: SeriesGap): string {
 export function gapAudioLabel(gap: SeriesGap): string | null {
   if (!gap.audio) return null;
   const named = `“${gap.audio.title}”`;
-  return gap.audio.matchedVia === 'work_match'
-    ? `you own this on audio, as ${named}`
-    : // The whole hedge in one clause: what was actually compared, and what was
-      // not. `matching.ts` opens with three wrong matches the sibling project
-      // shipped, every one of which would have read fine as a flat claim.
-      `possibly on audio — ${named} is filed under “${gap.audio.audiobookSeries}” there,` +
-        ' and only the series name connects the two catalogs';
+  switch (gap.audio.matchedVia) {
+    case 'work_match':
+      return `you own this on audio, as ${named}`;
+    // ⚠️ The same flat "you own this", and then it says who said so. Migration
+    // 0110's rule in one line: the rung stops hedging because the owner settled
+    // it, and the page does not let that read as though a book had corroborated
+    // it. Withdrawing the confirmation is on the same screen, which is only
+    // findable if the sentence admits the confirmation exists.
+    case 'owner':
+      return `you own this on audio, as ${named} — you confirmed the series match`;
+    // The whole hedge in one clause: what was actually compared, and what was
+    // not. `matching.ts` opens with three wrong matches the sibling project
+    // shipped, every one of which would have read fine as a flat claim.
+    case 'fold':
+      return (
+        `possibly on audio — ${named} is filed under “${gap.audio.audiobookSeries}” there,` +
+        ' and only the series name connects the two catalogs'
+      );
+  }
 }
 
 /** Why a rung is greyed out. The owner's words, never the app's guess. */

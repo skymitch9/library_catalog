@@ -32,6 +32,95 @@ Measured **2026-08-12**, live version `8c8b4e76`:
 Movement since the crowdfunding rescan landed: works 233 → 258, owned copies
 117 → 152. Audio corroboration: **17 series confident, 2 hedged**.
 
+### 🔨 "You might own this on audio" — let the owner confirm it, 2026-08-12
+
+**Code is written, typechecked and driven end-to-end against a local database.
+⏸️ Waiting on the user for the production migration and deploy** — see the two
+commands at the bottom of this section.
+
+**The ask, in the user's words:** *"can we check the series gap, some of them say
+you might own this on audio, its been right everytime i checked. I want it to
+recognize i do own them on audio."*
+
+**Measured against production 2026-08-12** — the hedge is **5 rungs in 2 series**,
+and it is unreachable by the automatic rule:
+
+| Series | Hedged rungs | We hold | They hold | Why `fold` |
+|---|---|---|---|---|
+| Arcane Pathfinder | 1, 2, 3, 4 | book **5** only | 1–4 | no volume in both catalogs |
+| Legion | 4 | 1 and 2 | **4** only (the omnibus) | no volume in both catalogs |
+
+⚠️ **Re-running `backfill:audiobooks` can never fix these.** `work_match`
+requires one volume present in BOTH catalogs, matched by title *and* author, and
+**agreeing on its number** — that pair is what corroborates the name mapping and
+the numbering together. These two series have **zero overlap**, so there is no
+volume for the rule to stand on. `fold` here is not weak evidence, it is *absent*
+evidence. Both series names are byte-identical on the two sides.
+
+Also measured: **all 70 live `audiobook_holding` rows are `exact`** — zero
+`containment` — so these 5 rungs are the only source of "possibly on audio"
+anywhere in production.
+
+**The fix:** the same shape as `series_gap_skip` and `series_check.known_total` —
+a decision the owner records, not a heuristic. Migration **0110**
+`audiobook_series_link`, a third `AudioSeriesMatch` value `'owner'`, and a button
+on the series page. ⚠️ **Not** a promotion to `work_match`: the page still says
+who vouched for it, because "a work corroborated this" and "you told me" are
+different facts and only one of them can be checked.
+
+⚠️ **The confirmation cannot live in `audiobook_series_holding.series_matched_via`** —
+`backfill-audiobook-holdings.mjs` upserts that column with
+`series_matched_via = excluded.series_matched_via`, so the next script run would
+erase it. A script-owned column cannot hold a human decision.
+
+**What was built**
+
+| File | What it does |
+|---|---|
+| `migrations/0110_audiobook_series_link.sql` | `audiobook_series_link` — one row per series, keyed on our spelling, storing **their** spelling as a guard |
+| `packages/core/src/completeness.ts` | `AudioSeriesMatch` gains `'owner'`; `held()` rewritten as **"not the hedge"**; `gapAudioLabel` third branch |
+| `packages/core/src/schemas.ts` | `confirmAudioSeriesSchema` — `audiobookSeries` required, `note` optional |
+| `packages/db/src/series.ts` | loads the links, applies the guard in `toAudioRungInput`, `confirmAudioSeries` / `unconfirmAudioSeries`, `audioLink` on the report |
+| `apps/worker/src/routes/series.ts` | `POST` / `DELETE /api/series/:name/audio-link` |
+| `apps/web/src/pages/SeriesDetailPage.tsx` | the `AudioLink` panel, and two `=== 'work_match'` tests became `!== 'fold'` |
+
+⚠️ **`held()` is now written as "not the hedge" rather than as a list of the
+values that count**, and that is deliberate. The two failure modes are not
+symmetric: a value missing from an allow-list silently keeps counting a book the
+owner owns as missing — the exact bug this feature exists to remove — while an
+unrecognised value is already forced to `'fold'` at the `@lc/db` boundary. Two UI
+branches carried the same equality test and both would have silently kept a
+confirmed rung red; both are fixed.
+
+**Verified locally, 2026-08-12** — migration applied to local D1, the Legion
+fixture seeded as `fold`, and the Worker driven through the whole flow:
+
+| Step | Result |
+|---|---|
+| before | rung 4 `fold`, `maybeOnAudio 1`, attested gaps **2** |
+| POST a mapping no rung carries | **404**, report unchanged — the guard holds |
+| POST `{audiobookSeries: 'Legion'}` | rung 4 `owner`, `onAudio 1`, attested gaps **1** |
+| DELETE | back to `fold` and **2** |
+| rename the rung's `audiobook_series` behind it | reverts to `fold`, and the stale link stays on the report so the page can say it is holding nothing up |
+
+`npm test` 313 pass (2 new), `npm run typecheck` clean across all 7 workspaces,
+`npm run build` clean.
+
+**⏸️ Pending — the user must run these, in this order**
+
+```bash
+# 1. Schema only. No data in this one.
+npm run db:migrate                 # applies 0110 to PRODUCTION
+
+# 2. Then the code. ⚠️ Migrate first — new code must never meet an old schema.
+npm run deploy
+```
+
+Then open `/series/Legion` and `/series/Arcane Pathfinder`, press **"Same series —
+I own these"** on each, and the 5 rungs stop being counted as missing. Nothing is
+confirmed automatically: the button is the whole point, since the owner is the
+evidence.
+
 ### ✅ 870 review keys backfilled — 2026-08-12
 
 `scripts/backfill-review-keys.mjs` had **never** been run with `--commit`, and
