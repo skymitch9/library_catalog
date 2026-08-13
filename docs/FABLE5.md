@@ -264,6 +264,8 @@ attempted.
 
 <!-- entries start here -->
 
+[2026-08-12T23:18-07:00] CLAIM  Re-measure the two matching thresholds (`matchExistingTitle`, 0.7 spine floor) — Fable 5. Plan: query both production D1s read-only (library works+editions+aliases, board game items), measure false-positive/false-negative rates of 0.34/0.7 and the 60% containment gate against real titles, propose a bare-series-name detection rule, write up at `catalog-platform/docs/info/matching-thresholds.md`. No deploys, no migrations.
+
 ## 8. Budget rules
 
 From the global usage rules, and they are not optional:
