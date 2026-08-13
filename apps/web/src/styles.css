@@ -259,11 +259,12 @@ a.topbar__brand { text-decoration: none; }
  * hover, not a different silhouette that would read as a button in a row of
  * facts. `a.chip` in the top bar made the same choice for the same reason.
  */
-a.stat--link { text-decoration: none; color: inherit; cursor: pointer; }
-a.stat--link:hover,
-a.stat--link:focus-visible { border-color: var(--accent); background: var(--bg); }
-a.stat--link:hover span,
-a.stat--link:focus-visible span { color: var(--fg); }
+/*
+ * ⚠️ `a.stat--link` lived here and is gone with its only user, the "series with
+ * gaps" chip (added 2026-08-11, removed 2026-08-12 at the owner's request).
+ * Nothing else in the app makes a stat clickable, and a gap is now answered on
+ * its own series page — see the stat strip in `CollectionPage.tsx`.
+ */
 
 /* --- covers -------------------------------------------------------------- */
 

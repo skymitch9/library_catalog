@@ -149,6 +149,43 @@ paperback" is still a decision somebody might make. `gaps.length` vs
 `certainGaps`/`attestedGaps` is exactly that distinction, and `completeness.ts`
 keeps them apart on purpose.
 
+### 🔨 Gaps chip removed from the collection stat strip — 2026-08-12
+
+**The ask:** *"I thought we had opted to move all information from that gap
+section into the individual book series… just get rid of the gaps button and
+count in the top sections."*
+
+They are right, and the chip was a partial reversal of their own earlier
+instruction. `0253f64` removed the top-bar Series button on 2026-08-11 —
+*"place that information inside of each clickable series instead"* — and
+`78bbd04`, five commits later, put a **"N series with gaps"** link back on the
+collection page pointing at `/series?gaps=1`. Approved at the time as "Option B";
+withdrawn now.
+
+Removed in full, not just the visible half:
+
+| File | What went |
+|---|---|
+| `apps/web/src/pages/CollectionPage.tsx` | the chip |
+| `apps/web/src/api.ts` | `Stats.seriesWithGaps` |
+| `apps/worker/src/routes/catalog.ts` | the `listSeries` call in `/stats`, and its now-dead import |
+| `apps/web/src/styles.css` | `a.stat--link`, whose only user it was |
+
+⚠️ **Removing it also deleted the most expensive query in the app.** `/stats` is
+fetched on every visit to the collection page, and that one integer cost a full
+`listSeries` — every work, `series_volume` row, edition, copy, audio rung, link
+and skip, with `completeness.ts` run over all 81 series. Not the reason it went,
+but worth knowing if anyone reconsiders.
+
+⚠️ **`/series` is still a live route** and must stay one — deep links, bookmarks,
+the back button out of a series page and `backTarget('/series')` all resolve to
+it. This removed an *entry point*, not the page. Both removals did.
+
+**The standing decision is now written down in
+`docs/info/completeness-wishlist-relations.md` §1.7**, with both build-and-remove
+cycles in a table, because a bare count of what you lack reads as a missing
+feature to anyone who has not seen it removed twice.
+
 ### ✅ 870 review keys backfilled — 2026-08-12
 
 `scripts/backfill-review-keys.mjs` had **never** been run with `--commit`, and

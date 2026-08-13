@@ -28,7 +28,6 @@ import {
   listCollection,
   listCopiesForWork,
   listEditionsForWork,
-  listSeries,
   listWatchesForWork,
   listWishlist,
   setReadState,
@@ -165,33 +164,26 @@ export const catalogRoutes = new Hono<AppBindings>()
   /**
    * Counted live on every request — never a literal written into the UI.
    *
-   * ⚠️ `seriesWithGaps` is joined on HERE rather than inside `collectionStats`,
-   * the same seam and the same reason as `universes` on `/collection/facets`
-   * above: the count is not a `COUNT(*)`, it is the output of
-   * `completeness.ts`, and pushing it into a stats SQL block would be a second
-   * implementation of "what counts as a gap" — the one thing that module exists
-   * to own. `listSeries` is the function the Series screen already uses, so the
-   * number here and the number there cannot disagree.
+   * ⚠️ **This route used to also run `listSeries` for a `seriesWithGaps` count,
+   * and no longer does** — added 2026-08-11, removed 2026-08-12 when the owner
+   * removed the chip that read it. Do not restore either half without asking.
    *
-   * It exists because removing the Series button from the top bar (2026-08-11)
-   * left the cross-series view with no home: the collection page can only show
-   * books you HAVE, and this is the one number that says something about the
-   * books you do not. It is a link, not a badge — the whole point is to get you
-   * to the list it counts.
+   * Worth knowing what it cost, because it was invisible: `listSeries` loads
+   * every work, every `series_volume` row, every edition, every copy, every
+   * audio rung, every link and every skip in the catalog, then runs
+   * `completeness.ts` over all 81 series — to produce one integer, on a screen
+   * about the books you *have*. `/stats` is fetched on every visit to the
+   * collection page, so that was the most expensive query in the app serving the
+   * least-read number on it.
+   *
+   * ⚠️ The standing decision is not about cost, though: **a gap is answered on
+   * the series it belongs to, reached from the book that prompted the
+   * question.** A single number cannot say which series, so it could only ever
+   * be a button to somewhere else.
    */
-  .get('/stats', requireCapability('read'), async (c) => {
-    const [stats, series] = await Promise.all([
-      collectionStats(c.env.DB, c.get('user').id),
-      listSeries(c.env.DB, c.get('user').id),
-    ]);
-    return c.json({
-      ...stats,
-      // ⚠️ `gaps.length`, not `certainGaps + attestedGaps`. Those two exclude
-      // rungs held on audio; this is "series with anything missing from THIS
-      // catalog", which is what the Series screen's own "with gaps" chip counts.
-      seriesWithGaps: series.series.filter((s) => s.gaps.length > 0).length,
-    });
-  })
+  .get('/stats', requireCapability('read'), async (c) =>
+    c.json(await collectionStats(c.env.DB, c.get('user').id)),
+  )
 
   /**
    * The wishlist: copies we want and do not hold.

@@ -324,6 +324,45 @@ deleted** — migration 0016's rule in the sibling project, and it transfers
 exactly: a row vanishing from the missing list looks identical to the owner
 having bought the book.
 
+### 1.7 ⚠️ Where a gap is ANSWERED — and the chip that keeps coming back
+
+**Standing decision, 2026-08-12: a gap is answered on the series it belongs to,
+reached from the book that prompted the question.** There is no cross-series gaps
+entry point anywhere in the navigation, and that is deliberate.
+
+This has now been built and removed twice, so it is written down here rather than
+in a commit message nobody will find:
+
+| When | What | Why it went |
+|---|---|---|
+| 2026-08-11 `0253f64` | **Series button removed from the top bar.** Owner: *"remove the series button from the top of the page in the book catalog and place that information inside of each clickable series instead"* | — |
+| 2026-08-11 `78bbd04` | **"N series with gaps" chip added to the collection stat strip**, linking to `/series?gaps=1`. Approved at the time as "Option B", to restore the cross-series view the button's removal had orphaned | Owner, 2026-08-12: *"just get rid of the gaps button and count in the top sections"* |
+
+⚠️ **Do not add it back without asking.** The reasoning, so a future session does
+not rediscover it as a "missing feature":
+
+- **A single number cannot say *which* series**, so it can only ever be a button
+  to somewhere else — which is the thing being removed, not a way of keeping it.
+- **Every other figure in that strip describes the shelf you have.** One count of
+  what you lack turns the collection screen into a worklist.
+- The question *"what am I missing?"* is asked **while looking at a book**, and
+  that is where the route to the answer belongs: `WorkPage`'s series tag opens
+  the ladder, and the ladder carries the gaps, the evidence for each, the skipped
+  rungs and the audio holdings.
+
+⚠️ **`/series` is still a live route** and must stay one — deep links, bookmarks,
+the back button out of a series page, and `backTarget('/series')` all resolve to
+it. Both removals took away an *entry point*, never the page. The search, the
+sorts, the gaps-only filter and the four aggregate stats all still exist there for
+anyone who types the URL.
+
+⚠️ **The removal also deleted a genuinely expensive query, which is worth knowing
+if the chip is ever reconsidered.** `/stats` is fetched on every visit to the
+collection page, and to produce that one integer it ran `listSeries` — every
+work, every `series_volume` row, every edition, every copy, every audio rung,
+link and skip in the catalog, with `completeness.ts` run over all 81 series. The
+most expensive query in the app, serving the least-read number on the screen.
+
 ---
 
 ## 2. Wishlist

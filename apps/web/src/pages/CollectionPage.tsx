@@ -282,20 +282,21 @@ export function CollectionPage({
               what somebody would say out loud. */}
           {stats.wanted > 0 && <Stat n={stats.wanted} label="wanted" />}
           {stats.preordered > 0 && <Stat n={stats.preordered} label={ON_THE_WAY} />}
-          {/* ⚠️ The only figure here about books you do NOT have, and the only
-              one that is a link. Every other stat describes the shelf; this one
-              is the way back to the cross-series view, which lost its home when
-              the Series button left the top bar on 2026-08-11. It goes straight
-              to the filtered list rather than the series index, because the
-              number is the question — "which ones?" — and the unfiltered list
-              does not answer it. Hidden at zero, like `wanted` above: a nothing
-              to do is not worth a chip. */}
-          {stats.seriesWithGaps > 0 && (
-            <Link to="/series?gaps=1" className="stat stat--link">
-              <b>{stats.seriesWithGaps.toLocaleString()}</b>
-              <span>series with gaps</span>
-            </Link>
-          )}
+          {/* ⚠️ There is deliberately NO "series with gaps" figure here, and it
+              is not an oversight — it was built on 2026-08-11 and removed on
+              2026-08-12 at the owner's request. Twice now this strip has grown a
+              link to the cross-series list to replace the Series button that
+              left the top bar, and twice that has been the wrong answer to the
+              question it was solving.
+
+              The standing decision: **a gap is answered on the series it belongs
+              to, reached from the book that prompted the question.** Every stat
+              here describes the shelf you have; a count of what you lack, on the
+              collection screen, is a worklist nobody asked for — and a single
+              number cannot say WHICH series anyway, so it can only ever be a
+              button to somewhere else. `/series` remains a live route for deep
+              links and the back button; it just has no entry point, on purpose.
+              See `docs/info/completeness-wishlist-relations.md` §1.7. */}
           {stats.readStates
             .filter((r) => r.readState === 'read')
             .map((r) => (
