@@ -429,6 +429,12 @@ records that it was attempted, which a tidy log does not.
 
 <!-- entries start here -->
 
+- `2026-08-13T07:40Z` **DONE** ⚠️ **OWNER APPROVED ALL FOUR** edit-and-audit decisions ("do them all"). Recorded below; build dispatched.
+  1. **Sentinel design + migration 0120 — APPROVED.** Build it.
+  2. **`reviews_seen_*` — KEEP.** Fable left this to the owner's taste; kept as defence behind the client attestation.
+  3. **Firestore `reviews` stays shape-only — DECIDED and recorded in `catalog-platform/docs/PLATFORM.md` §4a.** ⚠️ The carry procedure depends on it; hardening those rules later would silently break the restamp for other people's review docs.
+  4. **Title-edit sibling review doc — ACCEPTED for now.** Reading stays correct; the fix costs a read before every review write, so it waits for evidence that retitles on reviewed books actually happen.
+
 - `2026-08-13T06:55Z` **DONE** reviewed Fable's threshold report — verified both side findings against production. **One confirmed, one corrected.** See the section below.
 - `2026-08-13T06:55Z` **UNSOLVED (new, real)** ⚠️ `normaliseTitle` **strips Hangul entirely**, so every Korean book's `work_key` is author-only. Needs a migration; see below.
 
