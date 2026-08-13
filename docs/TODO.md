@@ -151,6 +151,65 @@ paperback" is still a decision somebody might make. `gaps.length` vs
 `certainGaps`/`attestedGaps` is exactly that distinction, and `completeness.ts`
 keeps them apart on purpose.
 
+### ⚠️⚠️ ONE BARCODE, SIX EDITIONS AND SIX COPIES — the OL work-record bug, 2026-08-13
+
+**The worst bug of the session.** The owner: *"Space knight barcode scanned caused
+a weird duplicate record… we have all of space knight and tamer already
+recorded."* It is not a duplicate — it is an **aggregate**.
+
+Scanning one Space Knight barcode produced work **302**, titled with the bare
+series name *Space Knight*, carrying **six editions with six unrelated ISBNs and
+six copies**:
+
+`9781951641061` · `9781951641078` · `9781951641085` · `9781951641139` ·
+`9781951641696` · `9781951641719` — 2020 and 2024 printings, all
+`source = openlibrary`.
+
+⚠️ **So the catalog claimed the household owned six copies of a book that does not
+exist**, while the nine real volumes (works 249–255, 69, 70 — *Space Knight Book
+1*…*9*) sit there with **no ISBNs at all**. The scan hoarded their identifiers
+onto a phantom.
+
+**Same bug, same author's barcodes, three works:**
+
+| id | title | editions | copies | verdict |
+|---|---|---|---|---|
+| 302 | Space Knight | 6 | 6 | ✅ deleted |
+| 301 | Tamer | 1 | 1 | ✅ deleted — authors even read *"Brian King, Michael-Scott Earle"*, a giveaway that the record is an aggregate and not one book |
+| 300 | Monster Empire | 2 | 2 | ⏳ **still present** — same shape, awaiting the owner's word |
+
+**Diagnosis.** The ISBN ladder resolved to an Open Library **work-level** record
+rather than a specific edition, and the add path then created *an edition for
+every ISBN that OL attaches to that work*, plus **a copy per edition**. The rule
+it breaks: **one barcode is one edition and at most one copy.** A work record on
+Open Library aggregates every printing of every volume in a series, so any series
+whose OL work is filed that way will do this again.
+
+⚠️ **Suspect any work whose title is a bare series name with several editions.**
+That is the signature — *Space Knight*, *Tamer*, *Monster Empire* all had it, and
+all three were created by scanning within a few minutes.
+
+**Deleted by SQL, because there is no other way** — see the item below.
+
+### 🔨 Add a record-delete button — asked 2026-08-13
+
+Owner: *"Add a todo to add a record delete button."*
+
+⚠️ **`DELETE /api/works/:id` already exists** (`routes/catalog.ts:305`, gated on
+`editCatalog`) and **nothing in the web app calls it** — `grep deleteWork` across
+`apps/web/src` returns nothing. So a junk row can only be removed with
+`wrangler d1 execute`, which is exactly the remedy `WorkFields`' own header says
+this app exists to avoid. Removing works 301 and 302 tonight required raw SQL.
+
+Safe to build: all **15** foreign keys to `work(id)` are `ON DELETE CASCADE`
+(verified across every migration), so a delete cleans up its editions, copies,
+aliases, watches and read-state without orphans.
+
+⚠️ Wants a confirm step that **says what will go with it** — the 302 case would
+have read "6 editions and 6 copies", which is precisely the information that makes
+the delete obviously right. And it belongs with the audit log in the edit-any-detail
+item below: a delete is the one edit that cannot be undone by re-editing.
+
 ### 🔨 LIVE QUEUE — the scanning session of 2026-08-13
 
 ⚠️ **Standing instruction from the owner:** *"Keep adding whatever I queue for you
