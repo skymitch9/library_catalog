@@ -233,12 +233,35 @@ one UI that creates an edition and its copy together. It now holds `ebook_epub`
 guessing which Mountaindale printing it is would be inventing. Scanning its
 barcode will fill it in.
 
-**#329-ish *Possibility & Promise*** — Matthew "Momo" Modrow, ISBN
-`9798278220268` (a `979-8` prefix, so Amazon KDP / independently published). A
-friend's self-published book. ⚠️ Title/subtitle split not yet settled — the cover
-reads *POSSIBILITY & PROMISE* large with *ECHOES OF THE UNKNOWN* beneath, and
-whether the second is a **subtitle or a series name** was under research at the
-time of adding, so `series` was deliberately left blank rather than guessed.
+***Possibility & Promise*** — Matthew "Momo" Modrow, ISBN `9798278220268`. A
+friend's self-published book. **Researched, and the question is settled: it is a
+standalone with a SUBTITLE, not a series** — so leaving `series` blank was right.
+
+| field | value |
+|---|---|
+| subtitle | **Echoes of the Unknown** ⏳ still to add |
+| publisher | Independently published (Amazon KDP) |
+| published | **14 December 2025** (paperback; Kindle 27 Dec) |
+| pages | **446** |
+| ASINs | `B0G7PQ845R` paperback · `B0GCTQFFBC` Kindle |
+| genre | hard SF · AI/robots · first contact |
+
+⚠️ **Why "not a series" is a real finding and not an absence of effort:** neither
+Amazon listing carries a "Part of series" element or a "Book 1 of N" banner — KDP
+surfaces those prominently when an author sets them — the interior title page is a
+plain title-colon-subtitle stack with no "Book One of…" line, and **it is the
+author's only published book**, so no sibling volume exists to define a series.
+A sequel could retro-fit the name later; nothing published says so today.
+
+⚠️ **Two corrections to the transcription I made from the photo:** the character is
+**Miku** (Miku Amarah), not "Mike", and the world is named **Trevek**. Also worth
+knowing: the book is **not in Open Library**, and Google Books returned 429 rather
+than a negative — so it is untested there, not absent.
+
+⚠️ Amazon's author field reads **Matthew Roland Modrow** (paperback) and *Matthew
+Modrow* (Kindle) while the cover byline is *Matthew "Momo" Modrow*. Same person,
+legal name vs. byline. The catalog holds the **cover byline**, which is the right
+call — but it is a candidate for an author **alias** if lookups ever need it.
 
 ***Last Child in the Woods*** — Richard Louv, ISBN `9781565126053`, Algonquin
 Books (Workman / Hachette), $18.99 US. ⚠️ Subtitle **"Saving Our Children from
