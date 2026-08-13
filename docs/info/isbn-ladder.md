@@ -199,3 +199,38 @@ nine refusals, and what "corroborated" is allowed to mean are in
 | 1 | Does a Kindle metadata cache exist on this machine? | Phase 3 | **Unresolved.** `C:\Users\nbasl\Documents\My Kindle Content` and the OneDrive equivalent do **not** exist. A wider profile sweep timed out at 2 minutes without completing, so "no Kindle for PC install" is *likely but not proven*. Re-check with a targeted `Get-ChildItem` before designing phase 3. |
 | 2 | Amazon "Request My Data" export | Phase 3 | **Not started.** The design says kick it off during phase 0 because it takes days. Nobody has — it needs the owner's own Amazon login and cannot be done from here. |
 | 3 | Where do loose ebook files live? | Phase 3 | Not investigated. |
+
+---
+
+## ⚠️ DECIDED: epub editions are NOT backfilled with identifiers
+
+**Owner's decision, 2026-08-13.** The **117 `ebook_epub` editions carrying no
+`isbn13`/`isbn10`/`asin` are a settled state, not a backlog.** Do not treat that
+count as a gap, and do not start a project to close it.
+
+**Why it is right rather than merely tolerated — three separate reasons:**
+
+1. ⚠️ **A print ISBN on an epub row is a WRONG fact, not a partial one.** An
+   ISBN identifies an edition *in a specific format*. The paperback's ISBN does
+   not identify the epub, so "filling in" the column would assert something
+   false in a column whose whole purpose is precision.
+2. **Much of this library legitimately has no ISBN at all.** This document's own
+   measurements found about half the collection absent from Open Library,
+   dominated by Kindle Unlimited and Audible-native titles — formats that are
+   frequently published without one.
+3. ⚠️ **Not even the ASIN is research-determinable here, which is the
+   non-obvious part.** These rows' `source_url` values are **local epub file
+   paths**. Matching a file on disk to a particular Kindle store listing is
+   *itself* a which-object guess — the same class of error as picking a printing
+   for a physical book you have not seen. So the ASIN column is not an escape
+   hatch for the ISBN column; it has the same problem wearing a different name.
+
+**If this is ever revisited**, the only honest routes are ones that read the
+object rather than infer it: metadata embedded in the epub files themselves, or
+the owner's own Amazon "Request My Data" export (open question 2 above). Both
+observe the actual item. Neither is a research task.
+
+**The general rule this is an instance of:** a first-published year is a fact
+about the **work** and has one right answer; an **identifier is a fact about an
+object** and has as many answers as there are editions. Research settles the
+first and usually cannot settle the second.
