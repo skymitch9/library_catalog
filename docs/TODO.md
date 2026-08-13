@@ -434,7 +434,8 @@ records that it was attempted, which a tidy log does not.
 - `2026-08-13T06:15Z` **CLAIM** watch `/queue`, research the residue — see the section below
 - `2026-08-13T06:30Z` **DONE** ISBN backfill on 265, 266, 267, 269, 274 — all five now carry their edition, and every copy is linked to it rather than dangling
 - `2026-08-13T06:30Z` **DONE** #269 *Who Goes Roar?* gained the owned copy it was missing
-- `2026-08-13T06:30Z` **UNSOLVED** format on those five editions — recorded as `paperback`, which is the app's own documented convention (*"a scanned book is recorded as a paperback until someone says otherwise"*). ⚠️ Four of the five are **board books**, so paperback is probably wrong; the catalog's other board books came from Open Library as `hardcover`. I did not assert a format I had not verified. Worth a sweep once the edition picker exists.
+- `2026-08-13T06:35Z` **DONE** ⚠️ RESOLVED the format question — owner's rule: *all board books are hardcover, since they are physically hard.* 10 editions moved paperback → hardcover; standing rule written into `docs/info/series-formats-and-audiobooks.md`
+- `2026-08-13T06:30Z` **~~UNSOLVED~~ superseded** format on those five editions — recorded as `paperback`, which is the app's own documented convention (*"a scanned book is recorded as a paperback until someone says otherwise"*). ⚠️ Four of the five are **board books**, so paperback is probably wrong; the catalog's other board books came from Open Library as `hardcover`. I did not assert a format I had not verified. Worth a sweep once the edition picker exists.
 - `2026-08-13T06:30Z` **CLAIM** Fable dispatched on (a) edit-any-detail + audit-log design, (b) re-measuring the matching thresholds — see FABLE5.md §7 for their side
 
 ### 🌙 OVERNIGHT AUTONOMOUS RUN — the plan, 2026-08-13

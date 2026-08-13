@@ -250,3 +250,39 @@ the shelf but not in your ears.
 - **`.fmt` is not `.mark`.** `.mark` is `position: absolute` from its first life
   in the corner of a cover, and every inline use since has had to undo it. The
   format chips are their own class for that reason.
+
+---
+
+## ⚠️ A board book is `hardcover` — standing rule, 2026-08-13
+
+Owner: *"consider all board books hard cover since theyre physically hard."*
+
+**So `format = 'hardcover'` for every board book, without exception.** The reason is
+physical and needs no lookup: board pages and a rigid case are what a board book
+*is*. This resolves a question that had been left open rather than guessed.
+
+⚠️ **It is a correction to two defaults that both point the wrong way for this
+shelf**, and neither announces itself:
+
+| Where the wrong value comes from | What it does |
+|---|---|
+| `edition.format` has `DEFAULT 'paperback'` (migration 0001) | anything created without naming a format lands as paperback |
+| The scan path's own convention — *"a scanned book is recorded as a paperback until someone says otherwise"* | every scanned board book, and this house is full of them |
+
+**Corrected on the day the rule was made** — 10 editions moved `paperback` →
+`hardcover`: the six Autumn Publishing *My First* board books, and *There's a Mouse
+About the House!*, *Don't Tickle the Dinosaur!*, *Richard Scarry's Busy Busy Farm*
+and *Who Goes Roar?*.
+
+⚠️ **Applies going forward to anything that creates an edition without a person
+choosing** — `AddWork`, the scan-add path, and any importer. A board book arriving
+through those still lands as `paperback` today; the rule says it should not. Fixing
+the *default* is not right either, since most non-board books really are paperback —
+so this wants the **edition picker** (`docs/FABLE5.md` §4.2a) or a format question at
+intake, not a changed default.
+
+⚠️ **One book was NOT changed on evidence**: *There's a Mouse About the House!* is a
+Richard Fowler **lift-the-flap**, and a lift-the-flap is not necessarily board — it
+was included above because the owner's rule is unconditional, but if it turns out to
+be a paper-paged flap book, that one row is wrong. Checkable only from the physical
+copy.
