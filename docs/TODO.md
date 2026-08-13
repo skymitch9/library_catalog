@@ -113,24 +113,41 @@ only, additive), then `npm run deploy`. Smoke-tested after: `/api/health` report
 `database: up`, `audiobook_series_link` exists in production, and all three
 `/audio-link` routes answer 401 unauthenticated as they should.
 
-**⏳ Left to do, and it is deliberately manual — press the button**
+**✅ Both confirmed by the owner in the browser, 2026-08-13 01:43** — and read back
+from production. ⚠️ Confirmation was left manual on purpose: the owner IS the
+evidence, so a migration that pre-confirmed these would be the app asserting a
+mapping on its own authority, which is the thing `'fold'` exists to refuse.
 
-Open each and press **"Same series — I own these"**:
+Effective grades across all 135 live audio rungs, read from production
+2026-08-13: **130 `work_match` (17 series) · 5 `owner` (2 series) · 0 `fold`.**
+Nothing in the app says "possibly on audio" any more.
 
-| Page | What it settles |
+What the two pages now read, verified in the browser rather than inferred:
+
+| Page | Sentence |
 |---|---|
-| `library.heygabi.ai/series/Legion` | rung 4, the omnibus |
-| `library.heygabi.ai/series/Arcane%20Pathfinder` | rungs 1, 2, 3, 4 |
+| `/series/Arcane Pathfinder` | *"1 book of at least 5 — **nothing here is missing**. 4 more you own on audio."* |
+| `/series/Legion` | *"2 books of at least 4 — 1 more beyond it, on a source's word. **1 more you own on audio**."* |
 
-⚠️ **Nothing is confirmed automatically and nothing should be.** The owner IS the
-evidence here — a migration that pre-confirmed these two would be the app asserting
-a mapping on its own authority, which is the thing `'fold'` exists to refuse. The
-panel prints both spellings side by side so the click is an actual look, not a
-formality.
+Each rung reads *"you own this on audio, as “…” — you confirmed the series
+match"*, and the panel offers **"Take that back"**.
 
-Afterwards the sentence on each page loses its *"N possibly on audio"* clause and
-those rungs stop being counted as missing. **"Take that back"** on the same panel
-undoes it.
+⚠️ **The series list agrees with both detail pages** — checked deliberately,
+because §1.4a and the `Holdings` header in `SeriesDetailPage.tsx` each record a
+bug where those two screens disagreed about which books they were counting.
+*Arcane Pathfinder* shows `4 ON AUDIO` and **no** MISSING chip; *Legion* shows
+`1 MORE LISTED` + `1 ON AUDIO`.
+
+Header counts moved as expected — **certainly missing 60 → 56** (the four
+`earlier` Arcane rungs) and **on a source's word 3 → 2** (Legion's `attested`
+rung 4).
+
+⚠️ **"WITH GAPS" stayed at 26, and that is correct, not a bug.** It counts rungs
+absent from *this* catalog, which is a different question from "missing" — those
+four Arcane books genuinely have no ebook or printing here, and "buy the
+paperback" is still a decision somebody might make. `gaps.length` vs
+`certainGaps`/`attestedGaps` is exactly that distinction, and `completeness.ts`
+keeps them apart on purpose.
 
 ### ✅ 870 review keys backfilled — 2026-08-12
 
