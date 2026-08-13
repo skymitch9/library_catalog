@@ -151,6 +151,139 @@ paperback" is still a decision somebody might make. `gaps.length` vs
 `certainGaps`/`attestedGaps` is exactly that distinction, and `completeness.ts`
 keeps them apart on purpose.
 
+### ⚠️⚠️ THREE BUGS found while adding books by hand — 2026-08-13, all unfixed
+
+Discovered by adding five books and then reading the rows back. **Read this before
+typing in a scanning backlog**, because two of the three lose data silently.
+
+**1. ⚠️ The typed ISBN is NOT stored. `/add?mode=type` has an ISBN box, and
+nothing persists it.** Measured: works **265, 266, 267, 269, 274** all have
+`editions = 0`, so no ISBN, no publisher, no year — for books whose ISBN was typed
+in or scanned. Compare the owner's own adds (#268, #270–273, #275, #276), which
+all resolved through a lookup and all have `editions = 1`.
+
+The ISBN box appears to feed the **Look up** button only. So for exactly the books
+that need hand-entry — the ones no service knows — **the one hard identifier the
+book carries is thrown away.** That is the worst possible place to drop it: a
+board book with no ISBN row can never be re-matched later, and the barcode is the
+only thing that would have made it findable.
+
+**2. ⚠️ "AND WE…" defaults to "just catalogue it — record no copy".** For a
+scanning session — where every book is physically in your hands — the default is
+the one answer that is always wrong. It produced **#269 *Who Goes Roar?* with
+`copies = 0`**, i.e. catalogued but not owned. The other options are "have it" and
+"want it — put it on the wishlist". Default should almost certainly be "have it"
+when reached from a scan.
+
+**3. ⚠️ A save can fail silently, and the cleared form looks like success.**
+*My First Farm Animals* (9781839035920) was typed, saved, and the form went blank
+— and **no row exists**. Cause is almost certainly hydration: the fields were
+filled before React had attached, so its state stayed empty, `Save` stayed
+disabled, and the click did nothing. The blank form after was the *un-filled* form,
+not a reset one. Nothing distinguishes that from a successful save.
+
+**Rows needing repair** (all created 2026-08-13):
+
+| work | title | what is missing |
+|---|---|---|
+| 265 | There's a Mouse About the House! | ISBN 9781601304193 |
+| 266 | Don't Tickle the Dinosaur! | ISBN 9780794549503 |
+| 267 | Richard Scarry's Busy Busy Farm | ISBN 9781984894236 |
+| 269 | Who Goes Roar? | ISBN 9781836422808 **and a copy — it is owned** |
+| 274 | My First Toys | ISBN 9781839035944 |
+
+⚠️ Also: #269 was entered as author **"Make Believe Ideas"** while the catalog
+already holds #144 *Never Touch a Dinosaur!* as **"Make Believe Ideas  Ltd."**
+(with a double space). Two author spellings for one publisher — pick one.
+
+### 🔨 Books whose ISBN resolves to NOTHING — transcribed from photographs, 2026-08-13
+
+⚠️ **Growing list, one root cause.** The owner is scanning and these keep landing:
+the ISBN is real and printed on the book, and **every rung of the ladder returns
+no answer at all** — so the scan row has no title, no author, and `isAddable`
+refuses it. Children's board books, publisher-branded, are the whole population.
+
+**Transcribed off the owner's photographs, so this survives the books going back
+on the shelf.** Enter via `/add?mode=type` ("Type a title"), which needs no lookup.
+
+**"Who Goes Roar?"** — a tabbed board book of dinosaur sounds
+| field | value |
+|---|---|
+| ISBN13 / ISBN10 | **9781836422808** / 1-83642-280-6 |
+| publisher | **Make Believe Ideas** (make believe ideas ltd, Berkhamsted, Herts UK · 557 Broadway, New York) |
+| copyright | 2019 · $4.99 US / $6.99 CAN |
+| illustrator | **Shannon Hays** — the ONLY credit on the book |
+| author | ⚠️ none named. Publisher-as-author, per the catalog's convention (*Scholastic* #141, *Bendon* #137) |
+
+**하츄핑의 눈물** — Korean *Catch! Teenieping* tie-in
+| field | value |
+|---|---|
+| ISBN | **9791165384678** (979-11-6538-467-8) · 15,000원 |
+| franchise | 캐치! 티니핑 (Catch! Teenieping) |
+| series badge on cover | **하츄핑 마음 동화 2** — so volume **2** of that series |
+| credits | 원작·그림 **SAMG** · 엮음 **아이휴먼 편집부** (compiled by the iHuman editorial dept) |
+| publisher | **아이휴먼 / iHuman** |
+
+⚠️ **Open question, and it decides how these two file together:** the catalog
+already holds **#195** — *슈팅 스타 캐치! 티니핑: 약속 의 오로라핑*, ISBN
+9791165384548 — under series **마음을 채우는 동화**. The new book's cover says
+**하츄핑 마음 동화**. Are those the same series or two different ones? Filing them
+together on a guess would merge two series; filing them apart would split one.
+Under research 2026-08-13; **do not resolve by guessing the Korean.**
+
+⚠️ Also note **#195 is on the cover-photo pull list** — do not confuse the two
+Korean books, they are different ISBNs (…4548 vs …4678).
+
+### 🔨 The Autumn Publishing 6-book set — cannot be scanned in, 2026-08-13
+
+⚠️ **Read the back covers: "Sold as part of a set, not for resale."** These are
+set-internal ISBNs. No retailer lists them individually, so **every rung of the
+ISBN ladder returns nothing** — not a wrong answer, no answer. The scan row gets
+no title and no author, so `isAddable` refuses it and the row has only *Edit* and
+*Not wanted*. This is the same gate as the authorless books, one step worse.
+
+**They must be typed in** — `/add?mode=type` ("Type a title"), which needs no
+lookup. Transcribed from the owner's photographs of the fronts and backs, so this
+survives even if the books go back on the shelf:
+
+| Title | ISBN-13 |
+|---|---|
+| My First Farm Animals | 9781839035920 |
+| My First Toys | 9781839035944 |
+| My First Things That Go | 9781839035906 |
+| My First Wild Animals | 9781839035951 |
+| My First Ocean Animals | 9781839035937 |
+| My First Food | 9781839035913 |
+
+Common facts, all read off the books: **Autumn Publishing**, an imprint of Igloo
+Books Ltd (owned by Bonnier Books, Sweden), **Third Edition, June 2025**, board
+books with polyurethane-foam covers, series line on the covers is **My First** —
+which is already a series in this catalog.
+
+⚠️ **Author: `Autumn Publishing`.** No person is credited anywhere on these books.
+That is the catalog's existing convention for publisher-branded board books —
+*Scholastic* on #141, *Bendon* on #137 — not a placeholder.
+
+### ⚠️ #174 *I Love You, Little Bear* — the author on file is probably another book's
+
+Owner: *"the publishing company editorial stuff wrote it together… use the
+publisher as the author."* They are right, and it is worse than a blank.
+
+Researched 2026-08-13: **at least four different books share this exact title** —
+Claire Freedman's, Angela Navarra's, a Scholastic edition, a Phoenix
+International edition — and **none of them carries our ISBN 9781472327314**. So
+the `Judi Abbot` currently in `work.authors` was almost certainly lifted from a
+*different book of the same name*, which is precisely the failure
+`docs/info/research-and-gaps.md` warns about.
+
+The edition's publisher is **Parragon Books**, consistent with the `978-1-4723`
+prefix. That is the honest attribution.
+
+⚠️ **Blocked on the same guard as the title:** `WorkFields` deliberately cannot
+reach `authors`, because `work_key` derives from it. #174 has **no reviews on
+either site**, so the key move is harmless here — which is exactly the
+"gated on no-review-join" design in the item below.
+
 ### ⏸️ Edit any detail, an audit log, and adding a book with no author — 2026-08-13
 
 **Three asks from one scanning session, and they are the same feature.** Recorded
