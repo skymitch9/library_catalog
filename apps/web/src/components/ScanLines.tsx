@@ -160,6 +160,12 @@ function LineRow({
   const [preorder, setPreorder] = useState<PreorderQuestion | null>(null);
   /** Said after the fact, because "Copy added" would be the wrong sentence. */
   const [arrived, setArrived] = useState(false);
+  /**
+   * The person pressed "Add without an author" — carried as state so the
+   * pre-order prompt's answer re-runs the SAME add, not the ordinary one
+   * (which would refuse for the missing author it was deliberately skipping).
+   */
+  const [authorless, setAuthorless] = useState(false);
 
   async function run(what: string, fn: () => Promise<void>) {
     setBusy(what);
@@ -183,9 +189,10 @@ function LineRow({
    * written**. `answer` is that question coming back; the second call runs the
    * same function from the top.
    */
-  const add = (answer?: PreorderAnswer) =>
+  const add = (answer?: PreorderAnswer, withoutAuthor = authorless) =>
     run('add', async () => {
-      const outcome = await addLineToCatalog(line, answer);
+      setAuthorless(withoutAuthor);
+      const outcome = await addLineToCatalog(line, answer, { withoutAuthor });
       if (outcome.status === 'ask-preorder') {
         // Nothing was written, so nothing is recorded on the line either. The
         // row now shows the prompt in place of its buttons.
@@ -461,8 +468,24 @@ function LineRow({
                 excludes a board book. A row with a title and an author is
                 addable however it got them — including from the keyboard. */}
             {!owned && addable && (
-              <button className="primary" onClick={() => void add()} disabled={busy !== null}>
+              <button
+                className="primary"
+                onClick={() => void add(undefined, false)}
+                disabled={busy !== null}
+              >
                 {busy === 'add' ? 'Adding…' : 'Add'}
+              </button>
+            )}
+
+            {/* ⚠️ The deliberate second action (design §3.4.4): a row with a
+                title and NO author is not a dead end, but authorless must
+                never be the default — the button says on it what it does.
+                The book lands flagged (Needs → Author) and its reviews stay
+                held until the author arrives; adding it later is always safe
+                by construction. */}
+            {!owned && !addable && proposedTitle(line) !== null && !line.dismissed && (
+              <button onClick={() => void add(undefined, true)} disabled={busy !== null}>
+                {busy === 'add' ? 'Adding…' : 'Add without an author'}
               </button>
             )}
 

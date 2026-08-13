@@ -61,6 +61,13 @@ export function AddWork({ onClose, onAdded }: { onClose: () => void; onAdded: ()
   const [intent, setIntent] = useState<'' | 'owned' | 'wanted'>('owned');
   /** Raised by Save, answered by the prompt, then handed back to `save`. */
   const [preorder, setPreorder] = useState<PreorderQuestion | null>(null);
+  /**
+   * "Add without an author" was pressed — remembered so the pre-order prompt's
+   * answer re-runs the same deliberate save rather than the ordinary one.
+   * Never inferred from a blank field: authorless is a button, not a default
+   * (design §3.4.4, migration 0120).
+   */
+  const [authorless, setAuthorless] = useState(false);
 
   async function lookup() {
     if (!isbn.trim()) return;
@@ -102,9 +109,10 @@ export function AddWork({ onClose, onAdded }: { onClose: () => void; onAdded: ()
     }
   }
 
-  async function save(answer?: PreorderAnswer) {
+  async function save(answer?: PreorderAnswer, withoutAuthor = authorless) {
     setBusy(true);
     setNote(null);
+    setAuthorless(withoutAuthor);
     try {
       /*
        * ⚠️ Ask before anything is written, exactly as `addLineToCatalog` does.
@@ -115,7 +123,9 @@ export function AddWork({ onClose, onAdded }: { onClose: () => void; onAdded: ()
        * other two would spend a request to answer a question nobody asked.
        */
       if (intent === 'owned' && !answer) {
-        const match = await api.matchWork(title.trim(), authors.trim());
+        // Null asks about the provisional key, so a second deliberate
+        // authorless add of the same title attaches instead of duplicating.
+        const match = await api.matchWork(title.trim(), withoutAuthor ? null : authors.trim());
         const question = match.work
           ? await preorderQuestionFor(match.work.id, match.work.title)
           : null;
@@ -140,7 +150,11 @@ export function AddWork({ onClose, onAdded }: { onClose: () => void; onAdded: ()
 
       const { work } = await api.createWork({
         title: title.trim(),
-        authors: authors.trim(),
+        // ⚠️ Explicit null, never ''. The schema makes authorless a statement
+        // (required-but-nullable), and the row gets the provisional key +
+        // the Needs→Author flag — which is the null itself, stored nowhere
+        // else.
+        authors: withoutAuthor ? null : authors.trim(),
         series: series.trim() || null,
       });
 
@@ -258,11 +272,24 @@ export function AddWork({ onClose, onAdded }: { onClose: () => void; onAdded: ()
       <div className="row">
         <button
           className="primary"
-          onClick={() => void save()}
+          onClick={() => void save(undefined, false)}
           disabled={busy || !title || !authors || preorder !== null}
         >
           Save
         </button>
+        {/* ⚠️ The deliberate second action, shown only when it applies: a
+            title with no author. It says on the button what it does, so
+            authorless is never an accident of a blank field — the ordinary
+            Save stays disabled without an author, exactly as before. */}
+        {title.trim() !== '' && authors.trim() === '' && (
+          <button
+            onClick={() => void save(undefined, true)}
+            disabled={busy || preorder !== null}
+            title="The book is added now and flagged; add the author later from its page — always safe, reviews stay held until then"
+          >
+            Add without an author
+          </button>
+        )}
         <button onClick={onClose} disabled={busy}>
           Cancel
         </button>

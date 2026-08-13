@@ -584,7 +584,13 @@ export function CollectionPage({
                 Cover needed{facets ? ` (${facets.needs.cover})` : ''}
               </option>
               <option value="watch">To check{facets ? ` (${facets.needs.watch})` : ''}</option>
-              <option value="any">Either</option>
+              {/* The remediation queue for "Add without an author" (0120).
+                  Derived from the row itself — authors is the sentinel — so
+                  this count and the card mark cannot disagree. */}
+              <option value="author">
+                Author unknown{facets ? ` (${facets.needs.author})` : ''}
+              </option>
+              <option value="any">Any of these</option>
             </select>
           </label>
 

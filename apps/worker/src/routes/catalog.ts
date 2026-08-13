@@ -238,10 +238,19 @@ export const catalogRoutes = new Hono<AppBindings>()
   .get('/works/match', requireCapability('read'), async (c) => {
     const title = c.req.query('title');
     const authors = c.req.query('authors');
-    if (!title || !authors) {
-      return c.json({ error: 'bad_request', detail: 'title and authors are required' }, 400);
+    if (!title) {
+      return c.json({ error: 'bad_request', detail: 'title is required' }, 400);
     }
-    const work = await findWorkByKey(c.env.DB, workKeyFor(title, authors));
+    // ⚠️ No authors = "match my authorless add" (migration 0120): the lookup
+    // runs against the PROVISIONAL key, so a second deliberate authorless scan
+    // of the same title attaches to the existing provisional work instead of
+    // minting a sibling. It can never match a real book — the sentinel key
+    // equals no key a real author can produce — so the old contract for
+    // callers that DO send authors is untouched.
+    const work = await findWorkByKey(
+      c.env.DB,
+      workKeyFor(title, authors || UNKNOWN_AUTHOR),
+    );
     return c.json({ work: work ?? null });
   })
 

@@ -126,6 +126,25 @@ function WatchMark({ count }: { count: number }) {
   );
 }
 
+/**
+ * "No author" — this book was added without one, deliberately, and is waiting
+ * for remediation (migration 0120). The mark IS the flag: it derives from
+ * `authors` being null, the same fact the Needs→Author filter queries, so the
+ * card and the filter cannot disagree. Filling the author in on the book page
+ * is always safe — a provisional book can have no reviews to orphan.
+ */
+function AuthorMark({ authors }: { authors: string | null }) {
+  if (authors !== null) return null;
+  return (
+    <span
+      className="mark mark--needs"
+      title="Added without an author — add one on the book page to finish the record"
+    >
+      No author
+    </span>
+  );
+}
+
 /** A finished book earns a mark; everything else stays quiet. */
 function ReadMark({ state }: { state: string | null }) {
   if (!state || state === 'unread') return null;
@@ -174,16 +193,17 @@ export function WorkList({ rows, view }: { rows: WorkSummary[]; view: 'grid' | '
           <li key={w.id}>
             <div className="card">
               <div className="card__art">
-                <Cover src={w.coverUrl} title={w.title} authors={w.authors} size="grid" />
+                <Cover src={w.coverUrl} title={w.title} authors={w.authors ?? undefined} size="grid" />
                 {/* A column, because both can be true at once — see `.card__marks`. */}
                 <span className="card__marks">
                   <ReadMark state={w.readState} />
                   <PreorderMark count={w.preordered} />
                   <CopiesMark count={w.copyCount} />
-                  {/* Last, so the two marks about the book's own record sit
-                      below the two about our copy of it. Both can be true at
-                      once and `.card__marks` is a column for exactly that. */}
+                  {/* Last, so the marks about the book's own record sit
+                      below the two about our copy of it. Several can be true
+                      at once and `.card__marks` is a column for exactly that. */}
                   <CoverMark work={w} />
+                  <AuthorMark authors={w.authors} />
                   <WatchMark count={w.openWatches} />
                 </span>
               </div>
@@ -191,7 +211,10 @@ export function WorkList({ rows, view }: { rows: WorkSummary[]; view: 'grid' | '
                 <Link to={workPath(w.id)} className="card__open">
                   <strong className="card__title">{w.title}</strong>
                 </Link>
-                <span className="muted small">{w.authors}</span>
+                {/* Null renders nothing here — the mark on the art already says
+                    it, and an "unknown" byline on every authorless card would
+                    say it twice. */}
+                {w.authors && <span className="muted small">{w.authors}</span>}
                 <SeriesLine work={w} />
               </div>
             </div>
@@ -216,9 +239,10 @@ export function WorkList({ rows, view }: { rows: WorkSummary[]; view: 'grid' | '
                 <PreorderMark count={w.preordered} />
                 <CopiesMark count={w.copyCount} />
                 <CoverMark work={w} />
+                <AuthorMark authors={w.authors} />
                 <WatchMark count={w.openWatches} />
               </div>
-              <div className="muted small">{w.authors}</div>
+              {w.authors && <div className="muted small">{w.authors}</div>}
               <div className="row-open__meta">
                 <SeriesLine work={w} />
                 {/* Formats are what makes "in audio and paperback but not ebook"

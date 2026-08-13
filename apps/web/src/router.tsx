@@ -73,7 +73,7 @@ const ADD_MODES: readonly AddMode[] = ['scan', 'single', 'photo', 'type'];
  * (`packages/db/src/works.ts`) and once as a URL word here. Promoting them to a
  * shared constant would imply a column somewhere holds one, and none does.
  */
-export const NEEDS_FILTERS = ['cover', 'watch', 'any'] as const;
+export const NEEDS_FILTERS = ['cover', 'watch', 'author', 'any'] as const;
 export type NeedsFilter = (typeof NEEDS_FILTERS)[number];
 
 /**

@@ -17,6 +17,27 @@ export class ApiError extends Error {
 }
 
 /**
+ * One audit row, as `GET /api/works/:id/changes` returns it. Mirrors
+ * `ChangeRow` in `@lc/db`. `oldValue`/`newValue` are decoded JSON — `null`
+ * means the column was NULL, and `__row__` rows carry a whole row (creation:
+ * old null; deletion: new null).
+ */
+export interface ChangeView {
+  id: number;
+  batchId: string;
+  entity: string;
+  entityId: number;
+  field: string;
+  oldValue: unknown;
+  newValue: unknown;
+  changedBy: number | null;
+  changedByName: string | null;
+  changedHow: string;
+  note: string | null;
+  createdAt: string;
+}
+
+/**
  * Every call carries a Firebase ID token.
  *
  * On a 401 the token is refreshed once and the request retried once — a token
@@ -64,7 +85,13 @@ export interface WorkSummary {
   id: number;
   title: string;
   subtitle: string | null;
-  authors: string;
+  /**
+   * As printed — or **null for a book whose author is not yet recorded**
+   * (migration 0120, "Add without an author"). Null IS the remediation flag:
+   * the card draws the mark from it, the Needs→Author filter derives from it,
+   * and nothing stores a second copy of the fact.
+   */
+  authors: string | null;
   series: string | null;
   seriesIndexDisplay: string | null;
   coverUrl: string | null;
@@ -172,10 +199,11 @@ export interface CollectionFacets {
   formats: { format: string; count: number }[];
   statuses: { status: string; count: number }[];
   /**
-   * How much is still outstanding. The two overlap — a book can want a cover
-   * *and* be on watch — so they are two numbers rather than a breakdown.
+   * How much is still outstanding. The three overlap — a book can want a cover
+   * *and* be on watch — so they are numbers rather than a breakdown.
+   * `author` is the remediation queue for books added without one (0120).
    */
-  needs: { cover: number; watch: number };
+  needs: { cover: number; watch: number; author: number };
   /**
    * Books holding a special printing, and books holding a *named* printing
    * nothing has sorted yet. Overlapping, like `needs` — a book can be in both.
@@ -746,14 +774,16 @@ export const api = {
    * on purpose. Skipping this check means scanning the paperback of a book you
    * already hold as an ebook silently produces a second row for the same book.
    */
-  matchWork: (title: string, authors: string) =>
+  /** `authors: null` asks about the PROVISIONAL key — the authorless-add dedupe. */
+  matchWork: (title: string, authors: string | null) =>
     request<{
       // The endpoint returns the whole work row; this type was narrower than
       // the wire for no reason, which hid `coverUrl` from the add path and let
       // a scan attach to a coverless book without noticing it could fill it in.
-      work: { id: number; title: string; authors: string; coverUrl: string | null } | null;
+      work: { id: number; title: string; authors: string | null; coverUrl: string | null } | null;
     }>(
-      `/api/works/match?title=${encodeURIComponent(title)}&authors=${encodeURIComponent(authors)}`,
+      `/api/works/match?title=${encodeURIComponent(title)}` +
+        (authors === null ? '' : `&authors=${encodeURIComponent(authors)}`),
     ),
 
   /**
@@ -920,10 +950,33 @@ export const api = {
       { method: 'POST', body: JSON.stringify(body) },
     ),
 
+  /**
+   * ⚠️ Both keys are null — and `held` says why — for a book with no author
+   * recorded (design §3.4 guard 2). The legacy bookId is title-only, so on an
+   * authorless book it could surface a stranger's reviews of a different book
+   * with the same name; the panel renders the held sentence instead of asking.
+   */
   reviewKeys: (workId: number) =>
-    request<{ collection: string; workKey: string; legacyBookId: string }>(
-      `/api/reviews/${workId}/keys`,
-    ),
+    request<{
+      collection: string;
+      workKey: string | null;
+      legacyBookId: string | null;
+      held?: string;
+    }>(`/api/reviews/${workId}/keys`),
+
+  /**
+   * Report what the review fetch just returned — the write side of the
+   * key-move evidence floor (design §5.2). Piggybacked after every successful
+   * fetch; failure is non-fatal and silent, because nothing was promised.
+   */
+  reviewsSeen: (workId: number, count: number) =>
+    request<{ ok: boolean }>(`/api/works/${workId}/reviews-seen`, {
+      method: 'POST',
+      body: JSON.stringify({ count }),
+    }),
+
+  /** The Changes panel read — who changed what, when, newest first. */
+  workChanges: (workId: number) => request<{ changes: ChangeView[] }>(`/api/works/${workId}/changes`),
 
   /**
    * "This rating is really in Firestore, and it is mine." Derives read state.

@@ -94,6 +94,15 @@ export type AddOutcome =
 export async function addLineToCatalog(
   line: ScanLine,
   answer?: PreorderAnswer,
+  /**
+   * ⚠️ `withoutAuthor` is the deliberate second action (design §3.4.4 —
+   * migration 0120), never a fallback this function reaches for on its own.
+   * The ordinary Add still requires title AND author; this flag is the person
+   * having pressed a button that says on it what it does. The work is created
+   * with `authors: null`, gets the provisional key, and lands in the
+   * Needs→Author remediation queue by construction — the null IS the flag.
+   */
+  opts?: { withoutAuthor?: boolean },
 ): Promise<AddOutcome> {
   /*
    * ⚠️ The duplicate case — a book we already hold, scanned again on purpose.
@@ -138,11 +147,18 @@ export async function addLineToCatalog(
    * then throws on is worse than either.
    */
   const title = proposedTitle(line);
-  const authors = proposedAuthors(line);
-  if (!title || !authors) {
+  // Null only down the deliberate path — a missing author is otherwise still
+  // the refusal it always was.
+  const authors = opts?.withoutAuthor ? null : proposedAuthors(line);
+  if (!title || (!authors && !opts?.withoutAuthor)) {
     throw new Error('Type in the title and author first — nothing found this book for us.');
   }
 
+  // A null author matches against the PROVISIONAL key server-side, so scanning
+  // the same authorless board book twice attaches a copy instead of minting a
+  // second provisional work. Two different authorless books with one title
+  // will still collide here — that is the collision the real key exists to
+  // prevent, and it is exactly why authorless is a flagged, temporary state.
   const existing = await api.matchWork(title, authors);
 
   /*

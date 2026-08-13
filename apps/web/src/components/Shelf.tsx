@@ -40,9 +40,11 @@ export function Shelf({
         {rows.map((w) => (
           <li key={w.id}>
             <button className="shelf__item" onClick={() => onOpen(w.id)} aria-label={`Open ${w.title}`}>
-              <Cover src={w.coverUrl} title={w.title} authors={w.authors} size="grid" />
+              <Cover src={w.coverUrl} title={w.title} authors={w.authors ?? undefined} size="grid" />
               <span className="shelf__title">{w.title}</span>
-              <span className="muted small">{w.authors}</span>
+              {/* Null byline renders nothing — the book page says "Author not
+                  recorded yet" in words; a strip tile has no room to. */}
+              {w.authors && <span className="muted small">{w.authors}</span>}
             </button>
           </li>
         ))}

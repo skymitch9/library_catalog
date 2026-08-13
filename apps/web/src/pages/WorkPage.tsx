@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import { api, type Me, type Watch } from '../api.js';
 import { Accessories } from '../components/Accessories.js';
 import { Aliases } from '../components/Aliases.js';
+import { Changes } from '../components/Changes.js';
 import { Copies, type CopyView } from '../components/Copies.js';
 import { Cover } from '../components/Cover.js';
+import { EditTitleAuthor } from '../components/EditTitleAuthor.js';
 import { CoverPanel } from '../components/CoverPanel.js';
 import { DriveLinks } from '../components/DriveLinks.js';
 import { Editions, type EditionView } from '../components/Editions.js';
@@ -35,7 +37,8 @@ interface WorkDetail {
     id: number;
     title: string;
     subtitle: string | null;
-    authors: string;
+    /** Null for a book added without an author — see EditTitleAuthor. */
+    authors: string | null;
     series: string | null;
     seriesIndexDisplay: string | null;
     /** Where it sorts. `seriesIndexDisplay` is what the cover says; see WorkFields. */
@@ -153,11 +156,16 @@ export function WorkPage({
       </button>
 
       <div className="work-head">
-        <Cover src={work.coverUrl} title={work.title} authors={work.authors} size="large" />
+        <Cover src={work.coverUrl} title={work.title} authors={work.authors ?? undefined} size="large" />
         <div className="work-head__text">
           <h2>{work.title}</h2>
           {work.subtitle && <p className="muted">{work.subtitle}</p>}
-          <p className="work-head__authors">{work.authors}</p>
+          {/* An authorless book says so in words, here where the byline would
+              be — the one place its absence would otherwise read as a broken
+              page rather than a recorded fact. */}
+          <p className="work-head__authors">
+            {work.authors ?? <span className="muted">Author not recorded yet</span>}
+          </p>
           {work.series && (
             <p className="series-tag">
               {/* A way into "what am I missing" from the book that prompted the
@@ -205,7 +213,7 @@ export function WorkPage({
           {showDrive && (
             <DriveLinks
               title={work.title}
-              authors={work.authors}
+              authors={work.authors ?? ''}
               sourceUrl={fileEdition?.source_url ?? null}
             />
           )}
@@ -239,6 +247,19 @@ export function WorkPage({
       />
 
       <WorkFields
+        workId={workId}
+        work={work}
+        canEdit={me.capabilities.includes('editCatalog')}
+        onSaved={load}
+      />
+
+      {/* ⚠️ The gated surface for the two fields WorkFields deliberately
+          cannot reach. Directly under it so "why can't I edit the title
+          there" has its answer one panel down — the heavier ceremony, with
+          the review-carry rules attached. On an authorless book it is the
+          remediation ask ("Add the author") and sits here, above the fold-ish,
+          because finishing the record is the page's one outstanding job. */}
+      <EditTitleAuthor
         workId={workId}
         work={work}
         canEdit={me.capabilities.includes('editCatalog')}
@@ -341,6 +362,10 @@ export function WorkPage({
           is what stops the page contradicting itself. It fires only when
           something actually changed, so there is no loop. */}
       <Reviews workId={workId} me={me} onReadStateDerived={load} />
+
+      {/* Last, because it is the record OF the page rather than part of it:
+          who changed what, when, and what it said before. Loads on demand. */}
+      <Changes workId={workId} />
     </main>
   );
 }

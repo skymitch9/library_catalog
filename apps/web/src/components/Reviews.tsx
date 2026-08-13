@@ -73,12 +73,32 @@ export function Reviews({
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The server's held sentence for an authorless book — design §3.4 guard 2. */
+  const [held, setHeld] = useState<string | null>(null);
 
   async function load() {
     try {
       const keys = await api.reviewKeys(workId);
+      /*
+       * ⚠️ Both keys are null for a book with no author recorded, and the
+       * legacy query is the reason this panel must not improvise one: it is
+       * title-only, so on an authorless book it could surface a STRANGER'S
+       * reviews of a different book with the same name. The server said
+       * "held"; render that and ask nothing.
+       */
+      if (keys.workKey === null || keys.legacyBookId === null) {
+        setHeld(keys.held ?? 'Reviews are held until the author is known.');
+        setReviews([]);
+        return;
+      }
+      setHeld(null);
       const found = await fetchReviews(keys.collection, keys.workKey, keys.legacyBookId);
       setReviews(found);
+
+      // Report what the fetch returned — the write side of the key-move
+      // evidence floor (design §5.2). Fire-and-forget: the panel promised
+      // nothing, and a failed report only leaves the floor where it was.
+      api.reviewsSeen(workId, found.length).catch(() => undefined);
 
       // Pre-fill with this person's existing review, so the form updates it
       // rather than looking like a blank slate they are about to duplicate.
@@ -147,13 +167,22 @@ export function Reviews({
     }
   }
 
-  const canRate = me.capabilities.includes('trackReading');
+  // Held books take no ratings either — a review written now would be stamped
+  // with the provisional key and come loose the day the author arrives, which
+  // is exactly what the server's 409 on /draft would say. Not offering the
+  // form beats offering one that refuses.
+  const canRate = me.capabilities.includes('trackReading') && held === null;
 
   return (
     <section className="panel">
       <h3>Reviews</h3>
 
-      {reviews === null ? (
+      {held !== null ? (
+        <p className="muted small">
+          {held} Add it from the <em>Title &amp; author</em> panel above — always safe on this
+          book.
+        </p>
+      ) : reviews === null ? (
         <p className="muted small">Loading…</p>
       ) : reviews.length === 0 ? (
         <p className="muted small">No reviews yet — on either site.</p>

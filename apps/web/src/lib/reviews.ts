@@ -108,6 +108,59 @@ export async function fetchMyReviews(
   return [...seen.values()];
 }
 
+/**
+ * The live check for a key move — the same two queries `fetchReviews` runs,
+ * but keeping the document ids, because the ids are what the carry writes to.
+ *
+ * ⚠️ A thrown error here must reach the caller. The Edit title & author panel
+ * disables Save until this resolves, and a failed check is never a zero —
+ * that is the silent-staleness trap in one more costume (design §5.2).
+ */
+export async function countReviewDocs(
+  collectionName: string,
+  workKey: string,
+  legacyBookId: string,
+): Promise<{ ids: string[] }> {
+  const ref = collection(firestore(), collectionName);
+  const [byKey, byLegacy] = await Promise.all([
+    getDocs(query(ref, where('workKey', '==', workKey))),
+    getDocs(query(ref, where('bookId', '==', legacyBookId))),
+  ]);
+  const ids = new Set<string>();
+  for (const snap of [byKey, byLegacy]) for (const d of snap.docs) ids.add(d.id);
+  return { ids: [...ids] };
+}
+
+/**
+ * The carry: re-point every found review document at the new key.
+ *
+ * ⚠️ **Firestore FIRST, then the PATCH — the order is load-bearing** (design
+ * §5.3). If the browser dies between the two, the docs carry `newKey` while
+ * the work still holds the old one — and the reviews stay VISIBLE, because
+ * `fetchReviews`' legacy `bookId` query still matches (the stored `bookId`
+ * field never changes). Re-running the ceremony is idempotent: the workKey
+ * query finds nothing under the old key, the legacy query finds the
+ * already-restamped docs, and the merge is a no-op. The opposite order would
+ * leave the database claiming a key no document carries, with nothing to
+ * notice it.
+ *
+ * A merge of one field on other people's documents, allowed because
+ * `firestore.rules` checks shape only — a posture the owner DECIDED to keep
+ * (PLATFORM.md §4a): hardening `reviews` later would silently break exactly
+ * this write, and that entry is the tripwire.
+ */
+export async function restampReviews(
+  collectionName: string,
+  ids: readonly string[],
+  newKey: string,
+): Promise<number> {
+  const db = firestore();
+  for (const id of ids) {
+    await setDoc(doc(db, collectionName, id), { workKey: newKey }, { merge: true });
+  }
+  return ids.length;
+}
+
 /** Write the document the Worker built. Merge, so `createdAt` survives an edit. */
 export async function writeReview(
   collectionName: string,
