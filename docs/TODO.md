@@ -522,6 +522,8 @@ records that it was attempted, which a tidy log does not.
 
 <!-- entries start here -->
 
+- `2026-08-13T20:05Z` **DECIDED — do not relitigate** **The book number stays ABOVE the title.** Owner approved 2026-08-13. Fable had flagged this as *"the decision to revisit"* if the owner had pictured a floating corner chip — they had not. ⚠️ **Recorded because that flag would otherwise sit in `FABLE5.md` §7 as an open invitation**, and a future session reading it would "fix" a placement that was deliberately chosen: a corner chip collides with title wrap on phones, while above-the-title reads as a catalog number.
+
 - `2026-08-13T19:55Z` **DONE** ✅ **Details queue empty again — 0 descriptions, 0 gaps of any kind.** The 7 outstanding were **not residue**: they were the works *created today* by splitting the Cooper and Card slipcase sets, which arrived with titles, authors, series, volumes and years but no descriptions — the expected consequence of turning 2 records into 9. Written as **brief factual summaries in the catalog's own voice** (matching #269's style), ⚠️ **deliberately not publisher jacket copy**, which is copyrighted text and not something to paste into a database by reflex.
 
 - `2026-08-13T19:41Z` **DEPLOYED** ✅ **Version `dded6f29`** — the illustrator credit and the book number are live. Health green, **347 tests pass**, typecheck clean.
