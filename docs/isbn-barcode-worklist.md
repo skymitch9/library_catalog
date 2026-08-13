@@ -19,6 +19,26 @@ ISBN-less ebooks are out of scope: a print ISBN on an epub row is a wrong fact,
 and none of their `source_url`s (all local epub paths) yield an ASIN without
 guessing which store listing matches the file.
 
+## ⚠️ Rescanning is now SAFE — what the scan will do (2026-08-13)
+
+The path this list waits on exists as of commit `634f4d8`. Scanning a barcode
+the catalog has never seen, on a book it already holds, no longer writes a
+duplicate edition and copy — it **stops and asks**, in the same shape as the
+pre-order prompt:
+
+1. **"This is the [printing] already on the shelf — record this ISBN on it"**
+   — the answer for everything on this list. The ISBN lands on the ISBN-less
+   row, the copy learns which printing it is, and nothing new is created.
+2. "I have two of it" / "a different printing I own" / "a different book" —
+   the other honest cases, each button saying what it writes.
+3. **If the ISBN is already on another row** (the Realmkeeper case below), the
+   scan does not dead-end: it names the row that holds it and offers to note
+   the shared ISBN in this row's `edition_name` — the slipcase treatment.
+
+Every write lands in `change_log` with who and how. A book with **several**
+ISBN-less printings (the two Dungeon Crawler Carl V1 rows) shows one button
+per row — pick by the edition name on the button.
+
 ## Why "needs the barcode" is the honest answer here
 
 Almost everything below is a **crowdfunded or retailer-exclusive printing** —
@@ -91,9 +111,12 @@ objects. Kickstarter exclusive; nothing public found.
 ⚠️ **Structural note before scanning these:** two edition rows share each
 physical volume. If a volume carries an ISBN, the UNIQUE index means only ONE
 row can hold it — record it like the slipcases (volume ISBN into both rows'
-`edition_name`, or isbn13 on one and a note on the other). A raw scan-attach of
-the same barcode to both books would fail on the second, which is the index
-doing its job.
+`edition_name`, or isbn13 on one and a note on the other). The scan fill
+handles the collision itself: a fill that hits a row already holding the ISBN
+offers "note the shared ISBN on this printing's name" instead of failing.
+Each volume's scan resolves to ONE of its two books, though — after filling
+that one, note the volume's *other* row by hand (book page → Editions →
+Edit → edition name), since no second scan will ever reach it.
 
 ### Zogarth — 1
 | Title | Edition | What is known |

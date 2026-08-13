@@ -349,6 +349,20 @@ export async function addLineToCatalog(
   };
 }
 
+/**
+ * The pre-order arriving, inside a rescan answer that writes no new copy.
+ * Flip-or-nothing, where `recordArrival` is flip-or-create: a `fill` means
+ * "the object was already counted", so `another` correctly writes no copy —
+ * and `arrived` still must not leave the flip undone. The flipped copy keeps
+ * whatever printing it already names, per the standing warning on
+ * `recordArrival`.
+ */
+async function flipIfArrived(answer: PreorderAnswer | undefined): Promise<boolean> {
+  if (answer?.kind !== 'arrived') return false;
+  await api.updateCopy(answer.copyId, arrivedPatch(answer.acquiredOn));
+  return true;
+}
+
 /** The edition a barcode line earns, in one spelling. `paperback` is the
  *  documented guess — see the comment above the call in the main path. */
 function editionFromLine(workId: number, line: ScanLine, isbn13: string) {
@@ -390,6 +404,24 @@ async function applyRescanAnswer(
   });
 
   /*
+   * ⚠️ The pre-order question composes with every answer except the note.
+   *
+   * The copy-writing answers need it for the reason the ordinary attach does.
+   * `fill` needs it for a subtler one: the production pre-orders (the variant
+   * covers, the campaign tiers) are recorded against ISBN-less printings —
+   * exactly the rows `fill` targets — so "this is the printing on file" and
+   * "this is the pre-order arriving" are usually BOTH true of the book in
+   * hand. Filling without asking would record the ISBN and leave the copy
+   * "on the way" forever, the phantom `@lc/core/preorders.ts` exists to
+   * prevent. Asked before the first write, as always; `another` against a
+   * `fill` writes no copy, because the object was already counted.
+   */
+  if (!answer && rescan.kind !== 'fill-note') {
+    const question = await preorderQuestionFor(work.id, work.title);
+    if (question) return { status: 'ask-preorder', question };
+  }
+
+  /*
    * "The book I already have." ⚠️ The owner's case, and the one that must work
    * flawlessly: the ISBN lands on the row that has none, the unlinked copy
    * learns its printing, and NOTHING is created — the object was already
@@ -408,7 +440,7 @@ async function applyRescanAnswer(
       if (rescan.linkCopyId !== null) {
         await api.updateCopy(rescan.linkCopyId, { editionId: rescan.editionId });
       }
-      return added('ISBN recorded');
+      return added('ISBN recorded', await flipIfArrived(answer));
     }
 
     // No printing row existed — a spine-added book. The scan is the moment
@@ -425,7 +457,7 @@ async function applyRescanAnswer(
     if (rescan.linkCopyId !== null) {
       await api.updateCopy(rescan.linkCopyId, { editionId });
     }
-    return added('Printing recorded');
+    return added('Printing recorded', await flipIfArrived(answer));
   }
 
   /*
@@ -443,18 +475,6 @@ async function applyRescanAnswer(
       editionName: appendSharedIsbnNote(current?.edition_name ?? null, isbn13, rescan.holderTitle),
     });
     return added('Shared ISBN noted');
-  }
-
-  /*
-   * Both remaining answers write a copy, so both first ask the pre-order
-   * question the ordinary attach asks — a new printing arriving is EXACTLY the
-   * production pre-order shape (different ISBN from anything on file), and
-   * skipping the prompt here would let the rescan flow re-mint the phantom
-   * "on the way forever" copies the prompt exists to prevent.
-   */
-  if (!answer) {
-    const question = await preorderQuestionFor(work.id, work.title);
-    if (question) return { status: 'ask-preorder', question };
   }
 
   /* "A second copy of that edition." */
