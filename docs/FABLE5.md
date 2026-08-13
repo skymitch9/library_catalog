@@ -292,6 +292,8 @@ attempted.
 
 [2026-08-13T00:15-07:00] UNSOLVED  Five items in the design's §9, headline two: (1) title-edit doc-id drift — a retitled book's future library-side review lands under a new slug beside the person's old doc; tried stable ids (impossible, `bookIdFromTitle` built every production id) and id rewrites (delete+create of other people's docs, breaks audiobook `getReviews`); settles with a measured retitle-of-reviewed-book frequency or a dedupe-on-write in `reviewDocFor`. (2) the carry procedure depends on Firestore's shape-only rules (no `request.auth`) letting any client restamp anyone's review doc — if `reviews` rules are ever hardened the restamp breaks silently; settles with a PLATFORM.md decision on whether `reviews` ever gets auth rules (and then the carry needs the service account this estate refuses to hold). Also unverified by execution: the migration SQL was never dry-run against local D1 (design-only task) and the restamp→PATCH interleave has never been exercised.
 
+[2026-08-13T00:01-07:00] CLAIM  Build the edit-and-audit code (design §7 "code changes riding along") — Fable 5. Owner approved all four open questions; migration 0120 already written and applied to LOCAL D1 by Opus (not production — Opus migrates+deploys after review). Priority: (1) @lc/core sentinel+tests, (2) @lc/db works.ts sentinel mapping + actor + change_log batch writes + NEEDS_AUTHOR, (3) worker key-move gate + reviews-seen + provisional refusals, (4) web UI. Not deploying, not migrating remote. Committing to main only.
+
 ## 8. Budget rules
 
 From the global usage rules, and they are not optional:
