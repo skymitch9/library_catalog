@@ -40,13 +40,25 @@ export function AddWork({ onClose, onAdded }: { onClose: () => void; onAdded: ()
   /**
    * What this book *is* to us, which the catalog previously had no way to say.
    *
-   * ⚠️ `''` — catalogue it and record nothing — is the default and stays the
-   * default. Every one of the 117 existing rows is exactly that: a book we know
-   * about, with no `copy` row of any status. Making "owned" the default would
-   * silently assert a shelf position for every future hand-added row and make
-   * the wanted/owned distinction meaningless the first time somebody forgot.
+   * ⚠️ **Defaults to `'owned'` since 2026-08-13, reversing the original rule.**
+   * That rule was: *"`''` — catalogue it and record nothing — is the default and
+   * stays the default. Every one of the 117 existing rows is exactly that…
+   * making 'owned' the default would silently assert a shelf position for every
+   * future hand-added row."*
+   *
+   * It was right for the catalog it was written against, where hand-adding was
+   * rare and backfilled 117 rows had no copies. It is wrong for what this screen
+   * has become: **the bulk-intake path during a scanning session, where the book
+   * is physically in your hands.** There, "record no copy" is the one answer that
+   * is never what you meant, and it fails silently — the book appears in the
+   * catalog and simply is not owned. It produced *Who Goes Roar?* with
+   * `copies = 0` on 2026-08-13, which is what prompted the change.
+   *
+   * ⚠️ The wanted/owned distinction is preserved by the dropdown still being
+   * explicit and still offering "just catalogue it" — nothing is unsayable, the
+   * common case is just no longer the one you have to remember.
    */
-  const [intent, setIntent] = useState<'' | 'owned' | 'wanted'>('');
+  const [intent, setIntent] = useState<'' | 'owned' | 'wanted'>('owned');
   /** Raised by Save, answered by the prompt, then handed back to `save`. */
   const [preorder, setPreorder] = useState<PreorderQuestion | null>(null);
 
@@ -131,10 +143,44 @@ export function AddWork({ onClose, onAdded }: { onClose: () => void; onAdded: ()
         authors: authors.trim(),
         series: series.trim() || null,
       });
-      // No edition is created here. A copy with no `edition_id` is exactly what
-      // migration 0001 made nullable for — the book is known, the printing is
-      // not, and inventing a paperback edition to hang the copy off would put a
-      // printing in the catalog that nobody has seen.
+
+      /*
+       * ⚠️ An edition IS created now, but ONLY to carry a typed ISBN — changed
+       * 2026-08-13. The comment here used to say no edition is created at all,
+       * on the grounds that "inventing a paperback edition to hang the copy off
+       * would put a printing in the catalog that nobody has seen." That
+       * reasoning is still right about the FORMAT and wrong about the ISBN.
+       *
+       * An ISBN typed off the back of a book in your hands is not invented — it
+       * is the single most reliable fact available, and it was being thrown
+       * away. Measured 2026-08-13: five books added by hand that evening all
+       * landed with `editions = 0`, so no ISBN at all. ⚠️ And they are exactly
+       * the books that need it most: the ones added by hand are the ones no
+       * service could resolve, so the barcode is the only thing that could ever
+       * re-match them later. A board book with no ISBN row is unfindable for
+       * good.
+       *
+       * `format` still falls to the schema's `'paperback'` default, which is the
+       * convention the work page already states out loud — "a scanned book is
+       * recorded as a paperback until someone says otherwise". So the invented
+       * part stays labelled as a guess and the known part gets recorded.
+       */
+      const typed = isbn.replace(/[^0-9]/g, '');
+      if (/^97[89]\d{10}$/.test(typed)) {
+        try {
+          await api.createEdition({ workId: work.id, isbn13: typed });
+        } catch {
+          /*
+           * ⚠️ Swallowed on purpose, and the book still gets added. Losing the
+           * ISBN is a nuisance; losing the whole book because its ISBN was
+           * mistyped or already on another row would be the bulk-intake path
+           * failing at the one thing it exists to do.
+           */
+          setNote('Book added, but that ISBN could not be recorded — add it from the book page.');
+        }
+      }
+
+      // A copy with no `edition_id` is what migration 0001 made nullable for.
       if (intent) await api.createCopy({ workId: work.id, status: intent });
       onAdded();
     } catch (err) {
