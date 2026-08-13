@@ -1,4 +1,10 @@
-import type { CreateCopy, CreateEdition, UpdateCopy, UpdateEdition } from '@lc/core';
+import {
+  UNKNOWN_AUTHOR,
+  type CreateCopy,
+  type CreateEdition,
+  type UpdateCopy,
+  type UpdateEdition,
+} from '@lc/core';
 
 /**
  * Editions (printings) and copies (the ones on the shelf).
@@ -366,7 +372,8 @@ export interface WishlistRow {
   copyId: number;
   workId: number;
   title: string;
-  authors: string;
+  /** Null for a book added without an author - the sentinel never leaves SQL. */
+  authors: string | null;
   series: string | null;
   seriesIndexDisplay: string | null;
   coverUrl: string | null;
@@ -410,7 +417,8 @@ export async function listWishlist(
   const placeholders = statuses.map(() => '?').join(', ');
   const { results } = await db
     .prepare(
-      `SELECT c.id AS copyId, c.work_id AS workId, w.title, w.authors, w.series,
+      // NULLIF folds the 0120 sentinel to the honest null at the SQL boundary.
+      `SELECT c.id AS copyId, c.work_id AS workId, w.title, NULLIF(w.authors, '${UNKNOWN_AUTHOR}') AS authors, w.series,
               w.series_index_display AS seriesIndexDisplay, w.cover_url AS coverUrl,
               c.status, c.vendor, c.price_paid_cents AS pricePaidCents, c.currency,
               c.notes, c.created_at AS createdAt, c.acquired_on AS acquiredOn,

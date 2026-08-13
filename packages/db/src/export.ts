@@ -1,3 +1,5 @@
+import { UNKNOWN_AUTHOR } from '@lc/core';
+
 /**
  * Take the whole catalog away with you.
  *
@@ -199,7 +201,10 @@ export async function* exportCsvChunks(db: D1Database, readerId: number): AsyncG
   for (;;) {
     const { results } = await db
       .prepare(
-        `SELECT w.id, w.title, w.subtitle, w.authors, w.series, w.series_index_display,
+        // NULLIF: the '?unknown' sentinel (0120) folds back to blank at the SQL
+        // boundary — an export leaves the estate, and a storage detail in a
+        // spreadsheet's author column would read as an author's name.
+        `SELECT w.id, w.title, w.subtitle, NULLIF(w.authors, '${UNKNOWN_AUTHOR}') AS authors, w.series, w.series_index_display,
                 w.first_published, w.openlibrary_work_id, w.created_at,
                 (SELECT group_concat(DISTINCT e.format) FROM edition e WHERE e.work_id = w.id) AS formats,
                 (SELECT group_concat(e.isbn13) FROM edition e

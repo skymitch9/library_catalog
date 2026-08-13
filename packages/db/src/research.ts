@@ -24,6 +24,7 @@
 
 import {
   DETAIL_FIELDS,
+  UNKNOWN_AUTHOR,
   detailGaps,
   type DecisionMode,
   type DetailField,
@@ -492,7 +493,8 @@ export interface AutoApplied {
   findingId: number;
   workId: number;
   title: string;
-  authors: string;
+  /** Null for a book added without an author — the sentinel never leaves SQL. */
+  authors: string | null;
   field: string;
   value: FindingValue;
   sourceTier: SourceTier;
@@ -514,7 +516,7 @@ export interface AutoApplied {
 export async function listAutoApplied(db: D1Database, limit = 50): Promise<AutoApplied[]> {
   const { results } = await db
     .prepare(
-      `SELECT f.id AS finding_id, f.work_id, w.title, w.authors, f.field, f.value_json,
+      `SELECT f.id AS finding_id, f.work_id, w.title, NULLIF(w.authors, '${UNKNOWN_AUTHOR}') AS authors, f.field, f.value_json,
               f.source_tier, f.source_url, f.reviewed_at
          FROM research_finding f
          JOIN work w ON w.id = f.work_id
@@ -710,7 +712,8 @@ interface QueueRow {
 export interface NeedsDetails {
   workId: number;
   title: string;
-  authors: string;
+  /** Null for a book added without an author — the sentinel never leaves SQL. */
+  authors: string | null;
   series: string | null;
   /** The fields this work is asked for and does not have. Never empty. */
   missing: DetailField[];
@@ -735,7 +738,7 @@ export interface NeedsDetails {
 export async function listWorksNeedingDetails(db: D1Database): Promise<NeedsDetails[]> {
   const { results } = await db
     .prepare(
-      `SELECT w.id, w.title, w.authors, w.series, w.series_index_sort,
+      `SELECT w.id, w.title, NULLIF(w.authors, '${UNKNOWN_AUTHOR}') AS authors, w.series, w.series_index_sort,
               w.first_published, w.description,
               (SELECT group_concat(field) FROM gap_verdict g WHERE g.work_id = w.id) AS verdicts
          FROM work w

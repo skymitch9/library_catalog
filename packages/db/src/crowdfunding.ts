@@ -1,4 +1,5 @@
 import {
+  UNKNOWN_AUTHOR,
   pledgeAudit,
   type CreateCampaign,
   type CreatePledge,
@@ -86,7 +87,8 @@ export interface PledgeItem {
   notes: string | null;
   /** From the joined `work`, so a pledge can be read without a second query. */
   workTitle: string;
-  workAuthors: string;
+  /** Null for a book added without an author (0120 sentinel folded in SQL). */
+  workAuthors: string | null;
   /** From the joined `edition`. Null until the line is matched to a printing. */
   format: string | null;
 }
@@ -213,7 +215,7 @@ interface ItemRow {
   external_ref: string | null;
   notes: string | null;
   work_title: string;
-  work_authors: string;
+  work_authors: string | null;
   format: string | null;
 }
 
@@ -227,7 +229,7 @@ const ITEM_SELECT = `
          i.format_hint, i.title,
          i.quantity, i.fulfilled, i.external_ref, i.notes,
          w.title   AS work_title,
-         w.authors AS work_authors,
+         NULLIF(w.authors, '${UNKNOWN_AUTHOR}') AS work_authors,
          e.format  AS format
     FROM pledge_item i
     JOIN work w      ON w.id = i.work_id

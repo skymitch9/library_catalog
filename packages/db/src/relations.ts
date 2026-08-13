@@ -1,4 +1,5 @@
 import {
+  UNKNOWN_AUTHOR,
   isDirectionalRelation,
   type CreateWorkRelation,
   type ScanOverlap,
@@ -28,7 +29,8 @@ export interface RelatedWork {
   relationId: number;
   workId: number;
   title: string;
-  authors: string;
+  /** Null for a book added without an author (0120 sentinel folded in SQL). */
+  authors: string | null;
   series: string | null;
   seriesIndexDisplay: string | null;
   coverUrl: string | null;
@@ -52,7 +54,7 @@ export async function listRelatedWorks(db: D1Database, workId: number): Promise<
               r.relation,
               CASE WHEN r.from_work_id = ?1 THEN 1 ELSE 0 END AS outgoing,
               r.note,
-              w.title, w.authors, w.series, w.series_index_display, w.cover_url
+              w.title, NULLIF(w.authors, '${UNKNOWN_AUTHOR}') AS authors, w.series, w.series_index_display, w.cover_url
          FROM work_relation r
          JOIN work w
            ON w.id = CASE WHEN r.from_work_id = ?1 THEN r.to_work_id ELSE r.from_work_id END
@@ -67,7 +69,7 @@ export async function listRelatedWorks(db: D1Database, workId: number): Promise<
       outgoing: number;
       note: string | null;
       title: string;
-      authors: string;
+      authors: string | null;
       series: string | null;
       series_index_display: string | null;
       cover_url: string | null;

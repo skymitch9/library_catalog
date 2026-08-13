@@ -1,5 +1,6 @@
 import {
   HELD_STATUSES,
+  UNKNOWN_AUTHOR,
   editionMedium,
   heldCopies,
   ownedMoreThanOnce,
@@ -200,7 +201,8 @@ interface OwnedRow {
   series_index_sort: number | null;
   series_index_display: string | null;
   title: string;
-  authors: string;
+  /** Null for a book added without an author (0120 sentinel folded in SQL). */
+  authors: string | null;
   cover_url: string | null;
   read_state: string | null;
   copies: number;
@@ -353,7 +355,7 @@ async function loadAll(
       db
         .prepare(
           `SELECT w.id, w.series, w.series_index_sort, w.series_index_display,
-                  w.title, w.authors, w.cover_url,
+                  w.title, NULLIF(w.authors, '${UNKNOWN_AUTHOR}') AS authors, w.cover_url,
                   (SELECT ub.read_state FROM user_book ub
                     WHERE ub.work_id = w.id AND ub.user_id = ?1) AS read_state,
                   -- ⚠️ Held vs merely wished for. The copy table held 0 rows of

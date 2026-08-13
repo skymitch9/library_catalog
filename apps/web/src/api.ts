@@ -471,7 +471,8 @@ export interface WishlistRow {
   copyId: number;
   workId: number;
   title: string;
-  authors: string;
+  /** Null for a book added without an author. */
+  authors: string | null;
   series: string | null;
   seriesIndexDisplay: string | null;
   coverUrl: string | null;
@@ -516,7 +517,8 @@ export interface RelatedWork {
   relationId: number;
   workId: number;
   title: string;
-  authors: string;
+  /** Null for a book added without an author. */
+  authors: string | null;
   series: string | null;
   seriesIndexDisplay: string | null;
   coverUrl: string | null;
@@ -588,7 +590,8 @@ export type DetailField = 'firstPublished' | 'series' | 'seriesIndex' | 'descrip
 export interface NeedsDetails {
   workId: number;
   title: string;
-  authors: string;
+  /** Null for a book added without an author. */
+  authors: string | null;
   series: string | null;
   missing: DetailField[];
   missingLabels: string[];
@@ -663,7 +666,8 @@ export interface AutoApplied {
   findingId: number;
   workId: number;
   title: string;
-  authors: string;
+  /** Null for a book added without an author. */
+  authors: string | null;
   field: string;
   value: FindingValue;
   sourceTier: 'official' | 'crowdfunding' | 'retail' | 'community';
@@ -923,7 +927,7 @@ export const api = {
   /* -- watches ------------------------------------------------------------ */
 
   /** Everything still open, across the catalog. */
-  watches: () => request<{ watches: (Watch & { title: string; authors: string; coverUrl: string | null })[] }>(
+  watches: () => request<{ watches: (Watch & { title: string; authors: string | null; coverUrl: string | null })[] }>(
     '/api/watches',
   ),
 

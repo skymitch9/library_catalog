@@ -1,4 +1,4 @@
-import type { DecisionMode } from '@lc/core';
+import { UNKNOWN_AUTHOR, type DecisionMode } from '@lc/core';
 
 /**
  * Watches: "needs my eyes, and here is why."
@@ -100,17 +100,22 @@ export async function listWatchesForWork(db: D1Database, workId: number): Promis
  */
 export interface OpenWatch extends Watch {
   title: string;
-  authors: string;
+  /** Null for a book added without an author — the sentinel never leaves SQL. */
+  authors: string | null;
   coverUrl: string | null;
 }
 
 export async function listOpenWatches(db: D1Database, limit = 200): Promise<OpenWatch[]> {
   const { results } = await db
     .prepare(
+      // NULLIF folds the '?unknown' sentinel (migration 0120) back to the
+      // honest null at the SQL boundary — the same mapping toWork does, for a
+      // query that does not go through it. The sentinel must never render as
+      // an author's name.
       `SELECT ww.id, ww.work_id, ww.note, ww.raised_how, ww.raised_by,
               au.display_name AS raised_by_name,
               ww.created_at, ww.resolved_at, ww.resolved_by,
-              w.title, w.authors, w.cover_url
+              w.title, NULLIF(w.authors, '${UNKNOWN_AUTHOR}') AS authors, w.cover_url
          FROM work_watch ww
          JOIN work w ON w.id = ww.work_id
          LEFT JOIN app_user au ON au.id = ww.raised_by
