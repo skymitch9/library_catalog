@@ -151,6 +151,68 @@ paperback" is still a decision somebody might make. `gaps.length` vs
 `certainGaps`/`attestedGaps` is exactly that distinction, and `completeness.ts`
 keeps them apart on purpose.
 
+### ⚠️ THE 1PASSWORD OVERLAY WAS EATING THE SAVE CLICK — found 2026-08-13
+
+**This explains most of tonight's "silent save failures", and it is not a bug in
+the app.** Several books were typed into `/add?mode=type`, the form looked right,
+Save looked enabled, the click landed — and no row appeared.
+
+The accessibility tree carried
+`status "1Password menu is available. Press down arrow to select."` while the
+extension's autofill overlay sat over the form. The Save click went to the overlay.
+
+⚠️ **The fix is one keystroke: press `Escape` first, then click Save.** *Animal
+Heroes* failed twice and went in on the very next click after an Escape. Anything
+driving this form — a person or an agent — should dismiss the overlay before
+saving, and **a save that appears to do nothing should be suspected of this before
+anything else.**
+
+⚠️ It also explains the *earlier* misdiagnosis: the "hydration" theory recorded
+below fits some cases, but the overlay fits all of them, including the ones with
+long waits where hydration cannot have been the cause.
+
+### ✅ Books added late in the session — 2026-08-13
+
+**#323 *Animal Heroes*** — Karleen Bradford, Scholastic school-market edition.
+⚠️ The back cover carries only an **ISBN-10, `0-590-18796-1`**; the ISBN-13
+`9780590187961` was derived by computing the check digit and then **confirmed
+against Open Library**, which lists it on the 1995 Scholastic Canada printing (90
+pp). Landed with the paperback edition and an owned copy.
+
+Still to enrich: **first published 1995**, a description (the back cover offers
+"thirteen true stories of animals who saved lives"), and a cover. ⚠️ There is also
+a sequel, ***More Animal Heroes*** (1998, `9780590187978`) — watch for it in the
+stack, the ISBNs are adjacent and easy to confuse.
+
+**#7 *Dungeon Born*** — owner: *"We have this as an epub. Add that we own a
+paperback edition."* Done via the Copies panel's **Record a copy**, which is the
+one UI that creates an edition and its copy together. It now holds `ebook_epub`
+(from file) **and** `paperback` (from manual), with the paperback on the shelf.
+⚠️ No ISBN on the paperback — the photograph was the front cover only, and
+guessing which Mountaindale printing it is would be inventing. Scanning its
+barcode will fill it in.
+
+**#329-ish *Possibility & Promise*** — Matthew "Momo" Modrow, ISBN
+`9798278220268` (a `979-8` prefix, so Amazon KDP / independently published). A
+friend's self-published book. ⚠️ Title/subtitle split not yet settled — the cover
+reads *POSSIBILITY & PROMISE* large with *ECHOES OF THE UNKNOWN* beneath, and
+whether the second is a **subtitle or a series name** was under research at the
+time of adding, so `series` was deliberately left blank rather than guessed.
+
+***Last Child in the Woods*** — Richard Louv, ISBN `9781565126053`, Algonquin
+Books (Workman / Hachette), $18.99 US. ⚠️ Subtitle **"Saving Our Children from
+Nature-Deficit Disorder"** still to add — the type-a-title form has no subtitle
+box, so it needs the new field on the book page. The copy is the 2020 printing
+(`Printed in the USA 0220`, cover © 2020) of a much older title.
+
+**⏳ Queued on #7 *Dungeon Born* specifically** — owner: *"Dungeon born also has
+an audiobook so make sure that's linked. This is the divine dungeon series in the
+Cal verse."* Two separate jobs: confirm the `audiobook_holding` row is present and
+showing, and file the series into the **Cal** universe. ⚠️ Do **not** invent the
+universe name — `packages/universes` is generated from `catalog-platform`, which
+owns the canonical list, and `normaliseUniverseText` deliberately keeps leading
+articles. Check what the list actually calls it before assigning.
+
 ### ⚠️⚠️ ONE BARCODE, SIX EDITIONS AND SIX COPIES — the OL work-record bug, 2026-08-13
 
 **The worst bug of the session.** The owner: *"Space knight barcode scanned caused
