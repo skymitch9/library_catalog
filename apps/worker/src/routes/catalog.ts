@@ -290,11 +290,57 @@ export const catalogRoutes = new Hono<AppBindings>()
     return c.json({ work: await createWork(c.env.DB, parsed.data) }, 201);
   })
 
+  /**
+   * ⚠️ **`title` and `authors` are refused here, on the server.**
+   *
+   * They were accepted until 2026-08-13. `updateWorkSchema` is
+   * `createWorkSchema.partial()`, so both fields pass validation, and this route
+   * added no check of its own — which meant **the only thing protecting the
+   * review join was that the web UI's patch object happened not to send them.**
+   *
+   * That is a convention, not a guard. `WorkFields`' header describes itself as
+   * refusing `title`/`authors` because `work_key` is derived from them and is the
+   * join to **~870 audiobook reviews** in the sibling catalog; but any other
+   * caller — a script, a curl with a token, a future feature written by someone
+   * who read the schema rather than that comment — could move the key and orphan
+   * every review for that book. Nothing would have reported it.
+   *
+   * ⚠️ **A refusal, not a silent drop.** Zod's `.strip()` behaviour would have
+   * been the tempting fix and is worse: the caller would get HTTP 200 and believe
+   * the rename happened. `identity-and-reviews.md` §5 records the review backfill
+   * reporting 860/860 matched while writing keys no print edition could meet —
+   * the same shape of lie. So this answers 400 and says why.
+   *
+   * This is deliberately a **dead end rather than a locked door**: renaming a
+   * work is a real need (see `docs/info/edit-and-audit-design.md`), and the
+   * feature that grants it must arrive with the review-carry ceremony attached.
+   * When it does, it opens its own guarded path — it does not relax this one.
+   */
   .patch('/works/:id', requireCapability('editCatalog'), async (c) => {
     const id = Number(c.req.param('id'));
     if (!Number.isInteger(id)) return c.json({ error: 'bad_request' }, 400);
 
-    const parsed = updateWorkSchema.safeParse(await c.req.json().catch(() => null));
+    const body = await c.req.json().catch(() => null);
+    // Checked on the RAW body, before Zod, because parsing is where a stripped
+    // field would vanish without trace.
+    const frozen = ['title', 'authors'].filter(
+      (f) => body != null && typeof body === 'object' && f in (body as Record<string, unknown>),
+    );
+    if (frozen.length > 0) {
+      return c.json(
+        {
+          error: 'frozen_field',
+          detail:
+            `${frozen.join(' and ')} cannot be changed here: work_key is derived from them ` +
+            'and is the join to the audiobook catalog’s reviews, so moving it orphans them. ' +
+            'Everything else in this patch was refused too — resend without those fields.',
+          fields: frozen,
+        },
+        400,
+      );
+    }
+
+    const parsed = updateWorkSchema.safeParse(body);
     if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues }, 400);
 
     const work = await updateWork(c.env.DB, id, parsed.data);
