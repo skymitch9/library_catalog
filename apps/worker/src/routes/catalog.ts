@@ -41,6 +41,7 @@ import {
   updateCopy,
   updateEdition,
   updateWork,
+  workDeletionReport,
   type Actor,
   type CollectionQuery,
 } from '@lc/db';
@@ -553,14 +554,67 @@ export const catalogRoutes = new Hono<AppBindings>()
     return c.json({ changes: await listChangesForEntity(c.env.DB, 'work', id) });
   })
 
+  /**
+   * What deleting this work would destroy — read BEFORE the button renders.
+   *
+   * The dialog shows this; the DELETE below recomputes it rather than
+   * trusting the client's copy. `editCatalog` and not `read`, because the
+   * only consumer is the delete surface and a reader has no button to feed.
+   */
+  .get('/works/:id/deletion', requireCapability('editCatalog'), async (c) => {
+    const id = Number(c.req.param('id'));
+    if (!Number.isInteger(id)) return c.json({ error: 'bad_request' }, 400);
+    const report = await workDeletionReport(c.env.DB, id);
+    if (!report) return c.json({ error: 'not_found' }, 404);
+    return c.json({ report });
+  })
+
+  /**
+   * Delete a work — with a hard stop, not a warning, when copies record
+   * property.
+   *
+   * ⚠️ **The refusal is absolute: there is no force flag.** Work #139 is the
+   * lesson — two edition rows looked like duplicates and the two copies under
+   * them were real books the owner owns. A duplicate edition and a duplicate
+   * copy are different bugs. To delete a work whose copies block, the copies
+   * must be removed one at a time through their own route (each removal logs
+   * the whole row), so a person has looked at every object the record claims
+   * before the record disappears. `copyBlocksDeletion` in `@lc/core` is the
+   * rule; only plain wishes pass.
+   *
+   * Recomputed here, never taken from the client: the report a person saw and
+   * the state this acts on can drift in the seconds between.
+   *
+   * What a permitted delete does: the whole-row `__row__` audit entry for the
+   * work AND one for every edition and copy the cascade takes — the undo
+   * material, all under one batch_id. Reviews in Firestore are untouched;
+   * they are keyed by title+author and reattach if the book is re-added.
+   */
   .delete('/works/:id', requireCapability('editCatalog'), async (c) => {
     const id = Number(c.req.param('id'));
     if (!Number.isInteger(id)) return c.json({ error: 'bad_request' }, 400);
-    // Who deleted it — the whole-row `__row__` audit entry is the undo
-    // material, and "who deleted this and what did it say" is the question an
-    // audit log most exists to answer.
+
+    const report = await workDeletionReport(c.env.DB, id);
+    if (!report) return c.json({ error: 'not_found' }, 404);
+    if (report.blockers.length > 0) {
+      const n = report.blockers.length;
+      return c.json(
+        {
+          error: 'copies_block_deletion',
+          detail:
+            `${n === 1 ? 'A copy' : `${n} copies`} of this book record${n === 1 ? 's' : ''} real ` +
+            'property (owned, lent, pre-ordered, borrowed, sold, or signed). Deleting the record ' +
+            'would destroy that. If this book is a duplicate, its copies belong on the right ' +
+            'record; otherwise remove each copy from the Copies panel first — every removal is ' +
+            'logged whole-row.',
+          report,
+        },
+        409,
+      );
+    }
+
     const ok = await deleteWork(c.env.DB, id, { userId: c.get('user').id, how: 'human' });
-    return ok ? c.json({ ok: true }) : c.json({ error: 'not_found' }, 404);
+    return ok ? c.json({ ok: true, report }) : c.json({ error: 'not_found' }, 404);
   })
 
   .post('/editions', requireCapability('editCatalog'), async (c) => {

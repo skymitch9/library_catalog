@@ -63,3 +63,40 @@ export function heldCopies<T extends StatusBearing>(copies: readonly T[]): T[] {
 export function ownedMoreThanOnce(copies: readonly StatusBearing[]): boolean {
   return heldCopies(copies).length > 1;
 }
+
+/** What the deletion rule needs to know about a copy. */
+export interface DeletionSubjectCopy extends StatusBearing {
+  isSigned?: boolean;
+}
+
+/**
+ * Does this copy stop its work being deleted?
+ *
+ * ⚠️ **The rule exists because of work #139**: two edition rows looked like
+ * duplicates, but the two *copies* under them were real books on a real shelf.
+ * A delete that quietly takes owned copies with it destroys the record of
+ * physical property — a duplicate edition and a duplicate copy are different
+ * bugs, and the delete button must not treat them alike.
+ *
+ * Everything except a plain wish blocks:
+ *
+ * - `owned` / `lent` — an object in (or out on loan from) this house
+ * - `preordered` — money already committed
+ * - `borrowed` — someone else's property, which we are answerable for
+ * - `sold` — the record that property existed and where it went
+ * - any **signed** copy, whatever its status — signatures are the one thing
+ *   a re-scan can never recover
+ *
+ * Only `wanted` — a wish, no object, no money — lets a work go directly.
+ * Anything else must be removed copy-by-copy first (each removal is itself
+ * logged whole-row), so a person has looked at every object the record
+ * claims before the record disappears.
+ */
+export function copyBlocksDeletion(copy: DeletionSubjectCopy): boolean {
+  return copy.status !== 'wanted' || copy.isSigned === true;
+}
+
+/** The copies that block deletion — empty means the work may be deleted. */
+export function deletionBlockers<T extends DeletionSubjectCopy>(copies: readonly T[]): T[] {
+  return copies.filter(copyBlocksDeletion);
+}

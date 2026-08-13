@@ -45,6 +45,33 @@ export interface ChangeView {
   createdAt: string;
 }
 
+/** One copy, as the deletion preview names it. Mirrors `WorkDeletionCopy` in `@lc/db`. */
+export interface DeletionCopy {
+  id: number;
+  status: string;
+  isSigned: boolean;
+  location: string | null;
+  lentTo: string | null;
+  editionId: number | null;
+  editionNotes: string | null;
+}
+
+/**
+ * Everything `DELETE /api/works/:id` would destroy, computed server-side
+ * BEFORE it happens. `blockers` non-empty means the server will refuse — the
+ * rule is `copyBlocksDeletion` in `@lc/core`: everything except a plain wish
+ * blocks, signed copies always.
+ */
+export interface DeletionReport {
+  workId: number;
+  title: string;
+  editions: number;
+  copies: DeletionCopy[];
+  blockers: DeletionCopy[];
+  traces: { what: string; rows: number }[];
+  reviewEvidence: boolean;
+}
+
 /**
  * Every call carries a Firebase ID token.
  *
@@ -870,6 +897,23 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(body),
     }),
+
+  /**
+   * What deleting this work would destroy — fetched before the dialog can
+   * offer the button, and recomputed by the server when the DELETE arrives.
+   */
+  workDeletionReport: (id: number) =>
+    request<{ report: DeletionReport }>(`/api/works/${id}/deletion`),
+
+  /**
+   * Delete a work outright.
+   *
+   * ⚠️ Refused with **409 `copies_block_deletion`** whenever any copy records
+   * real property — everything except a plain wish blocks, and there is no
+   * force flag. The 409 body carries the fresh `report` naming the copies.
+   */
+  deleteWork: (id: number) =>
+    request<{ ok: true; report: DeletionReport }>(`/api/works/${id}`, { method: 'DELETE' }),
 
   /* -- covers ------------------------------------------------------------- */
 

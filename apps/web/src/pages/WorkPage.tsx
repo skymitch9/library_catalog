@@ -5,6 +5,7 @@ import { Aliases } from '../components/Aliases.js';
 import { Changes } from '../components/Changes.js';
 import { Copies, type CopyView } from '../components/Copies.js';
 import { Cover } from '../components/Cover.js';
+import { DeleteWork } from '../components/DeleteWork.js';
 import { EditTitleAuthor } from '../components/EditTitleAuthor.js';
 import { CoverPanel } from '../components/CoverPanel.js';
 import { DriveLinks } from '../components/DriveLinks.js';
@@ -438,6 +439,17 @@ export function WorkPage({
       {/* Last, because it is the record OF the page rather than part of it:
           who changed what, when, and what it said before. Loads on demand. */}
       <Changes workId={workId} />
+
+      {/* Below even the Changes log, because it is the one control on this
+          page whose accidental press matters most — and because reading the
+          record of the page is a reasonable last thing to do before ending
+          it. Refused by the server while any copy records property; the
+          panel's header comment carries the #139 story. */}
+      <DeleteWork
+        workId={workId}
+        canEdit={me.capabilities.includes('editCatalog')}
+        onDeleted={onBack}
+      />
     </main>
   );
 }

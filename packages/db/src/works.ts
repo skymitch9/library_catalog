@@ -2,6 +2,7 @@ import {
   HELD_STATUSES,
   PHYSICAL_FORMATS,
   UNKNOWN_AUTHOR,
+  deletionBlockers,
   normaliseTitle,
   primaryAuthor,
   sortTitleFor,
@@ -11,7 +12,14 @@ import {
   type UniverseSource,
   type UpdateWork,
 } from '@lc/core';
-import { ROW_FIELD, changeLogInsert, type Actor } from './changes.js';
+import {
+  ROW_FIELD,
+  changeLogInsert,
+  evidenceSaysReviews,
+  keyMoveEvidence,
+  type Actor,
+} from './changes.js';
+import { listCopiesForWork, listEditionsForWork, type CopyRow } from './editions.js';
 import {
   canonicalUniverseName,
   universeAsserted,
@@ -510,6 +518,21 @@ export async function updateWork(
  * survives the row it describes: "who deleted this, and what did it say?" is
  * the question an audit log most exists to answer. `old_json` is the app-shape
  * row (`authors: null` for a provisional book, never the sentinel).
+ *
+ * ⚠️ **The cascade casualties are logged too, one `__row__` row each.** The
+ * database deletes this work's editions and copies the moment the work goes
+ * (`ON DELETE CASCADE`, migration 0001), and before this the log recorded only
+ * the work — the four raw-SQL deletions already in production (works 284, 299
+ * among them) took their editions and copies down with no record at all. Every
+ * child row now lands in the SAME batch, under the SAME batch_id, so the
+ * Changes reader shows one event and the undo material is the whole subtree,
+ * not just its root. Raw row shape for editions and copies — identical to what
+ * `deleteEdition`/`deleteCopy` log, so a reader of `__row__` rows meets one
+ * shape per entity however the row died.
+ *
+ * ⚠️ This function deletes when told to; the ROUTE decides whether it may be
+ * told to. The owned-copies refusal lives on `DELETE /api/works/:id` — same
+ * split as the key-move gate on PATCH.
  */
 export async function deleteWork(db: D1Database, id: number, actor?: Actor): Promise<boolean> {
   const row = await db
@@ -518,18 +541,181 @@ export async function deleteWork(db: D1Database, id: number, actor?: Actor): Pro
     .first<WorkRow>();
   if (!row) return false;
 
+  const [editions, copies] = await Promise.all([
+    listEditionsForWork(db, id),
+    listCopiesForWork(db, id),
+  ]);
+
+  const batchId = crypto.randomUUID();
   const del = db.prepare('DELETE FROM work WHERE id = ?').bind(id);
-  const audit = changeLogInsert(db, {
-    batchId: crypto.randomUUID(),
-    entity: 'work',
-    entityId: id,
-    field: ROW_FIELD,
-    oldJson: JSON.stringify(toWork(row)),
-    newJson: 'null',
-    actor,
-  });
-  const [res] = await db.batch([del, audit]);
+  const statements: D1PreparedStatement[] = [
+    del,
+    changeLogInsert(db, {
+      batchId,
+      entity: 'work',
+      entityId: id,
+      field: ROW_FIELD,
+      oldJson: JSON.stringify(toWork(row)),
+      newJson: 'null',
+      actor,
+    }),
+    ...editions.map((e) =>
+      changeLogInsert(db, {
+        batchId,
+        entity: 'edition',
+        entityId: e.id,
+        field: ROW_FIELD,
+        oldJson: JSON.stringify(e),
+        newJson: 'null',
+        actor,
+        // The note says HOW it died: nobody pressed delete on this edition,
+        // it went because its work did. Rendered verbatim by the Changes panel.
+        note: `cascade: work #${id} deleted`,
+      }),
+    ),
+    ...copies.map((c) =>
+      changeLogInsert(db, {
+        batchId,
+        entity: 'copy',
+        entityId: c.id,
+        field: ROW_FIELD,
+        oldJson: JSON.stringify(c),
+        newJson: 'null',
+        actor,
+        note: `cascade: work #${id} deleted`,
+      }),
+    ),
+  ];
+
+  const [res] = await db.batch(statements);
   return ((res?.meta as { changes?: number } | undefined)?.changes ?? 0) > 0;
+}
+
+/** One copy, as the deletion preview shows it — enough to recognise the object. */
+export interface WorkDeletionCopy {
+  id: number;
+  status: string;
+  isSigned: boolean;
+  location: string | null;
+  lentTo: string | null;
+  editionId: number | null;
+  editionNotes: string | null;
+}
+
+/** A named count of rows that go with the work — only non-zero ones are listed. */
+export interface WorkDeletionTrace {
+  what: string;
+  rows: number;
+}
+
+/**
+ * Everything `DELETE /works/:id` would destroy — computed BEFORE it happens.
+ *
+ * The confirmation dialog renders this, and the DELETE route recomputes it
+ * rather than trusting the client's copy: the report a person saw and the
+ * state the delete acts on can drift in the seconds between.
+ */
+export interface WorkDeletionReport {
+  workId: number;
+  title: string;
+  /** Printings destroyed by the cascade. */
+  editions: number;
+  /** Every copy row, so a person can recognise each object before it goes. */
+  copies: WorkDeletionCopy[];
+  /**
+   * The copies that stop deletion outright — everything but a plain wish.
+   * `copyBlocksDeletion` in `@lc/core` is the rule and says why (#139).
+   */
+  blockers: WorkDeletionCopy[];
+  /** Other rows the cascade takes, named: read states, watches, aliases… */
+  traces: WorkDeletionTrace[];
+  /**
+   * Does anything in D1 say reviews exist for this book? Reviews live in
+   * Firestore keyed by `work_key` and are NOT deleted with the work — but
+   * deleting the shelf-side join means this catalog forgets the book they
+   * attach to. Worth a sentence in the dialog, not a refusal: re-adding the
+   * book under the same title and author reattaches them.
+   */
+  reviewEvidence: boolean;
+}
+
+function toDeletionCopy(c: CopyRow): WorkDeletionCopy {
+  return {
+    id: c.id,
+    status: c.status,
+    isSigned: c.is_signed === 1,
+    location: c.location,
+    lentTo: c.lent_to,
+    editionId: c.edition_id,
+    editionNotes: c.edition_notes,
+  };
+}
+
+export async function workDeletionReport(
+  db: D1Database,
+  id: number,
+): Promise<WorkDeletionReport | null> {
+  const work = await getWork(db, id);
+  if (!work) return null;
+
+  const [copies, counts, evidence] = await Promise.all([
+    listCopiesForWork(db, id),
+    db
+      .prepare(
+        // Scalar subqueries, one round trip. Every table here is ON DELETE
+        // CASCADE from work (0001, 0004, 0007, 0010, 0020, 0021, 0040) — this
+        // is the list of what silently goes with the row, written out so the
+        // dialog can say it instead of the person discovering it afterwards.
+        `SELECT
+           (SELECT COUNT(*) FROM edition            WHERE work_id = ?1)                        AS editions,
+           (SELECT COUNT(*) FROM user_book          WHERE work_id = ?1)                        AS read_states,
+           (SELECT COUNT(*) FROM work_watch         WHERE work_id = ?1)                        AS watches,
+           (SELECT COUNT(*) FROM work_alias         WHERE work_id = ?1)                        AS aliases,
+           (SELECT COUNT(*) FROM work_relation      WHERE from_work_id = ?1 OR to_work_id = ?1) AS relations,
+           (SELECT COUNT(*) FROM book_accessory     WHERE work_id = ?1)                        AS accessories,
+           (SELECT COUNT(*) FROM pledge_item        WHERE work_id = ?1)                        AS pledge_items,
+           (SELECT COUNT(*) FROM audiobook_holding  WHERE work_id = ?1)                        AS audiobook,
+           (SELECT COUNT(*) FROM gap_verdict        WHERE work_id = ?1)                        AS verdicts`,
+      )
+      .bind(id)
+      .first<{
+        editions: number;
+        read_states: number;
+        watches: number;
+        aliases: number;
+        relations: number;
+        accessories: number;
+        pledge_items: number;
+        audiobook: number;
+        verdicts: number;
+      }>(),
+    keyMoveEvidence(db, id),
+  ]);
+
+  const copyViews = copies.map(toDeletionCopy);
+
+  // Named as a person would say them; zero-row entries dropped so the dialog
+  // lists what IS at stake rather than a wall of zeroes.
+  const traces: WorkDeletionTrace[] = [
+    { what: 'read states', rows: counts?.read_states ?? 0 },
+    { what: 'watches', rows: counts?.watches ?? 0 },
+    { what: 'alternate titles', rows: counts?.aliases ?? 0 },
+    { what: 'links to related books', rows: counts?.relations ?? 0 },
+    { what: 'accessories', rows: counts?.accessories ?? 0 },
+    { what: 'crowdfunding reward links', rows: counts?.pledge_items ?? 0 },
+    { what: 'audiobook holding', rows: counts?.audiobook ?? 0 },
+    { what: 'research verdicts', rows: counts?.verdicts ?? 0 },
+  ].filter((t) => t.rows > 0);
+
+  return {
+    workId: id,
+    title: work.title,
+    editions: counts?.editions ?? 0,
+    copies: copyViews,
+    blockers: deletionBlockers(copyViews),
+    traces,
+    reviewEvidence: evidenceSaysReviews(evidence),
+  };
 }
 
 /**

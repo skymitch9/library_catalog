@@ -55,7 +55,12 @@ import {
   searchText,
   type ScanLine,
 } from '../src/scanjobs.ts';
-import { heldCopies, ownedMoreThanOnce } from '../src/holdings.ts';
+import {
+  copyBlocksDeletion,
+  deletionBlockers,
+  heldCopies,
+  ownedMoreThanOnce,
+} from '../src/holdings.ts';
 import {
   MAX_COVER_BYTES,
   checkCoverUpload,
@@ -2292,6 +2297,50 @@ describe('owned more than once — copies, not editions', () => {
       kept.map((c) => c.id),
       [1, 3],
     );
+  });
+});
+
+/**
+ * The delete button's hard stop — work #139's lesson written as a rule.
+ *
+ * Two edition rows there looked like duplicates, but the two COPIES under
+ * them were real books the owner owns. A duplicate edition and a duplicate
+ * copy are different bugs, and a delete that quietly takes owned copies with
+ * it destroys the record of physical property.
+ */
+describe('deletion blockers — everything except a plain wish', () => {
+  it('⚠️ every property-recording status blocks, with no force flag anywhere', () => {
+    for (const status of ['owned', 'lent', 'preordered', 'borrowed', 'sold']) {
+      assert.equal(copyBlocksDeletion({ status }), true, `${status} must block`);
+    }
+  });
+
+  it('a plain wish does not block — no object, no money, nothing destroyed', () => {
+    assert.equal(copyBlocksDeletion({ status: 'wanted' }), false);
+    assert.equal(copyBlocksDeletion({ status: 'wanted', isSigned: false }), false);
+  });
+
+  it('⚠️ a signed copy blocks whatever its status — a signature cannot be re-scanned', () => {
+    assert.equal(copyBlocksDeletion({ status: 'wanted', isSigned: true }), true);
+  });
+
+  it('deletionBlockers keeps the rows, so the refusal can NAME the objects', () => {
+    const blockers = deletionBlockers([
+      { status: 'wanted', id: 1 },
+      { status: 'owned', id: 2 },
+      { status: 'lent', id: 3 },
+    ]);
+    assert.deepEqual(
+      blockers.map((c) => c.id),
+      [2, 3],
+    );
+  });
+
+  it('a work with no copies at all has no blockers — the phantom-scan case', () => {
+    // The realistic delete target: a work created by a bad scan, editions but
+    // nothing owned. (A phantom whose scan also wrote an owned copy still
+    // blocks, and that is correct — someone must look before it goes.)
+    assert.deepEqual(deletionBlockers([]), []);
   });
 });
 
