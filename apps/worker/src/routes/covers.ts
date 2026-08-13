@@ -6,7 +6,7 @@ import {
   setCoverSchema,
   setCoverStatusSchema,
 } from '@lc/core';
-import { getWork, updateWork } from '@lc/db';
+import { getWork, listCoverCandidates, updateWork } from '@lc/db';
 import { verifyCoverUrl } from '@lc/isbn';
 import type { AppBindings, Env } from '../env.js';
 import { requireCapability } from '../middleware/auth.js';
@@ -76,6 +76,32 @@ export const coverRoutes = new Hono<AppBindings>()
       maxBytes: MAX_COVER_BYTES,
       ...(store ? {} : { reason: NO_STORAGE }),
     });
+  })
+
+  /**
+   * Every cover this book could wear, side by side — the picker's read.
+   *
+   * Candidates come from what the catalog already knows (edition covers, the
+   * change_log history of the cover column, the current value) plus computed
+   * Open Library guesses that announce themselves as guesses. Nothing here
+   * fetches an image; **applying a pick goes through the verified PUT below**,
+   * so a candidate that no longer serves is refused at the moment of choice,
+   * never stored on faith.
+   *
+   * ⚠️ The reason a "previous cover" is a real offer and not a hope: uploaded
+   * objects are content-addressed (`coverObjectKey` hashes the bytes) and the
+   * DELETE below never removes them from the bucket. Swapping back is
+   * re-pointing a column, not re-uploading a file.
+   *
+   * `editCatalog` because its only consumer is the edit surface — a reader
+   * has no picker to feed.
+   */
+  .get('/works/:id/covers', requireCapability('editCatalog'), async (c) => {
+    const id = Number(c.req.param('id'));
+    if (!Number.isInteger(id) || id <= 0) return c.json({ error: 'bad_request' }, 400);
+    const covers = await listCoverCandidates(c.env.DB, id);
+    if (!covers) return c.json({ error: 'not_found' }, 404);
+    return c.json(covers);
   })
 
   /**

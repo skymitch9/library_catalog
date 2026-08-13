@@ -63,11 +63,13 @@ import {
 } from '../src/holdings.ts';
 import {
   MAX_COVER_BYTES,
+  assembleCoverCandidates,
   checkCoverUpload,
   coverNeeded,
   coverObjectKey,
   extensionFor,
   sniffImageType,
+  type CoverCandidateEdition,
 } from '../src/covers.ts';
 import { SHELF_SCHEMA } from '../src/vision.ts';
 import { REFUSED_FIELDS, detailGaps, verdictFor } from '../src/gaps.ts';
@@ -2240,6 +2242,143 @@ describe('covers — which books still need one', () => {
     // make the feature useless. Only a positive 'standin' counts.
     assert.equal(coverNeeded({ coverUrl: 'https://covers/x.jpg', coverStatus: null }), false);
     assert.equal(coverNeeded({ coverUrl: 'https://covers/x.jpg', coverStatus: 'ok' }), false);
+  });
+});
+
+/**
+ * The cover picker's assembly — which covers a book is offered, and how they
+ * are described. Ported as an idea from the board game catalog's
+ * listCoverCandidates; these tests pin what survived the port.
+ */
+describe('covers — the picker offers every cover the book could wear', () => {
+  const edition = (over: Partial<CoverCandidateEdition> & { id: number }): CoverCandidateEdition => ({
+    coverUrl: null,
+    isbn13: null,
+    format: 'paperback',
+    editionName: null,
+    publisher: null,
+    publishedYear: null,
+    source: 'manual',
+    ...over,
+  });
+
+  it('dedupes by URL, and the edition wins the description', () => {
+    // The common case: the work's cover IS one of its editions' covers.
+    const out = assembleCoverCandidates({
+      currentUrl: 'https://img/a.jpg',
+      openlibraryWorkId: null,
+      editions: [
+        edition({ id: 7, coverUrl: 'https://img/a.jpg', publisher: 'Tor', publishedYear: 2019 }),
+      ],
+      history: [{ url: 'https://img/a.jpg', at: '2026-08-01 00:00:00' }],
+    });
+    assert.equal(out.length, 1);
+    assert.equal(out[0]!.source, 'edition');
+    assert.equal(out[0]!.selected, true);
+    assert.equal(out[0]!.caption, 'Tor · 2019');
+    assert.equal(out[0]!.editionId, 7);
+  });
+
+  it('⚠️ a current cover nothing explains is still offered — never swap-away-only', () => {
+    // A hand-pasted URL, or a cover set before the audit log existed. Losing
+    // it from the grid would make the picker able to swap away from something
+    // it could not offer back.
+    const out = assembleCoverCandidates({
+      currentUrl: 'https://elsewhere/hand-pasted.jpg',
+      openlibraryWorkId: null,
+      editions: [edition({ id: 1, coverUrl: 'https://img/b.jpg' })],
+      history: [],
+    });
+    assert.deepEqual(
+      out.map((c) => [c.url, c.source, c.selected]),
+      [
+        ['https://elsewhere/hand-pasted.jpg', 'current', true],
+        ['https://img/b.jpg', 'edition', false],
+      ],
+    );
+  });
+
+  it('history rows become "Previous cover" cards that say when they stopped', () => {
+    const out = assembleCoverCandidates({
+      currentUrl: 'https://img/new.jpg',
+      openlibraryWorkId: null,
+      editions: [],
+      history: [{ url: 'https://img/old.jpg', at: '2026-08-10 12:00:00' }],
+    });
+    const prev = out.find((c) => c.source === 'history');
+    assert.ok(prev);
+    assert.equal(prev.label, 'Previous cover');
+    assert.equal(prev.caption, 'until 2026-08-10');
+    assert.equal(prev.derived, false);
+  });
+
+  it('⚠️ a swap-back is described as what it is now, not "Previous cover · in use"', () => {
+    // Found by exercising the live endpoint: after swapping back, the current
+    // cover deduped into its own history card and read as a contradiction.
+    const out = assembleCoverCandidates({
+      currentUrl: 'https://img/old.jpg',
+      openlibraryWorkId: null,
+      editions: [],
+      history: [
+        { url: 'https://img/newer.jpg', at: '2026-08-13 01:00:00' },
+        { url: 'https://img/old.jpg', at: '2026-08-12 00:00:00' },
+      ],
+    });
+    const current = out.find((c) => c.selected);
+    assert.ok(current);
+    assert.equal(current.label, 'Current cover');
+    assert.equal(current.source, 'current');
+    assert.equal(current.caption, null);
+    // The genuinely-previous one still reads as history.
+    assert.equal(out.find((c) => !c.selected)?.label, 'Previous cover');
+  });
+
+  it('⚠️ Open Library candidates are guesses, marked derived, sorted last, 404-not-placeholder', () => {
+    // `?default=false` is load-bearing: without it their API answers a
+    // 43-byte 1×1 as HTTP 200 (the exact thing MIN_COVER_BYTES exists for),
+    // and a wrong guess would render as a broken-looking blank instead of
+    // failing so the UI can drop the card.
+    const out = assembleCoverCandidates({
+      currentUrl: 'https://img/a.jpg',
+      openlibraryWorkId: 'OL123W',
+      editions: [edition({ id: 3, isbn13: '9781638493457' })],
+      history: [],
+    });
+    const guesses = out.filter((c) => c.source === 'guess');
+    assert.equal(guesses.length, 2);
+    assert.ok(guesses.every((g) => g.derived));
+    assert.ok(guesses.every((g) => g.url.endsWith('?default=false')));
+    assert.ok(guesses[0]!.url.includes('/olid/OL123W-'));
+    assert.ok(guesses[1]!.url.includes('/isbn/9781638493457-'));
+    // Guesses after facts, current first. (Edition 3 carries no cover of its
+    // own here, so its only contribution is the ISBN guess.)
+    assert.equal(out[0]!.selected, true);
+    assert.deepEqual(
+      out.map((c) => c.source),
+      ['current', 'guess', 'guess'],
+    );
+  });
+
+  it('a coverless book with no history and no OL id gets an empty grid, not an invented one', () => {
+    assert.deepEqual(
+      assembleCoverCandidates({
+        currentUrl: null,
+        openlibraryWorkId: null,
+        editions: [edition({ id: 1 })],
+        history: [],
+      }),
+      [],
+    );
+  });
+
+  it('blank and whitespace URLs never become cards', () => {
+    const out = assembleCoverCandidates({
+      currentUrl: '   ',
+      openlibraryWorkId: null,
+      editions: [edition({ id: 1, coverUrl: '' })],
+      history: [{ url: '  ', at: '2026-08-01' }],
+    });
+    assert.deepEqual(out, []);
   });
 });
 

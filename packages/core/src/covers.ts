@@ -201,3 +201,194 @@ export function coverNeeded(work: {
 }): boolean {
   return !work.coverUrl || work.coverStatus === 'standin';
 }
+
+// ---------------------------------------------------------------------------
+// The cover picker — every cover this book could wear, side by side
+// ---------------------------------------------------------------------------
+
+/** Where a candidate's URL was found. */
+export type CoverCandidateSource =
+  /** An edition row carries it — the richest kind, it names a printing. */
+  | 'edition'
+  /** The work wore it once; `change_log` remembers when it stopped. */
+  | 'history'
+  /** The work wears it now and no edition or history row explains it. */
+  | 'current'
+  /** A computed Open Library URL — a guess, not a recorded fact. */
+  | 'guess';
+
+export interface CoverCandidate {
+  url: string;
+  /** What to call it in the grid — a printing's name, or its provenance. */
+  label: string;
+  /** A second line: publisher · year, or when it was replaced. */
+  caption: string | null;
+  source: CoverCandidateSource;
+  /** The work is wearing this URL right now (saved, not merely picked). */
+  selected: boolean;
+  /**
+   * ⚠️ A derived candidate is a guess about what a CDN might hold, not a fact
+   * this catalog recorded. The UI hides a derived card whose image fails —
+   * a wrong guess is noise — but renders a RECORDED candidate's failure as
+   * "image no longer loads", because that is a fact worth seeing.
+   */
+  derived: boolean;
+  /** The edition carrying it, when one does. */
+  editionId: number | null;
+}
+
+/** The slice of an edition row the assembly needs. */
+export interface CoverCandidateEdition {
+  id: number;
+  coverUrl: string | null;
+  isbn13: string | null;
+  format: string;
+  editionName: string | null;
+  publisher: string | null;
+  publishedYear: number | null;
+  source: string;
+}
+
+export interface CoverCandidateInputs {
+  /** The cover the work wears now — `work.cover_url`. */
+  currentUrl: string | null;
+  /** `work.openlibrary_work_id`, for the work-level guess. */
+  openlibraryWorkId: string | null;
+  editions: CoverCandidateEdition[];
+  /**
+   * Every URL the cover column has held before, newest first — the OLD values
+   * of `change_log` rows with `field = 'coverUrl'`. ⚠️ This is why swapping
+   * back is cheap: uploaded objects are content-addressed and DELETE never
+   * removes them from the bucket, so a URL that was ever right is still
+   * serving. `at` is when the column stopped holding it.
+   */
+  history: { url: string; at: string }[];
+}
+
+/** "ebook_epub" → "ebook epub" — readable without importing a label map. */
+function formatWord(format: string): string {
+  return format.replace(/_/g, ' ');
+}
+
+const OL_COVERS = 'https://covers.openlibrary.org/b';
+
+/**
+ * Every cover this work could wear, deduplicated, current first.
+ *
+ * Pure assembly over rows already fetched — the queries live in `@lc/db`, the
+ * decisions live here where a test can reach them. Ported as an *idea* from
+ * the board game catalog's `listCoverCandidates`: an item has several known
+ * printings, each has artwork, and a person picks the one that matches the
+ * object on the shelf. The schemas differ (their campaign-edition machinery
+ * has no counterpart here; our change_log history has none there), so the
+ * code is this catalog's own.
+ *
+ * Rules:
+ *
+ * - **Dedupe by URL, richest description wins**: an edition row explains a
+ *   picture better than "previous cover", which explains it better than a
+ *   guess. The current cover is usually also an edition's or history's URL,
+ *   and gets `selected` wherever it lands.
+ * - **A current cover nothing explains is still a candidate** — a hand-pasted
+ *   URL must not vanish from the very grid that could swap away from it.
+ * - **Guesses go last and say they are guesses.** The `?default=false` query
+ *   makes Open Library answer 404 instead of its 43-byte placeholder, so a
+ *   wrong guess fails visibly in the browser and the UI can drop the card.
+ * - Nothing here fetches. Applying a pick goes through the existing verified
+ *   PUT, which refuses anything that does not serve a real image.
+ */
+export function assembleCoverCandidates(inputs: CoverCandidateInputs): CoverCandidate[] {
+  const currentUrl = inputs.currentUrl?.trim() || null;
+  const byUrl = new Map<string, CoverCandidate>();
+
+  const add = (candidate: CoverCandidate) => {
+    const url = candidate.url.trim();
+    if (!url || byUrl.has(url)) return;
+    byUrl.set(url, { ...candidate, url, selected: url === currentUrl });
+  };
+
+  // Editions first: they carry the year and publisher that make a choice
+  // meaningful, so they win the description when a URL appears twice.
+  for (const e of inputs.editions) {
+    if (!e.coverUrl?.trim()) continue;
+    add({
+      url: e.coverUrl,
+      label: e.editionName?.trim() || formatWord(e.format),
+      caption:
+        [e.publisher, e.publishedYear].filter(Boolean).join(' · ') ||
+        (e.source !== 'manual' ? e.source : null),
+      source: 'edition',
+      selected: false,
+      derived: false,
+      editionId: e.id,
+    });
+  }
+
+  // Covers the work wore before. Still retrievable: R2 objects are named for
+  // their own bytes and never deleted by a swap, and third-party URLs either
+  // still serve or fail visibly in the grid.
+  for (const h of inputs.history) {
+    if (!h.url.trim()) continue;
+    // ⚠️ A history URL that is ALSO the current cover is a swap-back that
+    // already happened — "Previous cover · in use" would contradict itself,
+    // so it is described as what it is now, not as what it once was.
+    const wornAgain = h.url.trim() === currentUrl;
+    add({
+      url: h.url,
+      label: wornAgain ? 'Current cover' : 'Previous cover',
+      caption: wornAgain ? null : h.at ? `until ${h.at.slice(0, 10)}` : null,
+      source: wornAgain ? 'current' : 'history',
+      selected: false,
+      derived: false,
+      editionId: null,
+    });
+  }
+
+  // The cover on the work but explained by nothing — a hand-typed URL, or one
+  // set before the audit log existed. Losing it from this list would make the
+  // picker able to swap away from something it could not offer back.
+  if (currentUrl && !byUrl.has(currentUrl)) {
+    add({
+      url: currentUrl,
+      label: 'Current cover',
+      caption: null,
+      source: 'current',
+      selected: true,
+      derived: false,
+      editionId: null,
+    });
+  }
+
+  // Guesses last: computed Open Library URLs. `?default=false` turns their
+  // placeholder into an honest 404 — see MIN_COVER_BYTES for what the
+  // placeholder otherwise costs.
+  const olid = inputs.openlibraryWorkId?.trim();
+  if (olid) {
+    add({
+      url: `${OL_COVERS}/olid/${olid}-L.jpg?default=false`,
+      label: 'Open Library',
+      caption: 'their cover for this work',
+      source: 'guess',
+      selected: false,
+      derived: true,
+      editionId: null,
+    });
+  }
+  for (const e of inputs.editions) {
+    if (!e.isbn13) continue;
+    add({
+      url: `${OL_COVERS}/isbn/${e.isbn13}-L.jpg?default=false`,
+      label: 'Open Library',
+      caption: `from ISBN ${e.isbn13}`,
+      source: 'guess',
+      selected: false,
+      derived: true,
+      editionId: e.id,
+    });
+  }
+
+  // Current first, then recorded facts, then guesses; ties keep insertion
+  // order, which already runs editions → history.
+  const rank = (c: CoverCandidate) => (c.selected ? 0 : c.derived ? 2 : 1);
+  return [...byUrl.values()].sort((a, b) => rank(a) - rank(b));
+}

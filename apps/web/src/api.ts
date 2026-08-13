@@ -45,6 +45,19 @@ export interface ChangeView {
   createdAt: string;
 }
 
+/** One cover the book could wear. Mirrors `CoverCandidate` in `@lc/core`. */
+export interface CoverCandidateView {
+  url: string;
+  label: string;
+  caption: string | null;
+  source: 'edition' | 'history' | 'current' | 'guess';
+  /** The work is wearing this URL right now (saved, not merely picked). */
+  selected: boolean;
+  /** A computed guess — the grid hides it when its image fails to load. */
+  derived: boolean;
+  editionId: number | null;
+}
+
 /** One copy, as the deletion preview names it. Mirrors `WorkDeletionCopy` in `@lc/db`. */
 export interface DeletionCopy {
   id: number;
@@ -920,6 +933,22 @@ export const api = {
   /** Is an R2 bucket bound? Asked once, so the panel can hide what cannot work. */
   coverStorage: () =>
     request<{ enabled: boolean; maxBytes: number; reason?: string }>('/api/cover-storage'),
+
+  /**
+   * Every cover this book could wear, side by side — editions' own covers,
+   * previous covers from the change log (still retrievable: uploads are
+   * content-addressed and never deleted by a swap), and Open Library guesses
+   * that announce themselves as guesses. Applying a pick goes through
+   * `setCover`, whose server-side fetch check still applies.
+   */
+  coverCandidates: (id: number) =>
+    request<{
+      workId: number;
+      title: string;
+      currentUrl: string | null;
+      coverStatus: 'ok' | 'standin' | null;
+      candidates: CoverCandidateView[];
+    }>(`/api/works/${id}/covers`),
 
   /**
    * Point a book at an image somebody else hosts.

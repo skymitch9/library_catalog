@@ -1,6 +1,7 @@
 export * from './accessories.js';
 export * from './aliases.js';
 export * from './changes.js';
+export * from './covers.js';
 export * from './crowdfunding.js';
 export * from './export.js';
 export * from './users.js';

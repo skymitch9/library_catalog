@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { MAX_COVER_BYTES, coverNeeded } from '@lc/core';
 import { api } from '../api.js';
+import { CoverSwap } from './CoverSwap.js';
 
 /**
  * Give this book the right cover — or say out loud that it has the wrong one.
@@ -46,6 +47,8 @@ export function CoverPanel({
   onChanged: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  /** The side-by-side grid of known covers — loaded only when asked for. */
+  const [swapping, setSwapping] = useState(false);
   const [url, setUrl] = useState('');
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState<string | null>(null);
@@ -153,6 +156,13 @@ export function CoverPanel({
           {open ? 'Cancel' : work.coverUrl ? 'Replace cover' : 'Add a cover'}
         </button>
 
+        {/* The picker — for when the right cover already exists somewhere the
+            catalog can see: another printing's, a previous one, an Open
+            Library guess. Lazy: nothing is fetched until this is opened. */}
+        <button onClick={() => setSwapping(!swapping)} aria-expanded={swapping} disabled={busy}>
+          {swapping ? 'Close covers' : 'Choose from known covers'}
+        </button>
+
         {/* ⚠️ The toggle, both ways. Marking a good cover as a stand-in is the
             rarer press and the one nobody would guess exists, so it is a plain
             button with the whole sentence on it rather than a checkbox. */}
@@ -185,6 +195,8 @@ export function CoverPanel({
           </button>
         )}
       </div>
+
+      {swapping && <CoverSwap workId={workId} onChanged={onChanged} />}
 
       {open && (
         <div className="stack">
