@@ -296,7 +296,9 @@ async function resolveBarcode(env: Env, position: number, code: string): Promise
 
   if (classified.kind === 'asin') {
     const owned = await findEditionByAsin(env.DB, classified.asin);
-    if (owned) return { ...line, code: classified.asin, ...(await ownedBy(env, owned.work_id)) };
+    if (owned) {
+      return { ...line, code: classified.asin, ...(await ownedBy(env, owned.work_id, owned.id)) };
+    }
     return {
       ...line,
       code: classified.asin,
@@ -308,7 +310,7 @@ async function resolveBarcode(env: Env, position: number, code: string): Promise
   const withCode: ScanLine = { ...line, code: classified.isbn13, isbn13: classified.isbn13 };
 
   const owned = await findEditionByIsbn13(env.DB, classified.isbn13);
-  if (owned) return { ...withCode, ...(await ownedBy(env, owned.work_id)) };
+  if (owned) return { ...withCode, ...(await ownedBy(env, owned.work_id, owned.id)) };
 
   const { candidates, trace } = await resolveIsbn(classified.isbn13, {
     googleBooksKey: env.GOOGLE_BOOKS_API_KEY,
@@ -458,13 +460,26 @@ function warnBareSeries(line: ScanLine, seriesKeys: ReadonlySet<string>): ScanLi
   return { ...line, detail: line.detail ? `${warning} ${line.detail}` : warning };
 }
 
-/** The "we already have this" half of a line, named so both producers share it. */
-async function ownedBy(env: Env, workId: number): Promise<Partial<ScanLine>> {
+/**
+ * The "we already have this" half of a line, named so both producers share it.
+ *
+ * `editionId` is the printing whose identifier answered the scan — an ISBN or
+ * ASIN names one edition by definition — or null when only the *work* is known
+ * (a spine match). It rides on the line so "Add 2nd copy" can link the new
+ * copy to the printing the scan just proved, instead of minting another
+ * `edition_id = NULL` row.
+ */
+async function ownedBy(
+  env: Env,
+  workId: number,
+  editionId: number | null,
+): Promise<Partial<ScanLine>> {
   const work = await getWork(env.DB, workId);
   return {
     state: 'owned' as const,
     existingWorkId: workId,
     existingTitle: work?.title ?? null,
+    existingEditionId: editionId,
     detail: null,
   };
 }

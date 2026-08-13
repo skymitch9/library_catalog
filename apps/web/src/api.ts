@@ -11,6 +11,14 @@ export class ApiError extends Error {
     readonly status: number,
     readonly detail: unknown,
     message: string,
+    /**
+     * The whole decoded error body, when there was one. Some refusals carry
+     * fields beside `error`/`detail` that the caller must act on — the
+     * `isbn_taken` 409 names the printing that already holds the ISBN in
+     * `holder`, which is what lets the rescan flow offer the slipcase
+     * treatment instead of a dead end. `null` when the body was not JSON.
+     */
+    readonly body: unknown = null,
   ) {
     super(message);
   }
@@ -60,7 +68,7 @@ async function request<T>(path: string, init: RequestInit = {}, retried = false)
 
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: string; detail?: unknown } | null;
-    throw new ApiError(res.status, body?.detail, body?.error ?? `HTTP ${res.status}`);
+    throw new ApiError(res.status, body?.detail, body?.error ?? `HTTP ${res.status}`, body);
   }
   return (await res.json()) as T;
 }

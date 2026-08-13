@@ -163,6 +163,19 @@ export interface ScanLine {
   /** The work we already hold, if this line names one. */
   existingWorkId: number | null;
   existingTitle: string | null;
+  /**
+   * The edition whose identifier answered the scan, when one did. An `owned`
+   * barcode line matched a specific printing — `edition.isbn13` or `.asin` —
+   * and this remembers WHICH, so "Add 2nd copy" can write `copy.edition_id`
+   * instead of another NULL. 177 of 265 production copies cannot say which
+   * printing they are; a scan that just proved the printing is the one moment
+   * that fact is free, and dropping it here is how those NULLs were minted.
+   *
+   * Null for a spine match (title evidence names a work, never a printing).
+   * ⚠️ Optional on the wire, like `overlap`: jobs written before this field
+   * existed have no key for it, and `undefined` reads as "printing unknown".
+   */
+  existingEditionId?: number | null;
 
   /**
    * Books already on the shelf whose text overlaps this one. Usually empty.
@@ -262,6 +275,7 @@ export function blankLine(
     detail: null,
     existingWorkId: null,
     existingTitle: null,
+    existingEditionId: null,
     overlap: [],
     isbn13: null,
     resolvedTitle: null,

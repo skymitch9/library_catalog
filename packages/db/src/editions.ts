@@ -5,6 +5,7 @@ import {
   type UpdateCopy,
   type UpdateEdition,
 } from '@lc/core';
+import { ROW_FIELD, changeLogInsert, type Actor } from './changes.js';
 
 /**
  * Editions (printings) and copies (the ones on the shelf).
@@ -12,6 +13,15 @@ import {
  * The catalog/collection split from migration 0001 is enforced here: an
  * `edition` re-synced from Open Library may be overwritten wholesale; a `copy`
  * never is, because nothing outside this house knows where the book lives.
+ *
+ * ⚠️ Every mutation here writes its `change_log` rows in the SAME `db.batch()`
+ * as the change — the works.ts pattern, for the works.ts reason: a record
+ * written in a second request can fail while the first succeeded (review
+ * checklist item 3). Added 2026-08-13 when the rescan flow started filling
+ * `edition.isbn13` on existing rows: an ISBN landing on a printing months
+ * after the row was made is exactly the event "who changed this, and from
+ * what?" exists to answer. An absent actor logs as `{ userId: null, how:
+ * 'auto' }` — importers are recorded and distinguished, never skipped.
  */
 
 export interface EditionRow {
@@ -57,8 +67,12 @@ const EDITION_COLS = `id, work_id, isbn13, isbn10, asin, format, edition_name, e
                       collects, publisher, published_year, pages, language, cover_url, source,
                       source_url, cwa_book_id`;
 
-export async function createEdition(db: D1Database, input: CreateEdition): Promise<EditionRow> {
-  const row = await db
+export async function createEdition(
+  db: D1Database,
+  input: CreateEdition,
+  actor?: Actor,
+): Promise<EditionRow> {
+  const insert = db
     .prepare(
       `INSERT INTO edition (work_id, isbn13, isbn10, asin, format, edition_name, edition_kind,
                             collects, publisher, published_year, pages, language, cover_url,
@@ -83,8 +97,39 @@ export async function createEdition(db: D1Database, input: CreateEdition): Promi
       input.source,
       input.sourceUrl ?? null,
       input.cwaBookId ?? null,
-    )
-    .first<EditionRow>();
+    );
+
+  // The id does not exist until the insert runs, so the audit row binds
+  // `last_insert_rowid()` — same batch, atomically or not at all.
+  const audit = changeLogInsert(db, {
+    batchId: crypto.randomUUID(),
+    entity: 'edition',
+    entityId: 'last_insert_rowid()',
+    field: ROW_FIELD,
+    oldJson: 'null',
+    newJson: JSON.stringify({
+      workId: input.workId,
+      isbn13: input.isbn13 ?? null,
+      isbn10: input.isbn10 ?? null,
+      asin: input.asin ?? null,
+      format: input.format,
+      editionName: input.editionName ?? null,
+      editionKind: input.editionKind ?? null,
+      collects: input.collects ?? null,
+      publisher: input.publisher ?? null,
+      publishedYear: input.publishedYear ?? null,
+      pages: input.pages ?? null,
+      language: input.language ?? null,
+      coverUrl: input.coverUrl ?? null,
+      source: input.source,
+      sourceUrl: input.sourceUrl ?? null,
+      cwaBookId: input.cwaBookId ?? null,
+    }),
+    actor,
+  });
+
+  const [inserted] = await db.batch<EditionRow>([insert, audit]);
+  const row = inserted?.results?.[0];
   if (!row) throw new Error('insert returned no row');
   return row;
 }
@@ -184,13 +229,66 @@ export async function updateEdition(
   db: D1Database,
   id: number,
   patch: UpdateEdition,
+  actor?: Actor,
 ): Promise<EditionRow | null> {
   const current = await getEdition(db, id);
   if (!current) return null;
 
   const pick = <T>(next: T | undefined, fallback: T): T => (next === undefined ? fallback : next);
 
-  return db
+  // The next values, derived once — the UPDATE binds them and the audit rows
+  // diff them, so the log cannot disagree with the write.
+  const next = {
+    isbn13: pick(patch.isbn13, current.isbn13),
+    isbn10: pick(patch.isbn10, current.isbn10),
+    asin: pick(patch.asin, current.asin),
+    format: pick(patch.format, current.format),
+    editionName: pick(patch.editionName, current.edition_name),
+    // ⚠️ Independent of `editionName`, deliberately. Renaming a printing must
+    // not re-run `classifyEdition` behind the caller's back, and clearing a
+    // name must not silently un-file the row — both are how a hand-made
+    // one-off correction gets undone by an unrelated edit. The form sends
+    // both, and each says exactly what it means.
+    editionKind: pick(patch.editionKind, current.edition_kind),
+    // Independent of both of the above. "Volume 1" is a fact about what is
+    // between the covers and survives being renamed or re-filed — see
+    // migration 0060 for why it is neither a name nor a kind.
+    collects: pick(patch.collects, current.collects),
+    publisher: pick(patch.publisher, current.publisher),
+    publishedYear: pick(patch.publishedYear, current.published_year),
+    pages: pick(patch.pages, current.pages),
+    language: pick(patch.language, current.language),
+    coverUrl: pick(patch.coverUrl, current.cover_url),
+    source: pick(patch.source, current.source),
+    sourceUrl: pick(patch.sourceUrl, current.source_url),
+    cwaBookId: pick(patch.cwaBookId, current.cwa_book_id),
+  };
+
+  // One audit row per field that actually changed — no-op saves log nothing,
+  // which matters here because `Editions.tsx` sends the identifier fields on
+  // every save whether or not they moved.
+  const batchId = crypto.randomUUID();
+  const diffs: { field: string; oldValue: unknown; newValue: unknown }[] = [];
+  const consider = (field: string, oldValue: unknown, newValue: unknown) => {
+    if (oldValue !== newValue) diffs.push({ field, oldValue, newValue });
+  };
+  consider('isbn13', current.isbn13, next.isbn13);
+  consider('isbn10', current.isbn10, next.isbn10);
+  consider('asin', current.asin, next.asin);
+  consider('format', current.format, next.format);
+  consider('editionName', current.edition_name, next.editionName);
+  consider('editionKind', current.edition_kind, next.editionKind);
+  consider('collects', current.collects, next.collects);
+  consider('publisher', current.publisher, next.publisher);
+  consider('publishedYear', current.published_year, next.publishedYear);
+  consider('pages', current.pages, next.pages);
+  consider('language', current.language, next.language);
+  consider('coverUrl', current.cover_url, next.coverUrl);
+  consider('source', current.source, next.source);
+  consider('sourceUrl', current.source_url, next.sourceUrl);
+  consider('cwaBookId', current.cwa_book_id, next.cwaBookId);
+
+  const update = db
     .prepare(
       `UPDATE edition SET
          isbn13 = ?, isbn10 = ?, asin = ?, format = ?, edition_name = ?, edition_kind = ?,
@@ -200,32 +298,39 @@ export async function updateEdition(
        RETURNING ${EDITION_COLS}`,
     )
     .bind(
-      pick(patch.isbn13, current.isbn13),
-      pick(patch.isbn10, current.isbn10),
-      pick(patch.asin, current.asin),
-      pick(patch.format, current.format),
-      pick(patch.editionName, current.edition_name),
-      // ⚠️ Independent of `editionName`, deliberately. Renaming a printing must
-      // not re-run `classifyEdition` behind the caller's back, and clearing a
-      // name must not silently un-file the row — both are how a hand-made
-      // one-off correction gets undone by an unrelated edit. The form sends
-      // both, and each says exactly what it means.
-      pick(patch.editionKind, current.edition_kind),
-      // Independent of both of the above. "Volume 1" is a fact about what is
-      // between the covers and survives being renamed or re-filed — see
-      // migration 0060 for why it is neither a name nor a kind.
-      pick(patch.collects, current.collects),
-      pick(patch.publisher, current.publisher),
-      pick(patch.publishedYear, current.published_year),
-      pick(patch.pages, current.pages),
-      pick(patch.language, current.language),
-      pick(patch.coverUrl, current.cover_url),
-      pick(patch.source, current.source),
-      pick(patch.sourceUrl, current.source_url),
-      pick(patch.cwaBookId, current.cwa_book_id),
+      next.isbn13,
+      next.isbn10,
+      next.asin,
+      next.format,
+      next.editionName,
+      next.editionKind,
+      next.collects,
+      next.publisher,
+      next.publishedYear,
+      next.pages,
+      next.language,
+      next.coverUrl,
+      next.source,
+      next.sourceUrl,
+      next.cwaBookId,
       id,
-    )
-    .first<EditionRow>();
+    );
+
+  const [updated] = await db.batch<EditionRow>([
+    update,
+    ...diffs.map((d) =>
+      changeLogInsert(db, {
+        batchId,
+        entity: 'edition',
+        entityId: id,
+        field: d.field,
+        oldJson: JSON.stringify(d.oldValue === undefined ? null : d.oldValue),
+        newJson: JSON.stringify(d.newValue === undefined ? null : d.newValue),
+        actor,
+      }),
+    ),
+  ]);
+  return updated?.results?.[0] ?? null;
 }
 
 /**
@@ -241,9 +346,24 @@ export async function updateEdition(
  * Both tables hold 0 rows today (the paid call has never run), but that will
  * stop being true.
  */
-export async function deleteEdition(db: D1Database, id: number): Promise<boolean> {
-  const res = await db.prepare('DELETE FROM edition WHERE id = ?').bind(id).run();
-  return (res.meta.changes ?? 0) > 0;
+export async function deleteEdition(db: D1Database, id: number, actor?: Actor): Promise<boolean> {
+  const row = await getEdition(db, id);
+  if (!row) return false;
+
+  // The whole row is the undo material — the audit row has no FK, so it
+  // survives the row it describes (migration 0120).
+  const del = db.prepare('DELETE FROM edition WHERE id = ?').bind(id);
+  const audit = changeLogInsert(db, {
+    batchId: crypto.randomUUID(),
+    entity: 'edition',
+    entityId: id,
+    field: ROW_FIELD,
+    oldJson: JSON.stringify(row),
+    newJson: 'null',
+    actor,
+  });
+  const [res] = await db.batch([del, audit]);
+  return ((res?.meta as { changes?: number } | undefined)?.changes ?? 0) > 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -270,8 +390,12 @@ export interface CopyRow {
 const COPY_COLS = `id, work_id, edition_id, status, location, acquired_on, price_paid_cents,
                    currency, vendor, condition, is_signed, edition_notes, lent_to, notes`;
 
-export async function createCopy(db: D1Database, input: CreateCopy): Promise<CopyRow> {
-  const row = await db
+export async function createCopy(
+  db: D1Database,
+  input: CreateCopy,
+  actor?: Actor,
+): Promise<CopyRow> {
+  const insert = db
     .prepare(
       `INSERT INTO copy (work_id, edition_id, status, location, acquired_on, price_paid_cents,
                          currency, vendor, condition, is_signed, edition_notes, lent_to, notes)
@@ -292,8 +416,34 @@ export async function createCopy(db: D1Database, input: CreateCopy): Promise<Cop
       input.editionNotes ?? null,
       input.lentTo ?? null,
       input.notes ?? null,
-    )
-    .first<CopyRow>();
+    );
+
+  const audit = changeLogInsert(db, {
+    batchId: crypto.randomUUID(),
+    entity: 'copy',
+    entityId: 'last_insert_rowid()',
+    field: ROW_FIELD,
+    oldJson: 'null',
+    newJson: JSON.stringify({
+      workId: input.workId,
+      editionId: input.editionId ?? null,
+      status: input.status,
+      location: input.location ?? null,
+      acquiredOn: input.acquiredOn ?? null,
+      pricePaidCents: input.pricePaidCents ?? null,
+      currency: input.currency,
+      vendor: input.vendor ?? null,
+      condition: input.condition ?? null,
+      isSigned: input.isSigned ?? false,
+      editionNotes: input.editionNotes ?? null,
+      lentTo: input.lentTo ?? null,
+      notes: input.notes ?? null,
+    }),
+    actor,
+  });
+
+  const [inserted] = await db.batch<CopyRow>([insert, audit]);
+  const row = inserted?.results?.[0];
   if (!row) throw new Error('insert returned no row');
   return row;
 }
@@ -330,13 +480,50 @@ export async function updateCopy(
   db: D1Database,
   id: number,
   patch: UpdateCopy,
+  actor?: Actor,
 ): Promise<CopyRow | null> {
   const current = await getCopy(db, id);
   if (!current) return null;
 
   const pick = <T>(next: T | undefined, fallback: T): T => (next === undefined ? fallback : next);
 
-  return db
+  const next = {
+    editionId: pick(patch.editionId, current.edition_id),
+    status: pick(patch.status, current.status),
+    location: pick(patch.location, current.location),
+    acquiredOn: pick(patch.acquiredOn, current.acquired_on),
+    pricePaidCents: pick(patch.pricePaidCents, current.price_paid_cents),
+    currency: pick(patch.currency, current.currency),
+    vendor: pick(patch.vendor, current.vendor),
+    condition: pick(patch.condition, current.condition),
+    isSigned: patch.isSigned === undefined ? current.is_signed : patch.isSigned ? 1 : 0,
+    editionNotes: pick(patch.editionNotes, current.edition_notes),
+    lentTo: pick(patch.lentTo, current.lent_to),
+    notes: pick(patch.notes, current.notes),
+  };
+
+  // One audit row per changed field. The rows that matter most here: `status`
+  // (a wish becoming a purchase, a pre-order arriving) and `editionId` (a copy
+  // finally saying which printing it is — the rescan flow's link write).
+  const batchId = crypto.randomUUID();
+  const diffs: { field: string; oldValue: unknown; newValue: unknown }[] = [];
+  const consider = (field: string, oldValue: unknown, newValue: unknown) => {
+    if (oldValue !== newValue) diffs.push({ field, oldValue, newValue });
+  };
+  consider('editionId', current.edition_id, next.editionId);
+  consider('status', current.status, next.status);
+  consider('location', current.location, next.location);
+  consider('acquiredOn', current.acquired_on, next.acquiredOn);
+  consider('pricePaidCents', current.price_paid_cents, next.pricePaidCents);
+  consider('currency', current.currency, next.currency);
+  consider('vendor', current.vendor, next.vendor);
+  consider('condition', current.condition, next.condition);
+  consider('isSigned', current.is_signed, next.isSigned);
+  consider('editionNotes', current.edition_notes, next.editionNotes);
+  consider('lentTo', current.lent_to, next.lentTo);
+  consider('notes', current.notes, next.notes);
+
+  const update = db
     .prepare(
       `UPDATE copy SET
          edition_id = ?, status = ?, location = ?, acquired_on = ?, price_paid_cents = ?,
@@ -346,26 +533,54 @@ export async function updateCopy(
        RETURNING ${COPY_COLS}`,
     )
     .bind(
-      pick(patch.editionId, current.edition_id),
-      pick(patch.status, current.status),
-      pick(patch.location, current.location),
-      pick(patch.acquiredOn, current.acquired_on),
-      pick(patch.pricePaidCents, current.price_paid_cents),
-      pick(patch.currency, current.currency),
-      pick(patch.vendor, current.vendor),
-      pick(patch.condition, current.condition),
-      patch.isSigned === undefined ? current.is_signed : patch.isSigned ? 1 : 0,
-      pick(patch.editionNotes, current.edition_notes),
-      pick(patch.lentTo, current.lent_to),
-      pick(patch.notes, current.notes),
+      next.editionId,
+      next.status,
+      next.location,
+      next.acquiredOn,
+      next.pricePaidCents,
+      next.currency,
+      next.vendor,
+      next.condition,
+      next.isSigned,
+      next.editionNotes,
+      next.lentTo,
+      next.notes,
       id,
-    )
-    .first<CopyRow>();
+    );
+
+  const [updated] = await db.batch<CopyRow>([
+    update,
+    ...diffs.map((d) =>
+      changeLogInsert(db, {
+        batchId,
+        entity: 'copy',
+        entityId: id,
+        field: d.field,
+        oldJson: JSON.stringify(d.oldValue === undefined ? null : d.oldValue),
+        newJson: JSON.stringify(d.newValue === undefined ? null : d.newValue),
+        actor,
+      }),
+    ),
+  ]);
+  return updated?.results?.[0] ?? null;
 }
 
-export async function deleteCopy(db: D1Database, id: number): Promise<boolean> {
-  const res = await db.prepare('DELETE FROM copy WHERE id = ?').bind(id).run();
-  return (res.meta.changes ?? 0) > 0;
+export async function deleteCopy(db: D1Database, id: number, actor?: Actor): Promise<boolean> {
+  const row = await getCopy(db, id);
+  if (!row) return false;
+
+  const del = db.prepare('DELETE FROM copy WHERE id = ?').bind(id);
+  const audit = changeLogInsert(db, {
+    batchId: crypto.randomUUID(),
+    entity: 'copy',
+    entityId: id,
+    field: ROW_FIELD,
+    oldJson: JSON.stringify(row),
+    newJson: 'null',
+    actor,
+  });
+  const [res] = await db.batch([del, audit]);
+  return ((res?.meta as { changes?: number } | undefined)?.changes ?? 0) > 0;
 }
 
 export interface WishlistRow {

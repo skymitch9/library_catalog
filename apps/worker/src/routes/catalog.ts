@@ -24,6 +24,7 @@ import {
   deleteEdition,
   deleteWork,
   evidenceSaysReviews,
+  findEditionByIsbn13,
   findWorkByKey,
   getReadState,
   getWork,
@@ -99,6 +100,45 @@ function collectionQueryFrom(c: {
     dir,
     limit: pageSize,
     offset: page * pageSize,
+  };
+}
+
+/**
+ * "Another printing already carries that ISBN" — as a body the client can act
+ * on, not just read.
+ *
+ * ⚠️ `holder` names the row and its book because the rescan flow's next move
+ * depends on it: the person holding a Realmkeeper omnibus whose barcode is
+ * already on the volume's OTHER row is offered the slipcase treatment (the
+ * fact goes into this row's `edition_name`), and that offer needs the holder's
+ * title to be worth anything. `detail` stays a plain sentence because
+ * `Editions.tsx`'s error rendering shows string details verbatim.
+ *
+ * `null` means the ISBN is free (or absent, or already this row's own) and the
+ * write may proceed.
+ */
+async function isbnTakenBody(
+  db: D1Database,
+  isbn13: string | null,
+  selfId?: number,
+): Promise<Record<string, unknown> | null> {
+  if (!isbn13) return null;
+  const holder = await findEditionByIsbn13(db, isbn13);
+  if (!holder || holder.id === selfId) return null;
+  const work = await getWork(db, holder.work_id);
+  const name = holder.edition_name ?? holder.format;
+  return {
+    error: 'isbn_taken',
+    detail:
+      `That ISBN is already recorded on ` +
+      `${work ? `“${work.title}”` : 'another book'} (${name}).`,
+    holder: {
+      editionId: holder.id,
+      workId: holder.work_id,
+      title: work?.title ?? null,
+      editionName: holder.edition_name,
+      format: holder.format,
+    },
   };
 }
 
@@ -526,7 +566,19 @@ export const catalogRoutes = new Hono<AppBindings>()
   .post('/editions', requireCapability('editCatalog'), async (c) => {
     const parsed = createEditionSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues }, 400);
-    return c.json({ edition: await createEdition(c.env.DB, parsed.data) }, 201);
+
+    // ⚠️ Asked BEFORE the insert, so the answer can NAME the holder. The
+    // UNIQUE index (`idx_edition_isbn13`, catalog-wide) would refuse this
+    // anyway, but its raw error cannot say which printing already carries the
+    // ISBN — and the rescan flow needs the holder to offer the slipcase
+    // treatment instead of a dead end. The Realmkeeper set is the live case:
+    // 16 edition rows describe 8 physical omnibus volumes, so a volume's
+    // barcode can only ever live on one of its two rows.
+    const taken = await isbnTakenBody(c.env.DB, parsed.data.isbn13 ?? null);
+    if (taken) return c.json(taken, 409);
+
+    const actor: Actor = { userId: c.get('user').id, how: 'human' };
+    return c.json({ edition: await createEdition(c.env.DB, parsed.data, actor) }, 201);
   })
 
   /**
@@ -550,14 +602,24 @@ export const catalogRoutes = new Hono<AppBindings>()
     const parsed = updateEditionSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues }, 400);
 
+    // ⚠️ The ISBN conflict is answered by name, before the write, with the
+    // holding printing attached — see the POST above for why the raw UNIQUE
+    // refusal is not enough. `id` is excluded so re-saving a row's own ISBN
+    // (which `Editions.tsx` does on every save) stays a no-op, not a conflict.
+    const taken = await isbnTakenBody(c.env.DB, parsed.data.isbn13 ?? null, id);
+    if (taken) return c.json(taken, 409);
+
+    const actor: Actor = { userId: c.get('user').id, how: 'human' };
+
     // `edition.isbn13` and `edition.asin` are UNIQUE partial indexes (migration
-    // 0001: "an ISBN-13 identifies one printing by definition"). Typing one that
-    // another row already holds is an ordinary mistake at a keyboard, and
-    // letting it reach the generic 500 handler answers it with a raw SQLite
-    // string. Answered here instead, as the conflict it is.
+    // 0001: "an ISBN-13 identifies one printing by definition"). The pre-check
+    // above names an ISBN conflict; this catch stays for the ASIN column and
+    // for the race the pre-check cannot close. Typing one that another row
+    // already holds is an ordinary mistake at a keyboard, and letting it reach
+    // the generic 500 handler answers it with a raw SQLite string.
     let edition;
     try {
-      edition = await updateEdition(c.env.DB, id, parsed.data);
+      edition = await updateEdition(c.env.DB, id, parsed.data, actor);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (/UNIQUE constraint failed/i.test(message)) {
@@ -587,14 +649,15 @@ export const catalogRoutes = new Hono<AppBindings>()
   .delete('/editions/:id', requireCapability('editCatalog'), async (c) => {
     const id = Number(c.req.param('id'));
     if (!Number.isInteger(id)) return c.json({ error: 'bad_request' }, 400);
-    const ok = await deleteEdition(c.env.DB, id);
+    const ok = await deleteEdition(c.env.DB, id, { userId: c.get('user').id, how: 'human' });
     return ok ? c.json({ ok: true }) : c.json({ error: 'not_found' }, 404);
   })
 
   .post('/copies', requireCapability('editCatalog'), async (c) => {
     const parsed = createCopySchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues }, 400);
-    return c.json({ copy: await createCopy(c.env.DB, parsed.data) }, 201);
+    const actor: Actor = { userId: c.get('user').id, how: 'human' };
+    return c.json({ copy: await createCopy(c.env.DB, parsed.data, actor) }, 201);
   })
 
   /**
@@ -612,7 +675,10 @@ export const catalogRoutes = new Hono<AppBindings>()
     const parsed = updateCopySchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues }, 400);
 
-    const copy = await updateCopy(c.env.DB, id, parsed.data);
+    const copy = await updateCopy(c.env.DB, id, parsed.data, {
+      userId: c.get('user').id,
+      how: 'human',
+    });
     if (!copy) return c.json({ error: 'not_found' }, 404);
     return c.json({ copy });
   })
@@ -620,7 +686,7 @@ export const catalogRoutes = new Hono<AppBindings>()
   .delete('/copies/:id', requireCapability('editCatalog'), async (c) => {
     const id = Number(c.req.param('id'));
     if (!Number.isInteger(id)) return c.json({ error: 'bad_request' }, 400);
-    const ok = await deleteCopy(c.env.DB, id);
+    const ok = await deleteCopy(c.env.DB, id, { userId: c.get('user').id, how: 'human' });
     return ok ? c.json({ ok: true }) : c.json({ error: 'not_found' }, 404);
   })
 

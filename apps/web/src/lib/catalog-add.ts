@@ -1,7 +1,20 @@
-import { proposedAuthors, proposedTitle, type PreorderAnswer, type ScanLine } from '@lc/core';
+import {
+  appendSharedIsbnNote,
+  proposedAuthors,
+  proposedTitle,
+  type PreorderAnswer,
+  type RescanAnswer,
+  type ScanLine,
+} from '@lc/core';
 import { api } from '../api.js';
 import { arrivedPatch } from './statuses.js';
 import { preorderQuestionFor, type PreorderQuestion } from './preorders.js';
+import {
+  isbnTakenFrom,
+  rescanQuestionFor,
+  type IsbnConflict,
+  type RescanQuestion,
+} from './rescans.js';
 
 /**
  * Turning one reviewed line into catalog rows.
@@ -22,6 +35,13 @@ export interface AddedWork {
    * lie, and the difference is the entire point of having asked.
    */
   preorderArrived: boolean;
+  /**
+   * What a rescan answer actually wrote, when it was not a plain add — "ISBN
+   * recorded", "Copy + ISBN recorded". Null for the ordinary outcomes, whose
+   * words the row already knows. Same reasoning as `preorderArrived`: the row
+   * must be able to say which thing happened, or the prompt taught nothing.
+   */
+  summary: string | null;
 }
 
 /**
@@ -36,7 +56,19 @@ export interface AddedWork {
  */
 export type AddOutcome =
   | { status: 'added'; added: AddedWork }
-  | { status: 'ask-preorder'; question: PreorderQuestion };
+  | { status: 'ask-preorder'; question: PreorderQuestion }
+  /**
+   * The scanned barcode is not on file but the book is — the rescan question
+   * (`@lc/core/rescan.ts`). Nothing written; call again with `opts.rescan`.
+   */
+  | { status: 'ask-rescan'; question: RescanQuestion }
+  /**
+   * A fill answer hit the catalog-wide UNIQUE index: another printing already
+   * carries the ISBN. Not an error to surface raw — one physical volume can
+   * be two catalog rows (the Realmkeeper set), and the person standing there
+   * gets offered the slipcase treatment. Nothing was written.
+   */
+  | { status: 'ask-isbn-taken'; conflict: IsbnConflict };
 
 /**
  * Add a reviewed line to the catalog.
@@ -102,7 +134,15 @@ export async function addLineToCatalog(
    * with `authors: null`, gets the provisional key, and lands in the
    * Needs→Author remediation queue by construction — the null IS the flag.
    */
-  opts?: { withoutAuthor?: boolean },
+  opts?: {
+    withoutAuthor?: boolean;
+    /**
+     * ⚠️ The answer to a `ask-rescan` question, carried back on the re-run —
+     * never synthesised. See `@lc/core/rescan.ts` for the four outcomes and
+     * what guessing any of them costs.
+     */
+    rescan?: RescanAnswer;
+  },
 ): Promise<AddOutcome> {
   /*
    * ⚠️ The duplicate case — a book we already hold, scanned again on purpose.
@@ -131,7 +171,18 @@ export async function addLineToCatalog(
       added: {
         workId: line.existingWorkId,
         attachedTo: line.existingTitle,
-        preorderArrived: await recordArrival(line.existingWorkId, answer),
+        // ⚠️ The second copy is linked to the printing whose identifier
+        // answered the scan (`existingEditionId`), because an `owned` barcode
+        // line matched a specific edition and that fact is free right now.
+        // 177 of 265 production copies have a NULL `edition_id`; this is the
+        // moment those NULLs used to be minted. Null for a spine match, which
+        // names a work and never a printing.
+        preorderArrived: await recordArrival(
+          line.existingWorkId,
+          answer,
+          line.existingEditionId ?? null,
+        ),
+        summary: null,
       },
     };
   }
@@ -160,6 +211,48 @@ export async function addLineToCatalog(
   // will still collide here — that is the collision the real key exists to
   // prevent, and it is exactly why authorless is a flagged, temporary state.
   const existing = await api.matchWork(title, authors);
+  const rescan = opts?.rescan;
+
+  /*
+   * ⚠️ **A rescan is a question, not a second copy** — asked HERE, after the
+   * match and before any write.
+   *
+   * A barcode line whose ISBN missed `findEditionByIsbn13` but whose book the
+   * catalog holds used to fall straight through to `createEdition` +
+   * `createCopy`: a new printing and a new copy, silently, every time. That is
+   * backwards for the commonest reason the ISBN is missing — the printing is
+   * already on file, recorded before anyone had the barcode (60+ crowdfunded
+   * and slipcase rows carry exactly that promise in
+   * `docs/isbn-barcode-worklist.md`). So the add stops and asks the four-way
+   * question in `@lc/core/rescan.ts`, and `rescanQuestionFor` returning null —
+   * a work with no physical presence, the paperback-of-an-ebook case — is what
+   * keeps the ordinary attach free of a pointless tap.
+   *
+   * Same contract as the pre-order prompt below: nothing has been written when
+   * the question comes back, and answering re-runs this function from the top.
+   */
+  if (existing.work && line.isbn13 && !rescan) {
+    const question = await rescanQuestionFor(existing.work.id, existing.work.title, line.isbn13);
+    if (question) return { status: 'ask-rescan', question };
+  }
+
+  /*
+   * The rescan answers that repair or extend the EXISTING book. `different-book`
+   * is deliberately not here — it falls through to `createWork` below with the
+   * match ignored, which is all "a different book" means.
+   */
+  if (rescan && rescan.kind !== 'different-book' && line.isbn13) {
+    if (!existing.work) {
+      // The question named a book that no longer matches — an edit or a delete
+      // raced the answer. Refuse loudly; re-adding re-asks against what is
+      // there now.
+      throw new Error('The book this question was about has changed — press Add again.');
+    }
+    return applyRescanAnswer(existing.work, line, line.isbn13, rescan, answer);
+  }
+
+  /** Attaching to the matched work, or creating one despite the match? */
+  const attachWork = rescan?.kind === 'different-book' ? null : existing.work;
 
   /*
    * ⚠️ Asked HERE — after the match, before the first write.
@@ -173,10 +266,12 @@ export async function addLineToCatalog(
    * come through. A pre-ordered hardcover has a *different* ISBN from any printing
    * on file, so `findEditionByIsbn13` misses and the line never reaches the review
    * screen as `owned` — it resolves through Open Library and matches on the work
-   * key instead, exactly as the paperback-of-an-ebook case does.
+   * key instead, exactly as the paperback-of-an-ebook case does. (When the work
+   * has physical rows the rescan question above fires first, and its copy-writing
+   * answers ask this same question through `applyRescanAnswer`.)
    */
-  if (existing.work && !answer) {
-    const question = await preorderQuestionFor(existing.work.id, existing.work.title);
+  if (attachWork && !answer) {
+    const question = await preorderQuestionFor(attachWork.id, attachWork.title);
     if (question) return { status: 'ask-preorder', question };
   }
 
@@ -192,7 +287,7 @@ export async function addLineToCatalog(
    * belonged to works showing none.
    */
   const work =
-    existing.work ??
+    attachWork ??
     (
       await api.createWork({
         title,
@@ -206,7 +301,7 @@ export async function addLineToCatalog(
   // be carrying the cover the existing row never got. Fill a gap, never
   // overwrite: a cover already on file was chosen deliberately or came from the
   // audiobook catalog, and a barcode is not a reason to replace it.
-  if (existing.work && !existing.work.coverUrl && line.coverUrl) {
+  if (attachWork && !attachWork.coverUrl && line.coverUrl) {
     await api.updateWork(work.id, { coverUrl: line.coverUrl });
   }
 
@@ -231,31 +326,189 @@ export async function addLineToCatalog(
    * practice, permanent. If this ever stops being a one-tap correction, ask at
    * scan time instead.
    */
+  let editionId: number | null = null;
   if (line.isbn13) {
-    await api.createEdition({
-      workId: work.id,
-      isbn13: line.isbn13,
-      format: 'paperback',
-      publisher: line.publisher ?? null,
-      publishedYear: line.publishedYear ?? null,
-      coverUrl: line.coverUrl ?? null,
-      source: 'openlibrary',
-    });
+    editionId = (await api.createEdition(editionFromLine(work.id, line, line.isbn13))).edition.id;
   }
 
   // A copy, because a person scanning a barcode or photographing a shelf is
   // looking at the book. This is the one place that inference is safe — unlike
   // the ebook importer, where a file existing says nothing about a shelf.
-  const preorderArrived = await recordArrival(work.id, answer);
+  // Linked to the edition just created, when one was: the scan proved the
+  // printing, and an unlinked copy here is a NULL somebody has to repair later.
+  const preorderArrived = await recordArrival(work.id, answer, editionId);
 
   return {
     status: 'added',
     added: {
       workId: work.id,
-      attachedTo: existing.work ? work.title : null,
+      attachedTo: attachWork ? work.title : null,
       preorderArrived,
+      summary: null,
     },
   };
+}
+
+/** The edition a barcode line earns, in one spelling. `paperback` is the
+ *  documented guess — see the comment above the call in the main path. */
+function editionFromLine(workId: number, line: ScanLine, isbn13: string) {
+  return {
+    workId,
+    isbn13,
+    format: 'paperback',
+    publisher: line.publisher ?? null,
+    publishedYear: line.publishedYear ?? null,
+    coverUrl: line.coverUrl ?? null,
+    source: 'openlibrary',
+  };
+}
+
+/**
+ * Carry out a rescan answer against the book the question was about.
+ *
+ * ⚠️ **Ask-returns always precede the first write** in every branch, the same
+ * ordering rule the pre-order prompt lives by: an unanswered question must
+ * leave the catalog exactly as it was, and answering re-runs from the top.
+ * The one deliberate partial: `extra-copy` still writes its copy when the
+ * side-fill of the ISBN loses a race to another row — the copy is what the
+ * person asserted, and the summary says what happened to the ISBN.
+ */
+async function applyRescanAnswer(
+  work: { id: number; title: string },
+  line: ScanLine,
+  isbn13: string,
+  rescan: Exclude<RescanAnswer, { kind: 'different-book' }>,
+  answer: PreorderAnswer | undefined,
+): Promise<AddOutcome> {
+  const added = (summary: string | null, preorderArrived = false): AddOutcome => ({
+    status: 'added',
+    added: { workId: work.id, attachedTo: work.title, preorderArrived, summary },
+  });
+  const conflict = (editionId: number | null, holder: IsbnConflict['holder']): AddOutcome => ({
+    status: 'ask-isbn-taken',
+    conflict: { editionId, workId: work.id, attachedTo: work.title, isbn13, holder },
+  });
+
+  /*
+   * "The book I already have." ⚠️ The owner's case, and the one that must work
+   * flawlessly: the ISBN lands on the row that has none, the unlinked copy
+   * learns its printing, and NOTHING is created — the object was already
+   * counted. The slipcase volumes' blank ISBNs are deliberate, which is why
+   * this only ever runs off a button that named the row.
+   */
+  if (rescan.kind === 'fill') {
+    if (rescan.editionId !== null) {
+      try {
+        await api.updateEdition(rescan.editionId, { isbn13 });
+      } catch (err) {
+        const taken = isbnTakenFrom(err);
+        if (taken) return conflict(rescan.editionId, taken.holder);
+        throw err;
+      }
+      if (rescan.linkCopyId !== null) {
+        await api.updateCopy(rescan.linkCopyId, { editionId: rescan.editionId });
+      }
+      return added('ISBN recorded');
+    }
+
+    // No printing row existed — a spine-added book. The scan is the moment
+    // "which printing is this?" finally has an answer, so the row is created
+    // and the copy linked. Still no new copy.
+    let editionId: number;
+    try {
+      editionId = (await api.createEdition(editionFromLine(work.id, line, isbn13))).edition.id;
+    } catch (err) {
+      const taken = isbnTakenFrom(err);
+      if (taken) return conflict(null, taken.holder);
+      throw err;
+    }
+    if (rescan.linkCopyId !== null) {
+      await api.updateCopy(rescan.linkCopyId, { editionId });
+    }
+    return added('Printing recorded');
+  }
+
+  /*
+   * The slipcase treatment, chosen by a person after the UNIQUE index said no:
+   * the ISBN stays on the row that holds it, and the fact goes into THIS
+   * row's `edition_name` — `edition` has no notes column; that lives on
+   * `copy`. Fetched fresh so the note APPENDS to whatever the name says now.
+   */
+  if (rescan.kind === 'fill-note') {
+    const detail = (await api.work(work.id)) as unknown as {
+      editions?: { id: number; edition_name?: string | null }[];
+    };
+    const current = detail.editions?.find((e) => e.id === rescan.editionId);
+    await api.updateEdition(rescan.editionId, {
+      editionName: appendSharedIsbnNote(current?.edition_name ?? null, isbn13, rescan.holderTitle),
+    });
+    return added('Shared ISBN noted');
+  }
+
+  /*
+   * Both remaining answers write a copy, so both first ask the pre-order
+   * question the ordinary attach asks — a new printing arriving is EXACTLY the
+   * production pre-order shape (different ISBN from anything on file), and
+   * skipping the prompt here would let the rescan flow re-mint the phantom
+   * "on the way forever" copies the prompt exists to prevent.
+   */
+  if (!answer) {
+    const question = await preorderQuestionFor(work.id, work.title);
+    if (question) return { status: 'ask-preorder', question };
+  }
+
+  /* "A second copy of that edition." */
+  if (rescan.kind === 'extra-copy') {
+    let editionId = rescan.editionId;
+    let summary = 'Copy added';
+
+    if (editionId === null) {
+      // Spine-added book, no printing row: the second copy brings one.
+      try {
+        editionId = (await api.createEdition(editionFromLine(work.id, line, isbn13))).edition.id;
+      } catch (err) {
+        const taken = isbnTakenFrom(err);
+        if (taken) return conflict(null, taken.holder);
+        throw err;
+      }
+      summary = 'Copy + printing recorded';
+    } else if (rescan.alsoFillIsbn) {
+      // "This barcode is that edition, and I have two" — both facts recorded.
+      // ⚠️ Losing the ISBN to a race does NOT lose the copy: the copy is the
+      // assertion, the fill is the bonus, and the summary says which landed.
+      try {
+        await api.updateEdition(editionId, { isbn13 });
+        summary = 'Copy + ISBN recorded';
+      } catch (err) {
+        if (!isbnTakenFrom(err)) throw err;
+        summary = 'Copy added — ISBN already on another printing';
+      }
+    }
+
+    const preorderArrived = await recordArrival(work.id, answer, editionId);
+    return added(preorderArrived ? null : summary, preorderArrived);
+  }
+
+  /* "A different printing I own" — the #341 two-hardcovers case. */
+  let editionId: number;
+  try {
+    editionId = (await api.createEdition(editionFromLine(work.id, line, isbn13))).edition.id;
+  } catch (err) {
+    const taken = isbnTakenFrom(err);
+    if (taken) {
+      // A "new" printing wearing an ISBN another row already owns is not new —
+      // it is that row. No note to offer here (there is no edition of ours to
+      // note it on), so the refusal names the holder and stops.
+      throw new Error(
+        taken.holder?.title
+          ? `That ISBN is already recorded on “${taken.holder.title}” — open that book and add the copy there.`
+          : 'That ISBN is already recorded on another printing in the catalog.',
+      );
+    }
+    throw err;
+  }
+  const preorderArrived = await recordArrival(work.id, answer, editionId);
+  return added(preorderArrived ? null : 'New printing added', preorderArrived);
 }
 
 /**
@@ -277,11 +530,22 @@ export async function addLineToCatalog(
  *
  * Returns whether a pre-order was received, so the caller can say the right thing.
  */
-async function recordArrival(workId: number, answer: PreorderAnswer | undefined): Promise<boolean> {
+async function recordArrival(
+  workId: number,
+  answer: PreorderAnswer | undefined,
+  /**
+   * The printing the new copy is a copy OF, when the scan proved one — the
+   * edition just created for this line, or the edition whose ISBN answered
+   * the scan. Null when only the work is known (a spine line). ⚠️ Only the
+   * `createCopy` branch reads it; the arriving pre-order keeps the edition it
+   * already names, per the warning above.
+   */
+  editionId: number | null,
+): Promise<boolean> {
   if (answer?.kind === 'arrived') {
     await api.updateCopy(answer.copyId, arrivedPatch(answer.acquiredOn));
     return true;
   }
-  await api.createCopy({ workId, status: 'owned' });
+  await api.createCopy({ workId, status: 'owned', editionId: editionId ?? undefined });
   return false;
 }

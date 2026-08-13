@@ -9,6 +9,7 @@ import {
   proposedTitle,
   searchText,
   type PreorderAnswer,
+  type RescanAnswer,
   type ScanJob,
   type ScanLine,
   type ScanStatus,
@@ -16,8 +17,10 @@ import {
 import { api } from '../api.js';
 import { addLineToCatalog } from '../lib/catalog-add.js';
 import type { PreorderQuestion } from '../lib/preorders.js';
+import type { IsbnConflict, RescanQuestion } from '../lib/rescans.js';
 import { Link, workPath } from '../router.js';
 import { PreorderPrompt } from './PreorderPrompt.js';
+import { IsbnTakenPrompt, RescanPrompt } from './RescanPrompt.js';
 
 /**
  * The review list — one row per book a sweep found, and the only place a book
@@ -158,8 +161,25 @@ function LineRow({
    * answer for whichever row was tapped last.
    */
   const [preorder, setPreorder] = useState<PreorderQuestion | null>(null);
+  /**
+   * The rescan question — a barcode the catalog has never seen, on a book it
+   * already holds. Row state for the reason `preorder` is: two rows can each
+   * be asking, and a shared prompt would answer for whichever was tapped last.
+   */
+  const [rescanQ, setRescanQ] = useState<RescanQuestion | null>(null);
+  /**
+   * The rescan answer already given — carried so the pre-order prompt's
+   * answer re-runs the SAME add ("a second copy of that edition" must not
+   * degrade to the ordinary attach when the person then says which pre-order
+   * arrived). Same reasoning as `authorless` below.
+   */
+  const [rescanAnswer, setRescanAnswer] = useState<RescanAnswer | null>(null);
+  /** The UNIQUE index refusal, dressed as the choice it actually is. */
+  const [conflict, setConflict] = useState<IsbnConflict | null>(null);
   /** Said after the fact, because "Copy added" would be the wrong sentence. */
   const [arrived, setArrived] = useState(false);
+  /** What a rescan answer wrote — "ISBN recorded" — for the result chip. */
+  const [summary, setSummary] = useState<string | null>(null);
   /**
    * The person pressed "Add without an author" — carried as state so the
    * pre-order prompt's answer re-runs the SAME add, not the ordinary one
@@ -189,22 +209,55 @@ function LineRow({
    * written**. `answer` is that question coming back; the second call runs the
    * same function from the top.
    */
-  const add = (answer?: PreorderAnswer, withoutAuthor = authorless) =>
+  const add = (
+    answer?: PreorderAnswer,
+    withoutAuthor = authorless,
+    rescan: RescanAnswer | undefined = rescanAnswer ?? undefined,
+  ) =>
     run('add', async () => {
       setAuthorless(withoutAuthor);
-      const outcome = await addLineToCatalog(line, answer, { withoutAuthor });
+      if (rescan) setRescanAnswer(rescan);
+      const outcome = await addLineToCatalog(line, answer, { withoutAuthor, rescan });
+      if (outcome.status === 'ask-rescan') {
+        // Nothing was written. The rescan question comes FIRST — it decides
+        // which rows exist at all; the pre-order question is asked afterwards
+        // by the answers that write a copy.
+        setRescanQ(outcome.question);
+        return;
+      }
       if (outcome.status === 'ask-preorder') {
         // Nothing was written, so nothing is recorded on the line either. The
         // row now shows the prompt in place of its buttons.
+        setRescanQ(null);
         setPreorder(outcome.question);
         return;
       }
+      if (outcome.status === 'ask-isbn-taken') {
+        // The UNIQUE index refused the fill and named the row that holds the
+        // ISBN. Still nothing written; the person chooses the slipcase
+        // treatment or walks away.
+        setRescanQ(null);
+        setPreorder(null);
+        setConflict(outcome.conflict);
+        return;
+      }
       setPreorder(null);
+      setRescanQ(null);
+      setConflict(null);
+      setRescanAnswer(null);
       setArrived(outcome.added.preorderArrived);
+      setSummary(outcome.added.summary);
       // Recorded on the line only after the catalog write succeeded. The other
       // order would mark a book added that is not in the catalog.
       onJob((await api.patchScanLine(jobId, index, { addedWorkId: outcome.added.workId })).job);
     });
+
+  /** Walk away from a question that has written nothing. The row's buttons return. */
+  const dropQuestions = () => {
+    setRescanQ(null);
+    setConflict(null);
+    setRescanAnswer(null);
+  };
 
   const lookup = (q?: string) =>
     run('lookup', async () => {
@@ -373,6 +426,35 @@ function LineRow({
           />
         )}
 
+        {/*
+          ⚠️ Raised the same way the pre-order prompt is — by pressing Add, with
+          nothing written — and for the same kind of reason: a barcode the
+          catalog has never seen, on a book it already holds, is FOUR different
+          facts and only the person holding the object knows which. The silent
+          answer used to be "new edition + new copy", which is how a rescan of
+          an ISBN-less printing minted a duplicate instead of filling the blank.
+        */}
+        {rescanQ && !preorder && !conflict && !settled && (
+          <RescanPrompt
+            question={rescanQ}
+            busy={busy !== null}
+            onAnswer={(rescan) => void add(undefined, authorless, rescan)}
+            onDismiss={dropQuestions}
+          />
+        )}
+
+        {/* The UNIQUE-index refusal, offered as the slipcase treatment rather
+            than surfaced as a constraint violation. Realmkeeper: one omnibus
+            volume, one barcode, two catalog rows. */}
+        {conflict && !settled && (
+          <IsbnTakenPrompt
+            conflict={conflict}
+            busy={busy !== null}
+            onAnswer={(rescan) => void add(undefined, authorless, rescan)}
+            onDismiss={dropQuestions}
+          />
+        )}
+
         {/* While the pass owns this line, its `detail` is the *previous*
             answer — or the placeholder written when the photo was read — and
             showing it beside "Looking up…" says two contradictory things. */}
@@ -404,13 +486,14 @@ function LineRow({
       <div className="row-tight" style={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>
         {line.addedWorkId !== null ? (
           <Link to={workPath(line.addedWorkId)} className="chip">
-            {/* ⚠️ Three outcomes, three words. "Copy added" over a received
+            {/* ⚠️ Each outcome gets its own words. "Copy added" over a received
                 pre-order would report the very thing the prompt was asked to
-                prevent — a second copy — and the person would have no way to
-                tell from the row which of the two they had chosen. */}
-            {arrived ? 'Pre-order received' : owned ? 'Copy added' : 'Added'}
+                prevent — a second copy — and "Added" over an ISBN fill would
+                claim a row was created when the whole point was that none was.
+                `summary` is the rescan outcomes saying what they wrote. */}
+            {arrived ? 'Pre-order received' : (summary ?? (owned ? 'Copy added' : 'Added'))}
           </Link>
-        ) : preorder ? (
+        ) : preorder || rescanQ || conflict ? (
           /* The prompt above is the row's only control while it is up. Leaving
              Add beside it would offer a third answer to a two-answer question,
              and pressing it would simply raise the same prompt again. */
