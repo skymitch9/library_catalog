@@ -151,6 +151,70 @@ paperback" is still a decision somebody might make. `gaps.length` vs
 `certainGaps`/`attestedGaps` is exactly that distinction, and `completeness.ts`
 keeps them apart on purpose.
 
+### ⏸️ Edit any detail, an audit log, and adding a book with no author — 2026-08-13
+
+**Three asks from one scanning session, and they are the same feature.** Recorded
+together because solving any one of them badly makes the others harder.
+
+**The owner, verbatim:**
+
+> *"add an edit title button on the ui. More than that we need a way to edit
+> basically any detail about a book except core details like ISBN. We'd also need
+> an audit log and stuff. Audiobook catalog will need this as well."*
+
+> *"Let us add books without an author and immediately flag them for
+> remediation. That way we're not hard blocked."*
+
+**Why it came up.** Four books in one evening could not be added without hand-
+typing an author — *There's a Mouse About the House!*, *Don't Tickle the
+Dinosaur!*, *Richard Scarry's Busy Busy Farm*, and every bare-titled board book
+on the pull list. `isAddable` (`packages/core/src/scanjobs.ts`) requires a title
+**and** an author; children's board books are the common case in this house and
+they resolve worst upstream, so the gate lands exactly where it hurts.
+
+#### ⚠️ The constraints, all measured — read before designing
+
+| Constraint | Where | Why it bites |
+|---|---|---|
+| `work.authors`, `primary_author`, `work_key` are all **NOT NULL** | `migrations/0001_init.sql:87,90,108` | "add with no author" is a **migration**, not a UI change |
+| **`work_key` contains the author on purpose** | `0001_init.sql:99` — *"Title-only keys collide across authors constantly"* | a title-only key for authorless rows is a known-bad idea in this schema, not a shortcut |
+| `work_key` is the join to **860 audiobook reviews** | `WorkFields.tsx` header | editing a title or author moves the key and orphans the reviews |
+| `WorkFields` **deliberately** cannot reach `title`/`authors` | same header | this is the guard, not an oversight — do not simply remove it |
+
+⚠️ **The trap:** "flag for remediation" means the author gets filled in *later*,
+which moves `work_key` — the exact thing the guard exists to prevent. It is
+harmless for a book that entered the catalog seconds ago with no reviews, and
+destructive for one that has them. **So the remediation path must know the
+difference**, and that is precisely what an audit log plus a "has this ever been
+review-joined" test would give.
+
+#### The shape this probably wants
+
+1. **Migration:** `authors`/`primary_author` nullable, plus a documented answer
+   for what `work_key` is while the author is unknown (a provisional key that is
+   *expected* to move, marked as such, is better than a colliding title-only one).
+2. **Add with no author** → row is created *and* a `work_watch` row is written in
+   the same call, so it lands in `Needs → To check` and cannot be silently
+   forgotten. Migration 0040's rule: the flag travels with the write.
+3. **An edit surface for everything else** — title included — gated on "this work
+   has no review join yet", or accompanied by an explicit "this will move the
+   review link" confirmation.
+4. **Audit log**: who changed what, when, and the old value. This is the thing
+   that makes 3 safe rather than brave, and it is also what lets a bad bulk edit
+   be undone.
+
+⚠️ **`audiobook_catalog` needs the same treatment** and shares the identity and
+review store, so the audit-log table and the `work_key`-move rules should be
+designed once, across both — see `catalog-platform` / `PLATFORM.md` §2.2 on what
+may and may not cross the boundary. Noted in that repo's work log too.
+
+**Meanwhile, the zero-code unblock** (used twice tonight, ~3 taps): on the scan
+row press **Edit**, type the author, **Save and look up**, then **Add**. The
+lookup re-runs with the author and usually returns a close match at 1.00. For
+publisher-branded board books the catalog's existing convention is the publisher
+as the author — *Scholastic* on #141, *Bendon* on #137 — so that is a legitimate
+answer, not a placeholder.
+
 ### 🔨 Scanning session — 2026-08-13
 
 **The pull list is built and verified against production.** 14 books, grouped by
