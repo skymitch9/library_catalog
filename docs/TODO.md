@@ -469,13 +469,65 @@ touches the schema.
 9. **#174** author → **Parragon Books** — needs the authors-edit capability, so it lands with item 10.
 10. **Edit-any-detail + audit log** — the large one. Read its entry for the measured constraints before designing.
 
-#### ⛔ CANNOT be done without the owner — do not guess these
+#### 🔭 Watch `/queue` and finish what the automatic pass could not
 
-- **The 2nd B&N copy's barcode** on #341 — decides whether it is a second copy or a third edition. Everything else about #341 is ready and waiting on this one scan.
-- **Signed flags** — *Untapped* ×2, *Unmapped* ×2 (paperback + hardcover each), and flipping #238's existing hardcover. `copy.is_signed` is a person-only field by design.
-- **Whether 239–242 are signed** — all read `signed = 0`; one confirmed book is not evidence about four.
-- **Monster Empire #300** — same OL-aggregate bug as the deleted 301/302, left alive pending a word.
-- **Subtitles/photos** still needing the physical book — the pull-list items.
+Owner, 2026-08-13: *"while im sleeping can you watch the /queue and manually look
+up anything that didn't finish. if you cant find it i'll resolve it when i awake."*
+
+The details queue stood at **~190 works** when they went to bed. The automatic pass
+resolves what a source will answer; this job is the residue.
+
+**How to work it:**
+1. Read the queue, and group by *what* is missing — a batch of 40 board books all
+   missing a year is one research shape, not forty.
+2. Research from primary sources: the publisher's own site first, then retailers,
+   then Open Library / Google Books. ⚠️ The publisher's own page has been right and
+   the aggregators wrong repeatedly tonight — *The Wonderful World of Bizzy Bear*
+   is the publisher's series name and the volume numbers came off their page.
+3. Apply only what a source states. **Prefer the API or a script over the book
+   page** — per-field UI edits cost 5–10 tool calls each and land about half the
+   time.
+4. ⚠️ **What cannot be found is a result, not a failure.** Write it here with what
+   was tried, so the owner can settle it in seconds rather than repeat the search.
+   `docs/TODO.md` is already full of that pattern and it is the pattern that works.
+
+⚠️ **Do not fill a field to empty the queue.** A guessed year or an invented series
+makes the count go down and the catalog worse — and *nothing revisits these
+columns*, so a wrong value is permanent in a way a blank is not. The queue being
+non-empty in the morning is an acceptable outcome; a queue emptied with fiction is
+not.
+
+#### ✅ ALL FOUR OWNER-BLOCKED ITEMS CLEARED before bed — 2026-08-13
+
+The owner stayed up to answer them, so none of these are pending any more.
+
+| Was blocked on | Owner's answer | Done |
+|---|---|---|
+| #341 — 2nd B&N barcode: 2nd copy or 3rd edition? | *"A and C seem to be the same except C was an early bird thing. So lets say I have A and B to be safe"* | 2 editions (`…3457` dust jacket, `…4362` Target), **3 copies** — signed B&N, unsigned B&N, Target |
+| *Untapped* / *Unmapped* signed copies | already stated: paperbacks signed, hardcovers signed too | #34 and #33 each gained a **paperback + hardcover edition with a signed copy** |
+| #238 *Ritualist* hardcover signed | *"probably the one from that kickstarter, I don't own 2 copies of it signed"* | existing copy flipped to `is_signed = 1` — **not** a second copy |
+| Are 239–242 signed too? | **yes, all four** | *Regicide*, *Rexus*, *Raze*, *Ruthless* flipped — the whole Kickstarter set 1–5 now reads signed |
+| Monster Empire #300 | **delete it** | gone, with its 2 phantom editions and 2 phantom copies |
+
+⚠️ **Recorded because the conservative choice on #341 loses information on purpose.**
+Both B&N copies are filed as edition `9781638493457`. If the second one is really
+the `…4355` B&N-early-exclusive, the catalog understates how many *printings* are
+owned — which a barcode scan fixes later — whereas guessing `…4355` would assert a
+printing that may not be in the house. That was the owner's call and it is the
+recoverable direction.
+
+⚠️ **The copy form cannot express this case**, which is why the two editions were
+written with SQL: `Copies.tsx` deliberately **reuses an existing edition of the
+same format** (the comment cites an importer that made 83 duplicate editions), so
+"a second, different hardcover printing" is unsayable through the UI. `edition` and
+`copy` carry no derived columns — no `work_key`, no `primary_author` — so SQL is
+safe here in a way a `work` edit never is. **A cover-swap-style edition picker
+would remove the need.**
+
+#### ⛔ Still needs the physical book
+
+- **Subtitles and cover photos** on the pull-list items — the board books in the stack.
+- ⚠️ #341's **cover art is the Target edition's** (it carries an "only at Target" badge) while the record's primary edition is the dust-jacket one. Swap once the cover-swap feature exists.
 
 #### ⚠️ Two working notes for whoever picks this up
 
