@@ -429,6 +429,9 @@ records that it was attempted, which a tidy log does not.
 
 <!-- entries start here -->
 
+- `2026-08-13T06:55Z` **DONE** reviewed Fable's threshold report — verified both side findings against production. **One confirmed, one corrected.** See the section below.
+- `2026-08-13T06:55Z` **UNSOLVED (new, real)** ⚠️ `normaliseTitle` **strips Hangul entirely**, so every Korean book's `work_key` is author-only. Needs a migration; see below.
+
 - `2026-08-13T06:15Z` **DONE** deploy overlap guard — lock + ancestry check, both tested; `docs/deploys.log` seeded and un-ignored
 - `2026-08-13T06:15Z` **DONE** all four owner-blocked items (#341 editions, Krout signed copies, #238–242, #300 deleted)
 - `2026-08-13T06:15Z` **CLAIM** watch `/queue`, research the residue — see the section below
@@ -437,6 +440,62 @@ records that it was attempted, which a tidy log does not.
 - `2026-08-13T06:35Z` **DONE** ⚠️ RESOLVED the format question — owner's rule: *all board books are hardcover, since they are physically hard.* 10 editions moved paperback → hardcover; standing rule written into `docs/info/series-formats-and-audiobooks.md`
 - `2026-08-13T06:30Z` **~~UNSOLVED~~ superseded** format on those five editions — recorded as `paperback`, which is the app's own documented convention (*"a scanned book is recorded as a paperback until someone says otherwise"*). ⚠️ Four of the five are **board books**, so paperback is probably wrong; the catalog's other board books came from Open Library as `hardcover`. I did not assert a format I had not verified. Worth a sweep once the edition picker exists.
 - `2026-08-13T06:30Z` **CLAIM** Fable dispatched on (a) edit-any-detail + audit-log design, (b) re-measuring the matching thresholds — see FABLE5.md §7 for their side
+
+### ⚠️ Reviewing Fable's threshold report — one finding confirmed, one corrected
+
+Fable's measurement pass (`catalog-platform/docs/info/matching-thresholds.md`) ended
+with two side findings. Both were checked against production rather than taken on
+trust, which is the point of the gate running in both directions.
+
+#### ✅ CONFIRMED, and worse than a curiosity: `normaliseTitle` strips Hangul
+
+Fable reported *"Korean titles normalise to `""` — works #195/#305 share the empty
+key."* **The bug is real; the specific claim is wrong.** Measured:
+
+| work | title | `work_key` |
+|---|---|---|
+| #195 | 슈팅 스타 캐치! 티니핑: 약속 의 오로라핑 | `\|samg` |
+| #305 | 하츄핑의 눈물 | `\|samg entertainment` |
+
+They do **not** currently collide — the keys differ on the author half (`SAMG` vs
+`SAMG Entertainment`). What they share is an **empty title half**, and that is the
+actual defect: `normaliseTitle` removes every Hangul character, so a Korean book's
+key is its author and nothing else.
+
+⚠️ **Consequences, which are broader than one collision:**
+- **Two Korean books by the same author would collide completely** — same author
+  string, both titles empty. #195 and #305 escape only because the author is spelled
+  two different ways, which is itself a thing to fix and would *cause* the collision.
+- Korean titles can never be **matched by title** at all — so the ISBN is the only
+  handle, and `9791165384678` is not in Open Library.
+- ⚠️ It presumably applies to **any non-Latin script**, not just Hangul. Untested.
+
+**Fixing it moves stored keys, so it is a migration, not an edit** — `work_key` is
+the join to 860 audiobook reviews. It belongs with the edit-any-detail/audit-log
+design, which is already solving "how do we move a key safely". **Do not fix it
+piecemeal.**
+
+#### ❌ CORRECTED: #258's three hardcovers are right, not duplicates
+
+Fable flagged *"#258 carries 3 hardcover editions — edition-picker case in the wild
+or leftover dupes; needs a human eyeball."* It is **not** dupes:
+
+| edition | name |
+|---|---|
+| 359 | The Wizard variant cover |
+| 376 | The Witch variant cover |
+| 377 | The Wild One variant cover |
+
+*Worlds Beyond Number: The Wizard, The Witch, The Wild One* was published with
+**three variant covers**, and this catalog already recorded that deliberately — it is
+in the work log as "one book, three variant covers". Fable lacked that context, so
+the flag was reasonable; the answer is that the data is correct.
+
+⚠️ **But its instinct was right for the other half:** this is a **real instance of
+the edition-picker case already in production** — three editions of one format on one
+work, which `Copies.tsx` cannot express. It is the second known case after #341, and
+it strengthens `FABLE5.md` §4.2a. ⚠️ Note #258 is still **pre-ordered, 0 held**, so
+whoever builds the picker gets a test case that must not be mistaken for owned.
 
 ### ⚠️ THE SCANNING IS NOT FINISHED — more books arrive tomorrow
 
