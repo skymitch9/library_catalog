@@ -1,7 +1,9 @@
 # library_catalog — work log
 
 > **Audience:** Claude sessions first, the user second. **Status:** TRACKED.
-> Last verified: **2026-08-11 late**, against production.
+> Last verified: **2026-08-12 late**, against production — the audio-series
+> confirmation (migration 0110) and the gaps-chip removal were both read back
+> from the live site, not assumed. Live version `d441ecd1`.
 >
 > ⚠️ **Keeping this current is a standing instruction, not a courtesy.** Every
 > ask goes in the moment it is made. The user relies on this file as the record,
@@ -192,6 +194,47 @@ feature to anyone who has not seen it removed twice.
   15 on the way · 34 read** — no gaps chip.
 - `/series?gaps=1` still works as a deep link: 26 of 81 series, the gaps-only
   filter active with its "Clear" button. The page survived; only the way in went.
+
+### 💤 Gap info on the BOOK page — considered, recommended against, 2026-08-12
+
+Raised by Claude as the other half of the removal above and then argued out of:
+should `WorkPage` show the series' gap summary inline, so clicking a book answers
+"what am I missing" without the hop to `/series/:name`? The owner asked *"what do
+you think"*; the answer was **no**, and this records why so it is not proposed a
+fourth time.
+
+**Measured against production 2026-08-12: 37 of 259 works — 14% — are in a series
+with anything genuinely missing.** The other 86% would carry a line saying nothing
+actionable, or worse the words *"nothing here is missing"*, which is a sentence
+about the absence of a problem.
+
+Two rules already in the code say not to:
+
+- `SeriesDetailPage` suppresses the media chips when every held rung agrees,
+  because a label on the majority "is a label nobody reads".
+- `WorkPage`'s own universe tag: *"Nothing is rendered when there is none, and
+  that is the whole rule… a dash, an 'unknown' or a quiet badge would turn the
+  majority of the shelf into a worklist."*
+
+⚠️ And the pattern: **a count of what you lack has now been removed from a
+what-you-have screen twice** — the top-bar Series button, then the stat chip. A
+gap line on the book page is the same idea a third time, one level down. The
+series tag already carries the signal ("Legion **1**" says there is a series and
+where this sits), and one click from the book is where the question is actually
+asked.
+
+**If it is ever revisited, the only shape worth building** is a count on the
+series tag itself, drawn only when non-zero — `Legion 1 · 1 missing` — the same
+minority-only rule as `wanted` and `preordered` on the stat strip. ~37 books would
+show it; 222 would not.
+
+⚠️⚠️ **And it MUST be `certainGaps + attestedGaps`, never `gaps.length`.** The
+naive version reintroduces the exact bug migration 0110 was built to remove: with
+`gaps.length` every *Arcane Pathfinder* book reads "4 missing", four books that
+are in the house. That would be the **third** surface carrying this rule, and
+§1.4a plus the `Holdings` header each record a bug caused by two screens
+disagreeing about which books they were counting. Reuse the number the series page
+prints; do not recompute it.
 
 ### ✅ 870 review keys backfilled — 2026-08-12
 
