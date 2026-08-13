@@ -23,20 +23,22 @@
 
 ## Production right now
 
-Measured **2026-08-12**, live version `8c8b4e76`:
+Measured **2026-08-12**, live version `a06b2ead`:
 
 | works | editions | owned copies | preordered | audio rungs | series_volume |
 |---|---|---|---|---|---|
 | **258** | 288 | **152** | **12** | 134 | 147 |
 
 Movement since the crowdfunding rescan landed: works 233 → 258, owned copies
-117 → 152. Audio corroboration: **17 series confident, 2 hedged**.
+117 → 152. Audio corroboration: **17 series confident, 2 hedged** — and the 2 are
+now confirmable by hand, see below. Of the 70 live `audiobook_holding` rows,
+**all 70 are `exact`**; zero rest on containment.
 
-### 🔨 "You might own this on audio" — let the owner confirm it, 2026-08-12
+### 🚢 "You might own this on audio" — the owner can confirm it, 2026-08-12
 
-**Code is written, typechecked and driven end-to-end against a local database.
-⏸️ Waiting on the user for the production migration and deploy** — see the two
-commands at the bottom of this section.
+**Shipped.** Commit `3d892d9`, migration 0110 applied to production, live version
+`a06b2ead`. ⏳ **One manual step remains and it is the point of the feature:**
+press the button on the two series pages — see the bottom of this section.
 
 **The ask, in the user's words:** *"can we check the series gap, some of them say
 you might own this on audio, its been right everytime i checked. I want it to
@@ -106,20 +108,29 @@ fixture seeded as `fold`, and the Worker driven through the whole flow:
 `npm test` 313 pass (2 new), `npm run typecheck` clean across all 7 workspaces,
 `npm run build` clean.
 
-**⏸️ Pending — the user must run these, in this order**
+**✅ Run against production 2026-08-12** — `npm run db:migrate` (0110, schema
+only, additive), then `npm run deploy`. Smoke-tested after: `/api/health` reports
+`database: up`, `audiobook_series_link` exists in production, and all three
+`/audio-link` routes answer 401 unauthenticated as they should.
 
-```bash
-# 1. Schema only. No data in this one.
-npm run db:migrate                 # applies 0110 to PRODUCTION
+**⏳ Left to do, and it is deliberately manual — press the button**
 
-# 2. Then the code. ⚠️ Migrate first — new code must never meet an old schema.
-npm run deploy
-```
+Open each and press **"Same series — I own these"**:
 
-Then open `/series/Legion` and `/series/Arcane Pathfinder`, press **"Same series —
-I own these"** on each, and the 5 rungs stop being counted as missing. Nothing is
-confirmed automatically: the button is the whole point, since the owner is the
-evidence.
+| Page | What it settles |
+|---|---|
+| `library.heygabi.ai/series/Legion` | rung 4, the omnibus |
+| `library.heygabi.ai/series/Arcane%20Pathfinder` | rungs 1, 2, 3, 4 |
+
+⚠️ **Nothing is confirmed automatically and nothing should be.** The owner IS the
+evidence here — a migration that pre-confirmed these two would be the app asserting
+a mapping on its own authority, which is the thing `'fold'` exists to refuse. The
+panel prints both spellings side by side so the click is an actual look, not a
+formality.
+
+Afterwards the sentence on each page loses its *"N possibly on audio"* clause and
+those rungs stop being counted as missing. **"Take that back"** on the same panel
+undoes it.
 
 ### ✅ 870 review keys backfilled — 2026-08-12
 
