@@ -522,6 +522,14 @@ records that it was attempted, which a tidy log does not.
 
 <!-- entries start here -->
 
+- `2026-08-13T19:41Z` **DEPLOYED** ✅ **Version `dded6f29`** — the illustrator credit and the book number are live. Health green, **347 tests pass**, typecheck clean.
+  **Illustrator** renders as *"Illustrated by Shannon Hays"* directly under the byline — same serif, smaller and muted so the author stays primary — and a null renders **nothing at all**. Editable from **About → Edit**, deliberately **not** from the ceremony panel: putting a Free field behind the key-move UI would mislabel it as dangerous.
+  ⚠️ **The one rule held with ZERO route changes**, which is the good kind of outcome: an illustrator-only PATCH computes `newKey === oldKey`, so the plain path takes it and **the ceremony never fires**. A new core test pins **`workKeyFor.length === 2`** as a tripwire — a literal guard against anyone widening the signature to include the illustrator.
+  **Book number** sits above the title: monospace, muted, `#269`. Built as `<code role="button">` rather than `<button>` ⚠️ **because button text is unselectable in several browsers**, which would defeat the entire purpose — the number exists to be quoted. `user-select: all` makes one tap grab the whole token; a click copies it.
+  **Placement to revisit if wrong:** the id went **above** the title rather than in a corner, because a corner chip collides with title wrap on phones. Five lines of CSS if the owner pictured a floating corner.
+  ⚠️ **Not browser-verified:** the rendering and the copy tap were checked by typecheck and build only. **One attended look at production #269 settles both** — and #269 is the ideal page for it, being the one book carrying an author, an illustrator, a publisher and an ISBN in four separate homes.
+  Production #53 was checked and is **intact** — the agent's probe misstep that cleared a `series` was local-D1 only, as it reported.
+
 - `2026-08-13T19:00Z` ⚠️ **POST-MORTEM: the session limit was hit and the usage check did not stop it. My failure, and the rule had a real hole.**
   **What happened:** a read was taken at **55%**. Immediately after it I dispatched the rescan agent, which cost **279k tokens**, then dispatched a second agent, and **took no further read**. The limit was hit mid-build and killed the illustrator/book-number agent.
   ⚠️ **Every sentence of the existing rule was followed and the run still died.** "Pulse-check whenever anything is running" names **no moment**, so it is satisfiable by a read taken *before* the expensive thing — which measures the one interval guaranteed to contain none of the spend. The global rule already warned that *"a subagent's cost is invisible until it lands"* and that *"the granularity of risk is one agent, not one tool call"*; what it lacked was a required read at the moment the cost becomes knowable.
