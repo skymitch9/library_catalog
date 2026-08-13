@@ -314,7 +314,23 @@ export const catalogRoutes = new Hono<AppBindings>()
    * This is deliberately a **dead end rather than a locked door**: renaming a
    * work is a real need (see `docs/info/edit-and-audit-design.md`), and the
    * feature that grants it must arrive with the review-carry ceremony attached.
-   * When it does, it opens its own guarded path — it does not relax this one.
+   *
+   * ⚠️ **When it does, REPLACE this block — do not add an endpoint beside it.**
+   * The design routes the ceremony through *this same* PATCH, carrying a
+   * `keyMove` payload, so this `400 frozen_field` becomes the
+   * `409 key_move_requires_check` branch **in place**. An earlier draft of this
+   * comment said the feature "opens its own guarded path", which reads as
+   * *build a second route* — corrected after review, because two routes able to
+   * write `title` would mean two places to keep the review-carry rule, and this
+   * file's whole point is that there is one.
+   *
+   * ⚠️ Do **not** copy this pattern onto `PATCH /editions/:id` for `isbn13`.
+   * Measured during review: `Editions.tsx`'s form sends `isbn13`/`isbn10`/`asin`
+   * on **every** save, changed or not, so a presence check there would refuse
+   * every edition edit in the app. Freezing edition identifiers has to arrive in
+   * the same commit that makes that form delta-only. The risk asymmetry allows
+   * the wait: a wrong ISBN is one visible, UNIQUE-guarded row, while a moved
+   * `work_key` silently orphans ~870 reviews.
    */
   .patch('/works/:id', requireCapability('editCatalog'), async (c) => {
     const id = Number(c.req.param('id'));
