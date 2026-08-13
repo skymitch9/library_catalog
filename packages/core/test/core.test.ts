@@ -27,7 +27,9 @@ import {
 } from '../src/titles.ts';
 import {
   buildWorkIndex,
+  foldSeriesNames,
   foldVolumeMarker,
+  isBareSeriesTitle,
   matchIndexedWork,
   titleSimilarity,
 } from '../src/matching.ts';
@@ -1977,6 +1979,57 @@ describe('matching — a numbered volume prefers a numbered row', () => {
     assert.equal(foldVolumeMarker('space knight volume 5'), 'space knight 5');
     // "The Book Thief" keeps its "book" — nothing numeric follows it.
     assert.equal(foldVolumeMarker('book thief'), 'book thief');
+  });
+});
+
+describe('matching — the bare-series-name rule, tier 2 (review-only)', () => {
+  /*
+   * The 2026-08-13 incident in miniature: *Space Knight* and *Tamer* are series
+   * names, and Open Library answered scanned barcodes with records titled with
+   * the bare name. Tier 1 (the aggregate refusal in @lc/isbn) catches the
+   * multi-ISBN and /works/ shapes; this predicate is tier 2, marking the
+   * single-record shape for a person's eye — never refusing, because 18 of 341
+   * real works ARE legitimately titled with a series name (volume 1s, picture
+   * books like Bizzy Bear).
+   */
+  const seriesKeys = foldSeriesNames([
+    'Space Knight',
+    'Tamer: King of Dinosaurs',
+    'Bizzy Bear',
+    'The Wandering Inn',
+  ]);
+
+  it('flags a bare series name with no volume number', () => {
+    assert.equal(isBareSeriesTitle('Space Knight', seriesKeys), true);
+    // Folded like everything else: punctuation and case cannot dodge it.
+    assert.equal(isBareSeriesTitle('TAMER: King of Dinosaurs', seriesKeys), true);
+  });
+
+  it('does not flag a title carrying a volume number — that names one book', () => {
+    assert.equal(isBareSeriesTitle('Space Knight Book 3', seriesKeys), false);
+    assert.equal(isBareSeriesTitle('Tamer: King of Dinosaurs 7', seriesKeys), false);
+  });
+
+  it('does not flag a title that is not a known series name', () => {
+    assert.equal(isBareSeriesTitle('The Book Thief', seriesKeys), false);
+    assert.equal(isBareSeriesTitle('Oathbound Healer', seriesKeys), false);
+  });
+
+  it('still flags the legitimate volume-1 shape — review-only means a person decides', () => {
+    // The Wandering Inn book 1 is titled exactly "The Wandering Inn". The flag
+    // is CORRECT there too: the row says "check", the person says "it really is
+    // called that", one tap. This test pins the review-only stance — if someone
+    // "fixes" the predicate to skip such titles, the Space Knight shape walks
+    // straight back in wearing volume 1's clothes.
+    assert.equal(isBareSeriesTitle('The Wandering Inn', seriesKeys), true);
+  });
+
+  it('folds out blanks and near-empty names rather than matching everything', () => {
+    const keys = foldSeriesNames(['', '  ', '한국어']);
+    // Non-Latin folds to "" (the known CJK gap) — must not become a key that
+    // flags every unparseable title.
+    assert.equal(keys.size, 0);
+    assert.equal(isBareSeriesTitle('', seriesKeys), false);
   });
 });
 

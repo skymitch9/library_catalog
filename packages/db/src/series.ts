@@ -1124,3 +1124,31 @@ export async function recordSeriesCheck(
     .bind(series, source, outcome, volumesSeen)
     .run();
 }
+
+/**
+ * Every series name this catalog knows, from all three places one lives:
+ * `work.series`, `series_volume.series`, `series_check.series`.
+ *
+ * This union is named by the bare-series-name rule (tier 2 of
+ * `catalog-platform/docs/info/matching-thresholds.md` section 6): a scan or
+ * lookup candidate titled with one of these names and carrying no volume
+ * number is review-only, because it may be an Open Library work-level
+ * aggregate wearing the series name as a title -- the shape that minted the
+ * phantom Space Knight (6 editions, 6 copies) on 2026-08-13.
+ *
+ * Returned as the curated spellings; fold them with `foldSeriesNames` in
+ * `@lc/core` -- folding here would be a second normalisation rule living in
+ * SQL, which is the drift the matcher's header bans.
+ */
+export async function listKnownSeriesNames(db: D1Database): Promise<string[]> {
+  const res = await db
+    .prepare(
+      `SELECT series FROM work WHERE series IS NOT NULL AND series <> ''
+       UNION
+       SELECT series FROM series_volume WHERE series IS NOT NULL AND series <> ''
+       UNION
+       SELECT series FROM series_check WHERE series IS NOT NULL AND series <> ''`,
+    )
+    .all<{ series: string }>();
+  return (res.results ?? []).map((r) => r.series);
+}

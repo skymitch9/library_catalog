@@ -5,7 +5,9 @@ import {
   blankLine,
   buildWorkIndex,
   classifyScannedCode,
+  foldSeriesNames,
   hasPendingLookups,
+  isBareSeriesTitle,
   matchIndexedWork,
   needsLookup,
   normaliseTitle,
@@ -26,6 +28,7 @@ import {
   findWorkByKey,
   getScanJob,
   getWork,
+  listKnownSeriesNames,
   listScanJobs,
   listWorkAliases,
   listWorksForMatching,
@@ -426,6 +429,35 @@ async function overlapsFor(
   return index.get(workId) ?? [];
 }
 
+/**
+ * Tier 2 of the bare-series-name rule — review-only, never silent, never a
+ * refusal (`catalog-platform/docs/info/matching-thresholds.md` §6).
+ *
+ * A resolved title that equals a known series name and carries no volume
+ * number is the signature of an Open Library record wearing the series name
+ * as a title — the shape that minted the phantom *Space Knight* (six scanned
+ * volumes absorbed as six editions and six copies of a book that does not
+ * exist) on 2026-08-13. It may also, legitimately, be volume 1 or a picture
+ * book: 18 of 341 real works are titled exactly this way, which is why this
+ * warns on the row instead of refusing the candidate. A person can say
+ * "it really is called that" in one tap; a phantom they were never warned
+ * about costs an evening of SQL.
+ *
+ * Applied wherever a line gains a resolution — the barcode ladder, the
+ * automatic pass, the manual re-lookup — and only to `found` lines: an
+ * `owned` barcode line matched a real edition by identifier, and a typed
+ * title is a person asserting, not a database answering.
+ */
+function warnBareSeries(line: ScanLine, seriesKeys: ReadonlySet<string>): ScanLine {
+  if (line.state !== 'found' || !line.resolvedTitle) return line;
+  if (!isBareSeriesTitle(line.resolvedTitle, seriesKeys)) return line;
+  const warning =
+    'That title is a bare series name in this catalog, with no volume number. The database ' +
+    'may have answered for the whole series rather than this book — check which volume this ' +
+    'is (or that it really is titled with the series name) before adding.';
+  return { ...line, detail: line.detail ? `${warning} ${line.detail}` : warning };
+}
+
 /** The "we already have this" half of a line, named so both producers share it. */
 async function ownedBy(env: Env, workId: number): Promise<Partial<ScanLine>> {
   const work = await getWork(env.DB, workId);
@@ -627,8 +659,10 @@ async function runLookupPass(env: Env, jobId: number): Promise<void> {
 
     // One read for the whole chunk, and none at all while nobody has recorded a
     // `contains` — see `overlapsFor`. Loaded after the slow part so it reflects a
-    // relation added while Open Library was being waited on.
+    // relation added while Open Library was being waited on. The series names
+    // ride the same read-once-per-chunk pattern for the same reason.
     const containments = await loadContainmentIndex(env.DB);
+    const seriesKeys = foldSeriesNames(await listKnownSeriesNames(env.DB));
 
     const lines = [...fresh.lines];
     for (const { i, before, after } of results) {
@@ -638,11 +672,14 @@ async function runLookupPass(env: Env, jobId: number): Promise<void> {
       // the person pressing the button themselves. Their answer wins.
       if (!needsLookup(current)) continue;
       if (current.text !== before.text || current.author !== before.author) continue;
-      lines[i] = {
-        ...after,
-        position: current.position,
-        overlap: await overlapsFor(env, after, containments),
-      };
+      lines[i] = warnBareSeries(
+        {
+          ...after,
+          position: current.position,
+          overlap: await overlapsFor(env, after, containments),
+        },
+        seriesKeys,
+      );
     }
 
     const more = hasPendingLookups(lines);
@@ -746,11 +783,15 @@ export const scanJobRoutes = new Hono<AppBindings>()
     // ⚠️ After the ladder, not inside it. `resolveBarcode` has six exits — an
     // owned edition, a price add-on, a SKU, an ASIN, a miss, a hit — and only
     // some of them name a work. Asking once, here, is the difference between one
-    // rule and six chances to forget it.
-    lines[index] = {
-      ...resolved,
-      overlap: await overlapsFor(c.env, resolved, await loadContainmentIndex(c.env.DB)),
-    };
+    // rule and six chances to forget it. `warnBareSeries` sits here for the
+    // same reason — one rule, applied where the resolution lands.
+    lines[index] = warnBareSeries(
+      {
+        ...resolved,
+        overlap: await overlapsFor(c.env, resolved, await loadContainmentIndex(c.env.DB)),
+      },
+      foldSeriesNames(await listKnownSeriesNames(c.env.DB)),
+    );
 
     const updated = await updateScanJob(c.env.DB, job.id, { lines: renumber(lines), status: 'review' });
     return c.json({ job: updated ?? job, index, line: lines[index], duplicate: false }, 201);
@@ -851,11 +892,15 @@ export const scanJobRoutes = new Hono<AppBindings>()
 
     const found = await lookupLine(line, query);
     // A new answer is a new work, so the overlap is re-asked rather than carried
-    // over — `unresolve` has already cleared the old one.
-    const resolved: ScanLine = {
-      ...found,
-      overlap: await overlapsFor(c.env, found, await loadContainmentIndex(c.env.DB)),
-    };
+    // over — `unresolve` has already cleared the old one. The bare-series check
+    // re-runs too: the corrected query may have resolved to a different record.
+    const resolved: ScanLine = warnBareSeries(
+      {
+        ...found,
+        overlap: await overlapsFor(c.env, found, await loadContainmentIndex(c.env.DB)),
+      },
+      foldSeriesNames(await listKnownSeriesNames(c.env.DB)),
+    );
     const lines = [...job.lines];
     lines[idx] = resolved;
     const updated = await updateScanJob(c.env.DB, id, { lines });
@@ -996,15 +1041,20 @@ async function readPhoto(c: any, kind: 'shelf' | 'cover') {
    * folded once — see `buildWorkIndex`, which exists so nobody writes a
    * second, faster, subtly different matcher when the loop starts to hurt.
    */
-  const [works, aliases, containments] = await Promise.all([
+  const [works, aliases, containments, seriesNames] = await Promise.all([
     listWorksForMatching(c.env.DB),
     listWorkAliases(c.env.DB),
     // Third read of the photo's three, and it answers every line at once. A
     // shelf is where the overlap warning earns its keep — twelve books go past
     // and one of them is already inside an omnibus upstairs.
     loadContainmentIndex(c.env.DB),
+    // Fourth read: the bare-series-name tier-2 check (see `warnBareSeries`).
+    // A spine routinely prints ONLY the series name, so a shelf photo is where
+    // a series-titled match is likeliest to be the wrong volume.
+    listKnownSeriesNames(c.env.DB),
   ]);
   const index = buildWorkIndex(works, aliases);
+  const seriesKeys = foldSeriesNames(seriesNames);
 
   const lines: ScanLine[] = reading.books.map((book, i) => {
     const line = blankLine(i + 1, 'spine', book.text);
@@ -1025,9 +1075,14 @@ async function readPhoto(c: any, kind: 'shelf' | 'cover') {
         overlap: containments.get(match.work.id) ?? [],
         // A title-only match on a spine that showed no author is the shape
         // that files a genuinely new book under "already yours", where it is
-        // lost rather than merely wrong. Say so on the row.
-        detail:
-          match.authorSimilarity === null && match.via !== 'exact'
+        // lost rather than merely wrong. Say so on the row. A spine that read
+        // as a bare series name is the other say-so: it matched *a* work
+        // carrying that name, but the spine alone cannot say which volume is
+        // on the shelf (tier 2 of the bare-series-name rule — review-only).
+        detail: isBareSeriesTitle(book.text, seriesKeys)
+          ? 'The spine read as a bare series name — this matched one work, but it may be a ' +
+            'different volume of the same series. Check this one.'
+          : match.authorSimilarity === null && match.via !== 'exact'
             ? 'Matched on the title alone — the spine showed no author. Check this one.'
             : null,
       };

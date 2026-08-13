@@ -491,6 +491,49 @@ export function matchIndexedWork<T extends MatchableWork>(
 }
 
 /**
+ * The known series names, folded once for membership tests. Feed it the union
+ * the rule names: `work.series` ∪ `series_volume.series` ∪ `series_check.series`
+ * (`listKnownSeriesNames` in `@lc/db` is that query). Same `normaliseTitle` as
+ * everything else — a second fold here is the drift this file's header bans.
+ */
+export function foldSeriesNames(names: readonly string[]): Set<string> {
+  const keys = new Set<string>();
+  for (const name of names) {
+    const key = normaliseTitle(name);
+    if (key.length >= 2) keys.add(key);
+  }
+  return keys;
+}
+
+/**
+ * Tier 2 of the bare-series-name rule — `catalog-platform/docs/info/
+ * matching-thresholds.md` §6: a candidate whose normalised title equals a
+ * known series name and carries no volume marker/number is **review-only,
+ * never auto-ticked, never refused**.
+ *
+ * Why review-only rather than a refusal: **18 of 341** real works are
+ * legitimately titled with a bare series name (volume 1s — *The Wandering
+ * Inn*, *Dungeon Crawler Carl*; picture books — *Bizzy Bear*). It may be
+ * volume 1; a person can say so in one tap. And why not silence: the
+ * 2026-08-13 phantom works (#300–#302) all wore exactly this title shape —
+ * an Open Library record titled bare *Space Knight* absorbed six scanned
+ * volumes as six editions and six copies of a book that does not exist.
+ *
+ * "Carries no volume number" is a digit test on the folded key, mechanically:
+ * `normaliseTitle`'s alphabet is [a-z0-9 ], so any digit that survives the
+ * fold is a volume-ish number ("Dungeon Crawler Carl 2"), and a marker word
+ * with no number ("The Book Thief") deliberately does not count — same
+ * stance as `foldVolumeMarker`, which only folds a marker *followed by* a
+ * number.
+ */
+export function isBareSeriesTitle(title: string, seriesKeys: ReadonlySet<string>): boolean {
+  const key = normaliseTitle(title);
+  if (key.length < 2) return false;
+  if (!seriesKeys.has(key)) return false;
+  return !/\d/.test(key);
+}
+
+/**
  * True when a match was made without an author to check it against.
  *
  * Not an error — plenty of legitimate reads have no author — but the one thing
