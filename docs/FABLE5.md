@@ -408,3 +408,5 @@ they are the reason the rule is written the way it is:
 figure when reporting.** ⚠️ And note that Fable being on a separate allowance makes
 its work *cheap on the main pool, not free* — the dispatcher still pays for the
 prompts it sends and the reports it reads.
+
+[2026-08-13T21:05-07:00] CLAIM  Index §7 step 4 (library half) — library pusher to index.heygabi.ai. Plan: `packages/db/src/index-projection.ts` (explicit allow-list, raw title/authors — NO fold code here, sentinel `?unknown` pushed raw so the index's creator-side refusal gets real exercise), `apps/worker/src/lib/index-push.ts` ported from the games pusher (after-mutation waitUntil + staleness backstop — ⚠️ this Worker has NO cron, backstop needs an honest non-cron home), env INDEX_URL (commented in [vars]) + INDEX_PUSH_TOKEN secret read, fail-soft when unset. Verify: local push probe against the real index Worker, 393 tests, typecheck. NOT deploying, NOT setting secrets — dispatcher's step. Surface excludes middleware/auth.ts and estate files (shadow work just landed).
