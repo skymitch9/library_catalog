@@ -2225,6 +2225,81 @@ describe('matching — a numbered volume prefers a numbered row', () => {
   });
 });
 
+describe('matching — ambiguous-fold disambiguation by series volume (Space Knight)', () => {
+  /*
+   * The real shape, measured 2026-08-14: works #249 "Space Knight Book 1" and
+   * #250 "Space Knight Book 2" both refused to match anything. The audiobook
+   * catalog's OWN title-cleaning strips the series+volume suffix down to bare
+   * "Space Knight" for both its volume-1 and volume-2 rows — so both rows
+   * fold to the identical titleKey with ZERO digits left in it, and
+   * `numbersAgree` correctly rejects a containment match against either (0
+   * numbers vs 1). The volume number survives outside the title text though,
+   * in `series_index_sort` / `MatchableWork.seriesIndex`, and that is the one
+   * thing `disambiguateByVolume` is allowed to use to tell the two rows apart.
+   */
+  const spaceKnight = [
+    { id: 1, title: 'Space Knight', authors: 'Michael-scott Earle', seriesIndex: 1 },
+    { id: 2, title: 'Space Knight', authors: 'Michael-scott Earle', seriesIndex: 2 },
+  ];
+  const index = buildWorkIndex(spaceKnight);
+
+  it('reaches volume 1 when our own series_index_sort says 1', () => {
+    const m = matchIndexedWork(index, 'Space Knight Book 1', 'Michael-scott Earle', 1);
+    assert.equal(m?.work.id, 1);
+    assert.equal(m?.via, 'containment');
+  });
+
+  it('reaches volume 2 when our own series_index_sort says 2 — not the same row as volume 1', () => {
+    const m = matchIndexedWork(index, 'Space Knight Book 2', 'Michael-scott Earle', 2);
+    assert.equal(m?.work.id, 2);
+    assert.equal(m?.via, 'containment');
+  });
+
+  it('refuses when our side states no volume — the ambiguity is real and must not be guessed', () => {
+    assert.equal(matchIndexedWork(index, 'Space Knight Book 1', 'Michael-scott Earle'), null);
+  });
+
+  it('refuses when our volume has no counterpart on the other side', () => {
+    assert.equal(matchIndexedWork(index, 'Space Knight Book 3', 'Michael-scott Earle', 3), null);
+  });
+
+  it('the exact tier disambiguates the same way when our own title IS the bare fold', () => {
+    // A work legitimately titled with a bare series name (volume 1s are
+    // ordinary — see `isBareSeriesTitle`'s header) hits the EXACT tier
+    // directly rather than containment, and the same volume rule applies
+    // there: `exactCandidates.length > 1` is the identical ambiguous-fold
+    // shape, just one step earlier in the function.
+    const m = matchIndexedWork(index, 'Space Knight', 'Michael-scott Earle', 1);
+    assert.equal(m?.work.id, 1);
+    assert.equal(m?.via, 'exact');
+  });
+
+  it('refuses the bare series name with no volume stated — still ambiguous, still refused', () => {
+    assert.equal(matchIndexedWork(index, 'Space Knight', 'Michael-scott Earle'), null);
+  });
+
+  it('a non-ambiguous bare title is unaffected — the Tamer/Oathbound Healer protections still hold', () => {
+    // Only one row folds to "oathbound healer" here, so `titleKeyCounts` is 1
+    // and pass 2 never engages: this must behave exactly as the existing
+    // "still allows containment where only decoration differs" test above.
+    const mixed = buildWorkIndex([
+      { id: 9, title: 'Oathbound Healer', authors: 'Actus', seriesIndex: null },
+    ]);
+    const m = matchIndexedWork(mixed, 'Oathbound Healer - MM', 'Actus');
+    assert.equal(m?.work.id, 9);
+    assert.equal(m?.via, 'containment');
+  });
+
+  it('does not let volume disambiguation override the author gate', () => {
+    // Same ambiguous pair, wrong author entirely — must still refuse even
+    // though the volume number would otherwise resolve cleanly.
+    assert.equal(
+      matchIndexedWork(index, 'Space Knight Book 1', 'A Completely Different Author', 1),
+      null,
+    );
+  });
+});
+
 describe('matching — the bare-series-name rule, tier 2 (review-only)', () => {
   /*
    * The 2026-08-13 incident in miniature: *Space Knight* and *Tamer* are series

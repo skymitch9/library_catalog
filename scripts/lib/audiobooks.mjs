@@ -86,6 +86,12 @@ export function loadAudiobooks() {
         authors: (r[at.author] ?? '').trim(),
         series,
         seriesIndexSort: parseVolumeNumber(r[at.series_index_sort] ?? ''),
+        // Same value, under the field name `MatchableWork` reads (see
+        // matching.ts). Kept as a second field rather than a rename so every
+        // existing `.seriesIndexSort` reader here stays untouched — this one
+        // exists solely so `buildWorkIndex` can see it for ambiguous-fold
+        // disambiguation (the Space Knight case).
+        seriesIndex: parseVolumeNumber(r[at.series_index_sort] ?? ''),
         seriesIndexDisplay: (r[at.series_index_display] ?? '').trim() || null,
         coverHref: (r[at.cover_href] ?? '').trim() || null,
         year: (r[at.year] ?? '').trim() || null,
@@ -110,8 +116,15 @@ export function loadAudiobooks() {
 export function audiobookIndex(rows) {
   const index = buildWorkIndex(rows);
   return {
-    lookup(title, authors) {
-      const m = matchIndexedWork(index, title, authors);
+    /**
+     * `seriesIndex` is OUR side's volume number (`work.series_index_sort`),
+     * optional and only ever consulted when the fold is already ambiguous —
+     * see `disambiguateByVolume` in matching.ts and the Space Knight case it
+     * documents. Omitting it just means an ambiguous fold refuses, same as
+     * before this parameter existed.
+     */
+    lookup(title, authors, seriesIndex) {
+      const m = matchIndexedWork(index, title, authors, seriesIndex);
       return m ? { row: m.work, via: m.via, similarity: m.titleSimilarity } : null;
     },
   };

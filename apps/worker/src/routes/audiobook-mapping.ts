@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { editionMedium } from '@lc/core';
+import { editionMedium, normaliseTitle } from '@lc/core';
 import type { AppBindings } from '../env.js';
 
 /**
@@ -37,6 +37,25 @@ import type { AppBindings } from '../env.js';
  * `work.title`: the audiobook pipeline's join has to compare against its OWN
  * strings, and the two titles are documented to differ (`OtherVersions.tsx`'s
  * `seriesDiffers` note is the series-column version of the same fact).
+ *
+ * ⚠️ **`foldedTitle` was added 2026-08-14.** A byte-exact join on
+ * `audiobookTitle` alone reached only 37 of ~90 mapped pairs: the cached
+ * title and the audiobook catalog's live title drift in DECORATION (case, a
+ * curly quote, "&" vs "and") without becoming a different book, and an exact
+ * string test cannot tell that apart from an actual rename. `foldedTitle` is
+ * `normaliseTitle(audiobookTitle)` — the SAME identity fold `work_key` and
+ * every other cross-catalog join in this estate already trusts — computed
+ * once, HERE, so the audiobook pipeline (Python) only ever compares strings
+ * and never re-derives the fold with a second implementation (see
+ * `titles.ts`'s header on why a second fold is how this estate's bugs start).
+ *
+ * A `foldedTitle` of `null` is not "unfoldable" — `normaliseTitle` never
+ * fails — it is a **collision tombstone**: two DIFFERENT holdings folded to
+ * the identical key (see the collision handling below `formatLabelsFor`).
+ * Rather than hand out an ambiguous key and let either side guess which row
+ * it means, both rows withhold `foldedTitle` and fall back to their own
+ * exact `audiobookTitle` — the pre-2026-08-14 behaviour, for those two rows
+ * only.
  *
  * ⚠️ **Stale holdings are excluded.** `stale_at IS NOT NULL` means the
  * audiobook catalog no longer confirms this match — the title cached here may
@@ -126,11 +145,38 @@ export const audiobookMappingRoutes = new Hono<AppBindings>()
         ORDER BY w.id`,
     ).all<MappingRow>();
 
-    const rows = results.map((r) => ({
-      workId: r.workId,
-      audiobookTitle: r.audiobookTitle,
-      formats: formatLabelsFor((r.rawFormats ?? '').split(',').filter(Boolean)),
-    }));
+    // How many LIVE rows fold to each key. A count of 1 is the ordinary case
+    // — that row's `foldedTitle` is unambiguous and goes out as-is. A count
+    // of 2+ is a genuine collision: two different holdings whose titles are
+    // indistinguishable once decoration is folded away. See the header above
+    // for why the answer is "withhold both", never "pick one".
+    const foldCounts = new Map<string, number>();
+    for (const r of results) {
+      const key = normaliseTitle(r.audiobookTitle);
+      foldCounts.set(key, (foldCounts.get(key) ?? 0) + 1);
+    }
+
+    const collisions = [...foldCounts].filter(([, n]) => n > 1);
+    if (collisions.length > 0) {
+      // One log line, read via `wrangler tail` — never thrown, since a
+      // collision degrades two rows to exact-match, it does not stall the
+      // route. See routes/ingest.ts's failure-posture precedent.
+      console.log(
+        `[audiobook-mapping] ${collisions.length} folded-title collision(s), ` +
+          `withholding foldedTitle: ${collisions.map(([key, n]) => `"${key}" (${n})`).join(', ')}`,
+      );
+    }
+
+    const rows = results.map((r) => {
+      const key = normaliseTitle(r.audiobookTitle);
+      const ambiguous = (foldCounts.get(key) ?? 0) > 1;
+      return {
+        workId: r.workId,
+        audiobookTitle: r.audiobookTitle,
+        foldedTitle: ambiguous ? null : key,
+        formats: formatLabelsFor((r.rawFormats ?? '').split(',').filter(Boolean)),
+      };
+    });
 
     return c.json({ rows, generatedAt: new Date().toISOString() });
   });

@@ -177,8 +177,14 @@ function attempts(w) {
 
 for (const w of works) {
   let best = null;
+  // Our own volume number, when we have one — see `attempts` above for why
+  // title/author are per-attempt but this is not: an alias never changes
+  // which physical book #w is, so its volume number is the same on every
+  // attempt. Only ever consulted by an ambiguous-fold match (Space Knight);
+  // every other match is unaffected. See matching.ts `disambiguateByVolume`.
+  const seriesIndex = w.series_index_sort == null ? null : Number(w.series_index_sort);
   for (const attempt of attempts(w)) {
-    const hit = index.lookup(attempt.title, attempt.authors);
+    const hit = index.lookup(attempt.title, attempt.authors, seriesIndex);
     if (!hit) continue;
     const better =
       !best ||

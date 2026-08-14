@@ -1,4 +1,21 @@
 /**
+ * ⚠️ SUPERSEDED 2026-08-14 — kept for history, not for re-running.
+ *
+ * `matching.ts`'s `disambiguateByVolume` now resolves BOTH #249 and #250
+ * directly from their own printed titles plus `work.series_index_sort`,
+ * with no alias needed on either — see `matching.ts`'s header on
+ * `MatchableWork.seriesIndex` and the "ambiguous-fold disambiguation by
+ * series volume" tests in `packages/core/test/core.test.ts`. That is the
+ * PRINCIPLED fix the alias below was always a stand-in for: an alias could
+ * only ever rescue ONE of the two works (rule 2 in `buildWorkIndex` refuses
+ * an alias two works both claim), which is exactly why #249 was left out
+ * on purpose when this script was written.
+ *
+ * The alias this script already wrote for #250 is still in the database and
+ * is harmless to leave — it now just makes #250 match one tier earlier
+ * ('exact' via the alias rather than 'containment' via the volume rule) with
+ * an identical result. Nothing else needs to run.
+ *
  * Give work #250 *Space Knight Book 2* the one alias its audiobook needs.
  *
  * ## The recorded case this closes

@@ -217,6 +217,54 @@ function numbersAgree(a: string, b: string): boolean {
 }
 
 /**
+ * Resolve a set of same-folded-title candidates to at most one, when a series
+ * volume number can settle it.
+ *
+ * ## Why this exists — Space Knight, measured 2026-08-14
+ *
+ * Work #249 *Space Knight Book 1* and #250 *Space Knight Book 2* both refused
+ * to match anything: the audiobook catalog's own title-cleaning strips the
+ * series+volume suffix down to bare "Space Knight" for BOTH its volume-1 and
+ * volume-2 rows, so the two candidates are textually identical and carry no
+ * digit at all in their `titleKey` — `numbersAgree` (0 numbers vs 1) rejects
+ * both, correctly, because a bare series-level row must not silently absorb a
+ * numbered volume (see `numbersAgree`'s Tamer/Primal Hunter table above).
+ *
+ * The volume number has not vanished, though — it survives as a separate
+ * field (`series_index_sort` in `catalog.csv`, carried here as
+ * `MatchableWork.seriesIndex`) that the title-cleaning step never touches.
+ * This function is the one place that field is allowed to settle a match, and
+ * only under the narrow condition that makes it safe: MULTIPLE rows already
+ * fold to the identical title (an ambiguous set — see `titleKeyCounts`), so
+ * there is no risk of a stray CSV number overriding a real title mismatch.
+ *
+ * ## The rule
+ *
+ * - Exactly one candidate → return it. This is the overwhelmingly common case
+ *   and changes nothing: a non-ambiguous fold never reaches this function with
+ *   more than one entry.
+ * - More than one candidate, and our side states no volume (`seriesIndex` is
+ *   null) → refuse. We cannot tell them apart; guessing is the one thing this
+ *   file's header bans.
+ * - More than one candidate, and exactly one of them carries the SAME volume
+ *   number → that one, and only that one.
+ * - More than one candidate and zero or several share our volume number
+ *   (neither side stated one clearly enough, or the data is inconsistent) →
+ *   refuse. Same posture as "no volume on either side": a wrong match is worse
+ *   than no match.
+ */
+function disambiguateByVolume<E extends { seriesIndex: number | null }>(
+  candidates: readonly E[],
+  seriesIndex: number | null | undefined,
+): E | null {
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0] as E;
+  if (seriesIndex == null) return null;
+  const withVolume = candidates.filter((c) => c.seriesIndex != null && c.seriesIndex === seriesIndex);
+  return withVolume.length === 1 ? (withVolume[0] as E) : null;
+}
+
+/**
  * Every folded name this work's author is known by — the printed one first, then
  * any `author` aliases.
  *
@@ -243,6 +291,17 @@ export interface MatchableWork {
   title: string;
   /** As printed. Split and folded here, never by the caller. */
   authors: string;
+  /**
+   * A series-volume number carried OUTSIDE the title string, when the row has
+   * one — e.g. `catalog.csv`'s `series_index_sort` column. Absent/null for the
+   * overwhelming majority of rows.
+   *
+   * ⚠️ Only ever consulted for **ambiguous-fold disambiguation** — see
+   * `disambiguateByVolume` — and never as a substitute for `numbersAgree`'s
+   * text-based check, which stays the primary gate. Widening its role would
+   * let a stray CSV number paper over a genuine title mismatch.
+   */
+  seriesIndex?: number | null;
 }
 
 /**
@@ -269,12 +328,22 @@ export interface WorkIndex<T> {
      */
     matchKey: string;
     authorKeys: string[];
+    /** Carried through from `MatchableWork.seriesIndex` — see its doc. */
+    seriesIndex: number | null;
   }[];
   /**
    * Folded alternate titles, exact-match only, kept apart from `entries` because
    * the two answer *different questions* — see `matchIndexedWork`.
    */
   aliasKeys: Map<string, T>;
+  /**
+   * How many entries share each `titleKey`, catalog-wide. A count of 2+ is an
+   * **ambiguous fold** — e.g. Space Knight vol 1 and vol 2 both stripping down
+   * to bare "space knight" once their series/volume decoration is removed —
+   * and is the trigger `disambiguateByVolume` checks for. A count of exactly 1
+   * is the ordinary case and changes nothing about how that row is matched.
+   */
+  titleKeyCounts: Map<string, number>;
 }
 
 /**
@@ -325,10 +394,14 @@ export function buildWorkIndex<T extends MatchableWork>(
       titleKey,
       matchKey: foldVolumeMarker(titleKey),
       authorKeys: foldAuthorNames(work.authors, authorAliases.get(work.id) ?? []),
+      seriesIndex: work.seriesIndex ?? null,
     };
   });
 
-  if (aliases.length === 0) return { entries, aliasKeys: new Map() };
+  const titleKeyCounts = new Map<string, number>();
+  for (const e of entries) titleKeyCounts.set(e.titleKey, (titleKeyCounts.get(e.titleKey) ?? 0) + 1);
+
+  if (aliases.length === 0) return { entries, aliasKeys: new Map(), titleKeyCounts };
 
   const byId = new Map(works.map((w) => [w.id, w]));
   const realTitles = new Map<string, number>();
@@ -352,7 +425,7 @@ export function buildWorkIndex<T extends MatchableWork>(
   const aliasKeys = new Map<string, T>();
   for (const [key, work] of claimed) if (work) aliasKeys.set(key, work);
 
-  return { entries, aliasKeys };
+  return { entries, aliasKeys, titleKeyCounts };
 }
 
 export interface WorkMatch<T> {
@@ -385,11 +458,18 @@ export interface WorkMatch<T> {
  * the Board Game Catalog's behaviour and exactly as unsafe — so callers that can
  * supply an author must, and `matchNeedsAuthor` below reports when one was
  * missing so the review screen can mark the row rather than tick it.
+ *
+ * `seriesIndex` may also be omitted — most callers (the spine-scan gate, most
+ * of the audiobook backfill) have no volume number on the search side and
+ * ambiguous-fold rows simply refuse, exactly as before this parameter existed.
+ * Supplying it only ever narrows an otherwise-ambiguous fold to one row or to
+ * none; see `disambiguateByVolume`. It never widens what already matches.
  */
 export function matchIndexedWork<T extends MatchableWork>(
   index: WorkIndex<T>,
   title: string,
   author?: string | null,
+  seriesIndex?: number | null,
 ): WorkMatch<T> | null {
   const target = normaliseTitle(title);
   if (target.length < 2) return null;
@@ -409,7 +489,11 @@ export function matchIndexedWork<T extends MatchableWork>(
     return score >= MIN_AUTHOR_SIMILARITY ? score : Number.NaN;
   };
 
-  const exact = index.entries.find((e) => e.titleKey === target);
+  // Usually one row; more than one is an ambiguous fold (rare — two rows
+  // printed identically once folded) and `disambiguateByVolume` is what
+  // decides whether a stated series volume can tell them apart.
+  const exactCandidates = index.entries.filter((e) => e.titleKey === target);
+  const exact = disambiguateByVolume(exactCandidates, seriesIndex);
   if (exact) {
     const a = authorOk(exact.authorKeys);
     if (!Number.isNaN(a as number)) {
@@ -418,6 +502,13 @@ export function matchIndexedWork<T extends MatchableWork>(
     // An exact title with the wrong author is not "no match found" — it is a
     // *different book with the same name*, and falling through to containment
     // would only find the same row again. Stop here.
+    return null;
+  }
+  if (exactCandidates.length > 1) {
+    // Ambiguous and the volume could not settle it — a positive refusal, not
+    // "no exact match, try something weaker": every later stage would face
+    // this identical fold collision, so falling through would only risk
+    // guessing at what was already declined. See `disambiguateByVolume`.
     return null;
   }
 
@@ -434,7 +525,8 @@ export function matchIndexedWork<T extends MatchableWork>(
    */
   const targetFolded = foldVolumeMarker(target);
   if (targetFolded !== target || index.entries.some((e) => e.matchKey !== e.titleKey)) {
-    const folded = index.entries.find((e) => e.matchKey === targetFolded);
+    const foldedCandidates = index.entries.filter((e) => e.matchKey === targetFolded);
+    const folded = disambiguateByVolume(foldedCandidates, seriesIndex);
     if (folded) {
       const a = authorOk(folded.authorKeys);
       if (!Number.isNaN(a as number)) {
@@ -445,6 +537,10 @@ export function matchIndexedWork<T extends MatchableWork>(
           authorSimilarity: a,
         };
       }
+      return null;
+    }
+    if (foldedCandidates.length > 1) {
+      // Same refusal as the exact-title tier above, for the same reason.
       return null;
     }
   }
@@ -459,27 +555,53 @@ export function matchIndexedWork<T extends MatchableWork>(
     return null;
   }
 
-  const contained = index.entries
-    .filter((e) => {
-      if (e.titleKey.length < 3) return false;
-      const contains = e.titleKey.includes(target) || target.includes(e.titleKey);
-      if (!contains) return false;
-      // The shorter string must be at least 60% of the longer. This is what
-      // stops "Mistborn" matching "Mistborn: The Final Empire" — which for books
-      // is not a near miss but a genuinely different row, since the series name
-      // and the volume title are routinely both printed on the spine.
-      const shorter = Math.min(e.titleKey.length, target.length);
-      const longer = Math.max(e.titleKey.length, target.length);
-      if (shorter / longer < 0.6) return false;
-      // A containment match may differ in words, never in numbers. Without this
-      // every numbered volume in a series is a substring match for the
-      // series-level row, and the sort below — longest key first — then hands an
-      // unnumbered work the *highest*-numbered volume it can find. See
-      // `numbersAgree` for the two false positives this was measured against.
-      if (!numbersAgree(e.titleKey, target)) return false;
-      return !Number.isNaN(authorOk(e.authorKeys) as number);
-    })
+  /**
+   * Everything containment requires EXCEPT the number check, which the two
+   * passes below apply differently. Kept as one predicate so both passes
+   * agree on containment, length ratio and the author gate — the three
+   * things that must never loosen.
+   */
+  const baseContained = (e: (typeof index.entries)[number]): boolean => {
+    if (e.titleKey.length < 3) return false;
+    const contains = e.titleKey.includes(target) || target.includes(e.titleKey);
+    if (!contains) return false;
+    // The shorter string must be at least 60% of the longer. This is what
+    // stops "Mistborn" matching "Mistborn: The Final Empire" — which for books
+    // is not a near miss but a genuinely different row, since the series name
+    // and the volume title are routinely both printed on the spine.
+    const shorter = Math.min(e.titleKey.length, target.length);
+    const longer = Math.max(e.titleKey.length, target.length);
+    if (shorter / longer < 0.6) return false;
+    return !Number.isNaN(authorOk(e.authorKeys) as number);
+  };
+
+  // Pass 1, unchanged from before this parameter existed: a containment match
+  // may differ in words, never in numbers. Without this every numbered volume
+  // in a series is a substring match for the series-level row, and the sort
+  // below — longest key first — then hands an unnumbered work the
+  // *highest*-numbered volume it can find. See `numbersAgree` for the two
+  // false positives this was measured against.
+  let contained = index.entries
+    .filter((e) => baseContained(e) && numbersAgree(e.titleKey, target))
     .sort((a, b) => b.titleKey.length - a.titleKey.length)[0];
+
+  // Pass 2, only when pass 1 found nothing: the Space Knight shape. A
+  // candidate whose titleKey carries NO number at all — because the
+  // decoration that held it was stripped along with the rest — and which is
+  // one of an ambiguous-fold GROUP (see `titleKeyCounts`) may still be
+  // resolved by `seriesIndex`, the volume number that survived outside the
+  // title text. A unique, non-ambiguous bare title (e.g. "Oathbound Healer",
+  // or the Tamer series-level row) never reaches this: `titleKeyCounts` is 1
+  // for it, so pass 2 is a no-op and pass 1's refusal stands.
+  if (!contained) {
+    const bareAmbiguous = index.entries.filter(
+      (e) =>
+        baseContained(e) &&
+        numbersIn(e.titleKey).size === 0 &&
+        (index.titleKeyCounts.get(e.titleKey) ?? 0) > 1,
+    );
+    contained = disambiguateByVolume(bareAmbiguous, seriesIndex) ?? undefined;
+  }
 
   if (!contained) return null;
   return {
