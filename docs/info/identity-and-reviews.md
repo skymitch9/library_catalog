@@ -140,13 +140,22 @@ ignores unknown fields. Verified against the live `firestore.rules` on
 2026-08-09. This matters: a rules deploy changes the audiobook site's security
 posture, and this feature does not need one.
 
-### No service account exists, deliberately
+### No service account in THIS Worker, deliberately — one ratified exception elsewhere
 
 The browser writes the document with the signed-in user's own credentials. A
 Firebase service account would bypass `firestore.rules` entirely, and putting the
 most powerful credential in the household behind the least important endpoint is
 a bad trade. The Worker's job is to *derive the keys*
 (`POST /api/reviews/:id/draft`), not to hold a key.
+
+> **Ratified exception (owner, 2026-08-14):** the estate **auth Worker**
+> (catalog-platform `apps/auth-worker`) now holds the service account
+> (`FIREBASE_SERVICE_ACCOUNT` secret, `src/firebase-sa.ts`) to write
+> `site_roles` and pre-seed directory rows — approver-gated, audit-logged,
+> the UI-first role management the owner ordered. The reasoning above still
+> governs THIS repo's Worker and every review-path endpoint: reviews are
+> written by people with their own credentials, never by a key. The exception
+> lives behind the estate's most-guarded surface, not its least.
 
 ---
 
