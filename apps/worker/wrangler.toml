@@ -116,5 +116,5 @@ OWNER_EMAILS = "nbaslamking@gmail.com"
 # Worker holds the matching value under the same name). With it unset, shadow
 # logs `estate_config_unset` and behaves as off — deploying code before secret
 # is the intended order, and it is safe.
-ESTATE_CHECK = "off"
+ESTATE_CHECK = "shadow"
 ESTATE_AUTH_URL = "https://auth.heygabi.ai"
