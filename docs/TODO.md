@@ -61,13 +61,12 @@ manuals.
 
 ### Awaits the OWNER 🔴
 
-- **Audiobook**: eyes on `https://audiobooks.heygabi.ai/dev/`, then the word
-  **"prod"** to promote. Never promote without it (standing rule).
-- **Library enforce flip**: only after the enforcement build lands AND a clean
-  shadow soak (grep the logs for `would_deny`; expect zero for household).
-- **Attended passes**: theme-v2 dev-lane pass (set a page theme, reload,
-  apply-to-all, reload); the §15 two-tab test (estate-auth-design.md) against
-  the deployed apex sign-in if not yet done; apex `deploy.md` §3 checklist.
+(All three items below CLEARED 2026-08-14: audiobook identity v2 + themes +
+community estate-admin link all PROMOTED to prod on the owner's word; library
+ESTATE_CHECK="enforce" is deployed; the attended passes happened live. What
+awaits the owner now is the CI-arming checklist in
+catalog-platform/docs/TODO.md §1.5.)
+
 
 ### Deploy commands per surface
 
