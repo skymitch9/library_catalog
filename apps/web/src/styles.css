@@ -353,23 +353,6 @@ a.topbar__brand { text-decoration: none; }
   color: var(--et-accent-fg);
 }
 .cog__note { margin: 0; }
-/* v2 per-page affordances: the quiet apply-to-all lever + the scope hint,
-   shown only while this page carries its own override. */
-.cog__applyall {
-  align-self: flex-start;
-  margin: 4px 0 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--et-muted);
-  font-size: 0.78rem;
-  font-weight: 600;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-.cog__applyall:hover { color: var(--et-accent); }
-.cog__scope { margin: 4px 0 0; font-style: italic; }
 
 /* --- stats --------------------------------------------------------------- */
 

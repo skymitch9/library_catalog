@@ -12,27 +12,21 @@
  * simply does not appear. A theme control that throws on a missing global
  * would take the whole shell down to save a dropdown.
  *
- * Storage (`hg_theme`, `hg_theme_page`, `hg_mode`) belongs to theme.js alone —
- * nothing in this app touches those keys directly, so the semantics can never
- * fork from the apex's. This is the "integrate via window.estateTheme" path
- * the adoption guide names for sites with their own settings surface.
- *
- * v2 (estate-themes.md §2a): themes resolve PER PAGE — `setTheme` writes an
- * override for the current path, `setSiteTheme` is "apply to all pages" (it
- * writes the site default and clears every override). `scope` in the state
- * says which one governs here. Mode has no scope; it is always site-wide.
+ * Storage (`hg_theme`, `hg_mode`) belongs to theme.js alone — nothing in this
+ * app touches those keys directly, so the semantics can never fork from the
+ * apex's. This is the "integrate via window.estateTheme" path the adoption
+ * guide names for sites with their own settings surface. Theme choice is
+ * SITE-WIDE — one look per site (owner clarification, 2026-08-14; a per-page
+ * variant was built and reverted the same day, estate-themes.md §2a).
  */
 
 export type EstateThemeName = 'classic' | 'apple' | 'cyberpunk' | 'retro';
 export type EstateMode = 'auto' | 'light' | 'dark';
-export type EstateScope = 'page' | 'site';
 
 export interface EstateState {
   theme: EstateThemeName;
   mode: EstateMode;
   resolvedMode: 'light' | 'dark';
-  scope: EstateScope;
-  siteTheme: EstateThemeName;
 }
 
 interface EstateThemeApi {
@@ -40,7 +34,6 @@ interface EstateThemeApi {
   modes: EstateMode[];
   get(): EstateState;
   setTheme(theme: string): void;
-  setSiteTheme(theme: string): void;
   setMode(mode: string): void;
 }
 

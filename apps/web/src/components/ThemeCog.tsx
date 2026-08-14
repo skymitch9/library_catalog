@@ -114,14 +114,6 @@ export function ThemeCog() {
                 </option>
               ))}
             </select>
-            {/* v2 per-page affordances (estate-themes.md §2a): picking above
-                applied to THIS page; this quiet lever makes it the site's. */}
-            {state.scope === 'page' && (
-              <p className="cog__scope muted small">This page keeps its own theme.</p>
-            )}
-            <button type="button" className="cog__applyall" onClick={() => api.setSiteTheme(state.theme)}>
-              Apply to all pages
-            </button>
           </div>
           <div className="cog__row">
             <span className="field__label" id="mode-label">
@@ -140,9 +132,7 @@ export function ThemeCog() {
               ))}
             </div>
           </div>
-          <p className="cog__note muted small">
-            Themes apply to this page; mode applies everywhere. Remembered on this site only.
-          </p>
+          <p className="cog__note muted small">Remembered on this site only.</p>
         </div>
       )}
     </div>
