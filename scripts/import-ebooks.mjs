@@ -71,7 +71,19 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { workKeyFor, cleanAudiobookTitle } from '../packages/core/src/titles.ts';
+import {
+  cleanAudiobookTitle,
+  normaliseTitle,
+  primaryAuthor,
+  splitSeriesPrefix,
+  workKeyFor,
+} from '../packages/core/src/titles.ts';
+import {
+  MIN_AUTHOR_SIMILARITY,
+  bestSimilarity,
+  foldAuthorNames,
+} from '../packages/core/src/matching.ts';
+import { UNKNOWN_AUTHOR } from '../packages/core/src/constants.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -184,12 +196,7 @@ for (const p of planned) {
 console.log(`distinct works: ${byWork.size}`);
 
 if (!COMMIT) {
-  let n = 0;
-  for (const w of byWork.values()) {
-    if (n++ >= 15) break;
-    console.log(`  ${w.title}  —  ${w.authors}  [${w.formats.map((f) => f.format).join(', ')}]`);
-  }
-  if (byWork.size > 15) console.log(`  … and ${byWork.size - 15} more`);
+  await dryRunProbe();
   console.log('\nDRY RUN. Nothing written. Re-run with --commit.');
   // ⚠️ Prune has to be reached here too, or `--prune` without `--commit` — the
   // safe rehearsal, and the way anyone will first try it — exits above and
@@ -197,6 +204,119 @@ if (!COMMIT) {
   // exactly like success.
   if (PRUNE) await runPrune();
   process.exit(0);
+}
+
+/**
+ * Dry run: say what a commit would DO, not just what it would send.
+ *
+ * ## Why a dry run reads the database at all
+ *
+ * The old dry run listed the planned rows and stopped — it could not tell an
+ * attach from a creation, so the 2026-08-14 run looked routine right up until
+ * `--commit` minted 13 duplicate works. The decision lives server-side (the
+ * ingest route matches before creating); a rehearsal that cannot see the
+ * catalog is rehearsing a different play.
+ *
+ * So this classifies every planned work exactly as the route will —
+ * exact key, then title alias (author-gated, contested → nobody), then
+ * series-prefix (remainder key + fold-equal recorded series) — against works
+ * and aliases read straight from D1, the same way `--prune` reads it:
+ * wrangler login, `--remote` for production. The shared pieces
+ * (`splitSeriesPrefix`, `workKeyFor`, `normaliseTitle`, `bestSimilarity`,
+ * `foldAuthorNames`, `MIN_AUTHOR_SIMILARITY`) are imported from
+ * `packages/core`, so the two sides cannot drift in what they fold — the
+ * composition order is the only thing repeated, and it is short.
+ *
+ * No wrangler? It says so, prints the old plain listing, and stays a dry run
+ * rather than failing — the safe rehearsal must stay the easy thing to run.
+ */
+async function dryRunProbe() {
+  let works;
+  let aliases;
+  try {
+    const { query } = await import('./lib/d1.mjs');
+    works = query('SELECT id, title, authors, series, work_key FROM work', { remote: REMOTE });
+    aliases = query('SELECT work_id, alias, kind FROM work_alias', { remote: REMOTE });
+  } catch (err) {
+    console.log(
+      `\n(could not read the ${REMOTE ? 'REMOTE' : 'local'} database — ` +
+        `attach-vs-create cannot be classified: ${err instanceof Error ? err.message.split('\n')[0] : err})`,
+    );
+    let n = 0;
+    for (const w of byWork.values()) {
+      if (n++ >= 15) break;
+      console.log(`  ${w.title}  —  ${w.authors}  [${w.formats.map((f) => f.format).join(', ')}]`);
+    }
+    if (byWork.size > 15) console.log(`  … and ${byWork.size - 15} more`);
+    return;
+  }
+
+  const byKey = new Map(works.map((w) => [w.work_key, w]));
+  const byId = new Map(works.map((w) => [w.id, w]));
+  const authorAliases = new Map();
+  const titleAliases = [];
+  for (const a of aliases) {
+    if (a.kind === 'author') {
+      const list = authorAliases.get(a.work_id);
+      if (list) list.push(a.alias);
+      else authorAliases.set(a.work_id, [a.alias]);
+    } else {
+      titleAliases.push(a);
+    }
+  }
+
+  // The same three arms, in the same order, with the same gates as the route.
+  const classify = (w) => {
+    const exact = byKey.get(w.workKey);
+    if (exact) return { via: 'key', work: exact };
+
+    const titleKey = normaliseTitle(w.title);
+    const authorKey = normaliseTitle(primaryAuthor(w.authors));
+    const gated = [];
+    for (const a of titleAliases) {
+      if (normaliseTitle(a.alias) !== titleKey) continue;
+      const candidate = byId.get(a.work_id);
+      if (!candidate) continue;
+      const stored = candidate.authors === UNKNOWN_AUTHOR ? '' : candidate.authors;
+      const keys = foldAuthorNames(stored, authorAliases.get(a.work_id) ?? []);
+      if (bestSimilarity(authorKey, keys) >= MIN_AUTHOR_SIMILARITY) gated.push(candidate);
+    }
+    const distinct = [...new Set(gated.map((g) => g.id))];
+    if (distinct.length === 1) return { via: 'alias', work: byId.get(distinct[0]) };
+    if (distinct.length > 1) return { via: 'create', work: null }; // contested — route refuses too
+
+    const split = splitSeriesPrefix(w.title);
+    if (split) {
+      const candidate = byKey.get(workKeyFor(split.title, w.authors));
+      if (candidate?.series && normaliseTitle(candidate.series) === normaliseTitle(split.series)) {
+        return { via: 'series_prefix', work: candidate };
+      }
+    }
+    return { via: 'create', work: null };
+  };
+
+  const counts = { key: 0, alias: 0, series_prefix: 0, create: 0 };
+  const interesting = [];
+  const creates = [];
+  for (const w of byWork.values()) {
+    const { via, work } = classify(w);
+    counts[via]++;
+    if (via === 'alias' || via === 'series_prefix') interesting.push({ w, via, work });
+    if (via === 'create') creates.push(w);
+  }
+
+  console.log(
+    `\nprobe (${REMOTE ? 'REMOTE' : 'local'} db, ${works.length} works): ` +
+      `${counts.key} attach by key, ${counts.alias} by alias, ` +
+      `${counts.series_prefix} by series prefix, ${counts.create} would CREATE`,
+  );
+  for (const { w, via, work } of interesting) {
+    console.log(`  [${via}] ${w.title}  ->  #${work.id} ${work.title}`);
+  }
+  if (creates.length) {
+    console.log('  new works a --commit would mint:');
+    for (const w of creates) console.log(`    ${w.title}  —  ${w.authors}`);
+  }
 }
 
 // A local `wrangler dev` carries the ENVIRONMENT!=production auth bypass, so it
@@ -250,6 +370,11 @@ for (const w of byWork.values()) {
       });
       if (res.createdWork) createdWorks++;
       else attachedWorks++;
+      // An attach the exact key could not have made is worth a line: it means
+      // a fallback (alias / series-prefix) just prevented a duplicate work.
+      if (!res.createdWork && res.matchedVia && res.matchedVia !== 'key') {
+        console.log(`  [${res.matchedVia}] ${w.title} -> work #${res.workId}`);
+      }
       if (res.warning === 'work_key_mismatch') {
         console.warn(`  key mismatch on "${w.title}": sent ${res.sent}, server computed ${res.workKey}`);
       }

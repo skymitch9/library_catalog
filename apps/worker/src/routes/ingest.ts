@@ -1,7 +1,24 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { EDITION_FORMATS, workKeyFor } from '@lc/core';
-import { createEdition, createWork, findEditionBySourceUrl, findWorkByKey } from '@lc/db';
+import {
+  EDITION_FORMATS,
+  MIN_AUTHOR_SIMILARITY,
+  bestSimilarity,
+  foldAuthorNames,
+  normaliseTitle,
+  primaryAuthor,
+  splitSeriesPrefix,
+  workKeyFor,
+} from '@lc/core';
+import {
+  createEdition,
+  createWork,
+  findEditionBySourceUrl,
+  findWorkByKey,
+  getWork,
+  listWorkAliases,
+  type Work,
+} from '@lc/db';
 import type { AppBindings } from '../env.js';
 
 /**
@@ -85,6 +102,85 @@ const ingestEbookSchema = z.object({
  * every byte regardless of where the first difference falls, and fold the length
  * check into the same result rather than short-circuiting on it.
  */
+/** How an incoming row found its work, reported so the importer can say so. */
+type MatchedVia = 'key' | 'alias' | 'series_prefix';
+
+/**
+ * Match an incoming title to an existing work when the exact key missed.
+ *
+ * ## Why the exact key is not enough — the 2026-08-14 duplicates
+ *
+ * The first full manifest import created 18 works, 13 of them duplicates, in
+ * two classes this function now closes:
+ *
+ *   1. **OPF series prefix.** The EPUB says `"Beneath the Dragoneye Moons:
+ *      Immortal War"`; the catalog says `"Immortal War"` with the series in
+ *      its own column. Four works minted.
+ *   2. **A renamed work leaves its old key behind.** The eight `"… - MM"`
+ *      titles were stripped off their works on 2026-08-12 — a deliberate key
+ *      move — so the unchanged OPF titles re-imported as eight new works.
+ *      That is what `work_alias` exists for: the merge records the old
+ *      spelling as a title alias, and this lookup honours it.
+ *
+ * ## Order and gates
+ *
+ * Alias first — it is asserted by a person or a merge, not inferred
+ * (`matchIndexedWork` ranks the same way). The author gate uses
+ * `bestSimilarity` over `foldAuthorNames` at `MIN_AUTHOR_SIMILARITY`, the one
+ * implementation — it is what lets `"Rik Hoskin"` meet `"Julius Gopez Rik
+ * Hoskin"` while an unrelated author still fails. A contested alias (two
+ * gated works claiming one folded title) matches nobody, `buildWorkIndex`'s
+ * rule 2.
+ *
+ * The series-prefix arm is exact-key on the remainder PLUS a fold-equality
+ * check of the prefix against the candidate's recorded `series` — never the
+ * bare split, which would read `"Tamer: King of Dinosaurs"` as series
+ * "Tamer". See `splitSeriesPrefix`.
+ */
+async function findFallbackWork(
+  db: D1Database,
+  title: string,
+  authors: string,
+): Promise<{ work: Work; via: MatchedVia } | null> {
+  const titleKey = normaliseTitle(title);
+  const authorKey = normaliseTitle(primaryAuthor(authors));
+
+  const aliases = await listWorkAliases(db);
+  const authorAliases = new Map<number, string[]>();
+  for (const a of aliases) {
+    if (a.kind !== 'author') continue;
+    const list = authorAliases.get(a.workId);
+    if (list) list.push(a.alias);
+    else authorAliases.set(a.workId, [a.alias]);
+  }
+
+  const claimants = new Set<number>();
+  for (const a of aliases) {
+    // Absent kind means 'title' — every row written before migration 0005.
+    if (a.kind === 'author') continue;
+    if (normaliseTitle(a.alias) === titleKey) claimants.add(a.workId);
+  }
+  const gated: Work[] = [];
+  for (const workId of claimants) {
+    const candidate = await getWork(db, workId);
+    if (!candidate) continue;
+    const keys = foldAuthorNames(candidate.authors ?? '', authorAliases.get(workId) ?? []);
+    if (bestSimilarity(authorKey, keys) >= MIN_AUTHOR_SIMILARITY) gated.push(candidate);
+  }
+  if (gated.length === 1) return { work: gated[0] as Work, via: 'alias' };
+  if (gated.length > 1) return null; // contested — belongs to nobody
+
+  const split = splitSeriesPrefix(title);
+  if (split) {
+    const candidate = await findWorkByKey(db, workKeyFor(split.title, authors));
+    if (candidate?.series && normaliseTitle(candidate.series) === normaliseTitle(split.series)) {
+      return { work: candidate, via: 'series_prefix' };
+    }
+  }
+
+  return null;
+}
+
 function secretEquals(a: string, b: string): boolean {
   const enc = new TextEncoder();
   const x = enc.encode(a);
@@ -128,7 +224,19 @@ export const ingestRoutes = new Hono<AppBindings>()
     const keyMismatch = input.workKey !== undefined && input.workKey !== key;
 
     let work = await findWorkByKey(c.env.DB, key);
+    let matchedVia: MatchedVia | null = work ? 'key' : null;
     let createdWork = false;
+
+    // ⚠️ Match before minting. The exact key missing does NOT yet mean the book
+    // is new — see findFallbackWork for the two classes of duplicate this
+    // route created before it looked any further than the key.
+    if (!work) {
+      const fallback = await findFallbackWork(c.env.DB, input.title, input.authors);
+      if (fallback) {
+        work = fallback.work;
+        matchedVia = fallback.via;
+      }
+    }
 
     if (!work) {
       work = await createWork(c.env.DB, {
@@ -155,7 +263,14 @@ export const ingestRoutes = new Hono<AppBindings>()
       const already = await findEditionBySourceUrl(c.env.DB, work.id, input.sourcePath);
       if (already) {
         return c.json(
-          { workId: work.id, editionId: already.id, createdWork, createdEdition: false, workKey: key },
+          {
+            workId: work.id,
+            editionId: already.id,
+            createdWork,
+            createdEdition: false,
+            workKey: key,
+            matchedVia,
+          },
           200,
         );
       }
@@ -179,6 +294,10 @@ export const ingestRoutes = new Hono<AppBindings>()
         createdWork,
         createdEdition: true,
         workKey: key,
+        // How an existing work was found (null for a creation) — surfaced so
+        // the importer's report can say WHICH mechanism attached a row rather
+        // than lumping every attach together.
+        matchedVia,
         // Surfaced rather than logged: a container log nobody reads is where
         // this class of bug goes to hide.
         ...(keyMismatch ? { warning: 'work_key_mismatch', sent: input.workKey } : {}),

@@ -257,6 +257,39 @@ export function cleanTitleWithSeries(raw: string, series: string | null | undefi
 }
 
 /**
+ * "Series: Title" → its two halves, when a title carries that shape.
+ *
+ * ## The duplicate class this exists to close — measured 2026-08-14
+ *
+ * EPUB OPF metadata routinely prefixes the series where the catalog does not:
+ * the file says *"Beneath the Dragoneye Moons: Immortal War"* while the catalog
+ * holds *"Immortal War"* with `series = "Beneath the Dragoneye Moons"`. The
+ * work keys never meet, and containment cannot bridge it either — the shorter
+ * half is well under the 60% floor (12/40 chars for exactly this pair). The
+ * 2026-08-14 ebook import minted four duplicate BtDEM works this way.
+ *
+ * ⚠️ **This is a splitter, not a fifth fold.** It makes no claim that the two
+ * halves ARE a series and a title — that claim belongs to the caller, which
+ * must check the prefix against something asserted (the candidate work's
+ * recorded `series`, folded through `normaliseTitle` on both sides) before
+ * acting. An ungated split would read *"Tamer: King of Dinosaurs"* as series
+ * "Tamer", which is exactly the kind of guess this module bans.
+ *
+ * Splits on the FIRST colon, so *"All The Skills: Book 2: A Deck-Building
+ * LitRPG"* yields prefix "All The Skills" — the remainder then simply fails to
+ * match anything, which is the safe direction. Returns null for a title with
+ * no colon, or one whose colon has nothing on either side.
+ */
+export function splitSeriesPrefix(raw: string): { series: string; title: string } | null {
+  const i = raw.indexOf(':');
+  if (i <= 0) return null;
+  const series = raw.slice(0, i).trim();
+  const title = raw.slice(i + 1).trim();
+  if (!series || !title) return null;
+  return { series, title };
+}
+
+/**
  * Pull a series name and volume out of an Audible-style title, when it says one.
  *
  * "Firefight - The Reckoners, Book 2" -> { series: 'The Reckoners', index: 2,
