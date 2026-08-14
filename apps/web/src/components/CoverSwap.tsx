@@ -81,6 +81,20 @@ export function CoverSwap({
       setSaid('Cover swapped.');
       setChosen(null);
       onChanged();
+      // ⚠️ The "in use" badge comes from the `selected` flags fetched at
+      // mount, and nothing above re-runs that effect — so without this
+      // re-fetch the grid keeps showing the OLD cover as current until the
+      // panel is closed and reopened (the night-QA wart). Ask the server
+      // again rather than patching flags locally: `selected` is computed
+      // server-side against the stored column, which is the truth even if
+      // the stored URL is not byte-identical to the candidate picked.
+      try {
+        const r = await api.coverCandidates(workId);
+        setCandidates(r.candidates);
+      } catch {
+        // The swap itself succeeded; a failed refresh must not be reported
+        // as a failed swap. The stale grid is no worse than it was before.
+      }
     } catch (err) {
       setSaid(err instanceof Error ? err.message : String(err));
     } finally {
