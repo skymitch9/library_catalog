@@ -522,6 +522,17 @@ records that it was attempted, which a tidy log does not.
 
 <!-- entries start here -->
 
+- `2026-08-13T18:15Z` **DECIDED (owner) — estate-wide auth. NEEDS A DESIGN DOC BEFORE ANY BUILD.** The direction: **`heygabi.ai` stays open, but global search requires a login**; login becomes **app-wide**; the audiobook catalog's users move onto it; **new users are approval-only**.
+  **The ground, measured before designing — and it changes the shape of the job:**
+  - **Library**: D1 `app_user`, roles `owner | reader | pending`. ✅ **Approval-only ALREADY WORKS here** — `role` defaults to `'pending'` and capabilities gate on it, so that half of the ask is a pattern to spread, not to invent.
+  - **Board games**: D1 `app_user`, roles `owner | manager | rater | viewer | pending` — **richer, and recently extended** (0023 viewer, 0024 manager).
+  - **Audiobook**: users live in **Firestore `/users`**, hardened after a documented takeover hole.
+  - **Index Worker**: new, no auth at all yet.
+  ⚠️ **THE CRUX: 12 foreign keys reference `app_user(id)` in the library alone** — `user_book`, `change_log.changed_by`, copies and more. **Local user rows therefore cannot be deleted or replaced.** "Moving users to global auth" is a **mapping** exercise, not a move; a design that migrates rows away will take out twelve relationships including the audit log's actor.
+  ⚠️ **The two role vocabularies have ALREADY diverged** (`reader` vs `rater|viewer|manager`), so a single global role set would be **lossy** for board games.
+  **The shape that follows from both facts: split identity from authorization.** Global auth answers *"who are you, and are you approved into the estate"*; each app keeps its own role for *"what may you do HERE"*, with the local `app_user` row surviving as the anchor its foreign keys need. That preserves board games' five roles and the library's capabilities without forcing a merge that loses either.
+  ⚠️ **Break-glass matters more than usual: an auth change can lock the owner out of everything at once.** The library's `OWNER_EMAILS` env var already plays that role and the design must keep an equivalent — a path in that does not depend on the thing being changed.
+
 - `2026-08-13T18:00Z` **BUILT, NOT DEPLOYED — the shared index Worker, games first.** Design §7 steps 1–3 done; **step 4 untouched and both existing bridges still running**, as the design required. Verified independently: **library 375/375, index-worker 17/17, all three trees clean**, both halves of the fold pin present. `Board_Game_Catalog` typecheck green — ⚠️ **no tests ran there because that repo has no `test` script**, stated rather than implied.
   **`index_catalog` database_id: `3004d175-3c51-4ed4-ac3e-62859319f8ac`** (WNAM). ⚠️ **Its remote migration is deliberately UNAPPLIED and the Worker has no route** (`workers_dev = false`) — both wait on the owner, per the no-unattended-migration rule.
   ✅ **THE PROOF WORKED — the first cross-catalog query this estate has ever answered without a script.** All 836 production items pushed through the *real* path (`__scheduled` → backstop → `PUT /api/push/game`), then `lookup?title=taverns and dragons` returned **Taverns & Dragons** (catalog spells it `&`, query typed `and`), a Ravenloft title matched with an added leading article, and a promo answered carrying `kind` and `parent_source_id`. **Fold audit: 0/836 unfoldable, 0/836 `work_fold` — NULL for every game, exactly as designed.**
