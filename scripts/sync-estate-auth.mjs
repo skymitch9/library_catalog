@@ -56,7 +56,7 @@ if (!existsSync(SRC_DIR)) {
 
 // The module's public surface. Named explicitly rather than globbed blind, so a
 // file appearing or vanishing upstream is a loud diff here, not a silent one.
-const EXPECTED = ['combine.ts', 'config.ts', 'index.ts', 'probes.ts', 'seen.ts', 'verify.ts'];
+const EXPECTED = ['combine.ts', 'config.ts', 'index.ts', 'probes.ts', 'seen.ts', 'verify.ts', 'visibility.ts'];
 
 const present = readdirSync(SRC_DIR).filter((f) => f.endsWith('.ts'));
 const missing = EXPECTED.filter((f) => !present.includes(f));

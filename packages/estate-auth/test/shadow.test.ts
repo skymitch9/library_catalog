@@ -141,8 +141,14 @@ test('household member: estate approved + active local role → proceed, no woul
   assert.equal(out.verdict, 'proceed');
   assert.equal(out.wouldDeny, false);
   assert.equal(out.wouldAutoGrant, null);
-  // Fresh answer → cache refresh for the caller to persist.
-  assert.deepEqual(out.refresh, { status: 'approved', checkedAt: new Date(NOW).toISOString() });
+  // Fresh answer → cache refresh for the caller to persist. `visibility` rides
+  // with the status since §4.5 (upstream seen.ts); null = "no visibility fact
+  // in the answer", which upstream documents as behaving exactly as before.
+  assert.deepEqual(out.refresh, {
+    status: 'approved',
+    visibility: null,
+    checkedAt: new Date(NOW).toISOString(),
+  });
   assert.equal(calls.length, 1);
   assert.ok(calls[0]!.url.endsWith('/api/estate/seen'));
   // The per-app bearer, not the user's token (§4.4).
@@ -166,7 +172,8 @@ test('estate approved + local pending never decided → would auto-grant reader,
   assert.equal(line.would_auto_grant, 'reader');
   assert.equal(line.would_deny, false);
   // The outcome offers the caller ONLY a cache refresh — no role, no grant.
-  assert.deepEqual(Object.keys(out.refresh ?? {}).sort(), ['checkedAt', 'status']);
+  // (`visibility` is part of the cache record since §4.5, not a grant.)
+  assert.deepEqual(Object.keys(out.refresh ?? {}).sort(), ['checkedAt', 'status', 'visibility']);
 });
 
 test('estate approved + locally DEMOTED pending → request_screen (the estate does not overrule)', async () => {
@@ -260,7 +267,11 @@ test('expired cache: /seen called, fresh answer replaces the cached status', asy
   );
   assert.equal(calls.length, 1);
   assert.equal(out.verdict, 'proceed');
-  assert.deepEqual(out.refresh, { status: 'approved', checkedAt: new Date(NOW).toISOString() });
+  assert.deepEqual(out.refresh, {
+    status: 'approved',
+    visibility: null,
+    checkedAt: new Date(NOW).toISOString(),
+  });
   const line = JSON.parse(out.logLine ?? 'null');
   assert.equal(line.src, 'seen');
   assert.equal(typeof line.seen_ms, 'number');
