@@ -1,9 +1,21 @@
 <!doctype html>
-<html lang="en">
+<!-- data-default-theme: DEFAULTS ARE IDENTITY (catalog-platform
+     docs/info/estate-themes.md §3) — the owner's "make the apple theme persist
+     on the books site too". This site renders apple unless ITS user picks
+     otherwise in the topbar cog; do not "helpfully" change it. -->
+<html lang="en" data-default-theme="apple">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
+    <!-- The estate theme system, vendored by scripts/sync-estate-theme.mjs
+         (build artifact under /estate/ — the canonical copy lives in
+         catalog-platform). Order and synchrony are the point: the tokens CSS
+         first, then theme.js as a CLASSIC script so the persisted hg_theme /
+         hg_mode land on <html> BEFORE first paint — a React bundle is far too
+         late and flashes the wrong theme. -->
+    <link rel="stylesheet" href="/estate/estate-theme.css" />
+    <script src="/estate/theme.js"></script>
     <!-- Installable to the home screen. This app is used one-handed in front of
          a bookshelf; launching it from an icon in standalone mode, without a URL
          bar eating vertical space, is most of what makes the scan screen usable

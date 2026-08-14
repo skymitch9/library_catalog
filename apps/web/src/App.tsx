@@ -45,6 +45,7 @@ import {
   workPath,
   type Route,
 } from './router.js';
+import { ThemeCog } from './components/ThemeCog.js';
 import { CollectionPage } from './pages/CollectionPage.js';
 import { ScanJobsPage } from './pages/ScanJobsPage.js';
 import { ExportPage } from './pages/ExportPage.js';
@@ -256,6 +257,10 @@ export function App() {
             </Link>
           )}
         </nav>
+        {/* The settings cog — the estate theme dropdown and light/dark/auto
+            live here (ThemeCog.tsx). Beside "Sign out" because both are
+            about the person, not the catalog; the nav chips stay places. */}
+        <ThemeCog />
         <button onClick={() => void signOutNow()}>Sign out</button>
       </header>
 
