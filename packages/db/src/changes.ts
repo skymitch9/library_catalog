@@ -41,7 +41,12 @@ export const ROW_FIELD = '__row__';
 
 export interface ChangeLogEntry {
   batchId: string;
-  entity: 'work' | 'edition' | 'copy';
+  /**
+   * 'app_user' joined 2026-08-13 (role changes — users.ts setUserRole). The
+   * 0120 DDL anticipated growth ("user_book? watches?") and carries no CHECK,
+   * so widening this union is the entire migration.
+   */
+  entity: 'work' | 'edition' | 'copy' | 'app_user';
   /**
    * The row's id — or the literal string 'last_insert_rowid()' when the entry
    * is batched immediately after the INSERT that creates the row and the id

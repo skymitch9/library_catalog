@@ -10,6 +10,7 @@ import type { AppBindings, Env } from './env.js';
 import { indexBackstopOnRequest, indexPushAfterMutation } from './lib/index-push.js';
 import { requireAuth } from './middleware/auth.js';
 import { accessoryRoutes } from './routes/accessories.js';
+import { adminCors, adminRoutes } from './routes/admin.js';
 import { aliasRoutes } from './routes/aliases.js';
 import { catalogRoutes } from './routes/catalog.js';
 import { coverRoutes } from './routes/covers.js';
@@ -50,8 +51,18 @@ app.use('/api/*', indexBackstopOnRequest());
 // than opening.
 app.route('/api/ingest', ingestRoutes);
 
+// CORS for the estate's federated admin page (exactly https://heygabi.ai —
+// see routes/admin.ts). ⚠️ Before requireAuth on purpose: a preflight OPTIONS
+// carries no bearer, so the blanket would 401 it. Only the preflight is
+// answered here; the admin routes themselves mount AFTER the blanket below
+// and stay behind it.
+app.use('/api/admin/*', adminCors());
+
 // Everything else behind a verified Firebase ID token.
 app.use('/api/*', requireAuth());
+// The federated-admin surface (cross-origin twin of the People page's user
+// routes — same gate, same write path, CORS-scoped mount).
+app.route('/api/admin', adminRoutes);
 app.route('/api', userRoutes);
 app.route('/api', catalogRoutes);
 // Mounted at /api too: `/works/:id/relations` and `/works/:id/aliases` each have

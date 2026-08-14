@@ -1,4 +1,5 @@
 import type { AppUser, Role } from '@lc/core';
+import { changeLogInsert } from './changes.js';
 
 interface UserRow {
   id: number;
@@ -189,14 +190,47 @@ export async function listUsers(db: D1Database): Promise<AppUser[]> {
   return results.map(toUser);
 }
 
+/**
+ * Change a person's role — the ONE role-write path (the People page and the
+ * federated /api/admin surface both land here, so both audit identically).
+ *
+ * ⚠️ The audit row rides in the same `db.batch()` as the UPDATE (changes.ts's
+ * atomicity rule: a change and its record land together or not at all). A
+ * write that does not move the role (re-approving the same role) still
+ * restamps approved_at/approved_by but logs nothing — an audit row whose
+ * old and new values are equal records no change.
+ */
 export async function setUserRole(
   db: D1Database,
   params: { userId: number; role: Role; approvedBy: number },
 ): Promise<AppUser | null> {
-  await db
+  const before = await db
+    .prepare(`SELECT ${COLS} FROM app_user WHERE id = ?`)
+    .bind(params.userId)
+    .first<UserRow>();
+  if (!before) return null;
+
+  const update = db
     .prepare('UPDATE app_user SET role = ?, approved_at = ?, approved_by = ? WHERE id = ?')
-    .bind(params.role, new Date().toISOString(), params.approvedBy, params.userId)
-    .run();
+    .bind(params.role, new Date().toISOString(), params.approvedBy, params.userId);
+
+  if (before.role !== params.role) {
+    await db.batch([
+      update,
+      changeLogInsert(db, {
+        batchId: crypto.randomUUID(),
+        entity: 'app_user',
+        entityId: params.userId,
+        field: 'role',
+        oldJson: JSON.stringify(before.role),
+        newJson: JSON.stringify(params.role),
+        actor: { userId: params.approvedBy, how: 'human' },
+      }),
+    ]);
+  } else {
+    await update.run();
+  }
+
   const row = await db
     .prepare(`SELECT ${COLS} FROM app_user WHERE id = ?`)
     .bind(params.userId)
