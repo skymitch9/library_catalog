@@ -1,79 +1,88 @@
 /*
- * Paper and ink.
+ * The library app, dressed by the ESTATE THEME SYSTEM.
  *
  * Phone first — this app is used standing in front of a bookshelf, one-handed,
  * with the other hand holding a book. Everything tappable is at least 44px.
  *
- * ## The look, and why it is not the audiobook catalog's
+ * ## Where the colours went (2026-08-13)
  *
- * The sibling site is neon-on-black cyberpunk. Copying it here would be the
- * wrong kind of parity: that catalog is a media library you scroll, and this one
- * is a record of physical objects. So the palette is warm paper, the type is a
- * serif for anything a publisher would have set in a serif, and the accents are
- * cloth-binding green and a spine-label terracotta.
+ * This stylesheet used to define its own palette — warm paper, a serif, a
+ * cloth-binding green and a spine-label terracotta. It now styles against the
+ * estate's `--et-*` token contract (catalog-platform
+ * docs/info/estate-themes.md; the tokens ship in /estate/estate-theme.css,
+ * vendored by scripts/sync-estate-theme.mjs), so the one stylesheet renders
+ * `apple`, `cyberpunk` and `retro`, each in light and dark, and the person
+ * picks in the topbar cog. The default is `apple` — defaults are identity,
+ * the owner's call.
  *
- * What IS ported is the structure — search, sort, direction, view toggle, rows
- * per page, pagination top and bottom, a strip of recent arrivals — because that
- * is the part that was learned from using a catalog of a thousand books.
+ * ⚠️ NO raw colours and NO `[data-theme=…]` selectors may be added here — if a
+ * component seems to need either, a token is missing from the contract; ask
+ * catalog-platform for one rather than forking. The two standing exceptions,
+ * both colour-IS-the-meaning and grandfathered deliberately:
+ *   - the gold of a filled star (#d9a441): a star is gold in every theme, and
+ *     the shared review store must not show differently-coloured truth per
+ *     site;
+ *   - the black behind the camera (#000): a viewfinder surround, not a theme
+ *     surface.
+ * The one [data-theme] rule below (retro's press-into-shadow) is the estate's
+ * OWN primitive rule mirrored onto this app's native buttons, not a fork.
+ *
+ * ## How the old roles map — read this before re-colouring anything
+ *
+ *   --accent (cloth binding)   → --et-accent      interactivity + held-fact
+ *   --warm as a REQUEST        → --et-warn        needs/watch/gap/pending:
+ *                                                 the marks that ask the owner
+ *                                                 for something (the rule
+ *                                                 written over `.mark--needs`)
+ *   --warm as the SECOND VOICE → --et-accent-2    series tags, blank-cover
+ *                                                 spines: decoration in the
+ *                                                 theme's second colour (apple
+ *                                                 folds it into the accent —
+ *                                                 one voice, deliberately)
+ *   --transit (in the post)    → --et-ok          the estate has no fourth
+ *                                                 hue; "paid for, on its way"
+ *                                                 is the closest honest status
+ *   --line / --line-strong     → --et-hairline    (+ --et-ink where an outline
+ *                                                 IS the theme: panels via
+ *                                                 --et-panel-border)
+ *   the serif                  → --et-font-display for headings; body copy and
+ *                                 list content ride --et-font, so cyberpunk
+ *                                 reads Rajdhani and retro's Bangers stays a
+ *                                 heading voice instead of shouting from every
+ *                                 140px card
  *
  * ## Light and dark are both first-class
  *
- * Only the tokens change between them. Nothing below `:root` hard-codes a colour
- * except the two places a colour IS the meaning: the gold of a filled star, and
- * the black behind the camera.
+ * Mode is stamped on <html data-mode> by /estate/theme.js (pre-paint, from
+ * `hg_mode`, `auto` following the OS live). The old
+ * `@media (prefers-color-scheme: dark)` palette block is gone — the token
+ * sheet owns dark, including the no-JS fallback.
  */
 
 :root {
-  --bg: #faf6ee;
-  --bg-tint: #f3ece0;
-  --panel: #fffdf9;
-  --fg: #231f1a;
-  --muted: #6f6960;
-  --line: #e0d7c6;
-  --line-strong: #cabfa9;
-  /* Cloth binding. */
-  --accent: #3a5a40;
-  --accent-fg: #fffdf9;
-  /* Spine label. */
-  --warm: #a8553a;
-  /* Paid for, not here yet — and the one hue nothing else in this palette
-     claims. Ported from the sibling Board Game Catalog, where preorder was
-     given its own colour rather than sharing the wishlist's: they mean opposite
-     things about a wallet, and a crowdfunding import makes the paid-for one the
-     commoner state overnight. */
-  --transit: #2f6d74;
-  --shadow: 0 1px 2px rgba(35, 31, 26, 0.10), 0 6px 16px rgba(35, 31, 26, 0.06);
-  --shadow-lift: 0 2px 4px rgba(35, 31, 26, 0.14), 0 12px 28px rgba(35, 31, 26, 0.12);
-  --radius: 10px;
-  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
-  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #16130e;
-    --bg-tint: #1d1a13;
-    --panel: #221e17;
-    --fg: #ece5d7;
-    --muted: #9b9385;
-    --line: #342f25;
-    --line-strong: #4a4335;
-    --accent: #8fbc8f;
-    --accent-fg: #15130e;
-    --warm: #d98f6e;
-    --transit: #78b6bb;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 6px 16px rgba(0, 0, 0, 0.35);
-    --shadow-lift: 0 2px 4px rgba(0, 0, 0, 0.6), 0 12px 28px rgba(0, 0, 0, 0.45);
-  }
+  /*
+   * The third surface level. The estate contract has two grounds (--et-bg,
+   * --et-surface); this app's chrome — the top bar, filter boxes, hover
+   * washes, blank covers — sat on a tint between them. Derived from the
+   * tokens rather than declared, so it follows every theme and mode for free.
+   */
+  --lc-tint: color-mix(in srgb, var(--et-fg) 5%, var(--et-bg));
+  /* The hairline down a cover's left edge that reads as a spine. */
+  --lc-spine: color-mix(in srgb, var(--et-ink) 25%, transparent);
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  background: var(--bg);
-  color: var(--fg);
-  font: 16px/1.55 var(--sans);
+  background-color: var(--et-bg);
+  /* The theme's ground texture — retro's halftone dots, cyberpunk's neon
+     haze, none for apple. Body only, which is the games app's own rule; the
+     token sheet kills it under `prefers-contrast: more`. */
+  background-image: var(--et-bg-texture);
+  background-size: var(--et-bg-texture-size);
+  color: var(--et-fg);
+  font: 16px/1.55 var(--et-font);
   -webkit-text-size-adjust: 100%;
   /* Home-screen PWA on iOS: keep content clear of the notch and the home bar. */
   padding: env(safe-area-inset-top) env(safe-area-inset-right)
@@ -82,7 +91,21 @@ body {
 
 main { padding: 1rem; max-width: 64rem; margin: 0 auto; }
 
-h1, h2, h3 { font-family: var(--serif); font-weight: 600; letter-spacing: 0.01em; }
+/*
+ * Headings wear the theme's display voice: its face, its casing (cyberpunk
+ * uppercases, the others do not), its tracking, and its heading colour
+ * (cyberpunk's yellow brand voice; elsewhere just the foreground). The glow
+ * is `none` outside cyberpunk, where a faint yellow halo on big titles IS the
+ * identity — component-level, exactly where the adoption guide says it lives.
+ */
+h1, h2, h3 {
+  font-family: var(--et-font-display);
+  font-weight: 600;
+  letter-spacing: var(--et-title-spacing);
+  text-transform: var(--et-title-case);
+  color: var(--et-heading-color);
+}
+h1, h2, .page-title { text-shadow: var(--et-glow-title); }
 
 .centre {
   min-height: 80vh;
@@ -106,28 +129,31 @@ h1, h2, h3 { font-family: var(--serif); font-weight: 600; letter-spacing: 0.01em
   align-items: center;
   gap: 0.5rem;
   padding: 0.6rem 1rem;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--et-hairline);
   /* Opaque, not translucent: a blur behind a scrolling grid of covers is the
-     one effect on this page that costs frames on a phone. */
-  background: var(--bg-tint);
+     one effect on this page that costs frames on a phone. --lc-tint is
+     computed opaque, so it also blanks the body texture scrolling beneath. */
+  background: var(--lc-tint);
 }
 .topbar__brand {
   flex: 1;
   min-width: 0;
-  font-family: var(--serif);
+  font-family: var(--et-font-display);
   font-size: 1.15rem;
   font-weight: 600;
-  letter-spacing: 0.02em;
+  letter-spacing: var(--et-title-spacing);
+  text-transform: var(--et-title-case);
   /* It is a button — going home from a book page — but it must read as the
      wordmark, not as a control competing with Scan and Sign out. */
   min-height: 0;
   padding: 0;
   border: 0;
   background: none;
+  box-shadow: none;
   text-align: left;
   color: inherit;
 }
-.topbar__brand:hover { color: var(--accent); }
+.topbar__brand:hover { color: var(--et-accent); }
 .topbar__who {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -138,34 +164,64 @@ h1, h2, h3 { font-family: var(--serif); font-weight: 600; letter-spacing: 0.01em
   .topbar__who { display: none; }
 }
 
-.muted { color: var(--muted); }
+.muted { color: var(--et-muted); }
 .small { font-size: 0.85rem; }
 
 /* --- controls ------------------------------------------------------------ */
 
+/*
+ * Fields take the theme's field border — which is TRANSPARENT in apple,
+ * because apple is flat surfaces rather than boxes, and visible where borders
+ * are the theme (retro's hairline, cyberpunk's). Buttons take the theme's
+ * whole button grammar below.
+ */
 button, input, select, textarea {
   font: inherit;
   min-height: 44px;
   padding: 0 0.7rem;
-  border-radius: 8px;
-  border: 1px solid var(--line-strong);
-  background: var(--panel);
-  color: var(--fg);
+  border-radius: var(--et-radius);
+  border: var(--et-border-w) solid var(--et-field-border);
+  background: var(--et-surface);
+  color: var(--et-fg);
 }
-button { cursor: pointer; transition: border-color 0.15s, background 0.15s, transform 0.05s; }
-button:hover:not(:disabled) { border-color: var(--accent); }
-button:active:not(:disabled) { transform: translateY(1px); }
-button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+
+/*
+ * The estate button grammar, on this app's native buttons (the `.et-btn`
+ * recipe, restated because everything pressable here is already a <button>):
+ * pill in apple, notch-sharp in cyberpunk, an ink-outlined panel with a hard
+ * offset shadow in retro. Hover is brightness + the theme's glow (cyberpunk's
+ * cyan halo; `none` elsewhere). Press is the theme's own move — apple scales,
+ * retro translates INTO its shadow.
+ */
+button {
+  border: var(--et-btn-border);
+  border-radius: var(--et-radius-pill);
+  box-shadow: var(--et-btn-shadow);
+  cursor: pointer;
+  transition: filter var(--et-dur-fast) var(--et-ease),
+              box-shadow var(--et-dur-fast) var(--et-ease),
+              transform var(--et-dur-fast) var(--et-ease),
+              background var(--et-dur-fast) var(--et-ease),
+              color var(--et-dur-fast) var(--et-ease);
+}
+button:hover:not(:disabled) { filter: brightness(1.05); box-shadow: var(--et-btn-shadow), var(--et-glow); }
+button:active:not(:disabled) { transform: var(--et-press); }
+/* Retro's press sinks the button INTO its shadow — the shadow goes with it.
+   This mirrors the token sheet's own `[data-theme="retro"] .et-btn:active`
+   primitive; it is the theme's shipped behaviour, not a local fork. */
+[data-theme='retro'] button:active:not(:disabled) { box-shadow: none; }
+button.primary { background: var(--et-btn-bg); border: var(--et-btn-border); color: var(--et-btn-fg); }
 button:disabled { opacity: 0.45; cursor: default; }
 
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+:focus-visible { outline: 2px solid var(--et-accent); outline-offset: 2px; }
 
 button.link {
   min-height: 0;
   padding: 0;
   border: 0;
   background: none;
-  color: var(--accent);
+  box-shadow: none;
+  color: var(--et-accent);
   text-decoration: underline;
   font-size: 0.85rem;
 }
@@ -184,15 +240,21 @@ a.chip {
   align-items: center;
   min-height: 36px;
   padding: 0 0.5rem;
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  background: var(--panel);
-  color: var(--fg);
+  border: var(--et-btn-border);
+  border-radius: var(--et-radius-pill);
+  background: var(--et-surface);
+  color: var(--et-fg);
+  box-shadow: var(--et-btn-shadow);
   font-size: 0.9rem;
   text-decoration: none;
 }
-a.chip:hover { border-color: var(--accent); }
-a.chip.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+a.chip:hover { filter: brightness(1.05); box-shadow: var(--et-btn-shadow), var(--et-glow); }
+a.chip:active { transform: var(--et-press); }
+[data-theme='retro'] a.chip:active { box-shadow: none; }
+/* The tab you are on: filled with the interactive voice, keeping the theme's
+   own border (retro fills over its ink outline — the games app's selected-tab
+   grammar; apple has no border to keep). */
+a.chip.primary { background: var(--et-accent); color: var(--et-accent-fg); }
 /* The wordmark. `.topbar__brand` already unsets the button chrome; an anchor
    only needs its underline taken off. */
 a.topbar__brand { text-decoration: none; }
@@ -209,16 +271,16 @@ a.topbar__brand { text-decoration: none; }
 }
 .controls--filters {
   padding: 0.75rem;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--bg-tint);
+  border: var(--et-border-w) solid var(--et-panel-border);
+  border-radius: var(--et-radius-lg);
+  background: var(--lc-tint);
 }
 .field { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .field__label {
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--muted);
+  color: var(--et-muted);
 }
 .field select { max-width: 14rem; }
 /* A line of explanation under the filter row rather than beside the last
@@ -230,6 +292,67 @@ a.topbar__brand { text-decoration: none; }
   font-size: 0.75rem;
   line-height: 1.35;
 }
+
+/* --- the settings cog ----------------------------------------------------- */
+
+/*
+ * The estate theme switcher's UI, folded into this app's top bar (the
+ * adoption guide's "existing settings cog" path — ThemeCog.tsx drives
+ * window.estateTheme; nothing here touches storage). Chrome comes from the
+ * global button grammar, so the cog wears whatever theme it just picked. The
+ * quarter-turn while the panel is open is the estate's one literal spin;
+ * reduced motion parks it below with everything else.
+ */
+.cog { position: relative; display: inline-flex; flex: none; }
+.cog__button {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--et-muted);
+  transition: filter var(--et-dur-fast) var(--et-ease),
+              box-shadow var(--et-dur-fast) var(--et-ease),
+              color var(--et-dur-fast) var(--et-ease),
+              transform var(--et-dur-slow) var(--et-ease);
+}
+.cog__button:hover:not(:disabled) { color: var(--et-fg); }
+.cog__button[aria-expanded='true'] { transform: rotate(90deg); color: var(--et-fg); }
+
+.cog__panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  width: min(17rem, calc(100vw - 2rem));
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.9rem;
+  border: var(--et-border-w) solid var(--et-hairline);
+  border-radius: var(--et-radius-lg);
+  background: var(--et-surface);
+  box-shadow: var(--et-shadow-lift);
+}
+.cog__panel select { width: 100%; max-width: none; min-height: 40px; }
+.cog__row { display: flex; flex-direction: column; gap: 2px; }
+.cog__modes { display: flex; gap: 0.4rem; }
+.cog__modes button {
+  flex: 1;
+  min-height: 36px;
+  padding: 0 0.5rem;
+  border-radius: var(--et-radius);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--et-muted);
+}
+.cog__modes button[aria-pressed='true'] {
+  background: var(--et-accent);
+  border-color: var(--et-accent);
+  color: var(--et-accent-fg);
+}
+.cog__note { margin: 0; }
 
 /* --- stats --------------------------------------------------------------- */
 
@@ -244,21 +367,14 @@ a.topbar__brand { text-decoration: none; }
   align-items: baseline;
   gap: 0.35rem;
   padding: 0.3rem 0.6rem;
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--accent);
-  border-radius: 6px;
-  background: var(--bg-tint);
+  border: 1px solid var(--et-hairline);
+  border-left: 3px solid var(--et-accent);
+  border-radius: var(--et-radius);
+  background: var(--lc-tint);
 }
-.stat b { font-family: var(--serif); font-size: 1.05rem; }
-.stat span { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.stat b { font-family: var(--et-font-display); font-size: 1.05rem; }
+.stat span { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--et-muted); }
 
-/*
- * A stat that is also a way somewhere. Only "series with gaps" uses this today.
- * It keeps the exact shape of its siblings on purpose — one number, one label,
- * same box — because it is a stat first; the affordance is the pointer and the
- * hover, not a different silhouette that would read as a button in a row of
- * facts. `a.chip` in the top bar made the same choice for the same reason.
- */
 /*
  * ⚠️ `a.stat--link` lived here and is gone with its only user, the "series with
  * gaps" chip (added 2026-08-11, removed 2026-08-12 at the owner's request).
@@ -272,6 +388,12 @@ a.topbar__brand { text-decoration: none; }
  * A book is roughly 2:3. Fixing the ratio rather than the height is what stops
  * the grid reflowing as images arrive — every slot is the right shape before
  * anything has loaded.
+ *
+ * The corner radius stays a literal (2px 5px 5px 2px): it draws the OBJECT — a
+ * bound book, square at the spine, rounded at the fore-edge — and an object's
+ * shape does not change with the theme. The resting shadow is the theme's hard
+ * offset in retro (the games app's card grammar) and nothing elsewhere; hover
+ * takes the theme's lift, which in cyberpunk is the cyan glow.
  */
 .cover {
   display: block;
@@ -279,10 +401,10 @@ a.topbar__brand { text-decoration: none; }
   aspect-ratio: 2 / 3;
   object-fit: cover;
   border-radius: 2px 5px 5px 2px;
-  background: var(--bg-tint);
-  box-shadow: var(--shadow);
+  background: var(--lc-tint);
+  box-shadow: var(--et-btn-shadow);
   /* The hairline down the left edge reads as a spine. */
-  border-left: 3px solid rgba(35, 31, 26, 0.22);
+  border-left: 3px solid var(--lc-spine);
 }
 .cover--row { width: 46px; flex: none; }
 .cover--large { width: 132px; flex: none; }
@@ -295,12 +417,16 @@ a.topbar__brand { text-decoration: none; }
   padding: 0.5rem;
   text-align: center;
   background:
-    linear-gradient(160deg, var(--bg-tint), var(--panel));
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--warm);
+    linear-gradient(160deg, var(--lc-tint), var(--et-surface));
+  border: 1px solid var(--et-hairline);
+  /* The second voice, not the warn colour: a blank cover is decoration
+     standing in for art, not a request — the request is `.mark--needs`. */
+  border-left: 3px solid var(--et-accent-2);
 }
 .cover__title {
-  font-family: var(--serif);
+  /* A stand-in cover is the one card text that IS display type — it is
+     pretending to be a title printed on a book. */
+  font-family: var(--et-font-display);
   font-size: 0.78rem;
   line-height: 1.25;
   overflow: hidden;
@@ -309,7 +435,7 @@ a.topbar__brand { text-decoration: none; }
   line-clamp: 4;
   -webkit-box-orient: vertical;
 }
-.cover__author { font-size: 0.65rem; color: var(--muted); }
+.cover__author { font-size: 0.65rem; color: var(--et-muted); }
 .cover--row.cover--blank .cover__title { font-size: 0.55rem; -webkit-line-clamp: 3; line-clamp: 3; }
 
 /* --- grid ---------------------------------------------------------------- */
@@ -338,15 +464,22 @@ a.topbar__brand { text-decoration: none; }
   text-align: left;
   border: 0;
   background: none;
+  box-shadow: none;
   color: inherit;
   /* The anchor for `.card__open::after`. */
   position: relative;
 }
 .card__art { position: relative; }
-.card:hover .cover { box-shadow: var(--shadow-lift); }
+.card:hover .cover { box-shadow: var(--et-shadow-lift); }
 .card__text { display: flex; flex-direction: column; gap: 1px; }
+/*
+ * List content rides the BODY face at weight 600, not the display face — in
+ * retro that keeps Bangers a heading voice instead of shouting from every
+ * 140px card, and in cyberpunk the body face is Rajdhani anyway. The display
+ * face appears at page scale (headings, the work page title).
+ */
 .card__title {
-  font-family: var(--serif);
+  font-weight: 600;
   font-size: 0.95rem;
   line-height: 1.25;
   overflow: hidden;
@@ -370,14 +503,16 @@ a.topbar__brand { text-decoration: none; }
  */
 .card__open { color: inherit; text-decoration: none; }
 .card__open::after { content: ''; position: absolute; inset: 0; }
-.card__open:hover { color: var(--accent); }
+.card__open:hover { color: var(--et-accent); }
 /* The focus ring lands on the title text rather than the card, which is where
    the tab stop actually is. */
-.card__open:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.card__open:focus-visible { outline: 2px solid var(--et-accent); outline-offset: 2px; }
 
+/* The theme's second voice — cyberpunk's yellow, retro's mustard; apple folds
+   it into the one accent, deliberately. */
 .series-tag {
   font-size: 0.75rem;
-  color: var(--warm);
+  color: var(--et-accent-2);
   letter-spacing: 0.01em;
   /* Above the stretched title overlay, so tapping the series reaches the series
      and not the book behind it. Without this the link is drawn, is announced,
@@ -395,7 +530,9 @@ a.topbar__brand { text-decoration: none; }
 .card__text .series-tag { align-self: flex-start; }
 
 /* A read mark sits ON the cover in the grid, where there is no room for a row
-   of text, and beside the title in the list, where there is. */
+   of text, and beside the title in the list, where there is. The shadow is the
+   theme's hard offset in retro — badge grammar from the games app — and
+   nothing elsewhere. */
 .mark {
   position: absolute;
   top: 6px;
@@ -406,26 +543,34 @@ a.topbar__brand { text-decoration: none; }
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  background: var(--accent);
-  color: var(--accent-fg);
-  box-shadow: var(--shadow);
+  background: var(--et-accent);
+  color: var(--et-accent-fg);
+  box-shadow: var(--et-btn-shadow);
 }
-.mark--reading { background: var(--warm); color: #fff; }
-.mark--dnf, .mark--reference { background: var(--muted); color: var(--bg); }
-/* Paid for and not here yet. `color: var(--bg)` rather than a fixed white,
-   because `--transit` is a dark teal on paper and a pale one in the dark theme,
-   and only the flipping token stays legible against both. */
-.mark--preordered { background: var(--transit); color: var(--bg); }
+/* In progress is a fact that still asks for an ending — it shared the warm
+   colour with the request marks before the token move, and shares --et-warn
+   with them now, for the reason recorded over `.mark--needs`. `--et-bg` as
+   the text colour rather than a fixed white: the warn hue flips lightness
+   with the mode, and only the flipping token stays legible against both. */
+.mark--reading { background: var(--et-warn); color: var(--et-bg); }
+.mark--dnf, .mark--reference { background: var(--et-muted); color: var(--et-bg); }
+/* Paid for and not here yet. The old palette gave this its own teal
+   (--transit); the estate has no fourth hue and minting one is how themes rot,
+   so it rides --et-ok — "paid for, on its way" is the closest honest status
+   colour, and nothing else in the app wears it on a badge. */
+.mark--preordered { background: var(--et-ok); color: var(--et-bg); }
 
 /*
  * "This record is not finished." Migration 0040.
  *
- * ⚠️ Both wear `--warm`, the spine-label terracotta, and that is the only place
- * in this stylesheet where two different marks share a colour. It is deliberate:
- * every other mark states a *fact* about the book (read, on the way, held as an
- * ebook), and these two alone are a *request to the owner*. Giving them one hue
- * is what lets "there is something to do on this card" be read without reading
- * the words — which on a 150px tile at arm's length is the whole job.
+ * ⚠️ Both wear `--et-warn`, and that is the only place in this stylesheet where
+ * two different marks share a colour. It is deliberate: every other mark states
+ * a *fact* about the book (read, on the way, held as an ebook), and these two
+ * alone are a *request to the owner*. Giving them one hue is what lets "there
+ * is something to do on this card" be read without reading the words — which on
+ * a 150px tile at arm's length is the whole job. That is also why the REQUESTS
+ * map to the status token while the decorative uses of the old warm colour
+ * (series tags) map to --et-accent-2: a status colour may never be decoration.
  *
  * They differ by fill, following the grammar the format chips already use: solid
  * is the stronger claim.
@@ -433,19 +578,19 @@ a.topbar__brand { text-decoration: none; }
  *   filled outline   Cover needed — we know the image is wrong or absent
  *   outlined         Check — somebody suspects something and wrote down what
  *
- * ⚠️ `--warm` also carries `.mark--reading` and `.mark--gap`. Neither collides:
- * a read-state mark and a needs mark stack in `.card__marks` rather than
- * replacing each other, and `.mark--gap` only ever appears in a series ladder,
- * which has no covers on it.
+ * ⚠️ `--et-warn` also carries `.mark--reading` and `.mark--gap`. Neither
+ * collides: a read-state mark and a needs mark stack in `.card__marks` rather
+ * than replacing each other, and `.mark--gap` only ever appears in a series
+ * ladder, which has no covers on it.
  */
 .mark--needs {
-  background: var(--warm);
-  color: #fff;
+  background: var(--et-warn);
+  color: var(--et-bg);
 }
 .mark--watch {
-  background: var(--panel);
-  color: var(--warm);
-  border: 1px solid var(--warm);
+  background: var(--et-surface);
+  color: var(--et-warn);
+  border: 1px solid var(--et-warn);
   /* The border eats 2px the filled marks do not spend, and without this the two
      sit at different heights when they stack. */
   padding: 1px 5px;
@@ -469,7 +614,7 @@ a.topbar__brand { text-decoration: none; }
 /* --- list ---------------------------------------------------------------- */
 
 ul.works { list-style: none; margin: 0; padding: 0; }
-ul.works li { border-bottom: 1px solid var(--line); }
+ul.works li { border-bottom: 1px solid var(--et-hairline); }
 ul.works li:last-child { border-bottom: 0; }
 
 /* The whole row is the tap target. A 44px-tall link inside a row is a miss on a
@@ -489,16 +634,17 @@ ul.works li:last-child { border-bottom: 0; }
   padding: 0.6rem 0.25rem;
   text-align: left;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--et-radius);
   background: none;
+  box-shadow: none;
   color: inherit;
   font: inherit;
   position: relative;
 }
-.row-open:hover { background: var(--bg-tint); }
+.row-open:hover { background: var(--lc-tint); }
 .row-open__text { min-width: 0; flex: 1; }
 .row-open__head { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
-.row-open__head strong { font-family: var(--serif); font-size: 1rem; }
+.row-open__head strong { font-weight: 600; font-size: 1rem; }
 .row-open__head .mark { position: static; box-shadow: none; }
 .row-open__meta { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: baseline; }
 
@@ -512,7 +658,7 @@ ul.works li:last-child { border-bottom: 0; }
   gap: 0.5rem;
   margin-bottom: 0.5rem;
   padding-bottom: 0.3rem;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--et-hairline);
 }
 .shelf__head h2 { margin: 0; font-size: 1.05rem; }
 .shelf__strip {
@@ -536,11 +682,12 @@ ul.works li:last-child { border-bottom: 0; }
   padding: 0;
   border: 0;
   background: none;
+  box-shadow: none;
   color: inherit;
   text-align: left;
 }
 .shelf__title {
-  font-family: var(--serif);
+  font-weight: 600;
   font-size: 0.82rem;
   line-height: 1.2;
   overflow: hidden;
@@ -568,30 +715,41 @@ ul.works li:last-child { border-bottom: 0; }
 
 /* --- panels and the work page -------------------------------------------- */
 
+/*
+ * The estate tile, as this app's panel: flat where the theme is flat (apple's
+ * transparent panel border), outlined where borders ARE the theme (retro's
+ * 2px ink, cyberpunk's hairline), notch-clipped in cyberpunk. The resting
+ * shadow is retro's hard offset and nothing elsewhere — apple panels are
+ * surfaces, not boxes. Note clip-path also clips box-shadow; hover feedback
+ * on clipped panels is the border, which matches the source site's own
+ * behaviour.
+ */
 .panel {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
   padding: 1rem;
   margin-bottom: 1rem;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--panel);
-  box-shadow: var(--shadow);
+  border: var(--et-border-w) solid var(--et-panel-border);
+  border-radius: var(--et-radius-lg);
+  background: var(--et-surface);
+  box-shadow: var(--et-btn-shadow);
+  clip-path: var(--et-clip-panel);
 }
 
 .work-head { display: flex; gap: 1.1rem; margin: 0.5rem 0 1.2rem; }
 .work-head__text { min-width: 0; }
 .work-head h2 { margin: 0 0 0.2rem; font-size: 1.5rem; line-height: 1.2; }
 .work-head p { margin: 0 0 0.25rem; }
-.work-head__authors { font-family: var(--serif); font-size: 1.02rem; }
+.work-head__authors { font-weight: 600; font-size: 1.02rem; }
 
 /*
  * The book's number, above the title — "#269", the identifier the household
  * quotes in conversation and queries.
  *
- * ⚠️ Unmistakably an identifier and visually QUIET: small, muted, monospace,
- * so it reads as a catalog number and never competes with the title below it.
+ * ⚠️ Unmistakably an identifier and visually QUIET: small, muted, monospace
+ * (Share Tech Mono when cyberpunk — the mono face is that theme's voice), so
+ * it reads as a catalog number and never competes with the title below it.
  *
  * ⚠️ `user-select: all` is load-bearing, not a flourish. The number's entire
  * purpose is being pasted somewhere else, so one click/tap selects the whole
@@ -601,28 +759,29 @@ ul.works li:last-child { border-bottom: 0; }
  */
 .work-id-row { margin: 0 0 0.1rem; line-height: 1; }
 .work-id {
-  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-family: var(--et-font-mono);
   font-size: 0.78rem;
-  color: var(--muted);
+  color: var(--et-muted);
   background: none;
   border: none;
+  box-shadow: none;
   padding: 2px 0;
   cursor: pointer;
   user-select: all;
   -webkit-user-select: all;
 }
-.work-id:hover { color: var(--accent); }
-.work-id:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.work-id:hover { color: var(--et-accent); }
+.work-id:focus-visible { outline: 2px solid var(--et-accent); outline-offset: 2px; }
 .work-id__said { margin-left: 0.4rem; }
 
 /*
  * The illustrator credit, directly under the byline — where a cover would
- * print it. Serif like the byline (it is the same kind of fact) but smaller
+ * print it. Same face as the byline (it is the same kind of fact) but smaller
  * and quieter, because the author stays the primary credit when both exist.
  * Rendered ONLY when recorded: an absent illustrator is nothing, never an
  * empty label — most novels have none and absence already says it.
  */
-.work-head__illustrator { font-family: var(--serif); font-size: 0.9rem; color: var(--muted); }
+.work-head__illustrator { font-size: 0.9rem; color: var(--et-muted); }
 @media (max-width: 26rem) {
   .cover--large { width: 104px; }
   .work-head h2 { font-size: 1.25rem; }
@@ -631,7 +790,7 @@ ul.works li:last-child { border-bottom: 0; }
 .description { margin: 0; white-space: pre-wrap; }
 
 .path {
-  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-family: var(--et-font-mono);
   font-size: 0.72rem;
   overflow-wrap: anywhere;
 }
@@ -642,31 +801,32 @@ ul.works li:last-child { border-bottom: 0; }
   align-items: center;
   min-height: 36px;
   padding: 0 0.65rem;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  background: var(--panel);
-  color: var(--fg);
+  border: var(--et-btn-border);
+  border-radius: var(--et-radius-pill);
+  background: var(--et-surface);
+  box-shadow: var(--et-btn-shadow);
+  color: var(--et-fg);
   font-size: 0.82rem;
   text-decoration: none;
 }
-.chip-link:hover { border-color: var(--accent); color: var(--accent); }
+.chip-link:hover { color: var(--et-accent); filter: brightness(1.05); box-shadow: var(--et-btn-shadow), var(--et-glow); }
 
 .notice {
   padding: 0.7rem 0.9rem;
-  border-radius: 8px;
-  border: 1px solid var(--line-strong);
-  background: var(--bg-tint);
+  border-radius: var(--et-radius);
+  border: 1px solid var(--et-hairline);
+  background: var(--lc-tint);
 }
-.notice--bad { border-left: 3px solid var(--warm); }
-/* Something landed. `--accent` is the cloth binding — this palette's positive —
-   rather than a green invented for the occasion; the design has two accents and
-   both already mean something. */
-.notice--good { border-left: 3px solid var(--accent); }
+/* Status colours carrying status — the one place they should: something went
+   wrong, something landed. (The old palette spent its two accents here; the
+   estate has real status tokens, so the notices use them.) */
+.notice--bad { border-left: 3px solid var(--et-danger); }
+.notice--good { border-left: 3px solid var(--et-ok); }
 
 h3 { margin: 0 0 0.5rem; font-size: 1rem; }
 
 ul.plain, ul.reviews { list-style: none; margin: 0 0 0.5rem; padding: 0; }
-ul.plain li, ul.reviews li { padding: 0.45rem 0; border-bottom: 1px solid var(--line); }
+ul.plain li, ul.reviews li { padding: 0.45rem 0; border-bottom: 1px solid var(--et-hairline); }
 ul.plain li:last-child, ul.reviews li:last-child { border-bottom: 0; }
 ul.plain li strong { margin-right: 0.5rem; }
 
@@ -683,10 +843,15 @@ textarea {
   resize: vertical;
 }
 
+/*
+ * ⚠️ The star gold (#d9a441) is a deliberate literal — see the header. A star
+ * is gold in every theme; the shared review store must not show two colours of
+ * truth on two sites. The empty star is the theme's hairline.
+ */
 .stars { letter-spacing: 1px; }
 .star { position: relative; }
 .star.full { color: #d9a441; }
-.star.empty { color: var(--line-strong); }
+.star.empty { color: var(--et-hairline); }
 
 /* ⚠️ A half star must LOOK half.
  *
@@ -698,7 +863,7 @@ textarea {
  *
  * The overlay technique is the audiobook site's: an empty star underneath, and a
  * filled one clipped to its left half on top. */
-.star.half { color: var(--line-strong); }
+.star.half { color: var(--et-hairline); }
 .star.half::after {
   content: '★';
   position: absolute;
@@ -712,11 +877,11 @@ textarea {
 /* --- series, wishlist, relations ----------------------------------------- */
 
 /*
- * Everything below is paper and ink like the rest — no new colour is invented,
- * because there are only two accents in this design and they already mean
- * something. `--accent` (cloth binding) is what we have; `--warm` (spine label)
- * is what is outstanding. A missing volume and a wishlist entry are the same
- * kind of fact, so they wear the same colour.
+ * Everything below keeps the two-voice discipline the paper design had, spoken
+ * in the theme's tokens: `--et-accent` (interactivity, held facts) is what we
+ * have; `--et-warn` is what is outstanding; `--et-accent-2` is the second,
+ * decorative voice. A missing volume and a wishlist entry are the same kind of
+ * fact, so they wear the same colour.
  */
 
 .topbar__nav { display: flex; gap: 0.35rem; }
@@ -727,7 +892,7 @@ textarea {
 }
 
 .page-title { margin: 0.2rem 0 0.6rem; font-size: 1.5rem; }
-.series-claim { margin: 0 0 0.4rem; font-family: var(--serif); font-size: 1.05rem; }
+.series-claim { margin: 0 0 0.4rem; font-weight: 600; font-size: 1.05rem; }
 
 .stack { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.6rem; }
 
@@ -745,9 +910,9 @@ textarea {
  */
 .series-tag__link {
   font-size: inherit;
-  color: var(--warm);
+  color: var(--et-accent-2);
   text-decoration: none;
-  border-bottom: 1px dotted var(--warm);
+  border-bottom: 1px dotted var(--et-accent-2);
   /* A 0.75rem target is small for a thumb. The padding is vertical only —
      widening it horizontally would push the link out over the card's tap
      overlay and steal presses meant for the book. */
@@ -761,17 +926,17 @@ textarea {
   white-space: nowrap;
   vertical-align: bottom;
 }
-.series-tag__link:hover { color: var(--accent); border-bottom-color: var(--accent); }
+.series-tag__link:hover { color: var(--et-accent); border-bottom-color: var(--et-accent); }
 
 /*
  * The tier above a series: "Part of The Cosmere", on a book page.
  *
- * ⚠️ **Not a `.mark`, and not terracotta.** Both would be wrong for the same
- * reason. `--warm` is reserved for the marks that *ask for something* — "Cover
- * needed", "Check" — and a universe is a fact about the book, not a job; the
- * rule is written out over `.mark--copies`. And `.mark` is `position: absolute`
- * with uppercase 0.65rem type built for the corner of a cover, which is not
- * what a sentence in a page header is.
+ * ⚠️ **Not a `.mark`, and not the warn colour.** Both would be wrong for the
+ * same reason. `--et-warn` is reserved for the marks that *ask for something* —
+ * "Cover needed", "Check" — and a universe is a fact about the book, not a job;
+ * the rule is written out over `.mark--copies`. And `.mark` is
+ * `position: absolute` with uppercase 0.65rem type built for the corner of a
+ * cover, which is not what a sentence in a page header is.
  *
  * So: ordinary prose in the muted colour, with the world's name as the only
  * coloured thing in it. It reads as one more line of the header rather than as
@@ -779,22 +944,22 @@ textarea {
  * roughly one book in eight here, and it must never look like an annotation the
  * other seven are missing.
  *
- * `--accent` and a dotted underline, matching `.series-tag__link` directly
+ * `--et-accent` and a dotted underline, matching `.series-tag__link` directly
  * above it: the two links do the same kind of thing (go up a level) and are two
  * lines apart, so they have to look related. The colour differs because the
- * scope does — the spine label for the series, the cloth binding for the world
- * the series sits in.
+ * scope does — the second voice for the series, the interactive voice for the
+ * world the series sits in.
  */
 .universe-tag {
   margin: 0.1rem 0 0;
   font-size: 0.75rem;
-  color: var(--muted);
+  color: var(--et-muted);
   letter-spacing: 0.01em;
 }
 .universe-tag__link {
-  color: var(--accent);
+  color: var(--et-accent);
   text-decoration: none;
-  border-bottom: 1px dotted var(--accent);
+  border-bottom: 1px dotted var(--et-accent);
   /* Vertical only, for the reason `.series-tag__link` gives: a wider target
      here would sit over a neighbouring tap area rather than beside it. */
   display: inline-block;
@@ -823,7 +988,7 @@ textarea {
   flex-wrap: wrap;
   margin: 0 0 0.2rem;
   padding-bottom: 0.3rem;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--et-hairline);
   font-size: 1rem;
 }
 
@@ -831,16 +996,16 @@ textarea {
    loudly as a Read mark; `--attested` rests on a source and is deliberately
    quieter — an outline rather than a fill, so a glance can tell them apart
    without reading either. */
-.mark--gap { background: var(--warm); color: #fff; }
+.mark--gap { background: var(--et-warn); color: var(--et-bg); }
 .mark--attested {
   background: none;
-  border: 1px solid var(--line-strong);
-  color: var(--muted);
+  border: 1px solid var(--et-hairline);
+  color: var(--et-muted);
 }
 .mark--relation {
   background: none;
-  border: 1px solid var(--accent);
-  color: var(--accent);
+  border: 1px solid var(--et-accent);
+  color: var(--et-accent);
   font-weight: 600;
 }
 
@@ -855,7 +1020,7 @@ ol.ladder {
   list-style: none;
   margin: 1rem 0;
   padding: 0 0 0 1.6rem;
-  border-left: 2px solid var(--line);
+  border-left: 2px solid var(--et-hairline);
 }
 ol.ladder > li {
   position: relative;
@@ -871,34 +1036,34 @@ ol.ladder > li::before {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--et-accent);
 }
 /* A hollow marker for a rung we do not have — the same "outline means we are
    taking somebody's word for it, fill means we hold it" grammar as the marks. */
-.ladder__gap::before { background: var(--bg); border: 2px solid var(--warm); }
+.ladder__gap::before { background: var(--et-bg); border: 2px solid var(--et-warn); }
 .ladder__gap--attested::before,
-.ladder__gap--implied::before { border-color: var(--line-strong); }
+.ladder__gap--implied::before { border-color: var(--et-hairline); }
 
 /*
  * ⚠️ Two rungs that are absent from this catalog and must NOT read as losses.
  *
  * `--audio` is a book the household owns, in the sibling catalog (migration
  * 0080); `--skipped` is one the owner has decided never to own (0081). Both were
- * drawn in `--warm` before those tables existed, which is how the Stormlight
- * ladder came to show four holes over a complete run. They keep the hollow
- * marker — we do not hold them *here* — and lose the warning colour, which is
- * the whole of the distinction.
+ * drawn in the warn colour before those tables existed, which is how the
+ * Stormlight ladder came to show four holes over a complete run. They keep the
+ * hollow marker — we do not hold them *here* — and lose the warning colour,
+ * which is the whole of the distinction.
  */
-.ladder__gap--audio::before { border-color: var(--accent); }
-.ladder__gap--skipped::before { border-color: var(--line); }
+.ladder__gap--audio::before { border-color: var(--et-accent); }
+.ladder__gap--skipped::before { border-color: var(--et-hairline); }
 .ladder__gap--skipped { opacity: 0.55; }
 
 .ladder__no {
   flex: none;
   min-width: 4.5rem;
-  font-family: var(--serif);
+  font-family: var(--et-font-display);
   font-size: 0.8rem;
-  color: var(--muted);
+  color: var(--et-muted);
 }
 .ladder__book,
 .ladder__missing {
@@ -910,15 +1075,16 @@ ol.ladder > li::before {
   padding: 0.2rem;
   min-height: 0;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--et-radius);
   background: none;
+  box-shadow: none;
   color: inherit;
   text-align: left;
 }
-.ladder__book:hover { background: var(--bg-tint); }
+.ladder__book:hover { background: var(--lc-tint); }
 .ladder__text { display: flex; flex-direction: column; min-width: 0; }
-.ladder__text strong { font-family: var(--serif); font-size: 0.95rem; }
-.ladder__gap .ladder__text strong { color: var(--muted); font-style: italic; }
+.ladder__text strong { font-weight: 600; font-size: 0.95rem; }
+.ladder__gap .ladder__text strong { color: var(--et-muted); font-style: italic; }
 .ladder__missing { flex-wrap: wrap; }
 
 /* --- what form we hold it in --------------------------------------------- */
@@ -937,14 +1103,17 @@ ol.ladder > li::before {
  * taking somebody's word for it. That grammar does not apply here — we hold all
  * three of these — so a different one is used and is consistent within itself:
  *
- *   filled accent   an object on a shelf
- *   outlined accent a file, or a licence: real, but nothing to hand across a room
- *   outlined warm   somebody else's record — it lives in the audiobook catalog,
- *                   which this app reads and never writes
+ *   filled accent    an object on a shelf
+ *   outlined accent  a file, or a licence: real, but nothing to hand across a room
+ *   outlined muted   somebody else's record — it lives in the audiobook catalog,
+ *                    which this app reads and never writes
  *
- * The warm outline is doing real work: an audiobook is the one row here that is
- * not in this database at all, and colouring it like the other two would say the
- * catalogs had merged, which `PLATFORM.md` §2.2 says they never do.
+ * The muted outline is doing real work: an audiobook is the one row here that
+ * is not in this database at all, and colouring it like the other two would say
+ * the catalogs had merged, which `PLATFORM.md` §2.2 says they never do. (It
+ * wore the old warm terracotta; the estate's second voice folds into the
+ * accent under apple, which would have made it identical to the ebook chip —
+ * the muted outline keeps the three-way distinction in every theme.)
  */
 .fmts {
   display: flex;
@@ -963,21 +1132,21 @@ ol.ladder > li::before {
   letter-spacing: 0.05em;
   white-space: nowrap;
 }
-.fmt--physical { background: var(--accent); color: var(--accent-fg); }
-.fmt--ebook { border-color: var(--accent); color: var(--accent); }
-.fmt--audio { border-color: var(--warm); color: var(--warm); }
+.fmt--physical { background: var(--et-accent); color: var(--et-accent-fg); }
+.fmt--ebook { border-color: var(--et-accent); color: var(--et-accent); }
+.fmt--audio { border-color: var(--et-muted); color: var(--et-muted); }
 
 /* The count beside a section heading, ported from the sibling Board Game
    Catalog's `.count` — the same muted, unbolded weight, so the number reads as
    an annotation of the heading and not as part of it. */
-.count { color: var(--muted); font-weight: 400; }
+.count { color: var(--et-muted); font-weight: 400; }
 
 /* The printings of one volume, nested under it. Indented by the rule rather than
    by padding alone, so the grouping survives a title long enough to wrap. */
 .alt__editions {
   margin: 0.2rem 0 0;
   padding-left: 0.6rem;
-  border-left: 2px solid var(--line);
+  border-left: 2px solid var(--et-hairline);
 }
 .alt__editions li { padding: 0.25rem 0; border-bottom: 0; }
 
@@ -993,29 +1162,30 @@ ol.ladder > li::before {
   min-height: 0;
   padding: 0.2rem;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--et-radius);
   background: none;
+  box-shadow: none;
   color: inherit;
   text-align: left;
 }
-.wish__book:hover { background: var(--bg-tint); }
+.wish__book:hover { background: var(--lc-tint); }
 .wish__book .row-open__text { display: flex; flex-direction: column; }
 .wish__actions { display: flex; flex-wrap: wrap; gap: 0.3rem; flex: none; }
 
 /* --- a parcel turning up -------------------------------------------------- */
 
 /*
- * Wears `--transit`, the colour `preordered` already has on every badge and
+ * Wears `--et-ok`, the colour `preordered` already has on every badge and
  * wishlist row — this panel is that badge grown into a section, and giving it a
  * colour of its own would make one fact look like two. The left rule is the
  * whole decoration: it sits above the fold on the screen that has it, and a
  * fully tinted panel there would shout over the list it introduces.
  *
  * Ported from the sibling Board Game Catalog, minus its starburst: that flourish
- * belongs to a design with a printed-object metaphor and two flat shadows, and
- * this stylesheet is paper and ink with no such motif to hang it on.
+ * belongs to a design with a printed-object metaphor, and no current theme has
+ * such a motif to hang it on.
  */
-.arrivals { border-left: 3px solid var(--transit); }
+.arrivals { border-left: 3px solid var(--et-ok); }
 
 /* Heading and the one control on the same line — the sibling's `.section-head`,
    which this stylesheet had no equivalent of because `.panel` is a column. */
@@ -1028,7 +1198,7 @@ ol.ladder > li::before {
 .panel__head h3 { margin: 0; }
 
 .arrivals__count {
-  color: var(--transit);
+  color: var(--et-ok);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1042,7 +1212,7 @@ ol.ladder > li::before {
 }
 
 .arrivals__list { list-style: none; margin: 0; padding: 0; }
-.arrival { border-bottom: 1px solid var(--line); }
+.arrival { border-bottom: 1px solid var(--et-hairline); }
 .arrival:last-child { border-bottom: 0; }
 /* ⚠️ The whole row is the tap target, not the 16px checkbox — the rule
    `WorkList` states for the collection, and this list is read on a phone with a
@@ -1083,7 +1253,7 @@ ol.ladder > li::before {
 }
 .arrival__note {
   font-size: 0.78rem;
-  color: var(--muted);
+  color: var(--et-muted);
   font-style: italic;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1104,8 +1274,8 @@ ol.ladder > li::before {
   z-index: 1;
   margin: 0 -1rem -1rem;
   padding: 0.7rem 1rem;
-  background: var(--panel);
-  border-top: 1px solid var(--line);
+  background: var(--et-surface);
+  border-top: 1px solid var(--et-hairline);
 }
 
 @media (max-width: 26rem) {
@@ -1133,7 +1303,7 @@ ol.ladder > li::before {
 
 .copy { display: flex; align-items: flex-start; gap: 0.6rem; flex-wrap: wrap; }
 .copy__text { display: flex; flex-direction: column; flex: 1; min-width: 12rem; }
-.copy__text strong { font-family: var(--serif); }
+.copy__text strong { font-weight: 600; }
 .copy__actions { display: flex; align-items: flex-end; gap: 0.4rem; }
 .copy__actions select { min-height: 36px; max-width: 10rem; }
 
@@ -1158,11 +1328,11 @@ ol.ladder > li::before {
 /*
  * "This printing was sold as better than the standard one."
  *
- * ⚠️ `--accent`, the cloth binding, and NOT `--warm`. The comment on
- * `.mark--needs` records that terracotta is reserved for the two marks that are
- * a *request to the owner*; this one states a **fact about the book**, like
- * `.mark--preordered` and the format chips, and borrowing the request colour
- * would put "there is something to do here" on nine books that are finished.
+ * ⚠️ `--et-accent`, and NOT `--et-warn`. The comment on `.mark--needs` records
+ * that the warn colour is reserved for the two marks that are a *request to the
+ * owner*; this one states a **fact about the book**, like `.mark--preordered`
+ * and the format chips, and borrowing the request colour would put "there is
+ * something to do here" on nine books that are finished.
  *
  * Outlined rather than filled, following the grammar `.mark--needs` and
  * `.mark--watch` set out — solid is the stronger claim — and matching
@@ -1179,8 +1349,8 @@ ol.ladder > li::before {
   box-shadow: none;
   flex: none;
   background: none;
-  border: 1px solid var(--accent);
-  color: var(--accent);
+  border: 1px solid var(--et-accent);
+  color: var(--et-accent);
   font-weight: 600;
 }
 
@@ -1195,9 +1365,9 @@ ol.ladder > li::before {
  */
 .edition-form {
   padding: 0.7rem;
-  border: 1px dashed var(--line-strong);
-  border-radius: 8px;
-  background: var(--bg-tint);
+  border: 1px dashed var(--et-hairline);
+  border-radius: var(--et-radius);
+  background: var(--lc-tint);
 }
 
 /*
@@ -1221,18 +1391,17 @@ ol.ladder > li::before {
 .edition-form .field select { max-width: none; }
 
 /*
- * The armed half of a two-click delete. Terracotta, because that is already
- * what this palette uses for "outstanding, needs attention" — a third colour
- * would be inventing one, and the design has exactly two.
+ * The armed half of a two-click delete. `--et-danger` — the estate has a real
+ * danger token, so the armed state no longer borrows the attention colour.
  *
  * Only the ARMED button wears it. The resting Delete is a plain chip, so a thumb
  * moving fast cannot read the pair as one control with two endings.
  */
 button.chip.danger {
-  border-color: var(--warm);
-  color: var(--warm);
+  border-color: var(--et-danger);
+  color: var(--et-danger);
 }
-button.chip.danger:hover:not(:disabled) { background: var(--warm); color: var(--panel); }
+button.chip.danger:hover:not(:disabled) { background: var(--et-danger); color: var(--et-bg); }
 
 /* --- related ------------------------------------------------------------- */
 
@@ -1246,12 +1415,13 @@ button.chip.danger:hover:not(:disabled) { background: var(--warm); color: var(--
   min-height: 0;
   padding: 0.2rem;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--et-radius);
   background: none;
+  box-shadow: none;
   color: inherit;
   text-align: left;
 }
-.related__book:hover { background: var(--bg-tint); }
+.related__book:hover { background: var(--lc-tint); }
 .related__book .row-open__text { display: flex; flex-direction: column; }
 
 /* --- the picker ---------------------------------------------------------- */
@@ -1262,11 +1432,11 @@ ul.picker {
   padding: 0;
   max-height: 16rem;
   overflow-y: auto;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--bg-tint);
+  border: 1px solid var(--et-hairline);
+  border-radius: var(--et-radius);
+  background: var(--lc-tint);
 }
-ul.picker > li + li { border-top: 1px solid var(--line); }
+ul.picker > li + li { border-top: 1px solid var(--et-hairline); }
 .picker__hit {
   display: flex;
   flex-direction: column;
@@ -1277,18 +1447,21 @@ ul.picker > li + li { border-top: 1px solid var(--line); }
   border: 0;
   border-radius: 0;
   background: none;
+  box-shadow: none;
   color: inherit;
   text-align: left;
 }
-.picker__hit:hover { background: var(--panel); }
-.picker__hit strong { font-family: var(--serif); font-size: 0.95rem; }
+.picker__hit:hover { background: var(--et-surface); }
+.picker__hit strong { font-weight: 600; font-size: 0.95rem; }
 
 /* --- scanning ------------------------------------------------------------ */
 
+/* ⚠️ The black is a deliberate literal — a viewfinder surround, not a theme
+   surface; see the header. */
 .camera-stage {
   position: relative;
   margin: 0.5rem 0;
-  border-radius: var(--radius);
+  border-radius: var(--et-radius-lg);
   overflow: hidden;
   background: #000;
 }
@@ -1302,8 +1475,14 @@ ul.picker > li + li { border-top: 1px solid var(--line); }
   object-fit: cover;
 }
 
+/* The whole motion vocabulary dies at once — the estate's rule, and both
+   source sites' own. The press transforms and the cog's quarter-turn are
+   parked explicitly because they are transforms, not transitions. */
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
+  button:active:not(:disabled) { transform: none; }
+  a.chip:active { transform: none; }
+  .cog__button[aria-expanded='true'] { transform: none; }
 }
 
 /* --- other names, and people --------------------------------------------- */
@@ -1335,39 +1514,39 @@ ul.picker > li + li { border-top: 1px solid var(--line); }
 /* What kind of thing it is. Quiet — the NAME is what a person reads. */
 .mark--accessory {
   background: none;
-  border: 1px solid var(--line-strong);
-  color: var(--muted);
+  border: 1px solid var(--et-hairline);
+  color: var(--et-muted);
 }
 
 /* A file is not a thing on a shelf, and the tag has to be legible at a glance
    because it is the axis the crowdfunding audit counts. */
 .mark--digital {
   background: none;
-  border: 1px dashed var(--accent);
-  color: var(--accent);
+  border: 1px dashed var(--et-accent);
+  color: var(--et-accent);
 }
 
 /* Four states, and only two of them are settled. `both` and `unknown` are jobs
-   somebody has to do — they get the warm colour every other unfinished thing in
+   somebody has to do — they get the warn colour every other unfinished thing in
    this app gets, so the eye finds them without reading. */
-.mark--medium-physical { background: var(--accent); color: var(--accent-fg); }
+.mark--medium-physical { background: var(--et-accent); color: var(--et-accent-fg); }
 .mark--medium-digital {
   background: none;
-  border: 1px dashed var(--accent);
-  color: var(--accent);
+  border: 1px dashed var(--et-accent);
+  color: var(--et-accent);
 }
 .mark--medium-both,
-.mark--medium-unknown { background: var(--warm); color: #fff; }
+.mark--medium-unknown { background: var(--et-warn); color: var(--et-bg); }
 
 /* A title alias and an author alias widen two different checks, so they are not
    two shades of one colour: outline for a title (a name for the book), filled
    for an author (a name for the person). */
 .mark--alias-title {
   background: none;
-  border: 1px solid var(--accent);
-  color: var(--accent);
+  border: 1px solid var(--et-accent);
+  color: var(--et-accent);
 }
-.mark--alias-author { background: var(--accent); color: var(--accent-fg); }
+.mark--alias-author { background: var(--et-accent); color: var(--et-accent-fg); }
 
 .kind-choice {
   display: flex;
@@ -1375,8 +1554,8 @@ ul.picker > li + li { border-top: 1px solid var(--line); }
   gap: 0.5rem;
   margin: 0;
   padding: 0.6rem;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border: 1px solid var(--et-hairline);
+  border-radius: var(--et-radius-lg);
 }
 .kind-choice legend { padding: 0 0.3rem; }
 /* The whole option is the tap target, radio included — a 13px circle is not one. */
@@ -1396,7 +1575,7 @@ ul.picker > li + li { border-top: 1px solid var(--line); }
   flex-wrap: wrap;
 }
 .person__id { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
-.person__id strong { font-family: var(--serif); font-size: 1rem; }
+.person__id strong { font-weight: 600; font-size: 1rem; }
 
 /* Four roles now, and `pending` must not read like `reader` — telling a guest
    who is in from a guest who is waiting is the whole job of this page.
@@ -1406,13 +1585,13 @@ ul.picker > li + li { border-top: 1px solid var(--line); }
    differ only in whether they can change this page. Every other distinction
    here is about the catalog, where they are identical. */
 .mark--role-owner,
-.mark--role-manager { background: var(--accent); color: var(--accent-fg); }
+.mark--role-manager { background: var(--et-accent); color: var(--et-accent-fg); }
 .mark--role-reader {
   background: none;
-  border: 1px solid var(--accent);
-  color: var(--accent);
+  border: 1px solid var(--et-accent);
+  color: var(--et-accent);
 }
-.mark--role-pending { background: var(--warm); color: #fff; }
+.mark--role-pending { background: var(--et-warn); color: var(--et-bg); }
 /* --- Scan review rows -------------------------------------------------------
    Scoped to `.scan-lines` rather than to `ul.works`, which the collection and
    the wishlist also use with a different row shape. A cover, the reading and
@@ -1430,7 +1609,7 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
   width: 44px;
   height: 66px;
   flex: none;
-  border: 1px dashed var(--line-strong);
+  border: 1px dashed var(--et-hairline);
   border-radius: 3px;
 }
 
@@ -1448,11 +1627,11 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
 .gap-summary td {
   padding: 0.35rem 0.5rem;
   text-align: right;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--et-hairline);
 }
 .gap-summary thead th {
   font-weight: 500;
-  color: var(--muted);
+  color: var(--et-muted);
   font-size: 0.8rem;
 }
 .gap-summary th[scope='row'] {
@@ -1461,16 +1640,16 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
 }
 .gap-summary tbody tr:last-child th,
 .gap-summary tbody tr:last-child td { border-bottom: 0; }
-.gap-summary tr.is-current { background: var(--panel); }
+.gap-summary tr.is-current { background: var(--et-surface); }
 
 /* One proposal. The value is the loud part; the source sits under it in the
    muted type every other provenance line in this app uses. */
 .proposal {
-  border-left: 3px solid var(--line);
+  border-left: 3px solid var(--et-hairline);
   padding: 0.4rem 0 0.4rem 0.6rem;
 }
 .proposal__value {
-  font-family: var(--serif);
+  font-weight: 600;
   font-size: 1rem;
   margin: 0.15rem 0;
 }
@@ -1484,11 +1663,9 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
  * like every other pressable thing here, and each carries a one-line blurb so
  * nobody has to open a tab to learn what it does.
  *
- * ⚠️ The colours are this app's, not that one's. It fills the selected tab with
- * mustard over an ink border; here the palette is paper-and-ink, so the same
- * idea is expressed with --accent on --panel. The rule being copied is "a filled
- * tab reads as the one you are on, an inset ring reads as a focus state" — not
- * the specific hue.
+ * The tokens make the rule that was being copied literal: a filled tab reads as
+ * the one you are on (retro fills over its own ink outline — exactly the
+ * source app's selected-tab treatment, now round-tripped through the contract).
  */
 .scan-modes {
   display: grid;
@@ -1513,9 +1690,9 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
   gap: 0.15rem;
   padding: 0.6rem 0.5rem;
   text-align: left;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  background: var(--lc-tint);
+  border: var(--et-border-w) solid var(--et-panel-border);
+  border-radius: var(--et-radius-lg);
   cursor: pointer;
   font: inherit;
   color: inherit;
@@ -1527,30 +1704,29 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
 .scan-mode span { font-size: 0.75rem; line-height: 1.25; }
 
 .scan-mode--on {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--bg);
+  background: var(--et-accent);
+  color: var(--et-accent-fg);
 }
-.scan-mode--on .muted { color: var(--bg); opacity: 0.8; }
+.scan-mode--on .muted { color: var(--et-accent-fg); opacity: 0.8; }
 
 /*
  * "x2" — more than one copy on the shelf.
  *
- * Neutral rather than warm: unlike `.mark--needs` and `.mark--watch`, owning a
- * book twice is a fact about the collection, not a job to do. Terracotta is
- * reserved for the marks that ask for something.
+ * Neutral rather than warn: unlike `.mark--needs` and `.mark--watch`, owning a
+ * book twice is a fact about the collection, not a job to do. The warn colour
+ * is reserved for the marks that ask for something.
  */
 .mark--copies {
-  background: var(--panel);
-  color: var(--fg);
-  border: 1px solid var(--line);
+  background: var(--et-surface);
+  color: var(--et-fg);
+  border: 1px solid var(--et-hairline);
   font-variant-numeric: tabular-nums;
 }
 
 /* --- the cover picker ------------------------------------------------------
    A grid of covers this book could wear, side by side — the whole feature is
    comparing pictures, so the picture is the button. Card idea ported from the
-   sibling Board Game Catalog's `.cover-card`; the tokens are this palette's.
+   sibling Board Game Catalog's `.cover-card`; the tokens are the theme's.
    2:3 frames because books are taller than they are wide; `object-fit:
    contain` (not cover) because the person is judging exactly what the crop
    would hide — whether THIS artwork is the object on the shelf. */
@@ -1568,24 +1744,25 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
   gap: 0.25rem;
   width: 100%;
   padding: 0.4rem;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  background: var(--et-surface);
+  border: var(--et-border-w) solid var(--et-panel-border);
+  border-radius: var(--et-radius);
+  box-shadow: var(--et-btn-shadow);
   cursor: pointer;
   font: inherit;
   color: inherit;
   text-align: left;
 }
 .cover-swap__card--chosen {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent);
+  border-color: var(--et-accent);
+  box-shadow: 0 0 0 2px var(--et-accent);
 }
 .cover-swap__frame {
   display: flex;
   align-items: center;
   justify-content: center;
   aspect-ratio: 2 / 3;
-  background: var(--bg-tint);
+  background: var(--lc-tint);
   border-radius: 4px;
   overflow: hidden;
 }
@@ -1597,8 +1774,8 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
 .cover-swap__dead {
   padding: 0.5rem;
   font-size: 0.75rem;
-  color: var(--muted);
+  color: var(--et-muted);
   text-align: center;
 }
 .cover-swap__label { font-size: 0.8rem; line-height: 1.3; }
-.cover-swap__caption { font-size: 0.72rem; color: var(--muted); line-height: 1.3; }
+.cover-swap__caption { font-size: 0.72rem; color: var(--et-muted); line-height: 1.3; }
