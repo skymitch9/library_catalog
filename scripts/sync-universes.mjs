@@ -63,6 +63,13 @@ let count = 0;
 for (const [name, src] of [
   ['universes.json', paths.universes],
   ['universes.fixtures.json', paths.fixtures],
+  // ⚠️ Not universe data: the fold-pinning fixtures for the shared index
+  // Worker (catalog-platform/apps/index-worker). Its work_fold replicates what
+  // this repo's work_key means, so its fold is pinned to normaliseTitle by
+  // this file, and packages/core/test/fold-fixtures.test.ts asserts every case
+  // reproduces. It rides this sync because the mechanism is identical: one
+  // tracked copy in catalog-platform, gitignored materialised copies here.
+  ['match-fold.fixtures.json', paths.foldFixtures],
 ]) {
   const body = readFileSync(src, 'utf8');
   JSON.parse(body); // belt and braces: never write something the bundler cannot parse
