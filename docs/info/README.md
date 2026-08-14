@@ -1,7 +1,10 @@
 # docs/info — index
 
 > **Audience:** Claude sessions. How and why things work.
-> Last verified: **2026-08-11**.
+> Last verified: **2026-08-14** (index rows for the estate docs checked against
+> their files; the operational side of estate auth / the index / themes now
+> lives in `../access/estate-auth.md`, `../access/index-worker.md`,
+> `../access/themes.md`).
 
 | File | Covers | Read it before |
 |---|---|---|

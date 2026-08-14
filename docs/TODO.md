@@ -23,81 +23,74 @@
 | ⏸️ | Blocked — the blocker is named |
 | 💤 | Deliberately deferred |
 
-## ⚠️ READ THIS FIRST — handoff, state at 2026-08-13 ~18:30Z
+## ⚠️ READ THIS FIRST — handoff, state at 2026-08-14 ~05:30Z
 
 **Written to survive a model swap and to be executable without the session that
-wrote it.** The owner may continue with a different model, another tool, or on
-overage credits.
+wrote it.** Operational detail lives in `docs/access/estate-auth.md`,
+`docs/access/index-worker.md` and `docs/access/themes.md` (all new tonight,
+verified against the live estate) — this section is the map, those are the
+manuals.
 
-### Where everything is right now
+### What is LIVE (every row curled/probed 2026-08-14 ~05:10–05:20Z)
 
-| | |
+| Surface | State |
 |---|---|
-| **library production** | `684b6e3` → Worker version `60a03b20`→`dded6f29`→latest deploy of `684b6e3`. Health green. Migrations **0120 and 0130 applied**. |
-| **board games production** | `44a34d3` → version `0b50c147`. Health green. Migration **0025 applied** (`sleeve_requirement` dropped). |
-| **index Worker** | **BUILT, NOT DEPLOYED.** D1 `index_catalog` = `3004d175-3c51-4ed4-ac3e-62859319f8ac`, **migration APPLIED**, schema verified (`entry` + 3 partial indexes). No route, `workers_dev = false`. |
-| **trees** | library, catalog-platform, boardbuddy — all clean and pushed. |
-| **tests** | library **375/375**, index-worker **17/17**. ⚠️ `Board_Game_Catalog` has **no `test` script** — typecheck only, never claim tests ran there. |
+| **auth.heygabi.ai** | 🚢 Estate directory Worker, **deployed + seeded**: health shows `approved:2, approvers:1, pending:0`; remote migrations 0001+0002 (visibility) applied; all three `ESTATE_APP_TOKEN_*` secrets set |
+| **index.heygabi.ai** | 🚢 **All three catalogs pushed** — game 836 / library 346 / audiobook 1077 rows with fresh `pushed_at`; reads are members-only (tokenless → 401, probed); ⚠️ remote migration `0003_visibility_cache.sql` **pending** — it belongs to the in-flight visibility work, apply WITH that deploy |
+| **heygabi.ai** (apex) | 🚢 Live search (`find.js` → `/api/search`) + the `/admin` member page (200); `classic` theme default; ⚠️ served `theme.js` is still **pre-v2** |
+| **board games** | 🚢 **`ESTATE_CHECK=enforce` DEPLOYED** (commit `6692c1d`, worker deploy 2026-08-14T05:07Z) + theme **v2 live** |
+| **library** | 🚢 Deployed at `44a52f3` (04:38Z): estate themes v1 + **`ESTATE_CHECK=shadow`** — ⚠️ enforcement is NOT BUILT here (`estate-auth-shadow.md`); theme v2 (`9da43af`) committed, NOT deployed |
+| **audiobooks** | Estate themes (cyberpunk default, first-ever light mode on stats + guess game) live on **`/dev/` ONLY**; prod site untouched |
+| Secrets | Every estate/push token name verified set in production via `wrangler secret list`; ⚠️ **values only in the session scratchpad `estate-app-tokens.json` (LOCAL ONLY)** |
 
-### ⚠️ The two things gating a deploy — both are OWNER DECISIONS
+### In flight — the five workstreams (per FABLE5 §7 claims; check its tail for landings)
 
-1. **Read-surface auth for the index** (`index-worker-design.md` §9 Q3). The owner
-   has since answered the shape: **`heygabi.ai` stays open, but global search
-   requires a login.** That answer is what the estate-auth design implements, so
-   the index deploy now waits on that design being approved.
-2. **One attended dev-lane pass**, covering **five** shipped-but-never-driven
-   browser surfaces: the **key-move ceremony** (the one that matters — the only
-   path touching the ~860-review join, which is why all six of today's key moves
-   went around it in SQL), the **rescan prompt**, the **edition picker**, the
-   **delete panel**, and the **cover swap grid**.
+1. **Federated admin view** (wave 2): apex `/admin` gains `admin.js` + NEW
+   `routes/admin.ts` in library + games workers (`GET/PATCH /api/admin/users`,
+   owner-gated via each app's own `manageUsers`, CORS locked to the apex).
+2. **Visibility-aware search (B2)**: index `/api/search` becomes
+   scoped-not-gated — anonymous → `{audiobook}` slice, members → their
+   visibility set (design §4.5). The catalog-platform tree is dirty with it;
+   remote 0003 pending (above).
+3. **Library enforcement build** — shadow's clean-log soak is the gate;
+   today `enforce` only logs `enforce_requested` and behaves as shadow.
+4. **Theme v2 wave** — committed in all three repos; dispatcher ships apex
+   Pages + games + library **together** (games' half is already live).
+5. **Docs refresh** — the three access docs + this handoff (landed with this
+   commit).
 
-### In flight
+### Awaits the OWNER 🔴
 
-**Fable 5 is writing `catalog-platform/docs/info/estate-auth-design.md`** —
-committing in parts (`a38c88b` = part 1: ground, threat model, core design).
-Design only; **no build until the owner approves it.**
+- **Audiobook**: eyes on `https://audiobooks.heygabi.ai/dev/`, then the word
+  **"prod"** to promote. Never promote without it (standing rule).
+- **Library enforce flip**: only after the enforcement build lands AND a clean
+  shadow soak (grep the logs for `would_deny`; expect zero for household).
+- **Attended passes**: theme-v2 dev-lane pass (set a page theme, reload,
+  apply-to-all, reload); the §15 two-tab test (estate-auth-design.md) against
+  the deployed apex sign-in if not yet done; apex `deploy.md` §3 checklist.
 
-### The decisions recorded today that must NOT be relitigated
+### Deploy commands per surface
 
-- ⚠️ **Do not canonicalise the `SAMG` author strings.** `normaliseTitle` folds
-  every wholly non-Latin title to `''`, so the two Korean works are keyed on the
-  author alone (`|samg`, `|samg entertainment`) and merging those spellings gives
-  two different books **one `work_key`**, merging them in the ~860-review join.
-  The guard is accidental and one tidy-up from failing.
-- ⚠️ **`illustrator` must never enter `work_key`.** A test pins
-  `workKeyFor.length === 2` as the tripwire.
-- **epub identifier backfill is CLOSED** (`isbn-ladder.md`) — not even ASINs are
-  derivable; those `source_url`s are local file paths.
-- **The book number stays above the title.** **`play` is deliberately kept.**
-  **Firestore `reviews` stays shape-only** (`PLATFORM.md` §4a).
+| Surface | Command |
+|---|---|
+| auth Worker | `cd catalog-platform/apps/auth-worker && npm run db:migrate && npx wrangler deploy` |
+| index Worker | `cd catalog-platform/apps/index-worker && npm run db:migrate && npx wrangler deploy` |
+| apex (+ `/admin`) | `npx wrangler pages deploy sites/heygabi-home/public --project-name heygabi-home` (catalog-platform root) |
+| library | `npm run deploy` (clean tree; migrate first if one is pending) |
+| games | `npm run deploy` |
+| audiobook `/dev/` | `git push origin main` — pushing that repo's main IS the /dev/ deploy |
+| audiobook prod | 🔴 owner says "prod" → promote.yml, the sole writer of prod |
 
-### ⚠️ Gotchas that cost real time today
-
-- **Destructive migrations invert the usual order.** Additive: migrate then
-  deploy. **A `DROP`: remove the reader, deploy, THEN drop** — otherwise the live
-  Worker queries a table that is gone.
-- **`edition` has NO `edition_notes` column** (it is on `copy`). A wrong column
-  name **rolls back the whole `--file` batch** — which is also the proof that D1
-  `--file` batches are atomic.
-- **`copy` carries both `work_id` and `edition_id`, and 172 copies have a NULL
-  `edition_id`.** Counting copies by joining through `edition` reports **zero**
-  for a book that is owned. Use `WHERE work_id = ?`.
-- **The volume number is TWO columns.** `series_index_sort` orders, `series_index_display`
-  prints. 22 rows had sort without display: correctly ordered, invisible on the page,
-  and **the gap check could not see them**. Fixed both in data and in `gaps.ts`.
-- **`npm run deploy` runs the deploy guard itself** — running the guard manually
-  first deadlocks against your own lock.
-- **`wrangler dev` does not die with its parent**; 212 orphans / 15.6 GB measured.
-  Kill by name.
-- Local D1 commands run from **`apps/worker`**, `--command` **single-line only**.
-
-### Verification commands
+### Verification
 
 ```bash
-npm test && npm run typecheck                    # library: expect 375 pass
-cd apps/worker && npx wrangler d1 execute library-catalog --remote   --command "SELECT COUNT(*) FROM change_log"    # audit log, was 414+
-curl -s https://library.heygabi.ai/api/health
+curl -s https://auth.heygabi.ai/api/health     # approved:2, approvers:1
+curl -s https://index.heygabi.ai/api/health    # three sources, fresh pushed_at
+npm test && npm run typecheck                  # library: 393+ expected
 ```
+
+⚠️ Git Bash curl here can report status 000 / exit 43 on hosts that are up —
+use PowerShell `Invoke-WebRequest`, or `curl -s -D -` and read the status line.
 
 ---
 

@@ -1,12 +1,19 @@
 # docs/access — index
 
 > **Audience:** Claude sessions. How to reach and operate things.
-> Last verified: **2026-08-10**.
+> Last verified: **2026-08-14**.
 
 | File | Covers |
 |---|---|
 | [`cloudflare.md`](cloudflare.md) | **Everything Cloudflare**: what exists in the account, Workers-not-Pages and why, redeploy, rollback, logs, D1 queries, secrets, custom domains, troubleshooting |
 | [`deploy.md`](deploy.md) | The short "what order do I do things in" version, plus the Firebase step and the review backfill |
+| [`estate-auth.md`](estate-auth.md) | **`auth.heygabi.ai` (LIVE 2026-08-14)**: the estate directory Worker + D1, the admin API and the apex `/admin` page, `OWNER_EMAILS` break-glass, the three `ESTATE_APP_TOKEN_*` secrets by name and where each side holds them, seed script usage, deploy commands, the 10-min TTL = revocation delay |
+| [`index-worker.md`](index-worker.md) | **`index.heygabi.ai` (LIVE, all three catalogs pushed)**: push protocol + per-source tokens by name, search vs lookup, each repo's freshness backstop, deploy commands, D1 id, ⚠️ the CORS/preflight lesson |
+| [`themes.md`](themes.md) | The estate theme system: canonical asset location, per-repo vendoring/sync, storage keys, the per-site defaults table, deploy-wave order and what is live where |
+
+⚠️ Estate token **values** live only in the session scratchpad
+`estate-app-tokens.json` (LOCAL ONLY, outside every repo) — the two estate docs
+name them; never paste a value anywhere.
 
 ### Commands added 2026-08-10
 
