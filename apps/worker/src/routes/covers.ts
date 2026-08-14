@@ -144,7 +144,7 @@ export const coverRoutes = new Hono<AppBindings>()
       // `?? null` and not `?? undefined`: an omitted status means "unassessed",
       // which is the honest record for a link somebody has just pasted.
       coverStatus: parsed.data.status ?? null,
-    });
+    }, { userId: c.get('user').id, how: 'human' });
     return c.json({ work: updated, bytes: check.bytes });
   })
 
@@ -162,7 +162,7 @@ export const coverRoutes = new Hono<AppBindings>()
     const parsed = setCoverStatusSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues }, 400);
 
-    const work = await updateWork(c.env.DB, id, { coverStatus: parsed.data.status });
+    const work = await updateWork(c.env.DB, id, { coverStatus: parsed.data.status }, { userId: c.get('user').id, how: 'human' });
     if (!work) return c.json({ error: 'not_found' }, 404);
     return c.json({ work });
   })
@@ -254,7 +254,7 @@ export const coverRoutes = new Hono<AppBindings>()
       // does, and leaving it unassessed would put the book straight back on the
       // "cover needed" list they just cleared it from.
       coverStatus: 'ok',
-    });
+    }, { userId: c.get('user').id, how: 'human' });
 
     return c.json({ work: updated, key, bytes: check.bytes }, 201);
   })
@@ -272,7 +272,7 @@ export const coverRoutes = new Hono<AppBindings>()
   .delete('/works/:id/cover', requireCapability('editCatalog'), async (c) => {
     const id = Number(c.req.param('id'));
     if (!Number.isInteger(id) || id <= 0) return c.json({ error: 'bad_request' }, 400);
-    const work = await updateWork(c.env.DB, id, { coverUrl: null, coverStatus: null });
+    const work = await updateWork(c.env.DB, id, { coverUrl: null, coverStatus: null }, { userId: c.get('user').id, how: 'human' });
     if (!work) return c.json({ error: 'not_found' }, 404);
     return c.json({ work });
   });
