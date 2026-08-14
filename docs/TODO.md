@@ -13,6 +13,15 @@
 > This is the living work log. Stable facts live in `docs/access/` and
 > `docs/info/`; current state lives here. Cross-link, don't duplicate.
 
+## 📸 Owner note — Illumicrate edition photos (2026-08-14)
+
+The Percy Jackson ILLUMICRATE editions need their own photos added as
+edition/cover images — the audiobook covers now being pulled are the standard
+art, not the Illumicrate art. Owner action: photograph the Illumicrate copies
+and upload via each work's cover UI (Replace cover / the edition row).
+Owner's words: "Leave me a note somewhere to add the illumicrate editions
+photos."
+
 ## Legend
 
 | Mark | Meaning |
