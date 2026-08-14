@@ -508,6 +508,8 @@ records that it was attempted, which a tidy log does not.
 
 <!-- entries start here -->
 
+- `2026-08-14T05:40Z` **DECIDED: tile labels stay PLURAL — "Audio · Books · Games".** Owner confirmed after the apple.com field trip. Reasoning on record: Apple's singular works because Mac/iPhone are product brands; these tiles are shelves, and the apple feel lives in the tile treatment (alternating gray/black scenes, hairline gutters, calm pills, whisper motion — specced live from apple.com 2026-08-14), not the nouns.
+
 - `2026-08-14T05:10Z` **APPROVED and dispatched: per-catalog search visibility (a+b+c).** Owner: "run a b c, we're good for it" — c as the FEDERATED admin view per recommendation, not centralization. **The directory gains a per-member VISIBILITY SET** (which catalogs a person may SEE — deliberately not a role; apps keep owning what a person may DO). Rules: anonymous/invalid token ⇒ `{audiobook}` (world-readable by recorded posture); `pending` ⇒ same; `revoked` ⇒ empty — revocation beats the public slice on estate surfaces; approved household ⇒ all three by default, narrowable at approval or after. **Wave 1 running**: auth-worker core (own agent) + index/client folded into Bundle B against its documented contract. **Wave 2 queued** (needs games + apex trees free): the federated admin view — per-app roles shown and edited beside visibility from /admin.
 
 - `2026-08-14T04:12Z` 🎉 **THE INDEX IS COMPLETE — 2,259 items across all three catalogs** (game 836, audiobook 1077, library 346). The library's request-traffic backstop fired on its second warm request, exactly as built. Same-work-any-format joins are live: print + audio of one book now fold together, and games join at the universe tier.
