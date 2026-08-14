@@ -508,6 +508,10 @@ records that it was attempted, which a tidy log does not.
 
 <!-- entries start here -->
 
+- `2026-08-13T20:30Z` ⚠️ **OWNER: FULL SEND on estate auth — the entire §14 sequence tonight, limits being raised.** The 93% dispatch-stop is lifted by the owner's explicit instruction; usage reads continue and get reported, but the budget ceiling no longer gates the sequence. **The design's own safeties are NOT lifted**: library adopts in SHADOW mode first and enforces only after shadow runs clean — that is correctness sequencing, not budget caution, and it stays.
+  **The chain is linear by dependency, dispatched stage-by-stage as each lands:** §14.1+14.2 (auth Worker + module — IN FLIGHT now) → my deploys: auth Worker + its remote migration → §14.3 index adoption → index deploy (finally un-gated) → §14.4 apex search + the owner's admin page → §14.5 library SHADOW → enforce → games. Nothing downstream can start before the module exists, so there is no parallelism to exploit at the front.
+  **Still needed from the owner, in order of when they block:** (1) the **Q5 pre-seed email list** — blocks the library seed at §14.5, not before; (2) the **§15 two-tab Firebase origin test** when apex sign-in first renders — one attended browser check; (3) the standing **dev-lane pass** over the five undriven surfaces, now +auth surfaces as they ship.
+
 - `2026-08-13T20:15Z` ✅ **AUTH DESIGN APPROVED — all seven §13 questions now answered. Build begins.** Final answers:
   1. **Machinery normalized estate-wide; posture is per-surface policy declared in config.** Audiobooks stays `public: true` **explicitly** — gating it later is a config+hosting change with a pre-designed path, not a redesign. (Owner asked for the weigh-in; accepted by continuation.)
   2. **Default-grant ON** — estate approval → library `reader` + games `viewer`. Acceptable because approval is owner-only, and §3.1's demotion escape hatch keeps partial guests possible deliberately.
