@@ -508,6 +508,16 @@ records that it was attempted, which a tidy log does not.
 
 <!-- entries start here -->
 
+- `2026-08-13T19:00Z` **DESIGN DELIVERED — `catalog-platform/docs/info/estate-auth-design.md`, awaiting owner approval before any build.**
+  ⚠️ **Measurement changed the problem before design began: identity is ALREADY estate-global.** Both Workers verify Firebase ID tokens pinned to the same `audiobook-catalog` project. **What is missing is MEMBERSHIP** — so the design adds exactly that and nothing more: a three-value directory (`pending | approved | revoked` plus an `is_approver` flag — **a status, never a role**) in a dedicated auth Worker, consulted *after* local token verification and cached 10 minutes on each app's own `app_user` row. **The TTL is the revocation delay, named as such.**
+  **The load-bearing sentence (§3.1): the estate gates newcomers and enforces revocations; it NEVER overrules a standing local approval except by explicit revocation.** That asymmetry is what makes it fail closed for strangers and the revoked while never locking the household out during a seed gap or an auth outage.
+  **Authorization stays entirely per-app** — both role vocabularies and **all 17 `app_user` foreign keys untouched** (my count of 12 was library-migrations-only). "Moving" the audiobook users is a **seed**, not a migration.
+- `2026-08-13T19:00Z` ⚠️ **SECURITY — the two `auth.ts` copies have ALREADY DRIFTED, and the library's is the fail-open one. VERIFIED, not relayed.**
+  - library: `env.ENVIRONMENT !== 'production' && env.DEV_EMAIL`
+  - games: `env.ENVIRONMENT === 'development' && env.DEV_EMAIL`
+  ⚠️ **The library's bypass activates in ANY environment that is not exactly `'production'`** — unset, misspelled, `staging`, `preview`, anything new. Games' activates only in `development`. **Production is safe today** because `ENVIRONMENT` is `'production'`, but the shape fails **open** where the other fails **closed**. Games hardened theirs; the library never got the change — which is the whole argument for a shared module over a copied file, arrived at by evidence rather than principle. **Worth fixing as a one-liner now rather than waiting for the auth build.**
+- `2026-08-13T19:00Z` **Fable rejected one of my seven recommendations and was right.** I said **library adopts first**; it argued **index Worker first** — the library has **real household users, exactly who a seed gap would lock out**, while the index has zero users, is already gated on this design, and its estate cache is free because the migration is unapplied. Then library in **shadow-then-enforce**, then games. It also refused a first-sign-in-claims bootstrap outright: ⚠️ *"first to knock owns the estate"* is unacceptable in an auth Worker.
+
 - `2026-08-13T18:15Z` **DECIDED (owner) — estate-wide auth. NEEDS A DESIGN DOC BEFORE ANY BUILD.** The direction: **`heygabi.ai` stays open, but global search requires a login**; login becomes **app-wide**; the audiobook catalog's users move onto it; **new users are approval-only**.
   **The ground, measured before designing — and it changes the shape of the job:**
   - **Library**: D1 `app_user`, roles `owner | reader | pending`. ✅ **Approval-only ALREADY WORKS here** — `role` defaults to `'pending'` and capabilities gate on it, so that half of the ask is a pattern to spread, not to invent.
