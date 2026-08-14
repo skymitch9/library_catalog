@@ -49,11 +49,58 @@
  *                              #250 already holds that alias — see
  *                              add-space-knight-alias.mjs, which refuses the
  *                              same thing for the same reason
- *   Wandering Inn part-twos    "No Killing Goblins" / "Immortal Games" are
- *                              print HALVES of audio books 1 and 2; owner's call
  *
  * An omnibus that contains a book is not that book. Aliasing any of these would
  * claim an audiobook the household does not separately own.
+ *
+ * ## The Wandering Inn part-volumes — owner decision, 2026-08-14: "match the halves"
+ *
+ * The sweep left #230 and #232 as LIKELY. The owner has ruled, so they are in.
+ *
+ * pirateaba's print line splits each web volume into two paperbacks, and the
+ * PART ONE of each already matched mechanically because it shares its title with
+ * the whole-volume audiobook:
+ *
+ *   #229 The Wandering Inn   Book One, Part One  → audio Book 1 "The Wandering Inn"
+ *   #230 No Killing Goblins  Book One, Part Two  → audio Book 1  ← added here
+ *   #231 Fae and Fare        Book Two, Part One  → audio Book 2 "Fae and Fare"
+ *   #232 Immortal Games      Book Two, Part Two  → audio Book 2  ← added here
+ *
+ * That the Part Ones share a title with the audiobooks is the evidence: audio
+ * Book N covers print Book N entire, so Part Two of Book N belongs to audio
+ * Book N. Two works pointing at one audiobook row is intended and is what
+ * "match the halves" means; `audiobook_holding.work_id` is the primary key, so
+ * each work still gets exactly one row.
+ *
+ * ## ⚠️ #232 is the trap, and this is how it is disarmed
+ *
+ * #232 carries `series_index_sort = 4` — but OUR 4 counts print part-volumes
+ * (TWI=1, No Killing Goblins=2, Fae and Fare=3, Immortal Games=4) while the
+ * audiobook 4 is "Winter Solstice", a different span of the story. A matching
+ * series-plus-volume is normally the strongest evidence there is; here it is
+ * pure coincidence, and following it would file Book Two's second half under a
+ * book it has nothing to do with.
+ *
+ * Three independent reasons it cannot happen, verified 2026-08-14:
+ *
+ *   1. `matchIndexedWork` never reads our `series_index_sort` at all. Matching
+ *      is (title, author) and nothing else, so the 4 has no route into the
+ *      decision. `numbersAgree` guards the NUMBERS INSIDE THE TWO TITLE STRINGS,
+ *      and neither "fae and fare" nor "winter solstice" contains a digit.
+ *   2. The alias folds to "fae and fare"; "Winter Solstice" folds to "winter
+ *      solstice". Disjoint — there is no string here that reaches that row.
+ *   3. `expectAudiobookIndexSort` below asserts the probe's volume, so a future
+ *      CSV edit that made the wrong row reachable would REFUSE rather than
+ *      silently re-point the alias.
+ *
+ * Phase 2 is unaffected either way: the `corroborated` check requires our volume
+ * to EQUAL theirs, and 4 ≠ 2, so #232 corroborates nothing. The Wandering Inn is
+ * already `work_match` through #229 (1 = 1), and that set is only ever added to.
+ *
+ * ⚠️ Expect a visible oddity on #232's holding row: it shows the audiobook as
+ * "Book 2" beside a work numbered 4. That is honest — it says the audio of this
+ * content is Book 2 — and it is the numbering in `work.series_index_sort` that
+ * is the real inconsistency (listed for the owner in the sweep results).
  *
  *   node scripts/add-sweep-aliases.mjs                    # dry run, local
  *   node scripts/add-sweep-aliases.mjs --remote           # dry run, REMOTE — read it
@@ -147,6 +194,27 @@ const ENTRIES = [
     expectAudiobook: 'All the Skills 3: A Deck-Building LitRPG - All the Skills, Book 3',
     why: 'Honour Rae, All the Skills vol 3; the ONLY difference is "Deckbuilding" against "Deck-Building", which the fold cannot bridge and containment cannot either (neither string contains the other)',
   },
+
+  // --- The Wandering Inn part-volumes. Owner decision 2026-08-14; see the header.
+  {
+    workId: 230,
+    expectTitle: 'No Killing Goblins',
+    titleAlias: 'The Wandering Inn',
+    expectAudiobook: 'The Wandering Inn - The Wandering Inn, Book 1',
+    expectAudiobookIndexSort: 1,
+    why: 'print "Book One, Part Two"; audio Book 1 covers web volume 1 entire, and #229 (Part One) already points there',
+  },
+  {
+    workId: 232,
+    expectTitle: 'Immortal Games',
+    titleAlias: 'Fae and Fare',
+    expectAudiobook: 'Fae and Fare - The Wandering Inn, Book 2',
+    // ⚠️ TWO, not four. Our series_index_sort is 4 and the audiobook at 4 is
+    // "Winter Solstice" — a coincidence of two different numbering schemes. This
+    // assertion is what makes that impossible to get wrong later; see the header.
+    expectAudiobookIndexSort: 2,
+    why: 'print "Book Two, Part Two"; audio Book 2 covers web volume 2 entire, and #231 (Part One) already points there. CONTENT, not the coincidental 4=4',
+  },
 ];
 
 const q = (sql) => query(sql, { remote: flags.remote });
@@ -209,6 +277,21 @@ for (const e of ENTRIES) {
     console.log(
       `     ⚠️ probe landed on the WRONG row: "${hit.row.rawTitle}"\n` +
         `        expected "${e.expectAudiobook}" — refusing\n`,
+    );
+    refused++;
+    continue;
+  }
+  // ⚠️ Optional, and load-bearing exactly where a work's own volume number
+  // disagrees with the audiobook's — see the Wandering Inn note in the header.
+  // Asserting the volume turns "the right row today" into "the right row, or a
+  // refusal" if the CSV is ever re-cut.
+  if (
+    e.expectAudiobookIndexSort !== undefined &&
+    Number(hit.row.seriesIndexSort) !== e.expectAudiobookIndexSort
+  ) {
+    console.log(
+      `     ⚠️ probe landed on volume ${hit.row.seriesIndexSort},` +
+        ` expected ${e.expectAudiobookIndexSort} — refusing\n`,
     );
     refused++;
     continue;
