@@ -508,6 +508,13 @@ records that it was attempted, which a tidy log does not.
 
 <!-- entries start here -->
 
+- `2026-08-13T20:00Z` **AUTH §13 — owner answered 3, 4, 5; 1 and 2 in discussion; 6 defaulted; 7 answered by implication.**
+  - **Q3 ✅ TTL = 10 minutes.**
+  - **Q4 ✅ Approver = owner only**, with a **promotion path**: the directory's `is_approver` flag is the mechanism — promoting someone is flipping that flag from the admin surface, no redeploy. `OWNER_EMAILS` stays break-glass. Owner: user count "won't be that large ever."
+  - **Q5 ✅ Owner will supply an email list to PRE-SEED** the review-name-only people — keeps existing reviews tied to their Google logins; worst case a migration later. ⚠️ Build note: the seed step must accept this list when it arrives; do not block on it.
+  - **Q7 (by implication of Q4): the auth Worker IS wanted** — a promotion path and owner-only approval both need the directory to exist.
+  - **Q1/Q2: owner leans toward NORMALIZING auth estate-wide** ("potentially normalize, weigh on this") and wants 1+2 mapped together. Analysis owed before any build touches the audiobook posture.
+
 - `2026-08-13T19:45Z` ✅ **POOL TEST ANSWERED: the weekly "All models" pool INCLUDES Fable.** Run per protocol — Fable-driven main loop, doc-reading turns only, zero subagents, zero background work. Baseline `80 / 47`; after `81 / 49`. **Both meters climbed with nothing else running.** Cross-check that settles it: the session moved +11 points, and at the global rules' measured session→weekly ratio (~0.09–0.10) that predicts **+1 weekly — exactly what all-models did.**
   ⚠️ **What the Fable meter actually is: a per-model CAP within the shared pool, not a second allowance.** Fable subagent spend was draining weekly all-models all along (yesterday's +22), with the Fable meter tracking Fable's share on a smaller denominator (+36). "Fable's separate untouched allowance" was a misreading — there is ONE pool and an extra cap.
   **Consequences:** the model swap is a budget no-op (no reason to swap back either); dispatch-vs-drive model choice is about capability, not budget; ⚠️ **the single real ceiling is weekly all-models — at 81% now, agents stop at 93%, so ~12 points of build budget remain until Sunday 4 PM.** Plan the auth build against that number.
