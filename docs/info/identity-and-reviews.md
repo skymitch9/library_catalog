@@ -6,6 +6,12 @@
 > were read, and the backfill was dry-run against the live `reviews` collection
 > (860 documents). What has **not** been verified: nothing here has run against
 > a deployed library catalog, because there is not one yet.
+>
+> §5.1 re-verified **2026-08-14**: three dry runs against the live `reviews`
+> collection (870 documents) and a read of the real
+> `audiobook_catalog/scripts/catalog_overrides.json` (69 entries, **0** of them
+> a title or author correction). **NOT verified:** no `--commit` run was made
+> that day — there was nothing to write.
 
 The owner's requirement, in their words:
 
@@ -232,6 +238,65 @@ All three now produce `court of mist and fury|sarah j maas`.
 
 **The lesson is the process, not the regex:** the dry run is what made a silent
 wrongness visible. Read the keys, do not just read the counts.
+
+### 5.1 A retitle on the audiobook side — the carry (phase A3, 2026-08-14)
+
+`catalog-platform/docs/info/edit-audit-design.md` §3.4 names the hazard this
+closes. A `title` correction in `audiobook_catalog/scripts/catalog_overrides.json`
+changes the *published* `catalog.csv` on the next build. `bookId` is a slug of
+the published title, so the correction silently detaches every existing review
+of that book: the backfill stops finding a catalog row for it, and the `workKey`
+it still carries names a spelling that no longer exists. §6's join and §7.7's
+sweep both lose those reviews and nothing reports it.
+
+**Re-running the backfill is the whole carry ceremony on that side** — no site
+JS is touched and no second store is invented. Two changes make it one:
+
+| | |
+|---|---|
+| **Aliasing** | `overrideTitleAliases` + `aliasedBookIdIndex` (`packages/core/src/reviews.ts`) fold every retitle in the overrides file into an old-slug → new-slug alias, so a document filed under the pre-correction slug still finds its row. The overrides file is the only place that remembers the old spelling, because `edit_overrides.py` **keys its entries on the pre-correction tags** — `match.title` is the old title by construction. An ASIN-keyed entry has no match title, so `evidence.tags_read['©nam']` is the documented fallback |
+| **Restamping** | a document whose stored `workKey` no longer equals the key its row derives is now **moved**, not skipped. ⚠️ Before this, any document carrying a key counted as done — so after §7.6's commit run the script could never have carried anything. That was the real gap; aliasing alone would have fixed nothing |
+
+Three refusals, all measured by tests in `core.test.ts`:
+
+- **A live catalog row always beats an alias.** If another book is published
+  under the old slug today, the alias is dropped (`shadowed`). Pointing a real
+  book's reviews at a different book is worse than leaving a rename unmatched.
+- **Two corrections claiming one old slug are refused, not resolved.**
+- **A review this catalog wrote (`source: 'library'`) is never restamped from
+  here.** Its key comes from this catalog's own title and author, which are the
+  authority for a print review; the audiobook row's spelling is not.
+
+#### Measured, 2026-08-14, dry run against the live `reviews` collection
+
+| Run | matched | unmatched | keys moved |
+|---|---|---|---|
+| Production as it stands | **870** | 0 | **0** |
+| Simulated retitle, aliasing OFF | 866 | **4** | 0 |
+| Simulated retitle, aliasing ON | **870** | **0** | **4** |
+
+The middle row *is* the hazard, reproduced against real documents: the
+simulation retitles "Harry Potter and the Sorcerer's Stone (Full-Cast Edition)"
+to "Harry Potter and the Sorcerer's Stone" in a copy of the CSV, and four real
+reviews go unmatched — and, before this phase, would also have been reported as
+"already keyed" and left holding
+`harry potter and the sorcerer s stone full cast edition|j k rowling` forever.
+With the alias they are carried to `harry potter and the sorcerer s stone|j k
+rowling`, and the other 866 are untouched.
+
+⚠️ **No `--commit` run was warranted on 2026-08-14.** Production carries **zero**
+title overrides today — all 69 entries correct `series`/`series_index`, which
+move no `bookId` — so the first row above says every stored key is already the
+key its row derives. A commit run would have written nothing. The guard is in
+place *before* the first retitle, which is the order §7 of the design asks for.
+
+**The command, for the day a retitle lands** (after the audiobook site rebuilds):
+
+```bash
+LC_AUDIOBOOK_ROOT=C:/Users/nbasl/OneDrive/Documents/vs-code-repos/bookbuddy/audiobook_catalog \
+  npm run backfill:reviews                # dry run — READ THE KEY MOVES
+LC_AUDIOBOOK_ROOT=... npm run backfill:reviews -- --commit
+```
 
 ---
 

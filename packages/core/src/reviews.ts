@@ -245,6 +245,188 @@ export function workKeyForAudiobookRow(
   return workKeyFor(cleanTitleWithSeries(title, series), authors);
 }
 
+/**
+ * A retitle on the audiobook side, expressed as the two slugs it sits between.
+ *
+ * `fromBookId` is what the existing review documents still carry; `toBookId` is
+ * what `catalog.csv` produces today. Nothing else about the entry travels.
+ */
+export interface OverrideTitleAlias {
+  /** The title as the m4b tags spelled it, before the correction. */
+  fromTitle: string;
+  /** The corrected title, as `catalog.csv` now publishes it. */
+  toTitle: string;
+  /** `bookIdFromTitle(fromTitle)` — the slug the old documents are filed under. */
+  fromBookId: string;
+  /** `bookIdFromTitle(toTitle)` — the slug the corrected catalog row derives. */
+  toBookId: string;
+  /** Where the pre-correction title was read from. */
+  via: 'match.title' | 'evidence.tags_read';
+}
+
+/**
+ * The MP4 title atom, as `catalog_overrides.json` spells it in `tags_read`.
+ *
+ * ⚠️ Written as an escape on purpose. It is `U+00A9 COPYRIGHT SIGN` followed by
+ * `nam`, and this key is compared byte-for-byte against JSON written on Windows;
+ * a source file that ever gets rewritten through PowerShell can come back with
+ * the literal re-encoded (`CLAUDE.md` records exactly that), and the lookup
+ * would then silently find nothing.
+ */
+const TITLE_ATOM = '\u00A9nam';
+
+function str(v: unknown): string | null {
+  return typeof v === 'string' && v.trim() ? v.trim() : null;
+}
+
+/**
+ * Every title correction in `audiobook_catalog/scripts/catalog_overrides.json`,
+ * as an old-slug → new-slug alias.
+ *
+ * ## Why this exists
+ *
+ * A title override changes the *published* `catalog.csv` on the next build, and
+ * `bookId` — the id every existing review document carries — is a slug of the
+ * published title. So a correction silently detaches those documents from their
+ * own book: the backfill stops finding a catalog row for them, they are never
+ * restamped, and the `workKey` they still hold points at a book that no longer
+ * exists under that spelling. The library-side join and the read-state sweep
+ * both lose the reviews, and nothing reports it
+ * (`catalog-platform/docs/info/edit-audit-design.md` §3.4).
+ *
+ * The overrides file is the one place that remembers both spellings, because
+ * `edit_overrides.py` **keys entries on the PRE-correction tag values** — it has
+ * to, or an entry keyed on a published title that is itself a correction would
+ * never fire. So `match.title` is the old title by construction, and this
+ * function is how the backfill learns it. Re-running the backfill afterwards is
+ * the audiobook side's whole carry ceremony: no site JS is touched and no second
+ * store is invented.
+ *
+ * ## What it deliberately does not do
+ *
+ * - **Author-only corrections produce no alias.** `bookId` has no author in it,
+ *   so those documents still match on their own slug; only their derived
+ *   `workKey` moves, and the backfill recomputes that anyway.
+ * - **An entry whose old and new titles slug the same is dropped.** "A: B" and
+ *   "A - B" are one `bookId`; an alias there would be a no-op that reads like a
+ *   rename.
+ * - **An old slug claimed by two different corrections is refused, not
+ *   guessed.** It comes back in `ambiguous` and matches nothing. Inventing a
+ *   winner would file somebody's review on the wrong book — the exact failure
+ *   `workKey` exists to prevent.
+ * - **Chains are not reconstructed.** The file holds one before-value per entry;
+ *   a book retitled twice keeps only the latest, and the earlier spelling lives
+ *   in git history (§4.3 of the same doc). A doc under a two-generations-old
+ *   slug stays unmatched and is reported, never guessed.
+ *
+ * @param overrides the parsed `catalog_overrides.json` (or a bare entry array).
+ */
+export function overrideTitleAliases(overrides: unknown): {
+  aliases: OverrideTitleAlias[];
+  /** Old slugs that more than one correction claims. Refused on purpose. */
+  ambiguous: string[];
+} {
+  const entries: unknown[] = Array.isArray(overrides)
+    ? overrides
+    : Array.isArray((overrides as { overrides?: unknown })?.overrides)
+      ? ((overrides as { overrides: unknown[] }).overrides)
+      : [];
+
+  const byFrom = new Map<string, OverrideTitleAlias>();
+  const ambiguous = new Set<string>();
+
+  for (const raw of entries) {
+    if (!raw || typeof raw !== 'object') continue;
+    const entry = raw as {
+      match?: { title?: unknown };
+      set?: { title?: unknown };
+      evidence?: { tags_read?: Record<string, unknown> };
+    };
+
+    const toTitle = str(entry.set?.title);
+    if (!toTitle) continue; // not a retitle; nothing moves
+
+    // `match.title` first: it is the key the entry fires on, so it is the
+    // spelling the catalog published before this correction. `tags_read` is the
+    // fallback for an ASIN-keyed entry, which carries no match title at all —
+    // there the tag value IS the pre-correction title, read off the real file.
+    const fromMatch = str(entry.match?.title);
+    const fromTag = str(entry.evidence?.tags_read?.[TITLE_ATOM]);
+    const fromTitle = fromMatch ?? fromTag;
+    if (!fromTitle) continue;
+
+    const fromBookId = bookIdFromTitle(fromTitle);
+    const toBookId = bookIdFromTitle(toTitle);
+    if (!fromBookId || !toBookId || fromBookId === toBookId) continue;
+
+    const seen = byFrom.get(fromBookId);
+    if (seen && seen.toBookId !== toBookId) {
+      ambiguous.add(fromBookId);
+      continue;
+    }
+    if (seen) continue; // the same correction written twice; harmless
+
+    byFrom.set(fromBookId, {
+      fromTitle,
+      toTitle,
+      fromBookId,
+      toBookId,
+      via: fromMatch ? 'match.title' : 'evidence.tags_read',
+    });
+  }
+
+  for (const id of ambiguous) byFrom.delete(id);
+  return { aliases: [...byFrom.values()], ambiguous: [...ambiguous] };
+}
+
+/**
+ * Fold the retitles into a `bookId → catalog row` index, so a review document
+ * filed under a pre-correction slug still finds its book.
+ *
+ * The three outcomes are all reportable, and the split is the point — a backfill
+ * that silently did the right thing 60 times and the wrong thing twice would
+ * look identical from the summary line.
+ *
+ * ⚠️ **A live catalog row always wins.** If some *other* book is published under
+ * the old slug today, the alias is `shadowed` and never applied: pointing a real
+ * book's reviews at a different book is worse than leaving a rename unmatched,
+ * and the shadowed case is exactly how that would happen.
+ *
+ * `dangling` means the corrected title is nowhere in `catalog.csv` — normally
+ * "the override was added but the site has not been rebuilt yet", which makes
+ * the whole carry premature. Worth printing rather than swallowing.
+ */
+export function aliasedBookIdIndex<T>(
+  byBookId: ReadonlyMap<string, T>,
+  aliases: readonly OverrideTitleAlias[],
+): {
+  index: Map<string, T>;
+  applied: OverrideTitleAlias[];
+  shadowed: OverrideTitleAlias[];
+  dangling: OverrideTitleAlias[];
+} {
+  const index = new Map(byBookId);
+  const applied: OverrideTitleAlias[] = [];
+  const shadowed: OverrideTitleAlias[] = [];
+  const dangling: OverrideTitleAlias[] = [];
+
+  for (const alias of aliases) {
+    if (byBookId.has(alias.fromBookId)) {
+      shadowed.push(alias);
+      continue;
+    }
+    const row = byBookId.get(alias.toBookId);
+    if (row === undefined) {
+      dangling.push(alias);
+      continue;
+    }
+    index.set(alias.fromBookId, row);
+    applied.push(alias);
+  }
+
+  return { index, applied, shadowed, dangling };
+}
+
 /** Half-star steps, 0.5–5. Mirrors `submitReview`'s guard on the other site. */
 export function isValidRating(rating: number): boolean {
   return (
