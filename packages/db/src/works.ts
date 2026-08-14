@@ -744,6 +744,86 @@ export async function findWorkByKey(db: D1Database, workKey: string): Promise<Wo
   return row ? toWork(row) : null;
 }
 
+interface AudiobookHoldingRow {
+  title: string;
+  authors: string | null;
+  series: string | null;
+  index_display: string | null;
+  cover_href: string | null;
+  matched_via: string;
+  title_similarity: number | null;
+  stale_at: string | null;
+}
+
+/**
+ * What the sibling audiobook catalog holds for this WORK — migration 0010.
+ *
+ * ⚠️ **Not the same shape as `AudiobookRef` in `series.ts`.** That one is the
+ * series ladder's chip and only carries enough to render a hedge; this is the
+ * whole row the work page shows, so `authors` and `coverHref` ride along too.
+ * The two are read separately because the ladder's query also filters
+ * `stale_at IS NULL` (a chip has no room to explain a stale match) while this
+ * one deliberately does NOT — the work page shows a stale holding with a
+ * muted note rather than making it look identical to "no match at all".
+ */
+export interface AudiobookHolding {
+  /** Their title, already stripped of Audible's decoration. Show it when it
+   *  differs from ours — that difference is the point of storing it. */
+  title: string;
+  authors: string | null;
+  /** That catalog's own series spelling and volume — deliberately not folded
+   *  to ours. See migration 0010's header. */
+  series: string | null;
+  indexDisplay: string | null;
+  /** Relative to `audiobook_catalog/site/`, e.g. `covers/Author/Title.jpg`.
+   *  Resolve against the sibling's own cover bucket (`covers.heygabi.ai`),
+   *  never this catalog's — see `resolveAudiobookCover` in the web app. */
+  coverHref: string | null;
+  /** 'exact' | 'alias' | 'containment' — shown, never hidden. A containment
+   *  match is a claim and must read as one. See migration 0010. */
+  matchedVia: string;
+  titleSimilarity: number | null;
+  /** Marked, never deleted. Non-null means the sibling catalog no longer
+   *  agrees; render the section with a "may be out of date" note, not nothing. */
+  staleAt: string | null;
+}
+
+/**
+ * The work's audio holding, or null when the sibling catalog has none for it.
+ *
+ * ⚠️ Null is the ordinary case for most of this catalog — most books here have
+ * no audiobook counterpart — and a work page must render nothing for it, the
+ * same rule `universe: null` and `coverStatus: null` already follow.
+ *
+ * `work_id` is `audiobook_holding`'s primary key (migration 0010), so this is
+ * at most one row.
+ */
+export async function getAudiobookHolding(
+  db: D1Database,
+  workId: number,
+): Promise<AudiobookHolding | null> {
+  const row = await db
+    .prepare(
+      `SELECT title, authors, series, index_display, cover_href, matched_via,
+              title_similarity, stale_at
+         FROM audiobook_holding
+        WHERE work_id = ?`,
+    )
+    .bind(workId)
+    .first<AudiobookHoldingRow>();
+  if (!row) return null;
+  return {
+    title: row.title,
+    authors: row.authors,
+    series: row.series,
+    indexDisplay: row.index_display,
+    coverHref: row.cover_href,
+    matchedVia: row.matched_via,
+    titleSimilarity: row.title_similarity,
+    staleAt: row.stale_at,
+  };
+}
+
 export interface CollectionQuery {
   /** Free text over title and author. Folded the same way the catalog is. */
   q?: string | undefined;

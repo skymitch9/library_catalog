@@ -428,6 +428,30 @@ export interface AudiobookRef {
   viaAlias: string | null;
 }
 
+/**
+ * What the sibling audiobook catalog holds for THIS work — `GET
+ * /api/works/:id`'s `audiobookHolding` field. Mirrors `AudiobookHolding` in
+ * `@lc/db`.
+ *
+ * ⚠️ Not `AudiobookRef` above — that is the series ladder's narrower chip.
+ * This is the whole row the work page's "On audio" section shows, and unlike
+ * the ladder's read it is NOT filtered on `staleAt`: a stale holding still
+ * arrives here so the page can say so rather than showing nothing.
+ */
+export interface WorkAudiobookHolding {
+  title: string;
+  authors: string | null;
+  series: string | null;
+  indexDisplay: string | null;
+  /** Relative to `audiobook_catalog/site/`. See `resolveAudiobookCover`. */
+  coverHref: string | null;
+  /** 'exact' | 'alias' | 'containment' — shown, never hidden. */
+  matchedVia: string;
+  titleSimilarity: number | null;
+  /** Non-null means the sibling catalog no longer agrees. */
+  staleAt: string | null;
+}
+
 /** `physical` or `ebook`. There is deliberately no `audio` — see `@lc/core`. */
 export type EditionMedium = 'physical' | 'ebook';
 

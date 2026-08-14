@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, type Me, type Watch } from '../api.js';
+import { api, type Me, type Watch, type WorkAudiobookHolding } from '../api.js';
 import { Accessories } from '../components/Accessories.js';
 import { Aliases } from '../components/Aliases.js';
 import { Changes } from '../components/Changes.js';
@@ -11,6 +11,7 @@ import { CoverPanel } from '../components/CoverPanel.js';
 import { DriveLinks } from '../components/DriveLinks.js';
 import { Editions, type EditionView } from '../components/Editions.js';
 import { Enrich } from '../components/Enrich.js';
+import { OnAudio } from '../components/OnAudio.js';
 import { Provenance } from '../components/Provenance.js';
 import { Related } from '../components/Related.js';
 import { Reviews } from '../components/Reviews.js';
@@ -71,6 +72,12 @@ interface WorkDetail {
   copies: CopyView[];
   /** Open and resolved both — see `listWatchesForWork`. Rides along with the work. */
   watches: Watch[];
+  /**
+   * What the sibling audiobook catalog holds for this work, or null — see
+   * `getAudiobookHolding` in `@lc/db`. Rides along with the work for the same
+   * reason `watches` does: it is a fact about the book, not a second request.
+   */
+  audiobookHolding: WorkAudiobookHolding | null;
   reading: {
     read_state: string;
     started_on: string | null;
@@ -391,9 +398,19 @@ export function WorkPage({
         onChanged={load}
       />
 
-      {/* Directly under Copies, because an accessory belongs to a copy — a
-          plushie arrived in a specific box, not with the novel as an idea. See
-          migration 0011 and the panel's own header.
+      {/* Directly under Copies, and above Accessories: this is the other place
+          the household holds the book, so it reads as a continuation of "what
+          we have" rather than a footnote. Renders nothing when there is no
+          holding — see `OnAudio`'s own header for why the fact was invisible
+          here before this (only a series page's "N on audio" chip showed it,
+          and a book with no series, or nobody happening to open that page,
+          hid it completely). */}
+      <OnAudio holding={detail.audiobookHolding} ourSeries={work.series} />
+
+      {/* Under Copies (and OnAudio, which renders nothing on most books)
+          because an accessory belongs to a copy — a plushie arrived in a
+          specific box, not with the novel as an idea. See migration 0011 and
+          the panel's own header.
 
           ⚠️ This is the ONLY place accessories are shown. The owner asked for the
           count to stay off the collection page, and nothing on that page (or in

@@ -28,6 +28,7 @@ import {
   evidenceSaysReviews,
   findEditionByIsbn13,
   findWorkByKey,
+  getAudiobookHolding,
   getReadState,
   getWork,
   isCollectionSort,
@@ -309,11 +310,17 @@ export const catalogRoutes = new Hono<AppBindings>()
     // panel is above the fold on a book that has one, and a book page that
     // rendered and *then* grew a "check this" note is the one place a late
     // arrival actually misleads. Resolved ones come too — see `listWatchesForWork`.
-    const [editions, copies, reading, watches] = await Promise.all([
+    const [editions, copies, reading, watches, audiobookHolding] = await Promise.all([
       listEditionsForWork(c.env.DB, id),
       listCopiesForWork(c.env.DB, id),
       getReadState(c.env.DB, id, user.id),
       listWatchesForWork(c.env.DB, id),
+      // "Do we already own this on audio?" — migration 0010's cache table,
+      // read the same way `watches` rides along above: it is a fact about the
+      // book, not a second request the page has to remember to make. Null for
+      // the ordinary case (no audiobook match) and the page renders nothing
+      // for it — see `AudiobookHolding` in `@lc/db`.
+      getAudiobookHolding(c.env.DB, id),
     ]);
 
     return c.json({
@@ -322,6 +329,7 @@ export const catalogRoutes = new Hono<AppBindings>()
       copies,
       reading,
       watches,
+      audiobookHolding,
       /**
        * Which shared world this book belongs to — the tier above its series —
        * or null.
