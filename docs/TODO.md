@@ -508,6 +508,10 @@ records that it was attempted, which a tidy log does not.
 
 <!-- entries start here -->
 
+- `2026-08-13T19:45Z` ✅ **POOL TEST ANSWERED: the weekly "All models" pool INCLUDES Fable.** Run per protocol — Fable-driven main loop, doc-reading turns only, zero subagents, zero background work. Baseline `80 / 47`; after `81 / 49`. **Both meters climbed with nothing else running.** Cross-check that settles it: the session moved +11 points, and at the global rules' measured session→weekly ratio (~0.09–0.10) that predicts **+1 weekly — exactly what all-models did.**
+  ⚠️ **What the Fable meter actually is: a per-model CAP within the shared pool, not a second allowance.** Fable subagent spend was draining weekly all-models all along (yesterday's +22), with the Fable meter tracking Fable's share on a smaller denominator (+36). "Fable's separate untouched allowance" was a misreading — there is ONE pool and an extra cap.
+  **Consequences:** the model swap is a budget no-op (no reason to swap back either); dispatch-vs-drive model choice is about capability, not budget; ⚠️ **the single real ceiling is weekly all-models — at 81% now, agents stop at 93%, so ~12 points of build budget remain until Sunday 4 PM.** Plan the auth build against that number.
+
 - `2026-08-13T19:15Z` ⚠️ **POOL TEST BASELINE — taken at a genuinely quiet moment, for the post-swap session to compare against.**
   **`session 40% · weekly all-models 80% · weekly Fable 47%`.** Nothing in flight: no subagents, no background commands, all three trees clean and pushed.
   **The question:** does the weekly **"All models"** pool **include** Fable, or is it separate? Today's readings cannot settle it — across the session all-models rose **+22** while Fable rose **+36**, which *looks* like separate pools, but the meters have **different denominators**, so a smaller Fable pool would produce that same pattern *while still being included*. Every interval had both moving together, because Fable subagents and Opus main-loop work ran **simultaneously all day** — nothing isolated the variables.
