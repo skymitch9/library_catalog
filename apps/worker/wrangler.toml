@@ -112,6 +112,7 @@ OWNER_EMAILS = "nbaslamking@gmail.com"
 # name exists there but its value is minted at the same step). Or via
 # `.dev.vars` + `npm run secrets:push` — INDEX_PUSH_TOKEN is allowlisted.
 # INDEX_URL = "https://index.heygabi.ai"
+INDEX_URL = "https://index.heygabi.ai"
 
 # ── Estate auth (catalog-platform/docs/info/estate-auth-design.md §14.5) ──────
 #
