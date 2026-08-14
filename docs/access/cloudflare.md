@@ -42,7 +42,7 @@ GET  /                   <title>Library</title>
 
 ⚠️ The `/api/me` 401 is the important one. It proves the **dev bypass is inert in
 production** — `middleware/auth.ts` only honours `DEV_EMAIL` when
-`ENVIRONMENT !== 'production'`, and this is the check that the gate is really
+`ENVIRONMENT === 'development'` (⚠️ **hardened 2026-08-13 from `!== 'production'`, which failed OPEN** — any environment that was not exactly `production`, including unset or misspelled, switched the bypass on), and this is the check that the gate is really
 holding rather than merely being written down.
 
 ---

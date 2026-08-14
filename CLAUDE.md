@@ -44,7 +44,7 @@ Migrate before deploying, so new code never meets an old schema.
 ## Verifying anything
 
 `npm run dev:worker` serves the API on `:8787` with **no sign-in** —
-`middleware/auth.ts` has a dev bypass gated on `ENVIRONMENT !== 'production'`
+`middleware/auth.ts` has a dev bypass gated on `ENVIRONMENT === 'development'`
 and `DEV_EMAIL`, both set in `apps/worker/.dev.vars`. So curl works locally with
 no tokens:
 

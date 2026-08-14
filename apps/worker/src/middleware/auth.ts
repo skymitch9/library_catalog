@@ -76,8 +76,25 @@ function readBearer(req: Request): string | null {
 
 async function resolveIdentity(req: Request, env: Env): Promise<Identity | null> {
   // Local development bypass. Double-gated: the variable must be set AND the
-  // environment must not be production.
-  if (env.ENVIRONMENT !== 'production' && env.DEV_EMAIL) {
+  // environment must be EXACTLY 'development'.
+  //
+  // ⚠️ This was `!== 'production'` until 2026-08-13, which fails OPEN. Any
+  // environment that is not the exact string 'production' — unset, misspelled,
+  // a `staging` or `preview` deploy, anything added later — turned the auth
+  // bypass ON. Requiring the affirmative value fails CLOSED instead: an
+  // unrecognised environment gets real authentication, which is the safe
+  // direction for a mistake to fall.
+  //
+  // The board game catalog hardened its identical copy of this function and
+  // this one never got the change — the drift was found by an estate-wide auth
+  // review, not by anything failing. That divergence is the argument for
+  // `estate-auth-design.md`'s shared module: two copies of an auth check are
+  // two chances to harden only one.
+  //
+  // Safe for local dev because `apps/worker/.dev.vars` sets
+  // ENVIRONMENT = "development" (verified before this change), and
+  // wrangler.toml sets "production" for the deployed Worker.
+  if (env.ENVIRONMENT === 'development' && env.DEV_EMAIL) {
     return {
       email: env.DEV_EMAIL,
       uid: 'dev-uid',
