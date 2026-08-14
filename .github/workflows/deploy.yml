@@ -1,0 +1,129 @@
+name: Deploy Worker (manual)
+
+# ⚠️ MANUAL DISPATCH ONLY — decided by the owner 2026-08-14 (catalog-platform
+# docs/TODO.md §1). This Worker has NO dev lane: a deploy goes straight to the
+# live custom domain, so the trigger stays a deliberate human button-press.
+# Do not add push triggers or schedules. This is deliberately NOT a copy of
+# audiobook_catalog's deploy.yml — that repo's two-lane main→/dev/ + promote
+# machinery exists for a generated static site and has no equivalent here
+# (TODO.md §1.2).
+#
+# What this preserves from the manual path (TODO.md §1.3):
+#   - check-clean.mjs still runs inside `npm run deploy` (predeploy). A CI
+#     checkout is clean by construction so it passes trivially, but it is NOT
+#     disabled: the reason it exists — the deployed artifact must be a commit —
+#     is exactly what CI guarantees.
+#   - deploy-guard.mjs also still runs: its ancestry check against
+#     docs/deploys.log protects against dispatching a stale ref.
+#   - Migrate BEFORE deploy, so new code never meets an old schema. Locally
+#     this ordering is a human remembering it; here it is a step order.
+#   - No `|| true` anywhere: the Windows wrangler exit-255 quirk does not
+#     exist on Linux runners, so a non-zero exit is a real failure.
+#
+# Cross-repo dependency (TODO.md §1.4): prebuild/predeploy sync scripts fetch
+# the shared universe list and estate-auth/theme modules from catalog-platform
+# and FAIL LOUDLY without that checkout. So this workflow checks out BOTH repos
+# side-by-side and points CATALOG_PLATFORM_DIR at the sibling.
+# ⚠️ skymitch9/catalog-platform is PRIVATE (verified 2026-08-14), and the
+# default GITHUB_TOKEN only reaches THIS repo — so the checkout needs a PAT in
+# the CATALOG_PLATFORM_TOKEN secret. The guard step below fails early with
+# instructions if it is absent.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time; a second dispatch queues rather than overlapping.
+# (deploy-guard.mjs's lock file only protects a single checkout, so in CI this
+# concurrency group is what provides the "no two deploys at once" guarantee.)
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      # Not a secret — the account id also appears in wrangler output. The repo
+      # Actions variable is set; the literal is a fallback so a variable wipe
+      # cannot silently break auth.
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || '113be82b840c956b8378a187047ab3ea' }}
+      # Explicit rather than relying on the ../catalog-platform sibling lookup,
+      # so a layout change here fails with platform-repo.mjs's loud message.
+      CATALOG_PLATFORM_DIR: ${{ github.workspace }}/catalog-platform
+      # Identifies this run in deploy-guard/deploy-done output.
+      DEPLOY_HOLDER: github-actions
+    defaults:
+      run:
+        working-directory: library_catalog
+
+    steps:
+      # ---- Fail early and clearly on missing secrets, before any checkout ----
+      - name: Guard — CLOUDFLARE_API_TOKEN must exist
+        working-directory: ${{ github.workspace }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::error::Set CLOUDFLARE_API_TOKEN: repo Settings → Secrets → Actions (or: gh secret set CLOUDFLARE_API_TOKEN --repo skymitch9/library_catalog). Create the token at dash.cloudflare.com/profile/api-tokens with the 'Edit Cloudflare Workers' template (needs Workers + D1 + R2 on account 113be82b840c956b8378a187047ab3ea)."
+            exit 1
+          fi
+          echo "CLOUDFLARE_API_TOKEN present."
+
+      - name: Guard — CATALOG_PLATFORM_TOKEN must exist (private sibling checkout)
+        working-directory: ${{ github.workspace }}
+        env:
+          HAVE_PAT: ${{ secrets.CATALOG_PLATFORM_TOKEN != '' }}
+        run: |
+          if [ "$HAVE_PAT" != "true" ]; then
+            echo "::error::Set CATALOG_PLATFORM_TOKEN: skymitch9/catalog-platform is PRIVATE and the build cannot proceed without it (prebuild syncs universes + estate-auth from it). Create a fine-grained PAT at github.com/settings/personal-access-tokens with Contents: Read on skymitch9/catalog-platform, then: gh secret set CATALOG_PLATFORM_TOKEN --repo skymitch9/library_catalog"
+            exit 1
+          fi
+          echo "CATALOG_PLATFORM_TOKEN present."
+
+      # ---- Side-by-side checkouts: this repo + the platform repo ----
+      - name: Checkout library_catalog
+        uses: actions/checkout@v5
+        with:
+          path: library_catalog
+
+      - name: Checkout catalog-platform (build-time dependency)
+        uses: actions/checkout@v5
+        with:
+          repository: skymitch9/catalog-platform
+          token: ${{ secrets.CATALOG_PLATFORM_TOKEN }}
+          path: catalog-platform
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          # engines says >=20; 22 is the active LTS.
+          node-version: 22
+          cache: npm
+          cache-dependency-path: library_catalog/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Migrate BEFORE deploy (TODO.md §1.3 point 2). `d1 migrations apply` is
+      # incremental — it only applies migrations the remote DB has not seen.
+      - name: Apply D1 migrations (remote)
+        run: npm run db:migrate
+
+      # Runs the full npm lifecycle: predeploy (check-clean + deploy-guard) →
+      # build (prebuild syncs from catalog-platform) → wrangler deploy →
+      # postdeploy (deploy-done appends docs/deploys.log in THIS checkout only).
+      - name: Deploy
+        run: npm run deploy
+
+      # deploy-done.mjs appended the deploy record to docs/deploys.log in the
+      # runner's ephemeral checkout, where it is discarded. The local convention
+      # is that "the run that deployed commits it" — but CI pushing commits to
+      # main is not this repo's convention, so the workflow does NOT push.
+      # The record below is what to append locally if the ancestry guard's log
+      # should stay current (it degrades safely: a stale log entry that is an
+      # ancestor of main never blocks a deploy).
+      - name: Note — docs/deploys.log not committed
+        run: |
+          echo "::notice::Deployed ${GITHUB_SHA} by github-actions. docs/deploys.log was NOT updated in git (CI does not push). Optional local append: printf '%s\t%s\t%s\t%s\n' \"$(date -u +%FT%TZ)\" \"${GITHUB_SHA}\" \"github-actions\" \"run-${GITHUB_RUN_ID}\" >> docs/deploys.log && commit it."
