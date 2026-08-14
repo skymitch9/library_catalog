@@ -87,6 +87,11 @@ jobs:
         uses: actions/checkout@v5
         with:
           path: library_catalog
+          # Full history: deploy-guard.mjs resolves the LIVE commit recorded in
+          # docs/deploys.log and refuses if HEAD doesn't contain it. A shallow
+          # clone can't resolve any older commit, so the guard refuses every
+          # run ("Not a valid commit name" — first proof dispatch, 31813656082).
+          fetch-depth: 0
 
       - name: Checkout catalog-platform (build-time dependency)
         uses: actions/checkout@v5
