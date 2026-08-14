@@ -23,98 +23,84 @@
 | ⏸️ | Blocked — the blocker is named |
 | 💤 | Deliberately deferred |
 
-## ⚠️ Read this first — state at 2026-08-13 08:00Z (end of the overnight run)
+## ⚠️ READ THIS FIRST — handoff, state at 2026-08-13 ~18:30Z
 
-**Branch:** `main`, pushed through `b617c80`. **Working tree: NOT clean** — a Fable
-build agent is mid-flight in *this* checkout (see below). Do not assume the tree
-is yours until it lands.
+**Written to survive a model swap and to be executable without the session that
+wrote it.** The owner may continue with a different model, another tool, or on
+overage credits.
 
-**Usage at 08:00Z:** session **90%** (over the 89% threshold, resets in ~31 min),
-weekly all-models **57%**, **weekly Fable 9%**. So the overnight plan worked as
-intended — Fable's separate allowance is barely touched.
+### Where everything is right now
 
-### What is DONE and committed
+| | |
+|---|---|
+| **library production** | `684b6e3` → Worker version `60a03b20`→`dded6f29`→latest deploy of `684b6e3`. Health green. Migrations **0120 and 0130 applied**. |
+| **board games production** | `44a34d3` → version `0b50c147`. Health green. Migration **0025 applied** (`sleeve_requirement` dropped). |
+| **index Worker** | **BUILT, NOT DEPLOYED.** D1 `index_catalog` = `3004d175-3c51-4ed4-ac3e-62859319f8ac`, **migration APPLIED**, schema verified (`entry` + 3 partial indexes). No route, `workers_dev = false`. |
+| **trees** | library, catalog-platform, boardbuddy — all clean and pushed. |
+| **tests** | library **375/375**, index-worker **17/17**. ⚠️ `Board_Game_Catalog` has **no `test` script** — typecheck only, never claim tests ran there. |
 
-| Thing | Where | State |
-|---|---|---|
-| Frozen-field guard on `PATCH /works/:id` (title, authors) | `apps/worker/src/routes/catalog.ts` | **DEPLOYED** `1a78c0b8`; Fable exercised it with 13 live probes |
-| Audio-hedge fix — owned audio no longer says "you might own this" | `packages/core/src/completeness.ts`, migration 0110 | deployed |
-| Gaps chip removed from the collection stat strip | `apps/worker/src/routes/catalog.ts` `/stats` | deployed |
-| Intake fixes: typed ISBN persists as an edition; `intent` defaults to `owned` | `apps/web/src/components/AddWork.tsx` | deployed |
-| Board books count as hardcover | data | applied |
-| Deploy guard (lock + git-ancestry) | `scripts/deploy-guard.mjs`, `scripts/deploy-done.mjs` | has now run on itself twice |
-| **Migration 0120** — `change_log`, `reviews_seen_*`, authorless index | `migrations/0120_change_log_and_authorless.sql` | ⚠️ **LOCAL D1 ONLY — NOT applied to production** |
-| All four edit-and-audit decisions approved by the owner | `docs/TODO.md` top, `catalog-platform/docs/PLATFORM.md` §4a | recorded |
+### ⚠️ The two things gating a deploy — both are OWNER DECISIONS
 
-### ⚠️ What is IN FLIGHT — read before touching code
+1. **Read-surface auth for the index** (`index-worker-design.md` §9 Q3). The owner
+   has since answered the shape: **`heygabi.ai` stays open, but global search
+   requires a login.** That answer is what the estate-auth design implements, so
+   the index deploy now waits on that design being approved.
+2. **One attended dev-lane pass**, covering **five** shipped-but-never-driven
+   browser surfaces: the **key-move ceremony** (the one that matters — the only
+   path touching the ~860-review join, which is why all six of today's key moves
+   went around it in SQL), the **rescan prompt**, the **edition picker**, the
+   **delete panel**, and the **cover swap grid**.
 
-A **Fable 5 agent is implementing the edit-and-audit design in this working
-tree** (no worktree isolation — my dispatch error). It is working through
-`docs/info/edit-and-audit-design.md` §7's "code changes riding along" table, in
-priority order: `@lc/core` (`constants.ts` `UNKNOWN_AUTHOR`, `titles.ts`
-`workKeyFor` sentinel branch, `reviews.ts` `reviewDocFor` throw, `schemas.ts`,
-`core.test.ts`) → `@lc/db` `works.ts` → worker `catalog.ts`/`reviews.ts` → web UI.
-It commits and pushes to `main`; **it must not deploy and must not run the remote
-migration.** Its progress log is `docs/FABLE5.md` §7.
+### In flight
 
-**If it did not finish:** finish fewer things completely rather than leaving a
-half-written route. Check `git status` and `docs/FABLE5.md` §7 first.
+**Fable 5 is writing `catalog-platform/docs/info/estate-auth-design.md`** —
+committing in parts (`a38c88b` = part 1: ground, threat model, core design).
+Design only; **no build until the owner approves it.**
 
-### Pending commands the OWNER must run (nothing here is automated)
+### The decisions recorded today that must NOT be relitigated
 
-```bash
-# 1. Production migration for 0120 — ONLY after reviewing the code that rides along,
-#    so new code never meets an old schema (CLAUDE.md: migrate, THEN deploy).
-npm run db:migrate            # remote; additive only, no table rebuild
+- ⚠️ **Do not canonicalise the `SAMG` author strings.** `normaliseTitle` folds
+  every wholly non-Latin title to `''`, so the two Korean works are keyed on the
+  author alone (`|samg`, `|samg entertainment`) and merging those spellings gives
+  two different books **one `work_key`**, merging them in the ~860-review join.
+  The guard is accidental and one tidy-up from failing.
+- ⚠️ **`illustrator` must never enter `work_key`.** A test pins
+  `workKeyFor.length === 2` as the tripwire.
+- **epub identifier backfill is CLOSED** (`isbn-ladder.md`) — not even ASINs are
+  derivable; those `source_url`s are local file paths.
+- **The book number stays above the title.** **`play` is deliberately kept.**
+  **Firestore `reviews` stays shape-only** (`PLATFORM.md` §4a).
 
-# 2. Then, and only then:
-node scripts/deploy-guard.mjs && npm run deploy && node scripts/deploy-done.mjs
-```
+### ⚠️ Gotchas that cost real time today
 
-Leaving 0120 unapplied is **safe indefinitely** — it is purely additive, so
-production stays self-consistent (old schema + old code).
-
-### ⚠️ Gotchas discovered that will cost you time
-
-- **The sentinel's collision proof needs BOTH halves.** `normaliseTitle` emitting
-  only `[a-z0-9 ]` (verified over an 8448-codepoint sweep) is necessary but **not
-  sufficient**: `normaliseTitle('?unknown') == normaliseTitle('Unknown') ==
-  'unknown'`. The proof also requires `workKeyFor` to **bypass the fold** for the
-  sentinel. Deleting that branch reads as a harmless simplification and would
-  silently collide every authorless book with real "Unknown"-credited ones.
-- **The one-barcode-one-edition guard is specced but ABSENT FROM CODE** — no OL
-  `/works/` refusal exists anywhere under `packages/`. This is the defect that
-  corrupted #300/#301/#302 from single barcodes. ⚠️ **Scanning resumes today with
-  ~100 books left, so fix this before scanning.**
-- **A rescan writes a second copy + a second same-format edition**, silently. 71
-  physical editions carry no ISBN and the documented answer ("a barcode scan will
-  fill it in later") describes a path that does not exist. Residue is already live
-  at work #139.
-- **`wrangler dev` does not die with its parent and leaks badly** — 212 orphaned
-  processes holding 15.6 GB, one leak per agent worktree. Kill by name.
-- **Local D1 commands run from `apps/worker`,** not the repo root, and
-  `--command` must be **single-line** — multi-line crashes wrangler with a libuv
-  assertion and silently executes nothing.
-- `curl -o /dev/null` reports status `000`/exit 43 on a healthy host in Git Bash.
-  Use `-o NUL`, or PowerShell `Invoke-WebRequest`.
+- **Destructive migrations invert the usual order.** Additive: migrate then
+  deploy. **A `DROP`: remove the reader, deploy, THEN drop** — otherwise the live
+  Worker queries a table that is gone.
+- **`edition` has NO `edition_notes` column** (it is on `copy`). A wrong column
+  name **rolls back the whole `--file` batch** — which is also the proof that D1
+  `--file` batches are atomic.
+- **`copy` carries both `work_id` and `edition_id`, and 172 copies have a NULL
+  `edition_id`.** Counting copies by joining through `edition` reports **zero**
+  for a book that is owned. Use `WHERE work_id = ?`.
+- **The volume number is TWO columns.** `series_index_sort` orders, `series_index_display`
+  prints. 22 rows had sort without display: correctly ordered, invisible on the page,
+  and **the gap check could not see them**. Fixed both in data and in `gaps.ts`.
+- **`npm run deploy` runs the deploy guard itself** — running the guard manually
+  first deadlocks against your own lock.
+- **`wrangler dev` does not die with its parent**; 212 orphans / 15.6 GB measured.
+  Kill by name.
+- Local D1 commands run from **`apps/worker`**, `--command` **single-line only**.
 
 ### Verification commands
 
 ```bash
-npm test && npm run typecheck                    # core rules + types, both must be green
-cd apps/worker && npx wrangler d1 execute library-catalog --local   --command "SELECT COUNT(*) FROM change_log"    # 0 rows locally; probes were cleaned up
-curl -s localhost:8787/api/health                # dev worker, no sign-in needed
+npm test && npm run typecheck                    # library: expect 375 pass
+cd apps/worker && npx wrangler d1 execute library-catalog --remote   --command "SELECT COUNT(*) FROM change_log"    # audit log, was 414+
+curl -s https://library.heygabi.ai/api/health
 ```
 
-### The one thing still owed to the owner
-
-The `/queue` residue research (~190 records) was claimed but **not started** — the
-session threshold arrived first. The owner asked to be told about it today. Method
-recorded: group by what is missing, publisher's own site first, apply only what a
-source states, and write up the unfindable **with the dead ends** — what cannot be
-found is a result, not a failure.
-
 ---
+
 
 ## Production right now
 
