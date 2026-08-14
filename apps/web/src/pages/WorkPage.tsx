@@ -11,7 +11,7 @@ import { CoverPanel } from '../components/CoverPanel.js';
 import { DriveLinks } from '../components/DriveLinks.js';
 import { Editions, type EditionView } from '../components/Editions.js';
 import { Enrich } from '../components/Enrich.js';
-import { OnAudio } from '../components/OnAudio.js';
+import { OtherVersions } from '../components/OtherVersions.js';
 import { Provenance } from '../components/Provenance.js';
 import { Related } from '../components/Related.js';
 import { Reviews } from '../components/Reviews.js';
@@ -400,14 +400,14 @@ export function WorkPage({
 
       {/* Directly under Copies, and above Accessories: this is the other place
           the household holds the book, so it reads as a continuation of "what
-          we have" rather than a footnote. Renders nothing when there is no
-          holding — see `OnAudio`'s own header for why the fact was invisible
-          here before this (only a series page's "N on audio" chip showed it,
-          and a book with no series, or nobody happening to open that page,
-          hid it completely). */}
-      <OnAudio holding={detail.audiobookHolding} ourSeries={work.series} />
+          we have" rather than a footnote. Renders nothing when there are no
+          other versions — see `OtherVersions`'s own header for why the fact
+          was invisible here before this (only a series page's "N on audio"
+          chip showed it, and a book with no series, or nobody happening to
+          open that page, hid it completely). */}
+      <OtherVersions holding={detail.audiobookHolding} ourSeries={work.series} />
 
-      {/* Under Copies (and OnAudio, which renders nothing on most books)
+      {/* Under Copies (and OtherVersions, which renders nothing on most books)
           because an accessory belongs to a copy — a plushie arrived in a
           specific box, not with the novel as an idea. See migration 0011 and
           the panel's own header.

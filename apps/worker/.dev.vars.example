@@ -41,3 +41,10 @@ ANTHROPIC_API_KEY = ""
 # Machine token for the ebook importer. Generate: openssl rand -hex 32
 # Unset = /api/ingest 404s, which is the safe default.
 EBOOK_INGEST_TOKEN = ""
+
+# Machine token for the audiobook pipeline's mapping export
+# (GET /api/machine/audiobook-mapping — "Other versions available", the
+# audiobook side). Generate: openssl rand -hex 32
+# Unset = the route 404s, which is the safe default. The audiobook_catalog
+# repo holds the SAME value under LIBRARY_MAPPING_TOKEN in its own .env.
+AUDIOBOOK_MAPPING_TOKEN = ""

@@ -39,6 +39,9 @@ const PRODUCTION_SECRETS = [
   'GOOGLE_BOOKS_API_KEY',
   'ANTHROPIC_API_KEY',
   'EBOOK_INGEST_TOKEN',
+  // The audiobook pipeline's mapping export bearer (routes/audiobook-mapping.ts).
+  // The audiobook_catalog repo holds the same value as LIBRARY_MAPPING_TOKEN.
+  'AUDIOBOOK_MAPPING_TOKEN',
   // The estate /seen bearer (estate-auth-design.md §4.4). The auth Worker
   // holds the matching value under the same name; minted at the dispatcher's
   // deploy step. Absent here = simply not pushed — the Worker then logs

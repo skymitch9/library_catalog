@@ -12,6 +12,7 @@ import { requireAuth } from './middleware/auth.js';
 import { accessoryRoutes } from './routes/accessories.js';
 import { adminCors, adminRoutes } from './routes/admin.js';
 import { aliasRoutes } from './routes/aliases.js';
+import { audiobookMappingRoutes } from './routes/audiobook-mapping.js';
 import { catalogRoutes } from './routes/catalog.js';
 import { coverRoutes } from './routes/covers.js';
 import { crowdfundingRoutes, provenanceRoutes } from './routes/crowdfunding.js';
@@ -50,6 +51,12 @@ app.use('/api/*', indexBackstopOnRequest());
 // the route is kept to make it so. With EBOOK_INGEST_TOKEN unset it 404s rather
 // than opening.
 app.route('/api/ingest', ingestRoutes);
+
+// ⚠️ Mounted BEFORE requireAuth, same reasoning as `/api/ingest` immediately
+// above: the audiobook pipeline's Task Scheduler run is a script, not a
+// person. See routes/audiobook-mapping.ts for how narrow the route is kept.
+// With AUDIOBOOK_MAPPING_TOKEN unset it 404s rather than opening.
+app.route('/api/machine/audiobook-mapping', audiobookMappingRoutes);
 
 // CORS for the estate's federated admin page (exactly https://heygabi.ai —
 // see routes/admin.ts). ⚠️ Before requireAuth on purpose: a preflight OPTIONS

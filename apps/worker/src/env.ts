@@ -104,6 +104,24 @@ export interface Env {
    */
   EBOOK_INGEST_TOKEN?: string;
 
+  /**
+   * Shared secret for the audiobook pipeline's mapping export
+   * (`routes/audiobook-mapping.ts`, `GET /api/machine/audiobook-mapping`).
+   *
+   * Same trade as `EBOOK_INGEST_TOKEN` above and for the same reason: the
+   * caller is `audiobook_catalog`'s Task Scheduler pipeline, not a person, so
+   * it carries a static bearer instead of a Firebase ID token. The route is
+   * read-only and answers only work ids, the audiobook title already cached
+   * in `audiobook_holding`, and format labels — never a review, a copy, or
+   * anything else in the collection.
+   *
+   * **Unset means the route is disabled entirely, not open** — see that
+   * route's header. Generate with `openssl rand -hex 32`, put it in
+   * `.dev.vars`, and `npm run secrets:push`. The audiobook repo holds the
+   * SAME value under `LIBRARY_MAPPING_TOKEN` in its own (gitignored) `.env`.
+   */
+  AUDIOBOOK_MAPPING_TOKEN?: string;
+
 
   /**
    * The shared index Worker (catalog-platform/apps/index-worker), where this
