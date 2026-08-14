@@ -74,3 +74,12 @@ packages/estate-auth/generated/
 # design: it is about one machine at one moment. The SHARED record is
 # docs/deploys.log, which IS tracked.
 .deploy.lock
+
+# ⚠️ Same mechanism, third asset: the estate THEME system (estate-theme.css,
+# theme.js, self-hosted fonts + OFL licence), materialised from
+# catalog-platform/sites/heygabi-home/public/assets/ by
+# scripts/sync-estate-theme.mjs on every build, test and typecheck. The ONE
+# implementation lives in that repo (contract: its docs/info/estate-themes.md);
+# the only local transformation is the font URL root (/assets/fonts/ →
+# /estate/fonts/), applied by the sync script, never by hand.
+apps/web/public/estate/

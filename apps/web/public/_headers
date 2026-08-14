@@ -29,3 +29,17 @@
 # once per session; an hour keeps a refresh from needing a hard reload.
 /author-drive-map.json
   Cache-Control: public, max-age=3600
+
+# The vendored estate theme asset (scripts/sync-estate-theme.mjs). The CSS and
+# theme.js change bytes WITHOUT changing name when catalog-platform updates
+# them, so they must never be immutable — an hour bounds the drift after a
+# deploy. Written before the fonts rule so the later, more specific rule wins
+# for /estate/fonts/*.
+/estate/*
+  Cache-Control: public, max-age=3600
+
+# The font faces are stable binaries that only ever change alongside a redesign
+# loud enough to rename them upstream; a year is safe and keeps the theme
+# switch instant on revisit.
+/estate/fonts/*
+  Cache-Control: public, max-age=31536000
