@@ -126,6 +126,50 @@ reviews.
 ---
 
 
+## ✅ A3 — the audiobook retitle can no longer orphan its reviews, 2026-08-14
+
+Phase **A3** of `catalog-platform/docs/info/edit-audit-design.md` §7 (its A1 —
+the audiobook repo's push discipline — was verified done the same day; **A2, the
+`edit_overrides.py` warning, belongs to another agent and was not touched**).
+
+**The hazard**, §3.4 of that doc: a `title` override in the audiobook repo
+changes the published `catalog.csv`, and `bookId` is a slug of the published
+title — so the correction silently detaches every existing review of that book,
+and both the book-page join and the read-state sweep lose them with no report.
+
+**Shipped** — `packages/core/src/reviews.ts` gains `overrideTitleAliases` +
+`aliasedBookIdIndex` (pure, tested), and `scripts/backfill-review-keys.mjs` now
+(a) matches a document filed under a **pre-correction** slug via the overrides
+file's `match.title`, and (b) ⚠️ **restamps a stale `workKey` instead of counting
+it done** — the old script treated any keyed document as finished, so after the
+2026-08-12 commit run it could never have carried anything. Re-running the
+backfill is now the audiobook side's entire carry ceremony. Tests **415 → 425**,
+typecheck clean, no migration, nothing deployed (the new functions have no
+caller in the Worker or web).
+
+**Measured, three dry runs against the live `reviews` collection** (details and
+the refusal rules: `docs/info/identity-and-reviews.md` §5.1):
+
+| Run | matched | unmatched | keys moved |
+|---|---|---|---|
+| Production as it stands | 870 | 0 | 0 |
+| Simulated retitle, aliasing OFF | 866 | **4** | 0 |
+| Simulated retitle, aliasing ON | 870 | 0 | **4** |
+
+⚠️ **No `--commit` run**: production carries **zero** title/author overrides
+today (all 69 entries correct `series`/`series_index`, which move no `bookId`),
+so every stored key already equals the key its row derives and a commit run
+would have written nothing. The guard landed *before* the first retitle, which
+is the order §7 asks for.
+
+**Next time a retitle lands**, after the audiobook site rebuilds:
+
+```bash
+LC_AUDIOBOOK_ROOT=C:/Users/nbasl/OneDrive/Documents/vs-code-repos/bookbuddy/audiobook_catalog \
+  npm run backfill:reviews                       # dry run — READ THE KEY MOVES
+LC_AUDIOBOOK_ROOT=... npm run backfill:reviews -- --commit
+```
+
 ## Production right now
 
 Measured **2026-08-12**, live version `d441ecd1`:

@@ -100,7 +100,9 @@ import {
   updateWorkSchema,
 } from '../src/schemas.ts';
 import {
+  aliasedBookIdIndex,
   bookIdFromTitle,
+  overrideTitleAliases,
   reviewDocFor,
   reviewSourceOf,
   workKeyForAudiobookRow,
@@ -464,6 +466,151 @@ describe('reviews — the document the other site already writes', () => {
     assert.equal(id, 'firefight-the-reckoners-book-2_skylar');
     // workKey from the CLEANED title, so a paperback finds it.
     assert.equal(doc.workKey, 'firefight|brandon sanderson');
+  });
+});
+
+describe('override aliases — a retitle on the other side must not orphan its reviews', () => {
+  // The MP4 title atom, built rather than typed: it is U+00A9 + 'nam', and a
+  // source file rewritten through PowerShell can come back with the literal
+  // re-encoded (CLAUDE.md records exactly that failure).
+  const NAM = String.fromCharCode(0xa9) + 'nam';
+
+  it('a title correction becomes an old-slug → new-slug alias', () => {
+    // The hazard, in one entry: every existing review of this book is filed
+    // under `implode`, and the next build publishes `Implode - Book 8`.
+    const { aliases, ambiguous } = overrideTitleAliases({
+      overrides: [
+        {
+          match: { title: 'Implode', author: 'Dakota Krout' },
+          set: { title: 'Implode - The Completionist Chronicles, Book 8' },
+        },
+      ],
+    });
+    assert.deepEqual(ambiguous, []);
+    assert.equal(aliases.length, 1);
+    assert.equal(aliases[0].fromBookId, 'implode');
+    assert.equal(aliases[0].toBookId, 'implode-the-completionist-chronicles-book-8');
+    // ⚠️ `match.title` is the PRE-correction spelling by construction —
+    // `edit_overrides.py` keys entries on the tags, not on the published CSV.
+    assert.equal(aliases[0].via, 'match.title');
+  });
+
+  it('an ASIN-keyed retitle falls back to the tag that was actually read', () => {
+    // An asin match block carries no title (carrying one would break the entry
+    // on the first retitle — the file's own `_schema` says so), so the only
+    // record of the old spelling is the evidence.
+    const { aliases } = overrideTitleAliases({
+      overrides: [
+        {
+          match: { asin: 'B07XYZ' },
+          set: { title: 'The Way of Kings' },
+          evidence: { tags_read: { [NAM]: 'Way of Kings, The (Unabridged)' } },
+        },
+      ],
+    });
+    assert.equal(aliases.length, 1);
+    assert.equal(aliases[0].fromBookId, 'way-of-kings-the-unabridged');
+    assert.equal(aliases[0].via, 'evidence.tags_read');
+  });
+
+  it('⚠️ an author-only or series-only correction produces NO alias', () => {
+    // `bookId` is a slug of the title alone. A corrected author moves the
+    // derived workKey — which the backfill recomputes anyway — but the document
+    // still matches on its own slug, so an alias here would be noise. All 69
+    // entries in production today are of this shape.
+    const { aliases } = overrideTitleAliases({
+      overrides: [
+        { match: { title: 'Implode' }, set: { author: 'Dakota Krout' } },
+        { match: { title: 'Implode' }, set: { series: 'The Completionist Chronicles', series_index: '8' } },
+      ],
+    });
+    assert.deepEqual(aliases, []);
+  });
+
+  it('a correction that slugs the same is not a rename', () => {
+    const { aliases } = overrideTitleAliases([
+      { match: { title: 'Gold: A Novel' }, set: { title: 'Gold - A Novel' } },
+    ]);
+    assert.deepEqual(aliases, []);
+  });
+
+  it('⚠️ two corrections claiming one old slug are REFUSED, not guessed', () => {
+    // Restamping either would file somebody's review on the wrong book, which
+    // is the single failure workKey exists to prevent.
+    const { aliases, ambiguous } = overrideTitleAliases([
+      { match: { title: 'Gold' }, set: { title: 'Gold - Plated Prisoner 1' } },
+      { match: { title: 'Gold' }, set: { title: 'Gold - Mining Guild 3' } },
+    ]);
+    assert.deepEqual(aliases, []);
+    assert.deepEqual(ambiguous, ['gold']);
+  });
+
+  it('reads the real file shape, and ignores anything it does not understand', () => {
+    // catalog_overrides.json is mostly `_`-prefixed prose plus `canonical_series`;
+    // only `overrides` is a list of entries.
+    const { aliases } = overrideTitleAliases({
+      _description: 'CATALOG CORRECTIONS LAYER',
+      canonical_series: { 'the completionist chronicles': 'The Completionist Chronicles' },
+      overrides: [null, 'nonsense', {}, { set: { title: 'No match block' } },
+        { match: { title: 'Old' }, set: { title: 'New' } }],
+    });
+    assert.equal(aliases.length, 1);
+    assert.equal(aliases[0].fromBookId, 'old');
+  });
+
+  it('an alias points the old slug at the corrected row', () => {
+    const csv = new Map([['implode-the-completionist-chronicles-book-8', { id: 8 }]]);
+    const { aliases } = overrideTitleAliases([
+      { match: { title: 'Implode' }, set: { title: 'Implode - The Completionist Chronicles, Book 8' } },
+    ]);
+    const { index, applied, shadowed, dangling } = aliasedBookIdIndex(csv, aliases);
+    assert.equal(index.get('implode')?.id, 8);
+    assert.equal(applied.length, 1);
+    assert.deepEqual([shadowed.length, dangling.length], [0, 0]);
+    // The real row is untouched: aliasing adds keys, it never rewrites one.
+    assert.equal(index.get('implode-the-completionist-chronicles-book-8')?.id, 8);
+  });
+
+  it('⚠️ a live catalog row beats an alias, always', () => {
+    // Some other book is published under `implode` today. Pointing its reviews
+    // at the renamed book is worse than leaving the rename unmatched.
+    const csv = new Map([
+      ['implode', { id: 99 }],
+      ['implode-the-completionist-chronicles-book-8', { id: 8 }],
+    ]);
+    const { aliases } = overrideTitleAliases([
+      { match: { title: 'Implode' }, set: { title: 'Implode - The Completionist Chronicles, Book 8' } },
+    ]);
+    const { index, applied, shadowed } = aliasedBookIdIndex(csv, aliases);
+    assert.equal(index.get('implode')?.id, 99);
+    assert.deepEqual(applied, []);
+    assert.equal(shadowed.length, 1);
+  });
+
+  it('before the site is rebuilt the old slug is still the live row, and wins', () => {
+    // The override is committed but `python -m app.main` has not run, so the
+    // CSV still publishes the old title. Matching is fine — it is the ordinary
+    // pre-correction case — and the alias must stand aside rather than claim it.
+    const csv = new Map([['implode', { id: 8 }]]);
+    const { aliases } = overrideTitleAliases([
+      { match: { title: 'Implode' }, set: { title: 'Implode - Book 8' } },
+    ]);
+    const { index, applied, shadowed, dangling } = aliasedBookIdIndex(csv, aliases);
+    assert.equal(index.get('implode')?.id, 8);
+    assert.deepEqual([applied.length, shadowed.length, dangling.length], [0, 1, 0]);
+  });
+
+  it('a corrected title that is in no catalog row at all is dangling, and says so', () => {
+    // Neither spelling is published: the book left the library, or something
+    // upstream renamed it again. Nothing is invented — it is reported.
+    const csv = new Map([['some-other-book', { id: 1 }]]);
+    const { aliases } = overrideTitleAliases([
+      { match: { title: 'Implode' }, set: { title: 'Implode - Book 8' } },
+    ]);
+    const { index, applied, dangling } = aliasedBookIdIndex(csv, aliases);
+    assert.equal(index.size, 1);
+    assert.deepEqual(applied, []);
+    assert.equal(dangling.length, 1);
   });
 });
 
