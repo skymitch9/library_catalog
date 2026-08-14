@@ -508,6 +508,14 @@ records that it was attempted, which a tidy log does not.
 
 <!-- entries start here -->
 
+- `2026-08-13T20:15Z` ✅ **AUTH DESIGN APPROVED — all seven §13 questions now answered. Build begins.** Final answers:
+  1. **Machinery normalized estate-wide; posture is per-surface policy declared in config.** Audiobooks stays `public: true` **explicitly** — gating it later is a config+hosting change with a pre-designed path, not a redesign. (Owner asked for the weigh-in; accepted by continuation.)
+  2. **Default-grant ON** — estate approval → library `reader` + games `viewer`. Acceptable because approval is owner-only, and §3.1's demotion escape hatch keeps partial guests possible deliberately.
+  3. **TTL 10 minutes.** 4. **Owner-only approver, `is_approver` flag as the promotion path.** 5. **Owner supplies a pre-seed email list; seed accepts it whenever it arrives.**
+  6. ✅ **Admin page at the TOP CATALOG LEVEL (the apex), not `auth.heygabi.ai`** — which deletes the design's "one more authorised domain" cost: the apex is already an authorised domain for search, and the auth Worker exposes an owner-gated admin API with CORS locked to the apex. **Better than the design's default.**
+  7. ✅ **Build the auth Worker.**
+  **Build order against ~12 weekly points:** §14.1 auth Worker + §14.2 canonical module first (dispatching now), then index adoption; library shadow-then-enforce and games land after Sunday's reset if the ceiling arrives first.
+
 - `2026-08-13T20:00Z` **AUTH §13 — owner answered 3, 4, 5; 1 and 2 in discussion; 6 defaulted; 7 answered by implication.**
   - **Q3 ✅ TTL = 10 minutes.**
   - **Q4 ✅ Approver = owner only**, with a **promotion path**: the directory's `is_approver` flag is the mechanism — promoting someone is flipping that flag from the admin surface, no redeploy. `OWNER_EMAILS` stays break-glass. Owner: user count "won't be that large ever."
