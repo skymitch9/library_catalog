@@ -7,6 +7,7 @@
 
 import { Hono } from 'hono';
 import type { AppBindings, Env } from './env.js';
+import { indexBackstopOnRequest, indexPushAfterMutation } from './lib/index-push.js';
 import { requireAuth } from './middleware/auth.js';
 import { accessoryRoutes } from './routes/accessories.js';
 import { aliasRoutes } from './routes/aliases.js';
@@ -32,6 +33,14 @@ const app = new Hono<AppBindings>();
 // Public — no token needed, so it can be curled to verify a deploy.
 app.route('/api/health', healthRoutes);
 
+// Shared-index pushers (lib/index-push.ts; design §7 step 4). ⚠️ Mounted
+// BEFORE the ingest route, deliberately: the ebook importer creates works, so
+// its mutations must pass through the after-mutation trigger too — a mount
+// after `app.route('/api/ingest', …)` would never see them. Both are inert
+// no-ops until the dispatcher sets INDEX_URL + INDEX_PUSH_TOKEN, and neither
+// can touch a response: all index work runs on `waitUntil` after `next()`.
+app.use('/api/*', indexPushAfterMutation());
+app.use('/api/*', indexBackstopOnRequest());
 
 // ⚠️ Mounted BEFORE requireAuth, deliberately. The ebook importer is a script,
 // not a person: no browser, no Google session, nothing to refresh a Firebase ID

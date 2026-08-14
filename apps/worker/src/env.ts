@@ -106,6 +106,22 @@ export interface Env {
 
 
   /**
+   * The shared index Worker (catalog-platform/apps/index-worker), where this
+   * catalog pushes its projection. See lib/index-push.ts and
+   * packages/db/src/index-projection.ts.
+   *
+   * ⚠️ Both optional, and unset in production ON PURPOSE until the
+   * dispatcher's deploy step. Unset means every push trigger logs one line
+   * and does nothing — the index must never be able to stall this catalog.
+   * At that step: uncomment INDEX_URL in wrangler.toml [vars] and
+   * `wrangler secret put INDEX_PUSH_TOKEN` (the same value the index Worker
+   * holds as its INDEX_PUSH_TOKEN_LIBRARY secret — mint one value, set it on
+   * both sides).
+   */
+  INDEX_URL?: string;
+  INDEX_PUSH_TOKEN?: string;
+
+  /**
    * Estate auth mode: `off` | `shadow` | `enforce` — the §14.5 rollout flag
    * (catalog-platform/docs/info/estate-auth-design.md §9 step 5).
    *

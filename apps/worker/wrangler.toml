@@ -101,6 +101,18 @@ FIREBASE_PROJECT_ID = "audiobook-catalog"
 # Set for the same reason and to the same address as the board game catalog's.
 OWNER_EMAILS = "nbaslamking@gmail.com"
 
+# The shared index Worker (catalog-platform/apps/index-worker) — deliberately
+# COMMENTED until the dispatcher's deploy step, matching the games catalog's
+# precedent (its INDEX_URL stayed unset until index.heygabi.ai went live).
+# With it unset every push trigger in lib/index-push.ts logs one line and does
+# nothing, so the code deploys inert. At the deploy step: uncomment this, and
+# set the token as a secret —
+#   npx wrangler secret put INDEX_PUSH_TOKEN --config apps/worker/wrangler.toml
+# (= the same value the index Worker holds as INDEX_PUSH_TOKEN_LIBRARY; that
+# name exists there but its value is minted at the same step). Or via
+# `.dev.vars` + `npm run secrets:push` — INDEX_PUSH_TOKEN is allowlisted.
+# INDEX_URL = "https://index.heygabi.ai"
+
 # ── Estate auth (catalog-platform/docs/info/estate-auth-design.md §14.5) ──────
 #
 # ⚠️ `off` ON PURPOSE: the deploy that carries the estate-auth code must be

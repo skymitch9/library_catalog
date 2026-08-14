@@ -44,6 +44,11 @@ const PRODUCTION_SECRETS = [
   // deploy step. Absent here = simply not pushed — the Worker then logs
   // estate_config_unset and the estate check stays off, by design.
   'ESTATE_APP_TOKEN_LIBRARY',
+  // The shared-index push bearer (index-worker-design.md §5). The index
+  // Worker holds the matching value as INDEX_PUSH_TOKEN_LIBRARY; minted at
+  // the dispatcher's deploy step. Absent = not pushed — the push triggers in
+  // lib/index-push.ts then log one line and do nothing, by design.
+  'INDEX_PUSH_TOKEN',
 ];
 
 /** Local-only by design. Listed so the script can say *why* it skipped them. */
@@ -53,6 +58,7 @@ const LOCAL_ONLY = {
   DEV_NAME: 'local auth bypass only',
   ESTATE_CHECK: 'set in wrangler.toml for production (off until the dispatcher flips it)',
   ESTATE_AUTH_URL: 'set in wrangler.toml for production',
+  INDEX_URL: 'set in wrangler.toml [vars] for production (commented until the index deploy step)',
 };
 
 function parseDevVars(text) {
