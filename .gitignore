@@ -62,6 +62,14 @@ scripts/crowdfunding-scan.*.json
 # See docs/info/universes.md.
 packages/universes/generated/
 
+# ⚠️ Same mechanism, second package: the canonical estate-auth module,
+# materialised from catalog-platform/packages/estate-auth/src/ by
+# scripts/sync-estate-auth.mjs on every build, test and typecheck. The ONE
+# implementation lives in that repo — two tracked copies of the estate's most
+# security-critical code is exactly the drift (estate-auth-design.md §1.1)
+# the shared module exists to end.
+packages/estate-auth/generated/
+
 # ⚠️ The deploy coordination lock — see scripts/deploy-guard.mjs. Local by
 # design: it is about one machine at one moment. The SHARED record is
 # docs/deploys.log, which IS tracked.

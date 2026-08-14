@@ -106,6 +106,33 @@ export interface Env {
 
 
   /**
+   * Estate auth mode: `off` | `shadow` | `enforce` — the §14.5 rollout flag
+   * (catalog-platform/docs/info/estate-auth-design.md §9 step 5).
+   *
+   * ⚠️ `off` is the deployed default (wrangler.toml), so a deploy carrying the
+   * estate code is INERT until the dispatcher flips this var. `shadow` calls
+   * `/seen` after local auth resolves and logs what the §3.1 table WOULD
+   * decide — one `estate_shadow` JSON line per request in `wrangler tail` —
+   * and never changes a response. `enforce` is NOT built in this revision:
+   * it logs `enforce_requested` loudly and behaves as shadow.
+   */
+  ESTATE_CHECK?: string;
+
+  /** The estate directory — `https://auth.heygabi.ai`. Absent = estate check off, by name. */
+  ESTATE_AUTH_URL?: string;
+
+  /**
+   * This app's own bearer for `POST /api/estate/seen` (design §4.4 — the check
+   * carries a per-app token, never the user's). Secret, set with
+   * `wrangler secret put ESTATE_APP_TOKEN_LIBRARY` (or `.dev.vars` +
+   * `npm run secrets:push`); the auth Worker holds the matching value under
+   * the same name. ⚠️ Unset means the estate check is OFF (logged as
+   * `estate_config_unset`), never half-on — the code deploys before the
+   * secret exists, and that ordering must be safe.
+   */
+  ESTATE_APP_TOKEN_LIBRARY?: string;
+
+  /**
    * Local development only. Ignored unless ENVIRONMENT is not "production", so a
    * stray value in production vars can never bypass sign-in.
    */

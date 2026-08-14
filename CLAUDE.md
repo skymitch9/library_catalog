@@ -11,6 +11,7 @@ things that will bite you in the first ten minutes.
 | `docs/info/identity-and-reviews.md` | One Google account across two catalogs, and one review store. The audiobook site does three surprising things; they are all documented there. |
 | `migrations/0001_init.sql` | The schema comments carry the reasoning, not just the columns. |
 | `docs/info/universes.md` | ⚠️ **This repo now depends on a sibling repo to build.** `catalog-platform` owns the shared universe list; `prebuild` / `pretest` / `pretypecheck` fetch it and **fail loudly** if that checkout is missing. Set `CATALOG_PLATFORM_DIR` if yours is not a sibling. |
+| `docs/info/estate-auth-shadow.md` | ⚠️ Estate auth is wired in **SHADOW mode** — observe and log, enforce nothing, `ESTATE_CHECK=off` deployed. The canonical module is a second sibling-checkout sync (`sync-estate-auth.mjs`); `packages/estate-auth/generated/` is a build artifact like the universes. Do not build enforcement casually — shadow's clean-log soak is the gate. |
 
 ## Committing on Windows
 

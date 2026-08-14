@@ -1,7 +1,8 @@
 import type { MiddlewareHandler } from 'hono';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { can, type Capability } from '@lc/core';
-import { upsertUserOnLogin } from '@lc/db';
+import { readEstateCache, upsertUserOnLogin, writeEstateCache } from '@lc/db';
+import { estateShadowCheck, parseEstateMode } from '@lc/estate-auth';
 import { parseOwnerEmails, type AppBindings, type Env } from '../env.js';
 
 /**
@@ -159,6 +160,43 @@ export function requireAuth(): MiddlewareHandler<AppBindings> {
     });
 
     c.set('user', user);
+
+    // ── Estate auth, SHADOW (estate-auth-design.md §14.5 / §9 step 5) ──────
+    //
+    // ⚠️ OBSERVE AND LOG, ENFORCE NOTHING. After local auth has fully resolved,
+    // ask the estate directory (cached /seen, §5.2), compute what the §3.1
+    // table WOULD decide, and log one `estate_shadow` JSON line. The response
+    // is NEVER changed by anything in this block — including failures, which
+    // is why the whole step sits in its own try/catch. With ESTATE_CHECK unset
+    // or 'off' (the deployed default) the guard below costs nothing: no DB
+    // read, no fetch, no log. Enforcement, when it comes, replaces this block
+    // — it is not built in this revision, and 'enforce' logs loudly + behaves
+    // as shadow (see @lc/estate-auth's shadow.ts header).
+    try {
+      const parsed = parseEstateMode(c.env.ESTATE_CHECK);
+      if (parsed.mode !== 'off' || !parsed.recognised) {
+        const cache =
+          parsed.mode !== 'off'
+            ? await readEstateCache(c.env.DB, user.id)
+            : { status: null, checkedAt: null };
+        const outcome = await estateShadowCheck(c.env, {
+          email: user.email,
+          firebaseUid: user.firebaseUid,
+          displayName: user.displayName,
+          role: user.role,
+          approvedAt: user.approvedAt,
+          estateStatus: cache.status,
+          estateCheckedAt: cache.checkedAt,
+        });
+        // The one write shadow performs: the §5.2 cache columns. Never role.
+        if (outcome.refresh) await writeEstateCache(c.env.DB, user.id, outcome.refresh);
+        if (outcome.logLine) console.log(outcome.logLine);
+      }
+    } catch (err) {
+      // Shadow means shadow: no estate failure may alter a response.
+      console.error('estate_shadow: error swallowed, response unchanged', err);
+    }
+
     await next();
   };
 }

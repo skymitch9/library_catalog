@@ -1,0 +1,11 @@
+{
+  "name": "@lc/estate-auth",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Estate auth for this catalog: the canonical @platform/estate-auth module materialised from catalog-platform at build time (generated/, gitignored), plus this repo's shadow-mode orchestration (src/shadow.ts). ⚠️ The SECOND package with a cross-repo dependency, after @lc/universes — same mechanism, same reasons, see scripts/sync-estate-auth.mjs.",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc --noEmit" },
+  "dependencies": { "jose": "^5.9.6" },
+  "devDependencies": { "@cloudflare/workers-types": "^4.20250109.0" }
+}

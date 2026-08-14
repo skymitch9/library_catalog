@@ -100,3 +100,21 @@ FIREBASE_PROJECT_ID = "audiobook-catalog"
 #
 # Set for the same reason and to the same address as the board game catalog's.
 OWNER_EMAILS = "nbaslamking@gmail.com"
+
+# ── Estate auth (catalog-platform/docs/info/estate-auth-design.md §14.5) ──────
+#
+# ⚠️ `off` ON PURPOSE: the deploy that carries the estate-auth code must be
+# inert until the dispatcher flips this to "shadow" (observe + log, enforce
+# nothing) and, much later and only after days of clean shadow logs, "enforce"
+# — which this revision does NOT implement (it logs `enforce_requested` and
+# behaves as shadow). Shadow's output is one `estate_shadow` JSON line per
+# authenticated request in `wrangler tail`; grep for `"would_deny":true` and
+# expect zero for household members before ever going further.
+#
+# The third leg is the secret `ESTATE_APP_TOKEN_LIBRARY` (never here — set via
+# `wrangler secret put` or `.dev.vars` + `npm run secrets:push`; the auth
+# Worker holds the matching value under the same name). With it unset, shadow
+# logs `estate_config_unset` and behaves as off — deploying code before secret
+# is the intended order, and it is safe.
+ESTATE_CHECK = "off"
+ESTATE_AUTH_URL = "https://auth.heygabi.ai"

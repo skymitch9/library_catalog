@@ -35,13 +35,24 @@ const CONFIG = join(root, 'apps', 'worker', 'wrangler.toml');
  * added to `.dev.vars` should never reach production just because nobody
  * remembered to exclude it.
  */
-const PRODUCTION_SECRETS = ['GOOGLE_BOOKS_API_KEY', 'ANTHROPIC_API_KEY', 'EBOOK_INGEST_TOKEN'];
+const PRODUCTION_SECRETS = [
+  'GOOGLE_BOOKS_API_KEY',
+  'ANTHROPIC_API_KEY',
+  'EBOOK_INGEST_TOKEN',
+  // The estate /seen bearer (estate-auth-design.md §4.4). The auth Worker
+  // holds the matching value under the same name; minted at the dispatcher's
+  // deploy step. Absent here = simply not pushed — the Worker then logs
+  // estate_config_unset and the estate check stays off, by design.
+  'ESTATE_APP_TOKEN_LIBRARY',
+];
 
 /** Local-only by design. Listed so the script can say *why* it skipped them. */
 const LOCAL_ONLY = {
   ENVIRONMENT: 'set in wrangler.toml for production',
   DEV_EMAIL: 'local auth bypass — must NEVER exist in production',
   DEV_NAME: 'local auth bypass only',
+  ESTATE_CHECK: 'set in wrangler.toml for production (off until the dispatcher flips it)',
+  ESTATE_AUTH_URL: 'set in wrangler.toml for production',
 };
 
 function parseDevVars(text) {

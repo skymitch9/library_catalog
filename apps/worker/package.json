@@ -16,6 +16,7 @@
     "@anthropic-ai/sdk": "^0.116.0",
     "@lc/core": "*",
     "@lc/db": "*",
+    "@lc/estate-auth": "*",
     "@lc/isbn": "*",
     "@lc/research": "*",
     "@lc/universes": "*",

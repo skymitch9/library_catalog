@@ -140,6 +140,45 @@ export async function upsertUserOnLogin(
   return created;
 }
 
+/**
+ * The two estate-membership cache columns (migration 0140, estate-auth-design
+ * §5.2). Deliberately NOT part of `AppUser` or `COLS`: they are protocol
+ * bookkeeping for the estate check, not a fact about the person that any route
+ * or the web client should see — and while `ESTATE_CHECK` is `off` (the
+ * deployed default) they must cost nothing, so they are read only by the
+ * middleware's shadow step, in their own narrow query, when the mode asks.
+ */
+export interface EstateCacheRow {
+  /** 'pending' | 'approved' | 'revoked', or null = never checked. */
+  status: string | null;
+  /** ISO timestamp of the last successful /seen answer, or null. */
+  checkedAt: string | null;
+}
+
+export async function readEstateCache(db: D1Database, userId: number): Promise<EstateCacheRow> {
+  const row = await db
+    .prepare('SELECT estate_status, estate_checked_at FROM app_user WHERE id = ?')
+    .bind(userId)
+    .first<{ estate_status: string | null; estate_checked_at: string | null }>();
+  return { status: row?.estate_status ?? null, checkedAt: row?.estate_checked_at ?? null };
+}
+
+/**
+ * Persist a fresh /seen answer. The ONLY write the shadow step performs — the
+ * cache is the protocol's own bookkeeping (§5.2), never an enforcement act,
+ * and pointedly never touches `role` / `approved_at`.
+ */
+export async function writeEstateCache(
+  db: D1Database,
+  userId: number,
+  cache: { status: string; checkedAt: string },
+): Promise<void> {
+  await db
+    .prepare('UPDATE app_user SET estate_status = ?, estate_checked_at = ? WHERE id = ?')
+    .bind(cache.status, cache.checkedAt, userId)
+    .run();
+}
+
 export async function listUsers(db: D1Database): Promise<AppUser[]> {
   const { results } = await db
     .prepare(
