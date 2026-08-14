@@ -102,7 +102,12 @@ One index-AHEAD find: library #250 "Space Knight Book 2" — the bridge's
 cleaner collapses the audiobook's "Space Knight, Book 2" to "Space Knight"
 (colliding with book 1) so the matcher misses it, while the raw-title fold
 join hits. The bridge's own known failure mode, fixable with a `work_alias`
-row + re-run, not with retirement.
+row + re-run, not with retirement. ✅ **Fixed 2026-08-14**:
+`scripts/add-space-knight-alias.mjs` (library repo) wrote the alias, the
+holdings backfill was re-run `--remote --commit`, and #250 now carries a live
+`audiobook_holding` row (`via_alias='Space Knight'`, `index_sort=2`). #249
+"Space Knight Book 1" shares the collapse but stays unmatched on purpose —
+see that script's header.
 
 For full retirement the index would need: (1) cleaned titles (or a second
 clean fold) from the audiobook pusher — a design change, since sources push

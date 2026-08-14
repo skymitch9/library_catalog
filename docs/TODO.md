@@ -102,9 +102,24 @@ series rungs, and its `work_fold` agrees with the stamped review `workKey` on
 only 329/870 docs (raw decorated titles vs cleaned). So
 `scripts/backfill-review-keys.mjs` and `scripts/backfill-audiobook-holdings.mjs`
 **both keep running as before**; nothing moved to an attic, no data touched.
-Two live observations for whoever runs them next: (1) work #250 *Space Knight
-Book 2* is a bridge MISS the index sees — add a `work_alias` and re-run the
-holdings backfill; (2) review stamping is currently complete (870/870, zero
+Two live observations for whoever runs them next: (1) ✅ **DONE 2026-08-14** —
+work #250 *Space Knight Book 2* got its `work_alias` (bare "Space Knight",
+`kind='title'`, `source='manual'`, written by the new
+`scripts/add-space-knight-alias.mjs`, whose header carries the measured
+reasoning) and the holdings backfill was re-run `--remote --commit`. Verified
+by re-reading production: #250 now holds `matched_via='exact'`,
+`via_alias='Space Knight'`, `index_sort=2` — the vol-2 row, not book 1's.
+⚠️ #249 *Space Knight Book 1* has the same miss (its audiobook's cleaned title
+is also bare "Space Knight") but was left alone: nothing recorded prescribes
+it, and pointing two works at one alias string would be ambiguous.
+⚠️ The same re-run also wrote the catalog's post-growth deltas: holdings
+70 → 79 live (incl. 2 read-and-approved containment matches — the two Harry
+Potter "(Full-Cast Edition)" rows), rungs 135 → 144 live, with **9 new `fold`
+rungs across 4 new series** (A Court of Thorns and Roses ×5, Grey Griffins ×1,
+The Inheritance Cycle ×1, The Symphony of Ages ×2) — so "possibly on audio" is
+back on those pages, honestly; the owner's series-page confirm button
+(migration 0110) is the designed remedy if the mappings are right.
+(2) review stamping is currently complete (870/870, zero
 re-run backlog), so bridge A is dormant until the audiobook site accrues new
 reviews.
 
@@ -127,8 +142,17 @@ now confirmable by hand, see below. Of the 70 live `audiobook_holding` rows,
 ### 🚢 "You might own this on audio" — the owner can confirm it, 2026-08-12
 
 **Shipped.** Commit `3d892d9`, migration 0110 applied to production, live version
-`a06b2ead`. ⏳ **One manual step remains and it is the point of the feature:**
-press the button on the two series pages — see the bottom of this section.
+`a06b2ead`. ✅ **The one manual step is done** — the owner pressed the button on
+both series pages 2026-08-13 01:43; see the bottom of this section.
+**Re-verified against production 2026-08-14:** `audiobook_series_link` holds
+exactly the two rows (Arcane Pathfinder, Legion, both `confirmed_by=1`), and the
+5 stored `fold` rungs they upgrade at read are unchanged. Nothing mechanical is
+outstanding here. ⚠️ But note: the 2026-08-14 holdings backfill re-run (Space
+Knight alias case, above) added **9 new `fold` rungs in 4 series new to the
+catalog** — A Court of Thorns and Roses, Grey Griffins, The Inheritance Cycle,
+The Symphony of Ages — so "possibly on audio" hedges exist again, for new
+reasons. Owner confirmation via the series-page button is the remedy where the
+mapping is in fact right; nothing here is a bug.
 
 **The ask, in the user's words:** *"can we check the series gap, some of them say
 you might own this on audio, its been right everytime i checked. I want it to
@@ -239,7 +263,18 @@ paperback" is still a decision somebody might make. `gaps.length` vs
 `certainGaps`/`attestedGaps` is exactly that distinction, and `completeness.ts`
 keeps them apart on purpose.
 
-### 🔨 #341 *He Who Fights with Monsters* book 1 — THREE hardcovers, TWO or THREE editions
+### ✅ #341 *He Who Fights with Monsters* book 1 — THREE hardcovers, TWO or THREE editions
+
+**✅ RESOLVED — the owner answered the barcode question 2026-08-13** (see "ALL
+FOUR OWNER-BLOCKED ITEMS CLEARED" below): *"A and C seem to be the same except C
+was an early bird thing. So lets say I have A and B to be safe"* → **2 editions,
+3 copies**, deliberately conservative on the `…4355` question. **Re-verified
+against production 2026-08-14:** edition 466 = `9781638493457` hardcover (dust
+jacket, bonus story) with copies 260 (**signed**) + 268 (unsigned); edition 467 =
+`9781638494362` hardcover (Target exclusive) with copy 269. No bare
+edition-less copy remains. Still open from this section: the **cover swap**
+(record shows the Target art; gated on the cover-swap feature) and the unresolved
+768-vs-704 page count noted below. The research below stays as the record.
 
 Owner: *"we have the target edition with no dust jacket and the barnes and noble
 one with a dust jacket that is signed, we also have a 2nd barnes and noble one
@@ -464,7 +499,7 @@ onto a phantom.
 |---|---|---|---|---|
 | 302 | Space Knight | 6 | 6 | ✅ deleted |
 | 301 | Tamer | 1 | 1 | ✅ deleted — authors even read *"Brian King, Michael-Scott Earle"*, a giveaway that the record is an aggregate and not one book |
-| 300 | Monster Empire | 2 | 2 | ⏳ **still present** — same shape, awaiting the owner's word |
+| 300 | Monster Empire | 2 | 2 | ✅ deleted 2026-08-13 on the owner's word (*"delete it"* — see the owner-blocked table below) — **verified absent from production 2026-08-14**; the real volumes live as #45 and #256 |
 
 **Diagnosis.** The ISBN ladder resolved to an Open Library **work-level** record
 rather than a specific edition, and the add path then created *an edition for
@@ -913,7 +948,7 @@ touches the schema.
 6. **#186 volume 11**, **#195 volume 8** — both verified against publishers.
 7. **Subtitles** — *Last Child in the Woods* → "Saving Our Children from Nature-Deficit Disorder"; *Possibility & Promise* → "Echoes of the Unknown"; #341 → "Outworlder".
 8. **#7 *Dungeon Born*** — confirm the audiobook link shows, and file the series into the **Cal** universe ⚠️ using whatever name `catalog-platform` actually holds; do not invent it.
-9. **#174** author → **Parragon Books** — needs the authors-edit capability, so it lands with item 10.
+9. ✅ **#174** author → **Parragon Books** — done 2026-08-13T17:20Z despite this entry (see the Opus log; verified in production 2026-08-14). The authors-edit *capability* (item 10) is still wanted for the general case.
 10. **Edit-any-detail + audit log** — the large one. Read its entry for the measured constraints before designing.
 
 #### 🔭 Watch `/queue` and finish what the automatic pass could not
@@ -1011,7 +1046,7 @@ land. It is the session's working queue, not a summary.
 - ⏳ #269 needs a **copy** (it is owned) and its author corrected to **Christie Hainsby**
 - ⏳ #160 series → *The Wonderful World of Bizzy Bear*, volume **15**; #186 volume **11**; #132 volume 2 already right
 - ⏳ #195 volume → **8** of *마음을 채우는 동화*
-- ⏸️ #174 author → **Parragon Books** — blocked on the authors edit
+- ✅ #174 author → **Parragon Books** — DONE 2026-08-13T17:20Z (see the Opus log); re-verified in production 2026-08-14: `authors`, `primary_author` and `work_key` (`i love you little bear|parragon books`) all moved together
 - 💤 *Fire Rescue* title pattern — owner said leave it
 
 ### ⚠️ Two research findings that CORRECT earlier assumptions — 2026-08-13
