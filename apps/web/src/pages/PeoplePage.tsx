@@ -126,6 +126,18 @@ export function PeoplePage({ me, onSelfChanged }: { me: Me; onSelfChanged: () =>
                     first seen {p.firstSeenAt.replace('T', ' ').slice(0, 16)}
                     {p.reviewName ? ` · reviews as ${p.reviewName}` : ''}
                   </span>
+                  {/* Entry point only, never a control: estate-wide grants live
+                      solely on heygabi.ai/admin, which is its own gate. This
+                      page is already owner-only (App.tsx routes it behind
+                      manageUsers), so everyone who can see this can use it. */}
+                  <a
+                    className="muted small"
+                    href={`https://heygabi.ai/admin#member=${encodeURIComponent(p.email)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Estate admin →
+                  </a>
                 </div>
 
                 <span className={`mark mark--role mark--role-${p.role}`} title={ROLE_BLURB[p.role]}>
