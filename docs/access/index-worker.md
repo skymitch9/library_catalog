@@ -79,7 +79,37 @@ can never stall a catalog.
 
 Known residual gaps (accepted, ≤24h tolerance): backfill scripts that write D1
 directly fire no mutation push; `universes.json` edits propagate only on the
-next re-push.
+next re-push. Seen live 2026-08-14: the 13-duplicate work merge (library commit
+`c5b5d66`, a script write) left the index at 364 library rows vs 351 works
+until the next push — exactly this gap, self-healing.
+
+## Bridge retirement (design §7 step 4) — proof run 2026-08-14: **both bridges STAY**
+
+The design's gate is *retire only when the index provably answers what they
+answer*. Measured read-only against production (remote D1 + the live Firestore
+`reviews` collection; index answers computed with the index Worker's own
+`fold.ts` over the current source projections — a member ID token for
+`/api/lookup` is not mintable non-interactively, and open `/api/health`
+cross-checks the row counts):
+
+| Bridge question | Index answer today | Verdict |
+|---|---|---|
+| `backfill-review-keys.mjs`: stamp `workKey` (cleaned-title composite) onto audiobook review docs so the library's Firestore query joins them | Cannot write Firestore, has no `bookId`, and its `work_fold` (RAW pushed titles) equals the stamped `workKey` on only **329/870** docs — 541 differ because Audible decoration survives the raw push | **STAYS** (dormant: 870/870 stamped, 0 backlog, a re-run today restamps 0) |
+| `backfill-audiobook-holdings.mjs` phase 1: per-work "owned on audio" (`audiobook_holding`, 70 live rows, all `matched_via='exact'`) | Exact `work_fold` join reproduces **21/70**; a cleaned-title push would reach 57/70; the last 13 need the alias/containment machinery `matching.ts` provides and design §8 refuses | **STAYS** |
+| `backfill-audiobook-holdings.mjs` phase 2: per-volume audio rungs on series-gap rows (`audiobook_series_holding`, 135 live rungs / 19 series, 130 `work_match` + 5 hedged `fold`) | The read surface (`/api/lookup`, `/api/universe`, `/api/search`) has **no series join at all** — answers none of it | **STAYS** |
+
+One index-AHEAD find: library #250 "Space Knight Book 2" — the bridge's
+cleaner collapses the audiobook's "Space Knight, Book 2" to "Space Knight"
+(colliding with book 1) so the matcher misses it, while the raw-title fold
+join hits. The bridge's own known failure mode, fixable with a `work_alias`
+row + re-run, not with retirement.
+
+For full retirement the index would need: (1) cleaned titles (or a second
+clean fold) from the audiobook pusher — a design change, since sources push
+raw strings by rule; (2) alias-aware joins fed by `work_alias`; (3) a series
+read surface with the `work_match`-vs-`fold` corroboration semantics; (4) for
+reviews, a Firestore stamping path — which "pointers, never truth" rules out.
+That is re-growing the bridges inside the index; not proposed.
 
 ## Deploy / operate
 

@@ -92,6 +92,23 @@ npm test && npm run typecheck                  # library: 393+ expected
 ⚠️ Git Bash curl here can report status 000 / exit 43 on hosts that are up —
 use PowerShell `Invoke-WebRequest`, or `curl -s -D -` and read the status line.
 
+### 🧾 Bridge retirement proof (hardening step 4) — RAN 2026-08-14, both bridges STAY
+
+The index-worker design's own gate ("retire *only* when the index provably
+answers what they answer") **failed for both bridges**, by measurement, not
+assumption — full delta table + method in
+`docs/access/index-worker.md` → *Bridge retirement*. Short form: the index's
+exact-fold join reproduces 21/70 live `audiobook_holding` rows and 0/135
+series rungs, and its `work_fold` agrees with the stamped review `workKey` on
+only 329/870 docs (raw decorated titles vs cleaned). So
+`scripts/backfill-review-keys.mjs` and `scripts/backfill-audiobook-holdings.mjs`
+**both keep running as before**; nothing moved to an attic, no data touched.
+Two live observations for whoever runs them next: (1) work #250 *Space Knight
+Book 2* is a bridge MISS the index sees — add a `work_alias` and re-run the
+holdings backfill; (2) review stamping is currently complete (870/870, zero
+re-run backlog), so bridge A is dormant until the audiobook site accrues new
+reviews.
+
 ---
 
 
