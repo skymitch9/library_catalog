@@ -142,42 +142,127 @@ export async function upsertUserOnLogin(
 }
 
 /**
- * The two estate-membership cache columns (migration 0140, estate-auth-design
- * §5.2). Deliberately NOT part of `AppUser` or `COLS`: they are protocol
- * bookkeeping for the estate check, not a fact about the person that any route
- * or the web client should see — and while `ESTATE_CHECK` is `off` (the
- * deployed default) they must cost nothing, so they are read only by the
- * middleware's shadow step, in their own narrow query, when the mode asks.
+ * The estate-membership cache columns (migrations 0140 + 0150,
+ * estate-auth-design §5.2 / §4.5). Deliberately NOT part of `AppUser` or
+ * `COLS`: they are protocol bookkeeping for the estate check, not a fact about
+ * the person that any route or the web client should see — and while
+ * `ESTATE_CHECK` is `off` they must cost nothing, so they are read only by the
+ * middleware's estate step, in their own narrow query, when the mode asks.
  */
 export interface EstateCacheRow {
   /** 'pending' | 'approved' | 'revoked', or null = never checked. */
   status: string | null;
   /** ISO timestamp of the last successful /seen answer, or null. */
   checkedAt: string | null;
+  /**
+   * The §4.5 visibility half of that same answer, as the stored JSON-array
+   * text ('["audiobook","library","games"]'), or null = no visibility fact.
+   * Raw on purpose — the canonical module's `parseVisibility` is the one
+   * validator, applied at the boundary by the gate, so garbage dies there
+   * rather than in a second parser here.
+   */
+  visibilityJson: string | null;
 }
 
 export async function readEstateCache(db: D1Database, userId: number): Promise<EstateCacheRow> {
   const row = await db
-    .prepare('SELECT estate_status, estate_checked_at FROM app_user WHERE id = ?')
+    .prepare('SELECT estate_status, estate_checked_at, estate_visibility FROM app_user WHERE id = ?')
     .bind(userId)
-    .first<{ estate_status: string | null; estate_checked_at: string | null }>();
-  return { status: row?.estate_status ?? null, checkedAt: row?.estate_checked_at ?? null };
+    .first<{
+      estate_status: string | null;
+      estate_checked_at: string | null;
+      estate_visibility: string | null;
+    }>();
+  return {
+    status: row?.estate_status ?? null,
+    checkedAt: row?.estate_checked_at ?? null,
+    visibilityJson: row?.estate_visibility ?? null,
+  };
 }
 
 /**
- * Persist a fresh /seen answer. The ONLY write the shadow step performs — the
- * cache is the protocol's own bookkeeping (§5.2), never an enforcement act,
- * and pointedly never touches `role` / `approved_at`.
+ * Persist a fresh /seen answer — all three columns in one write, because the
+ * §4.5 one-answer rule says status and visibility must not age separately
+ * (they share `estate_checked_at` as their single freshness stamp). The cache
+ * is the protocol's own bookkeeping (§5.2), never an enforcement act, and
+ * pointedly never touches `role` / `approved_at`. `visibilityJson: null` is
+ * written as NULL — an answer without a visibility fact (a pre-§4.5 server)
+ * must not leave a stale set behind pretending to belong to the new status.
  */
 export async function writeEstateCache(
   db: D1Database,
   userId: number,
-  cache: { status: string; checkedAt: string },
+  cache: { status: string; checkedAt: string; visibilityJson: string | null },
 ): Promise<void> {
   await db
-    .prepare('UPDATE app_user SET estate_status = ?, estate_checked_at = ? WHERE id = ?')
-    .bind(cache.status, cache.checkedAt, userId)
+    .prepare(
+      'UPDATE app_user SET estate_status = ?, estate_checked_at = ?, estate_visibility = ? WHERE id = ?',
+    )
+    .bind(cache.status, cache.checkedAt, cache.visibilityJson, userId)
     .run();
+}
+
+/**
+ * The §5.4 default-grant — the write half of the enforce arm's `default_grant`
+ * verdict: estate says `approved`, the local row is `pending` and was never
+ * locally decided, so the app assigns its configured default role.
+ *
+ * ## The estate-actor convention (§5.4 / §14.5)
+ *
+ * `approved_by` is NULL — no human approved this here — and the audit row is
+ * `changed_how='auto'` with a note naming the estate, so the grant is forever
+ * distinguishable from an owner's tap on the People page (which stamps
+ * `approved_by` and logs `changed_how='human'` via `setUserRole`).
+ *
+ * ## Why the UPDATE re-checks its precondition, and how the audit row stays
+ * honest anyway
+ *
+ * The WHERE re-asserts `role='pending' AND approved_at IS NULL` so a
+ * concurrent LOCAL decision (an owner tapping People mid-request) wins over
+ * the auto-grant — §3.1's "a local decision is standing" applied at the row
+ * level, same as the games arm. That makes the change_log INSERT conditional
+ * on a statement whose effect is unknowable until it runs — so the audit row
+ * guards itself with `(SELECT changes()) > 0`, which SQLite evaluates AFTER
+ * the preceding statement in the same batch (D1 runs a batch sequentially on
+ * one session — the same property `changes.ts` already leans on for
+ * `last_insert_rowid()`). One atomic batch, and either both the grant and its
+ * record land or neither does; a lost race writes nothing, not an orphan
+ * audit row describing a grant that never happened.
+ *
+ * Returns true only when the grant actually landed.
+ */
+export async function grantEstateDefaultRole(
+  db: D1Database,
+  params: { userId: number; role: Role },
+): Promise<boolean> {
+  const now = new Date().toISOString();
+  const results = await db.batch([
+    db
+      .prepare(
+        `UPDATE app_user SET role = ?, approved_at = ?, approved_by = NULL
+          WHERE id = ? AND role = 'pending' AND approved_at IS NULL`,
+      )
+      .bind(params.role, now, params.userId),
+    // Shaped exactly as changeLogInsert would (same columns, same JSON-text
+    // encoding, entity 'app_user' / field 'role' matching setUserRole's human
+    // rows) — hand-built only because the changes() guard needs INSERT…SELECT,
+    // which the plain VALUES builder cannot express.
+    db
+      .prepare(
+        `INSERT INTO change_log (batch_id, entity, entity_id, field, old_json, new_json,
+                                 changed_by, changed_how, note)
+         SELECT ?, 'app_user', ?, 'role', ?, ?, NULL, 'auto', ?
+          WHERE (SELECT changes()) > 0`,
+      )
+      .bind(
+        crypto.randomUUID(),
+        params.userId,
+        JSON.stringify('pending'),
+        JSON.stringify(params.role),
+        'estate default-grant: approved estate-wide, never locally decided (design §5.4)',
+      ),
+  ]);
+  return ((results[0]?.meta as { changes?: number } | undefined)?.changes ?? 0) > 0;
 }
 
 export async function listUsers(db: D1Database): Promise<AppUser[]> {

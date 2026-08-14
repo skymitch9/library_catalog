@@ -1,0 +1,33 @@
+-- 0150: the estate visibility cache column — enforce-arm adoption (§4.5).
+--
+-- Design: catalog-platform/docs/info/estate-auth-design.md §4.5. The /seen
+-- answer grew a second half in the visibility amendment: alongside `status`
+-- it now carries the EFFECTIVE visibility set — which catalogs this person
+-- may SEE on the estate's own surfaces. §4.5's one-answer rule is explicit:
+-- "a consumer that caches /seen caches the visibility WITH the status — the
+-- two are one answer and must not age separately." 0140 predates the
+-- amendment and built only status + checked_at, so the third column arrives
+-- here, additively, sharing 0140's freshness timestamp (`estate_checked_at`
+-- stamps the whole answer — that IS the not-age-separately rule in schema
+-- form).
+--
+-- Encoding: the §4.5 JSON array verbatim as TEXT — e.g.
+-- '["audiobook","library","games"]' — in canonical order, or NULL meaning
+-- "no visibility fact cached" (every pre-0150 row, and any answer from a
+-- pre-§4.5 server). NOT three flag columns like the directory's own
+-- 0002_visibility: that encoding is argued there for a table that is EDITED
+-- per-flag by an admin surface; this is a cache blob nothing edits — it is
+-- written whole from a /seen answer and parsed whole by the canonical
+-- module's `parseVisibility`, which rejects garbage into NULL at the
+-- boundary (so no CHECK here: the validating parser is the constraint, and
+-- a CHECK could not express "canonical-order JSON array of known catalogs"
+-- anyway).
+--
+-- ⚠️ Same standing as 0140: a CACHE, not an authorization fact. Nothing in
+-- THIS app's request path scopes on visibility today — the library answers
+-- "what may you do here" from `role`; visibility answers "which shelves are
+-- in the room" on the ESTATE'S surfaces (§4.5: index search scope). It is
+-- cached here so the answer is whole, per the rule above, and available the
+-- day a library surface needs it. Wiping it costs one /seen round-trip.
+
+ALTER TABLE app_user ADD COLUMN estate_visibility TEXT;

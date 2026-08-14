@@ -1,8 +1,13 @@
 import type { MiddlewareHandler } from 'hono';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
-import { can, type Capability } from '@lc/core';
-import { readEstateCache, upsertUserOnLogin, writeEstateCache } from '@lc/db';
-import { estateShadowCheck, parseEstateMode } from '@lc/estate-auth';
+import { can, type Capability, type Role } from '@lc/core';
+import {
+  grantEstateDefaultRole,
+  readEstateCache,
+  upsertUserOnLogin,
+  writeEstateCache,
+} from '@lc/db';
+import { estateGateCheck, parseEstateMode, type GateOutcome } from '@lc/estate-auth';
 import { parseOwnerEmails, type AppBindings, type Env } from '../env.js';
 
 /**
@@ -159,27 +164,29 @@ export function requireAuth(): MiddlewareHandler<AppBindings> {
       ownerEmails: parseOwnerEmails(c.env.OWNER_EMAILS),
     });
 
-    c.set('user', user);
-
-    // ── Estate auth, SHADOW (estate-auth-design.md §14.5 / §9 step 5) ──────
+    // ── Estate auth (estate-auth-design.md §3.1 / §5.2 / §14.5) ────────────
     //
-    // ⚠️ OBSERVE AND LOG, ENFORCE NOTHING. After local auth has fully resolved,
-    // ask the estate directory (cached /seen, §5.2), compute what the §3.1
-    // table WOULD decide, and log one `estate_shadow` JSON line. The response
-    // is NEVER changed by anything in this block — including failures, which
-    // is why the whole step sits in its own try/catch. With ESTATE_CHECK unset
-    // or 'off' (the deployed default) the guard below costs nothing: no DB
-    // read, no fetch, no log. Enforcement, when it comes, replaces this block
-    // — it is not built in this revision, and 'enforce' logs loudly + behaves
-    // as shadow (see @lc/estate-auth's shadow.ts header).
+    // After local auth has fully resolved — including the OWNER_EMAILS
+    // recovery hatch inside upsertUserOnLogin, which must never sit behind
+    // the estate — ask the directory (cached /seen) and act at ESTATE_CHECK
+    // strength. `off` costs nothing; `shadow` logs the would-verdict and
+    // changes no response; `enforce` acts on the gate's directives below.
+    //
+    // The COMPUTE step sits in a try/catch: no estate hiccup (a D1 error on
+    // the cache read, a bug in the gate) may break a request local auth
+    // already passed — an unexpected throw degrades to local-only auth,
+    // loudly (§6 row 1's direction: open for the admitted; strangers are
+    // still locally `pending` and gated by capabilities). The ACT step runs
+    // outside it, so an enforce refusal is deterministic, never swallowed.
+    let estate: GateOutcome | null = null;
     try {
       const parsed = parseEstateMode(c.env.ESTATE_CHECK);
       if (parsed.mode !== 'off' || !parsed.recognised) {
         const cache =
           parsed.mode !== 'off'
             ? await readEstateCache(c.env.DB, user.id)
-            : { status: null, checkedAt: null };
-        const outcome = await estateShadowCheck(c.env, {
+            : { status: null, checkedAt: null, visibilityJson: null };
+        estate = await estateGateCheck(c.env, {
           email: user.email,
           firebaseUid: user.firebaseUid,
           displayName: user.displayName,
@@ -187,16 +194,58 @@ export function requireAuth(): MiddlewareHandler<AppBindings> {
           approvedAt: user.approvedAt,
           estateStatus: cache.status,
           estateCheckedAt: cache.checkedAt,
+          estateVisibilityJson: cache.visibilityJson,
         });
-        // The one write shadow performs: the §5.2 cache columns. Never role.
-        if (outcome.refresh) await writeEstateCache(c.env.DB, user.id, outcome.refresh);
-        if (outcome.logLine) console.log(outcome.logLine);
+        // The §5.2 cache columns — status + visibility together, one stamp
+        // (§4.5's one-answer rule). Bookkeeping, never enforcement.
+        if (estate.refresh) {
+          await writeEstateCache(c.env.DB, user.id, {
+            status: estate.refresh.status,
+            checkedAt: estate.refresh.checkedAt,
+            visibilityJson:
+              estate.refresh.visibility === null
+                ? null
+                : JSON.stringify(estate.refresh.visibility),
+          });
+        }
+        if (estate.logLine) console.log(estate.logLine);
       }
     } catch (err) {
-      // Shadow means shadow: no estate failure may alter a response.
-      console.error('estate_shadow: error swallowed, response unchanged', err);
+      console.error('estate_gate: error swallowed — proceeding on local auth', err);
+      estate = null;
     }
 
+    // Enforce directives (both null outside enforce). Grant before deny is
+    // arbitrary — the verdicts are mutually exclusive.
+    if (estate?.autoGrant) {
+      try {
+        // §5.4: the WHERE inside re-checks `pending AND never-decided`, so a
+        // concurrent local decision wins; the change_log audit row
+        // (changed_how='auto', estate-actor convention) lands in the same
+        // atomic batch, only if the grant did.
+        const role = estate.autoGrant.role as Role;
+        const granted = await grantEstateDefaultRole(c.env.DB, { userId: user.id, role });
+        if (granted) {
+          console.log(
+            `estate_enforce: default-granted '${role}' to ${user.email} (estate-wide approval, §5.4; audit row written)`,
+          );
+          user.role = role;
+          user.approvedAt = new Date().toISOString();
+        }
+        // Not granted = a concurrent local decision won; proceed on it.
+      } catch (err) {
+        // A failed grant leaves the person locally pending — the capability
+        // layer shows the request screen, nothing is lost but this request.
+        console.error('estate_enforce: default-grant failed — proceeding as pending', err);
+      }
+    }
+    if (estate?.deny) {
+      // 403 estate_revoked (computed, never stored — role left intact for
+      // re-approval, §3.1 row 1) or 503 estate_unreachable (named, §6 row 1).
+      return c.json(estate.deny.body, estate.deny.status);
+    }
+
+    c.set('user', user);
     await next();
   };
 }

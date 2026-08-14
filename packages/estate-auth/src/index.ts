@@ -14,10 +14,11 @@
  * `node scripts/sync-estate-auth.mjs` and read what it says — it names
  * `CATALOG_PLATFORM_DIR` and every path it tried.
  *
- * `src/shadow.ts` is this repo's own consumption logic (the §14.5 shadow-mode
- * orchestration) — local code wrapping the canonical module, the same shape as
- * `@lc/universes`' `catalog.ts` wrapping the shared list.
+ * `src/gate.ts` is this repo's own consumption logic (the §14.5 gate — all
+ * three ESTATE_CHECK modes, enforce included since the wave-2 build) — local
+ * code wrapping the canonical module, the same shape as `@lc/universes`'
+ * `catalog.ts` wrapping the shared list.
  */
 
 export * from '../generated/index.js';
-export * from './shadow.js';
+export * from './gate.js';

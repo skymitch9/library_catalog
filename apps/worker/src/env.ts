@@ -125,12 +125,18 @@ export interface Env {
    * Estate auth mode: `off` | `shadow` | `enforce` — the §14.5 rollout flag
    * (catalog-platform/docs/info/estate-auth-design.md §9 step 5).
    *
-   * ⚠️ `off` is the deployed default (wrangler.toml), so a deploy carrying the
-   * estate code is INERT until the dispatcher flips this var. `shadow` calls
-   * `/seen` after local auth resolves and logs what the §3.1 table WOULD
-   * decide — one `estate_shadow` JSON line per request in `wrangler tail` —
-   * and never changes a response. `enforce` is NOT built in this revision:
-   * it logs `enforce_requested` loudly and behaves as shadow.
+   * `off` = fully inert. `shadow` calls `/seen` after local auth resolves and
+   * logs what the §3.1 table WOULD decide — one `estate_shadow` JSON line per
+   * request in `wrangler tail` — and never changes a response. `enforce`
+   * (built in the wave-2 revision; games precedent) acts on the verdicts:
+   * revoked → 403 computed-not-stored, unreachable with no standing → named
+   * 503, estate-approved never-locally-decided pending → auto-grant `reader`
+   * with a change_log audit row (`changed_how='auto'`). Unrecognised values
+   * fall to `off`, loudly.
+   *
+   * ⚠️ Flipping shadow → enforce is the DISPATCHER'S evidence-gated step
+   * (zero household `"would_deny":true` lines over a days-long soak), same
+   * as games. Never flip it as a side effect of a deploy.
    */
   ESTATE_CHECK?: string;
 

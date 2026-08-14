@@ -1,32 +1,70 @@
 /**
- * The library's SHADOW-MODE estate check — design §14.5 / §9 step 5.
+ * The library's estate gate — §14.5 / §9 step 5, ALL THREE MODES.
  *
- * ⚠️ SHADOW MEANS SHADOW. This module computes what the §3.1 combination table
- * WOULD decide and shapes one greppable log line saying so. It never touches a
- * response, never writes a role, never grants anything. The only writes its
- * caller performs on its behalf are the two §5.2 cache columns on `app_user`
- * (`estate_status`, `estate_checked_at`, migration 0140) — the cache is the
- * protocol's own bookkeeping, not an enforcement act.
+ * This module was born as the shadow-only `shadow.ts` (observe and log,
+ * enforce nothing); the enforce arm replaced that revision's deliberate
+ * `enforce_requested` stub once the shadow soak had evidence and the games
+ * arm (`Board_Game_Catalog/apps/worker/src/middleware/estate.ts`) had proven
+ * the shape in production. Same §3.1 semantics, ported into this repo's
+ * convention: the module computes PURELY — it never touches D1 or a Response
+ * — and returns directives (`refresh`, `autoGrant`, `deny`, `logLine`) that
+ * `middleware/auth.ts` acts on. That split is why the whole §3.1 table is
+ * pinned by plain unit tests with a fetch stub and no D1 mock.
  *
- * The mode flag (`ESTATE_CHECK`):
+ * ## The three modes (`ESTATE_CHECK`)
  *
- *   off      — (deployed default) nothing happens: no /seen call, no DB read,
- *              no log. The deploy carrying this code is inert until the
- *              dispatcher flips the var.
- *   shadow   — observe and log, enforce nothing. Run days-not-hours; grep the
- *              tail for `"would_deny":true` lines and expect ZERO for household
- *              members before anyone considers `enforce` (§14.5).
- *   enforce  — ⚠️ NOT BUILT in this revision, deliberately: this build's whole
- *              contract is "change no response". Setting it logs a loud
- *              `enforce_requested` marker on every line and behaves as shadow,
- *              so a premature flip is visible and harmless rather than either
- *              silently ignored or half-enforced.
+ *   off      — (safe default for a missing/typo'd value) nothing happens: no
+ *              /seen call, no DB read, no log. A deploy carrying this code is
+ *              inert until the flag is flipped deliberately.
+ *   shadow   — the full §5.2 protocol runs and the §3.1 verdict is computed
+ *              and logged (`"would_deny":true` on the rows enforce would
+ *              refuse), and then the request proceeds EXACTLY as local auth
+ *              already decided. Days of zero household would-deny lines are
+ *              the evidence that makes the enforce flip boring.
+ *   enforce  — the §3.1 verdicts act, via the directives:
+ *                revoked            → deny 403 `estate_revoked` — COMPUTED,
+ *                                     never stored: the local role is left
+ *                                     intact so a later re-approval restores
+ *                                     the person exactly (§3.1 row 1)
+ *                estate_unreachable → deny 503 `estate_unreachable`, NAMED so
+ *                                     an outage is distinguishable from a
+ *                                     denial (§6 row 1) — only ever reached
+ *                                     by non-standing users; standing ones
+ *                                     ride the stale cache
+ *                default_grant      → `autoGrant` the posture's `reader`
+ *                                     (§5.4) — the caller writes it with the
+ *                                     estate-actor convention: approved_by
+ *                                     NULL + a change_log row,
+ *                                     changed_how='auto' (this repo HAS an
+ *                                     audit log, unlike games where the log
+ *                                     line is the audit)
+ *                proceed / request_screen → nothing; local auth's answer
+ *                                     stands (a locally-pending person still
+ *                                     meets the capability layer's request
+ *                                     screen, not a new response shape)
  *
- * Missing `ESTATE_AUTH_URL` / `ESTATE_APP_TOKEN_LIBRARY` while the mode asks
- * for shadow IS the off state, with its name in the log: one
- * `estate_config_unset` line per request, no fetch ever attempted. That is the
- * sane behaviour the rollout depends on — the code deploys before the secret
- * exists (§14.5: the secret is set at the dispatcher's deploy step).
+ * ## What the gate deliberately does NOT touch (the games arm's §14.5 list)
+ *
+ *  - `upsertUserOnLogin` and its OWNER_EMAILS recovery hatch run BEFORE this
+ *    and are untouched — the way back in cannot depend on the thing being
+ *    added. §3.1's local-wins rows mean a forced owner proceeds even in
+ *    enforce with the directory down. (An estate `revoked` beats even a local
+ *    owner BY DESIGN — §3.1 row 1 says "anything, even owner"; the recovery
+ *    paths from a revocation mishap are §6 row 4's other two: the D1 console,
+ *    and the *.workers.dev hostname. This gate must not invent a fourth.)
+ *  - Missing `ESTATE_AUTH_URL` / `ESTATE_APP_TOKEN_LIBRARY` while the mode
+ *    asks for shadow OR enforce IS the off state, with its name in the log —
+ *    the code deploys before the secret exists, and a half-configured enforce
+ *    must fail into "today's behaviour", never into a lockout.
+ *
+ * ## Visibility rides along (§4.5)
+ *
+ * The /seen answer carries the EFFECTIVE visibility set beside the status;
+ * the one-answer rule says the two are cached and aged together. The gate
+ * parses the cached JSON at the boundary (`parseVisibility` — garbage dies
+ * into null here, not at query time), hands the canonical array back in
+ * `refresh` for the caller to persist, and logs it. Nothing in THIS app
+ * scopes on it today — the library's own authorization stays `role`.
  */
 
 import {
@@ -37,14 +75,14 @@ import {
 } from '../generated/combine.js';
 import { estateCheck } from '../generated/seen.js';
 import { declareAuthPosture } from '../generated/config.js';
+import { parseVisibility, type Catalog } from '../generated/visibility.js';
 
 /**
  * The per-surface posture declaration (owner decisions #1 and #2): the library
- * is NOT public, and one estate approval would auto-grant its designed guest
- * role `reader` (read + own read-state + rate — §5.4). In shadow the grant is
- * NEVER performed; it surfaces only as `"would_auto_grant":"reader"` in the
- * log, which is precisely requirement (2) of the §14.5 build: config present,
- * visible, inert.
+ * is NOT public, and one estate approval auto-grants its designed guest role
+ * `reader` (read + own read-state + rate — §5.4). In shadow the grant is
+ * NEVER performed and surfaces only as `"would_auto_grant":"reader"`; in
+ * enforce it is the `autoGrant` directive the middleware writes.
  */
 export const LIBRARY_POSTURE = declareAuthPosture({
   public: false,
@@ -62,9 +100,10 @@ export interface ParsedMode {
 
 /**
  * Unset and `'off'` are both off. An unrecognised value ('shdow', 'ON', a
- * stray space) is treated as OFF — the inert direction — but flagged so the
- * caller can log it: a typo that silently disabled observation would otherwise
- * read exactly like a clean bill of health.
+ * stray space) is treated as OFF — the inert direction, which for a typo on
+ * THIS flag means "behave exactly as before", never "enforce by accident" —
+ * but flagged so the caller can log it: a typo that silently disabled the
+ * check would otherwise read exactly like a clean bill of health.
  */
 export function parseEstateMode(raw: string | undefined): ParsedMode {
   const v = (raw ?? '').trim();
@@ -74,15 +113,15 @@ export function parseEstateMode(raw: string | undefined): ParsedMode {
   return { mode: 'off', recognised: false };
 }
 
-/** The env slice the shadow check reads. `Env` satisfies this structurally. */
-export interface ShadowEnv {
+/** The env slice the gate reads. `Env` satisfies this structurally. */
+export interface GateEnv {
   ESTATE_CHECK?: string;
   ESTATE_AUTH_URL?: string;
   ESTATE_APP_TOKEN_LIBRARY?: string;
 }
 
-/** What the shadow check needs to know about the already-resolved local user. */
-export interface ShadowSubject {
+/** What the gate needs to know about the already-resolved local user. */
+export interface GateSubject {
   /** Lowercased — `app_user.email` already is. */
   email: string;
   firebaseUid: string | null;
@@ -91,56 +130,87 @@ export interface ShadowSubject {
   role: string;
   /** `approved_at`: non-null = a local decision was stamped (§3.1 row 4). */
   approvedAt: string | null;
-  /** The two 0140 cache columns, as read from the row. */
+  /** The 0140 cache columns, as read from the row. */
   estateStatus: string | null;
   estateCheckedAt: string | null;
+  /** The 0150 column: the cached §4.5 array as raw JSON text, or null. */
+  estateVisibilityJson: string | null;
 }
 
-export interface ShadowOutcome {
+/** An enforce-mode refusal, ready for `c.json(body, status)`. */
+export type GateDenial =
+  | { status: 403; body: { error: 'estate_revoked' } }
+  | { status: 503; body: { error: 'estate_unreachable'; detail: string } };
+
+export interface GateOutcome {
+  mode: EstateMode;
   /** True when a §3.1 verdict was actually computed. */
   performed: boolean;
   skipReason: 'mode_off' | 'estate_config_unset' | null;
   verdict: EstateVerdict | null;
   /**
-   * True when enforce mode WOULD have refused this request that today
-   * succeeds: `revoked`, or `estate_unreachable` (which only occurs for
-   * non-standing users). `request_screen` is NOT a would-deny — a local
-   * `pending` user already gets 403s from the capability layer today, so
-   * nothing would change for them.
+   * Non-null ONLY in enforce, on the two refusing verdicts. The caller
+   * returns it verbatim; in shadow the same rows surface as `wouldDeny`.
+   */
+  deny: GateDenial | null;
+  /**
+   * Non-null ONLY in enforce, on `default_grant`: the caller performs the
+   * §5.4 grant (conditionally — a concurrent local decision wins) with the
+   * estate-actor convention. In shadow the same row is `wouldAutoGrant`.
+   */
+  autoGrant: { role: string } | null;
+  /**
+   * True when enforce refuses / would refuse a request that succeeds under
+   * local auth alone: `revoked`, or `estate_unreachable` (which only occurs
+   * for non-standing users). `request_screen` is NOT a (would-)deny — a
+   * local `pending` user already gets 403s from the capability layer today.
+   * Meaningful in BOTH modes; it is the shadow soak's greppable gate and
+   * enforce's `denied` log field.
    */
   wouldDeny: boolean;
-  /** `'reader'` when the verdict is `default_grant`. Logged, never written. */
+  /** `'reader'` when the verdict is `default_grant`. In shadow: logged only. */
   wouldAutoGrant: string | null;
-  /** Fresh /seen answer for the caller to persist onto the cache columns. */
-  refresh: { status: EstateStatus; checkedAt: string } | null;
+  /**
+   * Fresh /seen answer for the caller to persist onto the cache columns —
+   * status + visibility together (§4.5's one-answer rule; both stamped by
+   * the one `checkedAt`).
+   */
+  refresh: { status: EstateStatus; visibility: Catalog[] | null; checkedAt: string } | null;
   /** One JSON line for the caller to `console.log`, or null (pure off). */
   logLine: string | null;
 }
 
-const SKIPPED: Omit<ShadowOutcome, 'skipReason' | 'logLine'> = {
+const SKIPPED: Omit<GateOutcome, 'mode' | 'skipReason' | 'logLine'> = {
   performed: false,
   verdict: null,
+  deny: null,
+  autoGrant: null,
   wouldDeny: false,
   wouldAutoGrant: null,
   refresh: null,
 };
 
 /**
- * Compute the shadow verdict. Pure orchestration over the canonical module:
- * cache-or-/seen (§5.2, via `estateCheck`) then the §3.1 table
- * (`combineEstateAndLocal`), with the library's local standing derived as
- * `active = role !== 'pending'`, `locallyDecided = approved_at IS NOT NULL`.
+ * Run the estate check at the strength `ESTATE_CHECK` allows and return what
+ * to do about it. Pure orchestration over the canonical module: cache-or-/seen
+ * (§5.2, via `estateCheck`) then the §3.1 table (`combineEstateAndLocal`),
+ * with the library's local standing derived as `active = role !== 'pending'`,
+ * `locallyDecided = approved_at IS NOT NULL`.
  *
  * Never throws on estate trouble — an unreachable directory is an ANSWER
  * (`estate_unreachable`) in this protocol, not an error. The caller still
- * wraps the call defensively; in shadow, no failure may reach a response.
+ * wraps the call defensively; an unexpected throw there degrades to
+ * local-only auth (§6 row 1's direction), loudly.
  */
-export async function estateShadowCheck(
-  env: ShadowEnv,
-  subject: ShadowSubject,
+export async function estateGateCheck(
+  env: GateEnv,
+  subject: GateSubject,
   opts: { fetchImpl?: typeof fetch; nowMs?: number } = {},
-): Promise<ShadowOutcome> {
+): Promise<GateOutcome> {
   const { mode, recognised } = parseEstateMode(env.ESTATE_CHECK);
+  // Shadow-mode lines keep the soak's documented `estate_shadow` tag
+  // byte-compatible; enforce gets its own greppable stream.
+  const tag = mode === 'enforce' ? 'estate_enforce' : 'estate_shadow';
 
   if (mode === 'off') {
     // Pure off is silent — an inert deploy must not chatter. An unrecognised
@@ -148,13 +218,13 @@ export async function estateShadowCheck(
     const logLine = recognised
       ? null
       : JSON.stringify({
-          tag: 'estate_shadow',
+          tag,
           app: LIBRARY_POSTURE.app,
           event: 'mode_unrecognised',
           estate_check_raw: env.ESTATE_CHECK ?? null,
           treated_as: 'off',
         });
-    return { ...SKIPPED, skipReason: 'mode_off', logLine };
+    return { ...SKIPPED, mode, skipReason: 'mode_off', logLine };
   }
 
   const baseUrl = (env.ESTATE_AUTH_URL ?? '').trim();
@@ -166,22 +236,23 @@ export async function estateShadowCheck(
     ];
     return {
       ...SKIPPED,
+      mode,
       skipReason: 'estate_config_unset',
       logLine: JSON.stringify({
-        tag: 'estate_shadow',
+        tag,
         app: LIBRARY_POSTURE.app,
         mode,
         event: 'estate_config_unset',
         missing,
-        note: 'behaving as off — no /seen call attempted',
+        note: 'behaving as off — no /seen call attempted, nothing refused',
       }),
     };
   }
 
   const nowMs = opts.nowMs ?? Date.now();
 
-  // Time the /seen call when one happens (design §15 asks shadow to measure
-  // it — Worker-to-Worker latency on same-zone custom domains has never been).
+  // Time the /seen call when one happens (design §15 asked the rollout to
+  // measure Worker-to-Worker latency; enforce keeps reporting it).
   let seenMs: number | null = null;
   const inner = opts.fetchImpl ?? fetch;
   const timedFetch: typeof fetch = async (input, init) => {
@@ -197,6 +268,7 @@ export async function estateShadowCheck(
     {
       status: isEstateStatus(subject.estateStatus) ? subject.estateStatus : null,
       checkedAt: subject.estateCheckedAt,
+      visibility: parseCachedVisibility(subject.estateVisibilityJson),
     },
     {
       email: subject.email,
@@ -215,6 +287,25 @@ export async function estateShadowCheck(
   const wouldDeny = verdict === 'revoked' || verdict === 'estate_unreachable';
   const wouldAutoGrant = verdict === 'default_grant' ? LIBRARY_POSTURE.defaultRole : null;
 
+  // The enforce directives — null everywhere except the acting mode.
+  let deny: GateDenial | null = null;
+  let autoGrant: { role: string } | null = null;
+  if (mode === 'enforce') {
+    if (verdict === 'revoked') {
+      deny = { status: 403, body: { error: 'estate_revoked' } };
+    } else if (verdict === 'estate_unreachable') {
+      deny = {
+        status: 503,
+        body: {
+          error: 'estate_unreachable',
+          detail: 'the estate directory did not answer and no admission stands; try again shortly',
+        },
+      };
+    } else if (verdict === 'default_grant' && wouldAutoGrant) {
+      autoGrant = { role: wouldAutoGrant };
+    }
+  }
+
   // Where the status came from, for reading an incident later: 'seen' = fresh
   // call answered; 'cache' = fresh cache, no call; 'stale_cache' = call failed,
   // rode the old value (§6 row 1); 'none' = no answer exists at all.
@@ -227,30 +318,50 @@ export async function estateShadowCheck(
         : 'none';
 
   return {
+    mode,
     performed: true,
     skipReason: null,
     verdict,
+    deny,
+    autoGrant,
     wouldDeny,
     wouldAutoGrant,
     refresh: result.refresh,
     logLine: JSON.stringify({
-      tag: 'estate_shadow',
+      tag,
       app: LIBRARY_POSTURE.app,
       mode,
       email: subject.email,
       local_role: subject.role,
       estate: result.status,
       src,
+      visibility: result.visibility,
       verdict,
-      would_deny: wouldDeny,
-      would_auto_grant: wouldAutoGrant,
-      seen_ms: seenMs,
       ...(mode === 'enforce'
         ? {
-            enforce_requested: true,
-            note: 'enforcement is NOT built in this revision; behaving as shadow',
+            // Enforce vocabulary: what IS happening, not what would.
+            denied: deny !== null,
+            auto_grant: autoGrant?.role ?? null,
           }
-        : {}),
+        : {
+            would_deny: wouldDeny,
+            would_auto_grant: wouldAutoGrant,
+          }),
+      seen_ms: seenMs,
     }),
   };
+}
+
+/**
+ * The cached 0150 column crossed a network AND a database — parse it like the
+ * untrusted text it is. Unparseable JSON or a non-§4.5 shape dies into null
+ * ("no visibility fact"), which at worst costs one healing /seen call.
+ */
+function parseCachedVisibility(raw: string | null): Catalog[] | null {
+  if (raw === null) return null;
+  try {
+    return parseVisibility(JSON.parse(raw));
+  } catch {
+    return null;
+  }
 }
