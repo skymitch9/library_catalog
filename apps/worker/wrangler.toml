@@ -129,5 +129,5 @@ INDEX_URL = "https://index.heygabi.ai"
 # Worker holds the matching value under the same name). With it unset, shadow
 # logs `estate_config_unset` and behaves as off — deploying code before secret
 # is the intended order, and it is safe.
-ESTATE_CHECK = "shadow"
+ESTATE_CHECK = "enforce"
 ESTATE_AUTH_URL = "https://auth.heygabi.ai"
