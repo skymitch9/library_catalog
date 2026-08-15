@@ -6,6 +6,7 @@
  */
 
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import type { AppBindings, Env } from './env.js';
 import { indexBackstopOnRequest, indexPushAfterMutation } from './lib/index-push.js';
 import { requireAuth } from './middleware/auth.js';
@@ -32,6 +33,19 @@ import { watchRoutes } from './routes/watches.js';
 
 const app = new Hono<AppBindings>();
 
+/** The estate status page — apex only, GET-only, no Authorization needed. */
+function healthCors() {
+  return cors({
+    origin: 'https://heygabi.ai',
+    allowMethods: ['GET', 'OPTIONS'],
+    maxAge: 600,
+  });
+}
+
+// CORS for the estate status page (heygabi.ai/status) — apex only, GET-only.
+// The route is already open by design; this only lets a BROWSER read it.
+// Mounted before the route, same preflight reasoning as adminCors below.
+app.use('/api/health', healthCors());
 // Public — no token needed, so it can be curled to verify a deploy.
 app.route('/api/health', healthRoutes);
 
