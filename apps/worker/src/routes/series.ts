@@ -99,7 +99,11 @@ export const seriesRoutes = new Hono<AppBindings>()
       const outcome = await work;
 
       return c.json({
-        report: outcome.report,
+        // ⚠️ `configured` stamped here too, exactly as the GET handler stamps
+        // it — this response is what `onScanned` feeds straight into the
+        // page's state, and without this the button's own successful run
+        // would make itself look unconfigured on the very next render.
+        report: outcome.report ? { ...outcome.report, configured: true } : null,
         identified: outcome.identified,
         volumesWritten: outcome.volumesWritten,
         note: outcome.note,
