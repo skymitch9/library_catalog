@@ -18,6 +18,7 @@ import {
 } from '@lc/db';
 import type { AppBindings } from '../env.js';
 import { requireCapability } from '../middleware/auth.js';
+import { ResearchError, runSeriesScan } from '../lib/series-scan.js';
 
 /**
  * Series, and what is missing from them.
@@ -51,7 +52,65 @@ export const seriesRoutes = new Hono<AppBindings>()
     const name = decodeURIComponent(c.req.param('name'));
     const report = await getSeriesReport(c.env.DB, c.get('user').id, name);
     if (!report) return c.json({ error: 'not_found' }, 404);
-    return c.json(report);
+    // ⚠️ Told once here rather than making the page guess from a failed POST.
+    // Mirrors `/api/research/queue`'s `configured` field exactly, and for the
+    // same reason: a button that is going to 503 anyway should say so before it
+    // is pressed, not after.
+    return c.json({ ...report, configured: Boolean(c.env.ANTHROPIC_API_KEY) });
+  })
+
+  /**
+   * Research this series' complete volume list on the open web, and write down
+   * what a source says. Costs money; same gate as `POST /works/:id/run`.
+   *
+   * ⚠️ Unlike that route this is NOT auto-apply in the sense `research-run.ts`
+   * means it — nothing here touches `work`. It writes `series_volume` and
+   * `series_check` rows exactly as `upsertSeriesVolume`/`recordSeriesCheck`
+   * already do for the audiobook-catalog import; see `lib/series-scan.ts` for
+   * why that is a difference in KIND from auto-apply, not merely in degree.
+   *
+   * Re-running is allowed and expected — a series bought into further, or a
+   * publisher page that changes, is exactly what "scan again" is for. Every
+   * upsert stamps a fresh `last_seen_at`/`checked_at`; nothing here can touch a
+   * `manual` row's `source`, per `upsertSeriesVolume`'s own rule.
+   */
+  .post('/:name/scan', requireCapability('runResearch'), async (c) => {
+    const name = decodeURIComponent(c.req.param('name'));
+
+    // Checked before any work happens, exactly as `/works/:id/run` does — a
+    // missing key is a misconfiguration to report, not a scan that ran and
+    // failed.
+    if (!c.env.ANTHROPIC_API_KEY) {
+      return c.json(
+        {
+          error: 'not_configured',
+          detail:
+            'No Anthropic API key. Put ANTHROPIC_API_KEY in apps/worker/.dev.vars, then `npm run secrets:push`.',
+        },
+        503,
+      );
+    }
+
+    const user = c.get('user');
+    try {
+      const work = runSeriesScan(c.env, user.id, name);
+      // Registered AND awaited — see `lib/series-scan.ts`'s header for why both.
+      c.executionCtx.waitUntil(work);
+      const outcome = await work;
+
+      return c.json({
+        report: outcome.report,
+        identified: outcome.identified,
+        volumesWritten: outcome.volumesWritten,
+        note: outcome.note,
+        estimatedCents: outcome.estimatedCents,
+      });
+    } catch (err) {
+      if (err instanceof ResearchError) {
+        return c.json({ error: 'research_failed', detail: err.message }, err.status as 400 | 422 | 502 | 503 | 504);
+      }
+      throw err;
+    }
   })
 
   /**

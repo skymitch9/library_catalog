@@ -593,6 +593,14 @@ export const createSeriesVolumeSchema = z.object({
   indexDisplay: optionalText,
   title: optionalText,
   authors: optionalText,
+  /**
+   * When a source states it. Migration 0200 — as optional as `title`, and for
+   * the same reason: a NULL here has never meant "unpublished," only "not
+   * stated." Bounded, not because a wider year is impossible, but because a
+   * stray `20161` typed or scanned in would otherwise sort the whole series list
+   * wrong and nothing would flag it.
+   */
+  year: z.number().int().min(1000).max(2200).nullish(),
   source: seriesVolumeSourceSchema,
   sourceUrl: optionalText,
   note: optionalText,

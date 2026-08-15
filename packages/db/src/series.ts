@@ -217,6 +217,8 @@ interface VolumeRow {
   index_display: string | null;
   title: string | null;
   authors: string | null;
+  /** See `SeriesVolumeInput.year` in `@lc/core`. Migration 0200. */
+  year: number | null;
   source: string;
   source_url: string | null;
   note: string | null;
@@ -225,6 +227,7 @@ interface VolumeRow {
 
 interface CheckRow {
   series: string;
+  checked_at: string;
   outcome: string;
   source: string;
   known_total: number | null;
@@ -376,7 +379,7 @@ async function loadAll(
         .all<OwnedRow>(),
       db
         .prepare(
-          `SELECT id, series, index_sort, index_display, title, authors, source, source_url,
+          `SELECT id, series, index_sort, index_display, title, authors, year, source, source_url,
                   note, stale_at
              FROM series_volume ${volumeScope}`,
         )
@@ -384,7 +387,7 @@ async function loadAll(
         .all<VolumeRow>(),
       db
         .prepare(
-          `SELECT series, outcome, source, known_total, known_total_source, note
+          `SELECT series, checked_at, outcome, source, known_total, known_total_source, note
              FROM series_check ${checkScope}`,
         )
         .bind(...(onlySeries ? [onlySeries] : []))
@@ -664,6 +667,7 @@ function reportFor(
       display: v.index_display,
       title: v.title,
       authors: v.authors,
+      year: v.year,
       workId: null,
       source: v.source,
       sourceUrl: v.source_url,
@@ -693,6 +697,8 @@ function reportFor(
       source: check?.source ?? null,
       knownTotal: check?.known_total ?? null,
       knownTotalSource: check?.known_total_source ?? null,
+      checkedAt: check?.checked_at ?? null,
+      note: check?.note ?? null,
     },
     // ⚠️ A fourth argument and not more `volumes`, on purpose. Neither of these
     // claims a volume exists, and letting either into the volume list would let
@@ -918,13 +924,14 @@ export async function upsertSeriesVolume(
 ): Promise<void> {
   await db
     .prepare(
-      `INSERT INTO series_volume (series, index_sort, index_display, title, authors,
+      `INSERT INTO series_volume (series, index_sort, index_display, title, authors, year,
                                   source, source_url, note)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
        ON CONFLICT(series, index_sort) DO UPDATE SET
          index_display = COALESCE(excluded.index_display, series_volume.index_display),
          title         = COALESCE(excluded.title, series_volume.title),
          authors       = COALESCE(excluded.authors, series_volume.authors),
+         year          = COALESCE(excluded.year, series_volume.year),
          source        = CASE WHEN series_volume.source = 'manual'
                               THEN series_volume.source ELSE excluded.source END,
          source_url    = COALESCE(excluded.source_url, series_volume.source_url),
@@ -938,6 +945,7 @@ export async function upsertSeriesVolume(
       input.indexDisplay ?? null,
       input.title ?? null,
       input.authors ?? null,
+      input.year ?? null,
       input.source,
       input.sourceUrl ?? null,
       input.note ?? null,
@@ -1105,25 +1113,37 @@ export async function unconfirmAudioSeries(db: D1Database, series: string): Prom
   return (res.meta.changes ?? 0) > 0;
 }
 
-/** Record that a source was consulted about a series, and what it said. */
+/**
+ * Record that a source was consulted about a series, and what it said.
+ *
+ * ⚠️ `note` is new (migration 0200) and unused by every caller before the
+ * per-series scan — `scripts/backfill-series-volumes.mjs` writes `series_check`
+ * with its own SQL rather than through this function, so widening the signature
+ * here breaks nothing that exists. It is where a scan's caveat prose goes: "this
+ * reads as an ongoing web serial," "could not confirm which series this is." Not
+ * evidence — see `checkNote`'s header in `@lc/core` for why it may never feed
+ * the arithmetic.
+ */
 export async function recordSeriesCheck(
   db: D1Database,
   series: string,
   source: string,
   outcome: 'ok' | 'not_found',
   volumesSeen: number,
+  note: string | null = null,
 ): Promise<void> {
   await db
     .prepare(
-      `INSERT INTO series_check (series, source, outcome, volumes_seen)
-       VALUES (?1, ?2, ?3, ?4)
+      `INSERT INTO series_check (series, source, outcome, volumes_seen, note)
+       VALUES (?1, ?2, ?3, ?4, ?5)
        ON CONFLICT(series) DO UPDATE SET
          checked_at   = datetime('now'),
          source       = ?2,
          outcome      = ?3,
-         volumes_seen = ?4`,
+         volumes_seen = ?4,
+         note         = ?5`,
     )
-    .bind(series, source, outcome, volumesSeen)
+    .bind(series, source, outcome, volumesSeen, note)
     .run();
 }
 

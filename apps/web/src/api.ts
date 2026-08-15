@@ -370,6 +370,8 @@ export interface SeriesGap {
   title: string | null;
   authors: string | null;
   display: string | null;
+  /** When a source states it — a scan, most often. Migration 0200. */
+  year: number | null;
   source: string | null;
   sourceUrl: string | null;
   note: string | null;
@@ -404,6 +406,10 @@ export interface SeriesCompleteness {
   checked: boolean;
   checkOutcome: string | null;
   checkSource: string | null;
+  /** When the check happened. Migration 0200. */
+  checkedAt: string | null;
+  /** A caveat about the check itself — "reads as an ongoing web serial," and the like. Never evidence; see `@lc/core`. */
+  checkNote: string | null;
 }
 
 /** One printing. Mirrors `EditionRef` in `@lc/db`. */
@@ -532,6 +538,17 @@ export interface SeriesReport {
   unnumbered: { workId: number; title: string; display: string | null }[];
   ownedTwice: OwnedTwice[];
   audioLink: AudioSeriesLink | null;
+  /** Whether a scan can even be attempted — mirrors `/api/research/queue`'s field of the same name. */
+  configured: boolean;
+}
+
+/** `POST /api/series/:name/scan`'s response. */
+export interface SeriesScanResponse {
+  report: SeriesReport | null;
+  identified: boolean;
+  volumesWritten: number;
+  note: string | null;
+  estimatedCents: number;
 }
 
 /** A row of the series list. */
@@ -1207,6 +1224,21 @@ export const api = {
   unconfirmAudioSeries: (name: string) =>
     request<SeriesReport>(`/api/series/${encodeURIComponent(name)}/audio-link`, {
       method: 'DELETE',
+    }),
+
+  /**
+   * Research this series' complete volume list on the open web, and write down
+   * what a source says — `series_volume` rows the ladder above already knows
+   * how to render as gaps. Spends money and takes 20–90 seconds, the same shape
+   * as `runResearch`; the request is held open for the whole scan on purpose.
+   *
+   * Re-running is expected, not just tolerated — "scan again" refreshes every
+   * `claude_research` row's `last_seen_at` and never touches a `manual` one.
+   */
+  scanSeries: (name: string) =>
+    request<SeriesScanResponse>(`/api/series/${encodeURIComponent(name)}/scan`, {
+      method: 'POST',
+      body: JSON.stringify({}),
     }),
 
   // -------------------------------------------------------------------------

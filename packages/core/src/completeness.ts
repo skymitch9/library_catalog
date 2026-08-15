@@ -72,6 +72,20 @@
  * identified in both catalogs* is checkable, *somebody vouched for it* is not.
  * Both are good enough to stop calling a book missing. Only one of them may claim
  * to be evidence, so `gapAudioLabel` names which it is.
+ *
+ * ## ⚠️ A fourth `source`, added 2026-08-15: `claude_research`
+ *
+ * The per-series scan (migration 0200) is **not a new kind of claim.** It is a
+ * fourth thing that can write a `series_volume` row and a `series_check` row,
+ * alongside a person typing, the audiobook CSV import, and the Open Library rung
+ * that was never built. Every rule above is unchanged by it: a scanned volume is
+ * `attested`, exactly as an audiobook-catalog or hand-entered one is, and it
+ * closes no gap by itself — a person still decides whether to buy it, skip it, or
+ * say it is already owned on audio. `checkNote` is the one genuinely new thing,
+ * and it carries prose only: a scan that thinks a series is a still-running web
+ * serial, or that found a source disagreeing with the shape of what is already on
+ * the ladder, says so there. Nothing in `checkNote` may raise `highestKnown` or
+ * remove a gap; only `volumes` and `context` can do that, exactly as before.
  */
 
 /** A volume of a series, owned or merely attested. */
@@ -90,6 +104,14 @@ export interface SeriesVolumeInput {
   display?: string | null;
   title?: string | null;
   authors?: string | null;
+  /**
+   * The year this volume was first published, when a source states it.
+   *
+   * Additive (migration 0200) and exactly as optional as `title` — a scan that
+   * cannot find a year says nothing rather than guessing. `null` here has never
+   * meant "unpublished"; it means "not stated."
+   */
+  year?: number | null;
   /** The catalog row, when this volume is catalogued at all. */
   workId?: number | null;
   /**
@@ -235,6 +257,8 @@ export interface SeriesGap {
   title: string | null;
   authors: string | null;
   display: string | null;
+  /** See `SeriesVolumeInput.year`. Null far more often than not. */
+  year: number | null;
   source: string | null;
   sourceUrl: string | null;
   note: string | null;
@@ -330,6 +354,19 @@ export interface SeriesCompleteness {
   /** What that check found: 'ok', 'not_found', or null when never checked. */
   checkOutcome: string | null;
   checkSource: string | null;
+  /** When the check happened — provenance for `checkSource`, not arithmetic. */
+  checkedAt: string | null;
+  /**
+   * Whatever the check wants to say about itself, beyond outcome and total.
+   *
+   * ⚠️ Added for `claude_research` (migration 0200) and it is where an honest
+   * caveat lives — "this reads as an ongoing web serial," "sources disagree
+   * about the numbering." Nothing here may be treated as evidence for a gap;
+   * see the header on `GapContext` for why facts like that arrive through a
+   * separate channel instead of through `volumes`. This is prose for a person,
+   * not a fact for the arithmetic.
+   */
+  checkNote: string | null;
 }
 
 export interface SeriesCheckInput {
@@ -337,6 +374,8 @@ export interface SeriesCheckInput {
   source?: string | null;
   knownTotal?: number | null;
   knownTotalSource?: string | null;
+  checkedAt?: string | null;
+  note?: string | null;
 }
 
 /** Integer positions only. A volume 2.5 does not create a hole at 3. */
@@ -467,6 +506,8 @@ export function seriesCompleteness(
     checked: Boolean(check.outcome),
     checkOutcome: check.outcome ?? null,
     checkSource: check.source ?? null,
+    checkedAt: check.checkedAt ?? null,
+    checkNote: check.note ?? null,
   };
 }
 
@@ -524,6 +565,7 @@ function gapFrom(
     title: row?.title ?? audio?.title ?? null,
     authors: row?.authors ?? audio?.authors ?? null,
     display: row?.display ?? null,
+    year: row?.year ?? null,
     source: row?.source ?? null,
     sourceUrl: row?.sourceUrl ?? null,
     note: row?.note ?? null,

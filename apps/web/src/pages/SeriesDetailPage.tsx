@@ -18,6 +18,7 @@ import {
   type SeriesHoldings,
   type SeriesLadderEntry,
   type SeriesReport,
+  type SeriesScanResponse,
 } from '../api.js';
 import { Cover } from '../components/Cover.js';
 import { formatLabel, mediumLabel } from '../lib/formats.js';
@@ -118,6 +119,9 @@ export function SeriesDetailPage({
   const [declaring, setDeclaring] = useState(false);
 
   const canEdit = me.capabilities.includes('editCatalog');
+  // Same gate as `POST /works/:id/run` — a scan spends money, same as any other
+  // research run, and `runResearch` is the capability that already means that.
+  const canScan = me.capabilities.includes('runResearch');
 
   const load = useCallback(() => {
     setError(null);
@@ -191,17 +195,35 @@ export function SeriesDetailPage({
         {c.knownTotal != null ? (
           <>Length recorded by hand: {c.knownTotal} books, per {c.knownTotalSource}.</>
         ) : c.checkOutcome === 'not_found' ? (
-          <>
-            The audiobook catalog has never heard of this series, so everything below comes
-            from the volume numbers on the books you own — nothing beyond your highest one can
-            be claimed.
-          </>
+          c.checkSource === 'claude_research' ? (
+            <>
+              A scan could not confidently identify this series, so everything below comes
+              from the volume numbers on the books you own — nothing beyond your highest one
+              can be claimed.{c.checkNote && ` ${c.checkNote}`}
+            </>
+          ) : (
+            <>
+              The audiobook catalog has never heard of this series, so everything below comes
+              from the volume numbers on the books you own — nothing beyond your highest one can
+              be claimed.
+            </>
+          )
         ) : c.checked ? (
-          <>Checked against the audiobook catalog, which listed {c.highestKnown ?? 0} as its highest volume.</>
+          <>
+            Checked against {c.checkSource === 'claude_research' ? 'a Claude research scan' : 'the audiobook catalog'},
+            which listed {c.highestKnown ?? 0} as its highest volume.
+            {/* ⚠️ Said plainly rather than forced into agreement — the whole
+                reason a scan carries a note at all. See `checkNote`'s header in
+                `@lc/core`: it is prose for a person, never evidence for a gap. */}
+            {c.checkNote && ` ${c.checkNote}`}
+            {c.checkSource === 'claude_research' && c.checkedAt && ` Last scanned ${c.checkedAt.slice(0, 10)}.`}
+          </>
         ) : (
           <>No source has been asked about this series yet.</>
         )}
       </p>
+
+      <ScanControl series={name} checked={c.checked} configured={report.configured} canScan={canScan} onScanned={setReport} />
 
       <ol className="ladder">
         {rungs.map(({ index, entry, gap }) => (
@@ -512,6 +534,84 @@ function AudioLink({
 
       {error && <p className="notice notice--bad">{error}</p>}
     </section>
+  );
+}
+
+/* -- finding what is missing, by name --------------------------------------- */
+
+/**
+ * "Scan for missing books" — a Claude web-search pass over this one series,
+ * written down as `series_volume`/`series_check` rows the ladder above already
+ * knows how to render. See `apps/worker/src/lib/series-scan.ts` for the whole
+ * argument; the short version is that this writes exactly the kind of row the
+ * audiobook-catalog import already writes, just from a fourth source.
+ *
+ * ⚠️ No polling, no run table, no "already running" guard from the server —
+ * `busy` disabling the button for the duration of the request is the whole
+ * guard, the same one `AudioLink` and `MissingRung` already rely on for every
+ * other write on this page. A double-click costs at most a duplicate scan, not
+ * a duplicate anything written to the catalog: `upsertSeriesVolume` is an
+ * upsert either way.
+ */
+function ScanControl({
+  series,
+  checked,
+  configured,
+  canScan,
+  onScanned,
+}: {
+  series: string;
+  /** Whether this series has ever been checked against anything — decides "Scan" vs "Re-scan". */
+  checked: boolean;
+  /** `false` means the Worker has no `ANTHROPIC_API_KEY` — told up front, not discovered by a failed click. */
+  configured: boolean;
+  canScan: boolean;
+  onScanned: (report: SeriesReport) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<SeriesScanResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!canScan) return null;
+
+  function scan() {
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    api
+      .scanSeries(series)
+      .then((res) => {
+        setResult(res);
+        if (res.report) onScanned(res.report);
+      })
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setBusy(false));
+  }
+
+  return (
+    <div className="stack">
+      {configured ? (
+        <div className="row-tight">
+          <button disabled={busy} onClick={scan}>
+            {busy ? 'Scanning…' : checked ? 'Re-scan for missing books' : 'Scan for missing books'}
+          </button>
+        </div>
+      ) : (
+        <p className="muted small">
+          No Anthropic API key is configured, so a scan cannot run. Put <code>ANTHROPIC_API_KEY</code>{' '}
+          in <code>apps/worker/.dev.vars</code> and run <code>npm run secrets:push</code>.
+        </p>
+      )}
+      {result && (
+        <p className="muted small">
+          {result.identified
+            ? `Found ${result.volumesWritten} ${result.volumesWritten === 1 ? 'volume' : 'volumes'} on this series.`
+            : 'Could not confidently identify this series.'}
+          {result.note && ` ${result.note}`}
+        </p>
+      )}
+      {error && <p className="notice notice--bad small">{error}</p>}
+    </div>
   );
 }
 
@@ -909,9 +1009,13 @@ function MissingRung({
         {gap.wanted && gap.workId != null ? (
           <button className="link" onClick={() => onOpen(gap.workId!)}>
             <strong>{gap.title ?? `Volume ${gap.index}`}</strong>
+            {gap.year && <span className="muted small"> ({gap.year})</span>}
           </button>
         ) : (
-          <strong>{gap.title ?? 'Not known by name'}</strong>
+          <>
+            <strong>{gap.title ?? 'Not known by name'}</strong>
+            {gap.year && <span className="muted small"> ({gap.year})</span>}
+          </>
         )}
         {/* The same `.fmt` badge an owned rung wears, so the strip reads the
             same way down the whole ladder — a gap rung just has nothing filled

@@ -925,6 +925,97 @@ describe('series completeness — what we may and may not claim', () => {
     assert.equal(looked.checked, true);
     assert.equal(looked.checkOutcome, 'not_found');
   });
+
+  it('carries checkedAt and checkNote through untouched — provenance, not arithmetic', () => {
+    // Migration 0200. Neither field may move a single count: they are read
+    // straight off `SeriesCheckInput` and nothing derives from them.
+    const c = seriesCompleteness('Cradle', [own(1)], {
+      outcome: 'ok',
+      source: 'claude_research',
+      checkedAt: '2026-08-15 10:00:00',
+      note: 'The source describes this as an open-ended run.',
+    });
+    assert.equal(c.checkSource, 'claude_research');
+    assert.equal(c.checkedAt, '2026-08-15 10:00:00');
+    assert.equal(c.checkNote, 'The source describes this as an open-ended run.');
+  });
+
+  it('checkedAt and checkNote are null when nothing checked this series', () => {
+    const c = seriesCompleteness('Cradle', [own(1)]);
+    assert.equal(c.checkedAt, null);
+    assert.equal(c.checkNote, null);
+  });
+
+  describe('a scan: the same attested-volume machinery, a fourth source', () => {
+    const scanned = (index: number, extra: Record<string, unknown> = {}) => ({
+      index,
+      workId: null,
+      source: 'claude_research',
+      ...extra,
+    });
+
+    it('a scanned volume closes no gap by itself — it only names one', () => {
+      // The whole rule this feature has to respect: a scan INFORMS the ladder
+      // exactly as an audiobook-catalog row already does. It never counts as
+      // owned, and it never removes a rung from `gaps` on its own — only
+      // `wanted`, `skipped` or an audio holding (all decided elsewhere, never
+      // by the scan) can do that.
+      const owned = [own(1), own(2), own(4)];
+      const scan = [scanned(3, { title: 'Foundation of Ash', year: 2019 })];
+      const c = seriesCompleteness('Cradle', [...owned, ...scan]);
+
+      assert.deepEqual(c.gaps.map((g) => g.index), [3]);
+      assert.equal(c.gaps[0]?.workId, null);
+      assert.equal(c.gaps[0]?.title, 'Foundation of Ash');
+      assert.equal(c.gaps[0]?.year, 2019);
+      assert.equal(c.gaps[0]?.source, 'claude_research');
+    });
+
+    it('scanned-list vs owned-rungs: names every rung the owner does not have', () => {
+      // The comparison the "Scan for missing books" button exists to run: a
+      // scan reports the whole canonical list (1–5), the shelf holds 1, 2 and
+      // 4, and everything else is missing BY NAME — the feature's actual ask.
+      const owned = [own(1), own(2), own(4)];
+      const scan = [1, 2, 3, 4, 5].map((n) =>
+        scanned(n, { title: `Volume ${n}`, year: 2015 + n }),
+      );
+      const c = seriesCompleteness('Cradle', [...owned, ...scan]);
+
+      assert.deepEqual(c.gaps.map((g) => g.index), [3, 5]);
+      assert.deepEqual(
+        c.gaps.map((g) => g.title),
+        ['Volume 3', 'Volume 5'],
+      );
+      assert.deepEqual(
+        c.gaps.map((g) => g.year),
+        [2018, 2020],
+      );
+      // The scan also re-reported 1, 2 and 4 — see `researchSeriesVolumes`'s
+      // header on why it is asked to report the full list rather than only the
+      // gap. None of those three may appear as missing: an owned rung wins over
+      // an attested row at the same index by construction (`reportFor` in
+      // `@lc/db` filters attested rows down to indexes we do not already hold).
+      assert.equal(c.owned, 3);
+    });
+
+    it('year is null when the scan could not find one, never invented', () => {
+      const c = seriesCompleteness('Cradle', [own(1), scanned(2, { title: 'Wax and Wane' })]);
+      assert.equal(c.gaps[0]?.year, null);
+    });
+
+    it('a manual row is never overwritten by a scan finding the same volume', () => {
+      // Not `seriesCompleteness`'s rule — `upsertSeriesVolume`'s, in `@lc/db` —
+      // but the shape here is what that rule protects: a hand-typed title must
+      // win the same way an audiobook-catalog import already cannot clobber one.
+      // Exercised at the arithmetic level by simply never letting a second
+      // `SeriesVolumeInput` reach the same index; `@lc/db` is what enforces the
+      // ON CONFLICT before either row gets this far.
+      const manual = { index: 2, workId: null, source: 'manual', title: "The owner's own title" };
+      const c = seriesCompleteness('Cradle', [own(1), manual]);
+      assert.equal(c.gaps[0]?.title, "The owner's own title");
+      assert.equal(c.gaps[0]?.source, 'manual');
+    });
+  });
 });
 
 describe('series completeness — a rung we own, but not in this catalog', () => {

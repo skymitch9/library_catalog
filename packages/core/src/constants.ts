@@ -218,8 +218,18 @@ export function isDirectionalRelation(relation: WorkRelation): boolean {
  *
  * There is deliberately no 'inferred' and no 'guess'. A volume with no source has
  * no business being a row — see the head of migration 0003.
+ *
+ * ⚠️ `claude_research` joined the other three in migration 0200, which rebuilt
+ * `series_volume` and `series_check` to widen their CHECK constraints — this
+ * array and those two CHECKs must be edited together, or a row this app would
+ * happily write is refused by the database with a constraint error instead.
  */
-export const SERIES_VOLUME_SOURCES = ['audiobook_catalog', 'openlibrary', 'manual'] as const;
+export const SERIES_VOLUME_SOURCES = [
+  'audiobook_catalog',
+  'openlibrary',
+  'manual',
+  'claude_research',
+] as const;
 export type SeriesVolumeSource = (typeof SERIES_VOLUME_SOURCES)[number];
 
 /**
