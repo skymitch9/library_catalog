@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
-import { completenessSentence, gapAudioLabel, gapEvidenceLabel, gapSkipLabel } from '@lc/core';
+import {
+  completenessSentence,
+  gapAudioLabel,
+  gapEvidenceLabel,
+  gapSkipLabel,
+  gapsCountingAudio,
+  gapsInPrint,
+} from '@lc/core';
 import {
   api,
   type AudioSeriesLink,
   type EditionRef,
   type OwnedTwice,
   type Me,
+  type SeriesCompleteness,
   type SeriesGap,
   type SeriesHoldings,
   type SeriesLadderEntry,
@@ -162,6 +170,7 @@ export function SeriesDetailPage({
 
       <h2 className="page-title">{name}</h2>
       <p className="series-claim">{completenessSentence(c)}</p>
+      <ByFormatHeadline c={c} />
 
       <Holdings
         holdings={holdings}
@@ -588,6 +597,39 @@ function Media({ entry }: { entry: SeriesLadderEntry }) {
   );
 }
 
+/**
+ * `Media`'s counterpart for a rung we do NOT hold — the audio half only, since
+ * a gap by definition has no printing or ebook here to badge.
+ *
+ * ⚠️ Two different `matchedVia` vocabularies feed the two functions, and they
+ * are not interchangeable. `Media` reads `entry.audiobook.matchedVia` off
+ * migration 0010's `audiobook_holding` — one title matched against one work,
+ * hedged as `'containment'`. This reads `gap.audio.matchedVia` off migration
+ * 0090/0110's series-level match — a rung with no work at all, hedged as
+ * `'fold'`. Both hedges render the same `?`, because that is the one thing a
+ * glance needs; `gapAudioLabel` below is where the two are told apart in
+ * words.
+ */
+function GapMedia({ gap }: { gap: SeriesGap }) {
+  if (!gap.audio) return null;
+  const hedged = gap.audio.matchedVia === 'fold';
+  return (
+    <span className="fmts">
+      <span
+        className="fmt fmt--audio"
+        title={
+          hedged
+            ? `Filed under "${gap.audio.audiobookSeries}" in the audiobook catalog — only the series name connects the two catalogs`
+            : `You own this on audio, as "${gap.audio.title}"`
+        }
+      >
+        {mediumLabel('audio')}
+        {hedged && '?'}
+      </span>
+    </span>
+  );
+}
+
 /** Mirrors `PHYSICAL_FORMATS`; used only to split a tooltip, never to count. */
 const PHYSICAL = new Set(['hardcover', 'paperback', 'mass_market']);
 
@@ -612,6 +654,33 @@ function mediumPhrase(medium: string): string {
 function andList(items: string[]): string {
   if (items.length <= 1) return items[0] ?? '';
   return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+}
+
+/**
+ * "What would complete this series — in print, and in any format."
+ *
+ * ⚠️ Both numbers come straight from `gapsInPrint` / `gapsCountingAudio` in
+ * `@lc/core`, on purpose: `completenessSentence` above already prints
+ * `certainGaps` and `attestedGaps` split apart by *how sure* the app is,
+ * which is the right split for deciding what to chase next. This line asks a
+ * different question — *does owning it on audio already count?* — and the two
+ * headers must not silently disagree about what "missing" means, so the
+ * arithmetic is imported rather than re-added here.
+ *
+ * Suppressed once there is nothing left to complete, matching every other
+ * zero-omission on this page. The two numbers are printed even when they are
+ * EQUAL — that equality is itself the honest answer ("audio has not actually
+ * confirmed anything for this series"), not a bug to hide.
+ */
+function ByFormatHeadline({ c }: { c: SeriesCompleteness }) {
+  const inPrint = gapsInPrint(c);
+  if (inPrint === 0) return null;
+  const countingAudio = gapsCountingAudio(c);
+  return (
+    <p className="muted small">
+      {inPrint} {inPrint === 1 ? 'gap' : 'gaps'} in print, {countingAudio} counting audio.
+    </p>
+  );
 }
 
 /**
@@ -844,6 +913,12 @@ function MissingRung({
         ) : (
           <strong>{gap.title ?? 'Not known by name'}</strong>
         )}
+        {/* The same `.fmt` badge an owned rung wears, so the strip reads the
+            same way down the whole ladder — a gap rung just has nothing filled
+            in beside it. `audioNote` below still carries the sentence, for
+            whose word it is and (on a hedge) what was actually compared; the
+            badge is only the at-a-glance answer. */}
+        <GapMedia gap={gap} />
         {/* ⚠️ The audio answer comes FIRST, before the evidence for the gap.
             "you own this on audio" is the fact that changes what somebody does
             next; "earlier than the lowest you own" is why the rung is drawn at

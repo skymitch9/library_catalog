@@ -470,6 +470,39 @@ export function seriesCompleteness(
   };
 }
 
+/**
+ * The two honest numbers behind "what would complete this series" — in print,
+ * and crediting the household's audiobooks.
+ *
+ * ⚠️ Neither is new arithmetic; both are already sitting on `SeriesCompleteness`
+ * and this is only naming the pairing so two screens ask for it the same way.
+ * `gapsInPrint` is `gaps.length`, unmodified: every rung absent from
+ * `work`/`edition`, full stop, with **no** credit for what the sibling
+ * audiobook catalog holds — skipped rungs are never in `gaps` to begin with,
+ * see the partition in `seriesCompleteness`. `gapsCountingAudio` is
+ * `certainGaps + attestedGaps`, which — see `held()` above — already excludes
+ * every rung confidently held on audio. That exclusion is "half" of this
+ * feature, in the sense the caller asked about: it already answers "counting
+ * audio", it just never said so next to the number it did not adjust.
+ *
+ * ⚠️ A hedge (`matchedVia: 'fold'`, counted in `maybeOnAudio`) moves NEITHER
+ * number. It is still inside `gaps` (`gapsInPrint` counts it) and still inside
+ * `certainGaps`/`attestedGaps` (`gapsCountingAudio` counts it too) — a folded
+ * series name is a guess, not a receipt, and letting a guess close a gap is
+ * exactly the flat claim `gapAudioLabel`'s `'fold'` branch exists to refuse.
+ * So `gapsCountingAudio` can equal `gapsInPrint` even on a series with a
+ * hedged audio match: the two numbers differing is proof of a *confirmed*
+ * audio holding, not merely a possible one.
+ */
+export function gapsInPrint(c: SeriesCompleteness): number {
+  return c.gaps.length;
+}
+
+/** See `gapsInPrint` — the pair is documented once, there. */
+export function gapsCountingAudio(c: SeriesCompleteness): number {
+  return c.certainGaps + c.attestedGaps;
+}
+
 function gapFrom(
   index: number,
   row: SeriesVolumeInput | undefined,

@@ -78,6 +78,8 @@ import {
   gapAudioLabel,
   gapEvidenceLabel,
   gapSkipLabel,
+  gapsCountingAudio,
+  gapsInPrint,
   seriesCompleteness,
 } from '../src/completeness.ts';
 import {
@@ -1188,6 +1190,82 @@ describe('series completeness — “I am never buying that one”', () => {
     assert.deepEqual(c.gaps.map((g) => g.index), [4, 5, 6]);
     assert.deepEqual(c.skipped.map((g) => g.index), [1, 2, 3]);
     assert.equal(c.certainGaps, 3);
+  });
+});
+
+describe('gapsInPrint / gapsCountingAudio — the by-format headline', () => {
+  const own = (index: number, id = index) => ({ index, workId: id });
+  const said = (index: number, extra: Record<string, unknown> = {}) => ({
+    index,
+    workId: null,
+    source: 'audiobook_catalog',
+    ...extra,
+  });
+  const onAudio = (index: number, extra: Record<string, unknown> = {}) => ({
+    index,
+    title: `Volume ${index}`,
+    authors: 'Brandon Sanderson',
+    audiobookSeries: 'The Stormlight Archive',
+    indexDisplay: null,
+    matchedVia: 'work_match' as const,
+    ...extra,
+  });
+
+  it('agree with no audio in the picture at all', () => {
+    // High School DxD 7–9: three gaps below the lowest we own, nothing in the
+    // sibling catalog consulted. Both numbers are the plain gap count.
+    const c = seriesCompleteness('High School DxD', [7, 8, 9].map((n) => own(n)));
+    assert.equal(gapsInPrint(c), 6);
+    assert.equal(gapsCountingAudio(c), 6);
+  });
+
+  it('⚠️ split apart by a CONFIRMED audio holding — the whole point of the pair', () => {
+    // The Stormlight Archive case from `completeness.ts`'s own header: six
+    // rungs absent from this catalog, all six owned on audio. "In print" must
+    // still say 6 — nothing was added to the shelf — while "counting audio"
+    // says 0, because every one of those six is in the house.
+    const volumes = [own(2), ...[1, 2.5, 3, 3.5, 4, 5].map((n) => said(n))];
+    const audio = [1, 2.5, 3, 3.5, 4, 5].map((n) => onAudio(n));
+    const c = seriesCompleteness('The Stormlight Archive', volumes, {}, { audio });
+
+    assert.equal(gapsInPrint(c), 6);
+    assert.equal(gapsCountingAudio(c), 0);
+  });
+
+  it('⚠️ a HEDGED audio match ("fold") moves neither number', () => {
+    // The honesty rail again, from the other angle: a folded series name is a
+    // guess, not a receipt, so it may not shrink either count. `gapsInPrint`
+    // and `gapsCountingAudio` land on the SAME number here — that equality is
+    // itself the honest answer ("audio has not actually confirmed anything"),
+    // not a sign the pair collapsed to one.
+    const c = seriesCompleteness(
+      'Dark Healer',
+      [own(1), said(2), said(3)],
+      {},
+      { audio: [onAudio(2, { matchedVia: 'fold' }), onAudio(3, { matchedVia: 'fold' })] },
+    );
+    assert.equal(gapsInPrint(c), 2);
+    assert.equal(gapsCountingAudio(c), 2);
+    assert.equal(c.maybeOnAudio, 2);
+  });
+
+  it('a mix of confirmed and hedged rungs splits the pair by exactly the confirmed ones', () => {
+    const c = seriesCompleteness(
+      'The Stormlight Archive',
+      [own(2), said(1, { title: 'The Way of Kings' }), said(3, { title: 'Oathbringer' })],
+      {},
+      { audio: [onAudio(1), onAudio(3, { matchedVia: 'fold' })] },
+    );
+    // Two gaps total; rung 1 is confirmed (drops out of "counting audio"),
+    // rung 3 is only hedged (stays in both numbers).
+    assert.equal(gapsInPrint(c), 2);
+    assert.equal(gapsCountingAudio(c), 1);
+  });
+
+  it('both read zero on a series with nothing missing', () => {
+    const c = seriesCompleteness('Cradle', [1, 2, 3].map((n) => own(n)));
+    assert.equal(gapsInPrint(c), 0);
+    assert.equal(gapsCountingAudio(c), 0);
   });
 });
 

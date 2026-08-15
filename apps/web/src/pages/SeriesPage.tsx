@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { completenessSentence } from '@lc/core';
+import { completenessSentence, gapsCountingAudio } from '@lc/core';
 import { api, type SeriesSummary } from '../api.js';
 import {
   replaceUrl,
@@ -201,6 +201,20 @@ export function SeriesPage({
                       reported as missing. */}
                   {s.onAudio > 0 && (
                     <span className="mark mark--attested">{s.onAudio} on audio</span>
+                  )}
+                  {/* ⚠️ Only worth a chip once audio actually moves the number —
+                      `gapsCountingAudio` is `certainGaps + attestedGaps`, so with
+                      no confirmed audio holding it would repeat the sum of the
+                      two chips above for no reason. Reuses `.mark--attested`
+                      rather than inventing a new style, matching how the "on
+                      audio" chip beside it already extends the same language
+                      instead of a new one. Omitted at zero, like every other
+                      count on this row: "0 left counting audio" reads as a
+                      typo, not as good news. */}
+                  {s.onAudio > 0 && gapsCountingAudio(s) > 0 && (
+                    <span className="mark mark--attested">
+                      {gapsCountingAudio(s)} left counting audio
+                    </span>
                   )}
                 </div>
                 <div className="muted small">{completenessSentence(s)}</div>
