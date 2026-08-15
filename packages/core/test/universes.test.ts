@@ -263,7 +263,7 @@ describe('universes over catalog rows', () => {
     assert.deepEqual(tally.map((t) => t.name), universeNames);
     assert.deepEqual(
       tally.filter((t) => t.count === 0).map((t) => t.name),
-      ['Runnerverse', 'Maasverse', 'Riordanverse', 'Solaria', 'Willverse', 'Marvel', 'Disney'],
+      ['Runnerverse', 'Maasverse', 'Riordanverse', 'Solaria', 'Willverse', 'Marvel', 'Disney', 'Star Wars', 'Alliances'],
     );
   });
 
@@ -306,13 +306,17 @@ describe('universes over catalog rows', () => {
  * -------------------------------------------------------------------------- */
 
 describe('the approved content, so an edit in catalog-platform cannot land unnoticed', () => {
-  it('nine universes, in the order the owner/coordinator approved them', () => {
+  it('eleven universes, in the order the owner/coordinator approved them', () => {
     // ⚠️ Willverse was added 2026-08-12 and was the SEVENTH. Marvel and Disney
-    // were added 2026-08-15 (owner/coordinator: separate universes; the
-    // per-item membership is 'llm'-decided, not yet individually owner-
-    // reviewed — see their `confirmed` fields in data/universes.json). This
-    // assertion failing is this file WORKING: a universe cannot appear in
-    // catalog-platform without a decision landing here too.
+    // were added 2026-08-15 (owner/coordinator: separate universes). Same
+    // day, revised again: Star Wars split OUT of Disney on the owner's
+    // crossover-potential criterion, and Alliances was created (owner-
+    // approved, 'human'-decided — not just llm-proposed like the others).
+    // Per-item membership on Marvel/Disney/Star Wars is still 'llm'-decided,
+    // not individually owner-reviewed — see their `confirmed` fields in
+    // data/universes.json. This assertion failing is this file WORKING: a
+    // universe cannot appear in catalog-platform without a decision landing
+    // here too.
     assert.deepEqual(universeNames, [
       'The Cosmere',
       'Runnerverse',
@@ -323,10 +327,12 @@ describe('the approved content, so an edit in catalog-platform cannot land unnot
       'Willverse',
       'Marvel',
       'Disney',
+      'Star Wars',
+      'Alliances',
     ]);
   });
 
-  it('the counts the owner signed off (or, for Marvel/Disney, the agent proposed and cited)', () => {
+  it('the counts the owner signed off (or, for Marvel/Disney/Star Wars, the agent proposed and cited)', () => {
     const counts = Object.fromEntries(
       universesDocument.universes.map((u) => [
         u.name,
@@ -334,9 +340,17 @@ describe('the approved content, so an edit in catalog-platform cannot land unnot
       ]),
     );
     assert.deepEqual(counts, {
-      // 32 since 2026-08-15: +22 for Brotherwise Games' Cosmere RPG line and
-      // the Mistborn deckbuilder, all board-game D1 rows with a null series.
-      'The Cosmere': [5, 32, 8],
+      // 36 since 2026-08-15: +22 for Brotherwise Games' Cosmere RPG line and
+      // the Mistborn deckbuilder (board-game D1, null series), +1 Shards of
+      // Creation ('literally all the gods from the cosmere' — owner), +3 for
+      // Arcanum Unbounded / The Emperor's Soul / Shadows for Silence in the
+      // Forests of Hell — the last two used to be caught by the SERIES
+      // values 'Cosmere'/'The Cosmere' (a universe masquerading as a
+      // series); those series fields are now blanked non-destructively at
+      // the source (this repo's change_log; audiobook_catalog's corrections
+      // layer for Arcanum) and caught by title instead, which is also why
+      // `series` below dropped from 5 to 3.
+      'The Cosmere': [3, 36, 8],
       // 12 since 2026-08-12: Turncoat's Truth was restored from _refused once the
       // owner verified the co-authored book does sit inside the continuity.
       Runnerverse: [12, 3, 0],
@@ -354,9 +368,17 @@ describe('the approved content, so an edit in catalog-platform cannot land unnot
       // rows inside the mixed 'Dice Throne' series (unclaimed at series level),
       // 4 audiobook Avengers tie-ins, 1 library 'Little Golden Book' row.
       Marvel: [0, 77, 0],
-      // New 2026-08-15. 4 series claims (3 Star Wars + Toy Story) + 12 title
-      // overrides for the seriesless Disney Books imprint rows.
-      Disney: [4, 12, 0],
+      // New 2026-08-15, then revised the SAME day: Star Wars split out (see
+      // below), leaving just the Toy Story series claim + 11 seriesless
+      // Disney Books imprint titles (12 minus Star Wars: Ahsoka, moved out).
+      Disney: [1, 11, 0],
+      // New 2026-08-15, split out of Disney on the owner's crossover-potential
+      // criterion: 3 series (High Republic, Legends, Boba Fett) + 1 title
+      // override (Ahsoka, seriesless) — moved verbatim from Disney.
+      'Star Wars': [3, 1, 0],
+      // New 2026-08-15, owner-approved creation (not just llm-proposed):
+      // Stan Lee's Alliances, 1 series claim, both owned volumes.
+      Alliances: [1, 0, 0],
     });
   });
 
