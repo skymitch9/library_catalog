@@ -1700,7 +1700,8 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
   min-height: 44px;
 }
 
-.scan-mode strong { font-weight: 600; letter-spacing: 0.01em; }
+.scan-mode strong { font-weight: 600; letter-spacing: 0.01em; display: inline-flex; align-items: center; gap: 0.4rem; }
+.scan-mode strong svg { flex: none; }
 .scan-mode span { font-size: 0.75rem; line-height: 1.25; }
 
 .scan-mode--on {

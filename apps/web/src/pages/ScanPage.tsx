@@ -73,11 +73,38 @@ import { addPath, replaceUrl, scansPath, Link, type AddMode } from '../router.js
  * reader who cannot spend never sees them. Hidden rather than disabled — a
  * control that exists and refuses is worse than one that was never offered.
  */
-const ADD_MODES: { id: AddMode; label: string; blurb: string; costs?: true }[] = [
-  { id: 'scan', label: 'Barcode', blurb: 'Exact, free, and keeps scanning. Best when the book has one.' },
-  { id: 'photo', label: 'Shelf photo', blurb: 'Reads every spine at once. Best for bulk.', costs: true },
-  { id: 'single', label: 'One book', blurb: 'Reads the title off a single cover.', costs: true },
-  { id: 'type', label: 'Type a title', // ⚠️ Was "Looks the rest up as you type." There is no title-search endpoint and
+/**
+ * Tab glyphs — same SVG paths as the estate's canonical `estate-search.js`
+ * ES_ICONS (owner order 2026-08-15: barcode modes show a BARCODE, photo modes
+ * show a CAMERA, so the two never read backwards again — the apex once had
+ * the camera emoji on the barcode scanner). If the canonical set changes,
+ * change these to match; the convention is estate-wide.
+ */
+const MODE_GLYPHS = {
+  barcode: (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+      <path d="M2 5h2v14H2zM5.5 5h1v14h-1zM8 5h2v14H8zM11.5 5h1v14h-1zM14 5h3v14h-3zM18.5 5h1v14h-1zM21 5h1v14h-1z" />
+    </svg>
+  ),
+  photo: (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+      <circle cx="12" cy="13" r="4" />
+    </svg>
+  ),
+  type: (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  ),
+} as const;
+
+const ADD_MODES: { id: AddMode; label: string; blurb: string; glyph: keyof typeof MODE_GLYPHS; costs?: true }[] = [
+  { id: 'scan', label: 'Barcode', glyph: 'barcode', blurb: 'Exact, free, and keeps scanning. Best when the book has one.' },
+  { id: 'photo', label: 'Shelf photo', glyph: 'photo', blurb: 'Reads every spine at once. Best for bulk.', costs: true },
+  { id: 'single', label: 'One book', glyph: 'photo', blurb: 'Reads the title off a single cover.', costs: true },
+  { id: 'type', label: 'Type a title', glyph: 'type', // ⚠️ Was "Looks the rest up as you type." There is no title-search endpoint and
 // no as-you-type request — verified in a browser: typing a title produced no
 // suggestions and no network call. The tab offers an ISBN lookup button and
 // free-text fields, which the old blurb both overstated and contradicted (it
@@ -396,7 +423,7 @@ export function ScanPage({
           className={mode === m.id ? 'scan-mode scan-mode--on' : 'scan-mode'}
           onClick={() => setMode(m.id)}
         >
-          <strong>{m.label}</strong>
+          <strong>{MODE_GLYPHS[m.glyph]}{m.label}</strong>
           <span className="muted">{m.blurb}</span>
         </button>
       ))}
