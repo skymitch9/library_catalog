@@ -78,6 +78,7 @@
 import { execute, lit, parseFlags, query } from './lib/d1.mjs';
 import { normaliseTitle } from '../packages/core/src/titles.ts';
 import { AUDIOBOOK_CSV, audiobookIndex, loadAudiobooks } from './lib/audiobooks.mjs';
+import { canonicalSeries } from './lib/series-canon.mjs';
 
 const flags = parseFlags();
 
@@ -261,13 +262,24 @@ for (const r of goneStale) {
 //
 // Measured 2026-08-11: 331 raw spellings fold to 329 keys, and both collisions
 // are one series spelled two ways. Nothing distinct was conflated.
+//
+// ⚠️ `normaliseTitle` folds case and whitespace, not DECORATION. Three series
+// — Ascend Online, Harry Potter, Fae & Alchemy — built ZERO audio rungs before
+// 2026-08-14 because one catalog spells them plainly and the other adds a
+// bracketed or parenthetical suffix ("Ascend Online [publication order]",
+// "Harry Potter (Full-Cast Editions)"), and `normaliseTitle` alone does not
+// strip that. `canonicalSeries` (scripts/lib/series-canon.mjs) folds the
+// estate's known cross-catalog spellings onto one form FIRST, and
+// `normaliseTitle` still runs after it — same two-step shape
+// `canonicalize_series()` + tag-derived value has in audiobook_catalog's own
+// corrections layer. See catalog-platform/docs/UNIVERSES.md §8.
 // ---------------------------------------------------------------------------
 
 /** Folded audiobook series name -> its rows. */
 const abBySeries = new Map();
 for (const row of audiobooks) {
   if (!row.series) continue;
-  const key = normaliseTitle(row.series);
+  const key = normaliseTitle(canonicalSeries(row.series));
   const list = abBySeries.get(key);
   if (list) list.push(row);
   else abBySeries.set(key, [row]);
@@ -288,11 +300,15 @@ const rungKey = (series, index) => `${series}|${index}`;
  * catalogs NUMBER it alike. Only that pair earns `work_match` and an unhedged
  * AUDIO chip — everything else says AUDIO?, because a series whose numbering we
  * have never seen agree is a series whose book 4 might be somebody else's 3.
+ *
+ * Folded through `canonicalSeries` first, same as `abBySeries` above — a
+ * decoration-only spelling difference must not be the reason a series stays
+ * hedged as AUDIO? forever.
  */
 const corroborated = new Set();
 for (const m of matched) {
   if (!m.work.series || !m.row.series) continue;
-  if (normaliseTitle(m.work.series) !== normaliseTitle(m.row.series)) continue;
+  if (normaliseTitle(canonicalSeries(m.work.series)) !== normaliseTitle(canonicalSeries(m.row.series))) continue;
   if (m.work.series_index_sort == null || m.row.seriesIndexSort == null) continue;
   if (Number(m.work.series_index_sort) !== Number(m.row.seriesIndexSort)) continue;
   corroborated.add(m.work.series);
@@ -303,7 +319,7 @@ const rungReport = [];
 const liveRungs = new Set();
 
 for (const series of ourSeries) {
-  const hits = abBySeries.get(normaliseTitle(series)) ?? [];
+  const hits = abBySeries.get(normaliseTitle(canonicalSeries(series))) ?? [];
   const numbered = hits.filter((h) => typeof h.seriesIndexSort === 'number');
   if (numbered.length === 0) continue;
 

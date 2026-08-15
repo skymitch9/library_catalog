@@ -89,6 +89,13 @@ export function platformPaths(dir) {
     // reviews.ts are the canon for all but bookIdFromTitle (audiobook's
     // site/reviews.js). See packages/core/test/title-key-fixtures.test.ts.
     titleKeyFixtures: join(dir, 'data', 'title-key-fixtures.json'),
+    // The estate series canon (normalization item 4) — CROSS-CATALOG
+    // series-spelling folds, not universe data. Read LIVE by
+    // scripts/lib/series-canon.mjs (the audiobook-holdings backfill's series
+    // fold), not through the generated/ bundling path below, because this
+    // repo's consumer is a hand-run backfill script, not the deployed Worker.
+    // See catalog-platform/docs/UNIVERSES.md §8.
+    seriesCanon: join(dir, 'data', 'series-canon.json'),
     cli: join(dir, 'tools', 'universes.mjs'),
     // ⚠️ Node's ESM loader rejects a bare Windows path ("C:/..." reads as a URL
     // scheme). Anything doing a dynamic import of the platform's lib needs this.

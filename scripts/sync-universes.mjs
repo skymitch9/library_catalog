@@ -79,6 +79,19 @@ for (const [name, src] of [
   // straight off its sibling checkout (no sync step there — see that repo's
   // tests/test_title_key_fixtures.py).
   ['title-key-fixtures.json', paths.titleKeyFixtures],
+  // ⚠️ Also not universe data: the estate series canon (normalization item 4) —
+  // CROSS-CATALOG series-spelling folds (data/series-canon.json in
+  // catalog-platform, docs/UNIVERSES.md §8). Rides this sync for the same
+  // reason match-fold and title-key fixtures do: one tracked copy in
+  // catalog-platform, a gitignored materialised copy here, validated as JSON
+  // at prebuild time. scripts/lib/series-canon.mjs — the audiobook-holdings
+  // backfill's actual consumer — reads the LIVE source via
+  // resolvePlatformRepo() instead of this generated copy, because a hand-run
+  // backfill script has no prebuild step guaranteeing this file is current;
+  // this entry exists so a malformed series-canon.json fails loudly here too,
+  // and so a future Worker feature has a bundle-ready copy without adding a
+  // second sync mechanism.
+  ['series-canon.json', paths.seriesCanon],
 ]) {
   const body = readFileSync(src, 'utf8');
   JSON.parse(body); // belt and braces: never write something the bundler cannot parse
