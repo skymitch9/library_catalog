@@ -31,6 +31,20 @@
  * ⚠️ Never write these as `cover_status = 'ok'`. That would quietly assert the
  * print jacket is correct and remove the only prompt to fix it.
  *
+ * ## ⚠️ Scope widened 2026-08-14: `cover_status = 'standin'` is eligible too
+ *
+ * Originally this only ever touched `cover_url IS NULL` rows — a stand-in was
+ * a one-way door once written. But the five Percy Jackson rows above were
+ * given their stand-in by hand, BEFORE this script existed, and all five
+ * share the exact same image (The Lightning Thief's) because nothing matched
+ * them per volume. `coverNeeded` in `@lc/core` already treats a `'standin'`
+ * row as outstanding — same as a NULL one — so the scan below now selects
+ * `cover_url IS NULL OR cover_status = 'standin'`, matching that definition
+ * exactly rather than inventing a second one. A `'standin'` row this reaches
+ * gets its shared/generic image REPLACED by its own volume's audiobook cover
+ * when one exists; it stays `'standin'`, never `'ok'` — same rule as ever,
+ * just no longer gated on having never been touched before.
+ *
  * ## Matching
  *
  * Series + volume first, because it is exact. Falls back to a normalised title
@@ -87,13 +101,19 @@ for (const a of audio) {
   if (!byTitle.has(k)) byTitle.set(k, a);
 }
 
+// `cover_url IS NULL OR cover_status = 'standin'` is `coverNeeded` from
+// `@lc/core`, spelled out in SQL rather than re-derived — see the header's
+// 2026-08-14 note. `cover_url` rides along so an unchanged stand-in (this
+// row already wears exactly the audiobook cover it would be assigned again)
+// can be skipped below rather than rewritten for no reason.
 const works = q(
-  `SELECT DISTINCT id, title, series, CAST(series_index_sort AS REAL) idx
-     FROM work WHERE cover_url IS NULL ORDER BY title`,
+  `SELECT DISTINCT id, title, series, CAST(series_index_sort AS REAL) idx, cover_url, cover_status
+     FROM work WHERE cover_url IS NULL OR cover_status = 'standin' ORDER BY title`,
 );
 
 const plan = [];
 const unreachable = [];
+const unchanged = [];
 for (const w of works) {
   let a = null;
   let how = '';
@@ -111,13 +131,19 @@ for (const w of works) {
   }
   if (!a) { unreachable.push(w); continue; }
   const href = String(a.cover_href).replace(/^covers\//, '');
-  plan.push({ id: Number(w.id), title: w.title, how, audioTitle: a.title, url: BASE + href.split('/').map(encodeURIComponent).join('/') });
+  const url = BASE + href.split('/').map(encodeURIComponent).join('/');
+  if (url === w.cover_url) { unchanged.push(w); continue; }
+  plan.push({ id: Number(w.id), title: w.title, how, audioTitle: a.title, url, wasStandin: w.cover_status === 'standin' });
 }
 
-console.log(`\n${flags.remote ? 'REMOTE' : 'local'} — ${works.length} works with no cover`);
+console.log(`\n${flags.remote ? 'REMOTE' : 'local'} — ${works.length} works needing a cover (blank or stand-in)`);
 console.log(`  reachable from the audiobook catalog : ${plan.length}`);
+console.log(`  already wearing that exact cover      : ${unchanged.length}`);
 console.log(`  not reachable                        : ${unreachable.length}\n`);
-for (const p of plan) console.log(`  [${p.how.padEnd(13)}] ${p.title.slice(0, 40).padEnd(42)} <- ${p.audioTitle.slice(0, 40)}`);
+for (const p of plan) {
+  const tag = p.wasStandin ? 'replaces stand-in' : p.how;
+  console.log(`  [${tag.padEnd(18)}] ${p.title.slice(0, 40).padEnd(42)} <- ${p.audioTitle.slice(0, 40)}`);
+}
 if (unreachable.length) {
   console.log('\n  NOT REACHABLE — these still need a human:');
   for (const w of unreachable) console.log(`     ${w.id}  ${w.title}`);
@@ -128,11 +154,13 @@ if (!plan.length) { console.log('Nothing to do.\n'); process.exit(0); }
 
 // ⚠️ cover_url and cover_status are written TOGETHER, always. A url without a
 // status reads as "nobody has looked", which is the opposite of the truth here.
+// The WHERE guard mirrors the SELECT above — still never touches a row that
+// has since gained a real ('ok') cover between the read and this write.
 execute(
   plan.map(
     (p) =>
       `UPDATE work SET cover_url = ${lit(p.url)}, cover_status = 'standin', updated_at = datetime('now')
-        WHERE id = ${p.id} AND cover_url IS NULL;`,
+        WHERE id = ${p.id} AND (cover_url IS NULL OR cover_status = 'standin');`,
   ),
   { remote: flags.remote },
 );
