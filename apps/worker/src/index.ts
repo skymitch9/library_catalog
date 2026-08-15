@@ -25,7 +25,7 @@ import { isbnRoutes } from './routes/isbn.js';
 import { relationRoutes } from './routes/relations.js';
 import { researchRoutes } from './routes/research.js';
 import { reviewRoutes } from './routes/reviews.js';
-import { scanJobRoutes } from './routes/scan-jobs.js';
+import { scanCors, scanJobRoutes } from './routes/scan-jobs.js';
 import { seriesRoutes } from './routes/series.js';
 import { universeRoutes } from './routes/universes.js';
 import { userRoutes } from './routes/users.js';
@@ -78,6 +78,12 @@ app.route('/api/machine/audiobook-mapping', audiobookMappingRoutes);
 // answered here; the admin routes themselves mount AFTER the blanket below
 // and stay behind it.
 app.use('/api/admin/*', adminCors());
+
+// CORS for the apex's "Add to Books →" affordance (catalog-platform's
+// <estate-search scan>) — exactly https://heygabi.ai, POST-only, same
+// before-the-blanket reasoning as adminCors immediately above: the preflight
+// carries no bearer. See scan-jobs.ts's scanCors() for the full rationale.
+app.use('/api/scan-jobs/barcode', scanCors());
 
 // Everything else behind a verified Firebase ID token.
 app.use('/api/*', requireAuth());

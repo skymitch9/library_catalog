@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { z } from 'zod';
 import {
   MIN_AUTHOR_SIMILARITY,
@@ -718,6 +719,31 @@ async function runLookupPass(env: Env, jobId: number): Promise<void> {
 // ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
+
+/**
+ * CORS for the apex's "Add to Books →" affordance (catalog-platform's
+ * <estate-search scan>, 2026-08-15 — owner: "if I scan a book and end up
+ * buying it I want to be able to add it from the main page"). The apex
+ * resolves an ISBN client-side (Open Library) and calls straight through to
+ * THIS endpoint with the signed-in member's Firebase bearer — same project,
+ * same token estate-search.js already mints for index.heygabi.ai — rather
+ * than the apex re-deriving its own catalog-write path.
+ *
+ * Locked to exactly `https://heygabi.ai`, the admin.ts `adminCors()`
+ * pattern verbatim: a named allow-list, not a wildcard, and mounted BEFORE
+ * `requireAuth()` in index.ts so the OPTIONS preflight (which carries no
+ * bearer) is answered here rather than 401'd by the blanket. Scoped to
+ * `/barcode` only — the apex calls no other scan-jobs route, and a narrower
+ * CORS surface is less to audit than the whole `/api/scan-jobs/*` tree.
+ */
+export function scanCors() {
+  return cors({
+    origin: 'https://heygabi.ai',
+    allowMethods: ['POST', 'OPTIONS'],
+    allowHeaders: ['Authorization', 'Content-Type'],
+    maxAge: 600,
+  });
+}
 
 export const scanJobRoutes = new Hono<AppBindings>()
   /** The queue: what you left half-finished. */
