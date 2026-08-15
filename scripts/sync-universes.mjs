@@ -70,6 +70,15 @@ for (const [name, src] of [
   // reproduces. It rides this sync because the mechanism is identical: one
   // tracked copy in catalog-platform, gitignored materialised copies here.
   ['match-fold.fixtures.json', paths.foldFixtures],
+  // ⚠️ Also not universe data: the estate-wide TITLE/KEY drift guard
+  // (normalization item 1) — normaliseTitle, bookIdFromTitle, splitAuthors,
+  // workKeyFor, cleanAudiobookTitle/cleanTitleWithSeries, splitSeriesPrefix.
+  // Same mechanism again: one tracked copy in catalog-platform, gitignored
+  // here, asserted byte-for-byte reproduced by packages/core/test/
+  // title-key-fixtures.test.ts. audiobook_catalog runs the SAME source file
+  // straight off its sibling checkout (no sync step there — see that repo's
+  // tests/test_title_key_fixtures.py).
+  ['title-key-fixtures.json', paths.titleKeyFixtures],
 ]) {
   const body = readFileSync(src, 'utf8');
   JSON.parse(body); // belt and braces: never write something the bundler cannot parse

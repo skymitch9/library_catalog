@@ -82,6 +82,13 @@ export function platformPaths(dir) {
     // repo's CI reproduces every case. This repo's normaliseTitle is the
     // implementation being pinned — see packages/core/test/fold-fixtures.test.ts.
     foldFixtures: join(dir, 'data', 'match-fold.fixtures.json'),
+    // The TITLE/KEY cross-language drift guard (normalization item 1):
+    // normaliseTitle, bookIdFromTitle, splitAuthors, workKeyFor,
+    // cleanAudiobookTitle/cleanTitleWithSeries, splitSeriesPrefix — every
+    // function whose output is a PERSISTED key. This repo's titles.ts/
+    // reviews.ts are the canon for all but bookIdFromTitle (audiobook's
+    // site/reviews.js). See packages/core/test/title-key-fixtures.test.ts.
+    titleKeyFixtures: join(dir, 'data', 'title-key-fixtures.json'),
     cli: join(dir, 'tools', 'universes.mjs'),
     // ⚠️ Node's ESM loader rejects a bare Windows path ("C:/..." reads as a URL
     // scheme). Anything doing a dynamic import of the platform's lib needs this.
