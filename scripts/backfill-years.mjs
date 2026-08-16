@@ -152,7 +152,13 @@ for (const w of works) {
   }
 
   stats.ol++;
-  statements.push(`UPDATE work SET first_published = ${lit(year)} WHERE id = ${lit(w.id)};`);
+  // updated_at bump: without it this write is invisible to the shared-index
+  // staleness backstop's data-aware check (apps/worker/src/lib/index-push.ts,
+  // getLatestSourceUpdateAt) — the same class of gap the 2026-08-15 fix closed
+  // for every OTHER writer of `work`.
+  statements.push(
+    `UPDATE work SET first_published = ${lit(year)}, updated_at = datetime('now') WHERE id = ${lit(w.id)};`,
+  );
 
   // Surfaced, never auto-resolved. A file dated years AFTER first publication is
   // the ordinary reissue case, and the reason the two columns are separate.

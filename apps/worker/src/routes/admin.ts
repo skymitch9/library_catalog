@@ -33,6 +33,7 @@ import { cors } from 'hono/cors';
 import { ROLES, updateRoleSchema } from '@lc/core';
 import { countOwners, listUsers, setUserRole } from '@lc/db';
 import type { AppBindings } from '../env.js';
+import { pushIndexSnapshot } from '../lib/index-push.js';
 import { requireCapability } from '../middleware/auth.js';
 
 /**
@@ -52,7 +53,7 @@ export const ADMIN_PAGE_ORIGIN = 'https://heygabi.ai';
 export function adminCors() {
   return cors({
     origin: ADMIN_PAGE_ORIGIN,
-    allowMethods: ['GET', 'PATCH', 'OPTIONS'],
+    allowMethods: ['GET', 'PATCH', 'POST', 'OPTIONS'],
     allowHeaders: ['Authorization', 'Content-Type'],
     maxAge: 600,
   });
@@ -121,4 +122,22 @@ export const adminRoutes = new Hono<AppBindings>()
         role: updated.role,
       },
     });
+  })
+
+  /**
+   * Force a shared-index push right now, instead of waiting for the next
+   * mutation or backstop tick — the manual escape hatch for the 2026-08-15
+   * incident class: a person who just ran a D1 backfill script and does not
+   * want to wait out even the (now data-aware) hourly backstop. Same gate as
+   * every other route on this surface — owner-only, via the app's own
+   * `manageUsers` capability, on the caller's Firebase bearer — because
+   * pushing is an operational action on the whole catalog, not a per-item
+   * write any signed-in reader should be able to trigger. See
+   * lib/index-push.ts for what the push itself does; this route adds no new
+   * push logic, it just calls the same `pushIndexSnapshot` the other two
+   * triggers do.
+   */
+  .post('/index-push', requireCapability('manageUsers'), async (c) => {
+    const result = await pushIndexSnapshot(c.env);
+    return c.json({ app: 'library', ...result });
   });
