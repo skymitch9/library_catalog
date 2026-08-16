@@ -119,7 +119,8 @@ app.route('/api/series', seriesRoutes);
 // nesting the address would suggest it was. See routes/universes.ts.
 app.route('/api/universes', universeRoutes);
 // Kickstarter / BackerKit / Indiegogo provenance and its physical-vs-digital
-// audit. Owner-only, including the reads — see routes/crowdfunding.ts.
+// audit. Gated `editCatalog` (contributor and up), including the reads — see
+// routes/crowdfunding.ts.
 app.route('/api/crowdfunding', crowdfundingRoutes);
 app.route('/api/isbn', isbnRoutes);
 app.route('/api/enrich', enrichRoutes);

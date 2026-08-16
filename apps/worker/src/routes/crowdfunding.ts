@@ -44,8 +44,10 @@ import { requireCapability } from '../middleware/auth.js';
  * ## ⚠️ Everything is gated on `editCatalog`, including the reads
  *
  * What was paid, when, and from which of two logins is household financial
- * detail, and `reader` is a second person who reads books here. `read` gates the
- * catalog; this is not the catalog.
+ * detail, so it is kept off the read-only roles: `read` (which every signed-in
+ * role holds, member and guest included) gates the catalog; this is not the
+ * catalog. `editCatalog` admits contributor and up — anyone trusted to edit
+ * the catalog can see the provenance behind it.
  */
 export const crowdfundingRoutes = new Hono<AppBindings>()
   .use('*', requireCapability('editCatalog'))

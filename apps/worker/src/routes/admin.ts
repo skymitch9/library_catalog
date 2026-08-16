@@ -145,8 +145,8 @@ export const adminRoutes = new Hono<AppBindings>()
    * mutation or backstop tick — the manual escape hatch for the 2026-08-15
    * incident class: a person who just ran a D1 backfill script and does not
    * want to wait out even the (now data-aware) hourly backstop. Same gate as
-   * every other route on this surface — owner-only, via the app's own
-   * `manageUsers` capability, on the caller's Firebase bearer — because
+   * every other route on this surface — `manageUsers` (owner and admin), via
+   * the app's own capability check, on the caller's Firebase bearer — because
    * pushing is an operational action on the whole catalog, not a per-item
    * write any signed-in reader should be able to trigger. See
    * lib/index-push.ts for what the push itself does; this route adds no new
