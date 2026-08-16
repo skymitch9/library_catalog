@@ -8,6 +8,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { AppBindings, Env } from './env.js';
+import { DETAILS_SWEEP_CRON, runDetailsSweep } from './lib/details-sweep.js';
 import { indexBackstopOnRequest, indexPushAfterMutation } from './lib/index-push.js';
 import { requireAuth } from './middleware/auth.js';
 import { accessoryRoutes } from './routes/accessories.js';
@@ -155,4 +156,46 @@ app.onError((err, c) => {
 
 export default {
   fetch: app.fetch,
+
+  /**
+   * The clock. This Worker's first and only scheduled job (owner ask
+   * 2026-08-16), so there is nothing else here to dispatch between.
+   *
+   * ⚠️ **The promise is returned as well as registered, and that is not
+   * belt-and-braces — `waitUntil` alone would be a bug.** A registered task is
+   * cancelled about thirty seconds after the handler settles, and a details
+   * lookup takes 20–90 seconds; `RESEARCH_TIMEOUT_MS` is 90s precisely because
+   * they run that long. The sibling project put this work in `waitUntil` alone
+   * and roughly half its runs were cancelled silently — no exception, nothing
+   * in the catch, the run row stuck at `running` for eleven hours.
+   * `routes/research.ts` awaits AND registers for the same reason; returning
+   * the promise is a `scheduled()` handler's version of awaiting, because the
+   * runtime keeps the invocation alive until it settles.
+   *
+   * ⚠️ **An unrecognised cron does nothing, loudly.** The sibling Worker falls
+   * through to its oldest job instead, which is right *there* because it had a
+   * schedule before it had a dispatcher. Here, a cron this code does not know
+   * about means `wrangler.toml` and `DETAILS_SWEEP_CRON` have drifted apart —
+   * running the sweep anyway would hide exactly the mistake there is a test to
+   * catch.
+   *
+   * `runDetailsSweep` never throws, so the `.catch` should be unreachable. It
+   * is here because a scheduled invocation has no user, no response, and
+   * (measured in the sibling project 2026-08-13) logs that defeated three
+   * separate `wrangler tail` attempts — an unhandled rejection here would be
+   * invisible in a way a request's never is.
+   */
+  scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext) {
+    if (event.cron !== DETAILS_SWEEP_CRON) {
+      console.error('cron fired that nothing handles', event.cron, 'expected', DETAILS_SWEEP_CRON);
+      return;
+    }
+
+    const work = runDetailsSweep(env).then(
+      (run) => console.log('details sweep', JSON.stringify(run)),
+      (err) => console.error('details sweep failed', err),
+    );
+    ctx.waitUntil(work);
+    return work;
+  },
 } satisfies ExportedHandler<Env>;

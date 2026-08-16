@@ -37,10 +37,31 @@ migrations_dir = "../../migrations"
 binding = "COVERS"
 bucket_name = "library-covers"
 
-# No cron triggers yet. Phase 5 adds the cover-health sweep; when it does, read
-# the sibling project's wrangler.toml note first — its rule is that **a cron is
-# not working until something it writes has rows**, learned from weeks of
-# `wrangler deploy` reporting registered triggers that never fired.
+# This Worker's FIRST cron trigger (added 2026-08-16). Everything below about
+# what a cron does and does not prove was written while there were none; it all
+# still applies, and now there is something to apply it to.
+#
+# "7 * * * *" — the hourly missing-details sweep (owner ask 2026-08-16): if a
+# book is still missing a detail nobody has ever looked for, look for it,
+# without being asked. `src/lib/details-sweep.ts` carries the whole design.
+#
+# ⚠️ This string is dispatched on by `scheduled()` in src/index.ts via
+# DETAILS_SWEEP_CRON, and an unrecognised cron there does NOTHING rather than
+# guessing. Change one of the two and the sweep stops firing while both files
+# still look correct — which is why details-sweep.test.ts reads this file and
+# asserts the string is still here.
+#
+# Minute 7, not 0: every cron in the world fires on the hour, and this one has
+# no reason to join the stampede.
+#
+# ⚠️ The rule from the sibling project, learned from weeks of `wrangler deploy`
+# reporting registered triggers that never fired: **a cron is not working until
+# something it writes has rows.** For this one the proof is a `research_run` row
+# with `triggered_by` NULL — that is precisely how a sweep's run is
+# distinguishable from a person's. Until such a row exists, this trigger is
+# claimed, not verified.
+[triggers]
+crons = ["7 * * * *"]
 
 # The public hostname. Declared here rather than clicked in the dashboard so the
 # mapping lives in git and a redeploy reasserts it.

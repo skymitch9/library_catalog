@@ -275,6 +275,74 @@ export async function listRunsForWork(db: D1Database, workId: number): Promise<R
   return results.map(toRun);
 }
 
+/**
+ * What has already been ASKED about each work, and when it was last attempted.
+ *
+ * ⚠️ This exists for one reason: **the details queue does not converge on its
+ * own.** A `gap_verdict` closes a question only when the model actually returns
+ * a `none`/`unknown` finding for it. Three outcomes leave the gap exactly as it
+ * was, and every one of them is normal here:
+ *
+ * | Outcome | Why the gap survives |
+ * |---|---|
+ * | `identified: false` | no findings at all are returned — and per isbn-ladder.md §4.2 this is the *expected* answer for roughly half this library |
+ * | the volume number | research fills `series_index_sort` only; `series_index_display` quotes the cover, so `seriesIndexIncomplete` stays true for ever (22 works on 2026-08-13) |
+ * | an unusable value | the finding stays `pending` by design, so a person still gets asked |
+ *
+ * A person pressing Run is welcome to re-buy any of those; they are choosing to.
+ * An hourly sweep doing it is a bill that never stops, so the sweep asks this
+ * question first — see `apps/worker/src/lib/details-sweep.ts`.
+ *
+ * Two columns, two different jobs:
+ *
+ * - `asked` — fields carried by a **finished (`done`)** run whose `input_title`
+ *   still matches the work's title. `error` runs are excluded on purpose: they
+ *   never got an answer, so the question has not really been put. The title
+ *   match is the "unless an input changed" escape hatch — retitle a book and it
+ *   becomes askable again, because identification may now succeed.
+ * - `lastAttemptAt` — the newest attempt of ANY status, which is what stops one
+ *   permanently-erroring book at the top of the alphabet starving every book
+ *   below it. The sweep rotates on this.
+ *
+ * One query for the whole catalog. `research_run` is one row per lookup ever
+ * made — tens, not thousands — so grouping it in SQL costs nothing.
+ */
+export interface WorkRunHistory {
+  workId: number;
+  /** Fields a finished run already asked about, with the same title in hand. */
+  asked: DetailField[];
+  /** Newest attempt of any status: `finished_at`, or `started_at` if still out. */
+  lastAttemptAt: string | null;
+}
+
+export async function detailsRunHistory(db: D1Database): Promise<WorkRunHistory[]> {
+  const { results } = await db
+    .prepare(
+      // group_concat with '' as the separator: each unfilled is packed as
+      // ",a,b," (see packFields), so concatenating two of them gives ",a,b,,c,"
+      // and splitting on the comma with empties dropped reads back correctly.
+      // group_concat skips NULLs, which is what makes the CASE the filter.
+      `SELECT r.work_id AS work_id,
+              group_concat(
+                CASE WHEN r.status = 'done' AND r.input_title = w.title THEN r.unfilled END, ''
+              ) AS asked,
+              MAX(COALESCE(r.finished_at, r.started_at)) AS last_attempt_at
+         FROM research_run r
+         JOIN work w ON w.id = r.work_id
+        WHERE r.tier = 'details'
+        GROUP BY r.work_id`,
+    )
+    .all<{ work_id: number; asked: string | null; last_attempt_at: string | null }>();
+
+  return results.map((row) => ({
+    workId: row.work_id,
+    // Deduplicated: two runs that both asked about `description` concatenate to
+    // two entries, and every consumer wants the SET of questions already put.
+    asked: [...new Set(unpackFields(row.asked))] as DetailField[],
+    lastAttemptAt: row.last_attempt_at,
+  }));
+}
+
 /** Every token this feature has ever spent, from the table rather than a counter. */
 export async function runTotals(
   db: D1Database,
