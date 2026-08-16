@@ -1577,16 +1577,24 @@ ul.picker > li + li { border-top: 1px solid var(--et-hairline); }
 .person__id { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
 .person__id strong { font-weight: 600; font-size: 1rem; }
 
-/* Four roles now, and `pending` must not read like `reader` — telling a guest
-   who is in from a guest who is waiting is the whole job of this page.
+/* Six roles now (2026-08-16 ladder redesign: guest < member < contributor <
+   moderator < admin < owner), and `pending` must not read like any of them —
+   telling a guest who is in from a person who is waiting is the whole job of
+   this page. `manager` -> `moderator`, `reader` -> `member`; the class names
+   below are the new vocabulary, not a synonym list on top of the old one.
 
-   `manager` shares the owner's filled treatment rather than getting a fourth
-   colour: it is not a stronger guest, it is the catalog role, and the two
-   differ only in whether they can change this page. Every other distinction
-   here is about the catalog, where they are identical. */
+   `owner` and `admin` share the filled treatment: both hold `manageUsers`
+   (the only distinction left between them is the escalation cap
+   `canGrantRole` enforces, which this page's buttons already respect). Every
+   role below that gets the same open outline as `reader` used to, since the
+   distinction this badge exists to draw is "can this account touch the guest
+   list", not how far up the catalog ladder it sits. */
 .mark--role-owner,
-.mark--role-manager { background: var(--et-accent); color: var(--et-accent-fg); }
-.mark--role-reader {
+.mark--role-admin { background: var(--et-accent); color: var(--et-accent-fg); }
+.mark--role-moderator,
+.mark--role-contributor,
+.mark--role-member,
+.mark--role-guest {
   background: none;
   border: 1px solid var(--et-accent);
   color: var(--et-accent);

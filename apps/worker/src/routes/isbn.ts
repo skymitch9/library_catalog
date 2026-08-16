@@ -26,7 +26,9 @@ import { requireCapability } from '../middleware/auth.js';
  */
 export const isbnRoutes = new Hono<AppBindings>().get(
   '/:code',
-  requireCapability('scan'),
+  // Free, no vision call — `scanBarcode`, split from the old `scan` capability
+  // 2026-08-16. See capabilities.ts's `scanPhoto` comment for the other half.
+  requireCapability('scanBarcode'),
   async (c) => {
     const classified = classifyScannedCode(c.req.param('code'));
 

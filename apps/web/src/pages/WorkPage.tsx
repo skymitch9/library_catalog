@@ -395,6 +395,7 @@ export function WorkPage({
         copies={copies}
         editions={editions}
         canEdit={me.capabilities.includes('editCatalog')}
+        canSuggest={me.capabilities.includes('suggestWishlist')}
         onChanged={load}
       />
 

@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { capabilitiesFor, updateRoleSchema } from '@lc/core';
+import { canGrantRole, capabilitiesFor, updateRoleSchema } from '@lc/core';
 import { countOwners, gapSummary, listUsers, setUserRole } from '@lc/db';
 import type { AppBindings } from '../env.js';
 import { requireCapability } from '../middleware/auth.js';
@@ -58,6 +58,20 @@ export const userRoutes = new Hono<AppBindings>()
     const parsed = updateRoleSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
       return c.json({ error: 'bad_request', detail: parsed.error.issues }, 400);
+    }
+
+    // The no-self-escalation guard (2026-08-16, role matrix approved
+    // verbatim): a granter may only hand out a role strictly beneath its own
+    // — this is what stops `admin` minting another `admin` or an `owner`.
+    // Independent of the last-owner guard below; both must pass.
+    if (!canGrantRole(actor.role, parsed.data.role)) {
+      return c.json(
+        {
+          error: 'bad_request',
+          detail: `your role (${actor.role}) may not grant '${parsed.data.role}'`,
+        },
+        400,
+      );
     }
 
     // Don't let the last owner demote themselves and lock everyone out.

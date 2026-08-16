@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ROLES, type Role } from '@lc/core';
+import { ROLES, canGrantRole, type Role } from '@lc/core';
 import { api, type Me, type Person } from '../api.js';
 
 /**
@@ -10,15 +10,18 @@ import { api, type Me, type Person } from '../api.js';
  * pending becomes real, which is why it lives in the app rather than in a console
  * somewhere: the person who decides is the person holding the phone.
  *
- * ## ⚠️ The two guards, and where they actually live
+ * ## ⚠️ The three guards, and where they actually live
  *
- * Small household, real consequences. Both rules are enforced by
+ * Small household, real consequences. All three rules are enforced by
  * `apps/worker/src/routes/users.ts` and only *reflected* here:
  *
- *  1. **A non-owner cannot change roles.** `requireCapability('manageUsers')`
- *     gates both endpoints, and `App.tsx` will not even route a reader to this
+ *  1. **Only an owner or admin can change roles.** `requireCapability('manageUsers')`
+ *     gates both endpoints, and `App.tsx` will not even route anyone else to this
  *     screen. Disabling a button is a courtesy; the 403 is the rule.
- *  2. **The last owner cannot demote themselves.** The server counts owners
+ *  2. **Nobody can grant a role at or above their own.** `canGrantRole` (`@lc/core`)
+ *     caps an admin at strictly-beneath-admin, so an admin can hand out anything
+ *     up to moderator but never admin or owner — only an owner can grant either.
+ *  3. **The last owner cannot demote themselves.** The server counts owners
  *     inside the request and refuses. This page also greys the buttons, because a
  *     control that exists and always fails is worse than one that is visibly
  *     unavailable — but the count it greys them from is the list it last loaded,
@@ -31,12 +34,23 @@ import { api, type Me, type Person } from '../api.js';
  * see nothing.
  */
 
+/**
+ * The 2026-08-16 ladder, cumulative low to high: guest < member < contributor
+ * < moderator < admin < owner. `manager` → `moderator` and `reader` →
+ * `member` (migration 0300); every blurb below states what a role adds ON TOP
+ * of the one before it, matching CAPABILITY_MATRIX in `@lc/core`.
+ */
 const ROLE_BLURB: Record<Role, string> = {
-  owner: 'Everything a manager can do, plus deciding who else gets in.',
-  manager:
-    'Add and edit books, scan, export, run research. Cannot change anyone’s role.',
-  reader: 'Browse the shelf, track their own reading, and leave reviews. Changes nothing else.',
-  pending: 'Signed in, and sees a holding screen until an owner lets them in.',
+  owner: 'Everything an admin can do, plus granting the admin role itself.',
+  admin:
+    'Everything a moderator can do, plus approving people and changing roles — except granting admin or owner; only an owner can do that.',
+  moderator:
+    'Add and edit books, curate the wishlist, scan a barcode or a photo, run research, review its findings. Cannot change anyone’s role.',
+  contributor:
+    'Add and edit books, curate the wishlist, scan a barcode (free). Cannot photograph a shelf/cover or run research — those cost money.',
+  member: 'Ask for a book ("want this"), track their own reading, and leave reviews. Cannot edit the catalog.',
+  guest: 'Browse the shelf. Nothing else.',
+  pending: 'Signed in, and sees a holding screen until an owner or admin lets them in.',
 };
 
 /** What the button says. "Revoke" reads as an action; "Make pending" reads as a typo. */
@@ -93,8 +107,8 @@ export function PeoplePage({ me, onSelfChanged }: { me: Me; onSelfChanged: () =>
     <main>
       <h2>People</h2>
       <p className="muted">
-        Anyone with a Google account can sign in. Only the people listed here as owner or reader
-        can see the collection.
+        Anyone with a Google account can sign in. Everyone listed here as anything other than
+        pending can see the collection.
       </p>
 
       {pending.length > 0 && (
@@ -128,7 +142,7 @@ export function PeoplePage({ me, onSelfChanged }: { me: Me; onSelfChanged: () =>
                   </span>
                   {/* Entry point only, never a control: estate-wide grants live
                       solely on heygabi.ai/admin, which is its own gate. This
-                      page is already owner-only (App.tsx routes it behind
+                      page is already owner/admin-only (App.tsx routes it behind
                       manageUsers), so everyone who can see this can use it. */}
                   <a
                     className="muted small"
@@ -147,8 +161,15 @@ export function PeoplePage({ me, onSelfChanged }: { me: Me; onSelfChanged: () =>
                 <div className="row-tight">
                   {/* Derived from ROLES rather than listed again. The sibling
                       project shipped a hardcoded copy of this list and a whole
-                      role became assignable nowhere. */}
-                  {ROLES.filter((r) => r !== p.role).map((role) => (
+                      role became assignable nowhere.
+
+                      ⚠️ Also filtered through `canGrantRole(me.role, role)` —
+                      the courtesy half of guard #2 above. An admin viewing
+                      this page would otherwise see "Make admin" / "Make owner"
+                      buttons that the server always 403s; a button that exists
+                      and always fails is exactly what the last-owner guard
+                      already says to avoid. */}
+                  {ROLES.filter((r) => r !== p.role && canGrantRole(me.role, r)).map((role) => (
                     <button
                       key={role}
                       className={role === 'pending' ? 'chip' : 'chip'}

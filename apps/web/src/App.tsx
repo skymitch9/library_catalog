@@ -404,21 +404,22 @@ function Screens({
           onDone={back.go}
           backLabel={back.label}
           // The URL wins when it names a tab. Failing that: someone who may edit
-          // the catalog but has no `scan` capability would otherwise land on a
-          // camera they are not allowed to open. Same one button, same one
+          // the catalog but has no `scanBarcode` capability would otherwise land
+          // on a camera they are not allowed to open. Same one button, same one
           // screen — it just opens on the tab that works.
-          initialMode={route.mode ?? (me.capabilities.includes('scan') ? 'scan' : 'type')}
+          initialMode={route.mode ?? (me.capabilities.includes('scanBarcode') ? 'scan' : 'type')}
           initialJobId={route.job}
-          // A shelf photograph is the only thing in the app that spends money,
-          // so it is gated on the spend capability rather than on `scan`.
-          canSpend={me.capabilities.includes('runResearch')}
+          // A shelf/cover photograph is the thing in the app that spends money,
+          // so it is gated on `scanPhoto` — split from `scanBarcode` 2026-08-16
+          // specifically because a barcode is free and a photo is not.
+          canSpend={me.capabilities.includes('scanPhoto')}
         />
       );
     }
 
     case 'scans': {
       if (!me.capabilities.includes('editCatalog')) return <NotFound />;
-      return <ScanJobsPage canSpend={me.capabilities.includes('runResearch')} />;
+      return <ScanJobsPage canSpend={me.capabilities.includes('scanPhoto')} />;
     }
     // Gated the same way their nav entries are, and for the reason `/add`
     // carries: a screen with an address is a screen anybody can type. Answering

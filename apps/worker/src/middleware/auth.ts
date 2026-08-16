@@ -1,4 +1,4 @@
-import type { MiddlewareHandler } from 'hono';
+import type { Context, MiddlewareHandler } from 'hono';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { can, type Capability, type Role } from '@lc/core';
 import {
@@ -251,6 +251,31 @@ export function requireAuth(): MiddlewareHandler<AppBindings> {
 }
 
 /**
+ * The one 403 shape a capability refusal takes, whether it is decided by the
+ * declarative `requireCapability` middleware below (known from the route
+ * alone) or inline, inside a handler that cannot know which capability
+ * governs a write until it has parsed the body or read the row — the
+ * wishlist split in `routes/catalog.ts` is the reason this needed pulling out
+ * of `requireCapability`: `POST/PATCH/DELETE /copies` decide between
+ * `suggestWishlist`/`manageWishlist` and `editCatalog` from the copy's own
+ * `status`, which only exists after that point.
+ */
+export function capabilityDenied(c: Context<AppBindings>, capability: Capability, role: Role) {
+  return c.json(
+    {
+      error: 'forbidden',
+      capability,
+      role,
+      detail:
+        role === 'pending'
+          ? 'Your account is awaiting approval by an owner.'
+          : 'Your role does not permit this action.',
+    },
+    403,
+  );
+}
+
+/**
  * Gate a route on a capability rather than a role, so adding a role later does
  * not mean auditing every route.
  */
@@ -258,18 +283,7 @@ export function requireCapability(capability: Capability): MiddlewareHandler<App
   return async (c, next) => {
     const user = c.get('user');
     if (!can(user.role, capability)) {
-      return c.json(
-        {
-          error: 'forbidden',
-          capability,
-          role: user.role,
-          detail:
-            user.role === 'pending'
-              ? 'Your account is awaiting approval by an owner.'
-              : 'Your role does not permit this action.',
-        },
-        403,
-      );
+      return capabilityDenied(c, capability, user.role);
     }
     await next();
   };

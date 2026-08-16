@@ -79,15 +79,24 @@ import { parseVisibility, type Catalog } from '../generated/visibility.js';
 
 /**
  * The per-surface posture declaration (owner decisions #1 and #2): the library
- * is NOT public, and one estate approval auto-grants its designed guest role
- * `reader` (read + own read-state + rate — §5.4). In shadow the grant is
- * NEVER performed and surfaces only as `"would_auto_grant":"reader"`; in
- * enforce it is the `autoGrant` directive the middleware writes.
+ * is NOT public, and one estate approval auto-grants its designed default role
+ * `member` (read + own read-state + rate + suggestWishlist — §5.4). In shadow
+ * the grant is NEVER performed and surfaces only as
+ * `"would_auto_grant":"member"`; in enforce it is the `autoGrant` directive
+ * the middleware writes.
+ *
+ * ⚠️ Was `'reader'` until the 2026-08-16 ladder redesign renamed the library's
+ * own bottom active rung to `member` (`packages/core/src/constants.ts`,
+ * migration 0300 — `reader` -> `member` everywhere, including every stored
+ * row). `defaultRole` is a plain string here (`declareAuthPosture`'s
+ * `EstateAuthConfig`, generated/config.ts) with no shared type to catch the
+ * drift, so this rename had to be made by hand rather than by the compiler —
+ * noted so the next rename remembers to look here too.
  */
 export const LIBRARY_POSTURE = declareAuthPosture({
   public: false,
   app: 'library',
-  defaultRole: 'reader',
+  defaultRole: 'member',
 });
 
 export type EstateMode = 'off' | 'shadow' | 'enforce';
@@ -168,7 +177,7 @@ export interface GateOutcome {
    * enforce's `denied` log field.
    */
   wouldDeny: boolean;
-  /** `'reader'` when the verdict is `default_grant`. In shadow: logged only. */
+  /** `'member'` when the verdict is `default_grant`. In shadow: logged only. */
   wouldAutoGrant: string | null;
   /**
    * Fresh /seen answer for the caller to persist onto the cache columns —

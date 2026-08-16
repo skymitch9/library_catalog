@@ -116,7 +116,7 @@ async function request<T>(path: string, init: RequestInit = {}, retried = false)
 export interface Me {
   email: string;
   displayName: string | null;
-  role: 'owner' | 'reader' | 'pending';
+  role: Role;
   capabilities: string[];
   reviewName: string | null;
   /**
@@ -597,7 +597,7 @@ export interface Person {
   displayName: string | null;
   reviewName: string | null;
   photoUrl: string | null;
-  role: 'owner' | 'reader' | 'pending';
+  role: Role;
   firstSeenAt: string;
   approvedAt: string | null;
 }

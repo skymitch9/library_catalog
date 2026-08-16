@@ -5,15 +5,19 @@
  *
  * ## Federation, not centralization
  *
- * ⚠️ Roles are THIS app's. The endpoint exposes the vocabulary verbatim
- * (`owner | manager | reader | pending` — `reader` deliberately folds rating
- * into reading, §1.2) and validates writes against it; nothing here lets the
- * estate redefine what a library role means or grant one the library would
- * not. The gate is the library's own `manageUsers` capability — owner-only —
- * evaluated by the same `requireAuth` + `requireCapability` chain as the
- * in-app People page, on the caller's own Firebase bearer. The admin page
- * holds no credential of its own: if the signed-in person could not change
- * roles here, they cannot change them from there either.
+ * ⚠️ Roles are THIS app's. The endpoint exposes the vocabulary verbatim —
+ * `owner | admin | moderator | contributor | member | guest | pending`
+ * (2026-08-16 ladder redesign; `member` deliberately folds rating into
+ * reading, §1.2, the same way `reader` used to) — and validates writes
+ * against it; nothing here lets the estate redefine what a library role means
+ * or grant one the library would not. The gate is the library's own
+ * `manageUsers` capability — owner or admin, no longer owner-only — evaluated
+ * by the same `requireAuth` + `requireCapability` chain as the in-app People
+ * page, on the caller's own Firebase bearer, PLUS `canGrantRole`'s
+ * no-self-escalation check below (an admin caller cannot grant `admin` or
+ * `owner` through this surface either). The admin page holds no credential of
+ * its own: if the signed-in person could not change roles here, they cannot
+ * change them from there either.
  *
  * ## Why a second mount beside /api/users
  *
@@ -30,7 +34,7 @@
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { ROLES, updateRoleSchema } from '@lc/core';
+import { ROLES, canGrantRole, updateRoleSchema } from '@lc/core';
 import { countOwners, listUsers, setUserRole } from '@lc/db';
 import type { AppBindings } from '../env.js';
 import { pushIndexSnapshot } from '../lib/index-push.js';
@@ -96,6 +100,18 @@ export const adminRoutes = new Hono<AppBindings>()
     const parsed = updateRoleSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
       return c.json({ error: 'bad_request', detail: parsed.error.issues }, 400);
+    }
+
+    // The no-self-escalation guard — see users.ts's PATCH /users/:id/role,
+    // whose contract this mirrors exactly.
+    if (!canGrantRole(actor.role, parsed.data.role)) {
+      return c.json(
+        {
+          error: 'bad_request',
+          detail: `your role (${actor.role}) may not grant '${parsed.data.role}'`,
+        },
+        400,
+      );
     }
 
     // Don't let the last owner demote themselves and lock everyone out.

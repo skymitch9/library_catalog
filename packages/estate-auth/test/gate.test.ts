@@ -38,7 +38,7 @@ function subject(overrides: Partial<GateSubject> = {}): GateSubject {
     email: 'skylar@example.com',
     firebaseUid: 'uid-1',
     displayName: 'Skylar',
-    role: 'reader',
+    role: 'member',
     approvedAt: '2026-08-01T00:00:00.000Z',
     estateStatus: null,
     estateCheckedAt: null,
@@ -170,7 +170,7 @@ test('household member: estate approved + active local role → proceed, no woul
   );
 });
 
-test('estate approved + local pending never decided → would auto-grant reader, no directive in shadow', async () => {
+test('estate approved + local pending never decided → would auto-grant member, no directive in shadow', async () => {
   const { impl } = seenFetch('approved');
   const out = await estateGateCheck(
     ENV,
@@ -178,11 +178,11 @@ test('estate approved + local pending never decided → would auto-grant reader,
     { fetchImpl: impl, nowMs: NOW },
   );
   assert.equal(out.verdict, 'default_grant');
-  assert.equal(out.wouldAutoGrant, 'reader'); // §5.4, from the posture — visible, inert
+  assert.equal(out.wouldAutoGrant, 'member'); // §5.4, from the posture — visible, inert
   assert.equal(out.autoGrant, null); // ⚠️ shadow NEVER hands the caller a grant
   assert.equal(out.wouldDeny, false); // a grant is not a denial
   const line = JSON.parse(out.logLine ?? 'null');
-  assert.equal(line.would_auto_grant, 'reader');
+  assert.equal(line.would_auto_grant, 'member');
   assert.equal(line.would_deny, false);
   // The outcome offers the caller ONLY a cache refresh — no role, no grant.
   assert.deepEqual(Object.keys(out.refresh ?? {}).sort(), ['checkedAt', 'status', 'visibility']);
@@ -216,7 +216,7 @@ test('estate revoked + local owner → would-deny (revocation overrules everythi
 
 test('estate pending + active local role → proceed (local wins, §3.1 seed-gap row)', async () => {
   const { impl } = seenFetch('pending');
-  const out = await estateGateCheck(ENV, subject({ role: 'reader' }), {
+  const out = await estateGateCheck(ENV, subject({ role: 'member' }), {
     fetchImpl: impl,
     nowMs: NOW,
   });
@@ -311,17 +311,17 @@ test('the shadow log line is one valid JSON object with the greppable fields', a
   assert.equal(line.app, 'library');
   assert.equal(line.mode, 'shadow');
   assert.equal(line.email, 'skylar@example.com');
-  assert.equal(line.local_role, 'reader');
+  assert.equal(line.local_role, 'member');
   assert.equal(line.estate, 'approved');
   assert.equal(line.verdict, 'proceed');
   assert.equal(typeof line.would_deny, 'boolean');
   assert.ok(!out.logLine!.includes('\n'), 'must be a single line for tail-grepping');
 });
 
-test('the posture declaration is the §5.4 config: library, not public, reader', () => {
+test('the posture declaration is the §5.4 config: library, not public, member', () => {
   assert.equal(LIBRARY_POSTURE.app, 'library');
   assert.equal(LIBRARY_POSTURE.public, false);
-  assert.equal(LIBRARY_POSTURE.defaultRole, 'reader');
+  assert.equal(LIBRARY_POSTURE.defaultRole, 'member');
   assert.ok(Object.isFrozen(LIBRARY_POSTURE));
 });
 
@@ -347,7 +347,7 @@ test('enforce / revoked + local owner → deny 403 estate_revoked (row 1: anythi
 
 test('enforce / approved + active local role → proceed, no directives (row 2)', async () => {
   const { impl } = seenFetch('approved');
-  const out = await estateGateCheck(ENFORCE, subject({ role: 'reader' }), {
+  const out = await estateGateCheck(ENFORCE, subject({ role: 'member' }), {
     fetchImpl: impl,
     nowMs: NOW,
   });
@@ -357,7 +357,7 @@ test('enforce / approved + active local role → proceed, no directives (row 2)'
   assert.equal(JSON.parse(out.logLine ?? 'null').denied, false);
 });
 
-test('enforce / approved + never-locally-decided pending → autoGrant reader (row 3, §5.4)', async () => {
+test('enforce / approved + never-locally-decided pending → autoGrant member (row 3, §5.4)', async () => {
   const { impl } = seenFetch('approved');
   const out = await estateGateCheck(
     ENFORCE,
@@ -365,11 +365,11 @@ test('enforce / approved + never-locally-decided pending → autoGrant reader (r
     { fetchImpl: impl, nowMs: NOW },
   );
   assert.equal(out.verdict, 'default_grant');
-  assert.deepEqual(out.autoGrant, { role: 'reader' });
+  assert.deepEqual(out.autoGrant, { role: 'member' });
   assert.equal(out.deny, null);
   assert.equal(out.wouldDeny, false);
   const line = JSON.parse(out.logLine ?? 'null');
-  assert.equal(line.auto_grant, 'reader');
+  assert.equal(line.auto_grant, 'member');
   assert.equal(line.denied, false);
 });
 
@@ -387,7 +387,7 @@ test('enforce / approved + locally DEMOTED pending → request_screen, NO grant 
 
 test('enforce / estate pending + active local → proceed (row 5: local wins, seed gap)', async () => {
   const { impl } = seenFetch('pending');
-  const out = await estateGateCheck(ENFORCE, subject({ role: 'manager' }), {
+  const out = await estateGateCheck(ENFORCE, subject({ role: 'moderator' }), {
     fetchImpl: impl,
     nowMs: NOW,
   });
@@ -412,7 +412,7 @@ test('enforce / estate down + stale approved cache + active local → proceed on
   const { impl } = seenFetch('network-error');
   const out = await estateGateCheck(
     ENFORCE,
-    subject({ estateStatus: 'approved', estateCheckedAt: EXPIRED, role: 'reader' }),
+    subject({ estateStatus: 'approved', estateCheckedAt: EXPIRED, role: 'member' }),
     { fetchImpl: impl, nowMs: NOW },
   );
   assert.equal(out.verdict, 'proceed');
@@ -495,7 +495,7 @@ test('the enforce log line carries the acting vocabulary, single-line JSON', asy
 
 test('a /seen answer with visibility → refresh carries the canonical array, and it is logged', async () => {
   const { impl } = seenFetch('approved', ['library', 'audiobook']); // wrong order on purpose
-  const out = await estateGateCheck(ENFORCE, subject({ role: 'reader' }), {
+  const out = await estateGateCheck(ENFORCE, subject({ role: 'member' }), {
     fetchImpl: impl,
     nowMs: NOW,
   });
@@ -506,7 +506,7 @@ test('a /seen answer with visibility → refresh carries the canonical array, an
 
 test('garbage visibility in the answer dies into null; the status half still counts', async () => {
   const { impl } = seenFetch('approved', ['library', 'narnia']);
-  const out = await estateGateCheck(ENV, subject({ role: 'reader' }), {
+  const out = await estateGateCheck(ENV, subject({ role: 'member' }), {
     fetchImpl: impl,
     nowMs: NOW,
   });

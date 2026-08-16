@@ -119,6 +119,10 @@ export function SeriesDetailPage({
   const [declaring, setDeclaring] = useState(false);
 
   const canEdit = me.capabilities.includes('editCatalog');
+  // `suggestWishlist` (2026-08-16 split) — lets a `member` put a missing rung
+  // on the wishlist (`MissingRung`'s "Want it") without needing `editCatalog`
+  // for "Never buying it" / manual-volume actions, which stay canEdit-only.
+  const canSuggest = me.capabilities.includes('suggestWishlist');
   // Same gate as `POST /works/:id/run` — a scan spends money, same as any other
   // research run, and `runResearch` is the capability that already means that.
   const canScan = me.capabilities.includes('runResearch');
@@ -268,6 +272,7 @@ export function SeriesDetailPage({
                   gap={gap}
                   series={name}
                   canEdit={canEdit}
+                  canSuggest={canSuggest}
                   onChanged={load}
                   onOpen={onOpen}
                 />
@@ -937,12 +942,15 @@ function MissingRung({
   gap,
   series,
   canEdit,
+  canSuggest,
   onChanged,
   onOpen,
 }: {
   gap: SeriesGap;
   series: string;
   canEdit: boolean;
+  /** `suggestWishlist` — gates "Want it" alone; every other action here stays `canEdit`. */
+  canSuggest: boolean;
   onChanged: () => void;
   onOpen: (workId: number) => void;
 }) {
@@ -1048,7 +1056,7 @@ function MissingRung({
       {/* ⚠️ No "Want it" on a skipped rung, and no "Want it" on one we already
           own on audio without the reason being visible first — the button is
           the one action that costs money. A skipped rung offers only the undo. */}
-      {canEdit && !gap.skipped && !gap.wanted && gap.title && gap.authors && (
+      {canSuggest && !gap.skipped && !gap.wanted && gap.title && gap.authors && (
         <button className="chip" onClick={() => void wishFor()} disabled={busy}>
           {busy ? '…' : 'Want it'}
         </button>

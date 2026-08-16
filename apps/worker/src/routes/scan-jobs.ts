@@ -764,7 +764,7 @@ export const scanJobRoutes = new Hono<AppBindings>()
    * fast and free, and the person scanning wants the title back before they put
    * the book down.
    */
-  .post('/barcode', requireCapability('scan'), async (c) => {
+  .post('/barcode', requireCapability('scanBarcode'), async (c) => {
     const parsed = barcodeSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json(badRequest(parsed.error.issues), 400);
 
@@ -845,12 +845,16 @@ export const scanJobRoutes = new Hono<AppBindings>()
    * straight into the vision call, and is gone when this handler returns.
    * There is no R2 binding in `wrangler.toml` and there must not be one.
    *
-   * Gated on `runResearch` rather than `scan`, because this is the spend
-   * capability and a barcode is free. Both are owner-only today; the gate says
-   * which fact it depends on, so widening `scan` later does not quietly widen
-   * "may spend money" with it.
+   * Gated on `scanPhoto`, moderator+, because this is the spend capability and
+   * a barcode is free. ⚠️ Until 2026-08-16 this was gated on `runResearch`
+   * instead — the closest existing "may spend money" capability at the time,
+   * before `scan` had a photo/barcode split of its own to name the difference
+   * with. Same role set today (`scanPhoto` and `runResearch` are both
+   * moderator+), so repointing here changed no one's access; it just makes the
+   * gate say the thing it actually depends on, so widening `scanBarcode` later
+   * does not quietly widen "may spend money" with it.
    */
-  .post('/shelf', requireCapability('runResearch'), (c) => readPhoto(c, 'shelf'))
+  .post('/shelf', requireCapability('scanPhoto'), (c) => readPhoto(c, 'shelf'))
 
   /**
    * ONE book, photographed front-on.
@@ -864,9 +868,10 @@ export const scanJobRoutes = new Hono<AppBindings>()
    * `mode: 'single'` was already legal in migration 0001's CHECK constraint, so
    * this needed no migration — 0001 anticipated it.
    *
-   * The photo is never stored here either.
+   * The photo is never stored here either. Gated on `scanPhoto` — see `/shelf`
+   * above for why.
    */
-  .post('/single', requireCapability('runResearch'), (c) => readPhoto(c, 'cover'))
+  .post('/single', requireCapability('scanPhoto'), (c) => readPhoto(c, 'cover'))
 
 
   /**

@@ -56,13 +56,24 @@ export function Copies({
   copies,
   editions,
   canEdit,
+  canSuggest,
   onChanged,
 }: {
   workId: number;
   copies: CopyView[];
   /** The full rows — the picker's labels need name, kind and ISBN to tell printings apart. */
   editions: EditionView[];
+  /** `editCatalog`/`manageWishlist` — recording a real copy, and every action on an existing one. */
   canEdit: boolean;
+  /**
+   * `suggestWishlist` (2026-08-16 split) — "Want this" alone, so a `member`
+   * who cannot record a copy or touch an existing one can still ask for a
+   * book. `POST /copies` on the server permits exactly this: `editCatalog`'s
+   * role set is a subset of `suggestWishlist`'s, so `canEdit` members always
+   * satisfy this too — the prop exists to WIDEN who sees the button, never to
+   * narrow it further than `canEdit` already does.
+   */
+  canSuggest: boolean;
   onChanged: () => void;
 }) {
   const [adding, setAdding] = useState<null | 'owned' | 'wanted'>(null);
@@ -237,20 +248,26 @@ export function Copies({
 
       {error && <p className="notice notice--bad small">{error}</p>}
 
-      {canEdit && (
+      {(canEdit || canSuggest) && (
         <>
           <div className="row-tight">
-            <button onClick={() => setAdding(adding === 'owned' ? null : 'owned')}>
-              {adding === 'owned' ? 'Cancel' : 'Record a copy'}
-            </button>
+            {canEdit && (
+              <button onClick={() => setAdding(adding === 'owned' ? null : 'owned')}>
+                {adding === 'owned' ? 'Cancel' : 'Record a copy'}
+              </button>
+            )}
             {/* Offered even when a copy is already recorded: wanting a second
-                form of a book you own is the normal case here, not an error. */}
-            <button
-              className={wanted.length ? '' : 'primary'}
-              onClick={() => setAdding(adding === 'wanted' ? null : 'wanted')}
-            >
-              {adding === 'wanted' ? 'Cancel' : 'Want this'}
-            </button>
+                form of a book you own is the normal case here, not an error.
+                Gated on `canSuggest` (`suggestWishlist`), not `canEdit` — a
+                member who cannot record a copy can still ask for one. */}
+            {canSuggest && (
+              <button
+                className={wanted.length ? '' : 'primary'}
+                onClick={() => setAdding(adding === 'wanted' ? null : 'wanted')}
+              >
+                {adding === 'wanted' ? 'Cancel' : 'Want this'}
+              </button>
+            )}
           </div>
 
           {adding && (

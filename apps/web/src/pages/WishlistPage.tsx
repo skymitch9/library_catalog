@@ -49,7 +49,12 @@ export function WishlistPage({
    */
   const [note, setNote] = useState<{ text: string; tone: 'good' | 'bad' } | null>(null);
 
-  const canEdit = me.capabilities.includes('editCatalog');
+  // `manageWishlist`, not `editCatalog` — these buttons (arrived/pre-ordered/
+  // off-the-list) PATCH or DELETE an existing wishlist copy, which is exactly
+  // what the 2026-08-16 wishlist split names `manageWishlist` (contributor+).
+  // Asking for a NEW book ("Want this", elsewhere) is the looser
+  // `suggestWishlist` (member+) and does not gate anything on this page.
+  const canEdit = me.capabilities.includes('manageWishlist');
 
   const load = useCallback(() => {
     setError(null);

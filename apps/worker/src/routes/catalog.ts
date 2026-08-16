@@ -5,6 +5,7 @@ import {
   UNKNOWN_AUTHOR,
   WISHLIST_STATUSES,
   blankSiblingOf,
+  can,
   workKeyFor,
   createCopySchema,
   createEditionSchema,
@@ -29,6 +30,7 @@ import {
   findEditionByIsbn13,
   findWorkByKey,
   getAudiobookHolding,
+  getCopy,
   getReadState,
   getWork,
   isCollectionSort,
@@ -51,7 +53,12 @@ import {
 import { universeFor, universeIndex } from '@lc/universes';
 import type { AppBindings } from '../env.js';
 import { universeFacet, universeIdsFor } from '../lib/universes.js';
-import { requireCapability } from '../middleware/auth.js';
+import { capabilityDenied, requireCapability } from '../middleware/auth.js';
+
+/** `copy.status` narrowed to "this is a wishlist row, not a held one." */
+function isWishlistStatus(status: string): boolean {
+  return (WISHLIST_STATUSES as readonly string[]).includes(status);
+}
 
 /**
  * Read the query string into a `CollectionQuery`.
@@ -351,7 +358,22 @@ export const catalogRoutes = new Hono<AppBindings>()
     });
   })
 
-  .post('/works', requireCapability('editCatalog'), async (c) => {
+  /**
+   * ⚠️ Gated on `suggestWishlist`, not `editCatalog` — deliberately the
+   * loosest of the two. This route only ever creates a bare `work` row (no
+   * edition, no copy); the wishlist "ask for a thing" flow (AddWork.tsx)
+   * calls it first and then `POST /copies` with `status: 'wanted'` to say
+   * *why*. A member suggesting a book not yet in the catalog needs to be able
+   * to create that row, so the floor here has to admit them.
+   *
+   * This does not widen anyone's real access: `suggestWishlist`'s role set is
+   * a superset of `editCatalog`'s (member+ ⊇ contributor+, the ladder is
+   * cumulative), so every caller who could reach this route yesterday still
+   * can. `POST /copies` right below is where the split actually bites —
+   * whether the copy that follows is a wish or a catalog entry decides which
+   * capability it checks.
+   */
+  .post('/works', requireCapability('suggestWishlist'), async (c) => {
     const parsed = createWorkSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues }, 400);
     // Who added it — the `__row__` creation row in change_log. 'human' because
@@ -749,10 +771,28 @@ export const catalogRoutes = new Hono<AppBindings>()
     return ok ? c.json({ ok: true }) : c.json({ error: 'not_found' }, 404);
   })
 
-  .post('/copies', requireCapability('editCatalog'), async (c) => {
+  /**
+   * ⚠️ Wishlist split #1, the create side. `POST /copies` is how BOTH a
+   * catalog acquisition ("I bought this, add it to the shelf") and a wishlist
+   * ask ("I want this") land — the same route, distinguished only by
+   * `status`. `createCopySchema` defaults `status` to `'owned'`, so an absent
+   * status is always the catalog case.
+   *
+   * Gated on `suggestWishlist` as the floor (member+, so a guest is refused
+   * before the body is even read) and upgraded to `editCatalog` inline once
+   * the body says this is not a wishlist ask — `editCatalog`'s role set is a
+   * SUBSET of `suggestWishlist`'s (contributor+ ⊆ member+), so this can only
+   * ever narrow access for a non-wishlist create, never widen it.
+   */
+  .post('/copies', requireCapability('suggestWishlist'), async (c) => {
     const parsed = createCopySchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues }, 400);
-    const actor: Actor = { userId: c.get('user').id, how: 'human' };
+
+    const user = c.get('user');
+    const required = isWishlistStatus(parsed.data.status) ? 'suggestWishlist' : 'editCatalog';
+    if (!can(user.role, required)) return capabilityDenied(c, required, user.role);
+
+    const actor: Actor = { userId: user.id, how: 'human' };
     // `CopyLinkError`: an `editionId` naming another book's printing is a false
     // statement refused in `@lc/db`, not stored — the accessories rule, one
     // table over. Mapped here exactly as `AccessoryError` is in its routes.
@@ -773,21 +813,37 @@ export const catalogRoutes = new Hono<AppBindings>()
    * `@lc/db` carries the reasoning: the row holds when it was wanted, what was
    * going to be paid and where from, and a promotion must not throw those away.
    * `{ "status": "owned" }` is the whole request the wishlist sends.
+   *
+   * ⚠️ Wishlist split #1, the curate side. Editing, prioritising or promoting
+   * an EXISTING copy — wishlist or not — is `manageWishlist` / `editCatalog`,
+   * never the looser `suggestWishlist`: asking is member+, but touching a row
+   * that already exists (even your own ask) is contributor+. The two
+   * capabilities happen to share the same role set today (contributor+), so
+   * this branch cannot change who is let in — it exists so the capability
+   * NAMED in a 403 (and in `capabilitiesFor` for the UI) is the one that
+   * actually describes the row, and so the two stay correctly wired if they
+   * are ever tuned apart.
    */
-  .patch('/copies/:id', requireCapability('editCatalog'), async (c) => {
+  .patch('/copies/:id', async (c) => {
     const id = Number(c.req.param('id'));
     if (!Number.isInteger(id)) return c.json({ error: 'bad_request' }, 400);
 
     const parsed = updateCopySchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues }, 400);
 
+    const existing = await getCopy(c.env.DB, id);
+    if (!existing) return c.json({ error: 'not_found' }, 404);
+
+    const user = c.get('user');
+    const nextStatus = parsed.data.status ?? existing.status;
+    const touchesWishlist = isWishlistStatus(existing.status) || isWishlistStatus(nextStatus);
+    const required = touchesWishlist ? 'manageWishlist' : 'editCatalog';
+    if (!can(user.role, required)) return capabilityDenied(c, required, user.role);
+
     // See POST /copies: a cross-work `editionId` is refused, never stored.
     let copy;
     try {
-      copy = await updateCopy(c.env.DB, id, parsed.data, {
-        userId: c.get('user').id,
-        how: 'human',
-      });
+      copy = await updateCopy(c.env.DB, id, parsed.data, { userId: user.id, how: 'human' });
     } catch (err) {
       if (err instanceof CopyLinkError) {
         return c.json({ error: 'bad_request', detail: err.message }, err.status);
@@ -798,10 +854,19 @@ export const catalogRoutes = new Hono<AppBindings>()
     return c.json({ copy });
   })
 
-  .delete('/copies/:id', requireCapability('editCatalog'), async (c) => {
+  /** Wishlist split #1, the curate side again — see PATCH /copies/:id above. */
+  .delete('/copies/:id', async (c) => {
     const id = Number(c.req.param('id'));
     if (!Number.isInteger(id)) return c.json({ error: 'bad_request' }, 400);
-    const ok = await deleteCopy(c.env.DB, id, { userId: c.get('user').id, how: 'human' });
+
+    const existing = await getCopy(c.env.DB, id);
+    if (!existing) return c.json({ error: 'not_found' }, 404);
+
+    const user = c.get('user');
+    const required = isWishlistStatus(existing.status) ? 'manageWishlist' : 'editCatalog';
+    if (!can(user.role, required)) return capabilityDenied(c, required, user.role);
+
+    const ok = await deleteCopy(c.env.DB, id, { userId: user.id, how: 'human' });
     return ok ? c.json({ ok: true }) : c.json({ error: 'not_found' }, 404);
   })
 
