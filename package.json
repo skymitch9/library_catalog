@@ -25,7 +25,7 @@
     "pretypecheck": "node scripts/sync-universes.mjs && node scripts/sync-estate-auth.mjs && node scripts/sync-estate-theme.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "pretest": "node scripts/sync-universes.mjs && node scripts/sync-estate-auth.mjs && node scripts/sync-estate-theme.mjs",
-    "test": "tsx --test packages/core/test/*.test.ts packages/isbn/test/*.test.ts packages/estate-auth/test/*.test.ts apps/worker/src/lib/*.test.ts",
+    "test": "tsx --test packages/core/test/*.test.ts packages/isbn/test/*.test.ts packages/estate-auth/test/*.test.ts apps/worker/src/lib/*.test.ts apps/worker/src/routes/*.test.ts",
     "universes:sync": "node scripts/sync-universes.mjs",
     "estate-auth:sync": "node scripts/sync-estate-auth.mjs",
     "estate-theme:sync": "node scripts/sync-estate-theme.mjs",
