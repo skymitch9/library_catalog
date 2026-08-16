@@ -13,6 +13,43 @@
 > This is the living work log. Stable facts live in `docs/access/` and
 > `docs/info/`; current state lives here. Cross-link, don't duplicate.
 
+## ✅ Two Sanderson standalones stuck in the details queue (2026-08-16) — FIXED, data only
+
+Owner report: "check on the missing books in the library, theyre sanderson
+books we know have no series." Investigated as a possible universe/series
+conflation bug — it was not that. `apps/worker/src/routes/universes.ts`
+already refuses to compute completeness for a universe by design ("a universe
+has no volume numbering to be complete against"), and `work_relation` (the
+`same_universe` table) is empty, so nothing there was the cause.
+
+**Root cause:** `packages/core/src/gaps.ts`'s details queue asks "series?" for
+any work with `work.series IS NULL` unless a `gap_verdict` row says the
+question was already answered (migration 0007). `scripts/series-overrides.json`
+already recorded 8 Sanderson works as researched standalones on 2026-08-10,
+and a live research pass on 2026-08-11 wrote `gap_verdict` rows (verdict
+`none`/`unknown`, `run_id` set) for 7 of them — but missed two:
+**The Emperor's Soul** (work 30) and **Shadows for Silence in the Forests of
+Hell** (work 25). Both stayed open in the details queue, asking a question the
+catalog already had a sourced answer to. Confirmed by query: these were the
+*only* two works catalog-wide with `series IS NULL` and no `gap_verdict` row
+for `field='series'`.
+
+**Fix:** two `INSERT INTO gap_verdict` rows (verdict `'none'`, sourced from
+`series-overrides.json`'s existing citations), run directly via
+`wrangler d1 execute --remote` against production. `work.series` and
+`work.universe` were **not touched** — both books correctly keep
+`series IS NULL` (Emperor's Soul has no universe either; Shadows for Silence
+is `universe='The Cosmere'`, which is right — Cosmere is a universe, not a
+series, per `docs/info/UNIVERSES.md`). Re-ran the "no verdict" query after:
+zero rows. `npm test` still 501/501 (no code changed, no deploy needed).
+
+⚠️ **Left for the owner, not fixed:** `gap_verdict` for **Dragonsteel Prime**
+(work 3) holds verdict `'unknown'` (from the 2026-08-11 research pass, sourced
+to coppermind.net), while `series-overrides.json` records it as `'standalone'`
+(`'none'`) with a different source (Wikipedia bibliography + dragonsteelbooks.com
+"Sanderson Curiosity" filter). The two answers disagree and both are
+plausible; picking one is a judgement call about source quality, not a bug fix.
+
 ## ✅ Index-push staleness — data-aware backstop (2026-08-16) — DEPLOYED
 
 Closes the class behind "Boba Fett still Part of Disney": a backfill script
