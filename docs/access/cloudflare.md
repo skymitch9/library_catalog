@@ -28,7 +28,7 @@ Everything else in this file is optional, or is a runbook for later.
 | Migrations applied | `0001_init.sql` (39 statements), `0002_cwa_ebook_formats.sql` (12) |
 | Static assets | 5 files, 302 KiB, served by the Worker's `[assets]` binding |
 | R2 bucket | **none.** For scan photos that is permanent; for covers it is ⚠️ **pending owner action** — see §7 and §7.1 |
-| Cron triggers | **none yet** — phase 5 adds one |
+| Cron triggers | `7 * * * *` — the hourly missing-details sweep, **declared 2026-08-16 and not yet deployed**. ⚠️ *A cron is not working until something it writes has rows*; the proof for this one is a `research_run` row with `triggered_by` NULL. Design: `docs/info/research-and-gaps.md` §10 |
 | Secrets set | **none yet** — see §4 |
 
 Verified by curl immediately after deploying:

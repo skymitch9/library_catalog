@@ -4,7 +4,10 @@
 > Last verified: **2026-08-10** — every count below was read from the **production**
 > database that day through `query()` in `scripts/lib/d1.mjs`. The review, accept,
 > reject and verdict paths were driven in a browser against a local worker holding
-> a copy of those 116 rows. **The paid lookup itself has never run** — see §7.
+> a copy of those 116 rows. §10 (the hourly sweep) was added **2026-08-16**: its
+> logic is verified by tests and its history SQL was exercised against real
+> SQLite, but **the cron itself has never fired** — see §10.5.
+> **The paid lookup itself has never run** — see §7.
 
 Phase 5 is two separate things and this is one of them. The **index**
 (`index.heygabi.ai`, a cross-format view over three catalogues) is a different
@@ -185,12 +188,18 @@ guarantee a run cannot go quiet:
 | the `catch` in `runDetailsResearch` | anything thrown, from anywhere |
 | `closeStaleRuns` on read (15 min) | the invocation being killed outright, when none of our code runs |
 
-**Subrequest arithmetic:** one run is ~7 subrequests against a ceiling of 50, so
-one book per invocation is comfortable. ⚠️ A "research these ten" route **must
-not** share an invocation — ten is ~70, past the cap, and exceeding it
+**Subrequest arithmetic:** the plumbing of one run — read the work, read its
+verdicts, create the run, the Claude call, save the findings, finish the run —
+is ~7 against a ceiling of 50. ⚠️ **Auto-apply is on top of that and is per
+field:** `listFindings` plus `getWork` + `updateWork`'s own read + the UPDATE +
+`markFinding` for each value written, so four fields is 17 more and one book is
+**~12 + 4·fields, up to ~28**. (An earlier version of this line said "~7" flat
+and was written before auto-apply existed; `lib/research-run.ts` has carried the
+corrected figure since.) One book per invocation is still comfortable. ⚠️ A
+"research these ten" route **must not** share an invocation — exceeding the cap
 *terminates* the invocation rather than throwing. The queue page drives the list
 one book at a time from the browser for that reason, and that page *is* the bulk
-mechanism.
+mechanism; §10.3 is what the hourly sweep does with the same arithmetic.
 
 **Cost visibility** is why `input_tokens` and `output_tokens` are columns rather
 than something the browser holds: the queue's running total comes from the run
@@ -307,7 +316,93 @@ Both were found by clicking, and neither would ever have thrown.
 
 ---
 
-## 10. Where things live
+## 10. The hourly sweep — ⚠️ and why this queue needed code the twin did not
+
+Added 2026-08-16 on the owner's ask: *"can we make missing details auto fire the
+look up every hour if there is missing details, obviously skipping ones it cant
+finish?"* One cron (`7 * * * *`), this Worker's first,
+dispatched by `scheduled()` in `apps/worker/src/index.ts` to
+`apps/worker/src/lib/details-sweep.ts`.
+
+### 10.1 ⚠️ This queue does not converge on its own
+
+The board game catalog shipped the same feature the same day in four lines of
+loop, because **its** queue excludes per field and never re-asks unless an input
+changed — an unanswerable row is asked once and leaves for good.
+`listWorksNeedingDetails()` is not that. It is a person's worklist, recomputed
+from the columns on every read, so a gap closes only when a **value** lands in
+the column or a **`gap_verdict`** row is written. Three ordinary outcomes
+produce neither:
+
+| Outcome | Why the gap survives | How common |
+|---|---|---|
+| `identified: false` | no findings at all are returned, so nothing can become a verdict | isbn-ladder.md §4.2 — **roughly half this library** |
+| the volume number | `applyFinding` fills `series_index_sort` only; `series_index_display` quotes the cover, which research cannot read | 22 works on 2026-08-13 |
+| an unusable value | the finding stays `pending` **by design**, so a person is still asked | rare |
+
+A person pressing Run may re-buy any of those; they are choosing to. An hourly
+job doing it is **a bill that never stops**, and this is the money loop the
+feature had to be built around.
+
+### 10.2 What was chosen, and what was refused
+
+**Chosen: the sweep never asks the same book the same question twice.**
+`detailsRunHistory()` (`packages/db/src/research.ts`) returns, per work, the
+fields a **finished** run already carried — `error` runs excluded, because they
+never got an answer — and only while `input_title` still matches the work's
+title, which is the "unless an input changed" escape hatch. `planSweep()` drops
+any book with no unasked gap left. It is a **read**: no catalog state changes,
+so the queue page, `gapSummary` and the manual Run button behave exactly as
+before.
+
+**Refused: writing a `gap_verdict` of `unknown` for every field a run failed to
+fill.** It is the tidier mechanism and it is what the twin's queue does in
+effect. Here it would assert *"looked, and nobody knows"* about the
+volume-number gap — which is not unknown at all. It is answerable by a person
+holding the book, and the fix that made it visible is three days older than this
+sweep. Silencing 22 rows a person can close, from a background job, to save a
+table read is a bad trade. A run that genuinely reaches "nobody knows" still
+writes that verdict through the ordinary path (§3); nothing here changed that.
+
+### 10.3 ⚠️ Two books an hour, and the reason is subrequests, not money
+
+§5's arithmetic is the constraint: one run is **~12 + 4·fields** of the **50**
+an invocation gets, and exceeding that *terminates the invocation* rather than
+throwing — silently, in a scheduled handler. `lib/research-run.ts` already says
+a *"research these ten"* route must not share an invocation; a sweep is that
+route with a clock attached. So `SWEEP_BUDGET` (44) spends against the estimate
+rather than counting books, and a four-gap book (~28) takes the tick to itself
+instead of being fitted in beside another.
+
+| | |
+|---|---|
+| per-hour ceiling | **2 books ≈ 4¢** (`RESEARCH_CENTS_EACH.low`), and only while a backlog exists |
+| time to converge | ~116 works ÷ 2/hour ≈ **2½ days**, then the eligible list is empty and it costs nothing |
+| rotation | never-attempted first, then oldest attempt — so a book that fails every time costs one slot **once**, not every slot for ever |
+
+### 10.4 ⚠️ `scheduled()` returns the promise as well as registering it
+
+`waitUntil` alone would be the §5 bug again: a registered task is cancelled about
+thirty seconds after the handler settles, and these lookups take 20–90s
+(`RESEARCH_TIMEOUT_MS` is 90s *because* they run that long). Returning the
+promise is a scheduled handler's version of awaiting. An unrecognised cron does
+**nothing, loudly** — a cron this code does not know means `wrangler.toml` and
+`DETAILS_SWEEP_CRON` have drifted, and `details-sweep.test.ts` reads the toml to
+catch exactly that.
+
+### 10.5 What has NOT been verified
+
+⚠️ **The trigger is claimed, not verified.** By the sibling project's rule — *a
+cron is not working until something it writes has rows* — the proof here is a
+`research_run` row with **`triggered_by` NULL**, which is precisely what
+distinguishes a sweep's run from a person's. That row cannot exist until this is
+deployed, and it has not been. The 50-subrequest ceiling is also this repo's
+stated assumption (§5) rather than something re-measured against the account's
+plan; the budget carries slack for that reason.
+
+---
+
+## 11. Where things live
 
 | | |
 |---|---|
@@ -317,6 +412,7 @@ Both were found by clicking, and neither would ever have thrown.
 | the Claude call | `packages/research/src/details.ts` |
 | running one pass, applying one finding | `apps/worker/src/lib/research-run.ts` |
 | the routes | `apps/worker/src/routes/research.ts` |
+| the hourly sweep | `apps/worker/src/lib/details-sweep.ts`; the cron in `apps/worker/wrangler.toml`, dispatched in `apps/worker/src/index.ts` |
 | the page | `apps/web/src/pages/DetailsQueuePage.tsx`, at `/queue` |
 | the seed | `scripts/seed-gap-verdicts.mjs` (`npm run seed:verdicts`) |
 | the migration | `migrations/0005_gap_verdict.sql` |
