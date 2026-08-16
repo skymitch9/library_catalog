@@ -241,17 +241,29 @@ export function App() {
           <Link to="/wishlist" className={route.name === 'wishlist' ? 'primary chip' : 'chip'}>
             Wishlist
           </Link>
-          {/* Owner-only, and both genuinely places rather than actions — one is
-              a page that explains two file formats, the other is the guest list.
-              Hidden rather than disabled for a reader: an entry that is visible
-              and refuses is an invitation to wonder what is behind it, and there
-              is nothing behind it for them. The routes are gated in `Screens`
-              too, because hiding a link is not access control. */}
-          {me.capabilities.includes('manageUsers') && (
-            <Link to="/people" className={route.name === 'people' ? 'primary chip' : 'chip'}>
-              People
-            </Link>
-          )}
+          {/* ⚠️ NO "People" CHIP HERE — removed from the nav 2026-08-16 at the
+              owner's request ("remove /people from the nav on library and
+              games; keep the page just hide it from nav"). The route, the
+              page and its capability gate are all UNTOUCHED: /people still
+              resolves, still renders, and is still refused to anyone without
+              `manageUsers` by the guard in `Screens` below. This hides the
+              door, it does not lock it — and hiding was never the lock, which
+              is why that guard stays exactly where it is.
+
+              Reaching it now means typing the URL. That is the point: the
+              page went read-only earlier the same day (roles are granted on
+              heygabi.ai/admin, the one place that owns them), so a permanent
+              nav slot pointed at a screen that can only *show* you things,
+              while the chip's presence implied it was where you go to act.
+
+              ⚠️ Do not "restore the missing link" — its absence is the
+              feature. If it ever comes back, it needs the owner's word.
+
+              Export stays: owner-only, and genuinely a place rather than an
+              action — a page explaining two file formats. Hidden rather than
+              disabled for a reader, because an entry that is visible and
+              refuses invites wondering what is behind it, and there is
+              nothing behind it for them. */}
           {me.capabilities.includes('editCatalog') && (
             <Link to="/export" className={route.name === 'export' ? 'primary chip' : 'chip'}>
               Export
