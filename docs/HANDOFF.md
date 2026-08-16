@@ -14,6 +14,54 @@
 > production contains. **Re-measure before trusting any line here; if you
 > re-measure, update the date.**
 
+## 📌 State at 2026-08-16 ~15:45 PDT (Opus → Fable handoff)
+
+**Deployed today:** `6e3a368f` (estate-search + the hourly details sweep before
+it). Health green, 816 tests, typecheck clean, tree clean.
+
+### Two things live here now that were not this morning
+
+1. **An hourly details sweep**, cron `7 * * * *` — this Worker's FIRST cron
+   trigger. ⚠️ **2 books per tick, not 8**, and the reason is not money: one
+   research run is ~12 + 4·fields of the 50 subrequests an invocation gets, and
+   exceeding that cap TERMINATES the invocation silently. ~4¢/hour, converging
+   in ~2½ days then going quiet.
+   ⚠️ **This queue does NOT converge on its own** (unlike the games one).
+   Roughly half this library answers "not identified", which writes no verdict,
+   and the volume-number gap can never be closed by research at all — so the
+   sweep tracks what it already asked and never re-asks the same question. It
+   deliberately does NOT write `gap_verdict: 'unknown'`, which would silence
+   ~22 rows a person holding the book could answer.
+2. **`<estate-search>`** — an additive "search the whole estate" panel under the
+   top bar. Each app's own collection search is untouched.
+   ⚠️ It was CORS-blocked until `READ_ORIGINS` was set on the index Worker
+   (catalog-platform, deployed `befcce25`).
+
+### ⚠️ A real defect fixed today — and it is the shape to watch for
+
+`export.ts` gated itself with a blanket `.use('*', requireCapability('editCatalog'))`
+and is mounted at the BARE `/api` prefix, so Hono ran that middleware for **every
+sub-app mounted after it** — series, universes, crowdfunding, isbn, enrich,
+research, reviews, scan-jobs. A `member` was refused as `editCatalog` on routes
+declaring `read`, and could mark a book read but not write the review that goes
+with it. It failed CLOSED, so nothing broke loudly, and it refused nobody
+because this library holds 1 admin + 2 owners and no lesser roles — it would
+have bitten the first `member` added.
+
+**Tests went 524 → 816**, including a full route→capability table and a
+regression guard that fails if a blanket `.use('*')` returns to `export.ts`.
+
+### Still open here
+
+- `POST /works/:id/reviews-seen` is gated on `read` — the only write a `guest`
+  may make. Justified in the route's own comment; now pinned by a test so
+  tightening it is a decision, not a drift.
+- Two doc-vs-code drifts in comments only (crowdfunding "owner-only", admin
+  `/index-push` "owner-only") — the real gates are `editCatalog` and
+  `manageUsers`.
+- The second-household catalog is **narrowed to "she wants to sort her books"**
+  — do NOT start with the index join.
+
 ## Where things live
 
 This repo follows the estate's three-doc split. One living doc for state, one
