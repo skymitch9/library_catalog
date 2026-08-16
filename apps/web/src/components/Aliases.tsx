@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { WORK_ALIAS_KINDS, type WorkAliasKind } from '@lc/core';
 import { api, type WorkAlias } from '../api.js';
+import { describeError } from '../lib/errors.js';
 
 /**
  * Other names this book answers to.
@@ -67,7 +68,7 @@ export function Aliases({ workId, canEdit }: { workId: number; canEdit: boolean 
     api
       .aliases(workId)
       .then((r) => setAliases(r.aliases))
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
+      .catch((err: unknown) => setError(describeError(err)));
   }, [workId]);
 
   useEffect(load, [load]);
@@ -83,7 +84,7 @@ export function Aliases({ workId, canEdit }: { workId: number; canEdit: boolean 
       setAlias('');
       setAdding(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeError(err));
     } finally {
       setBusy(null);
     }
@@ -95,7 +96,7 @@ export function Aliases({ workId, canEdit }: { workId: number; canEdit: boolean 
     try {
       setAliases((await api.deleteAlias(workId, aliasId)).aliases);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeError(err));
     } finally {
       setBusy(null);
     }

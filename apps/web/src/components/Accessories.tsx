@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ACCESSORY_KINDS, type AccessoryKind } from '@lc/core';
 import { api, type Accessory } from '../api.js';
+import { describeError } from '../lib/errors.js';
 import type { CopyView } from './Copies.js';
 
 /**
@@ -114,7 +115,7 @@ export function Accessories({
     api
       .accessories(workId)
       .then((r) => setAccessories(r.accessories))
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
+      .catch((err: unknown) => setError(describeError(err)));
   }, [workId]);
 
   useEffect(load, [load]);
@@ -236,7 +237,7 @@ function AccessoryRow({
     try {
       onChanged((await api.deleteAccessory(workId, accessory.id)).accessories);
     } catch (err) {
-      onError(err instanceof Error ? err.message : String(err));
+      onError(describeError(err));
     } finally {
       setBusy(false);
       setArmed(false);
@@ -340,7 +341,7 @@ function AccessoryForm({
         : await api.addAccessory(workId, body);
       onSaved(r.accessories);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeError(err));
     } finally {
       setBusy(false);
     }

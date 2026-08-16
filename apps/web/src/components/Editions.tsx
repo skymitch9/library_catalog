@@ -7,7 +7,8 @@ import {
   hasNoBarcodeNote,
   stripNoBarcodeNote,
 } from '@lc/core';
-import { ApiError, api } from '../api.js';
+import { api } from '../api.js';
+import { describeError } from '../lib/errors.js';
 import { editionKindLabel, formatLabel } from '../lib/formats.js';
 
 /**
@@ -67,27 +68,6 @@ export interface EditionView {
   pages: number | null;
   source: string;
   source_url: string | null;
-}
-
-/**
- * Zod issues, a friendly conflict string, or nothing useful — say the best of
- * them. Exported for `Copies.tsx`: the picker's writes hit the same routes and
- * their 409s (`isbn_taken`, `indistinguishable_printing`) carry their advice
- * in `detail`, which a bare `err.message` would swallow.
- */
-export function describeError(err: unknown): string {
-  if (err instanceof ApiError) {
-    if (typeof err.detail === 'string') return err.detail;
-    if (Array.isArray(err.detail)) {
-      const issues = err.detail as { path?: unknown[]; message?: string }[];
-      const said = issues
-        .map((i) => `${(i.path ?? []).join('.') || 'value'}: ${i.message ?? 'is invalid'}`)
-        .join('; ');
-      if (said) return said;
-    }
-    return err.message;
-  }
-  return err instanceof Error ? err.message : String(err);
 }
 
 /**

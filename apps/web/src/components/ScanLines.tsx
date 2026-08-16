@@ -15,6 +15,7 @@ import {
   type ScanStatus,
 } from '@lc/core';
 import { api } from '../api.js';
+import { describeError } from '../lib/errors.js';
 import { addLineToCatalog } from '../lib/catalog-add.js';
 import type { PreorderQuestion } from '../lib/preorders.js';
 import type { IsbnConflict, RescanQuestion } from '../lib/rescans.js';
@@ -193,7 +194,7 @@ function LineRow({
     try {
       await fn();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeError(err));
     } finally {
       setBusy(null);
     }
@@ -664,7 +665,7 @@ export function ScanLines({
     try {
       onJob((await api.enrichScanJob(job.id)).job);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeError(err));
     } finally {
       setRetrying(false);
     }

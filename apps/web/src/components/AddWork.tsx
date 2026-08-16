@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { PreorderAnswer } from '@lc/core';
 import { api } from '../api.js';
+import { describeError } from '../lib/errors.js';
 import { PreorderPrompt } from './PreorderPrompt.js';
 import { preorderQuestionFor, type PreorderQuestion } from '../lib/preorders.js';
 import { arrivedPatch } from '../lib/statuses.js';
@@ -103,7 +104,7 @@ export function AddWork({ onClose, onAdded }: { onClose: () => void; onAdded: ()
       setAuthors(first.authors);
       setNote(`Found: ${first.title}${first.publisher ? ` (${first.publisher})` : ''}. Check it before saving.`);
     } catch (err) {
-      setNote(err instanceof Error ? err.message : String(err));
+      setNote(describeError(err));
     } finally {
       setBusy(false);
     }
@@ -198,7 +199,7 @@ export function AddWork({ onClose, onAdded }: { onClose: () => void; onAdded: ()
       if (intent) await api.createCopy({ workId: work.id, status: intent });
       onAdded();
     } catch (err) {
-      setNote(err instanceof Error ? err.message : String(err));
+      setNote(describeError(err));
     } finally {
       setBusy(false);
     }

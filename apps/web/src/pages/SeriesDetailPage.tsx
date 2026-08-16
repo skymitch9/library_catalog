@@ -20,6 +20,7 @@ import {
   type SeriesReport,
   type SeriesScanResponse,
 } from '../api.js';
+import { describeError } from '../lib/errors.js';
 import { Cover } from '../components/Cover.js';
 import { formatLabel, mediumLabel } from '../lib/formats.js';
 
@@ -132,7 +133,7 @@ export function SeriesDetailPage({
     api
       .series(name)
       .then(setReport)
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
+      .catch((err: unknown) => setError(describeError(err)));
   }, [name]);
 
   useEffect(load, [load]);
@@ -465,7 +466,7 @@ function AudioLink({
     setError(null);
     action()
       .then(() => onChanged())
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
+      .catch((err: unknown) => setError(describeError(err)))
       .finally(() => setBusy(false));
   }
 
@@ -589,7 +590,7 @@ function ScanControl({
         setResult(res);
         if (res.report) onScanned(res.report);
       })
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
+      .catch((err: unknown) => setError(describeError(err)))
       .finally(() => setBusy(false));
   }
 
@@ -992,7 +993,7 @@ function MissingRung({
       setNote(work ? 'Already catalogued; added to the wishlist.' : 'Added to the wishlist.');
       onChanged();
     } catch (err) {
-      setNote(err instanceof Error ? err.message : String(err));
+      setNote(describeError(err));
     } finally {
       setBusy(false);
     }
@@ -1004,7 +1005,7 @@ function MissingRung({
     setNote(null);
     run()
       .then(() => onChanged())
-      .catch((err: unknown) => setNote(err instanceof Error ? err.message : String(err)))
+      .catch((err: unknown) => setNote(describeError(err)))
       .finally(() => setBusy(false));
   }
 
@@ -1101,7 +1102,7 @@ function MissingRung({
             api
               .deleteSeriesVolume(series, gap.volumeId!)
               .then(() => onChanged())
-              .catch((err: unknown) => setNote(err instanceof Error ? err.message : String(err)))
+              .catch((err: unknown) => setNote(describeError(err)))
               .finally(() => setBusy(false));
           }}
         >
@@ -1189,7 +1190,7 @@ function AddVolume({
         }),
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeError(err));
     } finally {
       setBusy(false);
     }
@@ -1272,7 +1273,7 @@ function DeclareTotal({
         }),
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeError(err));
     } finally {
       setBusy(false);
     }

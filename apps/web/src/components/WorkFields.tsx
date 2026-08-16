@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api } from '../api.js';
+import { describeError } from '../lib/errors.js';
 
 /**
  * The four researched fields, editable where you read them.
@@ -151,7 +152,7 @@ export function WorkFields({
       setOpen(false);
       onSaved();
     } catch (err) {
-      setSaid(err instanceof Error ? err.message : String(err));
+      setSaid(describeError(err));
     } finally {
       setBusy(false);
     }

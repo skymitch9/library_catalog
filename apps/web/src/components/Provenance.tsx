@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { pledgeItemMedium, rewardFlags, type Medium } from '@lc/core';
 import { api, type Provenance as ProvenanceRow } from '../api.js';
+import { describeError } from '../lib/errors.js';
 import { formatLabel } from '../lib/formats.js';
 
 /**
@@ -80,7 +81,7 @@ export function Provenance({ workId, canEdit }: { workId: number; canEdit: boole
     api
       .provenance(workId)
       .then((r) => setRows(r.provenance))
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
+      .catch((err: unknown) => setError(describeError(err)));
   }, [workId]);
 
   useEffect(load, [load]);
@@ -93,7 +94,7 @@ export function Provenance({ workId, canEdit }: { workId: number; canEdit: boole
       setArmed(null);
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeError(err));
     } finally {
       setBusy(null);
     }

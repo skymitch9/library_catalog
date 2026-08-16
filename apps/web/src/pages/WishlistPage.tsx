@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Me, type WishlistRow } from '../api.js';
+import { describeError } from '../lib/errors.js';
 import { Arrivals } from '../components/Arrivals.js';
 import { Cover } from '../components/Cover.js';
 import { formatLabel } from '../lib/formats.js';
@@ -61,7 +62,7 @@ export function WishlistPage({
     api
       .wishlist()
       .then((r) => setRows(r.rows))
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
+      .catch((err: unknown) => setError(describeError(err)));
   }, []);
 
   useEffect(load, [load]);
@@ -75,7 +76,7 @@ export function WishlistPage({
       await api.updateCopy(copyId, body);
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeError(err));
     } finally {
       setBusy(null);
     }
@@ -87,7 +88,7 @@ export function WishlistPage({
       await api.deleteCopy(copyId);
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeError(err));
     } finally {
       setBusy(null);
     }

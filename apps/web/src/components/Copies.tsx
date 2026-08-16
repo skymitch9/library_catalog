@@ -7,10 +7,11 @@ import {
   printingCandidates,
 } from '@lc/core';
 import { api } from '../api.js';
+import { describeError } from '../lib/errors.js';
 import { formatLabel } from '../lib/formats.js';
 import { printingLabel } from '../lib/rescans.js';
 import { STATUS_LABEL, arrivedPatch } from '../lib/statuses.js';
-import { describeError, type EditionView } from './Editions.js';
+import { type EditionView } from './Editions.js';
 import { EditionPickerPrompt, type NewPrintingDetails } from './RescanPrompt.js';
 
 /**
@@ -132,7 +133,7 @@ export function Copies({
       await api.deleteCopy(copyId);
       onChanged();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeError(err));
     } finally {
       setBusy(null);
     }

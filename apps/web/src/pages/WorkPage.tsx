@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type Me, type Watch, type WorkAudiobookHolding } from '../api.js';
+import { describeError } from '../lib/errors.js';
 import { Accessories } from '../components/Accessories.js';
 import { Aliases } from '../components/Aliases.js';
 import { Changes } from '../components/Changes.js';
@@ -179,7 +180,7 @@ export function WorkPage({
     api
       .work(workId)
       .then((d) => setDetail(d as unknown as WorkDetail))
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
+      .catch((err: unknown) => setError(describeError(err)));
   }
 
   useEffect(() => {

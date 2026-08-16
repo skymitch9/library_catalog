@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type CoverCandidateView } from '../api.js';
+import { describeError } from '../lib/errors.js';
 
 /**
  * Swap between the covers this book is already known to have.
@@ -51,7 +52,7 @@ export function CoverSwap({
         if (!stale) setCandidates(r.candidates);
       })
       .catch((err: unknown) => {
-        if (!stale) setError(err instanceof Error ? err.message : String(err));
+        if (!stale) setError(describeError(err));
       });
     return () => {
       stale = true;
@@ -96,7 +97,7 @@ export function CoverSwap({
         // as a failed swap. The stale grid is no worse than it was before.
       }
     } catch (err) {
-      setSaid(err instanceof Error ? err.message : String(err));
+      setSaid(describeError(err));
     } finally {
       setBusy(false);
     }

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api, type WishlistRow } from '../api.js';
+import { describeError } from '../lib/errors.js';
 import { arrivedPatch } from '../lib/statuses.js';
 
 /**
@@ -180,7 +181,7 @@ export function Arrivals({
       onArrived(summarise(chosen, heldBack));
       close();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeError(err));
     } finally {
       setBusy(false);
     }

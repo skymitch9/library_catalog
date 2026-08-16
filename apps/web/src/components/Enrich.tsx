@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api } from '../api.js';
+import { describeError } from '../lib/errors.js';
 
 /**
  * Offer what Open Library knows, and let a person choose.
@@ -40,7 +41,7 @@ export function Enrich({
       setCandidates(res.candidates);
       setNote(res.note);
     } catch (err) {
-      setNote(err instanceof Error ? err.message : String(err));
+      setNote(describeError(err));
     } finally {
       setBusy(false);
     }
@@ -61,7 +62,7 @@ export function Enrich({
       setCandidates(null);
       onApplied();
     } catch (err) {
-      setNote(err instanceof Error ? err.message : String(err));
+      setNote(describeError(err));
     } finally {
       setBusy(false);
     }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { WORK_RELATIONS, type WorkRelation } from '@lc/core';
 import { api, type RelatedWork, type WorkSummary } from '../api.js';
+import { describeError } from '../lib/errors.js';
 import { Cover } from '../components/Cover.js';
 
 /**
@@ -96,7 +97,7 @@ export function Related({
     api
       .relations(workId)
       .then((r) => setRelated(r.related))
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
+      .catch((err: unknown) => setError(describeError(err)));
   }, [workId]);
 
   useEffect(load, [load]);
@@ -107,7 +108,7 @@ export function Related({
       await api.deleteRelation(relationId);
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeError(err));
     } finally {
       setBusy(null);
     }
@@ -249,7 +250,7 @@ function AddRelation({
       });
       onSaved(related);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeError(err));
     } finally {
       setBusy(false);
     }

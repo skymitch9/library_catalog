@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { MAX_COVER_BYTES, coverNeeded } from '@lc/core';
 import { api } from '../api.js';
+import { describeError } from '../lib/errors.js';
 import { CoverSwap } from './CoverSwap.js';
 
 /**
@@ -94,7 +95,7 @@ export function CoverPanel({
       setSaid(done);
       onChanged();
     } catch (err) {
-      setSaid(err instanceof Error ? err.message : String(err));
+      setSaid(describeError(err));
     } finally {
       setBusy(false);
     }

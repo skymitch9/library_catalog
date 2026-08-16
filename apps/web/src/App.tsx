@@ -32,6 +32,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { User } from 'firebase/auth';
 import { api, ApiError, type Me } from './api.js';
+import { describeError } from './lib/errors.js';
 import { signIn, signOutNow, watchAuth } from './lib/firebase.js';
 import {
   Link,
@@ -93,7 +94,7 @@ export function App() {
         // person in the house.
         setStatus('pending-approval');
       } else {
-        setError(err instanceof Error ? err.message : String(err));
+        setError(describeError(err));
         setStatus('error');
       }
     }
@@ -267,14 +268,6 @@ export function App() {
       <Screens
         route={route}
         me={me}
-        // Re-read `/api/me` and start again from the collection. Only the People
-        // screen calls it, and only when you have just changed your OWN role —
-        // see the note there on why a plain refetch shows the opposite of what
-        // happened.
-        onSelfChanged={() => {
-          navigate('/');
-          void check();
-        }}
         // Just the nav's chore count, and deliberately NOT `check()`: the
         // details queue calls this after every book it fills in, and `check()`
         // sets sign-in status from the same response.
@@ -299,12 +292,10 @@ const openSeries = (series: string) => navigate(seriesPath(series));
 function Screens({
   route,
   me,
-  onSelfChanged,
   onChoresChanged,
 }: {
   route: Route;
   me: Me;
-  onSelfChanged: () => void;
   /** Re-read the nav's "Missing (N)" count. Must be a stable reference. */
   onChoresChanged: () => void;
 }) {
@@ -431,7 +422,7 @@ function Screens({
 
     case 'people':
       if (!me.capabilities.includes('manageUsers')) return <NotFound />;
-      return <PeoplePage me={me} onSelfChanged={onSelfChanged} />;
+      return <PeoplePage me={me} />;
 
     case 'collection':
       return (

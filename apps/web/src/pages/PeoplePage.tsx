@@ -1,44 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ROLES, canGrantRole, type Role } from '@lc/core';
+import type { Role } from '@lc/core';
 import { api, type Me, type Person } from '../api.js';
-
-/**
- * Who is in, and what they may do.
- *
- * Anyone with a Google account can sign in — `middleware/auth.ts` verifies the
- * token and `upsertUserOnLogin` files them as `pending`. This screen is where
- * pending becomes real, which is why it lives in the app rather than in a console
- * somewhere: the person who decides is the person holding the phone.
- *
- * ## ⚠️ The three guards, and where they actually live
- *
- * Small household, real consequences. All three rules are enforced by
- * `apps/worker/src/routes/users.ts` and only *reflected* here:
- *
- *  1. **Only an owner or admin can change roles.** `requireCapability('manageUsers')`
- *     gates both endpoints, and `App.tsx` will not even route anyone else to this
- *     screen. Disabling a button is a courtesy; the 403 is the rule.
- *  2. **Nobody can grant a role at or above their own.** `canGrantRole` (`@lc/core`)
- *     caps an admin at strictly-beneath-admin, so an admin can hand out anything
- *     up to moderator but never admin or owner — only an owner can grant either.
- *  3. **The last owner cannot demote themselves.** The server counts owners
- *     inside the request and refuses. This page also greys the buttons, because a
- *     control that exists and always fails is worse than one that is visibly
- *     unavailable — but the count it greys them from is the list it last loaded,
- *     and the server's is the one that decides.
- *
- * ⚠️ There is deliberately no delete. `app_user.id` is referenced by `user_book`
- * with `ON DELETE CASCADE`, so removing a person would take their entire reading
- * history with them — the sibling project's migration 0023 has the measured
- * version of that lesson. `pending` is the revoke: they keep their history and
- * see nothing.
- */
+import { describeError } from '../lib/errors.js';
 
 /**
  * The 2026-08-16 ladder, cumulative low to high: guest < member < contributor
- * < moderator < admin < owner. `manager` → `moderator` and `reader` →
- * `member` (migration 0300); every blurb below states what a role adds ON TOP
- * of the one before it, matching CAPABILITY_MATRIX in `@lc/core`.
+ * < moderator < admin < owner. Kept as the role badge's tooltip — informational,
+ * not a control, so it survived the read-only rewrite below.
  */
 const ROLE_BLURB: Record<Role, string> = {
   owner: 'Everything an admin can do, plus granting the admin role itself.',
@@ -53,54 +21,57 @@ const ROLE_BLURB: Record<Role, string> = {
   pending: 'Signed in, and sees a holding screen until an owner or admin lets them in.',
 };
 
-/** What the button says. "Revoke" reads as an action; "Make pending" reads as a typo. */
-function actionLabel(role: Role): string {
-  return role === 'pending' ? 'Revoke' : `Make ${role}`;
-}
-
-export function PeoplePage({ me, onSelfChanged }: { me: Me; onSelfChanged: () => void }) {
+/**
+ * Who is in, and what they may do — READ-ONLY.
+ *
+ * ⚠️ **Made read-only 2026-08-16.** This page used to be where roles were
+ * granted and revoked. It no longer writes anything: the owner's decision
+ * (2026-08-16) was *"remove all people stuff from the individual sites and
+ * have it all redirect back to the admin page on heygabi,"* refined to
+ * **read-only rather than a hard redirect** for a specific reason —
+ * heygabi.ai/admin is itself gated on being an *estate approver*, and an app
+ * `admin` (this repo's own delegated role, `manageUsers`) is not guaranteed
+ * to be one. A redirect would bounce exactly the person the `admin` rung was
+ * created to delegate to. Read-only keeps this screen useful — everyone who
+ * could always see it still can — while leaving mutation to exactly one
+ * place.
+ *
+ * ## What changed
+ *
+ * Removed entirely: every role button (`Make member` / `Make admin` / …,
+ * `Revoke`), the last-owner self-demotion guard that only existed to grey
+ * those buttons, and `setRole`/`onSelfChanged` — there is nothing here left
+ * for a changed-own-role redirect to react to.
+ *
+ * Kept: the roster itself — name, email, role, first-seen date, review name
+ * — exactly as it rendered before, plus the per-person link to
+ * heygabi.ai/admin (now doubled by one at the top of the page, since it is
+ * the only way left to act on anything shown here).
+ *
+ * ⚠️ **The server-side routes are unchanged and still load-bearing.**
+ * `GET /api/users` (still called, for the read) and
+ * `PATCH /api/users/:id/role` (no longer called from here, but still gated
+ * by `requireCapability('manageUsers')` in `apps/worker/src/routes/users.ts`)
+ * are exactly how heygabi.ai/admin's federation edits this app's roles —
+ * removing or weakening either would break the estate admin page, not just
+ * this one.
+ */
+export function PeoplePage({ me }: { me: Me }) {
   const [people, setPeople] = useState<Person[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<number | null>(null);
 
   const load = useCallback(() => {
     api
       .users()
       .then((r) => setPeople(r.users))
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
+      .catch((err: unknown) => setError(describeError(err)));
   }, []);
 
   useEffect(load, [load]);
 
-  async function setRole(person: Person, role: Role) {
-    setBusy(person.id);
-    setError(null);
-    try {
-      await api.setRole(person.id, role);
-
-      // ⚠️ Stepping down is the one change that takes this screen away from the
-      // person making it, and the naive `load()` is visibly wrong when it does:
-      // the PATCH succeeds, the refetch of `/api/users` 403s because you are no
-      // longer an owner, and you are left looking at a stale list with the word
-      // "forbidden" over it — which reads as "the change failed" when it is the
-      // change working. Found by clicking it. Hand back to `App`, which re-reads
-      // `/api/me` and redraws the app you now actually have.
-      if (person.email === me.email && role !== 'owner') {
-        onSelfChanged();
-        return;
-      }
-      load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(null);
-    }
-  }
-
   if (error && !people) return <main className="centre">Could not load the people: {error}</main>;
   if (!people) return <main className="muted">Loading…</main>;
 
-  const owners = people.filter((p) => p.role === 'owner').length;
   const pending = people.filter((p) => p.role === 'pending');
 
   return (
@@ -111,12 +82,27 @@ export function PeoplePage({ me, onSelfChanged }: { me: Me; onSelfChanged: () =>
         pending can see the collection.
       </p>
 
+      {/* The one write path left. Prominent on purpose: this used to be a
+          page full of buttons, and it is now a page with none — the reason
+          has to be right where the buttons used to be, not buried below the
+          list. */}
+      <p className="notice">
+        <strong>
+          <a href="https://heygabi.ai/admin" target="_blank" rel="noreferrer">
+            Manage roles at heygabi.ai/admin →
+          </a>
+        </strong>{' '}
+        This page is read-only. Approving people, changing a role, or revoking one all happen
+        there now.
+      </p>
+
       {pending.length > 0 && (
         <p className="notice">
           <strong>
             {pending.length} {pending.length === 1 ? 'person is' : 'people are'} waiting.
           </strong>{' '}
-          They have signed in and are looking at a holding screen until you decide.
+          They have signed in and are looking at a holding screen until an owner or admin lets
+          them in — at heygabi.ai/admin.
         </p>
       )}
 
@@ -125,10 +111,6 @@ export function PeoplePage({ me, onSelfChanged }: { me: Me; onSelfChanged: () =>
       <ul className="plain people">
         {people.map((p) => {
           const isMe = p.email === me.email;
-          // The exact rule the server applies, mirrored: only self-demotion by
-          // the last owner is refused. An owner demoting a *different* owner
-          // always leaves at least themselves.
-          const lastOwner = isMe && p.role === 'owner' && owners <= 1;
 
           return (
             <li key={p.id}>
@@ -140,10 +122,6 @@ export function PeoplePage({ me, onSelfChanged }: { me: Me; onSelfChanged: () =>
                     first seen {p.firstSeenAt.replace('T', ' ').slice(0, 16)}
                     {p.reviewName ? ` · reviews as ${p.reviewName}` : ''}
                   </span>
-                  {/* Entry point only, never a control: estate-wide grants live
-                      solely on heygabi.ai/admin, which is its own gate. This
-                      page is already owner/admin-only (App.tsx routes it behind
-                      manageUsers), so everyone who can see this can use it. */}
                   <a
                     className="muted small"
                     href={`https://heygabi.ai/admin#member=${encodeURIComponent(p.email)}`}
@@ -158,38 +136,8 @@ export function PeoplePage({ me, onSelfChanged }: { me: Me; onSelfChanged: () =>
                   {p.role}
                 </span>
 
-                <div className="row-tight">
-                  {/* Derived from ROLES rather than listed again. The sibling
-                      project shipped a hardcoded copy of this list and a whole
-                      role became assignable nowhere.
-
-                      ⚠️ Also filtered through `canGrantRole(me.role, role)` —
-                      the courtesy half of guard #2 above. An admin viewing
-                      this page would otherwise see "Make admin" / "Make owner"
-                      buttons that the server always 403s; a button that exists
-                      and always fails is exactly what the last-owner guard
-                      already says to avoid. */}
-                  {ROLES.filter((r) => r !== p.role && canGrantRole(me.role, r)).map((role) => (
-                    <button
-                      key={role}
-                      className={role === 'pending' ? 'chip' : 'chip'}
-                      disabled={busy === p.id || lastOwner}
-                      title={lastOwner ? undefined : ROLE_BLURB[role]}
-                      onClick={() => void setRole(p, role)}
-                    >
-                      {actionLabel(role)}
-                    </button>
-                  ))}
-                  {isMe && <span className="muted small">that&apos;s you</span>}
-                </div>
+                {isMe && <span className="muted small">that&apos;s you</span>}
               </div>
-
-              {lastOwner && (
-                <p className="muted small">
-                  You are the only owner, so you cannot step down — promote somebody else first,
-                  or there would be nobody left who can let anyone in.
-                </p>
-              )}
             </li>
           );
         })}

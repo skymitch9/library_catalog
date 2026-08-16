@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api, ApiError, type DeletionReport } from '../api.js';
+import { describeError } from '../lib/errors.js';
 
 /**
  * Delete this record — after being shown, precisely, what dies with it.
@@ -57,7 +58,7 @@ export function DeleteWork({
       setReport(report);
       setOpen(true);
     } catch (err) {
-      setSaid(err instanceof Error ? err.message : String(err));
+      setSaid(describeError(err));
     } finally {
       setBusy(false);
     }
@@ -78,7 +79,7 @@ export function DeleteWork({
         if (body?.report) setReport(body.report);
         setSaid(typeof err.detail === 'string' ? err.detail : 'Deletion refused.');
       } else {
-        setSaid(err instanceof Error ? err.message : String(err));
+        setSaid(describeError(err));
       }
       setBusy(false);
     }

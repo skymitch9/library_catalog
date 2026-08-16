@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type Stats } from '../api.js';
+import { describeError } from '../lib/errors.js';
 
 /**
  * Take the catalog away with you.
@@ -48,7 +49,7 @@ export function ExportPage() {
     api
       .stats()
       .then(setStats)
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
+      .catch((err: unknown) => setError(describeError(err)));
   }, []);
 
   async function download(format: 'json' | 'csv') {
@@ -60,7 +61,7 @@ export function ExportPage() {
       saveBlob(blob, filename);
       setSaved(`${filename} — ${(blob.size / 1024).toFixed(0)} kB`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeError(err));
     } finally {
       setBusy(null);
     }

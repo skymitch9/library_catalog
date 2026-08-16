@@ -1041,6 +1041,7 @@ export const api = {
         res.status,
         body?.detail,
         typeof body?.detail === 'string' ? body.detail : (body?.error ?? `HTTP ${res.status}`),
+        body,
       );
     }
     return (await res.json()) as { work: WorkSummary; key: string; bytes: number };
@@ -1426,7 +1427,7 @@ export const api = {
     });
     if (!res.ok) {
       const body = (await res.json().catch(() => null)) as { error?: string } | null;
-      throw new ApiError(res.status, null, body?.error ?? `HTTP ${res.status}`);
+      throw new ApiError(res.status, null, body?.error ?? `HTTP ${res.status}`, body);
     }
     // The server names the file; the date in it is the server's, which is the one
     // the data is as of.

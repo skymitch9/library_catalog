@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { PHOTO_LONG_EDGE, SHELF_LONG_EDGE, type ScanJob } from '@lc/core';
 import { api } from '../api.js';
+import { describeError } from '../lib/errors.js';
 import {
   CameraError,
   cameraPlausible,
@@ -270,7 +271,7 @@ export function ScanPage({
         setCameraError(res.line.detail ?? 'Not a book barcode.');
       }
     } catch (err) {
-      setCameraError(err instanceof Error ? err.message : String(err));
+      setCameraError(describeError(err));
     }
   }
 
@@ -334,7 +335,7 @@ export function ScanPage({
           seenRef.current.add(scan.code);
           void lookupCode(scan.code);
         },
-        onError: (err) => setCameraError(err instanceof Error ? err.message : String(err)),
+        onError: (err) => setCameraError(describeError(err)),
       });
       setRunning(true);
     } catch (err) {
@@ -395,7 +396,7 @@ export function ScanPage({
         setCameraError('That photo could not be read. More light, or closer, or straighter on.');
       }
     } catch (err) {
-      setCameraError(err instanceof Error ? err.message : String(err));
+      setCameraError(describeError(err));
     } finally {
       setBusy(null);
     }
@@ -408,7 +409,7 @@ export function ScanPage({
       if (id) await api.finishScanJob(id);
       onDone();
     } catch (err) {
-      setCameraError(err instanceof Error ? err.message : String(err));
+      setCameraError(describeError(err));
       setBusy(null);
     }
   }
@@ -639,7 +640,7 @@ export function ScanPage({
 }
 
 function cameraMessage(err: unknown): string {
-  if (!(err instanceof CameraError)) return err instanceof Error ? err.message : String(err);
+  if (!(err instanceof CameraError)) return describeError(err);
   switch (err.reason) {
     case 'insecure-context':
       return 'The camera needs HTTPS. Open the site over https, or use the cloudflared tunnel.';

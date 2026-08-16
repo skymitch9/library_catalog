@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { isMyReview, reviewSourceOf } from '@lc/core';
 import { api, type Me } from '../api.js';
+import { describeError } from '../lib/errors.js';
 import { fetchReviews, writeReview, type Review } from '../lib/reviews.js';
 
 /**
@@ -139,7 +140,7 @@ export function Reviews({
     } catch (err) {
       // Firestore being unreachable must not take the page down — the book, its
       // editions and its copies are all in D1 and are still worth showing.
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeError(err));
       setReviews([]);
     }
   }
@@ -161,7 +162,7 @@ export function Reviews({
       await writeReview(draft.collection, draft.docId, draft.doc);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeError(err));
     } finally {
       setBusy(false);
     }

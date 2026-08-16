@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { completenessSentence, gapsCountingAudio } from '@lc/core';
 import { api, type SeriesSummary } from '../api.js';
+import { describeError } from '../lib/errors.js';
 import {
   replaceUrl,
   seriesListPath,
@@ -75,7 +76,7 @@ export function SeriesPage({
         setRows(r.series);
         setWithoutSeries(r.withoutSeries);
       })
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
+      .catch((err: unknown) => setError(describeError(err)));
   }, []);
 
   // ⚠️ `replaceUrl`, never `navigate` — the search box is live, and a pushState

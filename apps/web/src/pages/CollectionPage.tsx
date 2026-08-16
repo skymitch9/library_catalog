@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { COLLECTION_PAGE_SIZES, COPY_STATUSES, EDITION_MEDIA, READ_STATES } from '@lc/core';
 import { api, type CollectionFacets, type Me, type Stats, type WorkSummary } from '../api.js';
+import { describeError } from '../lib/errors.js';
 import { Pager } from '../components/Pager.js';
 import { Shelf } from '../components/Shelf.js';
 import { WorkList } from '../components/WorkList.js';
@@ -132,7 +133,7 @@ export function CollectionPage({
         setRows(r.rows);
         setTotal(r.total);
       })
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
+      .catch((err: unknown) => setError(describeError(err)))
       .finally(() => setLoading(false));
   }, [params]);
 

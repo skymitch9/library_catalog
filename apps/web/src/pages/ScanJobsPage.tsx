@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { jobSummary, type ScanJob } from '@lc/core';
 import { api } from '../api.js';
+import { describeError } from '../lib/errors.js';
 import { Link, addPath, navigate } from '../router.js';
 
 /**
@@ -25,7 +26,7 @@ export function ScanJobsPage({ canSpend }: { canSpend: boolean }) {
     try {
       setJobs((await api.scanJobs(true)).jobs);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeError(err));
     }
   }, []);
 
@@ -38,7 +39,7 @@ export function ScanJobsPage({ canSpend }: { canSpend: boolean }) {
       await api.deleteScanJob(id);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeError(err));
     }
   }
 
@@ -47,7 +48,7 @@ export function ScanJobsPage({ canSpend }: { canSpend: boolean }) {
       await api.finishScanJob(id);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeError(err));
     }
   }
 

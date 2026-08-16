@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { UNKNOWN_AUTHOR, workKeyFor } from '@lc/core';
 import { ApiError, api } from '../api.js';
+import { describeError } from '../lib/errors.js';
 import { countReviewDocs, restampReviews } from '../lib/reviews.js';
 
 /**
@@ -149,7 +150,7 @@ export function EditTitleAuthor({
       // ('stale_key') would send somebody to the docs for what one sentence
       // can say here.
       if (err instanceof ApiError && typeof err.detail === 'string') setSaid(err.detail);
-      else setSaid(err instanceof Error ? err.message : String(err));
+      else setSaid(describeError(err));
     } finally {
       setBusy(false);
     }

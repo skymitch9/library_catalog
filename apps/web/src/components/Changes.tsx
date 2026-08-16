@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api, type ChangeView } from '../api.js';
+import { describeError } from '../lib/errors.js';
 
 /**
  * The Changes panel — `change_log` read back, newest first, grouped by save.
@@ -61,7 +62,7 @@ export function Changes({ workId }: { workId: number }) {
       api
         .workChanges(workId)
         .then((r) => setChanges(r.changes))
-        .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
+        .catch((err: unknown) => setError(describeError(err)));
     }
   };
 

@@ -10,6 +10,7 @@ import {
   type ResearchFinding,
   type RunView,
 } from '../api.js';
+import { describeError } from '../lib/errors.js';
 import { Link, queuePath, workPath } from '../router.js';
 
 /**
@@ -136,7 +137,7 @@ export function DetailsQueuePage({
       setRuns(byWork);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeError(err));
     }
     // Reloaded together, always. These two views disagree the moment one is
     // refreshed without the other — a book vanishing from the worklist with
@@ -196,7 +197,7 @@ export function DetailsQueuePage({
         await loadAutoApplied();
         onChoresChanged();
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        setError(describeError(err));
         startedRef.current.delete(workId);
         // The request failed, but the lookup behind it may not have: the server
         // registers the work with `waitUntil` before answering, so a dropped
@@ -273,7 +274,7 @@ export function DetailsQueuePage({
             (skipped.length > 0 ? ` ${skipped.length} could not be: ${skipped.join(' ')}` : ''),
         );
       } catch (err) {
-        setUndoSaid(err instanceof Error ? err.message : String(err));
+        setUndoSaid(describeError(err));
       } finally {
         setUndoing(false);
         // The questions are open again, so the worklist, the tally and the nav
@@ -757,7 +758,7 @@ function Proposal({
       setOutcome(r.applied ?? r.skipped ?? (reviewState === 'rejected' ? 'Discarded.' : 'Done.'));
       onChanged();
     } catch (err) {
-      setOutcome(err instanceof Error ? err.message : String(err));
+      setOutcome(describeError(err));
     } finally {
       setBusy(false);
     }
@@ -852,7 +853,7 @@ function VerdictForm({ work, onChanged }: { work: NeedsDetails; onChanged: () =>
       setSource('');
       onChanged();
     } catch (err) {
-      setSaid(err instanceof Error ? err.message : String(err));
+      setSaid(describeError(err));
     } finally {
       setBusy(false);
     }

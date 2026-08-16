@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api, type Watch } from '../api.js';
+import { describeError } from '../lib/errors.js';
 
 /**
  * "I'll check — put a watch on this so I verify later."
@@ -54,7 +55,7 @@ export function Watches({
       await what();
       onChanged();
     } catch (err) {
-      setSaid(err instanceof Error ? err.message : String(err));
+      setSaid(describeError(err));
     } finally {
       setBusy(false);
     }
