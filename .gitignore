@@ -75,11 +75,20 @@ packages/estate-auth/generated/
 # docs/deploys.log, which IS tracked.
 .deploy.lock
 
-# ⚠️ Same mechanism, third asset: the estate THEME system (estate-theme.css,
-# theme.js, self-hosted fonts + OFL licence), materialised from
-# catalog-platform/sites/heygabi-home/public/assets/ by
-# scripts/sync-estate-theme.mjs on every build, test and typecheck. The ONE
-# implementation lives in that repo (contract: its docs/info/estate-themes.md);
-# the only local transformation is the font URL root (/assets/fonts/ →
-# /estate/fonts/), applied by the sync script, never by hand.
+# ⚠️ Same mechanism, third and fourth assets — TWO sync scripts write this ONE
+# directory, both from catalog-platform/sites/heygabi-home/public/assets/, on
+# every build, test and typecheck:
+#
+#   - the estate THEME system (estate-theme.css, theme.js, self-hosted fonts +
+#     OFL licence), by scripts/sync-estate-theme.mjs. The ONE implementation
+#     lives in that repo (contract: its docs/info/estate-themes.md); the only
+#     local transformation is the font URL root (/assets/fonts/ →
+#     /estate/fonts/), applied by the sync script, never by hand.
+#   - the shared <estate-search> custom element (estate-search.js), by
+#     scripts/sync-estate-search.mjs — copied verbatim, no transformation.
+#     Same directory as the theme ON PURPOSE: the component resolves its
+#     optional sibling modules relative to import.meta.url.
+#
+# Each script writes its own provenance file (SOURCE.txt / SOURCE-estate-search
+# .txt) so neither can clobber the other's record.
 apps/web/public/estate/
