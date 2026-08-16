@@ -39,19 +39,66 @@
 export const UNKNOWN_AUTHOR = '?unknown';
 
 /**
- * ⚠️ Mirrored by a CHECK constraint on `app_user.role` — migration 0008 is the
- * current definition. Adding a value here without a migration means the role is
- * assignable in the UI, passes zod, and then fails at the write with a bare
- * SQLITE_CONSTRAINT.
+ * ⚠️ Mirrored by a CHECK constraint on `app_user.role` — migration 0300 is the
+ * current definition (0008 defined the previous four-value ladder: `owner`,
+ * `manager`, `reader`, `pending`). Adding a value here without a migration
+ * means the role is assignable in the UI, passes zod, and then fails at the
+ * write with a bare SQLITE_CONSTRAINT.
  *
- * `manager` is everything an owner can do **except decide who is in**. It exists
- * because ownership had been doing two unrelated jobs: keeping the catalog, and
- * controlling the guest list. Two people were `owner` purely so both could add
- * books, which made "who can let someone in" a question with two answers. The
- * board game catalog carries the same role, with the same rule.
+ * ## The ladder — redesigned 2026-08-16, owner-approved verbatim ("Role
+ * matrix approved")
+ *
+ * `guest < member < contributor < moderator < admin < owner`, **cumulative**:
+ * each rung has everything the one below it, plus more. `ROLE_LADDER` below
+ * is the ordered list that claim is checked against; `canGrantRole` in
+ * capabilities.ts is the escalation rule built on it.
+ *
+ * `manager` and `reader` are gone, migrated rather than dropped out from under
+ * anyone: migration 0300 rewrites every stored `manager` to `moderator` and
+ * every stored `reader` to `member`, chosen so **no existing user loses a
+ * capability** — see the CAPABILITY_MATRIX comment in capabilities.ts, where
+ * `manager`'s old row is a strict subset of `moderator`'s new one. `guest`,
+ * `contributor` and `admin` are new; nobody is migrated into them
+ * automatically — they are assigned by hand from the People page exactly like
+ * every other role above `pending`.
+ *
+ * `admin` is new and holds `manageUsers` (capabilities.ts), ending the old
+ * rule that `manager` — now `moderator` — could do anything to the catalog and
+ * nothing to the guest list: that rule now belongs to `moderator`, and `admin`
+ * is the delegate for the guest list itself, capped so it can never mint
+ * another `admin` or an `owner` (see `canGrantRole`).
+ *
+ * `pending` is unchanged and is **not** a ladder rung — it is a STATUS
+ * (awaiting approval), and `ROLE_LADDER` deliberately excludes it. Nothing
+ * here compares `pending`'s "rank" against another role's; the request screen
+ * the capability layer already shows a pending person is enough.
  */
-export const ROLES = ['owner', 'manager', 'reader', 'pending'] as const;
+export const ROLES = [
+  'owner',
+  'admin',
+  'moderator',
+  'contributor',
+  'member',
+  'guest',
+  'pending',
+] as const;
 export type Role = (typeof ROLES)[number];
+
+/**
+ * The ladder, strictly ordered low → high, with `pending` excluded on purpose
+ * — see the block above. `canGrantRole` (capabilities.ts) and anything else
+ * that needs to compare "is X above Y" reads this array, not `ROLES`, so
+ * `pending` can never accidentally be ranked against a real role.
+ */
+export const ROLE_LADDER = [
+  'guest',
+  'member',
+  'contributor',
+  'moderator',
+  'admin',
+  'owner',
+] as const;
+export type LadderRole = (typeof ROLE_LADDER)[number];
 
 /**
  * What a printing is.
