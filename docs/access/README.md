@@ -53,3 +53,5 @@ deployed at `https://library-catalog.bgc-worker.workers.dev`. The only remaining
 blocker is a **Firebase** console click: add that host to Authentication →
 Settings → Authorised domains on the `audiobook-catalog` project, or Google
 sign-in fails with `auth/unauthorized-domain`.
+
+- [`rollback-points.md`](rollback-points.md) — annotated rollback ids. `docs/deploys.log` is the newer, more complete record; prefer it.

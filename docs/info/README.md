@@ -72,3 +72,6 @@ they live in `docs/` rather than beside the reference material:
 assessed the image**. Automated work leaves it **NULL** — "nobody has looked" —
 because promoting rows to `'ok'` would empty the "cover needed" list with work
 nobody did. 0040's rule, applied to covers.
+
+- [`gotchas.md`](gotchas.md) — the traps that cost real time, findable by symptom. Extracted from the work log 2026-08-16.
+- [`decisions.md`](decisions.md) — why things are as they are, including what was deliberately NOT built, plus the honest known-imperfect list.
