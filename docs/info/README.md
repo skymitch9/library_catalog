@@ -1,10 +1,11 @@
 # docs/info — index
 
 > **Audience:** Claude sessions. How and why things work.
-> Last verified: **2026-08-14** (index rows for the estate docs checked against
-> their files; the operational side of estate auth / the index / themes now
-> lives in `../access/estate-auth.md`, `../access/index-worker.md`,
-> `../access/themes.md`).
+> Last verified: **2026-08-16** — the `estate-search.md` row is new that day;
+> everything else was last checked **2026-08-14** (index rows for the estate
+> docs checked against their files; the operational side of estate auth / the
+> index / themes now lives in `../access/estate-auth.md`,
+> `../access/index-worker.md`, `../access/themes.md`).
 
 | File | Covers | Read it before |
 |---|---|---|
@@ -23,6 +24,7 @@
 | [`universes.md`](universes.md) | ⚠️ **The shared universe list lives in `catalog-platform`, not here** — that repo is now a BUILD DEPENDENCY. How this repo resolves it, why a missing checkout fails the build here and only warns in the audiobook pipeline, and why the generated copy is an artifact rather than a second source of truth | touching `@lc/universes`, `scripts/sync-universes.mjs`, or anything that asks what universe a book is in |
 | [`estate-auth-shadow.md`](estate-auth-shadow.md) | ⚠️ Estate auth (auth.heygabi.ai) adopted in **shadow mode**: the `ESTATE_CHECK` flag, the `estate_shadow` log line and its `would_deny` rollout gate, the 0140 cache columns, and the second sibling-checkout sync (`sync-estate-auth.mjs`). Enforcement is NOT built | touching `middleware/auth.ts`, `@lc/estate-auth`, migration 0140, or flipping `ESTATE_CHECK` |
 | [`estate-theme.md`](estate-theme.md) | ⚠️ The app styles against the estate's `--et-*` token contract (apple/cyberpunk/retro × light/dark, default apple), vendored by a **third** sibling-checkout sync (`sync-estate-theme.mjs` → gitignored `apps/web/public/estate/`); the pre-paint stamp in index.html, the topbar cog, and how the old palette's five hues mapped onto token roles | touching `styles.css`, `index.html`'s head, `ThemeCog.tsx`, or being tempted to hard-code a colour |
+| [`estate-search.md`](estate-search.md) | ⚠️ The **fourth** sibling-checkout sync (`sync-estate-search.mjs`): the shared `<estate-search>` element in the top bar — ADDITIVE, it does not replace CollectionPage’s own search. ⚠️ **It is dead until `library.heygabi.ai` is added to the index Worker’s `READ_ORIGINS`** (measured, §2). Why the element is built by hand, why Vite refuses a dynamic import of `public/`, the upstream scan-button bug, and the `navigate()` hook | touching `components/EstateSearch.tsx`, `lib/estate-search.ts`, `scripts/sync-estate-search.mjs`, or wondering why the estate box returns nothing |
 | [`scan-jobs-and-vision.md`](scan-jobs-and-vision.md) | **Measured** shelf-photo reads on two real photographs and two synthetic ones, with costs; why persistence had to precede the camera; why lookups are one line at a time rather than chunked server-side | touching `scan-jobs.ts`, `lib/vision.ts`, `scanjobs.ts`, or anything that spends money |
 
 ## The seven findings worth knowing without opening a file

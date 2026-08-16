@@ -143,30 +143,67 @@ export function estateAuthAdapter(): EstateAuthAdapter {
  * the site root by Vite, so this path is the same in `vite dev` and in the
  * built bundle.
  */
-const MODULE_URL: string = '/estate/estate-search.js';
+const MODULE_URL = '/estate/estate-search.js';
+
+/**
+ * How long to wait for the definition before calling it a failure.
+ *
+ * Only reachable if the script fetched but never defined the element — a parse
+ * error inside it, essentially, which reports to `window.onerror` rather than
+ * to the tag. The sync script's `customElements.define` check is what makes
+ * this unlikely; the backstop is what stops the panel saying "Loading…" at
+ * someone forever if it happens anyway.
+ */
+const DEFINE_TIMEOUT_MS = 10_000;
 
 let pending: Promise<void> | null = null;
 
 /**
  * Load the component and resolve once `<estate-search>` is actually defined.
  *
- * ⚠️ The `: string` annotation on MODULE_URL above is load-bearing, not style:
- * with a literal type TypeScript tries to RESOLVE the specifier at build time
- * and fails, because the file is a public asset that does not exist until the
- * sync script runs. Widening to `string` makes it the runtime import it is.
+ * ⚠️ A `<script type="module">` TAG, NOT `import()`. This looks like the long
+ * way round and is not: Vite refuses to serve a dynamic import of anything
+ * under `public/` — *"This file is in /public and will be copied as-is during
+ * build without going through the plugin transforms, and therefore should not
+ * be imported from source code. It can only be referenced via HTML tags."* The
+ * production build does not mind (`@vite-ignore` leaves the specifier alone and
+ * the bundle keeps it), so this fails in `vite dev` ONLY — found by opening the
+ * panel in a browser, and by nothing else: typecheck, the test suite and
+ * `npm run build` were all green over the broken version.
+ *
+ * A tag is also what index.html already does with the theme's sibling asset,
+ * and it behaves identically in both environments.
  *
  * Memoised, and the memo is cleared on failure so a later mount can retry
  * rather than inheriting one bad network moment forever.
  */
 export function loadEstateSearch(): Promise<void> {
   if (!pending) {
-    pending = import(/* @vite-ignore */ MODULE_URL)
-      .then(() => customElements.whenDefined(ESTATE_SEARCH_TAG))
-      .then(() => undefined)
-      .catch((err: unknown) => {
-        pending = null;
-        throw err;
+    pending = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(`${MODULE_URL} loaded but never defined <${ESTATE_SEARCH_TAG}>.`));
+      }, DEFINE_TIMEOUT_MS);
+
+      void customElements.whenDefined(ESTATE_SEARCH_TAG).then(() => {
+        clearTimeout(timer);
+        resolve();
       });
+
+      const tag = document.createElement('script');
+      tag.type = 'module';
+      tag.src = MODULE_URL;
+      tag.addEventListener('error', () => {
+        clearTimeout(timer);
+        tag.remove();
+        // It is a build artifact, so name the command that makes it exist —
+        // this is the message a future session will be reading.
+        reject(new Error(`${MODULE_URL} did not load. Run \`npm run estate-search:sync\`.`));
+      });
+      document.head.appendChild(tag);
+    }).catch((err: unknown) => {
+      pending = null;
+      throw err;
+    });
   }
   return pending;
 }

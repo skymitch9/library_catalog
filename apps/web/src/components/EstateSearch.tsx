@@ -82,6 +82,48 @@ function onEstateSelect(event: Event): void {
   navigate(path);
 }
 
+/**
+ * ⚠️ WORKAROUND FOR AN UPSTREAM BUG, found by opening the panel in a browser.
+ *
+ * `estate-search.js` hides its barcode/shelf-scan row with the `hidden`
+ * attribute and then styles it `.es-scan-row { display: flex; … }` — an author
+ * rule, which beats the UA stylesheet's `[hidden] { display: none }`. So the
+ * two scan buttons render on EVERY embed that does not ask for them, including
+ * this one, and they cannot work: their logic lives in `estate-scan.js`, which
+ * is only fetched when the `scan` attribute is set and which this app does not
+ * vendor. Two visible controls that can only fail is exactly what "never a dead
+ * button" forbids.
+ *
+ * The sibling `.es-camera-stage[hidden] { display: none; }` sits four lines
+ * below it in the same stylesheet, so the omission is an oversight rather than
+ * an intent — but catalog-platform is another repo, and this app must not wait
+ * on it to render honestly.
+ *
+ * ⚠️ This is the ONE rule allowed inside the component's shadow root, and it
+ * only re-asserts an attribute the component itself set. It does not change any
+ * behaviour, and it becomes a harmless no-op the moment upstream adds the
+ * guard. Anything beyond this belongs in catalog-platform.
+ */
+function guardHiddenScanRow(el: EstateSearchElement): void {
+  const root = el.shadowRoot;
+  if (!root) return;
+  const style = document.createElement('style');
+  style.textContent = '.es-scan-row[hidden] { display: none !important; }';
+  root.appendChild(style);
+}
+
+/**
+ * Put the cursor in the box, once it is usable.
+ *
+ * The second and last reach into the component's shadow root, and a read-only
+ * one. Fully guarded: a component that stops having a search input loses the
+ * focus, not the panel.
+ */
+function focusSearchInput(event: Event): void {
+  const el = event.currentTarget as EstateSearchElement | null;
+  el?.shadowRoot?.querySelector<HTMLInputElement>('input[type="search"]')?.focus();
+}
+
 /** The top-bar control that opens the panel. Icon-only; the words are in the label. */
 export function EstateSearchToggle({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   return (
@@ -143,15 +185,18 @@ export function EstateSearchPanel() {
         // narrow. No `scan` either — scanning here is /add's own screen, with
         // the catalog's add-to-shelf flow behind it.
         el.addEventListener('estate-search:select', onEstateSelect);
+        // ⚠️ NOT `appendChild` then `focus()`. The box boots NEUTRAL — the input
+        // is `disabled` until the auth adapter's first callback (the component's
+        // sign-in flash fix), and focusing a disabled input silently does
+        // nothing. `estate-search:auth` is the component's own word for "I am
+        // usable now", so the focus hangs off that rather than off a guess about
+        // Firebase's timing. Measured in a browser: the naive version never
+        // focused, once.
+        el.addEventListener('estate-search:auth', focusSearchInput, { once: true });
+        guardHiddenScanRow(el);
 
         host.appendChild(el);
         setState('ready');
-
-        // A reach into the component's shadow root, and the only one: the panel
-        // exists to be typed in, and it was opened by a deliberate click. Fully
-        // guarded — a component that stops having a search input loses the
-        // focus, not the panel.
-        el.shadowRoot?.querySelector<HTMLInputElement>('input[type="search"]')?.focus();
       })
       .catch((err: unknown) => {
         console.warn('[estate-search] the shared component did not load:', err);
@@ -162,6 +207,7 @@ export function EstateSearchPanel() {
       cancelled = true;
       if (el) {
         el.removeEventListener('estate-search:select', onEstateSelect);
+        el.removeEventListener('estate-search:auth', focusSearchInput);
         el.remove();
       }
     };
