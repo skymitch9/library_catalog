@@ -53,7 +53,7 @@ import { getFirestore, type Firestore } from 'firebase/firestore';
  */
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY ?? 'AIzaSyDgAblkxzVxl7nFbd7jXOo6PpuNPsJw11Y',
-  authDomain: 'audiobook-catalog.firebaseapp.com',
+  authDomain: 'auth.heygabi.ai',
   projectId: 'audiobook-catalog',
 };
 
