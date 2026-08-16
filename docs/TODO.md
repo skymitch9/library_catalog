@@ -13,6 +13,46 @@
 > This is the living work log. Stable facts live in `docs/access/` and
 > `docs/info/`; current state lives here. Cross-link, don't duplicate.
 
+## ✅ Index-push staleness — data-aware backstop (2026-08-16) — DEPLOYED
+
+Closes the class behind "Boba Fett still Part of Disney": a backfill script
+writes `work` directly via `wrangler d1 execute`, bypassing every mutation
+route, so `indexPushAfterMutation` never fires — and the old backstop only
+asked "is the last push >24h old?", which cannot see a bypassed write at all.
+It bit three times on 2026-08-15 (Boba Fett, the games universe rows, the
+library universe rows), each fixed by a human triggering an unrelated
+mutation by hand. Full context: `catalog-platform/docs/TODO.md`'s
+"Index-push staleness — the real fix" note (queued, now closed here and in
+the games catalog).
+
+- `packages/db/src/index-projection.ts`: new `getLatestSourceUpdateAt(db)` —
+  `MAX(work.updated_at)`, parsed UTC-safe (SQLite's `datetime('now')` has no
+  zone marker; naive `Date.parse` reads it as local time — same fix as
+  `scan-jobs.ts`'s `sqliteTime`).
+- `apps/worker/src/lib/index-push.ts`: `pushIndexIfStale` now also compares
+  that fingerprint against the index's own `pushed_at` via the new pure
+  `decidePushForStaleness` gate — pushes when data moved after the last push,
+  even if that push is well inside the 24h tolerance. 10 unit tests in the
+  new `index-push.test.ts` pin the decision table.
+- `apps/worker/src/routes/admin.ts`: `POST /api/admin/index-push` — owner-gated
+  (`requireCapability('manageUsers')`, same as the rest of that surface) manual
+  force-push, for when someone doesn't want to wait for the next backstop tick.
+- `scripts/backfill-years.mjs`: was the one backfill script not bumping
+  `updated_at` — fixed, so it's no longer invisible to the new check.
+
+**Mirrored in Board_Game_Catalog** (same design, `item`/`game` instead of
+`work`/`library`) — the two `index-push.ts` files are deliberately kept in
+sync; see that repo's own TODO/HANDOFF for its half.
+
+**Verified**: `npm test` (480/480, was 470) and `npm run typecheck` both
+clean. Deployed — `library.heygabi.ai/api/health` 200. Live-captured via
+`wrangler tail` on the games twin (same code shape): the deployed backstop
+ran the new `getLatestSourceUpdateAt` + `decidePushForStaleness` path against
+real traffic and logged `"index is fresh (837 rows, pushed …)"` — the exact
+reason string only the new code produces. Did **not** live-trigger the
+data-moved-since-push branch itself (would need an out-of-band write against
+production to demonstrate) — that branch is unit-test-verified only.
+
 ## 📸 Owner note — Illumicrate edition photos (2026-08-14)
 
 The Percy Jackson ILLUMICRATE editions need their own photos added as
