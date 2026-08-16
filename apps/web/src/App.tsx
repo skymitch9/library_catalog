@@ -46,6 +46,7 @@ import {
   workPath,
   type Route,
 } from './router.js';
+import { EstateSearchPanel, EstateSearchToggle } from './components/EstateSearch.js';
 import { ThemeCog } from './components/ThemeCog.js';
 import { CollectionPage } from './pages/CollectionPage.js';
 import { ScanJobsPage } from './pages/ScanJobsPage.js';
@@ -80,6 +81,16 @@ export function App() {
   const [me, setMe] = useState<Me | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Whether the estate-wide search panel is open.
+   *
+   * ⚠️ Lifted here rather than owned by the component because its two halves
+   * live on opposite sides of the header: the toggle is a control INSIDE the
+   * sticky top bar, the panel is a full-width strip BELOW it. Nothing else
+   * depends on it, so it is state and not a route — unlike every screen, this
+   * is a box you open and close, not a place you go.
+   */
+  const [estateOpen, setEstateOpen] = useState(false);
   const route = useRoute();
 
   const check = useCallback(async () => {
@@ -270,12 +281,23 @@ export function App() {
             </Link>
           )}
         </nav>
+        {/* ⚠️ ADDITIVE, and NOT this catalog's search. The collection page's own
+            box searches THESE books server-side with facets and pagination and
+            is untouched; this one asks the shared index at index.heygabi.ai
+            whether we own a thing on ANY shelf — audiobooks, books, board
+            games. See components/EstateSearch.tsx.
+
+            Beside the cog rather than in the nav for the reason the nav chips
+            give above: those are places you go, and this is a tool you open. */}
+        <EstateSearchToggle open={estateOpen} onToggle={() => setEstateOpen((o) => !o)} />
         {/* The settings cog — the estate theme dropdown and light/dark/auto
             live here (ThemeCog.tsx). Beside "Sign out" because both are
             about the person, not the catalog; the nav chips stay places. */}
         <ThemeCog />
         <button onClick={() => void signOutNow()}>Sign out</button>
       </header>
+
+      {estateOpen && <EstateSearchPanel />}
 
       <Screens
         route={route}

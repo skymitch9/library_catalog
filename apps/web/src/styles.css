@@ -354,6 +354,44 @@ a.topbar__brand { text-decoration: none; }
 }
 .cog__note { margin: 0; }
 
+/* --- search every shelf --------------------------------------------------- */
+
+/*
+ * The shared <estate-search> element's home (components/EstateSearch.tsx).
+ *
+ * ⚠️ There is almost nothing to style, and that is the point: the component
+ * carries its OWN scoped <style> inside a shadow root, written against the same
+ * `--et-*` tokens this app already sets, so it re-skins with every theme for
+ * free. Nothing here may reach inside it — a rule targeting `.es-*` would be
+ * styling another repo's private DOM, and shadow encapsulation would refuse it
+ * anyway. All this does is give the element a strip to sit in.
+ *
+ * The strip matches `main`'s measure and gutter exactly, so the box lines up
+ * with the page under it rather than floating in its own margin.
+ */
+.estate-toggle {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--et-muted);
+  transition: filter var(--et-dur-fast) var(--et-ease),
+              box-shadow var(--et-dur-fast) var(--et-ease),
+              color var(--et-dur-fast) var(--et-ease);
+}
+.estate-toggle:hover:not(:disabled) { color: var(--et-fg); }
+.estate-toggle[aria-expanded='true'] { color: var(--et-fg); }
+
+.estate-panel {
+  padding: 1rem 1rem 0;
+  max-width: 64rem;
+  margin: 0 auto;
+}
+.estate-panel__note { margin: 0.5rem 0 0; }
+
 /* --- stats --------------------------------------------------------------- */
 
 .stat-strip {
