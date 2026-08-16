@@ -42,10 +42,40 @@ function filename(ext: string): string {
   return `library-catalog-${new Date().toISOString().slice(0, 10)}.${ext}`;
 }
 
+/**
+ * ⚠️ PER-ROUTE GUARDS, NEVER `.use('*')` HERE — and the reason is a real bug,
+ * not a style preference.
+ *
+ * This sub-app used to gate itself with `.use('*', requireCapability(
+ * 'editCatalog'))`. It is mounted in index.ts at the BARE `/api` prefix, so
+ * Hono registered that middleware as `/api/*` — and ran it for **every
+ * sub-app mounted after it**: series, universes, crowdfunding, isbn, enrich,
+ * research, reviews and scan-jobs. Eight of them.
+ *
+ * Measured 2026-08-16, not reasoned: a `member` got
+ * `403 {"capability":"editCatalog"}` on `GET /api/series`, `/api/universes/:name`,
+ * the whole research queue, and `GET /api/reviews/collection` — all of which
+ * declare `read` — and could not `POST /api/reviews/:workId/draft`, which
+ * declares `trackReading`. The sharpest symptom: `PUT /api/works/:id/reading`
+ * is mounted BEFORE export, so the same member could mark a book read but not
+ * write the review that goes with it.
+ *
+ * It failed CLOSED — an over-restriction, never an escalation — which is
+ * exactly why nothing broke loudly and nobody noticed: every current account
+ * holds `editCatalog` or better (measured: 1 admin, 2 owners, zero lesser
+ * roles), so it refused nobody. It would have bitten the first `member` added
+ * — which is precisely what the second-household plan does.
+ *
+ * The fix is per-route guards, so this sub-app's gate can only ever apply to
+ * this sub-app's routes. ⚠️ Mounting it last was the tempting one-line
+ * alternative and was REJECTED: it only moves the blast radius to whatever is
+ * mounted after it next, and leaves the trap armed for the next author.
+ *
+ * `routes/mount-order.test.ts` pins this; it fails if a blanket `.use('*')`
+ * returns here.
+ */
 export const exportRoutes = new Hono<AppBindings>()
-  .use('*', requireCapability('editCatalog'))
-
-  .get('/export.json', (c) =>
+  .get('/export.json', requireCapability('editCatalog'), (c) =>
     new Response(textStream(exportJsonChunks(c.env.DB)), {
       headers: {
         'Content-Type': 'application/json; charset=utf-8',
@@ -58,7 +88,7 @@ export const exportRoutes = new Hono<AppBindings>()
     }),
   )
 
-  .get('/export.csv', (c) =>
+  .get('/export.csv', requireCapability('editCatalog'), (c) =>
     new Response(textStream(exportCsvChunks(c.env.DB, c.get('user').id)), {
       headers: {
         'Content-Type': 'text/csv; charset=utf-8',

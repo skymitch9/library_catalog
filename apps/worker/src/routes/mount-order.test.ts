@@ -194,15 +194,38 @@ describe('index.ts mount order', () => {
    * mounted there. That combination is the whole defect; this test is what
    * fails first if either half changes.
    */
-  it('exportRoutes is the only bare-/api mount with a blanket .use(*)', () => {
-    const source = readFileSync(fileURLToPath(new URL('./export.ts', import.meta.url).href), 'utf8');
+  it('export.ts must NEVER regain a blanket .use(*) — it is mounted at bare /api', () => {
+    // ⚠️ Inverted 2026-08-16 when the defect was fixed. It used to assert the
+    // blanket gate was PRESENT (characterising the bug). It now asserts the
+    // opposite, because the combination that caused the leak — a blanket
+    // `.use('*')` in a sub-app mounted at the BARE `/api` prefix — is still
+    // one edit away at any time, and nothing else would catch it.
+    const raw = readFileSync(fileURLToPath(new URL('./export.ts', import.meta.url).href), 'utf8');
+    // ⚠️ Strip comments before asserting. The docblock in export.ts EXPLAINS the
+    // old bug and therefore quotes `.use('*', requireCapability(...))` verbatim —
+    // a naive grep of the raw file matches that prose and fails on correct code.
+    // Caught immediately when this test was inverted; the lesson is that a
+    // source-grep test must look at code, not at the file.
+    const source = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    assert.doesNotMatch(
+      source,
+      /\.use\('\*'/,
+      "export.ts has a blanket .use('*') again. Mounted at bare /api, Hono registers that " +
+        'as /api/* and runs it for EVERY sub-app mounted after it — series, universes, ' +
+        'crowdfunding, isbn, enrich, research, reviews, scan-jobs. Guard each route instead.',
+    );
     assert.match(
       source,
-      /\.use\('\*',\s*requireCapability\('editCatalog'\)\)/,
-      "export.ts's blanket gate changed — re-verify what the composed app now does",
+      /\.get\('\/export\.json',\s*requireCapability\('editCatalog'\)/,
+      'export.json lost its own guard — the export must stay editCatalog-only',
+    );
+    assert.match(
+      source,
+      /\.get\('\/export\.csv',\s*requireCapability\('editCatalog'\)/,
+      'export.csv lost its own guard — the export must stay editCatalog-only',
     );
     const bare = MOUNTS.filter(([prefix]) => prefix === '/api').map(([, name]) => name);
-    assert.ok(bare.includes('exportRoutes'));
+    assert.ok(bare.includes('exportRoutes'), 'exportRoutes is still mounted at bare /api');
   });
 });
 
@@ -217,6 +240,7 @@ describe('index.ts mount order', () => {
  * stand as the only statement.
  */
 describe('⚠️ DEFECT: export.ts\'s blanket gate leaks onto everything mounted after it', () => {
+  // The routes the leak used to reach. Kept as the regression surface.
   const leaked: [string, string][] = [
     ['/api/series', 'read'],
     ['/api/series/Mistborn', 'read'],
@@ -228,27 +252,26 @@ describe('⚠️ DEFECT: export.ts\'s blanket gate leaks onto everything mounted
   ];
 
   for (const [path, declares] of leaked) {
-    it(`GET ${path} declares '${declares}' but refuses a member as 'editCatalog'`, async () => {
+    it(`GET ${path} declares '${declares}' and is no longer refused as 'editCatalog'`, async () => {
       const res = await get('member', path);
-      assert.equal(res.status, 403);
-      assert.equal(
+      assert.notEqual(
         res.capability,
         'editCatalog',
-        `${path}: expected the leaked gate. If this now says '${declares}', export.ts was fixed — delete this describe.`,
+        `${path}: refused as 'editCatalog' again — export.ts's gate is leaking across the ` +
+          `bare-/api mount. This route declares '${declares}'.`,
       );
     });
   }
 
-  it('a guest is refused the same way, on routes `read` names them for', async () => {
+  it('a guest is no longer refused as editCatalog on a route `read` names them for', async () => {
     const res = await get('guest', '/api/universes/cosmere');
-    assert.equal(res.status, 403);
-    assert.equal(res.capability, 'editCatalog');
+    assert.notEqual(res.capability, 'editCatalog', 'the leak is back');
   });
 
-  it('a contributor is admitted everywhere the leak reaches — it over-restricts, never escalates', async () => {
+  it('a contributor is still admitted everywhere — the fix must not have narrowed anything', async () => {
     for (const [path] of leaked) {
       const res = await get('contributor', path);
-      assert.notEqual(res.status, 403, `${path}: the leak refused a contributor, which would be a REAL break`);
+      assert.notEqual(res.status, 403, `${path}: a contributor is now refused — the fix narrowed something it should not have`);
     }
   });
 
@@ -270,17 +293,25 @@ describe('⚠️ DEFECT: export.ts\'s blanket gate leaks onto everything mounted
    * symptom, and the one most likely to be reported as "reviews are broken for
    * her but read-state works".
    */
-  it('trackReading is split in half by the mount order', async () => {
+  it('trackReading is whole again — read-state and its review agree', async () => {
+    // ⚠️ THE SHARPEST SYMPTOM THE DEFECT PRODUCED, kept as the sharpest guard.
+    // PUT /api/works/:id/reading is mounted BEFORE exportRoutes and POST
+    // /api/reviews/:id/draft AFTER, and both declare `trackReading` — so a
+    // member could mark a book read but not write the review that goes with
+    // it. One capability, split in half by mount order alone.
     const reading = await get('member', '/api/works/1/changes');
-    assert.notEqual(reading.status, 403);
+    assert.notEqual(reading.status, 403, 'the earlier half must still admit a member');
 
     const draft = await composedAs('member').request(
       '/api/reviews/1/draft',
       { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' },
       stubEnv,
     );
-    assert.equal(draft.status, 403, 'reviews/draft declares trackReading; today the leak refuses a member');
-    const body = (await draft.json()) as { capability?: string };
-    assert.equal(body.capability, 'editCatalog');
+    const body = (await draft.json().catch(() => ({}))) as { capability?: string };
+    assert.notEqual(
+      body.capability,
+      'editCatalog',
+      'reviews/draft declares trackReading but was refused as editCatalog — the halves have split again',
+    );
   });
 });
