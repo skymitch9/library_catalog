@@ -163,8 +163,8 @@ ESTATE_AUTH_URL = "https://auth.heygabi.ai"
 # here explicitly — an omission here is a missing binding on HER worker, not a
 # fallback to the main one.
 #
-# ⚠️ NAMING: the hostname `sam.heygabi.ai` is explicitly TEMPORARY (owner
-# decision 2026-08-16) and may change. Everything PERMANENT is therefore
+# ⚠️ NAMING: the hostname is `padhard.heygabi.ai` (owner decision 2026-08-16,
+# replacing the temporary `sam.heygabi.ai`). Everything PERMANENT is
 # identity-neutral: env `friend`, D1 `library-catalog-2nd`, bucket
 # `library-2nd-covers`. Never rename those to match whatever the hostname
 # becomes — the hostname is the only thing allowed to change.
@@ -206,16 +206,16 @@ bucket_name = "library-2nd-covers"
 [env.friend.triggers]
 crons = ["7 * * * *"]
 
-# ⚠️ TEMPORARY hostname (owner decision 2026-08-16) — see the naming note
-# above. Changing it later is: edit this pattern, add the new host to Firebase
-# Authorised domains, redeploy. Nothing else in her instance knows the name.
+# Hostname settled 2026-08-16 (was `sam.heygabi.ai` for a few hours) — see the
+# naming note above. Changing it again is: edit this pattern, add the new host
+# to Firebase Authorised domains, redeploy. Nothing else knows the name.
 #
 # ⚠️ Firebase: add this host to Authentication → Settings → Authorised domains
 # BEFORE she sees the URL, or Google sign-in fails `auth/unauthorized-domain`.
 # The workers.dev URL (library-catalog-friend.<account>.workers.dev) works
 # regardless, subject to the same Firebase-domain requirement.
 [[env.friend.routes]]
-pattern = "sam.heygabi.ai"
+pattern = "padhard.heygabi.ai"
 custom_domain = true
 
 [env.friend.vars]
