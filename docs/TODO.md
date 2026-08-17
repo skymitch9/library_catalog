@@ -24,19 +24,6 @@
 > living docs — they do not compete with this file for "what is happening
 > now", so do not helpfully re-merge them.
 
-## ⏳ Committed but NOT deployed — `cc27fec` (universes single-writer guard)
-
-Nothing runtime changed in it (a test, docs, and one comment in `health.ts`), so
-there is nothing to see live and no hurry. It was **deliberately not deployed**:
-at the time it landed the working tree held a concurrent agent's uncommitted
-donor work — including an unapplied `migrations/0321_donor_fuzzy_source_tier.sql`
-— and both a dirty-tree deploy and a `d1 migrations apply` would have shipped or
-applied work that is in no commit. It rides along with the next deploy of either
-instance; live at that moment was main `0007e16c…` / friend `ec721da6…`.
-
-⚠️ **Do not apply 0321 on its behalf.** It belongs to that agent's item and must
-land with its own code.
-
 ## 🔥 Owner asks 2026-08-16 late evening — status board
 
 ### Third wave (2026-08-17 morning)
@@ -78,13 +65,6 @@ Landed and archived — the TBR instant-clear built in `audiobook_catalog`
 that repo is outstanding, and it belongs to the conductor, not to this file.
 
 ### Second wave (rapid-fire, logged as they arrived)
-- **Series linking, owner's words on the desired UX:** *"I want missing books
-  to say you don't have book 1 but audio and ebook do and Skylar also owns
-  it."* So the series view is per-VOLUME ownership across mediums and owners:
-  each volume row names who holds it in what format, and a gap is a gap only
-  if NOBODY holds it in ANY medium. This extends the canonical-series-registry
-  item — the series page consumes the estate index union + each catalog's
-  holdings. 📋 QUEUED (reset batch, design locked).
 - **Sequencing (owner):** deliver current batch → **Discord portal** (owner is
   nearly home for the owner-present steps) → **EPUB/PDF viewer** after.
 
@@ -92,13 +72,6 @@ that repo is outstanding, and it belongs to the conductor, not to this file.
   archived in [`DONE.md`](DONE.md)): when her catalog is worth asking, one
   line in the main `[vars]` — `DONOR_URL = "https://padhard.heygabi.ai"` —
   makes the donating mutual. Owner's call on timing; zero code.
-- **Add her instance to the estate to be managed** — 📋 QUEUED (reset batch):
-  admin members page per-site columns, estate probes, status page rows for
-  `library2`/padhard.
-- **Cross-catalog bridge** (no duplicate series/universes; per-catalog surfaces
-  stay holdings-only, apex series/universe pages union every medium + owner) —
-  📋 QUEUED (reset batch), design agreed: canonical series registry in the
-  estate index, auto-merge exact fold, confirm-first queue for fuzzy.
 - **🤖 "Sam asks GABI to fix her books" — conversational fixer (owner vision,
   2026-08-16 late):** *"in the future i want Sam to be able to ask gabi to fix
   books for her like id ask you. it'd be done through api but it would have
@@ -256,110 +229,6 @@ photos."
 
 ---
 
-## ⚠️ READ THIS FIRST — handoff, state at 2026-08-14 ~05:30Z
-
-**Written to survive a model swap and to be executable without the session that
-wrote it.** Operational detail lives in `docs/access/estate-auth.md`,
-`docs/access/index-worker.md` and `docs/access/themes.md` (all new tonight,
-verified against the live estate) — this section is the map, those are the
-manuals.
-
-### What is LIVE (every row curled/probed 2026-08-14 ~05:10–05:20Z)
-
-| Surface | State |
-|---|---|
-| **auth.heygabi.ai** | 🚢 Estate directory Worker, **deployed + seeded**: health shows `approved:2, approvers:1, pending:0`; remote migrations 0001+0002 (visibility) applied; all three `ESTATE_APP_TOKEN_*` secrets set |
-| **index.heygabi.ai** | 🚢 **All three catalogs pushed** — game 836 / library 346 / audiobook 1077 rows with fresh `pushed_at`; reads are members-only (tokenless → 401, probed); ⚠️ remote migration `0003_visibility_cache.sql` **pending** — it belongs to the in-flight visibility work, apply WITH that deploy |
-| **heygabi.ai** (apex) | 🚢 Live search (`find.js` → `/api/search`) + the `/admin` member page (200); `classic` theme default; ⚠️ served `theme.js` is still **pre-v2** |
-| **board games** | 🚢 **`ESTATE_CHECK=enforce` DEPLOYED** (commit `6692c1d`, worker deploy 2026-08-14T05:07Z) + theme **v2 live** |
-| **library** | 🚢 Deployed at `44a52f3` (04:38Z): estate themes v1 + **`ESTATE_CHECK=shadow`** — ⚠️ enforcement is NOT BUILT here (`estate-auth-shadow.md`); theme v2 (`9da43af`) committed, NOT deployed |
-| **audiobooks** | Estate themes (cyberpunk default, first-ever light mode on stats + guess game) live on **`/dev/` ONLY**; prod site untouched |
-| Secrets | Every estate/push token name verified set in production via `wrangler secret list`; ⚠️ **values only in the session scratchpad `estate-app-tokens.json` (LOCAL ONLY)** |
-
-### In flight — the five workstreams (per FABLE5 §7 claims; check its tail for landings)
-
-1. **Federated admin view** (wave 2): apex `/admin` gains `admin.js` + NEW
-   `routes/admin.ts` in library + games workers (`GET/PATCH /api/admin/users`,
-   owner-gated via each app's own `manageUsers`, CORS locked to the apex).
-2. **Visibility-aware search (B2)**: index `/api/search` becomes
-   scoped-not-gated — anonymous → `{audiobook}` slice, members → their
-   visibility set (design §4.5). The catalog-platform tree is dirty with it;
-   remote 0003 pending (above).
-3. **Library enforcement build** — shadow's clean-log soak is the gate;
-   today `enforce` only logs `enforce_requested` and behaves as shadow.
-4. **Theme v2 wave** — committed in all three repos; dispatcher ships apex
-   Pages + games + library **together** (games' half is already live).
-5. **Docs refresh** — the three access docs + this handoff (landed with this
-   commit).
-
-### Awaits the OWNER 🔴
-
-(All three items below CLEARED 2026-08-14: audiobook identity v2 + themes +
-community estate-admin link all PROMOTED to prod on the owner's word; library
-ESTATE_CHECK="enforce" is deployed; the attended passes happened live. What
-awaits the owner now is the CI-arming checklist in
-catalog-platform/docs/TODO.md §1.5.)
-
-
-### Deploy commands per surface
-
-| Surface | Command |
-|---|---|
-| auth Worker | `cd catalog-platform/apps/auth-worker && npm run db:migrate && npx wrangler deploy` |
-| index Worker | `cd catalog-platform/apps/index-worker && npm run db:migrate && npx wrangler deploy` |
-| apex (+ `/admin`) | `npx wrangler pages deploy sites/heygabi-home/public --project-name heygabi-home` (catalog-platform root) |
-| library | `npm run deploy` (clean tree; migrate first if one is pending) |
-| games | `npm run deploy` |
-| audiobook `/dev/` | `git push origin main` — pushing that repo's main IS the /dev/ deploy |
-| audiobook prod | 🔴 owner says "prod" → promote.yml, the sole writer of prod |
-
-### Verification
-
-```bash
-curl -s https://auth.heygabi.ai/api/health     # approved:2, approvers:1
-curl -s https://index.heygabi.ai/api/health    # three sources, fresh pushed_at
-npm test && npm run typecheck                  # library: 393+ expected
-```
-
-⚠️ Git Bash curl here can report status 000 / exit 43 on hosts that are up —
-use PowerShell `Invoke-WebRequest`, or `curl -s -D -` and read the status line.
-
-### 🧾 Bridge retirement proof (hardening step 4) — RAN 2026-08-14, both bridges STAY
-
-The index-worker design's own gate ("retire *only* when the index provably
-answers what they answer") **failed for both bridges**, by measurement, not
-assumption — full delta table + method in
-`docs/access/index-worker.md` → *Bridge retirement*. Short form: the index's
-exact-fold join reproduces 21/70 live `audiobook_holding` rows and 0/135
-series rungs, and its `work_fold` agrees with the stamped review `workKey` on
-only 329/870 docs (raw decorated titles vs cleaned). So
-`scripts/backfill-review-keys.mjs` and `scripts/backfill-audiobook-holdings.mjs`
-**both keep running as before**; nothing moved to an attic, no data touched.
-Two live observations for whoever runs them next: (1) ✅ **DONE 2026-08-14** —
-work #250 *Space Knight Book 2* got its `work_alias` (bare "Space Knight",
-`kind='title'`, `source='manual'`, written by the new
-`scripts/add-space-knight-alias.mjs`, whose header carries the measured
-reasoning) and the holdings backfill was re-run `--remote --commit`. Verified
-by re-reading production: #250 now holds `matched_via='exact'`,
-`via_alias='Space Knight'`, `index_sort=2` — the vol-2 row, not book 1's.
-⚠️ #249 *Space Knight Book 1* has the same miss (its audiobook's cleaned title
-is also bare "Space Knight") but was left alone: nothing recorded prescribes
-it, and pointing two works at one alias string would be ambiguous.
-⚠️ The same re-run also wrote the catalog's post-growth deltas: holdings
-70 → 79 live (incl. 2 read-and-approved containment matches — the two Harry
-Potter "(Full-Cast Edition)" rows), rungs 135 → 144 live, with **9 new `fold`
-rungs across 4 new series** (A Court of Thorns and Roses ×5, Grey Griffins ×1,
-The Inheritance Cycle ×1, The Symphony of Ages ×2) — so "possibly on audio" is
-back on those pages, honestly; the owner's series-page confirm button
-(migration 0110) is the designed remedy if the mappings are right.
-(2) review stamping is currently complete (870/870, zero
-re-run backlog), so bridge A is dormant until the audiobook site accrues new
-reviews.
-
----
-
----
-
 ## Production right now
 
 Measured **2026-08-12**, live version `d441ecd1`:
@@ -374,28 +243,6 @@ now confirmable by hand, see below. Of the 70 live `audiobook_holding` rows,
 **all 70 are `exact`**; zero rest on containment.
 
 ---
-
-### 🔨 Cover swap — port it from the Board Game Catalog
-
-Owner: *"like the board game site can we just get the cover swap feature if we
-don't already have it."*
-
-⚠️ **We do not have it.** What exists today (`routes/covers.ts`) is: `PUT` a URL,
-`POST` an upload, `PATCH` a status, `DELETE`. All of those *replace* the one
-`work.cover_url`. There is **no** notion of holding several candidate covers and
-choosing between them, and no way to see the alternatives you are choosing from.
-
-Why it matters here specifically: **147 of this catalog's covers are hotlinks** —
-106 Open Library, 41 Google Books — which fetch fine server-side but render
-unreliably in a browser, and only **11** live in our own R2. A swap UI is also the
-natural place to move a hotlink into R2 permanently.
-
-⚠️ Read the sibling implementation before designing: the Board Game Catalog has
-this feature and this repo's cover rules were largely ported from it, so the
-candidate-list shape and the "which one is canonical" decision are already solved
-there. Also honour migration 0040 — **`cover_status` travels with `cover_url` or
-not at all** — a swap must carry the status across, or a "stand-in" flag survives
-onto its replacement.
 
 ---
 
@@ -441,25 +288,6 @@ the kind of "it was probably the same" guess the catalog refuses elsewhere. Ask,
 or look.
 
 ---
-
-### 🔨 Add a record-delete button — asked 2026-08-13
-
-Owner: *"Add a todo to add a record delete button."*
-
-⚠️ **`DELETE /api/works/:id` already exists** (`routes/catalog.ts:305`, gated on
-`editCatalog`) and **nothing in the web app calls it** — `grep deleteWork` across
-`apps/web/src` returns nothing. So a junk row can only be removed with
-`wrangler d1 execute`, which is exactly the remedy `WorkFields`' own header says
-this app exists to avoid. Removing works 301 and 302 tonight required raw SQL.
-
-Safe to build: all **15** foreign keys to `work(id)` are `ON DELETE CASCADE`
-(verified across every migration), so a delete cleans up its editions, copies,
-aliases, watches and read-state without orphans.
-
-⚠️ Wants a confirm step that **says what will go with it** — the 302 case would
-have read "6 editions and 6 copies", which is precisely the information that makes
-the delete obviously right. And it belongs with the audit log in the edit-any-detail
-item below: a delete is the one edit that cannot be undone by re-editing.
 
 ---
 
@@ -694,33 +522,6 @@ as the author — *Scholastic* on #141, *Bendon* on #137 — so that is a legiti
 answer, not a placeholder.
 
 ---
-
-## ⚠️ GitHub Actions minutes — diagnosed 2026-08-11, fix deferred by the user
-
-**Only `audiobook_catalog` runs any workflows.** `library_catalog`,
-`Board_Game_Catalog` and `catalog-platform` have **no `.github/workflows` at
-all**, so the user's assumption was right.
-
-Seven workflows there, and **two of them are pure cron**:
-
-| Workflow | Schedule | Share of the last 100 runs |
-|---|---|---|
-| **Club Discord Notifications** | `*/15 * * * *` — **every 15 min** | 25 |
-| **Content-warning requests** | `17 * * * *` — hourly | 21 |
-| Deploy / Lint / Tests / promote | push or manual | the rest |
-
-Measured: **100 runs in 26 hours ≈ 92/day ≈ 2,760/month.** The two crons alone
-are ~46% of that and run whether or not anything changed.
-
-⚠️ **The root cause is not the crons — it is that the repo went private on
-2026-08-10.** Public repos get unlimited Actions minutes; private repos are
-metered (2,000/mo Free, 3,000 Pro). Those two schedules were free the day before
-and metered the day after. Nothing about the workflows changed.
-
-Cheapest fixes, in order: lengthen the Discord poll from 15 min to 30–60 (saves
-~50–75% of the largest consumer on its own), fold the hourly CW check into the
-same job, or move both to Cloudflare Cron Triggers — the estate already runs
-Workers, and Cloudflare's scheduler is free.
 
 ---
 
