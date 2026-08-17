@@ -27,6 +27,17 @@
 ## 🔥 Owner asks 2026-08-16 late evening — status board
 
 ### Second wave (rapid-fire, logged as they arrived)
+- **Donor fuzzy-match backstop** (owner ask 2026-08-16, after the donor build
+  landed): *"have our ai model do a back up search on donors for fuzzy match
+  before going to web."* Ladder becomes: (1) donor exact canonical-fold match
+  (shipped today) → (2) when that misses, the donor returns a cheap candidate
+  shortlist (same author / fold-overlap SQL, no new normaliser) and ONE small
+  AI call judges "same work?" → on confident yes, use the donor's fields; on
+  no/unsure → (3) existing full web research. ⚠️ Fuzzy-matched donor answers
+  persist real data, so mirror the games matcher's confirm-first spirit: only
+  auto-apply on a high-confidence judge verdict, otherwise leave the finding
+  pending for a person. Donor-only instances (no AI key) stop at step 1
+  unchanged. 📋 QUEUED (reset batch).
 - **Ebook bookshelf: PROMOTED** ✅ — owner approved (*"I like the ebook site,
   promote it"*), promote.yml run 31994510844 success, prod deploy 31994541801
   success, `eb-shelf`/`eb-spine` markers verified live on ebooks.heygabi.ai.
