@@ -90,6 +90,29 @@
   estate index, auto-merge exact fold, confirm-first queue for fuzzy.
 - **Ebooks UX round 2** — 📋 QUEUED (reset batch); the bookshelf at
   `/dev/ebooks.html` is NOT promoted and the owner wants another pass first.
+- **🤖 "Sam asks GABI to fix her books" — conversational fixer (owner vision,
+  2026-08-16 late):** *"in the future i want Sam to be able to ask gabi to fix
+  books for her like id ask you. it'd be done through api but it would have
+  the needed context to fix things."* FUTURE — design seed, not queued yet
+  (sits after the current batch + Discord queue + EPUB/PDF viewer unless
+  reprioritized). The shape that keeps it safe and small:
+  - **The write plumbing already exists and must be REUSED, never bypassed:**
+    `claimRun`/`saveFindings`/`applyFinding`/`autoApplyFindings` are the one
+    canonical path that fixes a book, with provenance (`source_tier`,
+    `decided_by`, `decided_how`) and revert (`revertFinding`) built in. A
+    conversational GABI is a new FRONT DOOR to that machinery — an Anthropic
+    tool-use loop whose tools are the worker's existing capability-gated
+    endpoints — not a new writer.
+  - **Her authority, not GABI's:** actions run as Samantha (admin on her
+    instance, role ladder), attributable in the audit trail — never as a
+    service account. Scope: HER instance only.
+  - **Guardrails:** action allowlist (detail fixes, cover swaps; deletes
+    excluded at first), confirm-before-write summaries for anything bulk,
+    spend rides the capped-workspace key design (§4 of second-instance.md).
+  - **Surface question for later:** her site (a chat panel) vs Discord DM to
+    GABI — decide when built; the API loop is identical behind either.
+  Cross-referenced from catalog-platform TODO §0 (GABI queue).
+
 - **EPUB/PDF in-browser reader** (future ask: preview or read on the site) —
   📋 BACKLOG, feasibility note owed. First take: very buildable — epubs we
   already parse (OPF extraction ships covers today) render fine with a
