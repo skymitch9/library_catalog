@@ -11,7 +11,7 @@ things that will bite you in the first ten minutes.
 | `docs/info/identity-and-reviews.md` | One Google account across two catalogs, and one review store. The audiobook site does three surprising things; they are all documented there. |
 | `migrations/0001_init.sql` | The schema comments carry the reasoning, not just the columns. |
 | `docs/info/universes.md` | ⚠️ **This repo now depends on a sibling repo to build.** `catalog-platform` owns the shared universe list; `prebuild` / `pretest` / `pretypecheck` fetch it and **fail loudly** if that checkout is missing. Set `CATALOG_PLATFORM_DIR` if yours is not a sibling. |
-| `docs/info/estate-auth-shadow.md` | ⚠️ Estate auth runs in **SHADOW** in production (`ESTATE_CHECK="shadow"`); the **enforce arm is built** (`packages/estate-auth/src/gate.ts`) but the flip is the dispatcher's evidence-gated step — never flip it as a side effect. The canonical module is a second sibling-checkout sync (`sync-estate-auth.mjs`); `packages/estate-auth/generated/` is a build artifact like the universes. |
+| `docs/info/estate-auth-shadow.md` | ⚠️ Estate auth runs in **ENFORCE** in production on BOTH instances (`ESTATE_CHECK="enforce"` — main flipped deliberately 2026-08-13 commit `3065741` after its shadow soak; the friend env launched enforcing 2026-08-16). This row previously said SHADOW and went stale — corrected 2026-08-17 after two agents independently tripped on it. Changing the mode remains an evidence-gated dispatcher step, never a side effect. The canonical module is a second sibling-checkout sync (`sync-estate-auth.mjs`); `packages/estate-auth/generated/` is a build artifact like the universes. |
 
 ## Committing on Windows
 
