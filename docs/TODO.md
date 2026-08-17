@@ -24,6 +24,41 @@
 > living docs — they do not compete with this file for "what is happening
 > now", so do not helpfully re-merge them.
 
+## 🔥 Owner asks 2026-08-16 late evening — status board
+
+- **Hostname settled: `padhard.heygabi.ai`** — ✅ DONE (route swapped, Firebase
+  domains updated additively then `sam` removed after 522 confirmed it dead,
+  health 200 on the new name, apex Books card links it).
+- **Donor-first details sweep** (*"before pinging the ai it checks other
+  libraries for answers"*) — 🚧 IN FLIGHT, build agent dispatched 2026-08-16
+  ~21:30. `DONOR_TOKEN` minted on both instances (conductor, values nowhere).
+  Design: token-gated `GET /api/donor/details` on both instances + sweep asks
+  `DONOR_URL` before the AI, donor-only mode when no ANTHROPIC_API_KEY (her
+  instance heals from ours for free). Reciprocity = later var flip.
+- **Samantha = admin of her page** — ✅ DONE (pre-seeded `app_user` row id 1,
+  role `admin`, on library-catalog-2nd; sign-in matches by email and back-fills
+  her Firebase UID — verified against `packages/db/src/users.ts` upsert order).
+  UI-first note: no row existed yet, so this was the documented break-glass
+  path, not a bypass of the roles UI.
+- **Apex Books card → two household buttons** (Library / Samantha) — ✅ DONE,
+  deployed + live-marker verified (`padhard.heygabi.ai` is now a required
+  marker on `/`).
+- **Add her instance to the estate to be managed** — 📋 QUEUED (reset batch):
+  admin members page per-site columns, estate probes, status page rows for
+  `library2`/padhard.
+- **Cross-catalog bridge** (no duplicate series/universes; per-catalog surfaces
+  stay holdings-only, apex series/universe pages union every medium + owner) —
+  📋 QUEUED (reset batch), design agreed: canonical series registry in the
+  estate index, auto-merge exact fold, confirm-first queue for fuzzy.
+- **Ebooks UX round 2** — 📋 QUEUED (reset batch); the bookshelf at
+  `/dev/ebooks.html` is NOT promoted and the owner wants another pass first.
+- **EPUB/PDF in-browser reader** (future ask: preview or read on the site) —
+  📋 BACKLOG, feasibility note owed. First take: very buildable — epubs we
+  already parse (OPF extraction ships covers today) render fine with a
+  self-hosted reader lib off R2 range requests; PDFs via pdf.js; the real
+  design work is auth-gating the file streams so the shared pool doesn't
+  become a public download endpoint.
+
 ## 📖 TBR should span all catalogs, the way "read" does (owner ask 2026-08-16)
 
 > *"tbr like read should span all catalogs"*
