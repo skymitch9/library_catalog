@@ -1235,6 +1235,40 @@ export const api = {
     }),
 
   // -------------------------------------------------------------------------
+  // Reader content warnings — the shared `user_content_warnings` collection
+  // -------------------------------------------------------------------------
+
+  /**
+   * The lane, the ids to query, and the exact title the audiobook pipeline's
+   * published warnings file is keyed by.
+   *
+   * ⚠️ **`bookIds` is a list, not a key, and the order matters** — the first is
+   * the id a note written here is filed under, which is the AUDIOBOOK
+   * catalog's spelling of the title whenever this catalog knows it. That is the
+   * whole cross-catalog join; see `packages/core/src/warnings.ts`.
+   *
+   * ⚠️ Empty (and `held` says why) for a book with no author recorded, the same
+   * guard `reviewKeys` applies: a title-only id could surface notes about a
+   * different book with the same name.
+   */
+  warningKeys: (workId: number) =>
+    request<{
+      collection: string;
+      bookIds: string[];
+      publishedTitle: string | null;
+      writeBookId?: string;
+      audiobookTitle?: string | null;
+      held?: string;
+    }>(`/api/warnings/${workId}/keys`),
+
+  /** The Worker builds the note document; the browser writes it. See routes/warnings.ts. */
+  warningDraft: (workId: number, body: { label: string }) =>
+    request<{ collection: string; docId: string; doc: Record<string, unknown> }>(
+      `/api/warnings/${workId}/draft`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+
+  // -------------------------------------------------------------------------
   // Series completeness
   // -------------------------------------------------------------------------
 

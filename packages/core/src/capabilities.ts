@@ -76,6 +76,29 @@ export const CAPABILITY_MATRIX = {
   /** Accept or reject research findings into the catalog. */
   reviewFindings: ['owner', 'admin', 'moderator'],
   /**
+   * Take down somebody ELSE's reader-contributed content — today, a content
+   * warning on a book page (2026-08-17, the port of the audiobook site's
+   * warnings feature).
+   *
+   * ⚠️ **Its own name rather than `reviewFindings`, which holds the identical
+   * role set.** `capability-wiring.test.ts` states the reason at length: a
+   * capability that shares a role set with another is distinguishable ONLY by
+   * name, and "may curate research findings" and "may remove a person's note"
+   * are different powers that will not stay the same rung forever. Moderator
+   * is the floor because that is the floor the estate's own shadow vocabulary
+   * uses for `warning.modDelete` (catalog-platform ACTION_GATES).
+   *
+   * ⚠️ **It gates an affordance here, not the write.** The write is a Firestore
+   * delete performed by the browser with the person's own credentials, and the
+   * real gate is `canDeleteUserWarning()` in `audiobook_catalog/firestore.rules`
+   * — which reads the estate's `site_roles/{uid}`, a DIFFERENT record from this
+   * catalog's `app_user.role`. Somebody holding this capability without a
+   * `site_roles` document is refused by Firestore, and `warningDeleteVerdict`
+   * plus `describeStoreError` are what say so in words instead of a bare
+   * PERMISSION_DENIED.
+   */
+  moderateContent: ['owner', 'admin', 'moderator'],
+  /**
    * Approve a pending user, change roles.
    *
    * ⚠️ No longer owner-exclusive. `admin` is new 2026-08-16, specifically to

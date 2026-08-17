@@ -86,6 +86,7 @@ import { seriesRoutes } from './series.js';
 import { tbrRoutes } from './tbr.js';
 import { universeRoutes } from './universes.js';
 import { userRoutes } from './users.js';
+import { warningRoutes } from './warnings.js';
 import { watchRoutes } from './watches.js';
 
 /**
@@ -113,6 +114,7 @@ const MOUNTS: [string, string, Hono<AppBindings>][] = [
   ['/api/research', 'researchRoutes', researchRoutes],
   ['/api/reviews', 'reviewRoutes', reviewRoutes],
   ['/api/tbr', 'tbrRoutes', tbrRoutes],
+  ['/api/warnings', 'warningRoutes', warningRoutes],
   ['/api/scan-jobs', 'scanJobRoutes', scanJobRoutes],
 ];
 

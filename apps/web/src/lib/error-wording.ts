@@ -36,3 +36,44 @@ export function describeUnavailable(
   }
   return ACCESS_UNAVAILABLE;
 }
+
+/**
+ * A **Firestore** failure, in words — the other store, the one `describeError`
+ * knows nothing about.
+ *
+ * ⚠️ This exists because the shared collections are written by the BROWSER, not
+ * by the Worker (`routes/reviews.ts` on why there is no service account), so a
+ * refusal there arrives as a `FirebaseError` and never as an `ApiError`. Left
+ * alone it surfaces as the SDK's own *"Missing or insufficient permissions."* —
+ * a bare code in a sentence's clothing, which says nothing about what would
+ * help. Mirrors `describeActionError` in
+ * `audiobook_catalog/site/permission-ux.js`, which is the estate's canonical
+ * copy of this idea.
+ *
+ * ⚠️ **`unavailable` is an OUTAGE, not a permission problem**, and it is
+ * separated here for the reason the estate rule states outright: mislabelling
+ * one sends people asking for access they already have.
+ *
+ * @param need what the caller knows the write requires, named in the sentence
+ *   when the store refuses — e.g. `'the estate-wide moderator role'`.
+ */
+export function describeStoreError(err: unknown, opts?: { need?: string }): string {
+  const code = String((err as { code?: unknown })?.code ?? '');
+  const message = err instanceof Error ? err.message : String(err ?? '');
+
+  if (code === 'permission-denied' || /insufficient permissions/i.test(message)) {
+    return opts?.need
+      ? `That was refused. It needs ${opts.need} — ask an owner or admin to grant it.`
+      : 'That was refused: your account is not allowed to change this. Ask an owner or admin for access.';
+  }
+  if (code === 'unauthenticated') {
+    return 'Your session has expired. Sign in again to continue.';
+  }
+  if (code === 'unavailable' || err instanceof TypeError) {
+    return "Couldn't reach the shared store. Check your connection and try again.";
+  }
+  if (code === 'not-found') {
+    return 'That note is already gone.';
+  }
+  return message || 'Something went wrong reaching the shared store.';
+}

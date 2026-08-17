@@ -23,6 +23,7 @@ import {
   EDITION_SOURCES,
   FINDING_REVIEW_STATES,
   GAP_VERDICTS,
+  MAX_WARNING_LABEL,
   OBSERVED_RATINGS_MAX,
   RATING_MAX,
   RATING_MIN,
@@ -573,6 +574,27 @@ export const tbrResolveSchema = z
   })
   .strict();
 export type TbrResolveInput = z.infer<typeof tbrResolveSchema>;
+
+/**
+ * What the web app posts to add one reader content warning.
+ *
+ * ⚠️ **The 80-character bound is `firestore.rules`', not a UI preference** —
+ * `validUserWarning()` refuses a longer `label` outright, so a note past it
+ * cannot be written at all and must be refused here, in words, before the
+ * browser tries. See `MAX_WARNING_LABEL` in `constants.ts`.
+ *
+ * ⚠️ `.trim()` runs BEFORE `.min(1)`, so a note of nothing but spaces is
+ * refused rather than stored as an empty label the rules would also reject.
+ *
+ * `.strict()`, like every schema here: a field this does not model is a bug
+ * report, not something to strip in silence.
+ */
+export const addWarningSchema = z
+  .object({
+    label: z.string().trim().min(1).max(MAX_WARNING_LABEL),
+  })
+  .strict();
+export type AddWarningInput = z.infer<typeof addWarningSchema>;
 
 export const updateRoleSchema = z.object({ role: roleSchema });
 

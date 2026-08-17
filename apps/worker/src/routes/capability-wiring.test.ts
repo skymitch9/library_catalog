@@ -77,6 +77,7 @@ import { seriesRoutes } from './series.js';
 import { tbrRoutes } from './tbr.js';
 import { universeRoutes } from './universes.js';
 import { userRoutes } from './users.js';
+import { warningRoutes } from './warnings.js';
 import { watchRoutes } from './watches.js';
 
 // ── roles, derived from the matrix ──────────────────────────────────────────
@@ -312,6 +313,18 @@ const WIRED: Wired[] = [
   { routes: tbrRoutes, method: 'GET', path: '/collection', capability: 'read' },
   { routes: tbrRoutes, method: 'GET', path: '/1/keys', capability: 'read' },
   { routes: tbrRoutes, method: 'POST', path: '/resolve', capability: 'read' },
+
+  // ── warnings.ts (/api/warnings) ──
+  // ⚠️ `read` for the keys and `trackReading` for the draft — the SAME pair
+  // reviews declares, and for the same reason: neither route writes anything.
+  // The warning document itself is written and deleted by the browser with the
+  // person's own Firebase credentials, gated by `firestore.rules`. The
+  // `moderateContent` capability this feature adds is deliberately NOT wired to
+  // a route: it gates an affordance in the UI, and the real gate on the delete
+  // is `canDeleteUserWarning()` in the audiobook catalog's rules — see
+  // `packages/core/src/capabilities.ts`.
+  { routes: warningRoutes, method: 'GET', path: '/1/keys', capability: 'read' },
+  { routes: warningRoutes, method: 'POST', path: '/1/draft', capability: 'trackReading' },
 
   // ── scan-jobs.ts (/api/scan-jobs) ──
   // ⚠️ `GET /`, `POST /barcode`, `POST /shelf` and `POST /single` are pinned by

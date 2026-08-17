@@ -101,6 +101,21 @@ export async function signIn(): Promise<void> {
   await signInWithPopup(auth, provider);
 }
 
+/**
+ * The signed-in person's Firebase uid, or null.
+ *
+ * ⚠️ **This is the id `firestore.rules` compares against, and nothing else
+ * is.** `canDeleteUserWarning()` allows a delete when the document's
+ * `authorUid` equals `request.auth.uid`; a display name proves nothing (Google
+ * lets anyone set theirs to any string), and this app's own `app_user.id` is a
+ * D1 row the rules have never heard of. Used by `ContentNotes` to decide which
+ * delete affordance to draw — the same question `liveUid()` answers on the
+ * audiobook site, answered here from the session this app deliberately keeps.
+ */
+export function currentUid(): string | null {
+  return getAuth(firebaseApp()).currentUser?.uid ?? null;
+}
+
 export async function signOutNow(): Promise<void> {
   await signOut(getAuth(firebaseApp()));
 }

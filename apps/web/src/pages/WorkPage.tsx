@@ -4,6 +4,7 @@ import { describeError } from '../lib/errors.js';
 import { Accessories } from '../components/Accessories.js';
 import { Aliases } from '../components/Aliases.js';
 import { Changes } from '../components/Changes.js';
+import { ContentNotes } from '../components/ContentNotes.js';
 import { Copies, type CopyView } from '../components/Copies.js';
 import { Cover } from '../components/Cover.js';
 import { DeleteWork } from '../components/DeleteWork.js';
@@ -475,6 +476,15 @@ export function WorkPage({
       {me.capabilities.includes('editCatalog') && (
         <Enrich workId={workId} hasCover={!!work.coverUrl} onApplied={load} />
       )}
+
+      {/* ⚠️ ABOVE Reviews, deliberately, and it is the one placement decision
+          in this panel that is about the reader rather than the schema: a
+          content note is read BEFORE the book, a review after it. Below the
+          shelf sections because it is not a fact about what the household owns
+          — it is a fact about the text, which is also why it sits beside
+          Reviews rather than beside Editions. Both read the same shared
+          Firestore project; see components/ContentNotes.tsx. */}
+      <ContentNotes workId={workId} me={me} />
 
       {/* ⚠️ `onReadStateDerived` is not optional wiring. Reviews is the only
           thing here that can see Firestore, so it is where "you rated this, so

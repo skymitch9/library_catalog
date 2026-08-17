@@ -32,6 +32,7 @@ import { seriesRoutes } from './routes/series.js';
 import { tbrRoutes } from './routes/tbr.js';
 import { universeRoutes } from './routes/universes.js';
 import { userRoutes } from './routes/users.js';
+import { warningRoutes } from './routes/warnings.js';
 import { watchRoutes } from './routes/watches.js';
 
 const app = new Hono<AppBindings>();
@@ -138,6 +139,12 @@ app.route('/api/reviews', reviewRoutes);
 // both are keys into the SAME Firebase project's collections and neither owns
 // the other — an intention is not a kind of review. See routes/tbr.ts.
 app.route('/api/tbr', tbrRoutes);
+// Reader content warnings — the third key-derivation surface into the same
+// Firebase project, beside reviews and the TBR for the same reason they are
+// beside each other: none of the three owns the others, and all three exist to
+// compute a document key the browser then writes with its own credentials. See
+// routes/warnings.ts.
+app.route('/api/warnings', warningRoutes);
 // The intake queue: barcode sweeps and shelf photographs, both persisted so a
 // locked phone does not lose the sweep. See routes/scan-jobs.ts.
 app.route('/api/scan-jobs', scanJobRoutes);

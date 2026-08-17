@@ -27,6 +27,7 @@ const CAPABILITY_LABEL: Record<Capability, string> = {
   scanPhoto: 'Scanning a photo',
   runResearch: 'Running research',
   reviewFindings: 'Reviewing research findings',
+  moderateContent: "Removing someone else's content note",
   manageUsers: 'Managing people',
 };
 

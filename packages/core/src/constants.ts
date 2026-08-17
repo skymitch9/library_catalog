@@ -814,3 +814,16 @@ export const TBR_STATUS = 'tbr';
  * has ever recorded" and the heaviest list in the house is a few hundred.
  */
 export const TBR_ENTRIES_MAX = 500;
+
+/**
+ * The longest a reader-contributed content warning may be.
+ *
+ * ⚠️ **Not a preference — `firestore.rules` enforces it.** `validUserWarning()`
+ * refuses `label.size() > 80` outright, so a longer note is a guaranteed
+ * PERMISSION_DENIED that would read as "the site is broken" rather than as "too
+ * long". `MAX_WARNING_LABEL` in `audiobook_catalog/site/user-warnings.js` is the
+ * same number for the same reason; both sides state the limit to the person
+ * before the write, and this constant is what lets `schemas.ts` do that here
+ * (it may import `constants.ts` and nothing else).
+ */
+export const MAX_WARNING_LABEL = 80;
