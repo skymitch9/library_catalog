@@ -27,12 +27,29 @@
 ## 🔥 Owner asks 2026-08-16 late evening — status board
 
 ### Third wave (2026-08-17 morning)
+- **✅ EBOOK DOWNLOAD IS NOW A ROLE, NOT A CHECKBOX (owner, 2026-08-17: *"For
+  ebooks I don't want a download check box, I want to use roles we have. Set up
+  the roles to match library."*)** — built in `catalog-platform`
+  (`030930d`), nothing to do in this repo beyond the ripple already landed.
+  **Why it appears on this board at all:** the pattern the owner names by
+  "match library" is THIS repo's `@lc/core` `capabilitiesFor`, and the shared
+  `packages/estate-auth` module is build-synced from that repo, so the change
+  reached us whether we wanted it or not.
+  - **What arrived here:** the `downloadEbooks` field left `SeenAnswer` /
+    `SeenCache` / the `refresh` shape. `gate.test.ts`'s pinned shapes went back
+    to `{status, visibility, checkedAt}` — the form they had before yesterday
+    taught them the field. ⚠️ That is a ROUND TRIP, not a stale test; the file
+    header explains it so nobody "fixes" it back.
+  - **The grant now:** promote on the admin page's Audiobook role dropdown
+    (`download` floors at `admin`). `vis_ebooks` — seeing the shelf and reading
+    in the viewer — is UNCHANGED.
 - **📱 Ebook reader PWA/offline — ON THE TABLE FOR LATER (owner, 2026-08-17:
   "Add pwa back on the table for later"):** not in viewer v1. ⚠️ The design
   constraint that must survive until then: offline caching stores book
-  content on the device, so it is A FORM OF DOWNLOAD and gets gated by
-  `downloadEbook`, never bundled free with reading. Whoever builds it later
-  starts from that sentence.
+  content on the device, so it is A FORM OF DOWNLOAD and gets gated by the
+  `download` capability — **admin floor since 2026-08-17, and NOT the
+  per-person `dl_ebooks` checkbox that briefly existed** — never bundled free
+  with reading. Whoever builds it later starts from that sentence.
 - **🔴 EBOOK GATE — the three things it left open (built 2026-08-17, whole
   record in [`DONE.md`](DONE.md)):**
   1. **Purge the edge cache.** `audiobooks.heygabi.ai/ebooks.json` was still
@@ -139,10 +156,28 @@ that repo is outstanding, and it belongs to the conductor, not to this file.
 - **EPUB/PDF in-browser reader** (owner ask 2026-08-16: *"how hard would it be
   to have a reader for EPUBs and PDFs so users could either preview or a read a
   book on the site?"*; sequenced after the Discord portal) —
-  ✅ **DESIGN DONE 2026-08-17, awaiting owner read + phase-1 go.**
+  ✅ **DESIGN DONE 2026-08-17. PHASE 0a (bucket + file ingest) BUILT the same
+  day** — see [§2.2a](info/ebook-viewer-design.md) for the evidence and
+  `audiobook_catalog/docs/info/ebooks-r2-ingest.md` for the reference.
   📄 **[`info/ebook-viewer-design.md`](info/ebook-viewer-design.md)** — full
-  design, measured, with rejected alternatives per section. **Nothing is
-  built; no code, bucket, worker route or rules change exists.**
+  design, measured, with rejected alternatives per section.
+  **From phase 1a on, nothing is built: no worker route, no reader page, no
+  rules change.** Nothing in `estate-ebooks` is readable by a browser, which is
+  phase 0's success condition rather than a gap.
+  - 🔴 **OWNER ACTION carried over from phase 0a: one book is not in the
+    bucket.** ⚠️ **Measured: `wrangler r2 object put` refuses files over
+    300 MiB** (`--pipe` too — it is the Cloudflare REST endpoint's ceiling, not
+    wrangler's). Exactly one of the 168 is over it, the **393 MiB White Sand
+    omnibus**. The S3-multipart fallback is written and size-selected but needs
+    an **R2 API token** wrangler cannot mint (dashboard → R2 → Manage R2 API
+    Tokens, Object Read & Write on `estate-ebooks`). ⚠️ **Check the duplicate
+    question first** (§10): if the 143 MiB `whitesand.epub` is the same graphic
+    novel, deleting the omnibus removes the only file that needs the token.
+  - 🔴 **Pipeline wiring is a one-line conductor step, deliberately left
+    undone** — `sync_to_drive.py` auto-runs 3×/day and was contested. It is
+    **step 5.75**, not the design's 5.8 (the gate work took that slot the same
+    day); the load-bearing part is that files land *before* the manifest naming
+    them is published.
   **What the design changed about the first take** (which said "epubs off R2
   range requests, PDFs via pdf.js, real work is auth-gating"):
   - ⚠️ **The files are NOT in R2.** Measured: only covers are (1,850 + 83

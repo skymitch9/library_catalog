@@ -5,9 +5,9 @@
 > reading `audiobook_catalog/site/ebooks.json` (168 records, arithmetic run over
 > `size_bytes`) and by reading the named source files in `audiobook_catalog`,
 > `catalog-platform` and this repo. §10 lists what was **not** verified.
-> This is a **DESIGN DOC**: nothing below is built. No code, no data and no
-> other doc was changed alongside it except the two pointers this repo's rules
-> require (`info/README.md` index row, `TODO.md` item).
+> This was a **DESIGN DOC**. **Phase 0a (the bucket + file ingest) is now
+> BUILT** — 2026-08-17, evidence in [§2.2a](#22a-phase-0a--built-2026-08-17).
+> Everything from phase 1a onward is still unbuilt design.
 
 **The owner's ask, verbatim (2026-08-16):**
 
@@ -122,8 +122,8 @@ custom domain, reachable only through a Worker binding.**
 | Thing | State | Measured from |
 |---|---|---|
 | **`audiobook-api.heygabi.ai`** — the audiobook Worker | **DEPLOYED** 2026-08-16. `ENVIRONMENT=production`, `FIREBASE_PROJECT_ID=audiobook-catalog` pinned as iss+aud, `ESTATE_AUTH_URL=https://auth.heygabi.ai`, **`ESTATE_CHECK="shadow"`** | `catalog-platform/apps/audiobook-worker/wrangler.toml` |
-| **The `download` capability** | **already committed**, floor `member`, with the comment *"`download`/`upload` are Phase 4 surfaces — the floors are committed now so /api/me can already answer what the UI should render"* | `apps/audiobook-worker/src/capabilities.ts:58` |
-| **Phase 4 of the audiobook auth migration** | *"`GET /api/download/:bookId` — capability `download` (member+): answers a short-lived signed/proxied URL … a **gated READ behind the worker**"* | `catalog-platform/docs/info/audiobook-auth-migration.md` §5 Phase 4 |
+| **The `download` capability** | **already committed** — ⚠️ floor was `member` when this was written; **now `admin`** (owner directive 2026-08-17, see §6.x). The `member` value was the phase-4 placeholder this row quotes, never enforced by a shipped route. | `apps/audiobook-worker/src/capabilities.ts` |
+| **Phase 4 of the audiobook auth migration** | *"`GET /api/download/:bookId` — capability `download`: answers a short-lived signed/proxied URL … a **gated READ behind the worker**"* ⚠️ that doc said `member+`; it now reads `admin+` (see §6.x). | `catalog-platform/docs/info/audiobook-auth-migration.md` §5 Phase 4 |
 | The ladder | `guest < member < contributor < moderator < admin < owner`, stored in Firestore `site_roles/{uid}`, **written server-side only**; browsers may `get` their own doc, never list, never write | `auth-worker/src/role-ladder.ts`, `firestore.rules` |
 | `ESTATE_CHECK` enforce arm | **built and dormant** — `enforce-gate.ts` answers `503 not_enabled` in `off`/`shadow`; the flip is an owner act, never a deploy side effect | `apps/audiobook-worker/src/enforce-routes.ts` |
 | ⚠️ **CORS on the Worker** | `SITE_ORIGINS = "https://audiobooks.heygabi.ai"` — **`https://ebooks.heygabi.ai` is NOT on it** | same `wrangler.toml` |
@@ -226,8 +226,100 @@ every lesson:
 | R2 egress | **$0** — the whole reason R2 and not S3 |
 | Class A (writes) | 168 per full backfill; a handful per incremental run, against 1M/month |
 | Class B (reads) | ⚠️ **the one number that could bite.** A pdf.js range session is many small GETs — see §5.3 |
-| Backfill wall time | **not the ~3 objects/sec Node-startup floor the covers backfill hit** — at 10.7 MB mean these are bandwidth-bound, not process-bound. 1.805 GB over the household uplink; ⚠️ **the uplink was not measured** (§10) |
+| Backfill wall time | ✅ **MEASURED 2026-08-17: 1.393 GB in 8.5 minutes.** The prediction was half right — throughput climbed **0.2 → 2.7 MB/s** across the run, i.e. the small files *were* Node-startup-bound (the covers floor) and only the large ones were bandwidth-bound. Sorting smallest-first makes the reported rate rise monotonically, which is why the early numbers look alarming and are not |
 | Ongoing | trivial — the pipeline adds a handful of files a week |
+
+### 2.2a Phase 0a — BUILT 2026-08-17
+
+> **Status: ✅ DONE, with one named exception and two owner steps.** Built in
+> `audiobook_catalog` (commit `3a4d93d`). Reference doc:
+> `audiobook_catalog/docs/info/ebooks-r2-ingest.md` (LOCAL — that repo's
+> `docs/` is gitignored). Nothing here is user-visible, which is the phase's
+> success condition rather than a gap.
+
+| | |
+|---|---|
+| Script | `scripts/upload_ebooks_r2.py` (+ `tests/test_upload_ebooks_r2.py`, 22 tests) |
+| Bucket posture | ✅ **verified** — `wrangler r2 bucket dev-url get estate-ebooks` → *"Public access via the r2.dev URL is disabled."* No custom domain. Reachable only from a Worker binding that does not exist yet |
+| Object key | ✅ **as designed** — the row's `path`, verbatim. Measured: 168 unique paths ↔ 168 unique anchors, a bijection, so `:anchor → object` is 1:1 through the manifest lookup the Worker does anyway |
+| Uploaded | **167 of 168 objects, 1,392,856,647 B (1.393 GB)** — the backfill moved 166 of them in **8.5 min**, throughput climbing 0.2 → 2.7 MB/s as file sizes rose (small files are Node-startup-bound, large ones uplink-bound) |
+| ⚠️ NOT uploaded | **1 object, 412,436,591 B** — see the 300 MiB wall below. Reconciliation is exact: 1,805,293,238 − 412,436,591 = 1,392,856,647, and a set difference against `ebooks.json` names that one file and nothing else |
+| Round-tripped | 2 objects via `wrangler r2 object get` + sha256 vs local — the **smallest** (37,598 B) and the **largest in the bucket** (189,930,310 B): both **byte-identical** |
+| Idempotence | ✅ exercised — an immediate re-run reported `167 skipped, 1 pending` instantly, without re-reading 1.4 GB off disk |
+
+#### ⚠️ The 300 MiB wall — the finding that changed the build
+
+`wrangler r2 object put` **refuses any file over 300 MiB**, measured twice:
+
+```
+X [ERROR] Error: Wrangler only supports uploading files up to 300 MiB in size
+  ...White Sand Omnibus... is 393 MiB in size
+Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), src\win\async.c:76
+```
+
+⚠️ **`--pipe` does not bypass it.** Measured separately, 412,436,591 bytes
+piped in: same error. The ceiling belongs to the Cloudflare **REST object
+endpoint** that wrangler wraps, not to a wrangler-side buffer — so no wrangler
+flag, version or invocation gets past it.
+
+**Exactly one of the 168 files is over the line** (the next largest, the
+181 MiB Stormlight handbook, went through wrangler fine). The script therefore
+picks a backend per file by size: **wrangler ≤ 300 MiB** (its own OAuth token —
+nothing in the repo reads or stores a credential), **boto3 S3 multipart above
+it**. ⚠️ The S3 path is written, lazily imported and **never exercised**,
+because it needs an **R2 API token that wrangler cannot mint**.
+
+🔴 **OWNER STEP 1 — mint the token, or delete the book.** Dashboard → R2 →
+*Manage R2 API Tokens* → Object Read & Write on `estate-ebooks`; export
+`R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY`,
+`pip install boto3`, re-run `python -m scripts.upload_ebooks_r2 --commit` —
+idempotence means it touches only that one file.
+
+⚠️ **The escape hatch §10 hoped for does not exist — measured, not assumed.**
+Both White Sand EPUBs' OPF metadata was read at phase 0a: the 143 MiB file is
+*White Sand* (162 pages, one volume) and the 393 MiB file is the *White Sand
+Omnibus* (491 pages, the collected three, ASIN `B0C51J2YKH`). **Not a
+duplicate — a superset.** So the token is genuinely needed unless the owner
+decides to drop the omnibus, and the file that is arguably redundant is the
+*small* one, which uploads fine.
+
+🔴 **OWNER STEP 2 — the pipeline wiring, one line, two call sites.**
+Deliberately not done by the build agent: `scripts/sync_to_drive.py` auto-runs
+3×/day and was contested by concurrent agents.
+⚠️ **§2.2's "step 5.8" slot was taken the same day** by
+`publish_ebooks_manifest.py` (the manifest → `ebooks-gated`), so the ingest is
+**step 5.75**. The number is arbitrary; **the ORDER is not** — files must be in
+the bucket before the manifest naming them is published, or a reader gets a
+Read button that 404s. Exact block in `ebooks-r2-ingest.md` §5. ⚠️ It must pass
+`["--commit"]`: `--dry-run` is that script's default, so `main([])` would wire
+in a silent no-op that reports success.
+
+#### Two deliberate deviations from §2.1/§2.2
+
+1. ⚠️ **`site/ebook_files_manifest.json` is GITIGNORED, not committed.** It is
+   keyed on file paths — a list of the household's books by name, which is
+   exactly the surface closed on 2026-08-17 when `site/ebooks.json` was
+   gitignored on the owner's *"I don't want people scraping my books"*.
+   `audiobook_catalog` is PUBLIC and must stay public. `covers_manifest.json`
+   stays committed because it lists sha256 hashes, not books. Nothing off that
+   machine needs the record: the phase-1a Worker resolves `anchor → path` from
+   `ebooks.json` in the gated bucket. A test fails if someone adds the
+   negation.
+2. **Step 5.75, not 5.8** — see above.
+
+#### What phase 1a inherits
+
+- Bucket `estate-ebooks`, keys == `ebooks.json` paths, `Content-Type`
+  `application/epub+zip` / `application/pdf`, `Content-Disposition: inline`,
+  `Cache-Control: private, max-age=0, no-store` stored per object.
+- ⚠️ **One book that will 404** until owner step 1 lands. The Worker should
+  treat a present-in-manifest / absent-in-bucket object as its own error
+  ("this book is not available to read yet"), never as a 403 or a generic
+  500 — the four causes must stay distinguishable.
+- ⚠️ **No independent bucket listing exists** (§10). wrangler 4.123.0 has no
+  `r2 object list`; the counts above are the script's record of its own PUTs.
+
+---
 
 ### 2.3 The stream
 
@@ -654,6 +746,47 @@ separate affordance the owner can hide or show without changing the gate.
 **Recommendation: Option B, with `download` as the single capability, and the
 PDF first-page thumbnail built as part of it.**
 
+### 6.x ⚠️ DECIDED 2026-08-17 — Option B's GATE stands, its ONE-CAPABILITY half does not
+
+This section's recommendation was overtaken by the owner within a day, twice,
+and the difference matters enough to record here rather than leave a reader to
+discover that the shipped system does not match the doc they are holding.
+
+**What stands, exactly as argued above:** one gate, no anonymous access to
+corpus bytes, and the honesty in the ⚠️ above — read-online vs download is a
+product distinction, never protection. That paragraph is the most durable thing
+in this section and nothing below softens it.
+
+**What did NOT ship: "one capability for both".** Reading and downloading are
+**TWO capabilities**, decided when the ebooks gate was built:
+
+| | Capability | Grant mechanism |
+|---|---|---|
+| See the shelf + read in the viewer | estate **`vis_ebooks`** | a checkbox on the admin page's Ebooks row |
+| Take the file away | ladder **`download`**, floor **`admin`** | **promotion** on the Audiobook role dropdown |
+
+**And the second one's grant mechanism then changed too.** For one day
+(2026-08-16 → 08-17) `download` was a per-person estate flag, `dl_ebooks`, with
+its own checkbox. Owner directive 2026-08-17, verbatim: *"For ebooks I don't
+want a download check box, I want to use roles we have. Set up the roles to
+match library."* So the grant is now purely a rung — floor `admin`, granted by
+promotion, no side flag anywhere. (The "match library" pattern the owner names
+is THIS repo's `@lc/core` `capabilitiesFor`.)
+
+⚠️ **Two consequences for anything built from this design:**
+
+1. **`download: member` is stale wherever it appears in this file** (including
+   the §2 table's "already committed, floor `member`" row). The live floor is
+   `admin` — `catalog-platform/apps/audiobook-worker/src/capabilities.ts`, pinned
+   by `capabilities.test.ts`.
+2. **The reader's byte-serving route must gate on the READ grant, not
+   `can(role, 'download')`.** Where §9's flow sketch shows
+   `can(role, 'download')` on the streaming path, that is now wrong by one
+   capability: streaming ranges to the viewer is the `vis_ebooks` grant, and
+   `can(role, 'download')` gates only handing over a whole file. Building the
+   viewer against the download capability would lock every ordinary member out
+   of reading — the exact opposite of what `vis_ebooks` was created to allow.
+
 ---
 
 ## 7. Q6 — Reading position sync
@@ -792,7 +925,7 @@ but the size-gate work moving earlier.
 
 | # | Phase | Ships | Verify | Does **NOT** do | Est. agent size |
 |---|---|---|---|---|---|
-| **0** | **Bucket + ingest** — create `estate-ebooks` (no dev URL, no domain); `scripts/upload_ebooks_r2.py` modelled line-for-line on `upload_covers_r2.py`; committed `site/ebook_files_manifest.json`; wire as pipeline **step 5.8**, after covers' 5.7 and before the auto-commit | one repo (`audiobook_catalog`, Python) | manifest count == 168; a `wrangler r2 object get` of the 393 MiB file succeeds; **no anonymous URL exists** (there is no dev URL to try) | No Worker, no page, nothing user-visible. Nothing is readable by a browser at the end of this phase — deliberately | **~150–200k** |
+| **0** | ✅ **BUILT 2026-08-17 — see [§2.2a](#22a-phase-0a--built-2026-08-17).** **Bucket + ingest** — `estate-ebooks` (no dev URL, no domain); `scripts/upload_ebooks_r2.py` modelled line-for-line on `upload_covers_r2.py`; ~~committed~~ ⚠️ **GITIGNORED** `site/ebook_files_manifest.json` (§2.2a); wire as pipeline ~~step 5.8~~ ⚠️ **step 5.75** — 5.8 was taken the same day (§2.2a) | one repo (`audiobook_catalog`, Python) | ✅ 167/168 objects, 1.393 GB; ⚠️ **the 393 MiB file is NOT in the bucket** — wrangler's 300 MiB wall, owner action (§2.2a); **no anonymous URL exists** (verified: dev URL disabled) | No Worker, no page, nothing user-visible. Nothing is readable by a browser at the end of this phase — deliberately | **~150–200k** |
 | **1a** | **The gated stream** — `GET /api/ebook/:anchor/file` on `audiobook-worker`, behind `requireEnforceMode`; `[[r2_buckets]] EBOOKS` binding; manifest lookup for `anchor → path`; `Range` + `206` + `no-store`; `SITE_ORIGINS` gains `https://ebooks.heygabi.ai`; rate limit | one repo (`catalog-platform`) | tokenless → 401; `guest` → 403 with the §1e sentence; `member` → 206 with correct `Content-Range`; **copied URL → 401**; revoked user → 403 within TTL; **`curl -I` shows `Cache-Control: no-store`** | No reader page. No EPUB. `ESTATE_CHECK` stays `shadow`, so the route answers `503 not_enabled` until the owner flips it | **~150k** |
 | **1b** | **The PDF reader** — `app/web/templates/read.html`, vendored pinned pdf.js + worker + cMaps, windowed page rendering, `httpHeaders` bearer, `disableAutoFetch`; a **Read** button on the ebooks card for `format === 'pdf'` when `/api/me` reports the `download` capability; the `_headers` CSP block for `/read` **and** `/read/`; `identity.js` gains an exported `getIdToken()` | one repo (`audiobook_catalog`) + one exported function | dev lane `/dev/read.html` opens the 181 MiB handbook to page 1 in < 3 s having transferred < 2 MB (devtools network); a `guest` sees **no Read button**, and gets the sentence if they hit the URL; three canvases live at any time | No EPUB. No position sync — reopening starts at page 1. No download button | **~180–220k** |
 | **2** | **The EPUB reader** — vendored pinned epub.js + JSZip; whole-file fetch with the **32 MiB size gate** and its honest refusal card; pagination, font size, light/dark against the shelf's own palette; Read button extends to `format === 'epub'` | one repo | 135 of 138 open; the 3 over the gate show the refusal, never a spinner; images render (⚠️ proves `blob:` in the CSP); the reader inherits the shelf theme | No position sync yet. No zip-over-HTTP for the 3 big ones. No annotations, no highlights, no dictionary | **~250–300k** |
@@ -865,12 +998,32 @@ agents that each land beat one that dies at 90%.
 - **pdf.js's `httpHeaders` option surviving in the current version** — the
   bearer-per-range design (§3.3) depends on it. Confirm against the exact
   vendored version at phase 1b.
-- **Whether the 393 MiB "White Sand Omnibus" and the 143 MiB "whitesand.epub"
-  are the same book twice.** The sizes and names suggest a duplicate; nobody
-  opened either. If they are, the corpus is smaller than measured and the worst
-  outlier may simply be deletable — worth ten minutes before phase 0.
-- **The household's upload bandwidth**, so the phase-0 backfill wall time is
-  unstated rather than estimated.
+- ~~**Whether the 393 MiB "White Sand Omnibus" and the 143 MiB
+  "whitesand.epub" are the same book twice.**~~ ✅ **MEASURED 2026-08-17 at
+  phase 0a — they are NOT.** Both EPUBs' OPF metadata was read directly:
+
+  | | `whitesand.epub` (143 MiB) | `White Sand Omnibus … - Rik Hoskin.epub` (393 MiB) |
+  |---|---|---|
+  | `dc:title` | *White Sand* | *White Sand Omnibus (Brandon Sanderson's White Sand)* |
+  | `dc:creator` | Rik Hoskin, Julius Gopez | Hoskin, Rik / Sanderson, Brandon |
+  | `dc:identifier` | `urn:uuid:http://www.dynamite.com` | `urn:asin:B0C51J2YKH` |
+  | pages (xhtml/images) | 162 / 162 | 491 / 490 |
+
+  Same publisher (Dynamite), **different publications**: the small one is a
+  single volume, the large one the collected three. So the omnibus is not a
+  duplicate to be deleted — it is a **superset**, and the redundant file, if
+  the owner wants one gone, is the *small* one. ⚠️ **Consequence: the R2 API
+  token in §2.2a is genuinely required**, not avoidable by a tidy-up, unless
+  the owner chooses to drop the omnibus itself.
+- ~~**The household's upload bandwidth**, so the phase-0 backfill wall time is
+  unstated rather than estimated.~~ ✅ **MEASURED at phase 0a — see §2.2a.**
+- ⚠️ **NEW, phase 0a: no independent listing of `estate-ebooks` has ever been
+  taken.** wrangler 4.123.0 has no `r2 object list` (verified against
+  `wrangler r2 object --help`) and no S3 credentials exist, so the object count
+  and total bytes in §2.2a are the ingest script's record of its own successful
+  PUTs, not a read of the bucket. Two objects were round-tripped and hashed;
+  the rest rest on wrangler's own "Upload complete". The same API token §2.2a
+  asks for is what makes a real reconciliation possible.
 - **Nothing was fetched over the network.** `ebooks.heygabi.ai`,
   `audiobook-api.heygabi.ai/api/me` and `audiobooks.heygabi.ai/ebooks.json`
   were all read as source, never as live responses.

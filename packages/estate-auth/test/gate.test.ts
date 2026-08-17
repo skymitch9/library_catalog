@@ -10,6 +10,27 @@
  * The canonical module's own tests (catalog-platform/packages/estate-auth)
  * pin the combination table and /seen client; these pin THIS repo's use of
  * them — what the gate tells the middleware to do, and what it never does.
+ *
+ * ⚠️ A NOTE ON THE `refresh` SHAPE, because it moved twice in two days and
+ * looks like churn otherwise. `refresh` is `{status, visibility, checkedAt}`:
+ *
+ *   2026-08-16  the ebooks gate lands in catalog-platform and adds a fourth
+ *               key, `downloadEbooks` — the estate's per-person `dl_ebooks`
+ *               grant riding the /seen answer. The pinned shapes here were
+ *               taught that key ("test: estate answers carry downloadEbooks…").
+ *   2026-08-17  the owner supersedes the whole mechanism: *"For ebooks I don't
+ *               want a download check box, I want to use roles we have. Set up
+ *               the roles to match library."* Downloading became a ROLE
+ *               capability on the audiobook site's ladder (floor `admin`) —
+ *               modelled on THIS repo's `capabilitiesFor`, which is what "match
+ *               library" names — so the estate stopped answering it and the key
+ *               left the wire. These shapes returned to their pre-field form.
+ *
+ * So the three-key shape below is not a stale test that forgot an update; it is
+ * the shape after a round trip. ⚠️ `packages/estate-auth/generated/` is SYNCED
+ * from catalog-platform on every pretest, so if a `downloadEbooks` key ever
+ * reappears here, the change came from THAT repo and the decision above is the
+ * thing to re-read before accommodating it.
  */
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
@@ -160,9 +181,6 @@ test('household member: estate approved + active local role → proceed, no woul
   assert.deepEqual(out.refresh, {
     status: 'approved',
     visibility: null,
-    // downloadEbooks rides in the estate answer since the 2026-08-17 ebooks
-    // gate (per-person dl_ebooks); null = no download fact in the answer.
-    downloadEbooks: null,
     checkedAt: new Date(NOW).toISOString(),
   });
   assert.equal(calls.length, 1);
@@ -189,7 +207,7 @@ test('estate approved + local pending never decided → would auto-grant member,
   assert.equal(line.would_auto_grant, 'member');
   assert.equal(line.would_deny, false);
   // The outcome offers the caller ONLY a cache refresh — no role, no grant.
-  assert.deepEqual(Object.keys(out.refresh ?? {}).sort(), ['checkedAt', 'downloadEbooks', 'status', 'visibility']);
+  assert.deepEqual(Object.keys(out.refresh ?? {}).sort(), ['checkedAt', 'status', 'visibility']);
 });
 
 test('estate approved + locally DEMOTED pending → request_screen (the estate does not overrule)', async () => {
@@ -287,9 +305,6 @@ test('expired cache: /seen called, fresh answer replaces the cached status', asy
   assert.deepEqual(out.refresh, {
     status: 'approved',
     visibility: null,
-    // downloadEbooks rides in the estate answer since the 2026-08-17 ebooks
-    // gate (per-person dl_ebooks); null = no download fact in the answer.
-    downloadEbooks: null,
     checkedAt: new Date(NOW).toISOString(),
   });
   const line = JSON.parse(out.logLine ?? 'null');
@@ -346,7 +361,7 @@ test('enforce / revoked + local owner → deny 403 estate_revoked (row 1: anythi
   // the outcome carries no role write, so a later re-approval restores the
   // person exactly as they were.
   assert.equal(out.autoGrant, null);
-  assert.deepEqual(Object.keys(out.refresh ?? {}).sort(), ['checkedAt', 'downloadEbooks', 'status', 'visibility']);
+  assert.deepEqual(Object.keys(out.refresh ?? {}).sort(), ['checkedAt', 'status', 'visibility']);
   const line = JSON.parse(out.logLine ?? 'null');
   assert.equal(line.tag, 'estate_enforce');
   assert.equal(line.denied, true);
@@ -521,9 +536,6 @@ test('garbage visibility in the answer dies into null; the status half still cou
   assert.deepEqual(out.refresh, {
     status: 'approved',
     visibility: null,
-    // downloadEbooks rides in the estate answer since the 2026-08-17 ebooks
-    // gate (per-person dl_ebooks); null = no download fact in the answer.
-    downloadEbooks: null,
     checkedAt: new Date(NOW).toISOString(),
   });
 });
