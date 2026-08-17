@@ -38,17 +38,14 @@
   auto-apply on a high-confidence judge verdict, otherwise leave the finding
   pending for a person. Donor-only instances (no AI key) stop at step 1
   unchanged. 📋 QUEUED (reset batch).
-- **Ebook bookshelf: PROMOTED** ✅ — owner approved (*"I like the ebook site,
-  promote it"*), promote.yml run 31994510844 success, prod deploy 31994541801
-  success, `eb-shelf`/`eb-spine` markers verified live on ebooks.heygabi.ai.
-  Ebooks UX round 2 is CANCELLED (owner likes it as shipped).
-- **Cover gap, measured 2026-08-16:** 168 ebooks → 148 covered (92 extracted
-  from the EPUB itself, 56 borrowed from the audiobook sibling), 20 missing =
-  16 EPUBs with no embedded cover + 4 PDFs (no cover metadata at all). ⚠️ All
-  20 sit beside audiobooks whose own catalog entries could not donate a cover
-  either (several look like the unscanned backlog — absence means unscanned).
-  📋 QUEUED: cover healing pass — Google Books / Open Library lookup fallback
-  for the 20, slow drip to keep Cloudflare happy.
+- **Ebook cover healing** 📋 QUEUED (reset batch). The gap, measured
+  2026-08-16: 168 ebooks → 148 covered (92 extracted from the EPUB itself, 56
+  borrowed from the audiobook sibling), 20 missing = 16 EPUBs with no embedded
+  cover + 4 PDFs (no cover metadata at all). ⚠️ All 20 sit beside audiobooks
+  whose own catalog entries could not donate a cover either (several look like
+  the unscanned backlog — absence means unscanned). Plan: Google Books / Open
+  Library lookup fallback for the 20, slow drip to keep Cloudflare happy.
+  (The bookshelf itself shipped and PROMOTED — archived in DONE.md.)
 - **💗 Pixel-hearts theme** (owner ask): pink-and-white theme in the retro
   pixel family — "those pixel gamer hearts" — for the library app, and it
   becomes the DEFAULT theme on padhard (her instance; per-instance default
@@ -63,24 +60,10 @@
 - **Sequencing (owner):** deliver current batch → **Discord portal** (owner is
   nearly home for the owner-present steps) → **EPUB/PDF viewer** after.
 
-- **Hostname settled: `padhard.heygabi.ai`** — ✅ DONE (route swapped, Firebase
-  domains updated additively then `sam` removed after 522 confirmed it dead,
-  health 200 on the new name, apex Books card links it).
-- **Donor-first details sweep** (*"before pinging the ai it checks other
-  libraries for answers"*) — ✅ DONE 2026-08-16 (built, tested 882/882,
-  migrated both D1s, deployed both instances). Full record in
-  [`DONE.md`](DONE.md); operating reference in
-  [`access/second-instance.md`](access/second-instance.md) §donor. The one
-  open thread is the owner's later reciprocity flip: one line,
-  `DONOR_URL = "https://padhard.heygabi.ai"` in the main `[vars]`.
-- **Samantha = admin of her page** — ✅ DONE (pre-seeded `app_user` row id 1,
-  role `admin`, on library-catalog-2nd; sign-in matches by email and back-fills
-  her Firebase UID — verified against `packages/db/src/users.ts` upsert order).
-  UI-first note: no row existed yet, so this was the documented break-glass
-  path, not a bypass of the roles UI.
-- **Apex Books card → two household buttons** (Library / Samantha) — ✅ DONE,
-  deployed + live-marker verified (`padhard.heygabi.ai` is now a required
-  marker on `/`).
+- **Donor reciprocity flip** (open thread from the shipped donor sweep,
+  archived in [`DONE.md`](DONE.md)): when her catalog is worth asking, one
+  line in the main `[vars]` — `DONOR_URL = "https://padhard.heygabi.ai"` —
+  makes the donating mutual. Owner's call on timing; zero code.
 - **Add her instance to the estate to be managed** — 📋 QUEUED (reset batch):
   admin members page per-site columns, estate probes, status page rows for
   `library2`/padhard.
@@ -88,8 +71,6 @@
   stay holdings-only, apex series/universe pages union every medium + owner) —
   📋 QUEUED (reset batch), design agreed: canonical series registry in the
   estate index, auto-merge exact fold, confirm-first queue for fuzzy.
-- **Ebooks UX round 2** — 📋 QUEUED (reset batch); the bookshelf at
-  `/dev/ebooks.html` is NOT promoted and the owner wants another pass first.
 - **🤖 "Sam asks GABI to fix her books" — conversational fixer (owner vision,
   2026-08-16 late):** *"in the future i want Sam to be able to ask gabi to fix
   books for her like id ask you. it'd be done through api but it would have

@@ -17,6 +17,40 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ Ebook bookshelf PROMOTED to prod (2026-08-16 late)
+
+Owner approved (*"I like the ebook site, promote it"*): promote.yml run
+31994510844 success, prod deploy 31994541801 success, `eb-shelf`/`eb-spine`
+markers verified live on ebooks.heygabi.ai. The planned "Ebooks UX round 2"
+was CANCELLED the same evening — the owner likes it as shipped. Remaining
+thread (cover healing for the 20 coverless ebooks) stays active in TODO.md.
+
+## ✅ Hostname settled: `padhard.heygabi.ai` (2026-08-16 late)
+
+Was `sam.heygabi.ai` for a few hours (explicitly temporary by owner decision).
+Route pattern swapped in `[env.friend.routes]`, deployed (`d393d443`); Firebase
+authorised domains updated additively first, then `sam` removed only after a
+522 confirmed Cloudflare had already detached the old custom domain; health
+200 on the new name; apex Books card links it and carries it as a required
+live marker.
+
+## ✅ Samantha = admin of her instance (2026-08-16 late)
+
+Pre-seeded `app_user` row id 1, role `admin`, on library-catalog-2nd — no row
+existed yet (she had never signed in), so this was the documented break-glass
+path, not a bypass of the roles UI. Safe because sign-in matches by **email**
+and back-fills `firebase_uid` on the existing row (verified against
+`packages/db/src/users.ts` upsert order before writing anything).
+
+## ✅ Apex Books card → two household buttons (2026-08-16 late)
+
+Owner: *"2 buttons now, 1 for Library and 1 for Samantha."* Books became a
+`div.card` holding one link per household (Library → library.heygabi.ai,
+Samantha → padhard.heygabi.ai), following the Admin card's
+div-wearing-`.card` idiom via a generalised `.card-links` class. Deployed;
+`padhard.heygabi.ai` added to the `/` live markers so a deploy that loses the
+button fails loudly.
+
 ## ✅ Donor-first details sweep (2026-08-16) — built, migrated, deployed both instances
 
 Owner ask: *"before pinging the ai it checks other libraries for answers. If I
