@@ -18,6 +18,100 @@
 > were extracted from this same history.
 
 
+## 2026-08-17 — 🔒 The ebook permission gate (SHIPPED)
+
+**Moved whole from [`TODO.md`](TODO.md) at completion.** The item as it stood,
+verbatim, then what was actually built.
+
+- **🔒 EBOOKS GO PERMISSION-GATED (owner directive, 2026-08-17: "ebooks
+  should be like the other site where we grant permission to view it. I
+  don't want people scraping my books"):** ebooks.heygabi.ai becomes an
+  auth-locked shim (the /todo pattern); ebooks.html + ebooks.json leave the
+  public deployment and serve from a bearer-gated worker endpoint; estate
+  admin grows an ebooks column. **The capability model, owner's exact
+  design:** `vis_ebooks` (the view-site grant) **includes readEbook** — see
+  the shelf = read in the reader, one grant; `downloadEbook` is a SIDE
+  permission — **admin+ hold it by default, and it is individually
+  grantable to any person at any ladder level** (per-person toggle beside
+  the view checkbox, auto-on-and-locked for admin+/owners). This supersedes
+  viewer-design §11's read-vs-download question with a decided answer.
+  ✅ **UNBLOCKED 2026-08-17** — the covers agent has cleared the manifest
+  zone (`audiobook_catalog@1441f0a`, PDF page-1 auto-covers; `ebooks.json`
+  gained a top-level `needs_human_cover` array, and `site/ebooks.json` +
+  `site/covers_manifest.json` are committed and pushed). Nothing else is
+  holding this. Access-REDUCING, so it front-runs all viewer build work.
+  ⚠️ Residual, and now MEASURED rather than assumed: cover images stay on
+  the public host under unguessable sha256 hashes — including the 4 newly
+  rendered PDF covers, which are page 1 of a purchased product.
+  ⚠️ New surface for whoever builds the gate: the manifest now carries
+  `needs_human_cover` (`{path,title,format,reason}`). It is metadata about
+  the estate's gaps, not book content, but it names every file it lists —
+  decide deliberately whether it crosses the auth boundary with the rest
+  of `ebooks.json` rather than letting it ride along unnoticed.
+
+### What was built, and where it landed
+
+| Repo | Commits |
+|---|---|
+| `catalog-platform` | `be4d4f8` (estate vocabulary + the search carve-out), `146930c` (admin Ebooks column), `4350ad1` (the gated manifest route), `bf1059c` (ebooks-door path fix) |
+| `audiobook_catalog` | `ca85553` (manifest out of git AND out of the deployment; the shim; sync step 5.8) |
+
+**Deployed:** auth-worker `7b8c412f`, index-worker `e31d5d29`, audiobook-worker
+`02247cde`, ebooks-door `1b14749d`, heygabi-home `b5bcfa24`. Migrations
+`0008_vis_ebooks` + `0009_dl_ebooks` applied REMOTE FIRST, both rows seen ✅,
+before any deploy.
+
+**The capability model was built exactly as specified.** `vis_ebooks` is the
+view grant and it INCLUDES reading — no `read_ebooks` column exists or ever
+should. `download_ebooks` is the side permission, computed as
+`dl_ebooks = 1 OR is_approver = 1 OR OWNER_EMAILS`, so admin+ hold it by
+default while it stays individually grantable at any level; the admin page
+draws those rows checked-and-disabled with the reason said out loud, because a
+checkbox that cannot change anything is the silently-dead control the estate's
+refusal rules forbid.
+
+**`needs_human_cover` was decided deliberately, per the item's own warning: it
+rides INSIDE the gate.** Metadata about the estate's gaps rather than book
+content — but it names every file it lists, and a list of paths is a scrape
+with fewer steps.
+
+### Two things the item did not know, both MEASURED during the build
+
+1. **The manifest was public in TWO places, not one.** `site/ebooks.json` was
+   committed to `skymitch9/audiobook_catalog`, a **PUBLIC** repo that must stay
+   public. Removing it from the deployment alone would have moved a door in
+   front of an open window. It is now gitignored, and `deploy.yml` strips it
+   from both lanes and fails if it survives — which also seals PROD on the next
+   push to main rather than waiting for the promote.
+
+2. **Estate search was giving the whole shelf away.** Ebook rows are pushed
+   under `source: 'audiobook'` with `format: 'ebook'`, and `audiobook` is the
+   PUBLIC slice — so an ANONYMOUS `/api/search` returned every ebook's title,
+   author, cover URL and deep link. The brief said those rows were "already
+   members-scoped"; they were not. index-worker now carves ebook-format rows
+   out of any scope lacking the `ebooks` catalog, in the SQL. Verified live.
+
+### Residual public surface, stated honestly
+
+- **Cover images** stay on `covers.heygabi.ai` under unguessable sha256 keys,
+  exactly as the item predicted — the 4 PDF page-1 renders included.
+- **A Cloudflare EDGE-CACHED copy** of `audiobooks.heygabi.ai/ebooks.json` was
+  still served after the strip (`Age:` climbing; the same URL with a
+  cache-buster returned the SPA fallback, proving the origin was clean).
+  🔴 **Owner action: purge that URL** — `catalog-platform/docs/access/ebooks-gate.md` §7.
+
+### Left open, deliberately
+
+- **The prod promote.** `ebooks.heygabi.ai` serves the PROD branch, whose
+  `site/ebooks.html` is still the pre-gate page, so the SHIM is not live there
+  yet. No data leaks meanwhile: the manifest is stripped from both lanes on
+  every publish, so the old page cannot load a shelf even if reached.
+- **Ebook rows leave the estate index** at the next CI deploy — CI has no
+  manifest and the push is a snapshot REPLACE. Said loudly in a WARN and pinned
+  by a test. Needs an owner decision: move the index push into the local
+  pipeline (one writer, has the manifest), or teach CI to read the private
+  bucket.
+
 ## ✅ 2026-08-17: Ebook cover healing — closed out, every book on the shelf has a cover
 
 Landed in `audiobook_catalog`: the downscale fix (`32264d4`), the show-PDFs

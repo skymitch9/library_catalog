@@ -46,32 +46,33 @@ land with its own code.
   content on the device, so it is A FORM OF DOWNLOAD and gets gated by
   `downloadEbook`, never bundled free with reading. Whoever builds it later
   starts from that sentence.
-- **🔒 EBOOKS GO PERMISSION-GATED (owner directive, 2026-08-17: "ebooks
-  should be like the other site where we grant permission to view it. I
-  don't want people scraping my books"):** ebooks.heygabi.ai becomes an
-  auth-locked shim (the /todo pattern); ebooks.html + ebooks.json leave the
-  public deployment and serve from a bearer-gated worker endpoint; estate
-  admin grows an ebooks column. **The capability model, owner's exact
-  design:** `vis_ebooks` (the view-site grant) **includes readEbook** — see
-  the shelf = read in the reader, one grant; `downloadEbook` is a SIDE
-  permission — **admin+ hold it by default, and it is individually
-  grantable to any person at any ladder level** (per-person toggle beside
-  the view checkbox, auto-on-and-locked for admin+/owners). This supersedes
-  viewer-design §11's read-vs-download question with a decided answer.
-  ✅ **UNBLOCKED 2026-08-17** — the covers agent has cleared the manifest
-  zone (`audiobook_catalog@1441f0a`, PDF page-1 auto-covers; `ebooks.json`
-  gained a top-level `needs_human_cover` array, and `site/ebooks.json` +
-  `site/covers_manifest.json` are committed and pushed). Nothing else is
-  holding this. Access-REDUCING, so it front-runs all viewer build work.
-  ⚠️ Residual, and now MEASURED rather than assumed: cover images stay on
-  the public host under unguessable sha256 hashes — including the 4 newly
-  rendered PDF covers, which are page 1 of a purchased product.
-  ⚠️ New surface for whoever builds the gate: the manifest now carries
-  `needs_human_cover` (`{path,title,format,reason}`). It is metadata about
-  the estate's gaps, not book content, but it names every file it lists —
-  decide deliberately whether it crosses the auth boundary with the rest
-  of `ebooks.json` rather than letting it ride along unnoticed.
-
+- **🔴 EBOOK GATE — the three things it left open (built 2026-08-17, whole
+  record in [`DONE.md`](DONE.md)):**
+  1. **Purge the edge cache.** `audiobooks.heygabi.ai/ebooks.json` was still
+     served from Cloudflare's edge AFTER the deploy that stripped it —
+     MEASURED: `Age:` climbing, while the same URL with a cache-buster
+     returned the SPA fallback, so the origin was clean and the edge was not.
+     A `Cache-Control: no-cache` request header did not shake it loose, and
+     wrangler has no purge command (the session token holds `zone (read)`).
+     **Owner:** Cloudflare dashboard → `heygabi.ai` zone → Caching →
+     Configuration → Purge Custom URL, for `/ebooks.json` and
+     `/dev/ebooks.json`. Until then the old manifest is still reachable at
+     that exact bare URL.
+  2. **The prod promote.** `ebooks.heygabi.ai` proxies the PROD branch, whose
+     `site/ebooks.html` is still the pre-gate page — so the SHIM is not live
+     on that hostname yet. Nothing leaks meanwhile (the manifest is stripped
+     from both lanes on every publish), but the page a visitor meets there is
+     the old one, which will simply fail to load a shelf. Conductor's call,
+     as always.
+  3. **Ebook rows leave the estate index at the next CI deploy.** CI has no
+     manifest (it is gitignored now) and the index push is a snapshot
+     REPLACE, so every `format: 'ebook'` row drops out of estate search. Said
+     loudly in a WARN and pinned by a test rather than left to be discovered.
+     **Owner decision needed:** move the index push out of CI into the local
+     pipeline (one writer, already has the manifest, needs
+     `INDEX_PUSH_TOKEN` on that machine), or teach CI to read the private
+     `ebooks-gated` bucket. Safe direction either way — a lost feature, not a
+     leak.
 Landed and archived — the TBR instant-clear built in `audiobook_catalog`
 (`2ff816f`) and moved whole to [`DONE.md`](DONE.md). Only the prod promote of
 that repo is outstanding, and it belongs to the conductor, not to this file.
