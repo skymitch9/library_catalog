@@ -40,6 +40,21 @@ land with its own code.
 ## 🔥 Owner asks 2026-08-16 late evening — status board
 
 ### Third wave (2026-08-17 morning)
+- **🔒 EBOOKS GO PERMISSION-GATED (owner directive, 2026-08-17: "ebooks
+  should be like the other site where we grant permission to view it. I
+  don't want people scraping my books"):** ebooks.heygabi.ai becomes an
+  auth-locked shim (the /todo pattern); ebooks.html + ebooks.json leave the
+  public deployment and serve from a bearer-gated worker endpoint; estate
+  admin grows an ebooks column. **The capability model, owner's exact
+  design:** `vis_ebooks` (the view-site grant) **includes readEbook** — see
+  the shelf = read in the reader, one grant; `downloadEbook` is a SIDE
+  permission — **admin+ hold it by default, and it is individually
+  grantable to any person at any ladder level** (per-person toggle beside
+  the view checkbox, auto-on-and-locked for admin+/owners). This supersedes
+  viewer-design §11's read-vs-download question with a decided answer.
+  📋 Dispatches the moment the covers agent clears the manifest zone;
+  access-REDUCING, so it front-runs all viewer build work. Residual noted:
+  cover images stay on the public host under unguessable hashes.
 
 Landed and archived — the TBR instant-clear built in `audiobook_catalog`
 (`2ff816f`) and moved whole to [`DONE.md`](DONE.md). Only the prod promote of
