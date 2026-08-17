@@ -1,6 +1,8 @@
 # docs/access — index
 
 > **Audience:** Claude sessions. How to reach and operate things.
+
+> ⚠️ **The estate-wide credentials catalog is LOCAL-ONLY in `audiobook_catalog/docs/access/CREDENTIALS.md`** — every custody store, every paired token, the three env-file patterns, and each rotation procedure, in one place. It is deliberately not tracked in any repo (all four are public and the aggregation is more sensitive than the scattered names-only convention). Names only there too; never a value, anywhere.
 > Last verified: **2026-08-14**.
 
 | File | Covers |
