@@ -24,6 +24,42 @@
 > living docs — they do not compete with this file for "what is happening
 > now", so do not helpfully re-merge them.
 
+## 🧰 Tech debt (owner-ordered section, 2026-08-17: "all tech debt stuff move
+## in to there so we can handle tech debt stuff later")
+
+Nothing here is urgent, broken, or user-visible; each is a deliberate
+"later". An item leaves by being fixed (→ DONE.md) or by being promoted to
+real work. New debt goes HERE, never scattered.
+
+- **Revoke the stale broad Cloudflare user token** — "Edit Cloudflare
+  Workers" (issued Aug 14, Admin Read&Write on ALL R2 buckets, visible on
+  the R2 API-tokens page) predates today's scoped tokens and nothing known
+  uses it. Revoke from the dashboard. Its sibling "Edit Cloudflare Workers
+  2" (Aug 17) IS the live CI-deploy token — keep, but it's broader than CI
+  needs; narrowing = mint scoped replacement + `gh secret set` ×3 repos.
+- **Sam's ANTHROPIC key → capped workspace** — her key works but whether it
+  sits in a spend-capped workspace is UNVERIFIED (second-instance.md flags
+  it). One dashboard move at platform.claude.com ends the tail risk.
+- **audiobook `scripts/` not linted in CI** — the lint workflow covers `app
+  tests` only; `build_ebook_manifest.py` carries a pre-existing C901 on
+  `extract_epub_cover`. Add scripts/ to the lint matrix + fix or waive C901.
+- **The cp1252 ⚠️-in-print class** — three incidents in two days (smoke
+  script, club smoke, uploader): an emoji in a `print()` crashes any run
+  whose console is cp1252, always BETWEEN setup and cleanup. Mechanical fix
+  candidates: set `PYTHONIOENCODING=utf-8` in the pipeline .bat/task env
+  globally, or a repo lint rule banning non-ASCII in print strings.
+- **foliate-js is unpinned (`@main`)** in the EPUB probe findings — MUST be
+  pinned to a commit when the real EPUB reader build starts (the findings
+  doc says so; listed here so it survives until that build).
+- **CSP `frame-src` asymmetry on apex** — `/universes` + `/status` don't
+  name `auth.heygabi.ai` while `/`, `/admin`, `/series` do (series-page
+  agent's XS flag, catalog-platform TODO). Measure whether anything breaks
+  before touching; may be a no-op.
+- **`dl_ebooks` column is dead but standing** — deprecated-unused by
+  migration 0010's comment; it still holds 1s from its one-day life, and
+  re-adding it to `COLS` would resurrect ghost grants. Debt = decide someday
+  whether to zero the values; the guard comment is the current protection.
+
 ## 🔥 Owner asks 2026-08-16 late evening — status board
 
 ### Third wave (2026-08-17 morning)
