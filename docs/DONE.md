@@ -17,6 +17,113 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## 💸 A spend cap printed its JSON at a person — ✅ FIXED + DEPLOYED 2026-08-17
+
+⚠️ **Never in `TODO.md`** — the owner hit it live and reported it directly, so
+it is recorded here at completion rather than moved. The half that is NOT done
+(a signed-in eyeball, and the allowance itself) went into `TODO.md` as active
+work.
+
+**What he saw**, on padhard's Missing/queue screen, on a FAILED research run:
+
+```
+400 {"type":"error","error":{"type":"invalid_request_error","message":"You have
+reached your specified API usage limits. You will regain access on 2026-09-01 at
+00:00 UTC."},"request_id":"req_011Ce8wV2ToKAQnsf1Ahq1V6"}
+```
+
+Her Anthropic key had reached its monthly spend cap. The estate law it broke is
+the flat one: a person must NEVER see a bare status or a raw error body.
+
+⚠️ **The sharp part: `describeError` did exactly what it promises, and the
+defect shipped anyway — hours after the `[object Object]` fix above.** The SDK
+builds its `Error.message` as `` `${status} ${JSON.stringify(body)}` `` whenever
+the body has no **top-level** `message`, and the error envelope never does — its
+sentence is nested at `error.error.message`. So the first branch found a real,
+non-empty `string` and returned it. **A worded OUTPUT is not a worded MESSAGE**,
+and a test suite built entirely around "never `[object Object]`, never empty,
+never a bare number" cannot catch it. Verified against the installed SDK
+(`@anthropic-ai/sdk` 0.116.0, `APIError.makeMessage`), not inferred.
+
+**Commits `52aad39` (code + tests), `d8bd920` and this one (deploy log + docs).**
+Deployed both instances from `52aad39`'s tree:
+
+| instance | worker | version id | host |
+|---|---|---|---|
+| main | `library-catalog` | `76fcd3c2-5a89-4644-b136-78a287779f92` | library.heygabi.ai |
+| friend | `library-catalog-friend` | `07a757de-8485-4a26-824b-c541efa6c5ed` | padhard.heygabi.ai |
+
+Health 200 on both after deploy (21:00Z).
+
+**What shipped.** New leaf `packages/core/src/lookup-errors.ts` —
+`classifyLookupFailure` and `wordLookupError` — naming three provider failures
+and **keeping them apart on purpose**, because each has a different fix: the cap
+is a *wait*, the 429 is a *retry*, the 401 is an *operator action*. Collapsing
+them into one "lookups unavailable" sentence would send someone to wait a month
+for something a re-push fixes in a minute. The cap **reads** its reset date out
+of the message rather than computing one ("first of next month" is wrong for any
+limit that is not calendar-monthly), and says the thing the JSON never did.
+
+Before → after, on the exact string in D1:
+
+> `400 {"type":"error",…,"request_id":"req_011Ce8wV2ToKAQnsf1Ahq1V6"}`
+>
+> → *"This catalog's lookup allowance is used up until 1 September 2026 —
+> lookups pause until then. An operator can raise the limit at
+> platform.claude.com. Your books and everything already filled in are
+> unaffected."*
+
+The other two: *"Too many lookups at once, so the lookup service asked us to
+slow down. Nothing is wrong with your books or your account — leave it a minute
+and press Look again."* and *"The lookup service rejected this catalog's key…
+This is a server configuration problem, not a permission problem — your account
+is fine…"*, the latter deliberately parallel to `SCAN_KEY_REJECTED_MESSAGE`.
+
+⚠️ **Why it is in `@lc/core` and not beside either caller — the decision worth
+keeping.** `research_run.error_message` is **persisted**, so classifying at
+store time reaches no row that already exists; runs 5 and 6 on
+`library-catalog-2nd` hold that body and always will. Doing only the render side
+would persist every new row unreadable, which is exactly the defect that
+outlived its own session last time. So **both**, through one function: the
+Worker in `describeError` (ahead of all the generic unwrapping),
+`DetailsQueuePage` and `ScanJobsPage` via `wordLookupError` at render time. The
+sentence cannot drift between them, and `wordLookupError` guarantees its output
+contains **no brace** whatever it is handed — so the next unrecognised body is
+not this incident again.
+
+⚠️ **It refuses to guess.** An ordinary 400 ("roles must alternate") returns
+null and keeps reading like the bug it is; the bare word *limit* is not enough
+(`max_tokens exceeds the model's limit` is a defect, not an allowance); a
+`UNIQUE constraint failed` is left alone for `catalog.ts`'s own matcher. Three
+tests exist purely to pin what must NOT be claimed.
+
+The raw shape still goes to `wrangler tail` from the run's catch — where an
+operator can read it and a person cannot.
+
+**Tests +34; suite 1153/1153, typecheck clean.** Both halves were **proven able
+to fail**: stubbing `wordLookupError` to pass its input through fails 6 core
+tests, and disabling the classifier inside `describeError` fails the Worker's.
+The fixture strings were read **live out of `library-catalog-2nd`**, not
+reconstructed from the screenshot.
+
+**Verified:** health 200 both hosts; the worded sentences present in the live
+bundle on **both** hosts (`/assets/index-DVAovdWp.js` — identical hash, same
+build) — `lookup allowance`, `platform.claude.com`, `already filled in are
+unaffected`, `not a permission problem`.
+
+**NOT verified, and NOT done:**
+- **The rendered row.** Estate auth is in enforce on both instances, so the
+  FAILED rows have not been seen by a signed-in eye. Code-presence is not the
+  same evidence. Runs 5 and 6 are the natural test rows — in `TODO.md`.
+- **The Say-what-you-know / Look-again affordances** were not touched and their
+  code is unchanged, but they were not exercised in a browser either.
+- **The two legacy rows were not rewritten.** Deliberate: the render-layer
+  mapping is what makes a backfill unnecessary, and a backfill would have been
+  the weaker fix (it fixes two rows; the mapping fixes every row that will ever
+  exist).
+- **The allowance itself is untouched.** Lookups on `padhard` stay dead until
+  1 September unless the owner raises the limit. That is a decision, not a bug.
+
 ## 📱 The top bar printed its chips over the wordmark on a phone — ✅ FIXED + DEPLOYED 2026-08-17
 
 *Moved whole from [`TODO.md`](TODO.md) on completion. The original item, kept

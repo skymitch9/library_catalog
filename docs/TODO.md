@@ -90,6 +90,24 @@ real work. New debt goes HERE, never scattered.
     sits in a **capped workspace**. It is the backstop behind the turn ceiling,
     it is one dashboard move at platform.claude.com, and it is also on the tech
     debt list above. Everything else in §12 is answered.
+    - ⚠️ **That cap is not hypothetical — IT HAS ALREADY FIRED.** Her key hit
+      its monthly limit on 2026-08-17 and `research_run` 5 and 6 on
+      `library-catalog-2nd` failed with *"You have reached your specified API
+      usage limits. You will regain access on 2026-09-01."* The wording defect
+      that exposed is fixed and archived in [`DONE.md`](DONE.md); the
+      **allowance itself is untouched**, so lookups on her instance stay dead
+      until 1 September unless someone raises it. Evidence the backstop works —
+      and a decision the owner has to make, not a bug to fix.
+
+### 👁️ Needs a signed-in eye — padhard's Missing/queue FAILED rows
+The worded-error fix is deployed to both instances and verified by
+code-presence in the live bundle (`/assets/index-DVAovdWp.js` carries the
+sentences on both hosts), but **estate auth is in enforce, so nobody has seen
+the rendered row**. Runs 5 and 6 are the natural test rows: open
+<https://padhard.heygabi.ai/queue> signed in as someone with access and check
+the two FAILED rows read *"This catalog's lookup allowance is used up until
+1 September 2026…"* rather than a JSON body. Say-what-you-know and Look-again
+should still be beside them.
 - **✅ EBOOK DOWNLOAD IS NOW A ROLE, NOT A CHECKBOX (owner, 2026-08-17: *"For
   ebooks I don't want a download check box, I want to use roles we have. Set up
   the roles to match library."*)** — built in `catalog-platform`
