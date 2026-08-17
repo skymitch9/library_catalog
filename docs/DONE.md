@@ -17,6 +17,50 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ Donor-first details sweep (2026-08-16) — built, migrated, deployed both instances
+
+Owner ask: *"before pinging the ai it checks other libraries for answers. If I
+have Stormlight Archive don't have her look it up."*
+
+**What shipped** (commits `c2d7a00` route, `0e9a818` sweep, plus config+docs):
+
+- **`GET /api/donor/details`** on both instances (`apps/worker/src/routes/donor.ts`),
+  gated on `X-Donor-Token` = the `DONOR_TOKEN` secret; unset/absent/wrong all
+  404 — disabled, never advertised. Matching via the canonical `workKeyFor` /
+  `normaliseTitle` (never reimplemented); two works sharing a folded title
+  match nobody. Answers only filled `DETAIL_FIELDS` values plus the matched
+  work id/title; no match is `200 {matched:false}` so the caller can tell
+  "reachable, no answer" from "down".
+- **Sweep integration** (`details-sweep.ts`): with `DONOR_URL`+`DONOR_TOKEN`
+  set, each picked book's unasked gaps are asked of the donor BEFORE the AI
+  claim. Donor answers travel the ordinary findings → `autoApplyFindings`
+  path under their own run — `source_tier='donor'` (migration **0320**, the
+  CHECK rebuild 0013 predicted), `model='donor'`, `decided_how='auto'` — and
+  the donor run's `unfilled` lists exactly the ANSWERED fields, so run
+  history counts those as asked and nothing else. Remaining gaps fall
+  through to the AI unchanged.
+- **Donor-only mode**: no `ANTHROPIC_API_KEY` + donor configured no longer
+  skips the tick (honest `skipped[]` note). Her instance heals from the main
+  library for free, starting her next `:07` tick. A reachable donor with no
+  answer writes a run with `unfilled` EMPTY — rotation advances, nothing is
+  silenced, and she re-asks on later rotations as our own AI sweep keeps
+  filling the donor's gaps.
+- **Subrequest arithmetic** made mode-aware: donor adds 1 fetch + 4
+  bookkeeping per book; apply is 4 per field, spent once by whichever path
+  answered. With both paths live two ordinary books estimate ~50 (the whole
+  ceiling), so `planSweep` honestly picks one.
+- **Config**: `[env.friend.vars] DONOR_URL = "https://library.heygabi.ai"`.
+  Main instance has NO `DONOR_URL` on purpose — reciprocity is a later
+  one-line owner flip. `DONOR_TOKEN` secret set on both instances by the
+  conductor (values nowhere in any repo).
+- Tests: donor mapping, token gate, ambiguity rule, donor-only mode,
+  mode-aware budgets — full `npm test` 882/882.
+
+**Not verified**: a real donor answer end-to-end (needs the token value,
+which agents don't hold — correct); her next cron tick is the true test, and
+the proof is a `research_run` row on `library-catalog-2nd` with
+`model='donor'`.
+
 ## ✅ Two Sanderson standalones stuck in the details queue (2026-08-16) — FIXED, data only
 
 Owner report: "check on the missing books in the library, theyre sanderson

@@ -56,11 +56,12 @@
   domains updated additively then `sam` removed after 522 confirmed it dead,
   health 200 on the new name, apex Books card links it).
 - **Donor-first details sweep** (*"before pinging the ai it checks other
-  libraries for answers"*) — 🚧 IN FLIGHT, build agent dispatched 2026-08-16
-  ~21:30. `DONOR_TOKEN` minted on both instances (conductor, values nowhere).
-  Design: token-gated `GET /api/donor/details` on both instances + sweep asks
-  `DONOR_URL` before the AI, donor-only mode when no ANTHROPIC_API_KEY (her
-  instance heals from ours for free). Reciprocity = later var flip.
+  libraries for answers"*) — ✅ DONE 2026-08-16 (built, tested 882/882,
+  migrated both D1s, deployed both instances). Full record in
+  [`DONE.md`](DONE.md); operating reference in
+  [`access/second-instance.md`](access/second-instance.md) §donor. The one
+  open thread is the owner's later reciprocity flip: one line,
+  `DONOR_URL = "https://padhard.heygabi.ai"` in the main `[vars]`.
 - **Samantha = admin of her page** — ✅ DONE (pre-seeded `app_user` row id 1,
   role `admin`, on library-catalog-2nd; sign-in matches by email and back-fills
   her Firebase UID — verified against `packages/db/src/users.ts` upsert order).

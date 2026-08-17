@@ -1,7 +1,8 @@
 # Second Library Instance (friend) — Access Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED — no secret values here.
-> Last verified: **2026-08-16** (built and deployed that day).
+> Last verified: **2026-08-16** (built and deployed that day; hostname settled
+> to `padhard.heygabi.ai` and the donor-first sweep added the same day).
 > Design: `catalog-platform/docs/info/friend-ingest-design.md` (read-only).
 
 The friend's catalog: **the same Worker code, its own data**. One repo, one
@@ -13,7 +14,7 @@ build, two wrangler targets. Everything instance-specific lives in
 | Thing | Name / value | Notes |
 |---|---|---|
 | Wrangler env | `[env.friend]` | Worker deploys as **`library-catalog-friend`** |
-| Hostname | `sam.heygabi.ai` | ⚠️ **TEMPORARY by owner decision** — the ONLY name allowed to change. Changing it: edit the `[[env.friend.routes]]` pattern, add the new host to Firebase Authorised domains, `npm run deploy:friend` |
+| Hostname | `padhard.heygabi.ai` | **Settled 2026-08-16** (owner decision, replacing the temporary `sam.heygabi.ai`). Still the ONLY name allowed to change. Changing it again: edit the `[[env.friend.routes]]` pattern, add the new host to Firebase Authorised domains, `npm run deploy:friend` |
 | workers.dev | `library-catalog-friend.bgc-worker.workers.dev` | Works regardless of the custom domain |
 | D1 | `library-catalog-2nd` | id `9dcf4af9-d1a2-4de4-adcf-ac7eea77f1c8`, WNAM, created 2026-08-16. Identity-neutral name on purpose |
 | R2 covers | `library-2nd-covers` | Public dev URL enabled: `https://pub-6521c378bf4b4ac3b17d5ac898832819.r2.dev` = her `COVERS_BASE_URL`. r2.dev is rate-limited/uncacheable — swap for a bucket custom domain + 1-year Cache Rule when her hostname settles (edit one var, redeploy) |
@@ -59,7 +60,9 @@ vice versa.
 
 ## Secrets — names only, and who can set them
 
-Her env launches with **zero secrets**. Deliberately never set: `INDEX_PUSH_TOKEN`
+Her env holds **one secret**: `DONOR_TOKEN` (set 2026-08-16 — see the donor
+section above; the main instance holds the same value under the same name).
+Deliberately never set: `INDEX_PUSH_TOKEN`
 (federation is phase 2 — push code logs one line, inert), `EBOOK_INGEST_TOKEN`
 (her ebook surface is a 404 and stays one), `AUDIOBOOK_MAPPING_TOKEN` (no
 audiobook pipeline), `ANTHROPIC_API_KEY` (owner decision — scanPhoto dark;
@@ -74,10 +77,11 @@ be copied by an agent):
    must hold the matching value. Until both sides exist, her estate check is
    off and sign-ins sit `pending` for manual approval on her People page.
 2. `GOOGLE_BOOKS_API_KEY` — optional, reuse the main key (design §6.7).
-3. **Firebase console**: add `sam.heygabi.ai` (and the workers.dev host if
-   she'll ever see it) to Authentication → Settings → Authorised domains on
-   the `audiobook-catalog` project — BEFORE she gets the URL, or sign-in
-   fails `auth/unauthorized-domain`.
+3. **Firebase console**: add `padhard.heygabi.ai` (and the workers.dev host
+   if she'll ever see it) to Authentication → Settings → Authorised domains
+   on the `audiobook-catalog` project — BEFORE she gets the URL, or sign-in
+   fails `auth/unauthorized-domain`. (Done for `padhard` 2026-08-16, when the
+   hostname settled.)
 
 ## Gotchas that already bit
 
@@ -85,8 +89,33 @@ be copied by an agent):
   top level but not on env.friend.vars — probably not what you want". It IS
   what we want (phase-2 federation, inert by absence). Do not "fix" it.
 - This LAN negative-caches new subdomains ~30 min (router NXDOMAIN cache) —
-  a dead-looking `sam.heygabi.ai` right after deploy is the router, not the
-  deploy. Test via the workers.dev URL or another network.
+  a dead-looking `padhard.heygabi.ai` right after deploy is the router, not
+  the deploy. Test via the workers.dev URL or another network.
 - Her details-sweep cron is live (same `"7 * * * *"` string — it MUST match
-  `DETAILS_SWEEP_CRON` or `scheduled()` ignores it) and skips itself every
-  hour with `no ANTHROPIC_API_KEY` until a key exists. Free, by design.
+  `DETAILS_SWEEP_CRON` or `scheduled()` ignores it). ⚠️ Since the donor build
+  (2026-08-16) it no longer skips on the missing AI key — see below.
+
+## The donor-first details sweep (built 2026-08-16)
+
+Owner ask: *"before pinging the ai it checks other libraries for answers. If
+I have Stormlight Archive don't have her look it up."*
+
+**Her donor is the main library.** Every hourly tick, her sweep asks
+`https://library.heygabi.ai/api/donor/details?title=…&author=…` for each
+picked book's unasked missing details and copies what the main catalog
+already holds — running in **donor-only mode**, since she has no
+`ANTHROPIC_API_KEY` (her tick's log line starts its `skipped` list with
+`no ANTHROPIC_API_KEY — donor-only mode`).
+
+| Piece | Where | Notes |
+|---|---|---|
+| Endpoint | `GET /api/donor/details` on BOTH instances | Header `X-Donor-Token` must equal the `DONOR_TOKEN` secret; unset/absent/wrong are all **404** (disabled, never advertised). Read-only; answers only filled detail fields + the matched work id/title |
+| `DONOR_URL` | `[env.friend.vars]` = `https://library.heygabi.ai` | ⚠️ The MAIN instance has NO `DONOR_URL` on purpose — reciprocity (our sweep asking her catalog) is a later one-line owner flip: `DONOR_URL = "https://padhard.heygabi.ai"` in the top-level `[vars]` |
+| `DONOR_TOKEN` | Secret on BOTH instances (set 2026-08-16, conductor; values nowhere) | Same value both sides. Rotate with `npm run secret -- DONOR_TOKEN` and `npm run secret:friend -- DONOR_TOKEN` — together, or her asks 404 |
+| Provenance | `research_finding.source_tier = 'donor'` (migration 0320), `research_run.model = 'donor'`, `decided_how = 'auto'` | Donor copies are auditable/revertible on the queue page's auto-applied list like any machine batch |
+| Convergence | Donor-ANSWERED fields count as asked; a reachable donor with no answer advances the rotation without silencing anything | Books the donor can't answer are re-asked on later rotations — the main library's own AI sweep is still filling its gaps hourly, so her donor keeps learning |
+| Wrangler nag | `DONOR_URL` "exists on env.friend but not at top level" on main-instance commands | Same class as the `INDEX_URL` nag above — correct, do not "fix" |
+
+**Verifying her sweep worked:** a `research_run` row on `library-catalog-2nd`
+with `model = 'donor'` and `triggered_by` NULL (query via the D1 command in
+the table above). Her next `:07` cron tick after deploy is the true test.

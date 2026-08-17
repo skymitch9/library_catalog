@@ -239,6 +239,21 @@ FIREBASE_PROJECT_ID = "audiobook-catalog"
 # §5): remote support is "sign into her hostname and do anything she can".
 OWNER_EMAILS = "nbaslamking@gmail.com"
 
+# ── Donor-first details sweep (owner ask 2026-08-16) ─────────────────────────
+# Her donor is the MAIN library: with this plus the DONOR_TOKEN secret (set on
+# both instances 2026-08-16), her hourly sweep asks library.heygabi.ai's
+# /api/donor/details for each book's missing details before (in her case,
+# instead of) any AI lookup — she has no ANTHROPIC_API_KEY, so her sweep runs
+# in donor-only mode and heals from our catalog for free.
+#
+# ⚠️ The MAIN instance's [vars] deliberately has NO DONOR_URL yet — reciprocity
+# (our sweep asking HER catalog) is a later owner decision, and it is exactly
+# one line there when it comes: DONOR_URL = "https://padhard.heygabi.ai".
+# Wrangler will nag that DONOR_URL "exists on env.friend but not at top level";
+# that nag is the same INDEX_URL one documented in docs/access/
+# second-instance.md, and it is correct to ignore.
+DONOR_URL = "https://library.heygabi.ai"
+
 # ⚠️ INDEX_URL deliberately ABSENT — her estate-index integration is PHASE 2
 # (friend-ingest-design.md §7). Unset means every push trigger in
 # lib/index-push.ts logs one line and does nothing: inert by design, the
