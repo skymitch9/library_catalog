@@ -766,18 +766,6 @@ answer, not a placeholder.
 
 ---
 
-### ⚠️ `work.universe` — 5 of 258, and that is not the backfill
-
-The five Completionist Chronicles works carry `CAL Verse` / `universe_how =
-'list'`, stamped when the research queue called `updateWork`. So the #33 write
-path is proven live — it simply only fires on works that pass through
-`createWork`/`updateWork`, and rows inserted by script do not.
-
-**`npm run backfill:universes -- --remote` has still never been run.** 253 rows
-are NULL and the universe UI has almost nothing to show. Dry-run it first.
-
----
-
 ## ⚠️ GitHub Actions minutes — diagnosed 2026-08-11, fix deferred by the user
 
 **Only `audiobook_catalog` runs any workflows.** `library_catalog`,

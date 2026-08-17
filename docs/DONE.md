@@ -17,6 +17,100 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ 🌌 The universe LIST made single-writer — and the duplication was nothing (2026-08-17)
+
+Owner's ask, verbatim: *"I don't want duplicate universes."* The suspicion was
+that each library D1 carried its own seeded universe rows — "Samantha's fresh
+instance got 16 universes at creation" — so two writers were drifting.
+
+**Measured first, against both live databases. There was no second writer, and
+there never had been one:**
+
+| | main `library-catalog` | friend `library-catalog-2nd` |
+|---|---|---|
+| tables matching `%universe%` | **0** | **0** |
+| `/api/health` `universes.count` | 16 | 16 |
+| works | 351 | 0 |
+| stamped `work.universe` | 61, across 12 canonical names | 0 |
+| stored names not in the canonical 16 | **0** | — |
+| stored names disagreeing with the list | **0** | — |
+| NULL rows the list would resolve | **0** | — |
+
+The 16 on both instances is `universeNames.length` — the length of the
+**bundled** list, not a row count. Both answer 16 because both run the same
+bundle over the same `catalog-platform/data/universes.json`. Migration 0080
+had refused to create a universe table, deliberately and at length; nothing
+since added one. `work.universe` holds per-work **assignments**, keyed by name
+to the canonical list — per-instance data that is *supposed* to differ.
+
+⚠️ **So there was nothing to delete and nothing to reconcile.** What was
+missing was enforcement: the contract was upheld everywhere and guarded
+nowhere, held by prose in three files. Promoted from prose to a script, per the
+estate rule.
+
+**Built:** `packages/core/test/universes-single-writer.test.ts` — 16 assertions
+in four groups, in `npm test`:
+
+1. **no second registry** — no migration may `CREATE TABLE` a universe-named
+   table or `INSERT` into one;
+2. **no resolution in SQL** — `listUniverseKeys` must keep selecting exactly
+   `(id, title, series)`, and no `packages/db` query may filter on a universe
+   *name*;
+3. **a new universe needs no migration** — a synthetic 17th universe added to
+   the *document* must resolve by series, by title override, in the facet tally
+   (zeroes included) and by URL alias, with no schema change; the live list is
+   asserted untouched afterwards;
+4. **one bundle, two instances** — `wrangler.toml` may not grow a second
+   `main`, the two `migrations_dir` values must match, and `/api/health` must
+   keep deriving its count from `universeNames.length` rather than a literal.
+
+**Two traps, both found by exercising the guard rather than reading it:**
+
+- ⚠️ The migration guard parses **statements, not text**. 0080 and 0004 discuss
+  universe tables *in comments*, precisely to explain why they create none — a
+  raw grep fires on the explanation, and a guard that must be deleted to get a
+  green suite is a guard that gets deleted. One assertion exists solely to keep
+  0080 passing.
+- ⚠️ `universe IN ('The Cosmere')` **slipped through the first regex**, which
+  caught `= ?` and `LIKE ?` but not the parenthesis before the quote — the exact
+  form a hand-written registry query takes. Found by probing against synthetic
+  violations.
+
+Proved the guard bites: a scratch migration creating `universe` and seeding two
+names failed exactly the two registry assertions and nothing else, then was
+removed.
+
+**Docs:** `docs/info/universes.md` §7 is the contract (the two halves, the
+measurements, the guard, and how a new universe reaches both instances —
+upstream edit → `npm test` resyncs → deploy BOTH → optional backfill). §8's
+stale local snapshot (116 works / 13 resolving, from an agent worktree) was
+replaced with production figures.
+
+⚠️ **The one real drift vector left is deploy lag, not two writers**: the list
+travels in the bundle, so an instance that is not redeployed keeps the old
+list. `/api/health` on each host is how that is seen. Renames are the case to
+watch — a renamed universe orphans rows stamped with the old name, and the
+backfill is the whole fix.
+
+**Also moved here, resolved by the same measurement — the stale item as it
+stood in `TODO.md`:**
+
+> ### ⚠️ `work.universe` — 5 of 258, and that is not the backfill
+>
+> The five Completionist Chronicles works carry `CAL Verse` / `universe_how =
+> 'list'`, stamped when the research queue called `updateWork`. So the #33 write
+> path is proven live — it simply only fires on works that pass through
+> `createWork`/`updateWork`, and rows inserted by script do not.
+>
+> **`npm run backfill:universes -- --remote` has still never been run.** 253 rows
+> are NULL and the universe UI has almost nothing to show. Dry-run it first.
+
+Superseded by measurement: main now has **61 stamped rows across 12 universes**,
+**0** of its NULL rows resolve under the current list, and **0** stored names
+disagree with it. Whether the backfill ran or ordinary `createWork`/`updateWork`
+traffic did the stamping is **not distinguishable from the rows** — both write
+`universe_how = 'list'` — and is not worth a column to find out.
+
 ## ✅ 💗 Pixel-hearts theme, and padhard boots wearing it (2026-08-17)
 
 The item as it stood in `TODO.md`, moved whole:

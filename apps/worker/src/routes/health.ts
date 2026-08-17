@@ -9,10 +9,18 @@ import type { AppBindings } from '../env.js';
  *
  * ⚠️ `universes` is here for one reason: it is the only thing that proves the
  * shared list was actually bundled. It comes from catalog-platform, is
- * materialised at build time, and NOTHING ELSE reads it yet — surfacing
- * universes in the UI is a separate job. A dependency nobody exercises is a
- * dependency that breaks quietly, and this line makes a missing or empty list
- * visible in one curl rather than months later in a wrong answer.
+ * materialised at build time, and this line makes a missing or empty list
+ * visible in one curl rather than months later in a wrong answer. (It was
+ * written when nothing else read the list; the collection filter, the facets
+ * and `/api/universes/:name` all do now — so this is no longer the list's only
+ * exercise, but it is still its only *unauthenticated* one.)
+ *
+ * ⚠️ **`count` is the length of the BUNDLED list, never a row count.** Both
+ * instances answer 16 because both run the same bundle over the same file —
+ * that is the single-writer contract being observable, not two databases
+ * agreeing by luck. There is no `universe` table in either D1 and there must
+ * never be one; `packages/core/test/universes-single-writer.test.ts` is the
+ * guard, and `docs/info/universes.md` §7 is the contract.
  *
  * ⚠️ Envelope normalization (estate item 5, 2026-08-14): also answers
  * `{ ok, service, version, time, detail }`, `detail` holding this route's
