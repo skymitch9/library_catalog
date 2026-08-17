@@ -26,6 +26,32 @@
 
 ## 🔥 Owner asks 2026-08-16 late evening — status board
 
+### Second wave (rapid-fire, logged as they arrived)
+- **Ebook bookshelf: PROMOTED** ✅ — owner approved (*"I like the ebook site,
+  promote it"*), promote.yml run 31994510844 success, prod deploy 31994541801
+  success, `eb-shelf`/`eb-spine` markers verified live on ebooks.heygabi.ai.
+  Ebooks UX round 2 is CANCELLED (owner likes it as shipped).
+- **Cover gap, measured 2026-08-16:** 168 ebooks → 148 covered (92 extracted
+  from the EPUB itself, 56 borrowed from the audiobook sibling), 20 missing =
+  16 EPUBs with no embedded cover + 4 PDFs (no cover metadata at all). ⚠️ All
+  20 sit beside audiobooks whose own catalog entries could not donate a cover
+  either (several look like the unscanned backlog — absence means unscanned).
+  📋 QUEUED: cover healing pass — Google Books / Open Library lookup fallback
+  for the 20, slow drip to keep Cloudflare happy.
+- **💗 Pixel-hearts theme** (owner ask): pink-and-white theme in the retro
+  pixel family — "those pixel gamer hearts" — for the library app, and it
+  becomes the DEFAULT theme on padhard (her instance; per-instance default
+  var, posture-style). 📋 QUEUED (reset batch).
+- **Series linking, owner's words on the desired UX:** *"I want missing books
+  to say you don't have book 1 but audio and ebook do and Skylar also owns
+  it."* So the series view is per-VOLUME ownership across mediums and owners:
+  each volume row names who holds it in what format, and a gap is a gap only
+  if NOBODY holds it in ANY medium. This extends the canonical-series-registry
+  item — the series page consumes the estate index union + each catalog's
+  holdings. 📋 QUEUED (reset batch, design locked).
+- **Sequencing (owner):** deliver current batch → **Discord portal** (owner is
+  nearly home for the owner-present steps) → **EPUB/PDF viewer** after.
+
 - **Hostname settled: `padhard.heygabi.ai`** — ✅ DONE (route swapped, Firebase
   domains updated additively then `sam` removed after 522 confirmed it dead,
   health 200 on the new name, apex Books card links it).
