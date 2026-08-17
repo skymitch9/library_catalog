@@ -133,3 +133,22 @@ node/workerd left, no dev port held, **16.34 GB free of 63.18 GB**.
 parent chain — so a node/workerd sweep cannot kill the session. The editor's
 language servers *are* node, so `kiro|tsserver|extensionHost` were excluded.
 The kill one-liner is now in `CLAUDE.md` under "Verifying anything".
+
+---
+
+## "npm run db:migrate printed nothing" — silence is a FAILED migration, not a quiet one
+
+**Recorded 2026-08-17, from a real sequencing slip.** A remote migration run
+printed only the wrangler log-file line and no result table; the conductor
+read the silence as success, ran the backfill (which threw — the table did
+not exist), and DEPLOYED — shipping worker code that reads `ebook_holding`
+while the table was still missing. Migrate-before-deploy was violated for
+about ninety seconds; health stayed 200 and the household was asleep, so
+nothing user-visible is known to have failed, but that was luck.
+
+⚠️ **The rule: a migration is applied when you have seen its ✅ row in the
+result table, or `wrangler d1 migrations list --remote` no longer lists it.**
+Silence, an empty tail, or the UV teardown assertion are all FAILURE shapes
+on this machine (see the wrangler-exit-code gotcha above). Do not run the
+next step — least of all a deploy — on an unread migration result.
+
