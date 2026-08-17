@@ -63,6 +63,33 @@ real work. New debt goes HERE, never scattered.
 ## 🔥 Owner asks 2026-08-16 late evening — status board
 
 ### Third wave (2026-08-17 morning)
+- **🤖 GABI, the conversational fixer — PHASE 0 SHIPPED; DISCORD IS NEXT.**
+  Phase 0 (read-only) is built, deployed to both instances and archived whole in
+  [`DONE.md`](DONE.md); the living record is
+  [`info/gabi-fixer-design.md`](info/gabi-fixer-design.md) (§9 = what is and is
+  not built, §13 = the file map, §7.4 = measured costs). What is still moving:
+  - ⚠️ **HER FIRST CONVERSATION NEEDS HER EYES.** The panel is live on
+    `padhard.heygabi.ai` (top bar, speech-bubble icon beside the search and the
+    cog) and the posture and route were verified from outside — but every
+    measured conversation so far ran against the MAIN catalog's data on the
+    OWNER'S key through the dev worker. Nobody has talked to GABI on her site,
+    on her key, about her books. That is the acceptance test.
+  - **💬 Discord DM is the NEXT phase** (owner, 2026-08-17: *"we can do
+    discord right after"*) — promoted ahead of the write phases. Two of the
+    three parts already exist and are front-end-agnostic (`GABI_TOOLS`, the turn
+    route); what a Discord surface must write is its own EXECUTOR. ⚠️ Design
+    §10.2's four blockers are unchanged and none was solved by phase 0 — start at
+    shape **(b)**, propose-and-deep-link, which needs none of them.
+  - **Then phases 1–3** — the write slice (`research_book`, blank-only
+    `set_book_details`, `undo_changes`), covers, small batches. ⚠️ Each needs
+    what phase 0 deliberately does NOT have: the confirm lane (§6), the
+    provenance stamp (§5.2, `changed_how` + a `gabi:<conversationId>` note), and
+    the manifest UI. All the policy is settled (§12, answered) — none of it is
+    implemented.
+  - 🧑 **Owner action, the one open §12 row:** confirm Samantha's Anthropic key
+    sits in a **capped workspace**. It is the backstop behind the turn ceiling,
+    it is one dashboard move at platform.claude.com, and it is also on the tech
+    debt list above. Everything else in §12 is answered.
 - **✅ EBOOK DOWNLOAD IS NOW A ROLE, NOT A CHECKBOX (owner, 2026-08-17: *"For
   ebooks I don't want a download check box, I want to use roles we have. Set up
   the roles to match library."*)** — built in `catalog-platform`
@@ -131,69 +158,6 @@ that repo is outstanding, and it belongs to the conductor, not to this file.
   archived in [`DONE.md`](DONE.md)): when her catalog is worth asking, one
   line in the main `[vars]` — `DONOR_URL = "https://padhard.heygabi.ai"` —
   makes the donating mutual. Owner's call on timing; zero code.
-- **🤖 "Sam asks GABI to fix her books" — conversational fixer (owner vision,
-  2026-08-16 late):** *"in the future i want Sam to be able to ask gabi to fix
-  books for her like id ask you. it'd be done through api but it would have
-  the needed context to fix things."* FUTURE — design seed, not queued yet
-  (sits after the current batch + Discord queue + EPUB/PDF viewer unless
-  reprioritized). The shape that keeps it safe and small:
-  - **The write plumbing already exists and must be REUSED, never bypassed:**
-    `claimRun`/`saveFindings`/`applyFinding`/`autoApplyFindings` are the one
-    canonical path that fixes a book, with provenance (`source_tier`,
-    `decided_by`, `decided_how`) and revert (`revertFinding`) built in. A
-    conversational GABI is a new FRONT DOOR to that machinery — an Anthropic
-    tool-use loop whose tools are the worker's existing capability-gated
-    endpoints — not a new writer.
-  - **Her authority, not GABI's:** actions run as Samantha (admin on her
-    instance, role ladder), attributable in the audit trail — never as a
-    service account. Scope: HER instance only.
-  - **Guardrails:** action allowlist (detail fixes, cover swaps; deletes
-    excluded at first), confirm-before-write summaries for anything bulk,
-    spend rides the capped-workspace key design (§4 of second-instance.md).
-  - **Surface question for later:** her site (a chat panel) vs Discord DM to
-    GABI — decide when built; the API loop is identical behind either.
-  Cross-referenced from catalog-platform TODO §0 (GABI queue).
-  ✅ **DESIGN DONE 2026-08-17, awaiting owner read.**
-  📄 **[`info/gabi-fixer-design.md`](info/gabi-fixer-design.md)** — full design,
-  with rejected alternatives per section. **Nothing is built; no route, table,
-  secret or panel exists.** What the design settled that the seed left open:
-  - ⚠️ **The loop runs in HER BROWSER, not in the Worker.** A server-side loop
-    is the obvious shape and the wrong one: a six-turn conversation that
-    researches one book and patches two fields is ~40 of the **50 subrequests**
-    an invocation gets, and going over **terminates the invocation rather than
-    throwing** — a conversation whose failure mode is silence. The browser
-    already holds her live Firebase token and already calls every one of these
-    endpoints, so each tool call is *literally* the request the edit form makes:
-    "her authority end to end" becomes a thing the design declines to
-    circumvent rather than a thing it builds. The Worker keeps one thin route
-    (`POST /api/gabi/turn`, `runResearch`-gated) that holds the API key and
-    makes exactly ONE model call per turn.
-  - ⚠️ **`title`/`authors` are unreachable by construction**, not by validation
-    — they re-derive `work_key`, and moving a non-provisional key needs a
-    Firestore `keyMove` attestation the Worker structurally cannot make.
-    `applyFinding` already refuses the same two fields for the same reason.
-  - **No migration is needed to make a GABI write auditable.** `decided_how`
-    already means *"did anybody look at the value"*, not *"did a person ask"* —
-    so a blank-fill lands `'auto'` + her id, a confirmed overwrite lands
-    `'human'` + her id, and `Actor.note` carries `gabi:<conversationId>`. A
-    third enum value would have stretched the column's meaning for nothing.
-  - **Batches cap at 10** because `POST /api/research/undo` caps at 10: a batch
-    you cannot undo in one action should not be one action.
-  - ⚠️ **Do not disable thinking on Opus 5 to save money** — with it off, tool
-    calls can arrive as plain *text*: the turn succeeds, the call never runs,
-    nothing errors. Cost is controlled with `effort: 'low'` instead, exactly as
-    `RESEARCH_EFFORT` already does.
-  - **Cost: single-digit cents per conversation**, dominated by the ~2¢ paid
-    lookup, not by the loop. ⚠️ Haiku is a false economy — its 4096-token cache
-    minimum is above this prefix, so it pays full input price every turn.
-  - 🧑 **Owner action, before anything is built:** confirm **Samantha's role on
-    `padhard`**. The seed says `admin`; her `app_user.role` row was not read,
-    `ESTATE_DEFAULT_ROLE` is unset (the `moderator` flip is paused), and a
-    `member` gets 403 from every write tool — the whole feature is dark.
-  - **Discord needs four things that do not exist** (an `app_user` join, token
-    custody, a deferred-response path, persisted conversation state); the site
-    panel needs none. If Discord is wanted sooner, the propose-and-deep-link
-    shape is buildable today with no new auth.
 
 - **EPUB/PDF in-browser reader** (owner ask 2026-08-16: *"how hard would it be
   to have a reader for EPUBs and PDFs so users could either preview or a read a

@@ -3,12 +3,15 @@
 > **Audience:** Claude sessions. **Status:** TRACKED.
 > Last verified: **2026-08-17** — every claim in §1 was established that day by
 > reading the named source files in this repo and in `catalog-platform`. §11
-> lists what was **not** verified, including two unknowns that would change §3's
-> recommendation.
-> This is a **DESIGN DOC**: nothing below is built. No code, no route, no
-> migration and no secret exists. Nothing was changed alongside it except the
-> two pointers this repo's rules require (`info/README.md` index row,
-> `TODO.md` item).
+> lists what was **not** verified, and says which of those the build then closed.
+>
+> ⚠️ **PHASE 0 IS BUILT AND DEPLOYED (2026-08-17).** This started as a design doc
+> where nothing existed; the read-only loop, the turn route, the accounting
+> migration and the site panel now do. **§9 is the map of what is and is not
+> built** — phases 1–3 remain unbuilt, and §12's decisions about them are
+> *answered*, not *shipped*. §7's arithmetic has been replaced with measured
+> figures (§7.4). Everything else below still describes the whole design,
+> including the parts that are still design.
 
 **The owner's ask, verbatim (2026-08-16 late):**
 
@@ -624,6 +627,45 @@ The spend cap itself rides the capped-workspace key design
 (`second-instance.md` §4) — ⚠️ whose existence is unverified (§11). A capped
 workspace is the backstop; the turn ceiling in §3.2 is the fuse.
 
+### 7.4 ⚠️ MEASURED — 2026-08-17, the first real conversations
+
+Everything above this line was arithmetic over a published price table. These
+are numbers, taken by driving the real loop (real route, real executor, real
+model, local D1) against `npm run dev:worker` on the owner's key:
+
+| Fact | Measured | §7.1 had estimated |
+|---|---|---|
+| Cached prefix (system + 4 tool schemas) | **1,793 tokens** | ~2.5k |
+| First turn's *new* input, beyond the prefix | **85–90 tokens** | 300–1,500 |
+| A `list_gaps` tool result | **3,301 chars ≈ 1,450 tokens** | (unmodelled) |
+| Turn after one tool result: input / output | **1,437–1,547 / 115–386** | 300–1,500 / 200–400 |
+| A 2-turn conversation, one tool round | **1.4–1.8¢** | 2–5¢ for six turns |
+
+⚠️ **The correction that matters, and it went the wrong way in the first
+implementation.** `usage.input_tokens` **excludes** `cache_read_input_tokens` —
+the API reports three input classes separately and the prompt is their *sum*. So
+reusing `estimateCents(input, output)` unchanged, as this document's §7.3
+proposed, does not "err high by pricing cache reads as full input": it omits the
+cached prefix **entirely** and errs LOW. `gabiCents` in
+`packages/research/src/gabi.ts` now prices all four classes (reads at 0.1×,
+5-minute writes at 1.25×), still through the one `estimateCents` table.
+
+That mistake is the argument for this whole section: it was written from
+arithmetic, shipped, and corrected within the hour by *running* it. It is also
+why `gabi_turn` stores the raw columns rather than one total — a stored total
+computed by a wrong function is wrong forever.
+
+**What the numbers say about §7.1's practical implication:** it holds, and more
+strongly than estimated. The loop is cheap — the prefix caches at 0.1× from turn
+2 onward, and the model's own output dominates every turn. The expensive thing
+remains the paid lookup (`RESEARCH_CENTS_EACH.low = 2¢`), which phase 0 does not
+have. **A phase-1 conversation's cost will be roughly "how many times did GABI
+reach for `research_book`", and almost nothing else.**
+
+⚠️ **Not measured:** a six-turn conversation, a conversation on HER instance, and
+anything involving a paid lookup. The figures above are one- and two-tool
+conversations on the main catalog's data.
+
 ---
 
 ## 8. Failure modes
@@ -661,12 +703,19 @@ raw tool result underneath the message so a paraphrase is visible as one.
 The owner's v1 is details + covers, single-book and small-batch. These are the
 shippable slices **inside** that boundary, ordered so each one lands complete.
 
-**Phase 0 — read-only GABI.** `find_book`, `get_book`, `list_gaps`,
-`list_recent_changes`. The turn route, the `@lc/core` array, the panel, the
-executor, the `gabi_turn` accounting row. **No write tool exists yet.** This
-proves the loop, the token flow, the wording and the disambiguation UX with zero
-write risk, and it ends with a *measured* cost-per-conversation replacing §7.1's
-arithmetic.
+**Phase 0 — read-only GABI. ✅ BUILT AND DEPLOYED 2026-08-17.** `find_book`,
+`get_book`, `list_gaps`, `list_recent_changes`. The turn route, the `@lc/core`
+array, the panel, the executor, the `gabi_turn` accounting row. **No write tool
+exists yet** — and that is now enforced rather than remembered:
+`packages/core/test/gabi-tools.test.ts` fails the build if a tool in the array
+declares `mutates`, a non-GET method, or a capability above `read`. (Exercised:
+adding `set_book_details` to the array fails four assertions in four independent
+ways.) It ended with the *measured* cost figures §7.4 now carries.
+
+⚠️ **What phase 0 deliberately does NOT have**, so the next phase knows what it
+is starting from: no confirm lane, no manifest UI, no provenance stamping, no
+`gabi:<conversationId>` note on any `change_log` row — because nothing writes.
+§5.2 and §6 are unimplemented design, not implemented policy.
 
 **Phase 1 — the smallest useful write slice.** `research_book`,
 `set_book_details` (blank-only, auto lane), `undo_changes`. This is the
@@ -681,8 +730,12 @@ universe). One book at a time. Confirm lane exists but only fires on overwrites.
 **Phase 3 — small batches.** The manifest UI, serial execution, the cap of 10,
 partial-failure reporting by name.
 
-**Phase 4 — the other front end.** Only after phases 0–3 have run on her
-instance for a while. §10.
+**Phase 4 — the other front end.** ⚠️ **PROMOTED 2026-08-17.** The owner settled
+the surface order as *"we can do discord right after"*, which makes Discord the
+**next thing in the queue after phase 0**, ahead of phases 1–3 — not the last
+thing after them. The design itself is unchanged and so are §10.2's four
+blockers; only the position moved. Start at shape (b), propose-and-deep-link,
+which needs none of the four.
 
 Each phase is independently shippable and independently revertible, and none
 requires a migration except phase 0's `gabi_turn` table.
@@ -752,16 +805,45 @@ identity never enters page JavaScript.
 (b).** Option (b) needs none of the four, because a proposing bot is a read-only
 bot with a link on the end.
 
+⚠️ **DECIDED 2026-08-17 — and Discord is now NEXT, not later.** The owner settled
+the order as *"we can do discord right after"*: panel first (built), Discord the
+following phase, ahead of the write phases. Two things that carry forward:
+
+1. **Two of the three parts are already done for it.** `GABI_TOOLS` and
+   `POST /api/gabi/turn` are front-end-agnostic and shipped. What a Discord
+   surface needs to write is the **executor** — the third row of the table
+   above — and that is genuinely the whole difference.
+2. ⚠️ **The four blockers are unchanged and none was quietly solved by phase 0.**
+   There is still no `app_user` join, no token custody answer, no deferred
+   response path and no persisted conversation state — the browser tab provides
+   the last one for free, which is exactly why phase 0 did not need to build it.
+   Shape **(b)**, propose-and-deep-link, needs none of the four and is what
+   "right after" should mean unless the owner says otherwise.
+
 ---
 
 ## 11. What was NOT verified
 
-- ⚠️ **Samantha's actual role on `padhard`.** The seed says `admin`; her
-  `app_user.role` row was **not read** — no D1 query was run in this session.
-  `ESTATE_DEFAULT_ROLE` is unset on her env (the `moderator` flip is paused), so
-  the estate auto-grant hands out `member`, and a `member` gets 403 from every
-  write tool in §4.2. **This is the first thing to check, and the whole feature
-  is dark if it resolves badly.**
+> ⚠️ **This section was written by the DESIGN session, when nothing was built.**
+> The phase-0 build (2026-08-17) closed some of it by measurement and left the
+> rest open. Each row now says which. **Nothing has been struck out** — a
+> question that was open once is worth being able to see was open, and the
+> answers are worth more with the doubt still attached.
+>
+> **Closed by the build:** Samantha's role (row 1, measured), the §7 arithmetic
+> (now §7.4, measured), "no code was written, run or deployed" (it was), and the
+> `change_log` CHECK sweep (irrelevant to phase 0, which writes nothing).
+> **Still open:** the Cloudflare plan, the CPU limit, the capped workspace, the
+> Discord link's shape, and every figure §7.4 marks as not measured.
+
+- ✅ **Samantha's actual role on `padhard` — CLOSED 2026-08-17 by MEASUREMENT.**
+  `SELECT role FROM app_user` against `library-catalog-2nd` (remote) returns
+  **`admin`**, approved. `admin` holds `runResearch`, so the turn route admits
+  her and **the feature is not dark**. ⚠️ The original doubt was well founded and
+  is worth keeping visible: `ESTATE_DEFAULT_ROLE` is still unset on her env, so
+  the estate auto-grant still hands out `member` — her `admin` is a specific
+  grant to her account, not a property of the instance. **Anyone else who signs
+  in there gets `member` and will not see the panel at all.**
 - ⚠️ **Which Cloudflare plan this account is on (Workers Free vs Paid).** Not
   found in any doc — `ebook-viewer-design.md` §10 already flags the same
   unknown. It decides whether the subrequest ceiling is 50 or 1000, which is
@@ -778,8 +860,11 @@ bot with a link on the end.
 - **Anthropic model prices, cache minimums and the thinking-disabled tool-call
   failure mode** were taken from the bundled `claude-api` reference in this
   session, not fetched live from `platform.claude.com`.
-- **Every figure in §7 is arithmetic, not an invoice.** No Anthropic call was
-  made, no token count measured, nothing was run. §7.3 exists to fix this.
+- ✅ **"Every figure in §7 is arithmetic, not an invoice" — CLOSED, partly.**
+  Real calls were made 2026-08-17 and §7.4 carries the token counts. ⚠️ Still not
+  an invoice: it is list pricing over measured tokens, and §7.4 names what
+  remains unmeasured (a six-turn conversation, anything on HER instance, anything
+  involving a paid lookup).
 - **Whether her `ANTHROPIC_API_KEY` sits in a capped workspace.**
   `second-instance.md` already records this as unverified and recommends
   confirming with the owner before assuming a cap exists.
@@ -787,49 +872,118 @@ bot with a link on the end.
   `catalog-platform/apps/discord-worker/src/link.ts` as source, never exercised.
   Whether phase-2 linking is switched on at all depends on owner clicks that
   `catalog-platform/docs/TODO.md` §0 lists as outstanding.
-- **No code was written, run, typechecked or deployed. No route, migration,
-  secret or table exists.** Nothing was fetched over the network; no live
-  endpoint on `padhard.heygabi.ai` was called.
+- ✅ **"No code was written, run, typechecked or deployed" — CLOSED.** Phase 0
+  exists (§9). ⚠️ **What the BUILD did not verify, in its turn:**
+  - **Nobody has had a real conversation on `padhard.heygabi.ai`.** The panel is
+    deployed and the posture is on, but the measured conversations in §7.4 ran
+    against the main catalog's data through the dev worker on the OWNER's key.
+    **Samantha's first conversation needs her eyes, on her site, on her key** —
+    and it is the only thing that can confirm the wording lands for the person
+    it was written for.
+  - **The panel has not been seen in a browser.** Its logic is exercised by
+    tests and its loop by a live end-to-end run, but no screenshot exists and no
+    theme (`hearts`, hers) has been looked at.
+  - **No conversation has ever hit the turn ceiling, the size ceiling, or a
+    `pause_turn`** in production. All three are covered by tests; none has
+    happened for real.
 - **`change_log.changed_how` having no CHECK constraint** was read from
   `migrations/0120_change_log_and_authorless.sql`; whether a later migration
-  added one was not swept for.
-- **No claude.ai usage reading was taken** during this work.
+  added one was not swept for. ⚠️ Irrelevant to phase 0, which writes no
+  `change_log` row at all — it becomes load-bearing the day phase 1 ships.
+- **No claude.ai usage reading was taken** during either the design or the
+  build.
 
 ---
 
-## 12. Open owner decisions
+## 12. Owner decisions — ALL ANSWERED 2026-08-17
 
-1. ⚠️ **Is Samantha `admin` (or at least `moderator`) on `padhard`?** Not a
-   design question — a fact that must be checked before phase 0. `moderator` is
-   the floor for `runResearch` and `reviewFindings`; `contributor` for
-   `editCatalog`. If she is `member`, the decision becomes *which* rung to grant,
-   and that is access-increasing.
-2. **Auto lane or confirm-everything?** Recommended: **the auto lane for blank
-   single-book fills** (§6.1), because it is the same bargain the owner already
-   struck when the findings gate was retired. The conservative alternative
-   (confirm every write) is one line of policy and costs only taps.
-3. **`set_cover_from_url` — candidate-only, or free-web behind a confirm?**
-   Recommended: **candidate-only in the auto lane, free-web behind confirm**
-   (§4.2). Free-web everywhere is available and is the one place a model can
-   assert something nothing can check.
-4. **Should `record_gap_verdict` be a tool at all?** It silences a question
-   *forever* and demands a source. Recommended: yes, but confirm-only, and the
-   source must be her words. Removing it costs nothing.
-5. **Batch cap of 10, or smaller?** Recommended: 10, to stay symmetric with
-   `POST /undo` (§6.3). Smaller is free; larger requires rethinking undo.
-6. **Does the `gabi_turn` accounting table earn its migration?** Recommended:
-   yes (§7.3) — without it the cost model is permanently a guess. It is one
-   table and no behaviour change.
-7. **Which surface first?** Recommended: **site chat panel**, because it needs
-   no new auth and Discord needs four things that do not exist (§10.2). If
-   Discord is wanted sooner, the propose-and-link shape (b) is buildable today.
-8. **Should this ever run on the main library?** v1 says no. When it does, the
-   `runResearch` spend is the owner's key rather than hers, and the blast radius
-   is 157 works instead of hers.
-9. **Is a capped Anthropic workspace actually in place for her key?** Owner's
-   fact to confirm; it is the backstop behind §3.2's turn ceiling.
+**The owner took every recommendation, verbatim: *"take your recs and we can
+always change later."*** The surface order was settled in the same breath —
+*"we can do discord right after"*. Each row below records the answer, its date,
+and (where the answer was a fact rather than a preference) how it was checked.
+
+⚠️ **An answered decision is not the same as a shipped one.** Only phase 0 is
+built; decisions 2, 3 and 4 govern phases that do not exist yet and are recorded
+here so the phase that ships them starts from a settled position rather than
+re-opening the argument.
+
+| # | Question | Answer (2026-08-17) | Built? |
+|---|---|---|---|
+| 1 | Samantha's role on `padhard` | ✅ **`admin`** — **MEASURED**, not assumed: `SELECT role FROM app_user` on `library-catalog-2nd` (remote), 2026-08-17, returns `admin`, approved. `admin` holds `runResearch`, so **the feature is not dark** | n/a — it was the precondition |
+| 2 | Auto lane, or confirm everything? | **Auto lane for blank single-book fills** (§6.1) — the same bargain the owner struck when the findings gate was retired | ⏳ phase 1 |
+| 3 | `set_cover_from_url` — candidates only? | **Candidate-only in the auto lane, free-web behind confirm** (§4.2) | ⏳ phase 2 |
+| 4 | Is `record_gap_verdict` a tool at all? | **Yes, but confirm-only, and the source must be her words** | ⏳ phase 1 |
+| 5 | Batch cap | **10**, symmetric with `POST /undo` (§6.3) | ✅ recorded as `GABI_BATCH_CAP` in `@lc/core`, and a test reads `routes/research.ts` to check the two still agree. Nothing batches yet |
+| 6 | Does `gabi_turn` earn its migration? | **Yes** (§7.3) — without it the cost model is permanently a guess | ✅ migration `0330_gabi_turn.sql`, both instances |
+| 7 | Which surface first? | **Site chat panel first; Discord DM the phase NEXT AFTER** — owner, *"we can do discord right after"*. That promotes Discord from §9's phase 4 to the queue's next item, ahead of phases 1–3 | ✅ panel built. Discord recorded, not built — §10.2's four blockers are unchanged |
+| 8 | Should this run on the main library? | **No for v1.** The spend would be the owner's key rather than hers, and the blast radius the whole catalog | ✅ enforced: `GABI_PANEL = "off"` in `[vars]`, `"on"` in `[env.friend.vars]`, pinned by `apps/worker/src/routes/gabi.test.ts` |
+| 9 | Capped Anthropic workspace for her key? | **Still the owner's to confirm** — the one row here that is not closed. It is the backstop behind §3.2's turn ceiling, and it is on `TODO.md`'s tech-debt list | ⚠️ **NOT VERIFIED** |
+
+### 12.1 ⚠️ "Her instance only" is a POSTURE, not a deploy boundary
+
+Decision 8 needs one sentence of mechanism, because the obvious reading of it is
+wrong. **The loop, the route and the panel deploy from this one repo to BOTH
+instances by nature** — they are the same commit, the same bundle, the same
+`apps/web/dist`. Nothing about "her instance only" can be achieved by deploying
+less.
+
+What makes it hers is a **per-instance posture var**, `GABI_PANEL`, in the idiom
+the `DEFAULT_THEME` work established: `wrangler.toml` is the posture of record,
+one pure function reads it, and a test pins the two together so they cannot
+drift. Two differences from `DEFAULT_THEME`, both deliberate:
+
+- **The Worker reads this one.** A theme must resolve before first paint, so
+  that one is resolved in the browser from `location.hostname`. A chat panel
+  need not be, so this is read server-side and reported on `/api/me` (what the
+  app reads at boot) and `/api/health` (what a curl can check with no sign-in) —
+  the "when the Worker grows a config surface the web app reads at boot" case
+  `DEFAULT_THEME`'s own comment anticipated.
+- ⚠️ **It gates the ROUTE, not only the panel.** `POST /api/gabi/turn` answers a
+  worded **404** wherever the posture is off — the disabled-not-open idiom
+  `EBOOK_INGEST_TOKEN` and `DONOR_TOKEN` already use, and **not** 403, which in
+  this app means exactly one thing: your role. Hiding a control has never been
+  the lock here; `/people`'s nav comment says so in as many words.
+
+Unset means off, and so does anything unrecognised — the same failure direction
+as `resolveDefaultRole` and `parseEstateMode`, for the same reason: this one
+spends money.
 
 ---
+
+## 13. As built — where phase 0 actually lives
+
+For the session that has to change this. Everything above is the design;
+this is the map.
+
+| Part | File | The one thing to know |
+|---|---|---|
+| The allowlist | `packages/core/src/gabi-tools.ts` | `GABI_TOOL_NAMES` is default-deny and phase 0's four are read-only. Adding a name is not the change it looks like |
+| Its guard | `packages/core/test/gabi-tools.test.ts` | Fails on a write tool four ways. Also pins `GABI_BATCH_CAP` against `routes/research.ts`'s own literal |
+| The model call | `packages/research/src/gabi.ts` | One call, `maxRetries: 0`. ⚠️ **Thinking stays on** — see its header. `gabiCents` is the cache-aware pricing §7.4 corrected |
+| The decisions | `apps/worker/src/lib/gabi-turn.ts` | Guards, spend, accounting. Takes the model call as a PARAMETER so "exactly one" can be counted |
+| The route | `apps/worker/src/routes/gabi.ts` | Wiring only. `requireCapability('runResearch')` — money, not writes |
+| The accounting | `migrations/0330_gabi_turn.sql`, `packages/db/src/gabi.ts` | Written on success AND failure. `recordGabiTurn` never throws |
+| The posture | `wrangler.toml` `GABI_PANEL`, `routes/gabi.test.ts` | Off here, on for `friend`. The test reads the file |
+| The executor | `apps/web/src/lib/gabi.ts` | A LEAF that cannot fetch. Explicit projections — `work_key` and copies never leave |
+| The panel | `apps/web/src/components/GabiPanel.tsx` | Runs the loop. A tool card per `tool_use`, raw results verbatim |
+| Two config surfaces | `routes/health.ts` (`gabi.panel`), `routes/users.ts` (`gabiPanel`) | One is curl-able without sign-in; one is what the app reads at boot |
+
+**Verifying a deploy, in two curls and no sign-in:**
+
+```bash
+curl -s https://padhard.heygabi.ai/api/health   | grep -o '"gabi":{[^}]*}'   # {"panel":true}
+curl -s https://library.heygabi.ai/api/health   | grep -o '"gabi":{[^}]*}'   # {"panel":false}
+curl -s -X POST https://padhard.heygabi.ai/api/gabi/turn -d '{}'             # 401, tokenless
+```
+
+**The cost question, answered from the table rather than from arithmetic:**
+
+```sql
+SELECT conversation_id, COUNT(*) AS turns,
+       SUM(input_tokens) AS input, SUM(output_tokens) AS output,
+       SUM(cache_read_tokens) AS cached, SUM(tool_calls) AS tools
+  FROM gabi_turn GROUP BY conversation_id ORDER BY MAX(id) DESC;
+```
 
 ## Related
 
