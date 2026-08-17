@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { tbrDocFor, tbrResolveSchema } from '@lc/core';
+import { absoluteCoverUrl, tbrDocFor, tbrResolveSchema } from '@lc/core';
 import { getWork, resolveTbrEntries } from '@lc/db';
 import type { AppBindings } from '../env.js';
 import { requireCapability } from '../middleware/auth.js';
@@ -94,7 +94,11 @@ export const tbrRoutes = new Hono<AppBindings>()
       authors: work.authors,
       displayName,
       email: user.email,
-      coverUrl: work.coverUrl ?? null,
+      // ⚠️ Absolute, against this request's own origin. `work.cover_url` is
+      // usually `/covers/…` — a path this Worker serves — and the document is
+      // read by another site, where that path means something else or nothing
+      // at all. See `absoluteCoverUrl`.
+      coverUrl: absoluteCoverUrl(work.coverUrl, c.req.url),
     });
 
     return c.json({ collection: tbrCollection(c.env), docId: id, doc });

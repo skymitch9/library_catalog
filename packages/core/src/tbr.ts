@@ -149,6 +149,33 @@ export function tbrDocFor(params: {
   return { id: readingListDocId(params.displayName, bookId), doc };
 }
 
+/**
+ * A cover URL that means the same thing on somebody else's site.
+ *
+ * ⚠️ **This catalog's `work.cover_url` is usually a site-relative path** —
+ * `/covers/killer-s-mind-….jpg`, served by this Worker. Writing that into a
+ * document the audiobook site also reads would store a URL that resolves
+ * against *their* host and 404s. Nothing over there renders `bookCover` today
+ * (it writes the field and never reads it back, measured 2026-08-17), so this
+ * is a trap being closed before it is sprung rather than a bug being fixed —
+ * and it is exactly the kind that would surface as "why are half the covers on
+ * the reading list broken" long after anyone remembers who wrote them.
+ *
+ * An absolute URL, a protocol-relative one and a `data:` URI are all left
+ * alone. Anything that cannot be resolved answers `null`: a document with no
+ * cover is honest, a document with a broken one is not.
+ */
+export function absoluteCoverUrl(coverUrl: string | null | undefined, base: string): string | null {
+  const raw = (coverUrl ?? '').trim();
+  if (!raw) return null;
+  if (/^(https?:)?\/\//.test(raw) || raw.startsWith('data:')) return raw;
+  try {
+    return new URL(raw, base).toString();
+  } catch {
+    return null;
+  }
+}
+
 /** The fields of a reading-list document these rules read. Nothing else. */
 export interface TbrLike {
   displayName?: string | null;

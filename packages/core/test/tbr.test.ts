@@ -22,6 +22,7 @@ import { describe, it } from 'node:test';
 import { UNKNOWN_AUTHOR } from '../src/constants.js';
 import { reviewDocId } from '../src/reviews.js';
 import {
+  absoluteCoverUrl,
   myTbrEntries,
   outstandingTbrEntries,
   readingListDocId,
@@ -121,6 +122,34 @@ describe('tbrDocFor — the document this catalog writes', () => {
     const { doc } = tbrDocFor({ title: 'Gold', authors: 'A B', displayName: 'Sky' });
     assert.equal('email' in doc, false);
     assert.equal('bookCover' in doc, false);
+  });
+});
+
+describe('absoluteCoverUrl — a cover that means the same thing on the other site', () => {
+  const base = 'https://library.heygabi.ai/api/tbr/1/keys';
+
+  /**
+   * ⚠️ The trap this closes. `work.cover_url` is usually `/covers/…`, served by
+   * this Worker — and the document is read by the audiobook site, where that
+   * path resolves against THEIR host.
+   */
+  it('resolves a site-relative path against this instance', () => {
+    assert.equal(
+      absoluteCoverUrl('/covers/a-killer-s-mind.jpg', base),
+      'https://library.heygabi.ai/covers/a-killer-s-mind.jpg',
+    );
+  });
+
+  it('leaves an absolute, protocol-relative or data URL exactly as it is', () => {
+    assert.equal(absoluteCoverUrl('https://x.test/a.jpg', base), 'https://x.test/a.jpg');
+    assert.equal(absoluteCoverUrl('//x.test/a.jpg', base), '//x.test/a.jpg');
+    assert.equal(absoluteCoverUrl('data:image/gif;base64,AA', base), 'data:image/gif;base64,AA');
+  });
+
+  it('answers null for nothing at all — a coverless entry beats a broken one', () => {
+    assert.equal(absoluteCoverUrl(null, base), null);
+    assert.equal(absoluteCoverUrl('   ', base), null);
+    assert.equal(absoluteCoverUrl('/covers/x.jpg', 'not a url'), null);
   });
 });
 

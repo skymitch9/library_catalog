@@ -48,6 +48,21 @@ both directions on day one — a book added on the audiobook site appears in the
 library's My TBR, and clearing it here turns that site's `✓ To Be Read` button
 back into `📋 Add to TBR`.
 
+### ⚠️ The cover has to be an ABSOLUTE url, and that is not obvious
+
+`work.cover_url` in this catalog is usually a site-relative path
+(`/covers/killer-s-mind-….jpg`, an asset this Worker serves). Written straight
+into a document the **other** site reads, that path would resolve against
+*their* host and 404. Nothing over there renders `bookCover` today — it writes
+the field and never reads it back, measured 2026-08-17 — so `absoluteCoverUrl`
+closes a trap before it is sprung rather than fixing a live bug.
+
+It resolves against the **request's own origin** rather than a configured host,
+which is what makes one bundle correct on both instances: `library.heygabi.ai`
+stamps its own covers, `padhard.heygabi.ai` stamps hers. Absolute,
+protocol-relative and `data:` values are passed through untouched, and anything
+unresolvable becomes `null` — a coverless entry is honest, a broken one is not.
+
 ### ⚠️ No rules change was needed, and that is deliberate
 
 `validReadingList()` asserts `displayName`, `bookId` and `status` are strings
