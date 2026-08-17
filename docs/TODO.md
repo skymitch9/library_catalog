@@ -47,17 +47,6 @@ land with its own code.
   moment the warnings-split agent clears the audiobook templates zone; its
   promote is covered by the same owner sentence (he was told it rides one and
   said do it).
-- **🎨 Hearts everywhere + themes propagate mechanically (owner order,
-  verbatim):** *"Add the pink theme as an option for every site, when a theme
-  is added all sites get it some may just default right away."* Two halves:
-  (1) hearts joins the cog on apex, audiobook site, games site (library/
-  padhard already have it; padhard alone defaults it; every other default
-  unchanged; the ebooks page's own identity is investigated, not steamrolled);
-  (2) THE RULE — vendored theme copies become build-time syncs from the
-  canonical (library's sync-estate-theme.mjs is the template) or carry a
-  drift-guard test, so theme #6 someday reaches every cog with zero manual
-  copying or breaks tests loudly. 🚧 IN FLIGHT (agent dispatched 08-17).
-  ⚠️ audiobooks.heygabi.ai PROD shows it only after the owner's "promote".
 
 ### Second wave (rapid-fire, logged as they arrived)
 - **Ebook cover healing** 📋 QUEUED (reset batch) — **ROOT CAUSE FOUND

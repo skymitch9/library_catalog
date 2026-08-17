@@ -17,6 +17,62 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ Hearts everywhere, and theme propagation stops depending on memory (2026-08-17)
+
+**Owner order, verbatim:** *"Add the pink theme as an option for every site,
+when a theme is added all sites get it some may just default right away."*
+(The item below is the TODO entry, moved whole. What follows it is what
+landed.)
+
+- **🎨 Hearts everywhere + themes propagate mechanically:** Two halves:
+  (1) hearts joins the cog on apex, audiobook site, games site (library/
+  padhard already have it; padhard alone defaults it; every other default
+  unchanged; the ebooks page's own identity is investigated, not steamrolled);
+  (2) THE RULE — vendored theme copies become build-time syncs from the
+  canonical (library's sync-estate-theme.mjs is the template) or carry a
+  drift-guard test, so theme #6 someday reaches every cog with zero manual
+  copying or breaks tests loudly.
+
+**The diagnosis that mattered:** `hearts` had been in canonical since 08-16 and
+was in NO cog, and the reason was not laziness. Adding a theme required editing
+five apex HTML files, a React constant in the games repo, a label map in THIS
+repo, a fallback list in the audiobook repo, and hand-copying four files into
+two repos — nine places, none of which failed when skipped. So the fix was to
+delete all nine, not to do the sweep.
+
+**What landed**
+
+| Repo | Mechanism now | Commit |
+|---|---|---|
+| catalog-platform | `theme.js` owns THEMES **and** a new LABELS map, and `wireCog` BUILDS `#hg-theme-select`'s options from them; `window.estateTheme` gains `labels`/`label()`; `predeploy-check.mjs` refuses to deploy a theme with no palette or label, or a page with hardcoded `<option>`s | `176c60c`, `ac36bbd` |
+| games | `scripts/sync-estate-theme.mjs` on prebuild/pretest/predeploy; `apps/web/public/assets/` left git; the cog renders `estateThemes()`/`estateThemeLabel()`; its two inline scripts (bgc-theme migrate, theme-color) deleted — canonical does both for everyone now | `0c84d6b` |
+| audiobook | `scripts/sync_estate_theme.py` + `tests/test_estate_theme_vendor.py` (sync-on-demand + read-only guard, because `site/` is served from the repo and the pipeline auto-commits); its forked `theme.js` is verbatim canonical again, all three site-local additions having moved upstream | `ada611f`, `9baeb38` |
+| library (this repo) | already synced; gave up its `THEME_LABELS` map for `themeLabel()`, and the test that pinned that map now pins the LABELS in canonical instead | see this wave |
+
+**Verified in a browser, not reasoned about** — the `hearts` build's own lesson
+was that automated contrast checks passed while a page rendered as a solid pink
+wall. Apex: all five cog pages ship an EMPTY select that fills to five named
+themes, default `classic`. Games: five options, default `retro`, `theme-color`
+still tracking `--et-bg` after its inline script was removed. Audiobook: five
+options in the account modal's exact markup, default `cyberpunk`/dark
+preserved, hearts legible in light and dark on the real catalog page.
+
+**Both drift guards were watched FAILING and then passing** — a sixth theme
+with no palette breaks the apex predeploy check and the audiobook drift test by
+name.
+
+⚠️ **Not covered:** the audiobook drift test SKIPS where the catalog-platform
+checkout is absent, which includes that repo's CI. It guards developer and
+agent checkouts — where re-vendoring actually happens — and nothing else.
+
+⚠️ **Deliberate exclusion, recorded rather than fixed:** `ebooks.heygabi.ai`
+is not a theme consumer. It has one look of its own by owner ruling and keeps
+`theme.js` only so the shared account modal's Appearance controls work; hearts
+reaches that dropdown while the page keeps its own skin.
+
+Reference: [`access/themes.md`](access/themes.md) and
+`catalog-platform/docs/info/estate-themes.md` §3a (how to add theme #6).
+
 ## ✅ Cross-catalog TBR — one intention per person per work, in the store the audiobook site already had (2026-08-17)
 
 **What shipped** (core `packages/core/src/tbr.ts`, db `packages/db/src/tbr.ts`,
