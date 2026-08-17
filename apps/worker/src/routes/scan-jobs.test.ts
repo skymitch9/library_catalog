@@ -111,6 +111,65 @@ describe('scan-jobs capability gates — behaviour, not just the matrix', () => 
     });
   });
 
+  /**
+   * ⚠️ An unconfigured scan service is a FOURTH cause, and it must not be
+   * worded — or coded — like the three permission ones.
+   *
+   * `stubEnv` has no `ANTHROPIC_API_KEY`, which is exactly the production
+   * failure being pinned: the estate rule says a server failure must never
+   * read as a permission failure, because someone who reads "check your
+   * access" goes and asks an admin for a role they already hold. The
+   * assertions are two-sided on purpose — the right code AND the absence of
+   * refusal vocabulary.
+   *
+   * ⚠️ It also proves the guard runs BEFORE `createScanJob`: `stubEnv` has no
+   * `DB` either, so a 503 here (rather than a TypeError) is the evidence that
+   * no job row is written for a photo that was never sent.
+   */
+  describe('POST /shelf and /single with no API key — an OUTAGE, not a refusal', () => {
+    const photo = { data: 'x'.repeat(128), mediaType: 'image/jpeg' };
+
+    /** Vocabulary owned by the three PERMISSION causes. See lib/vision.test.ts. */
+    const PERMISSION_SHAPED =
+      /ask an owner|ask an admin|your role does not|do not have permission|couldn'?t check your access|waiting to be approved|sign in again|request access/i;
+
+    for (const path of ['/shelf', '/single']) {
+      it(`${path}: answers 503 scan_unavailable with a worded detail`, async () => {
+        const res = await postJson('moderator', path, photo);
+        assert.equal(res.status, 503);
+        const body = (await res.json()) as { error?: string; detail?: string; retryable?: boolean };
+
+        // A distinct code: a client must be able to tell an outage from the
+        // 403 the same route returns to a contributor.
+        assert.equal(body.error, 'scan_unavailable');
+        assert.equal(body.retryable, false);
+
+        const detail = body.detail ?? '';
+        assert.ok(detail.length > 0, 'never a bare status');
+        assert.ok(!detail.includes('[object Object]'), 'always words');
+        assert.match(detail, /unavailable|not configured/i);
+        assert.match(detail, /ANTHROPIC_API_KEY/);
+        assert.match(detail, /not a permission problem/i);
+        assert.doesNotMatch(
+          detail,
+          PERMISSION_SHAPED,
+          `a server outage described as a permission problem — the exact regression: ${detail}`,
+        );
+      });
+    }
+
+    it('the outage and the role refusal are different codes AND different statuses', async () => {
+      const outage = await postJson('moderator', '/shelf', photo);
+      const refusal = await postJson('contributor', '/shelf', photo);
+      assert.equal(outage.status, 503);
+      assert.equal(refusal.status, 403);
+      const outageBody = (await outage.json()) as { error?: string };
+      const refusalBody = (await refusal.json()) as { error?: string };
+      assert.equal(outageBody.error, 'scan_unavailable');
+      assert.equal(refusalBody.error, 'forbidden');
+    });
+  });
+
   describe('the queue routes (GET /, GET /:id) require editCatalog', () => {
     it('a member is refused as editCatalog', async () => {
       const res = await appAs('member').request('/', {}, stubEnv);

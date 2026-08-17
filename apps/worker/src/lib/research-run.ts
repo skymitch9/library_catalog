@@ -111,6 +111,7 @@ import {
   researchDetails,
 } from '@lc/research';
 import type { Env } from '../env.js';
+import { describeError } from './describe-error.js';
 
 /**
  * The run as the browser sees it: outcome and money, no plumbing.
@@ -368,7 +369,10 @@ export async function runDetailsResearch(
       },
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    // ⚠️ `describeError`, not `String(err)`: `errorMessage` is persisted on the
+    // run row and shown on the findings screen, and the research client throws
+    // SDK objects — `String({...})` would store `[object Object]` for ever.
+    const message = describeError(err);
     return await finishRun(env.DB, runId, { status: 'error', errorMessage: message }).catch(
       // The database is the only place left to report to. If that is gone too
       // there is nothing useful left to do.

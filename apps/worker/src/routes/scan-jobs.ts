@@ -38,7 +38,13 @@ import {
 } from '@lc/db';
 import { coverFrom, resolveIsbn, searchOpenLibrary, wasRefused, type BookCandidate } from '@lc/isbn';
 import type { AppBindings, Env } from '../env.js';
-import { isPhotoMediaType, readShelf, VisionError } from '../lib/vision.js';
+import { describeError } from '../lib/describe-error.js';
+import {
+  isPhotoMediaType,
+  readShelf,
+  SCAN_UNAVAILABLE_MESSAGE,
+  VisionError,
+} from '../lib/vision.js';
 import { requireCapability } from '../middleware/auth.js';
 
 /**
@@ -517,7 +523,7 @@ async function lookupLine(line: ScanLine, query: string): Promise<ScanLine> {
        * Library did not answer" is not an answer at all, so the line stays
        * eligible and the next pass — or the Retry button — picks it up.
        */
-      detail: `Open Library did not answer: ${err instanceof Error ? err.message : String(err)}`,
+      detail: `Open Library did not answer: ${describeError(err)}`,
     };
   }
 
@@ -711,7 +717,7 @@ async function runLookupPass(env: Env, jobId: number): Promise<void> {
     // screen shows a spinner and the retry button refuses to race it.
     await updateScanJob(env.DB, jobId, {
       status: 'read',
-      error: `Lookup pass failed: ${err instanceof Error ? err.message : String(err)}`,
+      error: `Lookup pass failed: ${describeError(err)}`,
     }).catch(() => undefined);
   }
 }
@@ -1044,6 +1050,25 @@ async function readPhoto(c: any, kind: 'shelf' | 'cover') {
     return c.json(badRequest('That photo is too large. Downscale it before sending.'), 413);
   }
 
+  /*
+   * ⚠️ The service check comes BEFORE the job row, and answers with words.
+   *
+   * Two reasons it is here rather than only inside `readShelf`:
+   *
+   * - **No job is created for a photo that was never sent.** A `failed` row
+   *   means "you paid for a read that did not work"; an unconfigured key means
+   *   nothing left the Worker, and recording it as a failed sweep makes the
+   *   queue lie about what happened.
+   * - **The wire code is distinct.** `scan_unavailable` is an OUTAGE, not a
+   *   refusal, and a client must be able to tell it from the 403 that
+   *   `requireCapability('scanPhoto')` returns. The four causes — not signed
+   *   in / awaiting approval / insufficient role / service unavailable — need
+   *   four different sentences because they need four different fixes.
+   */
+  if (!c.env.ANTHROPIC_API_KEY) {
+    return c.json({ error: 'scan_unavailable', detail: SCAN_UNAVAILABLE_MESSAGE, retryable: false }, 503);
+  }
+
   const job = await createScanJob(c.env.DB, {
     mode: kind === 'cover' ? 'single' : 'shelf',
     createdBy: c.get('user').id,
@@ -1061,12 +1086,19 @@ async function readPhoto(c: any, kind: 'shelf' | 'cover') {
       kind,
     );
   } catch (err) {
-    const e = err instanceof VisionError ? err : new VisionError(String(err), 502, true);
+    // ⚠️ `describeError`, never `String(err)`: this string is PERSISTED on the
+    // job row below, and `String({...})` is `[object Object]` — an unreadable
+    // row that outlives the session that could have explained it.
+    const e = err instanceof VisionError ? err : new VisionError(describeError(err), 502, true);
     // The job is kept, not deleted. It records that a photo was taken and
     // failed, which is the difference between "nothing happened" and "you
     // paid for nothing" — and `error` is the only place that says which.
     await updateScanJob(c.env.DB, job.id, { status: 'failed', error: e.message });
-    return c.json({ error: 'vision_failed', detail: e.message, retryable: e.retryable, jobId: job.id }, e.status as 502);
+    // A 503 out of the vision path is the service being unavailable (no key,
+    // rejected key), not the photo failing — same distinction as the guard
+    // above, so it gets the same code.
+    const code = e.status === 503 ? 'scan_unavailable' : 'vision_failed';
+    return c.json({ error: code, detail: e.message, retryable: e.retryable, jobId: job.id }, e.status as 502);
   }
 
   // Keep exactly what the model said, before anything matched it. This is the

@@ -53,6 +53,7 @@ import {
 } from '@lc/db';
 import { universeFor, universeIndex } from '@lc/universes';
 import type { AppBindings } from '../env.js';
+import { describeError } from '../lib/describe-error.js';
 import { universeFacet, universeIdsFor } from '../lib/universes.js';
 import { capabilityDenied, requireCapability } from '../middleware/auth.js';
 
@@ -747,7 +748,11 @@ export const catalogRoutes = new Hono<AppBindings>()
     try {
       edition = await updateEdition(c.env.DB, id, parsed.data, actor);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      // ⚠️ `describeError`, not `String(err)`. This string is MATCHED, not just
+      // shown: a D1 failure that arrives as a plain object stringifies to
+      // `[object Object]`, the regex below misses, and an ordinary duplicate
+      // ISBN falls through to the generic 500 with a raw SQLite string.
+      const message = describeError(err);
       if (/UNIQUE constraint failed/i.test(message)) {
         return c.json(
           {

@@ -7,6 +7,7 @@ import {
   type ShelfBook,
   type ShelfReading,
 } from '@lc/core';
+import { describeError } from './describe-error.js';
 
 /**
  * Reading books off a photograph.
@@ -71,6 +72,39 @@ const CENTS_PER_MTOK_OUT = 2500;
  */
 const MAX_TOKENS = 8000;
 
+/**
+ * What a 503 off the scan endpoints says, and the ONE place it is written.
+ *
+ * ⚠️ Three things, in this order, because the estate rule requires all three:
+ * **what happened** (the scan service is unavailable), **what it needs** (an
+ * operator sets a key), and **that it is not about the person asking.** A
+ * server failure described in the vocabulary of access sends someone to ask an
+ * admin for a permission they already hold, and the four refusal causes — not
+ * signed in / awaiting approval / insufficient role / service unavailable —
+ * have four different fixes and must never be worded into each other.
+ *
+ * Exported so the route can answer with it *before* it creates a scan job:
+ * an unconfigured key is not a photo that failed, and it should not leave a
+ * failed-job row behind. See `readPhoto` in `routes/scan-jobs.ts`.
+ */
+export const SCAN_UNAVAILABLE_MESSAGE =
+  'Photo scanning is unavailable: this site has no Anthropic API key configured, so no photo can be read right now. ' +
+  'This is a server configuration problem, not a permission problem — your account is fine and nothing about it needs changing. ' +
+  'An operator fixes it by setting ANTHROPIC_API_KEY (`.dev.vars` locally, then `npm run secrets:push` for the deployed Worker).';
+
+/**
+ * The same, for a key that exists but was rejected upstream.
+ *
+ * ⚠️ Kept separate from `SCAN_UNAVAILABLE_MESSAGE` because the operator's fix
+ * differs — nothing is missing, something is stale — while the half that faces
+ * the person holding the phone must stay identical: not your photo, not your
+ * permissions.
+ */
+export const SCAN_KEY_REJECTED_MESSAGE =
+  'Photo scanning is unavailable: the Anthropic API key was rejected. ' +
+  'This is a server configuration problem — not a problem with your photo, and not a permission problem; your account is fine and nothing about it needs changing. ' +
+  'The key was probably rotated without being pushed; an operator fixes it with `npm run secrets:push`.';
+
 export class VisionError extends Error {
   constructor(
     message: string,
@@ -119,10 +153,11 @@ function explain(err: unknown): VisionError {
   const status = (err as { status?: number })?.status;
 
   if (status === 401 || status === 403) {
-    return new VisionError(
-      'The Anthropic API key was rejected. This is a configuration problem, not a problem with your photo — the key was probably rotated without being pushed. Run `npm run secrets:push`.',
-      503,
-    );
+    // ⚠️ The upstream status is 401/403 and ours is 503 ON PURPOSE. Passing
+    // the upstream code through would tell the client "you are not
+    // authenticated / not allowed" about a credential that is not theirs and
+    // that they cannot do anything about.
+    return new VisionError(SCAN_KEY_REJECTED_MESSAGE, 503);
   }
   if (status === 429) {
     return new VisionError('Rate limited by the Anthropic API. Wait a moment and try again.', 429, true);
@@ -131,8 +166,10 @@ function explain(err: unknown): VisionError {
     return new VisionError('That photo is too large for the model. Take a wider, lower-resolution shot.', 413);
   }
 
-  const detail = err instanceof Error ? err.message : String(err);
-  return new VisionError(`Could not read that photo: ${detail}`, 502, true);
+  // ⚠️ `describeError`, not `String(err)`. The Anthropic SDK throws objects,
+  // and `String({...})` is `[object Object]` — which then gets written into
+  // `scan_job.error` and shown back on the queue screen. See describe-error.ts.
+  return new VisionError(`Could not read that photo: ${describeError(err)}`, 502, true);
 }
 
 /**
@@ -153,10 +190,10 @@ export async function readShelf(
   kind: 'shelf' | 'cover' = 'shelf',
 ): Promise<ShelfReading> {
   if (!apiKey) {
-    throw new VisionError(
-      'No Anthropic API key is configured, so photos cannot be read. Set ANTHROPIC_API_KEY in .dev.vars and run `npm run secrets:push`.',
-      503,
-    );
+    // The route checks this first and answers without creating a job; this is
+    // the backstop for any other caller. One message, one place — see
+    // SCAN_UNAVAILABLE_MESSAGE for why it is worded the way it is.
+    throw new VisionError(SCAN_UNAVAILABLE_MESSAGE, 503);
   }
 
   const client = new Anthropic({ apiKey });
