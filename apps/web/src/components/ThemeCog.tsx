@@ -27,11 +27,19 @@ import {
   type EstateThemeName,
 } from '../lib/estate-theme.js';
 
+/**
+ * ⚠️ Labels only — the LIST comes from `api.themes` (the switcher), never from
+ * this object. A theme added upstream shows up in the dropdown on the next
+ * vendor sync wearing its raw id until it is named here; a hardcoded list
+ * would instead hide it entirely, which is the harder bug to notice.
+ */
 const THEME_LABELS: Record<EstateThemeName, string> = {
   classic: 'Classic',
   apple: 'Apple',
   cyberpunk: 'Cyberpunk',
   retro: 'Retro',
+  // Pink and white, 8-bit hearts — padhard's default (owner, 2026-08-16).
+  hearts: 'Hearts',
 };
 
 const MODE_LABELS: Record<EstateMode, string> = {

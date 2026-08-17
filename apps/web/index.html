@@ -2,8 +2,20 @@
 <!-- data-default-theme: DEFAULTS ARE IDENTITY (catalog-platform
      docs/info/estate-themes.md §3) — the owner's "make the apple theme persist
      on the books site too". This site renders apple unless ITS user picks
-     otherwise in the topbar cog; do not "helpfully" change it. -->
-<html lang="en" data-default-theme="apple">
+     otherwise in the topbar cog; do not "helpfully" change it.
+
+     data-default-theme-by-host: the SECOND instance's identity (owner
+     2026-08-16: "let it be the default for padhard"). ⚠️ It is keyed by
+     HOSTNAME because both instances serve THIS EXACT FILE — `[assets]` and
+     `[env.friend.assets]` both point at apps/web/dist, so there is one
+     bundle and one index.html for two sites. A build-time flag cannot tell
+     them apart, and the worker's per-env `DEFAULT_THEME` var cannot reach a
+     document the Worker serves straight out of ASSETS without rewriting it.
+     The var is still declared in wrangler.toml as the posture of record, and
+     apps/web/test/instance-default-theme.test.ts fails if the two disagree —
+     the same "a test reads wrangler.toml" guard the details-sweep cron uses.
+     When the Worker grows a config surface, this attribute is what goes. -->
+<html lang="en" data-default-theme="apple" data-default-theme-by-host='{"padhard.heygabi.ai":"hearts"}'>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -15,6 +27,25 @@
          hg_mode land on <html> BEFORE first paint — a React bundle is far too
          late and flashes the wrong theme. -->
     <link rel="stylesheet" href="/estate/estate-theme.css" />
+    <!-- Resolve the per-INSTANCE default before theme.js reads the attribute.
+         Inline and classic (not a module, not a file): it has to run in the
+         same pre-paint window theme.js runs in, and a second blocking request
+         to learn one word would cost more than the whole switcher. Anything
+         going wrong here leaves the declared default in place — a wrong-but-
+         styled page, never an unstyled one. A person's own stored choice is
+         read by theme.js and still wins; this only moves the FALLBACK. -->
+    <script>
+      (function () {
+        try {
+          var el = document.documentElement;
+          var byHost = JSON.parse(el.getAttribute('data-default-theme-by-host') || '{}');
+          var theme = byHost[location.hostname];
+          if (theme) el.setAttribute('data-default-theme', theme);
+        } catch (e) {
+          /* malformed JSON or a locked-down document: keep the declared default */
+        }
+      })();
+    </script>
     <script src="/estate/theme.js"></script>
     <!-- Installable to the home screen. This app is used one-handed in front of
          a bookshelf; launching it from an icon in standalone mode, without a URL

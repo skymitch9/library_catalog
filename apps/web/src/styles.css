@@ -11,9 +11,11 @@
  * estate's `--et-*` token contract (catalog-platform
  * docs/info/estate-themes.md; the tokens ship in /estate/estate-theme.css,
  * vendored by scripts/sync-estate-theme.mjs), so the one stylesheet renders
- * `apple`, `cyberpunk` and `retro`, each in light and dark, and the person
- * picks in the topbar cog. The default is `apple` — defaults are identity,
- * the owner's call.
+ * `classic`, `apple`, `cyberpunk`, `retro` and `hearts`, each in light and
+ * dark, and the person picks in the topbar cog. The default is `apple` on
+ * library.heygabi.ai and `hearts` on padhard.heygabi.ai (the second
+ * instance) — defaults are identity, the owner's call, resolved by hostname
+ * in index.html because both instances serve this same bundle.
  *
  * ⚠️ NO raw colours and NO `[data-theme=…]` selectors may be added here — if a
  * component seems to need either, a token is missing from the contract; ask
@@ -24,8 +26,9 @@
  *     site;
  *   - the black behind the camera (#000): a viewfinder surround, not a theme
  *     surface.
- * The one [data-theme] rule below (retro's press-into-shadow) is the estate's
- * OWN primitive rule mirrored onto this app's native buttons, not a fork.
+ * The one [data-theme] rule below (retro's press-into-shadow, which `hearts`
+ * shares) is the estate's OWN primitive rule mirrored onto this app's native
+ * buttons, not a fork.
  *
  * ## How the old roles map — read this before re-colouring anything
  *
@@ -206,10 +209,13 @@ button {
 }
 button:hover:not(:disabled) { filter: brightness(1.05); box-shadow: var(--et-btn-shadow), var(--et-glow); }
 button:active:not(:disabled) { transform: var(--et-press); }
-/* Retro's press sinks the button INTO its shadow — the shadow goes with it.
-   This mirrors the token sheet's own `[data-theme="retro"] .et-btn:active`
-   primitive; it is the theme's shipped behaviour, not a local fork. */
-[data-theme='retro'] button:active:not(:disabled) { box-shadow: none; }
+/* Retro's press sinks the button INTO its shadow — the shadow goes with it,
+   and `hearts` borrows the same move (same hard no-blur shadow grammar).
+   This mirrors the token sheet's own
+   `[data-theme="retro"], [data-theme="hearts"] .et-btn:active` primitive; it
+   is the themes' shipped behaviour, not a local fork. */
+[data-theme='retro'] button:active:not(:disabled),
+[data-theme='hearts'] button:active:not(:disabled) { box-shadow: none; }
 button.primary { background: var(--et-btn-bg); border: var(--et-btn-border); color: var(--et-btn-fg); }
 button:disabled { opacity: 0.45; cursor: default; }
 
@@ -250,7 +256,8 @@ a.chip {
 }
 a.chip:hover { filter: brightness(1.05); box-shadow: var(--et-btn-shadow), var(--et-glow); }
 a.chip:active { transform: var(--et-press); }
-[data-theme='retro'] a.chip:active { box-shadow: none; }
+[data-theme='retro'] a.chip:active,
+[data-theme='hearts'] a.chip:active { box-shadow: none; }
 /* The tab you are on: filled with the interactive voice, keeping the theme's
    own border (retro fills over its ink outline — the games app's selected-tab
    grammar; apple has no border to keep). */

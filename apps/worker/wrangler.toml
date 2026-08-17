@@ -89,6 +89,25 @@ custom_domain = true
 APP_VERSION = "0.1.0"
 ENVIRONMENT = "production"
 
+# ── The instance's DEFAULT THEME (owner ask 2026-08-16) ──────────────────────
+#
+# Defaults are identity (catalog-platform docs/info/estate-themes.md §3): this
+# instance boots `apple`, hers boots `hearts`. A person's own pick in the
+# topbar cog is stored in localStorage and always wins over this.
+#
+# ⚠️ NOTHING IN THE WORKER READS THIS — and that is not an oversight. Both
+# instances serve the SAME apps/web/dist, so the default has to be resolved in
+# the browser, and index.html does it from `location.hostname`
+# (data-default-theme-by-host) before first paint. This var is the POSTURE OF
+# RECORD, kept beside every other per-instance setting so the answer to "what
+# does her site look like" is in one file; `apps/web/test/
+# instance-default-theme.test.ts` reads this file and FAILS if the two ever
+# disagree — the same guard the details-sweep cron string has.
+#
+# When the Worker grows a config surface the web app reads at boot, this var
+# becomes the live source and the hostname map in index.html goes away.
+DEFAULT_THEME = "apple"
+
 # ⚠️ Where an uploaded cover is READ from. Both this and the COVERS binding must
 # be set or the route refuses to write — storing an object and then being unable
 # to say where it went is the failure that guard exists for.
@@ -221,6 +240,14 @@ custom_domain = true
 [env.friend.vars]
 APP_VERSION = "0.1.0"
 ENVIRONMENT = "production"
+
+# Her instance's identity: the pixel-hearts theme (owner 2026-08-16, verbatim
+# — "Make that a theme and let it be the default for padhard"). Pink and
+# white, 8-bit hearts, retro's chunky grammar. See the main [vars] block for
+# why the Worker does not read this and where it is actually resolved; the
+# hostname this string is paired with is the [[env.friend.routes]] pattern
+# above, and the test asserts exactly that pairing.
+DEFAULT_THEME = "hearts"
 
 # The bucket's managed r2.dev public URL, enabled 2026-08-16. This WORKS —
 # the app only ever concatenates `COVERS_BASE_URL + '/' + objectKey` — but

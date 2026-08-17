@@ -20,7 +20,7 @@
  * variant was built and reverted the same day, estate-themes.md §2a).
  */
 
-export type EstateThemeName = 'classic' | 'apple' | 'cyberpunk' | 'retro';
+export type EstateThemeName = 'classic' | 'apple' | 'cyberpunk' | 'retro' | 'hearts';
 export type EstateMode = 'auto' | 'light' | 'dark';
 
 export interface EstateState {
