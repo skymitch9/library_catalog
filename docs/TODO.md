@@ -68,15 +68,21 @@
      from both lanes on every publish), but the page a visitor meets there is
      the old one, which will simply fail to load a shelf. Conductor's call,
      as always.
-  3. **Ebook rows leave the estate index at the next CI deploy.** CI has no
-     manifest (it is gitignored now) and the index push is a snapshot
-     REPLACE, so every `format: 'ebook'` row drops out of estate search. Said
-     loudly in a WARN and pinned by a test rather than left to be discovered.
-     **Owner decision needed:** move the index push out of CI into the local
-     pipeline (one writer, already has the manifest, needs
-     `INDEX_PUSH_TOKEN` on that machine), or teach CI to read the private
-     `ebooks-gated` bucket. Safe direction either way — a lost feature, not a
-     leak.
+  3. ~~**Ebook rows leave the estate index at the next CI deploy.**~~
+     ✅ **CLOSED 2026-08-17 — the owner chose option A** (move the push out of
+     CI into the local pipeline, the one writer that holds the manifest). It
+     is now **STEP 7** of `audiobook_catalog/scripts/sync_to_drive.py`, run on
+     every cycle including idle ones; the CI step was deleted and its
+     `INDEX_PUSH_TOKEN` repo secret deleted with it (the Worker secret was
+     rotated first, so the old value is inert). **Measured live the same day:
+     the index holds 1,246 `audiobook`-source rows = 1,078 audiobooks + 168
+     ebooks** (`index.heygabi.ai/api/health`); a manifest-less CI push landed
+     1,078. Whole record in `audiobook_catalog/docs/DONE.md`; runbook in that
+     repo's `docs/access/PIPELINE.md` ("STEP 7").
+     ⚠️ **Two things to carry forward for this repo's own pushes:** never add
+     a second writer of a REPLACE-semantics snapshot, and remember that an
+     ebook missing from an **anonymous** `/api/search` is the permission gate
+     working — check `/api/health` counts or search as a member instead.
 Landed and archived — the TBR instant-clear built in `audiobook_catalog`
 (`2ff816f`) and moved whole to [`DONE.md`](DONE.md). Only the prod promote of
 that repo is outstanding, and it belongs to the conductor, not to this file.
