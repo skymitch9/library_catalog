@@ -24,6 +24,19 @@
 > living docs — they do not compete with this file for "what is happening
 > now", so do not helpfully re-merge them.
 
+## ⏳ Committed but NOT deployed — `cc27fec` (universes single-writer guard)
+
+Nothing runtime changed in it (a test, docs, and one comment in `health.ts`), so
+there is nothing to see live and no hurry. It was **deliberately not deployed**:
+at the time it landed the working tree held a concurrent agent's uncommitted
+donor work — including an unapplied `migrations/0321_donor_fuzzy_source_tier.sql`
+— and both a dirty-tree deploy and a `d1 migrations apply` would have shipped or
+applied work that is in no commit. It rides along with the next deploy of either
+instance; live at that moment was main `0007e16c…` / friend `ec721da6…`.
+
+⚠️ **Do not apply 0321 on its behalf.** It belongs to that agent's item and must
+land with its own code.
+
 ## 🔥 Owner asks 2026-08-16 late evening — status board
 
 ### Second wave (rapid-fire, logged as they arrived)
