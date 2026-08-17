@@ -117,12 +117,46 @@ land with its own code.
     GABI — decide when built; the API loop is identical behind either.
   Cross-referenced from catalog-platform TODO §0 (GABI queue).
 
-- **EPUB/PDF in-browser reader** (future ask: preview or read on the site) —
-  📋 BACKLOG, feasibility note owed. First take: very buildable — epubs we
-  already parse (OPF extraction ships covers today) render fine with a
-  self-hosted reader lib off R2 range requests; PDFs via pdf.js; the real
-  design work is auth-gating the file streams so the shared pool doesn't
-  become a public download endpoint.
+- **EPUB/PDF in-browser reader** (owner ask 2026-08-16: *"how hard would it be
+  to have a reader for EPUBs and PDFs so users could either preview or a read a
+  book on the site?"*; sequenced after the Discord portal) —
+  ✅ **DESIGN DONE 2026-08-17, awaiting owner read + phase-1 go.**
+  📄 **[`info/ebook-viewer-design.md`](info/ebook-viewer-design.md)** — full
+  design, measured, with rejected alternatives per section. **Nothing is
+  built; no code, bucket, worker route or rules change exists.**
+  **What the design changed about the first take** (which said "epubs off R2
+  range requests, PDFs via pdf.js, real work is auth-gating"):
+  - ⚠️ **The files are NOT in R2.** Measured: only covers are (1,850 + 83
+    objects). The 168 ebook files live on the pipeline PC, mirrored to Drive
+    and rclone'd to the shelf server. **An ingest phase exists that the
+    framing did not price** — **1.805 GB / 1.681 GiB total** (138 EPUB =
+    1.084 GiB, 30 PDF = 0.598 GiB), against R2's 10 GB free tier.
+  - ⚠️ **Range requests are a PDF technique, not an EPUB one.** An EPUB is a
+    ZIP; epub.js and foliate-js both fetch the whole archive. That inverts the
+    phase order: **pdf.js first**, because it range-streams its own 181 MiB
+    outlier by design where epub.js must *refuse* three books (393 / 143 /
+    27.7 MiB) behind a size gate.
+  - ✅ The auth-gating call was right, and it is smaller than feared: the
+    **`download` capability (floor `member`) is already committed** in
+    `audiobook-worker/src/capabilities.ts`, on a Worker already deployed with
+    the canonical verifier. This is that repo's **Phase 4**, already specced.
+  - ⚠️ **It must NOT gate on §4.5 visibility** — `vis_audiobook` is the estate's
+    *public* slice (anonymous callers get it), so gating on it gates on
+    nothing. Ladder role, server-side, every request.
+  - **Bearer-per-request, never a signed URL**: a copied URL must be a 401, and
+    a presigned URL cannot be revoked mid-session.
+  - Reading position becomes the **first `uid`-keyed collection in this
+    estate** — the reader's readership is token-bearing by construction, unlike
+    `reviews`/`readingLists`, which must stay display-name-keyed for legacy
+    sessions.
+  **Recommended phase 1** (after phase 0, the bucket + ingest step): the gated
+  stream route on `audiobook-api.heygabi.ai` + a self-hosted pdf.js reader at
+  `ebooks.heygabi.ai/read/`. Ships **behind `ESTATE_CHECK` enforce**, so it is
+  dormant until the owner flips it.
+  🔴 **Owner decisions before phase 1** (§11 of the doc, 8 of them; the two
+  that matter most): **PDF first or EPUB first?** and **what "preview" means —
+  ungated first chapter, or members-only read with a richer card + PDF
+  first-page thumbnail?** (recommended: PDF first; members-only).
 
 ## 📚 Ebooks may want to be their OWN site — the ownership boundary is per-FORMAT (owner insight 2026-08-16)
 

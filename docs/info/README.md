@@ -1,7 +1,8 @@
 # docs/info — index
 
 > **Audience:** Claude sessions. How and why things work.
-> Last verified: **2026-08-16** — the `estate-search.md` row is new that day;
+> Last verified: **2026-08-17** — the `ebook-viewer-design.md` row is new that
+> day (design only, nothing built); the `estate-search.md` row is from 2026-08-16;
 > everything else was last checked **2026-08-14** (index rows for the estate
 > docs checked against their files; the operational side of estate auth / the
 > index / themes now lives in `../access/estate-auth.md`,
@@ -15,6 +16,7 @@
 | [`completeness-wishlist-relations.md`](completeness-wishlist-relations.md) | **Measured** series gaps (7 interior, 69 earlier, 12 sourced), what may and may not be claimed about a series length, why the wishlist is a list of copies, and the two bugs where a wish closed a gap | touching `completeness.ts`, `series_volume`, `copy.status`, or `work_relation` |
 | [`identity-and-reviews.md`](identity-and-reviews.md) | One Google account across both catalogs; one shared review store; the `workKey` bridge and the backfill | touching auth, `titles.ts`, or anything that writes Firestore |
 | [`tbr.md`](tbr.md) | The cross-catalog to-be-read list. ⚠️ **The store already existed** — `readingLists`, the audiobook site's own TBR — so this joins it rather than inventing one, and needed **no rules change**. The document id is the REVERSE of a review's; why TBR is a flag and not a fifth `read_state`; how finishing any format clears it; and the audiobook-side hook that is deliberately NOT built, with its spec | touching `packages/core/src/tbr.ts`, `/api/tbr`, the My TBR screen, or the read-state sweep |
+| [`ebook-viewer-design.md`](ebook-viewer-design.md) | **DESIGN ONLY, nothing built.** The in-browser EPUB/PDF reader. **Measured: 168 files / 1.805 GB, and they are NOT in R2 today** — only covers are, so an ingest phase exists the first take did not price. ⚠️ **Range requests are a PDF technique, not an EPUB one** (an EPUB is a ZIP; epub.js fetches the whole archive), which is why pdf.js ships first. The gate is the audiobook Worker's already-committed `download` capability (member+) — **not** §4.5 visibility, whose default population includes the anonymous internet. Bearer-per-request, never a signed URL. Position sync becomes the first `uid`-keyed collection in this estate | building any of it, proposing a public bucket, or assuming the files are already in R2 |
 | [`data-model.md`](data-model.md) | What each table is for and the rules the schema enforces | changing the schema |
 | [`ios-camera.md`](ios-camera.md) | Copied from the Board Game Catalog. Every line is a WebKit constraint | touching `camera.ts` / `scanner.ts` |
 | [`research-and-gaps.md`](research-and-gaps.md) | **Measured** gap counts across the whole catalog, the four questions the details queue asks and the five it refuses, why `gap_verdict` exists, and the propose/accept rule the paid lookup obeys | touching `gaps.ts`, `packages/research`, the queue page, or adding a field anybody could be asked for |
