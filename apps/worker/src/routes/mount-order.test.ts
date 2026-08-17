@@ -88,11 +88,11 @@ import { userRoutes } from './users.js';
 import { watchRoutes } from './watches.js';
 
 /**
- * The mounts that sit BEHIND `requireAuth` in `index.ts`, in order. The three
+ * The mounts that sit BEHIND `requireAuth` in `index.ts`, in order. The ones
  * that sit in front of it (`/api/health`, `/api/ingest`,
- * `/api/machine/audiobook-mapping`) and `/api/admin` are excluded: they are
- * not part of the composition under test and are covered in
- * `capability-wiring.test.ts`.
+ * `/api/machine/audiobook-mapping`, `/api/donor`) and `/api/admin` are
+ * excluded: they are not part of the composition under test and are covered
+ * in `capability-wiring.test.ts` and `donor.test.ts`.
  */
 const MOUNTS: [string, string, Hono<AppBindings>][] = [
   ['/api', 'userRoutes', userRoutes],
@@ -174,12 +174,13 @@ describe('index.ts mount order', () => {
       (m) => [m[1], m[2]] as [string, string],
     );
 
-    // The four in front of the blanket `requireAuth`, dropped in the same order
-    // they appear — see MOUNTS' comment for why they are out of scope here.
-    const behindAuth = found.filter(
-      ([, name]) =>
-        name !== 'healthRoutes' && name !== 'ingestRoutes' && name !== 'audiobookMappingRoutes' && name !== 'adminRoutes',
-    );
+    // The ones in front of the blanket `requireAuth` (health, the three
+    // machine-token routes, admin), dropped in the same order they appear —
+    // see MOUNTS' comment for why they are out of scope here. `donorRoutes`
+    // joined the machine set 2026-08-16 (X-Donor-Token gated, 404 otherwise;
+    // its gate is covered in donor.test.ts).
+    const inFront = ['healthRoutes', 'ingestRoutes', 'audiobookMappingRoutes', 'donorRoutes', 'adminRoutes'];
+    const behindAuth = found.filter(([, name]) => !inFront.includes(name));
 
     assert.deepEqual(
       behindAuth,

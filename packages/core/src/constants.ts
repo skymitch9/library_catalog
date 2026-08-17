@@ -497,6 +497,26 @@ export const SOURCE_TIERS = ['official', 'crowdfunding', 'retail', 'community'] 
 export type SourceTier = (typeof SOURCE_TIERS)[number];
 
 /**
+ * The one finding origin that is not a web claim at all: a value copied from a
+ * sibling instance of this same app (the donor-first details sweep, owner ask
+ * 2026-08-16 — *"before pinging the ai it checks other libraries"*).
+ *
+ * ⚠️ Deliberately NOT added to `SOURCE_TIERS`. That list is the enum the
+ * research model answers from (`packages/research/src/details.ts` puts it in
+ * the tool schema) and the conflict ranking `tierRank` orders — a model must
+ * never be able to claim its answer came from the donor, and "another catalog
+ * the owner curates" does not sit anywhere on a web-source trust ladder.
+ * `research_finding.source_tier` accepts it via migration 0320.
+ */
+export const DONOR_SOURCE_TIER = 'donor' as const;
+
+/**
+ * What `research_finding.source_tier` may actually hold: one of the model's
+ * four tiers, or the donor. Must match migration 0320's CHECK list.
+ */
+export type FindingSourceTier = SourceTier | typeof DONOR_SOURCE_TIER;
+
+/**
  * What a `research_run` can be a run *of*. Three name a source tier; `details`
  * does not — it is a single cheap open-web pass, not a search restricted to a
  * publisher's domain. Kept as a separate list so nothing may treat 'details' as

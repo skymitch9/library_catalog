@@ -20,6 +20,7 @@ import {
   type Work,
 } from '@lc/db';
 import type { AppBindings } from '../env.js';
+import { secretEquals } from '../lib/secret-equals.js';
 
 /**
  * Machine ingest for ebooks.
@@ -95,13 +96,6 @@ const ingestEbookSchema = z.object({
   workKey: z.string().optional(),
 });
 
-/**
- * Timing-safe string comparison.
- *
- * Workers has no `crypto.timingSafeEqual`, so this is the manual form: compare
- * every byte regardless of where the first difference falls, and fold the length
- * check into the same result rather than short-circuiting on it.
- */
 /** How an incoming row found its work, reported so the importer can say so. */
 type MatchedVia = 'key' | 'alias' | 'series_prefix';
 
@@ -179,16 +173,6 @@ async function findFallbackWork(
   }
 
   return null;
-}
-
-function secretEquals(a: string, b: string): boolean {
-  const enc = new TextEncoder();
-  const x = enc.encode(a);
-  const y = enc.encode(b);
-  let diff = x.length ^ y.length;
-  const n = Math.max(x.length, y.length);
-  for (let i = 0; i < n; i++) diff |= (x[i] ?? 0) ^ (y[i] ?? 0);
-  return diff === 0;
 }
 
 export const ingestRoutes = new Hono<AppBindings>()

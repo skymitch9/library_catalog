@@ -18,6 +18,7 @@ import { audiobookMappingRoutes } from './routes/audiobook-mapping.js';
 import { catalogRoutes } from './routes/catalog.js';
 import { coverRoutes } from './routes/covers.js';
 import { crowdfundingRoutes, provenanceRoutes } from './routes/crowdfunding.js';
+import { donorRoutes } from './routes/donor.js';
 import { enrichRoutes } from './routes/enrich.js';
 import { exportRoutes } from './routes/export.js';
 import { healthRoutes } from './routes/health.js';
@@ -72,6 +73,12 @@ app.route('/api/ingest', ingestRoutes);
 // person. See routes/audiobook-mapping.ts for how narrow the route is kept.
 // With AUDIOBOOK_MAPPING_TOKEN unset it 404s rather than opening.
 app.route('/api/machine/audiobook-mapping', audiobookMappingRoutes);
+
+// ⚠️ Mounted BEFORE requireAuth, third of the machine routes: the caller is a
+// sibling instance's hourly details sweep, not a person. X-Donor-Token gated;
+// unset token OR wrong token both answer 404 — disabled/invisible, never open,
+// and never advertised. Read-only, DETAIL_FIELDS values only. See routes/donor.ts.
+app.route('/api/donor', donorRoutes);
 
 // CORS for the estate's federated admin page (exactly https://heygabi.ai —
 // see routes/admin.ts). ⚠️ Before requireAuth on purpose: a preflight OPTIONS

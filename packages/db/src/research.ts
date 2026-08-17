@@ -30,11 +30,11 @@ import {
   type DecisionMode,
   type DetailField,
   type FindingReviewState,
+  type FindingSourceTier,
   type FindingValue,
   type GapSubject,
   type GapVerdict,
   type RunTier,
-  type SourceTier,
 } from '@lc/core';
 
 // ---------------------------------------------------------------------------
@@ -393,7 +393,8 @@ export interface ResearchFinding {
   workId: number;
   field: string;
   value: FindingValue;
-  sourceTier: SourceTier;
+  /** `FindingSourceTier`, not `SourceTier`: 'donor' is a valid stored origin (migration 0320). */
+  sourceTier: FindingSourceTier;
   sourceUrl: string | null;
   /**
    * ⚠️ Always null, and deliberately.
@@ -435,7 +436,7 @@ export function toFinding(row: ResearchFindingRow): ResearchFinding {
     workId: row.work_id,
     field: row.field,
     value,
-    sourceTier: row.source_tier as SourceTier,
+    sourceTier: row.source_tier as FindingSourceTier,
     sourceUrl: row.source_url,
     confidence: row.confidence,
     reviewState: row.review_state as FindingReviewState,
@@ -448,7 +449,7 @@ export function toFinding(row: ResearchFindingRow): ResearchFinding {
 export interface SaveFindingInput {
   field: DetailField;
   value: FindingValue;
-  sourceTier: SourceTier;
+  sourceTier: FindingSourceTier;
   sourceUrl: string | null;
 }
 
@@ -566,7 +567,7 @@ export interface AutoApplied {
   authors: string | null;
   field: string;
   value: FindingValue;
-  sourceTier: SourceTier;
+  sourceTier: FindingSourceTier;
   sourceUrl: string | null;
   appliedAt: string | null;
 }
@@ -620,7 +621,7 @@ export async function listAutoApplied(db: D1Database, limit = 50): Promise<AutoA
       authors: r.authors,
       field: r.field,
       value,
-      sourceTier: r.source_tier as SourceTier,
+      sourceTier: r.source_tier as FindingSourceTier,
       sourceUrl: r.source_url,
       appliedAt: r.reviewed_at,
     };

@@ -124,6 +124,34 @@ export interface Env {
 
 
   /**
+   * The donor library — another instance of THIS app asked for details before
+   * any paid AI lookup (owner ask 2026-08-16: *"before pinging the ai it
+   * checks other libraries for answers. If I have Stormlight Archive don't
+   * have her look it up"*).
+   *
+   * `DONOR_URL` is the donor's origin, no trailing slash — e.g.
+   * `https://library.heygabi.ai`. `DONOR_TOKEN` does double duty, same value
+   * both ways because the two instances are the same product:
+   *
+   * - **Outbound**: sent as `X-Donor-Token` when this instance's details
+   *   sweep asks `DONOR_URL`'s `/api/donor/details`.
+   * - **Inbound**: the gate on this instance's OWN `/api/donor/details`.
+   *   ⚠️ Unset means that route answers 404 — disabled, not open, the same
+   *   failure direction as `EBOOK_INGEST_TOKEN` — and unlike the ingest gate
+   *   a WRONG token is also 404, not 401: a donor endpoint has exactly one
+   *   legitimate caller, so there is nobody worth telling "almost".
+   *
+   * The sweep asks the donor only when BOTH are set. With `DONOR_URL` +
+   * `DONOR_TOKEN` set and no `ANTHROPIC_API_KEY`, the sweep runs in
+   * donor-only mode instead of skipping — that is what makes the friend
+   * instance's hourly sweep useful with no AI key at all. Secrets via
+   * `wrangler secret put DONOR_TOKEN` (already set on both instances,
+   * 2026-08-16); `DONOR_URL` is a plain var in `wrangler.toml`.
+   */
+  DONOR_URL?: string;
+  DONOR_TOKEN?: string;
+
+  /**
    * The shared index Worker (catalog-platform/apps/index-worker), where this
    * catalog pushes its projection. See lib/index-push.ts and
    * packages/db/src/index-projection.ts.

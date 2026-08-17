@@ -755,7 +755,8 @@ export interface ResearchFinding {
   workId: number;
   field: string;
   value: FindingValue;
-  sourceTier: 'official' | 'crowdfunding' | 'retail' | 'community';
+  /** 'donor' = copied from the sibling library instance, not a web claim. Migration 0320. */
+  sourceTier: 'official' | 'crowdfunding' | 'retail' | 'community' | 'donor';
   sourceUrl: string | null;
   /** Always null. See `FindingValue.basis`. */
   confidence: number | null;
@@ -781,7 +782,8 @@ export interface AutoApplied {
   authors: string | null;
   field: string;
   value: FindingValue;
-  sourceTier: 'official' | 'crowdfunding' | 'retail' | 'community';
+  /** 'donor' = copied from the sibling library instance, not a web claim. Migration 0320. */
+  sourceTier: 'official' | 'crowdfunding' | 'retail' | 'community' | 'donor';
   sourceUrl: string | null;
   appliedAt: string | null;
 }
