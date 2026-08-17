@@ -58,48 +58,25 @@ land with its own code.
   grantable to any person at any ladder level** (per-person toggle beside
   the view checkbox, auto-on-and-locked for admin+/owners). This supersedes
   viewer-design §11's read-vs-download question with a decided answer.
-  📋 Dispatches the moment the covers agent clears the manifest zone;
-  access-REDUCING, so it front-runs all viewer build work. Residual noted:
-  cover images stay on the public host under unguessable hashes.
+  ✅ **UNBLOCKED 2026-08-17** — the covers agent has cleared the manifest
+  zone (`audiobook_catalog@1441f0a`, PDF page-1 auto-covers; `ebooks.json`
+  gained a top-level `needs_human_cover` array, and `site/ebooks.json` +
+  `site/covers_manifest.json` are committed and pushed). Nothing else is
+  holding this. Access-REDUCING, so it front-runs all viewer build work.
+  ⚠️ Residual, and now MEASURED rather than assumed: cover images stay on
+  the public host under unguessable sha256 hashes — including the 4 newly
+  rendered PDF covers, which are page 1 of a purchased product.
+  ⚠️ New surface for whoever builds the gate: the manifest now carries
+  `needs_human_cover` (`{path,title,format,reason}`). It is metadata about
+  the estate's gaps, not book content, but it names every file it lists —
+  decide deliberately whether it crosses the auth boundary with the rest
+  of `ebooks.json` rather than letting it ride along unnoticed.
 
 Landed and archived — the TBR instant-clear built in `audiobook_catalog`
 (`2ff816f`) and moved whole to [`DONE.md`](DONE.md). Only the prod promote of
 that repo is outstanding, and it belongs to the conductor, not to this file.
 
 ### Second wave (rapid-fire, logged as they arrived)
-- **Ebook cover healing** 📋 QUEUED (reset batch) — **ROOT CAUSE FOUND
-  2026-08-16 late (owner: "the epub has the cover"): he was right.** 15 of
-  the 16 "coverless" EPUBs (All The Skills 2/4/6, Arcane Pathfinder 5, six
-  Cradle books, more) declare perfect covers that
-  `audiobook_catalog/scripts/build_ebook_manifest.py` silently REJECTS at
-  `MAX_COVER_BYTES = 2MB` — measured 2.1–3.4MB high-res images, dropped by
-  the size guard as if absent. Fix: **downscale-not-reject** (Pillow 11.3.0
-  is in the env; resize ~1600px longest side, JPEG q85, keep sha256 naming) —
-  never just raise the cap, that ships 3MB images to every page load.
-  **Owner mandates (2026-08-16 late): every EPUB ends with a cover, minimum**
-  — the 1 truly coverless EPUB gets a web lookup; **PDFs get no cover hunt —
-  instead a "show PDFs" checkbox on the ebooks page, DEFAULT OFF** (hidden
-  from grid and page search until ticked, preference persisted).
-  📋 **Follow-up (owner ask 2026-08-16, deliberately NOT in the wave-1
-  batch): PDF covers from content.** Two ideas weighed, owner prefers the
-  second: (1) borrow the cover of the series the PDF belongs to — rejected as
-  primary (a Mistborn RPG handbook wearing the novel's cover misrepresents
-  what you'd open); (2) **scour the web for the actual product's cover art**
-  — the 4 PDFs are real published products (Mistborn Adventure Game books,
-  the Stormlight Handbook) whose covers exist online. Design note: source
-  from the product's own listing (publisher page / DriveThruRPG / Google
-  Books), stage through the same sha256 + upload_covers_r2 path, and mark
-  `cover_source: 'web'` for provenance. Series-borrow stays the documented
-  fallback for a PDF whose product art genuinely cannot be found. The
-  "show PDFs" checkbox stays default-off regardless — covers make the hidden
-  rows nicer, not more prominent.
-  ⚠️ **And a MECHANICAL GUARD (owner: "this is so so important to me"):**
-  every-EPUB-has-a-cover becomes a promote gate AND a test-suite failure in
-  audiobook_catalog — failing output names the offending titles; escape
-  hatch `ALLOW_COVERLESS_EPUBS=1`, emergency-only; guard ships only AFTER
-  coverage reaches 100% and is proven able to fail before trusted. Original
-  census for context: 168 ebooks, 148 covered (92 self-extracted, 56
-  audiobook-sibling). (The bookshelf itself shipped and PROMOTED — DONE.md.)
 - **Series linking, owner's words on the desired UX:** *"I want missing books
   to say you don't have book 1 but audio and ebook do and Skylar also owns
   it."* So the series view is per-VOLUME ownership across mediums and owners:

@@ -18,6 +18,86 @@
 > were extracted from this same history.
 
 
+## ✅ 2026-08-17: Ebook cover healing — closed out, every book on the shelf has a cover
+
+Landed in `audiobook_catalog`: the downscale fix (`32264d4`), the show-PDFs
+checkbox (`4d45a4a`), the one hand-placed override, the mechanical guard, and
+finally **PDF page-1 auto-covers** (`1441f0a`). Final census, measured: **56
+audiobook / 107 epub / 4 pdf_page1 / 1 override / 0 placeholder of 168.**
+
+⚠️ **The PDF half shipped by a DIFFERENT route than the design note below
+anticipated, and the note is preserved unedited so the change of mind is
+visible.** The queued plan was *"scour the web for the actual product's cover
+art"* with `cover_source: 'web'`. The owner superseded it on 2026-08-17:
+
+> "Apply and make it automatic but we need to check that first page ... make
+> sure it's an image or at least some kind of cover page and not just a chapter
+> or some huge block of text."
+
+So the source is the PDF's **own page 1**, rendered by PyMuPDF and staged
+through the existing sha256 / downscale / `upload_covers_r2` path —
+`cover_source: 'pdf_page1'`, no network call, no provenance question, and the
+art is by construction the actual product's. All four are real published
+covers, verified by eye before upload. The web-lookup and series-borrow ideas
+below stay on the record as the documented fallbacks for a PDF whose page 1 the
+gate refuses.
+
+**What replaced "no cover hunt for PDFs" is a cover-likeness gate**, which is
+where the work actually went: page-1 text length, UNION image coverage, ink and
+colour fractions, tuned against the four real covers and nine interior pages of
+those same files. Measured, and each signal load-bearing — every Stormlight
+Handbook interior page carries a full-page image *and* 2,500+ characters, while
+Alloy of Law's real cover is eight tiled images whose largest is 17% of the
+page. An ambiguous page is refused, not guessed at (the optional Claude-haiku
+rung is unconfigured on that machine by design). Full write-up:
+`audiobook_catalog/docs/info/covers-r2.md`.
+
+**The guard grew a second half.** "Every EPUB has a cover" now sits beside
+"every PDF resolves a cover **OR** is named in `needs_human_cover`" — so a
+text-first PDF cannot break promote while a *silent* cover gap still fails,
+naming the title. Proven able to fail before being trusted, as the owner's
+mandate required: nulling *Defiant*'s cover unnamed → exit 1 naming it; the
+same manifest with it listed → exit 0.
+
+The **show-PDFs checkbox stays default-off**, exactly as the note below
+insisted — covers make the hidden rows nicer, not more prominent.
+
+### The item as it stood in TODO.md, moved whole
+
+- **Ebook cover healing** 📋 QUEUED (reset batch) — **ROOT CAUSE FOUND
+  2026-08-16 late (owner: "the epub has the cover"): he was right.** 15 of
+  the 16 "coverless" EPUBs (All The Skills 2/4/6, Arcane Pathfinder 5, six
+  Cradle books, more) declare perfect covers that
+  `audiobook_catalog/scripts/build_ebook_manifest.py` silently REJECTS at
+  `MAX_COVER_BYTES = 2MB` — measured 2.1–3.4MB high-res images, dropped by
+  the size guard as if absent. Fix: **downscale-not-reject** (Pillow 11.3.0
+  is in the env; resize ~1600px longest side, JPEG q85, keep sha256 naming) —
+  never just raise the cap, that ships 3MB images to every page load.
+  **Owner mandates (2026-08-16 late): every EPUB ends with a cover, minimum**
+  — the 1 truly coverless EPUB gets a web lookup; **PDFs get no cover hunt —
+  instead a "show PDFs" checkbox on the ebooks page, DEFAULT OFF** (hidden
+  from grid and page search until ticked, preference persisted).
+  📋 **Follow-up (owner ask 2026-08-16, deliberately NOT in the wave-1
+  batch): PDF covers from content.** Two ideas weighed, owner prefers the
+  second: (1) borrow the cover of the series the PDF belongs to — rejected as
+  primary (a Mistborn RPG handbook wearing the novel's cover misrepresents
+  what you'd open); (2) **scour the web for the actual product's cover art**
+  — the 4 PDFs are real published products (Mistborn Adventure Game books,
+  the Stormlight Handbook) whose covers exist online. Design note: source
+  from the product's own listing (publisher page / DriveThruRPG / Google
+  Books), stage through the same sha256 + upload_covers_r2 path, and mark
+  `cover_source: 'web'` for provenance. Series-borrow stays the documented
+  fallback for a PDF whose product art genuinely cannot be found. The
+  "show PDFs" checkbox stays default-off regardless — covers make the hidden
+  rows nicer, not more prominent.
+  ⚠️ **And a MECHANICAL GUARD (owner: "this is so so important to me"):**
+  every-EPUB-has-a-cover becomes a promote gate AND a test-suite failure in
+  audiobook_catalog — failing output names the offending titles; escape
+  hatch `ALLOW_COVERLESS_EPUBS=1`, emergency-only; guard ships only AFTER
+  coverage reaches 100% and is proven able to fail before trusted. Original
+  census for context: 168 ebooks, 148 covered (92 self-extracted, 56
+  audiobook-sibling). (The bookshelf itself shipped and PROMOTED — DONE.md.)
+
 ## ✅ TBR instant-clear on the audiobook site (2026-08-17)
 
 The TODO entry, moved whole:
