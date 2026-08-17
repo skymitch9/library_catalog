@@ -27,23 +27,6 @@
 ## 🔥 Owner asks 2026-08-16 late evening — status board
 
 ### Third wave (2026-08-17 morning)
-- **⚠️ CONTENT WARNINGS — the EBOOKS half is still owed (owner, 2026-08-17:
-  "port content warning feature over to all physical book and the ebook
-  site").** The **library half is BUILT and deployed** on both instances —
-  whole record in [`DONE.md`](DONE.md), design in
-  [`info/content-warnings.md`](info/content-warnings.md). The ebooks half was
-  deliberately NOT built: that page was mid-rebuild into the permission-gated
-  shim on the same day, and adding a panel to a page being replaced is work
-  done twice or a merge conflict.
-  ⚠️ **The one thing whoever picks it up must not do:** key the notes on the
-  ebooks site's own title. The store is the audiobook site's
-  `user_content_warnings`, keyed by a slug of the title as THAT catalog spells
-  it, and this catalog measured **27 of 92 matched works spelling it
-  differently enough to produce a different key**. The library reads
-  `audiobook_holding.title` for that; the ebooks page has no such cache and
-  needs its own answer — `info/content-warnings.md` §7 states the options,
-  including reusing this Worker's `/api/warnings/:workId/keys` if an
-  `ebook_holding` row can supply a work id here.
 - **📱 Ebook reader PWA/offline — ON THE TABLE FOR LATER (owner, 2026-08-17:
   "Add pwa back on the table for later"):** not in viewer v1. ⚠️ The design
   constraint that must survive until then: offline caching stores book

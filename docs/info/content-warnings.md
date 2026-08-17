@@ -10,9 +10,14 @@
 > `firestore.rules` read line by line, including the delete tightening that
 > landed on that same day.
 >
+> **Updated 2026-08-17 (same day):** §7 rewritten — the ebooks half is now
+> **BUILT**, in `audiobook_catalog`, and it answered the identity question a
+> third way that adds a keying class this document did not have a name for.
+> Counts there are measured against that repo's live 168-row ebook manifest.
+>
 > **NOT verified:** no signed-in round trip has been performed on either
-> instance — see §8. The ebooks half of the owner's ask is deliberately **not
-> built** — see §7.
+> instance — see §8. The ebooks shelf's own round trip is likewise unverified
+> (it is behind a sign-in wall); see that repo's `docs/DONE.md`.
 
 The owner's ask, 2026-08-17:
 
@@ -262,30 +267,75 @@ by a test — but it has not been run.
 
 ---
 
-## 7. ⚠️ The ebooks half is DEFERRED, on purpose
+## 7. The ebooks half — ✅ BUILT 2026-08-17, in `audiobook_catalog`
 
-The owner's ask named *"all physical book and the ebook site"*. Only the library
-half was built. The ebooks page (`ebooks.heygabi.ai`) was **mid-rebuild by
-another agent** on the day of this work — it is being turned into a
-permission-gated shim (`docs/TODO.md`, the 2026-08-17 ebooks directive) — and
-adding a feature to a page that is being replaced would have been work done
-twice, or a merge conflict, or both.
+*Deferred when this document was written the same day (the ebooks page was
+mid-rebuild into a permission-gated shim by another agent, so adding a feature
+to a page being replaced meant doing it twice). Picked up once that shim
+shipped (`ca85553`) and built in `audiobook_catalog` as
+`7c2061a` — see that repo's `docs/DONE.md`.*
 
-**When it is picked up, this is what carries over and what does not:**
+**What carried over, exactly as predicted:** everything in §1 and §4. The
+store, the document id, the `authorUid` stamp, the author-or-moderator delete
+and the 80-character bound are the estate's. The shelf **calls**
+`audiobook_catalog/site/user-warnings.js` rather than forking it, and imports
+`bookIdFromTitle` from `site/reviews.js`. No new normaliser, no
+`firestore.rules` change.
 
-- **Carries over unchanged:** everything in §1, §4 and the whole of
-  `packages/core/src/warnings.ts`. The store, the id, the delete rules and the
-  80-character bound are the estate's, not this repo's.
-- **Does NOT carry over:** §2's join. The ebooks site has no
-  `audiobook_holding` cache to read the other catalog's spelling out of, so it
-  needs its own answer to *"what does the audiobook catalog call this book"* —
-  the ebook manifest's titles are a third spelling again. **Do not let it key on
-  its own title**; that is the exact silo this document exists to prevent.
-- **Open question for whoever builds it:** whether the ebooks page can reach
-  this Worker's `/api/warnings/:workId/keys` (it would need a work id in *this*
-  catalog, which `ebook_holding` — migration 0310 — may be able to supply), or
-  whether it needs its own key derivation. The first is strictly better if the
-  join exists.
+### The identity join, answered differently again
+
+§2's mechanism did not carry over — as predicted — but the ebooks page did not
+need this Worker either. **That repo IS the audiobook catalog**, so the
+question *"what does the audiobook catalog call this book?"* is answerable from
+its own data, and something already answered it: the ebook manifest's
+**sibling-cover join** (`scripts/build_ebook_manifest.sibling_catalog_match`)
+matches an ebook to the audiobook it sits beside in order to reuse its cover.
+That join was extended to hand back the matched row's **raw catalog title**,
+published per row as `audiobook_title`. One join, two answers, so a cover and a
+content note can never disagree about which audiobook a file is.
+
+⚠️ **THREE keying classes, not two** — the third is this half's own
+contribution to the vocabulary, and it is not a fallback but a correct answer:
+
+| Class | Key | Measured on the live 168-row manifest |
+|---|---|---|
+| `audiobook` | the audiobook catalog's title, byte-for-byte | **56** — of which **31 spell it differently** from the ebook |
+| `beside` | its own title; the join refused (ambiguous, or a different volume) | **100** |
+| `ebook-only` | its own title — **that IS this catalog's spelling** for a file with no audiobook at all | **12** |
+
+So a third of the resolvable shelf would have siloed on the ebook's own
+spelling — the same failure §2 measured at 27-of-92 on this side, in a
+different catalog. ⚠️ **`ebook-only` is the class this document previously had
+no name for.** An ebook with no audiobook sibling is not a book whose "real"
+key is missing; the estate has no other spelling of it, so its own title is
+canonical and keying on it is right. The prohibition in §2 is narrower than it
+sounded: *never key on your own title when another catalog's spelling is the
+convention* — not *never key on your own title*.
+
+⚠️ **The `beside` class says so in words.** A file in an audiobook's folder
+whose join was refused prints *"Filed beside an audiobook, but not matched to
+one"*, because a refused join is not a match and silence there would read as
+one. Same rule as §3's "the panel names the title it looked under", which that
+page also follows for the `audiobook` class.
+
+### The published file, from the third site
+
+`content_warnings.json` is fetched **relative first, then the public
+`https://audiobooks.heygabi.ai/` copy** — that page is served from two origins
+(its own `ebooks.heygabi.ai` door and the audiobook Pages deploy, `/dev/`
+included), and relative-first keeps a lane reading its own file. Reach with the
+new key: **21 books** (14 listing warnings, 7 checked-clean), against 12 keyed
+by the ebook's own title. §3's empty-array-is-not-a-missing-entry rule is
+reproduced there and pinned by a test.
+
+### The open question in the old text is closed
+
+It asked whether the ebooks page should call this Worker's
+`GET /api/warnings/:workId/keys` (needing an `ebook_holding` work id) or derive
+its own key. **Neither, in the end** — it needed no key derivation at all,
+because the pipeline that builds its manifest already knew the answer and can
+simply publish it. Nothing in the browser computes a key there either; it hands
+a raw title to `user-warnings.js`, which owns the one `bookIdFromTitle` call.
 
 ---
 

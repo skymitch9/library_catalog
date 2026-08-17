@@ -17,6 +17,74 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ⚠️ Content warnings — the EBOOKS half — ✅ BUILT 2026-08-17, in `audiobook_catalog`
+
+*Moved whole from [`TODO.md`](TODO.md) on completion, with its original text
+below kept verbatim — including the warning that turned out to be the whole
+job. Built as `audiobook_catalog@7c2061a`; the design is written up in
+[`info/content-warnings.md`](info/content-warnings.md) §7, rewritten the same
+day from "deferred, on purpose" to the built answer.*
+
+**How the one prohibition was satisfied.** The item's ⚠️ said: do not key the
+notes on the ebooks site's own title. It is satisfied without a new key
+derivation, and without this Worker — **that repo IS the audiobook catalog**,
+so the answer was already in its own pipeline. The ebook manifest's
+sibling-cover join (`scripts/build_ebook_manifest.sibling_catalog_match`)
+already matches an ebook to the audiobook it sits beside; it now hands back the
+matched row's **raw catalog title** as well, published per row as
+`audiobook_title`. One join, two answers, so a cover and a content note can
+never disagree about which audiobook a file is. Nothing in that browser
+computes a key: it passes a raw title to `user-warnings.js`, which owns the
+single `bookIdFromTitle` call.
+
+**Measured on that repo's live 168-row manifest** — the same shape of failure
+this catalog measured at 27-of-92, in a different catalog:
+
+| Keying class | Key | Count |
+|---|---|---|
+| `audiobook` | the audiobook catalog's title | **56** (31 spelled differently from the ebook) |
+| `beside` | own title; the join refused, and the panel says so | **100** |
+| `ebook-only` | own title — the estate has no other spelling | **12** |
+
+⚠️ **`ebook-only` is a keying class this document had no name for**, and
+naming it narrowed §2's rule: never key on your own title *when another
+catalog's spelling is the convention* — not never at all. Published-file reach
+with the new key: 21 books (14 listing warnings, 7 checked-clean) against 12 on
+the ebook's own title.
+
+**The open question in the old §7 is closed, and the answer was neither
+option.** No `ebook_holding` work id, no call to `/api/warnings/:workId/keys` —
+the pipeline that builds the manifest already knew, so it publishes.
+
+**Carried over unchanged, as predicted:** the store, the document id, the
+`authorUid` stamp, the author-or-moderator delete and the 80-character bound.
+That page CALLS `audiobook_catalog/site/user-warnings.js`; it does not fork it.
+No `firestore.rules` change was made or needed.
+
+**NOT verified:** the shelf's content notes sit behind a sign-in-and-grant
+wall, so no rendered round trip has been performed there — see that repo's
+`docs/DONE.md` for its own NOT-verified list.
+
+### The item as it stood in TODO.md
+
+- **⚠️ CONTENT WARNINGS — the EBOOKS half is still owed (owner, 2026-08-17:
+  "port content warning feature over to all physical book and the ebook
+  site").** The **library half is BUILT and deployed** on both instances —
+  whole record in [`DONE.md`](DONE.md), design in
+  [`info/content-warnings.md`](info/content-warnings.md). The ebooks half was
+  deliberately NOT built: that page was mid-rebuild into the permission-gated
+  shim on the same day, and adding a panel to a page being replaced is work
+  done twice or a merge conflict.
+  ⚠️ **The one thing whoever picks it up must not do:** key the notes on the
+  ebooks site's own title. The store is the audiobook site's
+  `user_content_warnings`, keyed by a slug of the title as THAT catalog spells
+  it, and this catalog measured **27 of 92 matched works spelling it
+  differently enough to produce a different key**. The library reads
+  `audiobook_holding.title` for that; the ebooks page has no such cache and
+  needs its own answer — `info/content-warnings.md` §7 states the options,
+  including reusing this Worker's `/api/warnings/:workId/keys` if an
+  `ebook_holding` row can supply a work id here.
+
 
 ### ✅ Content warnings — the LIBRARY half, built 2026-08-17 (`e5934d1`)
 
