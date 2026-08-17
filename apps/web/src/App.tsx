@@ -47,6 +47,7 @@ import {
   type Route,
 } from './router.js';
 import { EstateSearchPanel, EstateSearchToggle } from './components/EstateSearch.js';
+import { GabiPanel, GabiToggle } from './components/GabiPanel.js';
 import { ThemeCog } from './components/ThemeCog.js';
 import { CollectionPage } from './pages/CollectionPage.js';
 import { ScanJobsPage } from './pages/ScanJobsPage.js';
@@ -92,6 +93,13 @@ export function App() {
    * is a box you open and close, not a place you go.
    */
   const [estateOpen, setEstateOpen] = useState(false);
+  /**
+   * Whether the GABI chat panel is open. Lifted here for the same reason
+   * `estateOpen` is: its toggle is a control inside the sticky top bar and its
+   * panel is a full-width strip below. A box you open and close, not a place
+   * you go — so it is state, not a route.
+   */
+  const [gabiOpen, setGabiOpen] = useState(false);
   const route = useRoute();
 
   const check = useCallback(async () => {
@@ -304,6 +312,23 @@ export function App() {
 
             Beside the cog rather than in the nav for the reason the nav chips
             give above: those are places you go, and this is a tool you open. */}
+        {/* ⚠️ TWO conditions, and both are needed.
+              `gabiPanel` is the per-INSTANCE posture (`GABI_PANEL` in
+              wrangler.toml — "on" for padhard, off here), so this control does
+              not exist at all on a catalog the feature was not built for.
+              `runResearch` is the per-PERSON gate, because a turn spends real
+              money on that instance's Anthropic key — the same capability
+              `POST /api/gabi/turn` checks server-side.
+
+              Hidden rather than disabled, for the reason the Export chip
+              carries: a visible entry that refuses invites wondering what is
+              behind it, and for somebody without the capability there is
+              nothing behind it. ⚠️ Hiding is not the lock and never was — the
+              route answers a worded 404 where the posture is off and a 403
+              naming `runResearch` where the role is short. */}
+        {me.gabiPanel && me.capabilities.includes('runResearch') && (
+          <GabiToggle open={gabiOpen} onToggle={() => setGabiOpen((o) => !o)} />
+        )}
         <EstateSearchToggle open={estateOpen} onToggle={() => setEstateOpen((o) => !o)} />
         {/* The settings cog — the estate theme dropdown and light/dark/auto
             live here (ThemeCog.tsx). Beside "Sign out" because both are
@@ -313,6 +338,14 @@ export function App() {
       </header>
 
       {estateOpen && <EstateSearchPanel />}
+      {/* ⚠️ Kept MOUNTED once opened, unlike the estate-search panel, which
+          unmounts on close so its element aborts in-flight requests. The
+          difference is what the two hold: that one holds a query, this one
+          holds a conversation the Worker does not persist (design §3.2 —
+          stateless, no transcript). Unmounting would throw away the transcript
+          every time somebody closed the box to look at a book, which is
+          precisely the moment a conversation is worth keeping. */}
+      {me.gabiPanel && me.capabilities.includes('runResearch') && <GabiPanel hidden={!gabiOpen} />}
 
       <Screens
         route={route}

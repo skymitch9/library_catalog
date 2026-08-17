@@ -127,6 +127,43 @@ export interface Me {
    * never look like a finished job.
    */
   chores: { missingDetails: number } | null;
+  /**
+   * Whether the GABI chat panel exists on THIS instance — the per-instance
+   * posture var (`GABI_PANEL` in wrangler.toml), resolved server-side.
+   *
+   * ⚠️ A POSTURE, not a permission. It says the feature is switched on here at
+   * all; whether *this person* may use it is `capabilities.includes('runResearch')`
+   * beside it, and the route re-checks both. Neither is the lock — the lock is
+   * the capability gate on the Worker.
+   *
+   * ⚠️ Optional on the wire because the app and the Worker deploy separately at
+   * the seam of a release; an older Worker answers without it and `undefined`
+   * must read as OFF, never as ON.
+   */
+  gabiPanel?: boolean;
+}
+
+/**
+ * One turn of a GABI conversation.
+ *
+ * ⚠️ `content` is the model's blocks VERBATIM — text and `tool_use`, unparsed.
+ * The panel renders a card for every one of them and the executor runs them; a
+ * claimed action with no card is visibly a claim (design §8).
+ */
+export interface GabiTurnResponse {
+  conversationId: string;
+  content: { type: string; [key: string]: unknown }[];
+  /** `end_turn` | `tool_use` | `pause_turn` — the browser decides what happens next. */
+  stopReason: string | null;
+  model: string;
+  usage: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheCreationTokens: number;
+    /** ⚠️ An over-estimate: cache reads are priced as full input. See packages/research/src/gabi.ts. */
+    estimatedCents: number;
+  };
 }
 
 export interface WorkSummary {
@@ -1734,4 +1771,27 @@ export const api = {
 
   deleteVerdict: (id: number) =>
     request<{ ok: true }>(`/api/research/verdicts/${id}`, { method: 'DELETE' }),
+
+  // GABI — the conversational fixer
+  // -------------------------------------------------------------------------
+
+  /**
+   * ⚠️ Spends money on this instance's Anthropic key, one model call per call.
+   *
+   * The loop runs HERE, not on the Worker: this posts a turn, the panel executes
+   * whatever tools the model asked for through the ordinary methods above — each
+   * one its own authenticated request, its own invocation, its own fresh
+   * subrequest budget — and posts the next turn. `docs/info/gabi-fixer-design.md`
+   * §3.1 carries the arithmetic; the short version is that a server-side loop
+   * spends ~40 of an invocation's 50 subrequests on a six-turn conversation, and
+   * going over **terminates the invocation rather than throwing**.
+   *
+   * ⚠️ The whole `messages` array goes up every time — the route is stateless
+   * and persists no transcript. The Worker refuses past 24 turns.
+   */
+  gabiTurn: (conversationId: string, messages: unknown[]) =>
+    request<GabiTurnResponse>('/api/gabi/turn', {
+      method: 'POST',
+      body: JSON.stringify({ conversationId, messages }),
+    }),
 };

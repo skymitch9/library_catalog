@@ -399,6 +399,141 @@ a.topbar__brand { text-decoration: none; }
 }
 .estate-panel__note { margin: 0.5rem 0 0; }
 
+/* --- ask GABI ------------------------------------------------------------- */
+
+/*
+ * The conversational fixer's panel (components/GabiPanel.tsx).
+ *
+ * Same strip as the estate-search panel above and for the same reason: it
+ * matches `main`'s measure and gutter exactly, so the box lines up with the page
+ * under it rather than floating in its own margin. Everything is drawn from the
+ * `--et-*` tokens, so it re-skins with every theme for free — including hers,
+ * which is `hearts`.
+ */
+.gabi-toggle {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--et-muted);
+  transition: filter var(--et-dur-fast) var(--et-ease),
+              box-shadow var(--et-dur-fast) var(--et-ease),
+              color var(--et-dur-fast) var(--et-ease);
+}
+.gabi-toggle:hover:not(:disabled) { color: var(--et-fg); }
+.gabi-toggle[aria-expanded='true'] { color: var(--et-fg); }
+
+.gabi-panel {
+  padding: 1rem 1rem 0;
+  max-width: 64rem;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+/*
+ * ⚠️ LOAD-BEARING. The panel is hidden rather than unmounted so a conversation
+ * survives being closed (GabiPanel.tsx's header says why), and the `display:
+ * flex` above is an AUTHOR rule, which beats the UA stylesheet's
+ * `[hidden] { display: none }`. Without this line the panel is permanently
+ * open. It is the exact bug `guardHiddenScanRow` patches in somebody else's
+ * component; there is no excuse for shipping it in our own.
+ */
+.gabi-panel[hidden] { display: none; }
+
+.gabi-log {
+  max-height: min(52vh, 30rem);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--et-border);
+  border-radius: var(--et-radius);
+  background: var(--et-surface);
+}
+
+.gabi-intro { display: flex; flex-direction: column; gap: 0.4rem; }
+.gabi-intro p { margin: 0; }
+
+.gabi-suggestions {
+  list-style: none;
+  margin: 0.3rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.gabi-turn { display: flex; flex-direction: column; gap: 0.4rem; }
+/* Hers on the right, GABI's on the left — the one convention every chat shares. */
+.gabi-turn--user { align-items: flex-end; }
+.gabi-turn--assistant { align-items: flex-start; }
+
+.gabi-said {
+  margin: 0;
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--et-radius);
+  max-width: 42rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.gabi-turn--user .gabi-said {
+  background: var(--et-accent);
+  color: var(--et-btn-fg);
+}
+.gabi-turn--assistant .gabi-said {
+  background: var(--et-bg);
+  border: 1px solid var(--et-border);
+}
+
+/*
+ * ⚠️ THE TOOL CARD. One per `tool_use` block, always — design §8's last row:
+ * with thinking off, Opus 5 can write a tool call into its visible text, the
+ * turn succeeds and the call never runs. A claimed action with no card here is
+ * visibly a claim. The raw request and the raw response sit inside, verbatim,
+ * so a paraphrase in the prose above is visible as one.
+ */
+.gabi-tool {
+  align-self: stretch;
+  border: 1px dashed var(--et-border);
+  border-radius: var(--et-radius);
+  padding: 0.35rem 0.6rem;
+  font-size: 0.85rem;
+}
+.gabi-tool > summary { cursor: pointer; }
+.gabi-tool__name { font-family: var(--et-font-mono, ui-monospace, monospace); }
+.gabi-tool__raw {
+  margin: 0.4rem 0 0;
+  max-height: 16rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.78rem;
+  color: var(--et-muted);
+}
+
+.gabi-busy { margin: 0; }
+/*
+ * Never a bare status: every sentence rendered here comes from `describeError`,
+ * the one place an ApiError becomes words — a 404 says GABI is not switched on,
+ * a 503 names the missing key, a 403 names the capability and the role.
+ */
+.gabi-error {
+  margin: 0;
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--et-radius);
+  border: 1px solid var(--et-border);
+  font-size: 0.9rem;
+}
+
+.gabi-compose { display: flex; gap: 0.5rem; }
+.gabi-compose input { flex: 1 1 auto; min-width: 0; }
+.gabi-spend { margin: 0; text-align: right; }
+
 /* --- stats --------------------------------------------------------------- */
 
 .stat-strip {
