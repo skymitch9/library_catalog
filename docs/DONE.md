@@ -96,11 +96,19 @@ worker `apps/worker/src/routes/tbr.ts`, web `lib/tbr.ts` + `components/Tbr.tsx`
   `mount-order.test.ts`. Mutation-checked: reversing the id, dropping the status
   filter and loosening the clearing rule fail 5 of them. Full suite **985
   passing, 0 failing** (2026-08-17, `npm test`).
-- ⚠️ **NOT verified: no signed-in browser has exercised the Firestore round
-  trip.** Sign-in is a Google popup against the shared project and this build
-  could not perform one, so add / read-back / clear are untested against the
-  live collection, on both instances. `info/tbr.md` §7 lists every untested
-  claim rather than leaving it implied.
+- ✅ **VERIFIED LIVE, signed in as the owner on `library.heygabi.ai`
+  (2026-08-17)** — the evidence table is `info/tbr.md` §7. The one that matters:
+  *Adventures in the Argo* (#78) is marked read **from an audiobook rating**, and
+  adding it to the TBR then reloading **deleted the entry** and printed "Taken
+  off your TBR — you have read it." `/tbr` also opened carrying *Rise of the
+  Living Forge* — a document recorded on the **audiobook site**, which this
+  catalog has never written — correctly filed under "Not on these shelves".
+  Both test entries were cleaned up; the owner's own entry was left alone.
+- ⚠️ **STILL NOT verified:** the second instance signed-in as her (bundle and
+  config checked, no round trip), the audiobook site's own button falling back
+  after a clear, a `bookCover` written by that site rendering here, the
+  `readingLists_dev` lane, and the no-`trackReading` refusal path. Listed in
+  `info/tbr.md` §7 rather than left implied.
 
 **Still active, and NOT archived with this** — the "sort her books" items the
 scope-narrowing subsection below points at (remote ingestion, the library

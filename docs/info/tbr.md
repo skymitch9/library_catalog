@@ -5,10 +5,10 @@
 > `app/web/templates/index.html` (the TBR button and the reading-list filter),
 > `site/community.html` (the per-person TBR count) and `firestore.rules`
 > (`validReadingList`, `/readingLists`, `/readingLists_dev`) were read line by
-> line.
-> **NOT verified:** nothing here has been exercised against the live
-> `readingLists` collection with a signed-in browser — see §7 for exactly which
-> claims that leaves untested.
+> line — and **exercised live the same day**, signed in on
+> `library.heygabi.ai`: an entry recorded on the audiobook site appeared here,
+> and a book marked read from an audiobook rating had its entry cleared. §7
+> carries the evidence and the four things still untested.
 
 The owner's ask, 2026-08-16:
 
@@ -218,21 +218,42 @@ so re-running is harmless).
 
 ---
 
-## 7. What has NOT been verified
+## 7. Verified live — and what still is not
 
-- **No signed-in browser has exercised any of this.** Sign-in is a Google popup
-  against the shared Firebase project; the build could not perform one. So the
-  Firestore round trip — add, read back, clear — is **untested against the live
-  collection**, and everything in §1's table is read off that site's source
-  rather than off a document this feature wrote.
-- **The second instance (`padhard.heygabi.ai`) is untested the same way.** It
-  shares the Firebase project and `ENVIRONMENT = "production"` (both instances,
-  `apps/worker/wrangler.toml`), so it writes the same `readingLists` collection
-  under her own email and display name. That is inference from configuration,
-  not a measurement.
-- **Nobody's `bookCover` from the audiobook site has been rendered here.** It is
-  captured from that site's modal `<img>` and passed through
-  `resolveAudiobookCover`, which handles both absolute and site-relative values —
-  but no real value has been seen.
-- **The dev lane's `readingLists_dev` has never held a document.** The rules
-  block exists and mirrors prod; nothing has written to it.
+### Measured 2026-08-17, signed in as the owner on `library.heygabi.ai`
+
+Shipped and verified are tracked separately, per item. These were exercised in a
+real signed-in browser against the **live `readingLists` collection**, not
+reasoned about:
+
+| Claim | Evidence |
+|---|---|
+| **A TBR recorded on the audiobook site shows up here** | `/tbr` opened with *"Rise of the Living Forge - A LitRPG Adventure"* already on it — a document this catalog never wrote — filed under **Not on these shelves** with the link out, because the library holds no copy of it |
+| Adding from a book page writes the document | *A Killer's Mind* (#84): the button flipped to **✓ On my TBR** and the book appeared on `/tbr` with its cover, author and series index |
+| ⚠️ **Finishing clears the intention, across catalogs** | *Adventures in the Argo* (#78) is marked read **from an audiobook rating** (the page says so). Adding it to the TBR and reloading deleted the entry and printed *"Taken off your TBR — you have read it."* That is the whole cross-catalog path: rating on the other site → read state here → intention retired |
+| Removing works from the list screen | **Off the list** removed the test entry; the pre-existing audiobook one was left untouched |
+| The nav chip and the route | **My TBR** renders in the top bar; `/tbr` is a real address |
+
+⚠️ **The test data was cleaned up.** Both entries this verification created were
+removed; the owner's own pre-existing entry was not touched.
+
+### Still NOT verified
+
+- **The second instance (`padhard.heygabi.ai`) has not been exercised
+  signed-in.** Its bundle is confirmed live and identical (same asset hash), and
+  it shares the Firebase project and `ENVIRONMENT = "production"`
+  (`apps/worker/wrangler.toml`), so it writes the same collection under her own
+  email — but that is inference from configuration plus a bundle check, not a
+  round trip performed as her.
+- **The audiobook site's own view of a clear has not been looked at.** Deleting
+  the document is the same delete its toggle performs, so its button must fall
+  back to `📋 Add to TBR` — but nobody has loaded that page to watch it happen.
+- **No `bookCover` written by the audiobook site has rendered here.** The one
+  entry that came from there has no cover on the document, so the placeholder
+  drew instead — which is itself the correct behaviour, just not a test of
+  `resolveAudiobookCover`.
+- **`readingLists_dev` has never held a document.** The rules block exists and
+  mirrors prod; nothing has written to it.
+- **Nobody without `trackReading` has visited.** The chip is hidden and `/tbr`
+  answers "Not a page" for them by the same guard `/export` uses; that path was
+  read, not exercised.
