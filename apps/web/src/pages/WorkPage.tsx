@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, type Me, type Watch, type WorkAudiobookHolding } from '../api.js';
+import { api, type Me, type Watch, type WorkAudiobookHolding, type WorkEbookHolding } from '../api.js';
 import { describeError } from '../lib/errors.js';
 import { Accessories } from '../components/Accessories.js';
 import { Aliases } from '../components/Aliases.js';
@@ -10,6 +10,7 @@ import { DeleteWork } from '../components/DeleteWork.js';
 import { EditTitleAuthor } from '../components/EditTitleAuthor.js';
 import { CoverPanel } from '../components/CoverPanel.js';
 import { DriveLinks } from '../components/DriveLinks.js';
+import { EbookShadow } from '../components/EbookShadow.js';
 import { Editions, type EditionView } from '../components/Editions.js';
 import { Enrich } from '../components/Enrich.js';
 import { OtherVersions } from '../components/OtherVersions.js';
@@ -79,6 +80,12 @@ interface WorkDetail {
    * reason `watches` does: it is a fact about the book, not a second request.
    */
   audiobookHolding: WorkAudiobookHolding | null;
+  /**
+   * The shared pool's ebook holding cache — migration 0310, phase 4 of the
+   * ebook split. Runs BESIDE the edition rows, never instead of them; see
+   * `EbookShadow`. Null is the ordinary case (physical-only book).
+   */
+  ebookHolding: WorkEbookHolding | null;
   reading: {
     read_state: string;
     started_on: string | null;
@@ -390,6 +397,15 @@ export function WorkPage({
         canEdit={me.capabilities.includes('editCatalog')}
         onChanged={load}
       />
+
+      {/* Directly under Editions, because it is Editions' shadow: the ebook
+          fact the panel above states from edition rows, restated from the
+          `ebook_holding` cache (migration 0310), with the agreement said in
+          words. Phase 4 of the ebook split — both representations live side
+          by side until phase 5 prunes the ebook editions, and this panel is
+          the visible evidence that gate needs. Renders nothing on the
+          ordinary physical-only book. */}
+      <EbookShadow editions={editions} holding={detail.ebookHolding} />
 
       <Copies
         workId={workId}

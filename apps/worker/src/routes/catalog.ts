@@ -30,6 +30,7 @@ import {
   findEditionByIsbn13,
   findWorkByKey,
   getAudiobookHolding,
+  getEbookHolding,
   getCopy,
   getReadState,
   getWork,
@@ -317,7 +318,7 @@ export const catalogRoutes = new Hono<AppBindings>()
     // panel is above the fold on a book that has one, and a book page that
     // rendered and *then* grew a "check this" note is the one place a late
     // arrival actually misleads. Resolved ones come too — see `listWatchesForWork`.
-    const [editions, copies, reading, watches, audiobookHolding] = await Promise.all([
+    const [editions, copies, reading, watches, audiobookHolding, ebookHolding] = await Promise.all([
       listEditionsForWork(c.env.DB, id),
       listCopiesForWork(c.env.DB, id),
       getReadState(c.env.DB, id, user.id),
@@ -328,6 +329,12 @@ export const catalogRoutes = new Hono<AppBindings>()
       // the ordinary case (no audiobook match) and the page renders nothing
       // for it — see `AudiobookHolding` in `@lc/db`.
       getAudiobookHolding(c.env.DB, id),
+      // "Does the household pool hold this as an ebook?" — migration 0310,
+      // 0010's ebook twin, phase 4 of the ebook split. Runs BESIDE the
+      // edition rows above, not instead of them: the page renders both
+      // answers and says whether they agree, which is the visible evidence
+      // phase 5's edition-pruning is gated on. Null is the ordinary case.
+      getEbookHolding(c.env.DB, id),
     ]);
 
     return c.json({
@@ -337,6 +344,7 @@ export const catalogRoutes = new Hono<AppBindings>()
       reading,
       watches,
       audiobookHolding,
+      ebookHolding,
       /**
        * Which shared world this book belongs to — the tier above its series —
        * or null.

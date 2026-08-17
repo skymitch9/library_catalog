@@ -458,6 +458,28 @@ export interface WorkAudiobookHolding {
   staleAt: string | null;
 }
 
+/**
+ * What the shared household pool holds for THIS work as an ebook — `GET
+ * /api/works/:id`'s `ebookHolding` field. Mirrors `EbookHolding` in `@lc/db`
+ * (migration 0310, `audiobook_holding`'s ebook twin).
+ *
+ * ⚠️ Phase 4 of the ebook split: this is the SHADOW answer, running beside the
+ * edition rows the page already shows, never replacing them. Like
+ * `WorkAudiobookHolding` it is NOT filtered on `staleAt` — a stale holding
+ * still arrives so the page can say so rather than showing nothing.
+ */
+export interface WorkEbookHolding {
+  /** Manifest-spelling formats ('epub', 'pdf'). */
+  formats: string[];
+  sourcePath: string | null;
+  /** 'file' | 'manual' — provenance, shown, never hidden. */
+  editionSource: string;
+  /** 'edition' today; 'manifest' after phase 5. */
+  derivedVia: string;
+  /** Non-null means no edition backs this any more. */
+  staleAt: string | null;
+}
+
 /** `physical` or `ebook`. There is deliberately no `audio` — see `@lc/core`. */
 export type EditionMedium = 'physical' | 'ebook';
 

@@ -824,6 +824,67 @@ export async function getAudiobookHolding(
   };
 }
 
+interface EbookHoldingRow {
+  formats: string;
+  source_path: string | null;
+  edition_source: string;
+  derived_via: string;
+  stale_at: string | null;
+}
+
+/**
+ * What the shared household pool holds for this WORK as an ebook — migration
+ * 0310, `audiobook_holding`'s ebook twin.
+ *
+ * ⚠️ Phase 4 of the ebook split: this cache runs BESIDE the edition-derived
+ * answer, not instead of it. The work page shows both and says whether they
+ * agree (`ebookAgreement` in `@lc/core`), which is the visible evidence phase
+ * 5's edition-pruning is gated on. Like `getAudiobookHolding` above, this
+ * deliberately does NOT filter `stale_at` — the page shows a stale holding
+ * with a caveat rather than making it look identical to "no holding at all".
+ */
+export interface EbookHolding {
+  /** Manifest-spelling formats ('epub', 'pdf'), split from the stored list. */
+  formats: string[];
+  /** Manifest-relative path of the file, or null for the hand-added edition. */
+  sourcePath: string | null;
+  /** 'file' | 'manual' — provenance of the deriving edition. Shown, never hidden. */
+  editionSource: string;
+  /** 'edition' today; 'manifest' after phase 5. See migration 0310. */
+  derivedVia: string;
+  /** Non-null means no edition backs this any more. Render with a note, not nothing. */
+  staleAt: string | null;
+}
+
+/**
+ * The work's ebook holding, or null when the pool cache has none for it.
+ *
+ * Null is the ordinary case — most of this catalog is physical-only — and the
+ * page renders nothing for it, the same rule `getAudiobookHolding` follows.
+ * `work_id` is `ebook_holding`'s primary key, so this is at most one row.
+ */
+export async function getEbookHolding(
+  db: D1Database,
+  workId: number,
+): Promise<EbookHolding | null> {
+  const row = await db
+    .prepare(
+      `SELECT formats, source_path, edition_source, derived_via, stale_at
+         FROM ebook_holding
+        WHERE work_id = ?`,
+    )
+    .bind(workId)
+    .first<EbookHoldingRow>();
+  if (!row) return null;
+  return {
+    formats: row.formats.split(',').map((f) => f.trim()).filter(Boolean),
+    sourcePath: row.source_path,
+    editionSource: row.edition_source,
+    derivedVia: row.derived_via,
+    staleAt: row.stale_at,
+  };
+}
+
 export interface CollectionQuery {
   /** Free text over title and author. Folded the same way the catalog is. */
   q?: string | undefined;

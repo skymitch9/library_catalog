@@ -23,6 +23,7 @@ export * from './completeness.js';
 export * from './covers.js';
 export * from './gaps.js';
 export * from './holdings.js';
+export * from './ebook-holding.js';
 export * from './preorders.js';
 export * from './rescan.js';
 export * from './isbn.js';
