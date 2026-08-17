@@ -38,14 +38,18 @@
   auto-apply on a high-confidence judge verdict, otherwise leave the finding
   pending for a person. Donor-only instances (no AI key) stop at step 1
   unchanged. 📋 QUEUED (reset batch).
-- **Ebook cover healing** 📋 QUEUED (reset batch). The gap, measured
-  2026-08-16: 168 ebooks → 148 covered (92 extracted from the EPUB itself, 56
-  borrowed from the audiobook sibling), 20 missing = 16 EPUBs with no embedded
-  cover + 4 PDFs (no cover metadata at all). ⚠️ All 20 sit beside audiobooks
-  whose own catalog entries could not donate a cover either (several look like
-  the unscanned backlog — absence means unscanned). Plan: Google Books / Open
-  Library lookup fallback for the 20, slow drip to keep Cloudflare happy.
-  (The bookshelf itself shipped and PROMOTED — archived in DONE.md.)
+- **Ebook cover healing** 📋 QUEUED (reset batch) — **ROOT CAUSE FOUND
+  2026-08-16 late (owner: "the epub has the cover"): he was right.** 15 of
+  the 16 "coverless" EPUBs (All The Skills 2/4/6, Arcane Pathfinder 5, six
+  Cradle books, more) declare perfect covers that
+  `audiobook_catalog/scripts/build_ebook_manifest.py` silently REJECTS at
+  `MAX_COVER_BYTES = 2MB` — measured 2.1–3.4MB high-res images, dropped by
+  the size guard as if absent. Fix: **downscale-not-reject** (Pillow 11.3.0
+  is in the env; resize ~1600px longest side, JPEG q85, keep sha256 naming) —
+  never just raise the cap, that ships 3MB images to every page load. Web
+  lookup remains only for the 1 truly coverless EPUB + 4 PDFs. Original
+  census for context: 168 ebooks, 148 covered (92 self-extracted, 56
+  audiobook-sibling). (The bookshelf itself shipped and PROMOTED — DONE.md.)
 - **💗 Pixel-hearts theme** (owner ask): pink-and-white theme in the retro
   pixel family — "those pixel gamer hearts" — for the library app, and it
   becomes the DEFAULT theme on padhard (her instance; per-instance default
