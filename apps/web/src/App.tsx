@@ -56,6 +56,7 @@ import { DetailsQueuePage } from './pages/DetailsQueuePage.js';
 import { ScanPage } from './pages/ScanPage.js';
 import { SeriesDetailPage } from './pages/SeriesDetailPage.js';
 import { SeriesPage } from './pages/SeriesPage.js';
+import { TbrPage } from './pages/TbrPage.js';
 import { UniversePage } from './pages/UniversePage.js';
 import { WishlistPage } from './pages/WishlistPage.js';
 import { WorkPage } from './pages/WorkPage.js';
@@ -249,6 +250,20 @@ export function App() {
               Missing{me.chores ? ` (${me.chores.missingDetails})` : ''}
             </Link>
           )}
+          {/* ⚠️ A place, like Wishlist beside it — and shown to everyone who
+              can track their own reading, because the list is theirs and not
+              the catalog's. It sits BEFORE Wishlist: what you mean to read next
+              is a more frequent question than what you mean to buy, and the two
+              are easy to confuse, so the one that is about reading comes first.
+
+              Gated on `trackReading` for the same reason the read-state chips
+              are: without it there is nothing to add and nothing to clear, and
+              an entry that opens an empty screen is worse than no entry. */}
+          {me.capabilities.includes('trackReading') && (
+            <Link to="/tbr" className={route.name === 'tbr' ? 'primary chip' : 'chip'}>
+              My TBR
+            </Link>
+          )}
           <Link to="/wishlist" className={route.name === 'wishlist' ? 'primary chip' : 'chip'}>
             Wishlist
           </Link>
@@ -401,6 +416,14 @@ function Screens({
 
     case 'wishlist':
       return <WishlistPage me={me} onOpen={openWork} />;
+
+    // Gated the same way its nav chip is, and for the reason `/add` carries: a
+    // screen with an address is a screen anybody can type. Without
+    // `trackReading` there is no list to show and nothing that could be
+    // cleared, so it genuinely is not a page for them.
+    case 'tbr':
+      if (!me.capabilities.includes('trackReading')) return <NotFound />;
+      return <TbrPage me={me} />;
 
     case 'queue':
       // Keyed on the field so switching question remounts rather than keeping

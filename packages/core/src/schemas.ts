@@ -33,6 +33,7 @@ import {
   RUN_TIERS,
   SERIES_VOLUME_SOURCES,
   SOURCE_TIERS,
+  TBR_ENTRIES_MAX,
   WORK_ALIAS_KINDS,
   WORK_RELATIONS,
 } from './constants.js';
@@ -525,6 +526,53 @@ export const observedRatingsSchema = z
   })
   .strict();
 export type ObservedRatingsInput = z.infer<typeof observedRatingsSchema>;
+
+/**
+ * "Here is my whole TBR out of Firestore — which of these books are on these
+ * shelves, and have I read them?"
+ *
+ * ## ⚠️ Read-only, and it is the caller's own list either way
+ *
+ * `POST /api/tbr/resolve` writes nothing. It matches keys against `work` and
+ * reads `user_book` for the `user.id` on the verified token — the body cannot
+ * name a person — so the worst a crafted request can do is learn whether a key
+ * it already guessed names a book in this catalog. The read states come back
+ * for the caller and nobody else.
+ *
+ * `workKey` is nullable rather than required: **every** entry the audiobook
+ * site has ever written has only a `bookId`, because that site knows nothing
+ * about the composite key. Requiring one would silently drop exactly the
+ * entries this feature exists to reach.
+ *
+ * `.strict()`, like every schema here — a field this does not model is a bug
+ * report, not something to strip in silence.
+ */
+export const tbrResolveSchema = z
+  .object({
+    entries: z
+      .array(
+        z
+          .object({
+            /** The Firestore document id, echoed back so the browser can join. */
+            docId: z.string().min(1).max(400),
+            /** Title-only slug, `bookIdFromTitle`. Every document has one. */
+            bookId: z.string().min(1).max(300),
+            /** The composite key, when the document carries one — see above. */
+            workKey: z
+              .string()
+              .min(3)
+              .max(300)
+              .refine((k) => k.includes('|'), { message: 'a workKey is title|author' })
+              .nullable()
+              .optional(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(TBR_ENTRIES_MAX),
+  })
+  .strict();
+export type TbrResolveInput = z.infer<typeof tbrResolveSchema>;
 
 export const updateRoleSchema = z.object({ role: roleSchema });
 

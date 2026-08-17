@@ -74,6 +74,7 @@ import { researchRoutes } from './research.js';
 import { reviewRoutes } from './reviews.js';
 import { scanJobRoutes } from './scan-jobs.js';
 import { seriesRoutes } from './series.js';
+import { tbrRoutes } from './tbr.js';
 import { universeRoutes } from './universes.js';
 import { userRoutes } from './users.js';
 import { watchRoutes } from './watches.js';
@@ -303,6 +304,14 @@ const WIRED: Wired[] = [
   { routes: reviewRoutes, method: 'POST', path: '/1/draft', capability: 'trackReading' },
   { routes: reviewRoutes, method: 'POST', path: '/1/observed', capability: 'trackReading' },
   { routes: reviewRoutes, method: 'POST', path: '/observed', capability: 'trackReading' },
+
+  // ── tbr.ts (/api/tbr) ──
+  // Both are `read`: this route writes nothing at all. The TBR document itself
+  // is written and deleted by the browser with the person's own Firebase
+  // credentials (routes/tbr.ts), exactly as a review is.
+  { routes: tbrRoutes, method: 'GET', path: '/collection', capability: 'read' },
+  { routes: tbrRoutes, method: 'GET', path: '/1/keys', capability: 'read' },
+  { routes: tbrRoutes, method: 'POST', path: '/resolve', capability: 'read' },
 
   // ── scan-jobs.ts (/api/scan-jobs) ──
   // ⚠️ `GET /`, `POST /barcode`, `POST /shelf` and `POST /single` are pinned by

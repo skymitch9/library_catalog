@@ -17,6 +17,7 @@ import { OtherVersions } from '../components/OtherVersions.js';
 import { Provenance } from '../components/Provenance.js';
 import { Related } from '../components/Related.js';
 import { Reviews } from '../components/Reviews.js';
+import { Tbr } from '../components/Tbr.js';
 import { Watches } from '../components/Watches.js';
 import { WorkFields } from '../components/WorkFields.js';
 import { formatLabel, shouldShowDriveLinks } from '../lib/formats.js';
@@ -388,6 +389,17 @@ export function WorkPage({
               above and it stays changed.
             </p>
           )}
+          {/* ⚠️ Inside "Your reading" and directly under the chips, because it
+              is the same fact one step earlier: what you mean to read, then
+              what you are reading, then what you read. It is also what makes
+              the chips clear it — `Tbr` takes the read state as a prop, so
+              pressing Read above (or a rating deriving it below) removes the
+              entry with no second implementation of the rule here.
+
+              The list itself lives in the audiobook site's `readingLists`
+              collection, so this button and its `✓ To Be Read` button are one
+              intention. See components/Tbr.tsx. */}
+          <Tbr workId={workId} readState={reading?.read_state ?? null} />
         </section>
       )}
 

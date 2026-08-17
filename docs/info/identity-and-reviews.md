@@ -525,4 +525,12 @@ and `backfill-read-from-ratings.mjs` prints the same warning.
 | **How that read state was decided** | D1 `user_book.read_state_how` | this app |
 | Which book a review is about | Firestore `reviews.workKey` — stamped 2026-08-12 | **both**, and §7.7 cannot work without it |
 | Whether the book was any good | Firestore `reviews` | **both** |
+| **Whether you mean to read it** | Firestore `readingLists` — the audiobook site's own TBR store, joined 2026-08-17 | **both**; see [`tbr.md`](tbr.md) |
 | The rating, for sorting | D1 `user_book.rating_cached` | this app, never authoritative |
+
+⚠️ **`reviews` is not the only shared collection any more.** The cross-catalog
+TBR follows every rule in this document — one store, browser-written, keyed by
+`bookIdFromTitle` with a `workKey` added — but its document id is the **reverse
+order** of a review's, because that is what the other site already writes.
+[`tbr.md`](tbr.md) carries the whole design; §7.7's read-state sweep is what
+clears an intention settled by a rating.

@@ -199,6 +199,26 @@ export interface DerivedRead {
 }
 
 /**
+ * One TBR entry, matched against this catalog. Mirrors `TbrMatch` in `@lc/db`.
+ *
+ * ⚠️ `workId: null` is the ORDINARY answer, not a failure — most of anybody's
+ * to-read list is audiobooks this catalog does not hold. `readState: null`
+ * means there is no `user_book` row, which is not the same as 'unread'.
+ */
+export interface TbrMatchView {
+  docId: string;
+  bookId: string;
+  workKey: string | null;
+  workId: number | null;
+  readState: string | null;
+  workTitle: string | null;
+  authors: string | null;
+  series: string | null;
+  seriesIndexDisplay: string | null;
+  workCoverUrl: string | null;
+}
+
+/**
  * What the collection screen can ask for.
  *
  * ⚠️ Every one of these is *validated again on the server* — the sort key
@@ -1173,6 +1193,45 @@ export const api = {
     request<{ marked: DerivedRead[]; considered: number }>('/api/reviews/observed', {
       method: 'POST',
       body: JSON.stringify({ ratings }),
+    }),
+
+  // -------------------------------------------------------------------------
+  // The cross-catalog to-be-read list
+  // -------------------------------------------------------------------------
+
+  /**
+   * The collection, the document id and the payload for one book's TBR entry.
+   *
+   * ⚠️ `docId` and `doc` are **null** — and `held` says why — for a book with
+   * no author recorded, the same guard `reviewKeys` applies: an entry written
+   * now would carry the provisional key and come loose the day the author
+   * arrives. The control renders the held sentence and offers no button.
+   */
+  /**
+   * Which reading-list collection this deployment uses. The per-book call
+   * answers it as part of its reply; the list screen has no book to ask about
+   * and must not guess the lane — see `routes/tbr.ts`.
+   */
+  tbrCollection: () => request<{ collection: string }>('/api/tbr/collection'),
+
+  tbrKeys: (workId: number) =>
+    request<{
+      collection: string;
+      docId: string | null;
+      doc: Record<string, unknown> | null;
+      held?: string;
+    }>(`/api/tbr/${workId}/keys`),
+
+  /**
+   * "Which of my TBR entries are books on these shelves, and have I read them?"
+   *
+   * The browser brings the list because the Worker cannot see Firestore. Every
+   * read state comes back for the signed-in person only — see `routes/tbr.ts`.
+   */
+  tbrResolve: (entries: { docId: string; bookId: string; workKey: string | null }[]) =>
+    request<{ entries: TbrMatchView[] }>('/api/tbr/resolve', {
+      method: 'POST',
+      body: JSON.stringify({ entries }),
     }),
 
   // -------------------------------------------------------------------------

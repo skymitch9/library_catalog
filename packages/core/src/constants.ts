@@ -793,3 +793,24 @@ export const RATING_STEP = 0.5;
  * per statement are the constraint there and this is a payload size.
  */
 export const OBSERVED_RATINGS_MAX = 500;
+
+/**
+ * The one `status` value either catalog writes to a `readingLists` document.
+ *
+ * ⚠️ **The audiobook site's vocabulary, not ours** — its TBR button writes
+ * `status: 'tbr'` and its own filter reads `data.status === 'tbr'`
+ * (`app/web/templates/index.html`), while `firestore.rules`' `validReadingList`
+ * accepts any string. So this is a shared spelling to match exactly, and a
+ * document carrying anything else is something that site knows about and this
+ * catalog does not: `myTbrEntries` drops it rather than guessing.
+ */
+export const TBR_STATUS = 'tbr';
+
+/**
+ * How many TBR entries one `POST /api/tbr/resolve` may carry.
+ *
+ * Same reasoning as `OBSERVED_RATINGS_MAX` above — a stated shape rather than
+ * an implied one — and the same number, because both are "everything one person
+ * has ever recorded" and the heaviest list in the house is a few hundred.
+ */
+export const TBR_ENTRIES_MAX = 500;

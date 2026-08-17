@@ -1195,6 +1195,17 @@ ol.ladder > li::before {
 }
 .alt__editions li { padding: 0.25rem 0; border-bottom: 0; }
 
+/* --- the cross-catalog TBR ------------------------------------------------ */
+
+/*
+ * The one control on the book page whose list lives in another catalog. It sits
+ * inside "Your reading", under the read-state chips, so it needs separating
+ * from them and nothing more — the chip itself already wears the app's button
+ * styling, and a box of its own would make one fact look like two panels.
+ */
+.tbr { margin-top: 0.6rem; }
+.tbr p { margin: 0.35rem 0 0; }
+
 /* --- wishlist ------------------------------------------------------------ */
 
 .wish { display: flex; align-items: flex-start; gap: 0.5rem; padding: 0.4rem 0; }
@@ -1212,6 +1223,10 @@ ol.ladder > li::before {
   box-shadow: none;
   color: inherit;
   text-align: left;
+  /* ⚠️ Not decoration: the TBR list uses this same row as a real ANCHOR (a
+     link to the book, or out to the audiobook site), and an underlined row
+     would look like a different component from the wishlist's button. */
+  text-decoration: none;
 }
 .wish__book:hover { background: var(--lc-tint); }
 .wish__book .row-open__text { display: flex; flex-direction: column; }

@@ -29,6 +29,7 @@ import { researchRoutes } from './routes/research.js';
 import { reviewRoutes } from './routes/reviews.js';
 import { scanCors, scanJobRoutes } from './routes/scan-jobs.js';
 import { seriesRoutes } from './routes/series.js';
+import { tbrRoutes } from './routes/tbr.js';
 import { universeRoutes } from './routes/universes.js';
 import { userRoutes } from './routes/users.js';
 import { watchRoutes } from './routes/watches.js';
@@ -133,6 +134,10 @@ app.route('/api/isbn', isbnRoutes);
 app.route('/api/enrich', enrichRoutes);
 app.route('/api/research', researchRoutes);
 app.route('/api/reviews', reviewRoutes);
+// The cross-catalog to-be-read list. Beside /api/reviews rather than under it:
+// both are keys into the SAME Firebase project's collections and neither owns
+// the other — an intention is not a kind of review. See routes/tbr.ts.
+app.route('/api/tbr', tbrRoutes);
 // The intake queue: barcode sweeps and shelf photographs, both persisted so a
 // locked phone does not lose the sweep. See routes/scan-jobs.ts.
 app.route('/api/scan-jobs', scanJobRoutes);

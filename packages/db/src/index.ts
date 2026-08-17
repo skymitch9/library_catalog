@@ -10,6 +10,7 @@ export * from './index-projection.js';
 export * from './works.js';
 export * from './editions.js';
 export * from './reading.js';
+export * from './tbr.js';
 export * from './relations.js';
 export * from './series.js';
 export * from './scanjobs.js';

@@ -83,6 +83,7 @@ import { researchRoutes } from './research.js';
 import { reviewRoutes } from './reviews.js';
 import { scanJobRoutes } from './scan-jobs.js';
 import { seriesRoutes } from './series.js';
+import { tbrRoutes } from './tbr.js';
 import { universeRoutes } from './universes.js';
 import { userRoutes } from './users.js';
 import { watchRoutes } from './watches.js';
@@ -111,6 +112,7 @@ const MOUNTS: [string, string, Hono<AppBindings>][] = [
   ['/api/enrich', 'enrichRoutes', enrichRoutes],
   ['/api/research', 'researchRoutes', researchRoutes],
   ['/api/reviews', 'reviewRoutes', reviewRoutes],
+  ['/api/tbr', 'tbrRoutes', tbrRoutes],
   ['/api/scan-jobs', 'scanJobRoutes', scanJobRoutes],
 ];
 

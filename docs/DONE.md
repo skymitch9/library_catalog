@@ -17,6 +17,176 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ Cross-catalog TBR — one intention per person per work, in the store the audiobook site already had (2026-08-17)
+
+**What shipped** (core `packages/core/src/tbr.ts`, db `packages/db/src/tbr.ts`,
+worker `apps/worker/src/routes/tbr.ts`, web `lib/tbr.ts` + `components/Tbr.tsx`
++ `pages/TbrPage.tsx`, design recorded in [`info/tbr.md`](info/tbr.md)):
+
+- ⚠️ **The store already existed, and that is the whole reason this was small.**
+  The design below assumed a TBR had to be *built* and weighed a new per-user
+  Firestore collection with new per-user rules. It did not need one:
+  `audiobook_catalog/app/web/templates/index.html` has had a per-person TBR
+  button for a long time, writing `readingLists/{displayNameLower}_{bookId}`
+  with `{ displayName, bookId, bookTitle, bookCover, status: 'tbr', addedAt }`,
+  and `site/community.html` counts those documents per person. So this catalog
+  did what it did for reviews: **joined that store and added fields to it**.
+  A book added on either site is one document; clearing it here turns that
+  site's `✓ To Be Read` button back into `📋 Add to TBR`.
+- ⚠️ **No `firestore.rules` change, deliberately — and the brief authorised
+  one.** `validReadingList()` asserts three strings and ignores unknown fields,
+  exactly as `validReview()` does, so `workKey`, `email` and `source` ride along
+  untouched. Tightening the collection would have been worse than nothing: that
+  file's own header says reviews, club content, **TBR**, progress and profiles
+  "are MEANT to be writable by anyone who can load the page — including legacy
+  v1 sessions… Do not 'fix' that openness", so a per-user rule from this repo
+  would have broken the audiobook site's own button for a legacy session.
+  **Nothing in `audiobook_catalog` was touched.**
+- ⚠️ **The document id is the REVERSE of a review's** — `${nameLower}_${bookId}`
+  here against `${bookId}_${nameLower}` there — because that is what each site
+  already wrote. Both are ported verbatim into `@lc/core`, and
+  `packages/core/test/tbr.test.ts` asserts they differ, so harmonising them
+  fails a test instead of filing a second document beside somebody's real entry.
+- **Two keys, for the reason reviews carry two.** An entry this catalog writes
+  carries `bookId` (theirs, title-only, and the document id) *and* `workKey`
+  (`normaliseTitle(title)|normaliseTitle(author)`, the key that spans).
+  `POST /api/tbr/resolve` matches on `workKey` and falls back to
+  `bookIdFromTitle(work.title)` — the same weak fallback `fetchReviews` uses.
+  An entry written on the audiobook site has only a `bookId` and usually matches
+  nothing here; the My TBR screen shows those in a second group headed **Not on
+  these shelves** with a link out, because hiding them would make a
+  cross-catalog list look complete while showing a fraction of itself.
+- **The decision the design asked for, recorded in `info/tbr.md` §4: TBR is its
+  own per-person flag in the shared store, NOT a fifth `read_state`.** No
+  migration, no new column. A ladder state in `user_book` could not span (it is
+  this catalog's table, invisible to the audiobook site — the whole
+  requirement), the want→have→reading→read ladder already exists across three
+  stores under three names that are genuinely different facts (want to READ =
+  Firestore; want to OWN = `copy.status = 'wanted'`, a fact about a *copy*;
+  reading/read = `user_book`), and folding them would have to answer "does
+  wanting the hardcover of a book I have read put it back on my TBR?"
+- **Clearing, two paths, neither redundant.** The work page's control takes the
+  read state as a prop, so it clears on `'read'` however that arrived — a press
+  of the Read chip, a state set on an earlier visit, or one derived from a
+  rating. The list clears on open: `/api/tbr/resolve` reports the read state of
+  every entry and the finished ones are **deleted, not hidden**. ⚠️ Only
+  `'read'`: a `dnf` is a *more specific* truth than "done with it" (the same
+  reading `deriveReadState`'s precedence rule 5 applies) and `reference` is not
+  something anybody finishes.
+- ⚠️ **A rating written on the AUDIOBOOK site clears the intention through two
+  steps that already existed** — the collection page's sweep (`lib/read-sync.ts`
+  → `POST /api/reviews/observed`, `identity-and-reviews.md` §7.7) marks the work
+  read, and the next open of My TBR retires the entry. That is why no
+  audiobook-side code changed. The remaining gap — that site's own button stays
+  lit until the person next opens the library — is left with **an exact spec in
+  `info/tbr.md` §6**, because the button lives in a *generated* page (`site/` is
+  built from `app/web/templates/`) so shipping it needs that repo's pipeline and
+  a promote, and because dropping a book off your list the moment you rate it is
+  a product decision for the owner rather than a repair.
+- **Her instance gets it from the same bundle.** Both instances run
+  `ENVIRONMENT = "production"` and `FIREBASE_PROJECT_ID = "audiobook-catalog"`
+  (`apps/worker/wrangler.toml`), so `padhard.heygabi.ai` writes the same
+  `readingLists` collection under her own email and display name — the identity
+  model `identity-and-reviews.md` §2 settled on, unchanged.
+- **Tests:** 22 new in `packages/core/test/tbr.test.ts` (id order and the
+  reversal, the two keys, the provisional-work refusal, whose entries these are
+  including the audiobook site's email-less documents, one row per work across
+  two spellings, and exactly what clearing does and does not touch), plus the
+  three new routes wired into `capability-wiring.test.ts` and
+  `mount-order.test.ts`. Mutation-checked: reversing the id, dropping the status
+  filter and loosening the clearing rule fail 5 of them. Full suite **985
+  passing, 0 failing** (2026-08-17, `npm test`).
+- ⚠️ **NOT verified: no signed-in browser has exercised the Firestore round
+  trip.** Sign-in is a Google popup against the shared project and this build
+  could not perform one, so add / read-back / clear are untested against the
+  live collection, on both instances. `info/tbr.md` §7 lists every untested
+  claim rather than leaving it implied.
+
+**Still active, and NOT archived with this** — the "sort her books" items the
+scope-narrowing subsection below points at (remote ingestion, the library
+details sweep, adding her instance to the estate) keep their own rows in
+[`TODO.md`](TODO.md)'s status board.
+
+**The ask and its whole design discussion, moved from `TODO.md` — nothing
+summarised, nothing dropped; heading levels demoted one so the archive keeps
+one entry per `##`:**
+
+### 📖 TBR should span all catalogs, the way "read" does (owner ask 2026-08-16)
+
+> *"tbr like read should span all catalogs"*
+
+**Recorded, not started.** Sits with the two entries below it — this is the
+same question they are, arrived at from the reader's side rather than the
+architecture's.
+
+**What exists today, measured 2026-08-16:**
+
+| Concept | Where it lives | Spans catalogs? |
+|---|---|---|
+| Reviews + ratings | ONE shared Firestore store, keyed by `bookIdFromTitle` — audiobook and library both write it | ✅ yes, already |
+| "read" / reading state | `PUT /works/:id/reading` (`trackReading`), library only | ❌ library's own table |
+| **TBR** | Only inside audiobook **book clubs** — a club's Current Read and TBR list | ❌ per-club, not per-person |
+| Wishlist | Per catalog (`suggestWishlist` / `manageWishlist` in both library and games) | ❌ separate lists |
+
+So there is a precedent that already works — the shared review store proves a
+per-person fact CAN span catalogs — and TBR is the one that most obviously
+should follow it: what someone intends to read next does not care whether the
+copy is an audiobook, an ebook or a paperback.
+
+⚠️ **The design question this forces, and why it is worth answering once:**
+TBR is a **per-person, per-WORK** fact, while every catalog is organised around
+**copies**. "I want to read *Wintersteel*" is one intention, even when the
+household holds it in three formats. So a cross-catalog TBR needs the same
+identity key the reviews already use, NOT a row in each catalog — otherwise
+finishing the audiobook leaves the paperback still on the list.
+
+⚠️ **This is the same seam as the ebooks question below.** Shared-pool formats
+(audio, ebook) versus owned copies (physical, games) is the split; a spanning
+TBR is what it looks like from the reader's side. Decide them together, and
+consider whether "read", wishlist and TBR are three names for one per-person
+state machine (want → have → reading → read) rather than three features.
+
+**Games: DECIDED — NO to-play list (owner, 2026-08-16 late):** *"lets not
+make a to play list, most people except weirdos like me buy games they arent
+going to immediatly play where as books can stack up."* So TBR spans
+audiobook + ebook + physical books ONLY; games are deliberately out, and the
+reason is recorded so nobody "helpfully" adds them later: an unplayed game on
+a shelf is normal ownership, an unread book on a list is an intention. If the
+owner ever wants it, that's a NEW ask, not this feature grown sideways.
+
+#### ⚠️ SCOPE NARROWED by the owner, 2026-08-16 — read this before building anything above
+
+> *"lets more or less exclude games unless we design a feature thats worth
+> adding to it. for now my friend wants to sort her books"*
+
+Two corrections to everything written above, and the second is the important one:
+
+1. **Games are out of scope** for the federation, the cross-catalog TBR and the
+   ownership join — unless a feature turns up that is genuinely worth adding to
+   games on its own merits. Do not carry games through these designs "for
+   symmetry"; it doubles the surface for a use case nobody asked for.
+
+2. ⚠️ **The actual requirement is "she wants to sort her books."** That is not
+   the federation, not "who owns what", not a spanning TBR. Those are things
+   the OWNER finds interesting about the estate; they are not what the person
+   with the books needs. **Build the small thing first.**
+
+**What "sort her books" actually needs, in order:**
+
+| Need | Status today |
+|---|---|
+| Get her books INTO a catalog without a terminal | Scanning exists and is field-proven; the remote/non-technical ingest story is the real gap |
+| Details filled in without her chasing them | The hourly auto-sweep landed for games 2026-08-16; **library is the queued twin and is what she actually needs** |
+| Browse/sort by series, author, what's missing | Already the library app's strongest feature — series ladders, gaps, sorting, filters |
+
+So most of what she needs **already exists**; the missing piece is ingestion for
+someone remote and non-technical, plus the library details sweep.
+
+⚠️ **Do NOT start with the shared index join.** "See who owns what" is a
+SECOND-phase want, and it is cheap to add later precisely because a separate
+instance is already an index source. Building the join first would mean
+designing a federation for a catalog that does not yet have any books in it.
+
 ## ✅ Donor fuzzy-match backstop — the judged rung between the donor and the web (2026-08-17)
 
 **The ask, moved whole from `TODO.md`:**

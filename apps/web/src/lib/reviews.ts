@@ -87,6 +87,29 @@ export async function fetchMyReviews(
   collectionName: string,
   me: { email?: string | null; reviewName?: string | null },
 ): Promise<Review[]> {
+  return (await fetchMineFrom(collectionName, me)).map((d) => d.data as unknown as Review);
+}
+
+/**
+ * The two-query dance above, over any collection keyed the way the audiobook
+ * site keys things — and keeping the document ids.
+ *
+ * ⚠️ **One implementation, shared with the TBR list** (`lib/tbr.ts`). Both
+ * collections have exactly the same identity problem: `email` is the join this
+ * project settled on and the audiobook site writes none, so `displayName` is
+ * the only key that reaches what it wrote. A second copy of this pair would be
+ * a second place for the weak key to be forgotten — and the day it was, the
+ * feature would look like it worked while silently seeing nothing anybody had
+ * recorded on the other site.
+ *
+ * The ids matter for the TBR and not for reviews: clearing an intention is a
+ * `deleteDoc` against the id, so a list that dropped them could show an entry
+ * and never remove it.
+ */
+export async function fetchMineFrom(
+  collectionName: string,
+  me: { email?: string | null; reviewName?: string | null },
+): Promise<{ id: string; data: Record<string, unknown> }[]> {
   const ref = collection(firestore(), collectionName);
 
   const queries = [];
@@ -98,14 +121,14 @@ export async function fetchMyReviews(
 
   const snaps = await Promise.all(queries);
 
-  // Deduplicate on document id — somebody who has reviewed from both sites
+  // Deduplicate on document id — somebody who has written from both sites
   // matches both queries, and counting one rating twice is not harmful here but
   // is the sort of thing that makes a reported total impossible to check.
-  const seen = new Map<string, Review>();
+  const seen = new Map<string, Record<string, unknown>>();
   for (const snap of snaps) {
-    for (const d of snap.docs) seen.set(d.id, d.data() as Review);
+    for (const d of snap.docs) seen.set(d.id, d.data() as Record<string, unknown>);
   }
-  return [...seen.values()];
+  return [...seen].map(([id, data]) => ({ id, data }));
 }
 
 /**

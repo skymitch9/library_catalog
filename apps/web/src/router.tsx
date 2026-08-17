@@ -171,6 +171,13 @@ export type Route =
   // other half of the pair: this page groups, that one filters.
   | { name: 'universe'; universe: string }
   | { name: 'wishlist' }
+  // What this person means to read next, across every catalog. A screen of its
+  // own rather than a filter on the collection, and the reason is not layout:
+  // the list is NOT a subset of these shelves. It lives in the shared
+  // `readingLists` collection and most of it is audiobooks this catalog does
+  // not hold, so there is nothing for `/api/collection` to filter — see
+  // pages/TbrPage.tsx.
+  | { name: 'tbr' }
   // `?field=` narrows the worklist to one question. A query parameter and not a
   // segment, for the same reason the collection's filters are: it is what the
   // page is *showing*, not which page it is, and switching it must not put an
@@ -382,6 +389,7 @@ export function addPath(mode?: AddMode, job?: number | null): string {
 }
 
 export const scansPath = '/scans';
+export const tbrPath = '/tbr';
 /** The details queue, optionally narrowed to one question. */
 export function queuePath(field?: string | null): string {
   return field ? `/queue?field=${encodeURIComponent(field)}` : '/queue';
@@ -413,6 +421,8 @@ function parse(pathname: string, search: string): Route {
   }
 
   if (parts[0] === 'wishlist' && parts.length === 1) return { name: 'wishlist' };
+
+  if (parts[0] === 'tbr' && parts.length === 1) return { name: 'tbr' };
 
   if (parts[0] === 'queue' && parts.length === 1) {
     // Open-ended rather than checked against a list: the field set lives in
@@ -514,6 +524,7 @@ export function labelFor(path: string): string {
   if (p === '/' || p === '') return 'Collection';
   if (p === '/series') return 'Series';
   if (p === '/wishlist') return 'Wishlist';
+  if (p === '/tbr') return 'My TBR';
   if (p === '/queue') return 'What is missing';
   if (p === '/add') return 'Add books';
   if (p === '/scans') return 'Sweeps';
