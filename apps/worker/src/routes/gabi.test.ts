@@ -121,16 +121,18 @@ describe('⚠️ the per-instance posture: HER instance only, and wrangler.toml 
     );
   });
 
-  it('⚠️ the MAIN instance has it OFF — design §2, and §12 decision 8 keeps it that way', () => {
-    // "Her instance only. padhard.heygabi.ai. The main library is out of scope
-    // and stays out until this has run on hers for a while." When it does come
-    // here, the runResearch spend is the OWNER'S key rather than hers.
+  it('⚠️ the MAIN instance has it ON — owner decision 2026-08-17 superseding §12.8', () => {
+    // §12.8's v1-no held for exactly one day: the owner ordered "Add it to my
+    // catalog for my wife to use" (2026-08-17; Amber is admin here, measured),
+    // exercising his recorded "we can always change later". The spend on this
+    // instance is the OWNER'S key. This test still pins the posture BOTH ways:
+    // turning it back off is equally an owner decision, not a deploy artifact.
     const flag = tomlString(tomlTable('[vars]'), 'GABI_PANEL');
     assert.equal(
       gabiPanelEnabled(flag),
-      false,
-      `[vars] GABI_PANEL is "${flag}" — GABI just switched itself on for the main catalog. ` +
-        'That is an owner decision (design §12.8), not a deploy.',
+      true,
+      `[vars] GABI_PANEL is "${flag}" — the main catalog's panel posture changed ` +
+        'without an owner decision recorded here. The last recorded decision (2026-08-17) is ON.',
     );
   });
 

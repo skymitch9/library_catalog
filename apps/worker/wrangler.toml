@@ -130,7 +130,12 @@ DEFAULT_THEME = "apple"
 # that "is GABI on here?" has an answer in this file, not an absence — and
 # `apps/worker/src/routes/gabi.test.ts` reads BOTH values below and fails if the
 # posture ever stops matching the design.
-GABI_PANEL = "off"
+#
+# "on" since 2026-08-17 (owner: "Add it to my catalog for my wife to use") —
+# supersedes §12.8's v1-no, per his standing "we can always change later".
+# Amber is admin here (measured), so she sees the panel the moment this
+# deploys; conversations on this instance spend the OWNER's key.
+GABI_PANEL = "on"
 
 # ⚠️ Where an uploaded cover is READ from. Both this and the COVERS binding must
 # be set or the route refuses to write — storing an object and then being unable
