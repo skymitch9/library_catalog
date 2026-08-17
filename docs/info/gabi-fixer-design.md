@@ -880,9 +880,15 @@ following phase, ahead of the write phases. Two things that carry forward:
     **Samantha's first conversation needs her eyes, on her site, on her key** —
     and it is the only thing that can confirm the wording lands for the person
     it was written for.
-  - **The panel has not been seen in a browser.** Its logic is exercised by
-    tests and its loop by a live end-to-end run, but no screenshot exists and no
-    theme (`hearts`, hers) has been looked at.
+  - ✅ **The panel HAS now been seen in a browser** — `padhard.heygabi.ai`,
+    signed in, 2026-08-17. The speech-bubble toggle renders in the top bar
+    between Export and the estate-search magnifier; opening it shows the intro,
+    the three suggestion chips, the compose box, and the line that matters most
+    for phase 0: *"GABI can look things up. It cannot change anything yet —
+    edits are still made on a book's own page."* It wears her `hearts` theme and
+    lines up with `main`'s measure. ⚠️ **Looked at, not talked to** — no message
+    was sent from that browser, deliberately: the first conversation on her
+    instance spends her key and is hers to have.
   - **No conversation has ever hit the turn ceiling, the size ceiling, or a
     `pause_turn`** in production. All three are covered by tests; none has
     happened for real.
