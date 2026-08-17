@@ -1,3 +1,10 @@
+/* @jsxRuntime automatic @jsxImportSource react */
+// ⚠️ The pragma is for `npm test`, not the app build. tsx/esbuild runs the
+// test files from the repo root, where no tsconfig sets `jsx`, so without it
+// the JSX here compiles to `React.createElement` and throws "React is not
+// defined" under `apps/web/test/other-versions.test.ts`. Vite and tsc both
+// already use the automatic runtime (`jsx: react-jsx`), so this changes
+// nothing for the shipped bundle — it only makes the test runner agree.
 import type { ReactNode } from 'react';
 import type { WorkAudiobookHolding } from '../api.js';
 import { audiobookDetailUrl, resolveAudiobookCover } from '../lib/audiobook-site.js';
@@ -77,7 +84,7 @@ export function OtherVersions({
  * plain data shape (not JSX) so `buildVersionEntries` stays a pure function a
  * future version type can extend without importing React.
  */
-interface VersionEntry {
+export interface VersionEntry {
   key: string;
   /** ALWAYS present. See the component header. */
   formatLabel: string;
@@ -88,7 +95,13 @@ interface VersionEntry {
   extra: ReactNode;
 }
 
-function buildVersionEntries({
+/**
+ * Exported for two callers only: the render above, and
+ * `apps/web/test/other-versions.test.ts`, which pins the render conditions
+ * (nothing for a work with no counterpart; the format label ALWAYS present)
+ * without needing a DOM.
+ */
+export function buildVersionEntries({
   holding,
   ourSeries,
 }: {
