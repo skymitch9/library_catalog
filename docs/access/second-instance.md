@@ -118,33 +118,70 @@ right consumer, and makes the column **meaningful to switch on**; it does not
 by itself narrow who gets in. Gating on the array is a separate,
 access-REDUCING decision.
 
-**Owner/conductor step — the one thing code cannot do.** Her env needs the
-`library2` bearer under its own name:
+### ⚠️ Finishing it: PIPE FIRST, DEPLOY SECOND
 
-```
-npm run secret:friend -- ESTATE_APP_TOKEN_LIBRARY2
-# paste the SAME value the auth Worker holds as ESTATE_APP_TOKEN_LIBRARY2
-npm run secret:list:friend        # confirm the NAME is there (never the value)
-```
+**As of 2026-08-17 the code is committed and the MAIN instance is deployed;
+HER Worker is not.** That is deliberate, and the order matters:
 
-Until that lands her gate logs `estate_config_unset` and behaves as **OFF** —
-local auth only (Firebase + her own role ladder), nobody locked out, nothing
-enforced. That is the deliberate direction: a missing NAME fails inert, where a
-wrong VALUE would have failed as a 401 the gate reports as `estate_unreachable`.
+1. **Pipe her bearer** — her env needs the `library2` value under its own name:
+
+   ```
+   npm run secret:friend -- ESTATE_APP_TOKEN_LIBRARY2
+   # paste the SAME value the auth Worker holds as ESTATE_APP_TOKEN_LIBRARY2
+   npm run secret:list:friend        # confirm the NAME is there (never the value)
+   ```
+
+   Setting it is inert while the old code runs — that build never reads the
+   name — so this step changes nothing until step 2.
+
+2. **Then deploy her** — `npm run deploy:friend`, from a **clean tree**.
+
+⚠️ **Pipe-then-deploy has NO inert window. Deploy-then-pipe has one**, because
+the new code looks for a name her env does not yet hold: her gate would log
+`estate_config_unset` and behave as **OFF** — local auth only (Firebase + her
+own role ladder), nobody locked out, nothing enforced — until the secret
+landed. That inert failure is the deliberate safety property (a missing NAME
+fails inert, where a wrong VALUE fails as a 401 the gate reports as
+`estate_unreachable`), but there is no reason to spend it when the order is
+free.
+
+⚠️ **Clean tree is not optional for `deploy:friend`.** It builds
+`apps/web/dist` from the WORKING TREE and uploads that directory — so any
+concurrent agent's half-finished `apps/web/src` change ships to her site. This
+is why the F-5 pass deployed main (tree verified clean at that moment) and
+stopped: a second agent had `App.tsx` dirty. `predeploy:friend` runs
+`check-clean.mjs` and will refuse; **do not reach for
+`ALLOW_DIRTY_DEPLOY=1`** — take a `git worktree add <tmp> HEAD` checkout
+instead, or wait.
 
 **Verifying it — three levels, and only the third proves the value:**
 
 | Level | Command | Proves |
 |---|---|---|
-| Identity | `curl -s https://padhard.heygabi.ai/api/health` → `estate.app` | she asserts `library2` and names `ESTATE_APP_TOKEN_LIBRARY2` |
+| Identity | `https://padhard.heygabi.ai/api/health` → `estate.app` | she asserts `library2` and names `ESTATE_APP_TOKEN_LIBRARY2` |
 | Config | same response → `estate.configured` | both halves are populated — **not** that the value is right |
 | **Pairing** | `npm run tail:friend --workspace @lc/worker`, then a real sign-in | the line `"app":"library2"` with **`"src":"seen"`**. `"src":"none"` or `"stale_cache"` = the directory refused the bearer ⇒ wrong value, re-pipe |
+
+⚠️ **`/api/health` IS EDGE-CACHED on both custom domains — measured
+2026-08-17.** A plain fetch right after a deploy returned the PREVIOUS body
+(no `estate` block at all) while `?cb=<random>` on the same URL returned the
+new one. A post-deploy check without a cache-buster reads the old deployment
+and looks exactly like a deploy that did not land. Always append a unique
+query string, or hit the `*.workers.dev` host, which is not fronted by the
+cache.
 
 **Once the pairing is verified**, delete the stale name from her env —
 `npx wrangler secret delete ESTATE_APP_TOKEN_LIBRARY --env friend --config apps/worker/wrangler.toml`.
 Nothing reads it after this change, and a live credential nothing consumes is
 one more thing a rotation will forget. ⚠️ Verify **first**: deleting it is the
 only step here that is not free to get wrong.
+
+**Rollback**, if her deploy misbehaves: `npx wrangler rollback --env friend
+--config apps/worker/wrangler.toml` (list versions first with
+`npx wrangler deployments list --env friend --config apps/worker/wrangler.toml`).
+The previous version reads `ESTATE_APP_TOKEN_LIBRARY`, which is still set on
+her env — so a rollback restores her exact prior behaviour, which is the second
+reason not to delete that secret until the new pairing is proven.
 
 `ANTHROPIC_API_KEY` history, all within 2026-08-16 late (three states in one
 evening; the LAST one is current): (1) design said leave unset, scanPhoto
