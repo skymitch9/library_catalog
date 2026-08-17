@@ -152,3 +152,59 @@ Silence, an empty tail, or the UV teardown assertion are all FAILURE shapes
 on this machine (see the wrangler-exit-code gotcha above). Do not run the
 next step — least of all a deploy — on an unread migration result.
 
+
+---
+
+## `String(err)` is `[object Object]` — and it gets PERSISTED
+
+**Found 2026-08-17.** Four places in the Worker wrote the idiom
+`err instanceof Error ? err.message : String(err)`. The second half is the
+trap: the Anthropic SDK throws plain objects (`{ status, error: { message } }`),
+a parsed JSON error body is a plain object, and `String({})` is the literal
+string `[object Object]`.
+
+⚠️ **The reason it is worse here than in most codebases: two of those four
+sites WRITE THE STRING TO D1** — `scan_job.error` and
+`research_run.error_message` — and both are read back on screen days later.
+The real cause is unrecoverable from that row.
+
+The fix is `apps/worker/src/lib/describe-error.ts`, now the one implementation:
+message-bearing fields, the SDK envelope, nested `cause`, arrays of issues,
+custom `toString`, then JSON — never `[object Object]`, never a bare status
+number, never empty. `describe-error.test.ts` pins every shape.
+
+⚠️ **There are TWO `describeError`s and they are NOT interchangeable.**
+`apps/web/src/lib/errors.ts` decodes an `ApiError` *status* into role-aware
+words for a screen; the Worker's decodes a *thrown value* for a log line, a D1
+row or a `detail` field. Merging them would put role vocabulary into messages
+where no role was involved — which is the next gotcha.
+
+---
+
+## A 503 that reads like a permission problem
+
+**Found 2026-08-17.** The scan endpoints answer **503** when
+`ANTHROPIC_API_KEY` is missing or rejected, and the estate rule is explicit:
+*a network or server failure is NOT a permission failure — mislabelling an
+outage sends people asking for access they already have.*
+
+Both halves were wrong. Server-side the message was written for an operator
+("Set ANTHROPIC_API_KEY in .dev.vars"), which tells the person holding the
+phone nothing about whether it is their fault. Client-side is worse and is
+**still open**: `describeError` in `apps/web/src/lib/errors.ts` maps *every*
+503 to `"Couldn't check your access right now."` — wording that belongs to
+`estate_unreachable` alone — and it ignores the body, so a scan outage cannot
+currently say anything else.
+
+Worker side is fixed: `SCAN_UNAVAILABLE_MESSAGE` / `SCAN_KEY_REJECTED_MESSAGE`
+in `lib/vision.ts` each say what happened, what it needs (an *operator* sets
+the key), and that it is not about the person asking; the route answers
+`error: 'scan_unavailable'`, distinct from the 403 `forbidden` that
+`requireCapability('scanPhoto')` returns, so the two are told apart by code and
+not by status alone.
+
+⚠️ **Keep the four causes four**: not signed in / awaiting approval /
+insufficient role / service unavailable. They have four different fixes, so
+they need four different sentences. `lib/vision.test.ts` and the
+`scan-jobs.test.ts` block assert *both* sides — the message must say the
+operator half AND must not contain the vocabulary the other three own.

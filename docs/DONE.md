@@ -17,6 +17,55 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ Two worded-error fixes in the Worker (2026-08-17)
+
+⚠️ **Neither item was ever in `TODO.md`** — they were identified in an earlier
+session and carried in chat, which is exactly what the "every ask goes on the
+todo doc" rule exists to stop. Recorded here at completion rather than moved,
+and the half that is NOT done was written into `TODO.md` as active work.
+
+**Commits `5a9c007` (code + tests) and `d028f11` (deploy log).**
+Deployed both instances from `5a9c007`'s tree:
+
+| instance | worker | version id | host |
+|---|---|---|---|
+| main | `library-catalog` | `5eb17ade-1d75-446b-bcec-03acca94cfe4` | library.heygabi.ai |
+| friend | `library-catalog-friend` | `681e9532-14b2-4cd9-b1d5-5beb1f6e3fdf` | padhard.heygabi.ai |
+
+Health 200 on both after deploy (06:28Z).
+
+**1. The scan 503 stopped wearing a permission's clothes.** Before, the
+missing-key message was written for an operator alone — *"No Anthropic API key
+is configured, so photos cannot be read. Set ANTHROPIC_API_KEY in .dev.vars and
+run `npm run secrets:push`."* — and the rejected-key one led with *"The
+Anthropic API key was rejected."* After, `SCAN_UNAVAILABLE_MESSAGE` and
+`SCAN_KEY_REJECTED_MESSAGE` (`lib/vision.ts`, the one place either is written)
+each say three things: **what happened** (photo scanning is unavailable),
+**what it needs** (an *operator* sets the key), and **that it is not about the
+person asking** ("not a permission problem — your account is fine"). The route
+answers `error: 'scan_unavailable'`, distinct from the 403 `forbidden` that
+`requireCapability('scanPhoto')` returns, so the two are separable by code and
+not only by status. The key check also moved **ahead of `createScanJob`**:
+nothing left the Worker, so no failed-job row is written for a photo that was
+never sent.
+
+**2. `describeError` — `String(err)` is `[object Object]`.** New
+`apps/worker/src/lib/describe-error.ts` is the one implementation, wired into
+`vision.ts`, `scan-jobs.ts` (×3), `research-run.ts` and `catalog.ts`. The last
+of those is the sharpest: the string is *matched* against
+`/UNIQUE constraint failed/`, so a non-`Error` throw turned an ordinary
+duplicate ISBN into a raw 500. Two of the sites persist the string
+(`scan_job.error`, `research_run.error_message`), which is why the defect
+outlived the session that could have explained it.
+
+**Tests +20, no framework; suite 902/902, typecheck clean.** The wording tests
+are two-sided and were **proven able to fail**: reverting the message to *"You
+do not have permission to scan photos right now"* fails 4 of them.
+
+Reference extracted to [`info/gotchas.md`](info/gotchas.md) — two entries,
+findable by symptom (`[object Object]`, and a 503 that reads like a permission
+problem).
+
 ## ✅ Ebook bookshelf PROMOTED to prod (2026-08-16 late)
 
 Owner approved (*"I like the ebook site, promote it"*): promote.yml run
