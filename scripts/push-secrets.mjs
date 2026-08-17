@@ -33,9 +33,23 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
  * `.dev.vars.friend` — wrangler's own per-environment convention, so
  * `wrangler dev --env friend` would read the same file — and pushes with
  * `--env friend`. No flag = the main instance, `.dev.vars`, unchanged.
- * ⚠️ Two files on purpose: the instances hold DIFFERENT key material (hers
- * deliberately has no ANTHROPIC_API_KEY, for one), and one shared file would
- * make pushing the owner's keys to her Worker a default instead of a choice.
+ * ⚠️ Two files on purpose: the instances hold DIFFERENT key material, and one
+ * shared file would make pushing the owner's keys to her Worker a default
+ * instead of a choice. (It once said "hers deliberately has no
+ * ANTHROPIC_API_KEY" — stale since 2026-08-16 late, when she got her own; the
+ * two-file reason survives the correction unchanged.)
+ *
+ * ⚠️ **AND `.dev.vars.friend` DOES NOT EXIST, ON PURPOSE** (estate credentials
+ * catalog F-6). Her env has never been push-synced: every secret on it was
+ * piped one at a time — `npm run secret:friend -- NAME`, or the drop-box
+ * pattern (a named line in the MAIN `.dev.vars`, piped, then blanked) for the
+ * ones that must never sit in an allowlist. So `--env friend` here is a
+ * command with no source file, and the failure below says that in words
+ * rather than telling you to copy an example that would create a second,
+ * competing home for her key material. If you ever DO want push-sync for her,
+ * that is a deliberate custody change (§2 of the credentials catalog: write
+ * down which of read-access / redeploy-behaviour / rotation-cost you are
+ * changing), not a missing file to fill in.
  */
 const envArgIdx = process.argv.findIndex((a) => a === '--env' || a.startsWith('--env='));
 const wranglerEnv =
@@ -83,7 +97,17 @@ const LOCAL_ONLY = {
   DEV_NAME: 'local auth bypass only',
   ESTATE_CHECK: 'set in wrangler.toml for production (off until the dispatcher flips it)',
   ESTATE_AUTH_URL: 'set in wrangler.toml for production',
+  ESTATE_APP: 'set in wrangler.toml per env — the instance identity is config of record, not a secret',
   INDEX_URL: 'set in wrangler.toml [vars] for production (commented until the index deploy step)',
+  // The friend instance's estate bearer (added with the F-5 fix, 2026-08-17).
+  // Named here rather than in PRODUCTION_SECRETS on purpose: THIS FILE PUSHES
+  // THE MAIN INSTANCE, whose ESTATE_APP is `library` — it would never read a
+  // library2 token, and pushing it there would put a live credential somewhere
+  // nothing consumes it. Her env is not push-synced at all (see the FRIEND
+  // note above the .dev.vars read); it is set one value at a time with
+  // `npm run secret:friend -- ESTATE_APP_TOKEN_LIBRARY2`.
+  ESTATE_APP_TOKEN_LIBRARY2:
+    "the FRIEND instance's estate bearer — set with `npm run secret:friend -- ESTATE_APP_TOKEN_LIBRARY2`, never pushed from here",
 };
 
 function parseDevVars(text) {
@@ -110,6 +134,34 @@ let raw;
 try {
   raw = readFileSync(DEV_VARS, 'utf8');
 } catch {
+  if (wranglerEnv === 'friend') {
+    // The honest answer, not "file not found". There is no .dev.vars.friend
+    // and there is not meant to be one — see the FRIEND note in the header.
+    // Telling someone to copy the example here would hand them a second home
+    // for her key material and a rotation path that pushes the OWNER'S keys
+    // onto HER Worker by default.
+    console.error('`secrets:push --env friend` has no source file, and that is by design.');
+    console.error('');
+    console.error(`  looked for:  ${DEV_VARS}`);
+    console.error('');
+    console.error("The friend instance's secrets are NOT push-synced. Each one was piped");
+    console.error('individually and deliberately:');
+    console.error('');
+    console.error('  one secret          npm run secret:friend -- NAME      (prompts for the value)');
+    console.error('  confirm it landed   npm run secret:list:friend         (names only, never values)');
+    console.error('');
+    console.error('Drop-box keys (a named line in the MAIN apps/worker/.dev.vars, piped to her');
+    console.error('env, then BLANKED) exist so they can never reach an allowlist by accident —');
+    console.error('ANTHROPIC_API_KEY_FRIEND_SAM is the one in use. Do not rename them.');
+    console.error('');
+    console.error('Her estate bearer is ESTATE_APP_TOKEN_LIBRARY2, not _LIBRARY: her wrangler');
+    console.error('env declares ESTATE_APP = "library2" and the gate reads the matching name.');
+    console.error('');
+    console.error('Runbook: docs/access/second-instance.md ("Secrets — names only").');
+    console.error('Creating .dev.vars.friend would be a custody change, not a fix — read §2 of');
+    console.error('the estate credentials catalog before deciding to make one.');
+    process.exit(1);
+  }
   console.error(`No .dev.vars at ${DEV_VARS}. Nothing to push.`);
   console.error('Copy apps/worker/.dev.vars.example and fill it in.');
   process.exit(1);

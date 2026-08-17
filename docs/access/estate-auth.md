@@ -81,19 +81,42 @@ recovered; the other two levers are the Cloudflare D1 console (edit
 
 ## Secrets — names only; where each side holds them
 
-⚠️ **Values live in the session scratchpad `estate-app-tokens.json`
-(LOCAL ONLY, this machine, outside every repo). Never paste a value into any
-file, message or log.** All names below verified set in production via
-`wrangler secret list`, 2026-08-14.
+⚠️ **Values live ONLY in Cloudflare Worker secrets, which are write-only.**
+Never paste a value into any file, message or log.
+
+> **Corrected 2026-08-17 (F-7).** This paragraph used to say the values lived
+> in a session scratchpad `estate-app-tokens.json` on this machine. **That file
+> does not exist** (searched 2026-08-17) and no readable copy of any of these
+> values exists anywhere. The practical consequence is not data loss — it is
+> that "look up the value" is never the move. **A token that must be known is a
+> token that must be RE-MINTED and set on both holders in one sitting** (§6 of
+> `audiobook_catalog/docs/access/CREDENTIALS.md`, the LOCAL-ONLY catalog that
+> maps every pairing).
+
+Names verified set in production via `wrangler secret list` — the first three
+on 2026-08-14, `_AUDIOBOOK` and `_LIBRARY2` re-verified 2026-08-17.
 
 | Secret | Auth Worker holds | Consumer holds |
 |---|---|---|
-| `ESTATE_APP_TOKEN_LIBRARY` | ✅ (`wrangler secret put`, from `apps/auth-worker/`) | ✅ library Worker, same name — `.dev.vars` + `npm run secrets:push` |
+| `ESTATE_APP_TOKEN_LIBRARY` | ✅ (`wrangler secret put`, from `apps/auth-worker/`) | ✅ library Worker **main env**, same name — `.dev.vars` + `npm run secrets:push` |
 | `ESTATE_APP_TOKEN_GAMES` | ✅ | ✅ games Worker, same name — `npm run secret ESTATE_APP_TOKEN_GAMES` |
 | `ESTATE_APP_TOKEN_INDEX` | ✅ | ✅ index Worker, same name |
+| `ESTATE_APP_TOKEN_AUDIOBOOK` | ✅ | ✅ `catalog-platform/apps/audiobook-worker`, same name |
+| `ESTATE_APP_TOKEN_LIBRARY2` | ✅ (since 2026-08-16) | ⚠️ library Worker **`--env friend`**, same name — see below |
 
 One value per pair — mint once, set on both sides. A leaked token can probe
 membership and spray `pending` rows; rotate that one secret on both sides.
+
+⚠️ **`_LIBRARY2` was an ORPHAN until 2026-08-17** (credentials catalog F-5):
+the auth Worker held it, but `packages/estate-auth/src/gate.ts` hard-coded
+`app: 'library'` and read `ESTATE_APP_TOKEN_LIBRARY` on **both** wrangler
+environments, so the friend instance presented the main library's identity and
+nothing on the estate ever asserted `library2`. The identity is now
+per-instance config — `ESTATE_APP` in `wrangler.toml`, `"library"` at top level
+and `"library2"` under `[env.friend.vars]` — and the app id selects the secret
+NAME, so the estate's same-name-both-sides rule now holds for the second
+instance too. Her env therefore needs `ESTATE_APP_TOKEN_LIBRARY2`, not
+`_LIBRARY`; see `second-instance.md` for the pipe-and-verify runbook.
 
 ## The seed
 

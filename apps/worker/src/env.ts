@@ -202,6 +202,22 @@ export interface Env {
   ESTATE_DEFAULT_ROLE?: string;
 
   /**
+   * WHICH estate consumer this instance is: `library` (main) or `library2`
+   * (the friend instance). Set in `wrangler.toml` per env — posture of record,
+   * the `DEFAULT_THEME`/`GABI_PANEL` idiom — and read by `resolveEstateApp` in
+   * packages/estate-auth/src/gate.ts, which also uses it to pick WHICH of the
+   * two bearer secrets below to present.
+   *
+   * ⚠️ It was a hard-coded `'library'` in the gate until 2026-08-17, so the
+   * friend instance presented the main library's identity and
+   * `ESTATE_APP_TOKEN_LIBRARY2` on the auth Worker was an orphan (estate
+   * credentials catalog F-5). ⚠️ Unset means `library`; anything else
+   * unrecognised turns the gate OFF loudly rather than falling back to
+   * `library` — the fallback would be the bug returning.
+   */
+  ESTATE_APP?: string;
+
+  /**
    * This app's own bearer for `POST /api/estate/seen` (design §4.4 — the check
    * carries a per-app token, never the user's). Secret, set with
    * `wrangler secret put ESTATE_APP_TOKEN_LIBRARY` (or `.dev.vars` +
@@ -209,8 +225,19 @@ export interface Env {
    * the same name. ⚠️ Unset means the estate check is OFF (logged as
    * `estate_config_unset`), never half-on — the code deploys before the
    * secret exists, and that ordering must be safe.
+   *
+   * ⚠️ Read ONLY when `ESTATE_APP` is `library` — the main instance.
    */
   ESTATE_APP_TOKEN_LIBRARY?: string;
+
+  /**
+   * The SECOND instance's bearer, read only when `ESTATE_APP` is `library2`.
+   * Same pairing rule, same name on the auth Worker (which has held it since
+   * 2026-08-16). Set with `npm run secret:friend -- ESTATE_APP_TOKEN_LIBRARY2`.
+   * ⚠️ Unset on her env means her gate logs `estate_config_unset` and behaves
+   * as OFF — local auth only, nobody locked out, nothing enforced.
+   */
+  ESTATE_APP_TOKEN_LIBRARY2?: string;
 
   /**
    * The GABI chat panel's per-instance posture — `on` on hers, absent on ours.

@@ -1,8 +1,11 @@
 # Second Library Instance (friend) — Access Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED — no secret values here.
-> Last verified: **2026-08-16** (built and deployed that day; hostname settled
-> to `padhard.heygabi.ai` and the donor-first sweep added the same day).
+> Last verified: **2026-08-17** (estate credentials catalog findings F-5, F-6
+> and F-8 applied: her estate identity is now `library2`, the friend env is
+> documented as never push-synced, and the "no Anthropic key / donor-only"
+> claims are corrected). Built and deployed 2026-08-16, when the hostname
+> settled to `padhard.heygabi.ai` and the donor-first sweep landed.
 > Design: `catalog-platform/docs/info/friend-ingest-design.md` (read-only).
 
 The friend's catalog: **the same Worker code, its own data**. One repo, one
@@ -18,7 +21,8 @@ build, two wrangler targets. Everything instance-specific lives in
 | workers.dev | `library-catalog-friend.bgc-worker.workers.dev` | Works regardless of the custom domain |
 | D1 | `library-catalog-2nd` | id `9dcf4af9-d1a2-4de4-adcf-ac7eea77f1c8`, WNAM, created 2026-08-16. Identity-neutral name on purpose |
 | R2 covers | `library-2nd-covers` | Public dev URL enabled: `https://pub-6521c378bf4b4ac3b17d5ac898832819.r2.dev` = her `COVERS_BASE_URL`. r2.dev is rate-limited/uncacheable — swap for a bucket custom domain + 1-year Cache Rule when her hostname settles (edit one var, redeploy) |
-| Estate | `ESTATE_CHECK = "enforce"` (same as main) | ⚠️ Inert until `ESTATE_APP_TOKEN_LIBRARY` is set on HER env — gate logs `estate_config_unset`, behaves as off, new sign-ins land `pending` |
+| Estate | `ESTATE_CHECK = "enforce"` (same as main) | ⚠️ Inert until `ESTATE_APP_TOKEN_LIBRARY2` is set on HER env — gate logs `estate_config_unset`, behaves as off, new sign-ins land `pending`. **Not `_LIBRARY` — the name changed 2026-08-17, see the estate-identity section below** |
+| Estate identity | `ESTATE_APP = "library2"` in `[env.friend.vars]` | ⚠️ **She is her own estate consumer** — one of the five in the auth Worker's `CONSUMER_APPS`, paired with the `vis_library2` column. Fixed 2026-08-17 (credentials catalog F-5): the app id was hard-coded `'library'` in `gate.ts`, so this Worker asserted the MAIN library's identity. Full section below |
 | Default role | `member` (posture default) | The flip to `moderator` is ONE line in `[env.friend.vars]`: `ESTATE_DEFAULT_ROLE = "moderator"` — a PAUSED owner decision, access-increasing, never a side effect. Read by `resolveDefaultRole` in `packages/estate-auth/src/gate.ts`; only member/contributor/moderator accepted, garbage falls back to member and flags itself in the tail line |
 | 🤖 GABI (conversational fixer) | `GABI_PANEL = "on"` in `[env.friend.vars]` — **HER INSTANCE ONLY**; the main one is `"off"` | ⚠️ **PHASE 0 IS READ-ONLY.** GABI can look things up (find a book, read one, list gaps, list recent changes) and can change NOTHING; the allowlist is `@lc/core`'s `GABI_TOOL_NAMES` and a test fails the build if a write tool is added. ⚠️ The var gates the ROUTE as well as the panel — `POST /api/gabi/turn` answers a worded **404** where it is off (disabled-not-open, the `EBOOK_INGEST_TOKEN` idiom), never 403. Unset = off. Spends HER `ANTHROPIC_API_KEY`, ~1.4–1.8¢ per short conversation (measured 2026-08-17). Design: [`../info/gabi-fixer-design.md`](../info/gabi-fixer-design.md) |
 | Her role, for GABI | **`admin`** — MEASURED 2026-08-17 (`SELECT role FROM app_user` on `library-catalog-2nd`, id 3, approved) | `admin` holds `runResearch`, which is what the turn route gates on, so the panel is visible to her. ⚠️ It is a grant to HER ACCOUNT, not a property of the instance — `ESTATE_DEFAULT_ROLE` is still unset, so anyone else signing in there lands `member` and sees no panel at all |
@@ -32,7 +36,7 @@ build, two wrangler targets. Everything instance-specific lives in
 | List her migrations | `npx wrangler d1 migrations list library-catalog-2nd --remote --env friend --config apps/worker/wrangler.toml` |
 | One secret | `npm run secret:friend -- NAME` |
 | List her secrets | `npm run secret:list:friend` |
-| Bulk secrets | put values in `apps/worker/.dev.vars.friend` (gitignored, wrangler's own per-env convention), then `npm run secrets:push:friend` |
+| Bulk secrets | ⚠️ **There is no bulk path for her, on purpose.** `npm run secrets:push:friend` looks for `apps/worker/.dev.vars.friend`, which **does not exist and is not meant to** (credentials catalog F-6). Since 2026-08-17 the command fails with a worded explanation and the one-at-a-time commands instead of "file not found" — read it, do not create the file |
 | Tail her logs | `npm run tail:friend --workspace @lc/worker` (or `npx wrangler tail --env friend --config apps/worker/wrangler.toml`) |
 | Query her D1 | `npx wrangler d1 execute library-catalog-2nd --remote --env friend --config apps/worker/wrangler.toml --command "..."` |
 
@@ -62,13 +66,85 @@ vice versa.
 
 ## Secrets — names only, and who can set them
 
-Her env holds **three secrets**: `DONOR_TOKEN` (set 2026-08-16 — see the donor
-section above; the main instance holds the same value under the same name),
-`ESTATE_APP_TOKEN_LIBRARY` (set 2026-08-16, minted fresh for her as her own
-estate consumer), and `ANTHROPIC_API_KEY` — **HER OWN key** (see below).
+Her env holds **four secrets** (names read from `npm run secret:list:friend`,
+2026-08-17): `DONOR_TOKEN` (set 2026-08-16 — see the donor section below; the
+main instance holds the same value under the same name), `ANTHROPIC_API_KEY` —
+**HER OWN key** (see below), `GOOGLE_BOOKS_API_KEY`, and
+`ESTATE_APP_TOKEN_LIBRARY` — ⚠️ **the last of which is the WRONG NAME as of
+2026-08-17 and is now dead weight**; see the estate-identity section below.
 Deliberately never set: `INDEX_PUSH_TOKEN` (federation is phase 2 — push code
 logs one line, inert), `EBOOK_INGEST_TOKEN` (her ebook surface is a 404 and
 stays one), `AUDIOBOOK_MAPPING_TOKEN` (no audiobook pipeline).
+
+⚠️ **Her secrets are NOT push-synced and never have been** (credentials catalog
+F-6). There is no `.dev.vars.friend`; every value on her env was piped
+individually with `npm run secret:friend -- NAME`, or through a **drop-box
+line** in the MAIN `apps/worker/.dev.vars` (paste → pipe → blank the line), a
+pattern used for values that must never sit in a push allowlist. Creating
+`.dev.vars.friend` would be a deliberate custody change — a second home for her
+key material, and a rotation path whose default is pushing the OWNER'S keys
+onto HER Worker — not a missing file to fill in.
+
+## ⚠️ Her estate identity: `library2`, not `library` (fixed 2026-08-17)
+
+**What was wrong.** `packages/estate-auth/src/gate.ts` declared
+`app: 'library'` in the posture and read a hard-coded `ESTATE_APP_TOKEN_LIBRARY`
+— on **both** wrangler environments. One build, two Workers, one identity. So:
+
+- this Worker knocked on `auth.heygabi.ai` wearing the **main library's** badge;
+- `ESTATE_APP_TOKEN_LIBRARY2`, held on the auth Worker since 2026-08-16, was an
+  **orphan** — a secret nothing in the estate ever presented;
+- `vis_library2` (auth-worker migration 0007, `DEFAULT 0`, written expressly so
+  that "another household's shelf" is granted **by hand**) described a door
+  nobody knocked on.
+
+Nothing failed, nothing logged wrong, no request 500'd. A hard-coded identity
+is indistinguishable from a correct one until you ask which instance is
+speaking — which is why the fix ships with an outside-observable signal.
+
+**What it is now.** The identity is per-instance config in `wrangler.toml`:
+`ESTATE_APP = "library"` at top level, `ESTATE_APP = "library2"` under
+`[env.friend.vars]`. The app id also selects the **secret name** (`library` →
+`ESTATE_APP_TOKEN_LIBRARY`, `library2` → `ESTATE_APP_TOKEN_LIBRARY2`), so the
+estate's *one value, two holders, same name both sides* rule holds here too.
+`packages/estate-auth/test/instance-estate-app.test.ts` fails on every way this
+can regress, including re-hard-coding either half.
+
+**⚠️ What this fix does NOT do.** It does not make `vis_library2` a gate. The
+library gate refuses on estate `status` only (revoked / unreachable) — the
+visibility array is cached and logged, never enforced, on either instance. So
+asserting `library2` makes the directory *answer, attribute and log* for the
+right consumer, and makes the column **meaningful to switch on**; it does not
+by itself narrow who gets in. Gating on the array is a separate,
+access-REDUCING decision.
+
+**Owner/conductor step — the one thing code cannot do.** Her env needs the
+`library2` bearer under its own name:
+
+```
+npm run secret:friend -- ESTATE_APP_TOKEN_LIBRARY2
+# paste the SAME value the auth Worker holds as ESTATE_APP_TOKEN_LIBRARY2
+npm run secret:list:friend        # confirm the NAME is there (never the value)
+```
+
+Until that lands her gate logs `estate_config_unset` and behaves as **OFF** —
+local auth only (Firebase + her own role ladder), nobody locked out, nothing
+enforced. That is the deliberate direction: a missing NAME fails inert, where a
+wrong VALUE would have failed as a 401 the gate reports as `estate_unreachable`.
+
+**Verifying it — three levels, and only the third proves the value:**
+
+| Level | Command | Proves |
+|---|---|---|
+| Identity | `curl -s https://padhard.heygabi.ai/api/health` → `estate.app` | she asserts `library2` and names `ESTATE_APP_TOKEN_LIBRARY2` |
+| Config | same response → `estate.configured` | both halves are populated — **not** that the value is right |
+| **Pairing** | `npm run tail:friend --workspace @lc/worker`, then a real sign-in | the line `"app":"library2"` with **`"src":"seen"`**. `"src":"none"` or `"stale_cache"` = the directory refused the bearer ⇒ wrong value, re-pipe |
+
+**Once the pairing is verified**, delete the stale name from her env —
+`npx wrangler secret delete ESTATE_APP_TOKEN_LIBRARY --env friend --config apps/worker/wrangler.toml`.
+Nothing reads it after this change, and a live credential nothing consumes is
+one more thing a rotation will forget. ⚠️ Verify **first**: deleting it is the
+only step here that is not free to get wrong.
 
 `ANTHROPIC_API_KEY` history, all within 2026-08-16 late (three states in one
 evening; the LAST one is current): (1) design said leave unset, scanPhoto
@@ -88,11 +164,15 @@ deploy was needed at any step.
 Owner/conductor steps (values unreadable from the main Worker, so they cannot
 be copied by an agent):
 
-1. `ESTATE_APP_TOKEN_LIBRARY` on her env — design §6.7 says **mint a NEW
+1. `ESTATE_APP_TOKEN_LIBRARY2` on her env — design §6.7 says **mint a NEW
    token** for her (she is her own estate consumer, paired with the estate's
    4th visibility column, which is the auth-worker build); the auth Worker
-   must hold the matching value. Until both sides exist, her estate check is
-   off and sign-ins sit `pending` for manual approval on her People page.
+   must hold the matching value under the **same name**, and has since
+   2026-08-16. Until both sides exist, her estate check is off and sign-ins sit
+   `pending` for manual approval on her People page. ⚠️ **The name is `_LIBRARY2`
+   as of 2026-08-17** — it was `_LIBRARY` while the gate hard-coded the app id.
+   Full story, and how to verify the pairing, in the estate-identity section
+   above.
 2. `GOOGLE_BOOKS_API_KEY` — optional, reuse the main key (design §6.7).
 3. **Firebase console**: add `padhard.heygabi.ai` (and the workers.dev host
    if she'll ever see it) to Authentication → Settings → Authorised domains
@@ -109,8 +189,11 @@ be copied by an agent):
   a dead-looking `padhard.heygabi.ai` right after deploy is the router, not
   the deploy. Test via the workers.dev URL or another network.
 - Her details-sweep cron is live (same `"7 * * * *"` string — it MUST match
-  `DETAILS_SWEEP_CRON` or `scheduled()` ignores it). ⚠️ Since the donor build
-  (2026-08-16) it no longer skips on the missing AI key — see below.
+  `DETAILS_SWEEP_CRON` or `scheduled()` ignores it). ⚠️ It no longer skips for
+  want of an AI key — first because the donor build (2026-08-16) gave it a free
+  source, and then because she got her own key the same night. It runs
+  donor-then-AI and **spends her money** every tick that the donor cannot fully
+  answer — see below.
 
 ## The donor-first details sweep (built 2026-08-16)
 
@@ -120,9 +203,18 @@ I have Stormlight Archive don't have her look it up."*
 **Her donor is the main library.** Every hourly tick, her sweep asks
 `https://library.heygabi.ai/api/donor/details?title=…&author=…` for each
 picked book's unasked missing details and copies what the main catalog
-already holds — running in **donor-only mode**, since she has no
-`ANTHROPIC_API_KEY` (her tick's log line starts its `skipped` list with
-`no ANTHROPIC_API_KEY — donor-only mode`).
+already holds, **before** any AI lookup.
+
+⚠️ **Corrected 2026-08-17 (credentials catalog F-8).** This paragraph used to
+say she ran in **donor-only mode** because she had no `ANTHROPIC_API_KEY`, and
+that her tick's log line began `no ANTHROPIC_API_KEY — donor-only mode`. That
+was true for a few hours on 2026-08-16 and has not been true since: she has her
+**own** key (`wrangler secret list --env friend` confirms the name), so the
+sweep is **donor-then-AI** — free answers from our catalog first, HER key and
+HER money only for what the donor could not supply. Documents that say a
+credential does not exist while it does are how a spend goes unnoticed; the
+same claim was corrected in `wrangler.toml` and `scripts/push-secrets.mjs` the
+same day.
 
 | Piece | Where | Notes |
 |---|---|---|

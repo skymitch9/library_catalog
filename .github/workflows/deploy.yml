@@ -71,13 +71,19 @@ jobs:
           fi
           echo "CLOUDFLARE_API_TOKEN present."
 
-      - name: Guard — CATALOG_PLATFORM_TOKEN must exist (private sibling checkout)
+      # ⚠️ The token is required because the ACTIONS RUNNER needs credentials to
+      # check out a second repo — not because that repo is private. It is
+      # PUBLIC (measured `gh repo view`, 2026-08-17; all four estate repos
+      # are). The message below said "is PRIVATE" until then — estate
+      # credentials catalog F-1. Text only: the guard's logic is unchanged and
+      # correct either way.
+      - name: Guard — CATALOG_PLATFORM_TOKEN must exist (sibling checkout)
         working-directory: ${{ github.workspace }}
         env:
           HAVE_PAT: ${{ secrets.CATALOG_PLATFORM_TOKEN != '' }}
         run: |
           if [ "$HAVE_PAT" != "true" ]; then
-            echo "::error::Set CATALOG_PLATFORM_TOKEN: skymitch9/catalog-platform is PRIVATE and the build cannot proceed without it (prebuild syncs universes + estate-auth from it). Create a fine-grained PAT at github.com/settings/personal-access-tokens with Contents: Read on skymitch9/catalog-platform, then: gh secret set CATALOG_PLATFORM_TOKEN --repo skymitch9/library_catalog"
+            echo "::error::Set CATALOG_PLATFORM_TOKEN: this build checks out skymitch9/catalog-platform alongside this repo (prebuild syncs universes + estate-auth from it) and the runner needs a token to do it. Create a fine-grained PAT at github.com/settings/personal-access-tokens with Contents: Read on skymitch9/catalog-platform, then: gh secret set CATALOG_PLATFORM_TOKEN --repo skymitch9/library_catalog"
             exit 1
           fi
           echo "CATALOG_PLATFORM_TOKEN present."

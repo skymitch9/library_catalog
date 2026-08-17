@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { gabiPanelEnabled } from '@lc/core';
 import { isDatabaseReachable } from '@lc/db';
+import { describeEstateGate } from '@lc/estate-auth';
 import { universeNames, universesDocument } from '@lc/universes';
 import type { AppBindings } from '../env.js';
 
@@ -37,6 +38,22 @@ import type { AppBindings } from '../env.js';
  * there?" is otherwise a question only a signed-in browser can answer. A
  * boolean about a feature's existence is not privileged information; nothing
  * else about GABI is exposed here.
+ *
+ * ⚠️ `estate` is here for the SAME reason and by the same rule (added
+ * 2026-08-17 with the F-5 fix): which estate consumer a Worker claims to be
+ * (`app`), which secret NAME carries that identity's bearer (`tokenVar`),
+ * whether both halves of the config exist (`configured`) and at what strength
+ * (`mode`). One curl, no sign-in, from outside — which is exactly what was
+ * missing when the friend instance spent a day asserting `library`.
+ *
+ * ⚠️ Names and booleans, never a value or a fingerprint of one. And
+ * `configured: true` is NOT proof the pairing is right: it says the name is
+ * populated, not that the directory accepts what is in it. The only proof of
+ * the VALUE is a `wrangler tail` line from a real sign-in reading
+ * `"src":"seen"` — a wrong value shows as `"src":"none"`/`"stale_cache"`.
+ * (Six of one: `mode`/`configured` are also the fastest way to see that a
+ * gate has quietly fallen inert, which is the failure this whole route class
+ * exists to make visible rather than silent.)
  */
 export const healthRoutes = new Hono<AppBindings>().get('/', async (c) => {
   const database = (await isDatabaseReachable(c.env.DB)) ? 'up' : 'down';
@@ -52,6 +69,8 @@ export const healthRoutes = new Hono<AppBindings>().get('/', async (c) => {
     universes: { count: universeNames.length, schemaVersion: universesDocument.schemaVersion },
     /** The per-instance posture of the conversational fixer. See the header. */
     gabi: { panel: gabiPanelEnabled(c.env.GABI_PANEL) },
+    /** The per-instance ESTATE IDENTITY and its config state. See the header. */
+    estate: describeEstateGate(c.env),
     time: new Date().toISOString(),
   };
   return c.json(

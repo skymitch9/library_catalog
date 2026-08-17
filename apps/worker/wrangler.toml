@@ -196,6 +196,27 @@ INDEX_URL = "https://index.heygabi.ai"
 ESTATE_CHECK = "enforce"
 ESTATE_AUTH_URL = "https://auth.heygabi.ai"
 
+# ── WHICH estate consumer this Worker IS ─────────────────────────────────────
+#
+# The directory knows five consumers (`CONSUMER_APPS` in the auth Worker's
+# env.ts) and tells them apart BY THE BEARER VALUE they present. This repo is
+# two of them from one build: `library` here, `library2` on [env.friend].
+#
+# ⚠️ Written out rather than omitted, the DEFAULT_THEME/GABI_PANEL idiom: "what
+# is this instance's estate identity" must have an ANSWER in this file, not an
+# absence. It also names which secret carries the bearer —
+# ESTATE_APP_TOKEN_LIBRARY here, ESTATE_APP_TOKEN_LIBRARY2 on hers — because
+# the estate's pairing rule is one value, two holders, SAME NAME both sides.
+#
+# ⚠️ Until 2026-08-17 this was a hard-coded 'library' in
+# packages/estate-auth/src/gate.ts, so HER instance asserted OUR identity and
+# the auth Worker's ESTATE_APP_TOKEN_LIBRARY2 was an orphan nothing presented
+# (estate credentials catalog F-5). Changing either instance's value is an
+# identity change at the directory, never a tidy-up;
+# `packages/estate-auth/test/instance-estate-app.test.ts` reads this file and
+# fails if the two instances ever name the same app.
+ESTATE_APP = "library"
+
 # ═════════════════════════════════════════════════════════════════════════════
 # [env.friend] — the SECOND library instance (friend-ingest-design.md §6).
 #
@@ -243,9 +264,14 @@ bucket_name = "library-2nd-covers"
 # Same cron STRING as the main instance, deliberately — `scheduled()` in
 # src/index.ts dispatches on DETAILS_SWEEP_CRON and an unrecognised cron does
 # nothing. A different minute here would silently disable her details sweep.
-# With no ANTHROPIC_API_KEY on this env the sweep runs and skips itself
-# (`skipped: no ANTHROPIC_API_KEY`, details-sweep.ts:273) — free, and it
-# starts healing details the day a key is ever added.
+#
+# ⚠️ CORRECTED 2026-08-17 (estate credentials catalog F-8). This comment used
+# to say the sweep "runs and skips itself" for want of an ANTHROPIC_API_KEY.
+# It has not been true since 2026-08-16 late: her OWN Anthropic key is set on
+# this env (`wrangler secret list --env friend` confirms the name), so her
+# hourly tick runs DONOR-THEN-AI — the main library answers what it can for
+# free, and whatever is left is asked of HER key and spends HER money. The
+# config of record must not keep claiming she cannot spend.
 [env.friend.triggers]
 crons = ["7 * * * *"]
 
@@ -311,9 +337,14 @@ OWNER_EMAILS = "nbaslamking@gmail.com"
 # ── Donor-first details sweep (owner ask 2026-08-16) ─────────────────────────
 # Her donor is the MAIN library: with this plus the DONOR_TOKEN secret (set on
 # both instances 2026-08-16), her hourly sweep asks library.heygabi.ai's
-# /api/donor/details for each book's missing details before (in her case,
-# instead of) any AI lookup — she has no ANTHROPIC_API_KEY, so her sweep runs
-# in donor-only mode and heals from our catalog for free.
+# /api/donor/details for each book's missing details BEFORE any AI lookup, and
+# heals from our catalog for free.
+#
+# ⚠️ CORRECTED 2026-08-17 (F-8): "instead of any AI lookup … donor-only mode"
+# was true for a few hours on 2026-08-16 and is not true now. She has her own
+# ANTHROPIC_API_KEY, so the sweep is DONOR-THEN-AI: donor first (free, and the
+# whole point of the owner's ask — *"if I have Stormlight Archive don't have
+# her look it up"*), her key only for what the donor could not answer.
 #
 # ⚠️ The MAIN instance's [vars] deliberately has NO DONOR_URL yet — reciprocity
 # (our sweep asking HER catalog) is a later owner decision, and it is exactly
@@ -329,12 +360,36 @@ DONOR_URL = "https://library.heygabi.ai"
 # games-catalog precedent. Same for the INDEX_PUSH_TOKEN secret.
 
 # Estate auth: same mode as the main instance's production posture (enforce,
-# flipped after its shadow soak). ⚠️ Until the ESTATE_APP_TOKEN_LIBRARY secret
-# is set on THIS env, the gate logs `estate_config_unset` and behaves as OFF —
-# local-only auth, new sign-ins land as `pending` with no role. That ordering
-# is safe and intended: code before secret.
+# flipped after its shadow soak). ⚠️ Until the ESTATE_APP_TOKEN_LIBRARY2
+# secret is set on THIS env, the gate logs `estate_config_unset` and behaves
+# as OFF — local-only auth, new sign-ins land as `pending` with no role. That
+# ordering is safe and intended: code before secret.
 ESTATE_CHECK = "enforce"
 ESTATE_AUTH_URL = "https://auth.heygabi.ai"
+
+# ── THIS instance is `library2`, and that is the whole of the F-5 fix ─────────
+#
+# She is her OWN estate consumer: her own bearer, her own `seen:library2`
+# origin on a newcomer's directory row, and the `vis_library2` column
+# (auth-worker migration 0007, DEFAULT 0 — "another household's shelf") finally
+# describing the door people actually knock on.
+#
+# ⚠️ Before 2026-08-17 the app id was hard-coded `library` in gate.ts, so this
+# Worker presented the MAIN library's identity: the directory attributed her
+# sign-ins to `library`, and ESTATE_APP_TOKEN_LIBRARY2 on the auth Worker was
+# an orphan (estate credentials catalog F-5).
+#
+# ⚠️ THE PAIRED SECRET IS `ESTATE_APP_TOKEN_LIBRARY2` — a different NAME from
+# the `ESTATE_APP_TOKEN_LIBRARY` this env used to hold, deliberately, so the
+# estate's "same name both sides" rule holds here too. A missing name fails
+# into OFF (loud, local-auth-only, nobody locked out); a wrong VALUE would
+# fail into 401-from-the-directory. That is why the name changed rather than
+# the value being moved under the old one.
+#
+# Setting this to anything but "library2" here is an identity change at the
+# directory. `packages/estate-auth/test/instance-estate-app.test.ts` fails if
+# it ever matches the main instance's.
+ESTATE_APP = "library2"
 
 # ── The paused owner decision: her default role ──────────────────────────────
 # friend-ingest-design.md §3 recommends auto-granting `moderator` on HER

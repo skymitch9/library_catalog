@@ -52,10 +52,40 @@
  *    owner BY DESIGN — §3.1 row 1 says "anything, even owner"; the recovery
  *    paths from a revocation mishap are §6 row 4's other two: the D1 console,
  *    and the *.workers.dev hostname. This gate must not invent a fourth.)
- *  - Missing `ESTATE_AUTH_URL` / `ESTATE_APP_TOKEN_LIBRARY` while the mode
- *    asks for shadow OR enforce IS the off state, with its name in the log —
- *    the code deploys before the secret exists, and a half-configured enforce
- *    must fail into "today's behaviour", never into a lockout.
+ *  - Missing `ESTATE_AUTH_URL` / this instance's `ESTATE_APP_TOKEN_*` while
+ *    the mode asks for shadow OR enforce IS the off state, with its name in
+ *    the log — the code deploys before the secret exists, and a
+ *    half-configured enforce must fail into "today's behaviour", never into a
+ *    lockout.
+ *
+ * ## ⚠️ WHICH APP THIS INSTANCE IS (`ESTATE_APP`) — per-instance, not baked in
+ *
+ * This codebase runs as TWO estate consumers from one build: the main library
+ * (`library`, library.heygabi.ai) and the second instance (`library2`,
+ * padhard.heygabi.ai). The directory tells them apart by the BEARER VALUE —
+ * `identifyApp` in the auth Worker walks `CONSUMER_APPS` and matches the
+ * presented token against each configured `ESTATE_APP_TOKEN_*`, then stamps a
+ * newcomer's row `origin = 'seen:<app>'` and answers that person's effective
+ * visibility set.
+ *
+ * ⚠️ Until 2026-08-17 the app id here was a HARD-CODED `'library'` and the
+ * bearer was read from a hard-coded `ESTATE_APP_TOKEN_LIBRARY`, on BOTH
+ * instances. The consequence (estate credentials catalog F-5): the friend
+ * instance asserted the main library's identity, `ESTATE_APP_TOKEN_LIBRARY2`
+ * on the auth Worker was an orphan nothing ever presented, and the
+ * `vis_library2` column the friend-ingest design created to gate her catalog
+ * gated nothing. The identity is now CONFIG, one var per wrangler env:
+ *
+ *   [vars]              ESTATE_APP = "library"   → ESTATE_APP_TOKEN_LIBRARY
+ *   [env.friend.vars]   ESTATE_APP = "library2"  → ESTATE_APP_TOKEN_LIBRARY2
+ *
+ * The token var NAME follows the app id (`APP_TOKEN_VAR`), so the pairing rule
+ * the whole estate uses — *one value, two holders, SAME NAME on both sides* —
+ * holds for the second instance too, and a mismatched pairing is a missing
+ * NAME (⇒ `estate_config_unset` ⇒ off) rather than a wrong VALUE (⇒ 401 from
+ * the directory ⇒ `estate_unreachable`). Failing into off is the direction
+ * this module has always chosen; it is why deploying this change before the
+ * secret is piped cannot lock anyone out.
  *
  * ## Visibility rides along (§4.5)
  *
@@ -65,6 +95,17 @@
  * into null here, not at query time), hands the canonical array back in
  * `refresh` for the caller to persist, and logs it. Nothing in THIS app
  * scopes on it today — the library's own authorization stays `role`.
+ *
+ * ⚠️ Read that last sentence together with `ESTATE_APP` below, because it
+ * bounds what the F-5 fix does and does not buy. The gate's REFUSALS come
+ * from `status` (revoked / unreachable), never from the visibility array, on
+ * either instance. So asserting `library2` does not by itself make
+ * `vis_library2` a gate — it makes the directory answer, log and attribute
+ * for the right consumer, and it makes the column MEANINGFUL to switch on
+ * when a visibility-scoped refusal is built. Anyone who reaches the friend
+ * instance today still passes or fails on estate `status` + her local role,
+ * exactly as before. Gating on the array is a separate, access-REDUCING
+ * decision with its own evidence step — do not slip it in here.
  */
 
 import {
@@ -98,6 +139,110 @@ export const LIBRARY_POSTURE = declareAuthPosture({
   app: 'library',
   defaultRole: 'member',
 });
+
+/**
+ * The estate app identities THIS codebase is allowed to present — an
+ * allowlist, deliberately, and deliberately not `CONSUMER_APPS` (which also
+ * names `games`, `index` and `audiobook`, three apps that are not this repo).
+ * A var that could name any string would let one edit make the library
+ * catalog impersonate the audiobook site's consumer at the directory.
+ *
+ * `library` is the declared posture's own id and the default; `library2` is
+ * the second instance (friend-ingest-design.md §6, auth-worker migration
+ * 0007's `vis_library2`).
+ */
+export const ESTATE_APPS = Object.freeze(['library', 'library2'] as const);
+export type EstateApp = (typeof ESTATE_APPS)[number];
+
+/**
+ * app id → the env var holding ITS paired bearer. ⚠️ The names are the auth
+ * Worker's own (`appTokenFor` in `apps/auth-worker/src/env.ts`), because the
+ * estate's pairing rule is *same name, both sides* — see §6 of the credentials
+ * catalog. Renaming one half is how a pairing silently desyncs.
+ */
+export const APP_TOKEN_VAR: Readonly<Record<EstateApp, string>> = Object.freeze({
+  library: 'ESTATE_APP_TOKEN_LIBRARY',
+  library2: 'ESTATE_APP_TOKEN_LIBRARY2',
+});
+
+export interface ResolvedEstateApp {
+  /** Null ONLY when a value was set and is not an allowed id — see below. */
+  app: EstateApp | null;
+  /** The env var this app's bearer must be under. Null with a null `app`. */
+  tokenVar: string | null;
+  /** The rejected raw value when one was set but not recognised, else null. */
+  invalid: string | null;
+}
+
+/**
+ * Resolve `ESTATE_APP` into an identity and the var holding its bearer.
+ *
+ * ⚠️ The failure direction is DELIBERATELY different from `resolveDefaultRole`
+ * and `parseEstateMode`, which fall back to a working default. Those two pick
+ * the inert answer; here the "inert" answer would be `library` — the exact
+ * wrong identity for the friend instance, and the bug F-5 named. A typo must
+ * therefore turn the gate OFF (loudly, `estate_app_unrecognised`) rather than
+ * fall back into asserting the main library. Off is still the safe direction:
+ * local auth — Firebase verification plus this app's own role ladder — is
+ * untouched by it, so nobody gains anything they did not already have; the
+ * estate simply stops being consulted until the var is fixed.
+ */
+export function resolveEstateApp(raw: string | undefined): ResolvedEstateApp {
+  const v = (raw ?? '').trim();
+  if (v === '') {
+    const app = LIBRARY_POSTURE.app as EstateApp;
+    return { app, tokenVar: APP_TOKEN_VAR[app], invalid: null };
+  }
+  if ((ESTATE_APPS as readonly string[]).includes(v)) {
+    const app = v as EstateApp;
+    return { app, tokenVar: APP_TOKEN_VAR[app], invalid: null };
+  }
+  return { app: null, tokenVar: null, invalid: v };
+}
+
+/**
+ * Read the bearer for a resolved `tokenVar`. A switch rather than an index
+ * expression: the set of secrets this module may read stays greppable, and no
+ * future var name can be reached by data.
+ */
+function appTokenFrom(env: GateEnv, tokenVar: string): string {
+  switch (tokenVar) {
+    case 'ESTATE_APP_TOKEN_LIBRARY':
+      return (env.ESTATE_APP_TOKEN_LIBRARY ?? '').trim();
+    case 'ESTATE_APP_TOKEN_LIBRARY2':
+      return (env.ESTATE_APP_TOKEN_LIBRARY2 ?? '').trim();
+    default:
+      return '';
+  }
+}
+
+/**
+ * The gate's configuration as an OUTSIDE observer can check it — what
+ * `/api/health` reports (`routes/health.ts`), for the same reason it reports
+ * `gabi.panel`: two instances serve one bundle from one commit, so "which
+ * estate consumer is that Worker?" is otherwise a question only a signed-in
+ * browser plus `wrangler tail` can answer, and F-5 was exactly that question
+ * going unasked for a day.
+ *
+ * ⚠️ Names and booleans only — never a value, never a fingerprint of one.
+ * `configured` says both halves of the config exist, NOT that the token's
+ * value is the one the directory expects; only a real `/seen` call proves
+ * that, and its proof is the tail line's `"src":"seen"`.
+ */
+export function describeEstateGate(env: GateEnv): {
+  mode: EstateMode;
+  app: EstateApp | null;
+  tokenVar: string | null;
+  configured: boolean;
+} {
+  const { mode } = parseEstateMode(env.ESTATE_CHECK);
+  const { app, tokenVar } = resolveEstateApp(env.ESTATE_APP);
+  const configured =
+    app !== null && tokenVar !== null &&
+    (env.ESTATE_AUTH_URL ?? '').trim() !== '' &&
+    appTokenFrom(env, tokenVar) !== '';
+  return { mode, app, tokenVar, configured };
+}
 
 /**
  * The roles a per-instance override may name — deliberately NARROWER than
@@ -160,7 +305,22 @@ export function parseEstateMode(raw: string | undefined): ParsedMode {
 export interface GateEnv {
   ESTATE_CHECK?: string;
   ESTATE_AUTH_URL?: string;
+  /**
+   * WHICH estate consumer this instance is — `library` (default, unset) or
+   * `library2`. See the header. It selects both the asserted app id and the
+   * name of the secret below that carries this instance's bearer.
+   */
+  ESTATE_APP?: string;
+  /** The `library` bearer — the MAIN instance's. */
   ESTATE_APP_TOKEN_LIBRARY?: string;
+  /**
+   * The `library2` bearer — the FRIEND instance's, paired with the auth
+   * Worker's secret of the same name. ⚠️ Setting this on the main instance
+   * does nothing (its `ESTATE_APP` is `library`), and neither does setting
+   * `ESTATE_APP_TOKEN_LIBRARY` on hers: the app id picks the var, so a token
+   * in the wrong slot is inert rather than quietly wrong.
+   */
+  ESTATE_APP_TOKEN_LIBRARY2?: string;
   /** Per-instance auto-grant role override — see `resolveDefaultRole`. */
   ESTATE_DEFAULT_ROLE?: string;
 }
@@ -191,7 +351,7 @@ export interface GateOutcome {
   mode: EstateMode;
   /** True when a §3.1 verdict was actually computed. */
   performed: boolean;
-  skipReason: 'mode_off' | 'estate_config_unset' | null;
+  skipReason: 'mode_off' | 'estate_config_unset' | 'estate_app_unrecognised' | null;
   verdict: EstateVerdict | null;
   /**
    * Non-null ONLY in enforce, on the two refusing verdicts. The caller
@@ -253,6 +413,7 @@ export async function estateGateCheck(
   opts: { fetchImpl?: typeof fetch; nowMs?: number } = {},
 ): Promise<GateOutcome> {
   const { mode, recognised } = parseEstateMode(env.ESTATE_CHECK);
+  const identity = resolveEstateApp(env.ESTATE_APP);
   // Shadow-mode lines keep the soak's documented `estate_shadow` tag
   // byte-compatible; enforce gets its own greppable stream.
   const tag = mode === 'enforce' ? 'estate_enforce' : 'estate_shadow';
@@ -264,7 +425,7 @@ export async function estateGateCheck(
       ? null
       : JSON.stringify({
           tag,
-          app: LIBRARY_POSTURE.app,
+          app: identity.app,
           event: 'mode_unrecognised',
           estate_check_raw: env.ESTATE_CHECK ?? null,
           treated_as: 'off',
@@ -272,12 +433,32 @@ export async function estateGateCheck(
     return { ...SKIPPED, mode, skipReason: 'mode_off', logLine };
   }
 
+  // A set-but-unrecognised ESTATE_APP is off, loudly — never a fallback to
+  // `library`, which on the friend instance is precisely the wrong answer.
+  if (identity.app === null || identity.tokenVar === null) {
+    return {
+      ...SKIPPED,
+      mode,
+      skipReason: 'estate_app_unrecognised',
+      logLine: JSON.stringify({
+        tag,
+        app: null,
+        mode,
+        event: 'estate_app_unrecognised',
+        estate_app_raw: identity.invalid,
+        allowed: [...ESTATE_APPS],
+        treated_as: 'off',
+        note: 'behaving as off — this instance will not assert an identity it cannot name',
+      }),
+    };
+  }
+
   const baseUrl = (env.ESTATE_AUTH_URL ?? '').trim();
-  const appToken = (env.ESTATE_APP_TOKEN_LIBRARY ?? '').trim();
+  const appToken = appTokenFrom(env, identity.tokenVar);
   if (!baseUrl || !appToken) {
     const missing = [
       ...(baseUrl ? [] : ['ESTATE_AUTH_URL']),
-      ...(appToken ? [] : ['ESTATE_APP_TOKEN_LIBRARY']),
+      ...(appToken ? [] : [identity.tokenVar]),
     ];
     return {
       ...SKIPPED,
@@ -285,7 +466,7 @@ export async function estateGateCheck(
       skipReason: 'estate_config_unset',
       logLine: JSON.stringify({
         tag,
-        app: LIBRARY_POSTURE.app,
+        app: identity.app,
         mode,
         event: 'estate_config_unset',
         missing,
@@ -375,7 +556,10 @@ export async function estateGateCheck(
     refresh: result.refresh,
     logLine: JSON.stringify({
       tag,
-      app: LIBRARY_POSTURE.app,
+      // ⚠️ The identity this instance ASSERTED, from ESTATE_APP — not the
+      // posture's baked-in `library`. This field is the greppable proof of the
+      // F-5 fix in `wrangler tail`: hers must read "library2".
+      app: identity.app,
       mode,
       email: subject.email,
       local_role: subject.role,

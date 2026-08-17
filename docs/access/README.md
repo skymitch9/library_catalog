@@ -12,11 +12,21 @@
 | [`estate-auth.md`](estate-auth.md) | **`auth.heygabi.ai` (LIVE 2026-08-14)**: the estate directory Worker + D1, the admin API and the apex `/admin` page, `OWNER_EMAILS` break-glass, the three `ESTATE_APP_TOKEN_*` secrets by name and where each side holds them, seed script usage, deploy commands, the 10-min TTL = revocation delay |
 | [`index-worker.md`](index-worker.md) | **`index.heygabi.ai` (LIVE, all three catalogs pushed)**: push protocol + per-source tokens by name, search vs lookup, each repo's freshness backstop, deploy commands, D1 id, ⚠️ the CORS/preflight lesson |
 | [`themes.md`](themes.md) | The estate theme system: canonical asset location, per-repo vendoring/sync, storage keys, the per-site defaults table, deploy-wave order and what is live where |
-| [`second-instance.md`](second-instance.md) | **The friend's library (`[env.friend]`, LIVE 2026-08-16)**: `padhard.heygabi.ai` (settled name), D1 `library-catalog-2nd`, bucket `library-2nd-covers`, the `:friend` command set, per-instance deploys.log/guard behaviour, rollback, her secrets (just `DONOR_TOKEN`) and who sets them, and the **donor-first details sweep** (her sweep copies details from the main library, donor-only, no AI key) |
+| [`second-instance.md`](second-instance.md) | **The friend's library (`[env.friend]`, LIVE 2026-08-16)**: `padhard.heygabi.ai` (settled name), D1 `library-catalog-2nd`, bucket `library-2nd-covers`, the `:friend` command set, per-instance deploys.log/guard behaviour, rollback, her four secrets and who sets them (⚠️ **never push-synced** — there is no `.dev.vars.friend`), her own estate identity **`library2`** (fixed 2026-08-17, credentials catalog F-5), and the **donor-first details sweep** (donor-then-AI: the main library answers what it can for free, her own key pays for the rest) |
 
-⚠️ Estate token **values** live only in the session scratchpad
-`estate-app-tokens.json` (LOCAL ONLY, outside every repo) — the two estate docs
-name them; never paste a value anywhere.
+⚠️ Estate token **values** live in **Cloudflare Worker secrets, which are
+write-only** — nothing on this machine can read one back. The two estate docs
+name the secrets; never paste a value anywhere.
+
+> **Corrected 2026-08-17 (estate credentials catalog F-7).** These lines used
+> to name a session scratchpad `estate-app-tokens.json` as where the values
+> live. **That file no longer exists** (searched, 2026-08-17), and pointing a
+> future session at it is worse than useless: it implies a copy exists to
+> compare against. There is none. If a value is genuinely needed, the answer is
+> to **mint a new one and set it on BOTH holders in one sitting** — never to go
+> looking for the old one. The names, the pairings, and which side holds what
+> are catalogued in `audiobook_catalog/docs/access/CREDENTIALS.md` (LOCAL ONLY,
+> gitignored).
 
 ### Commands added 2026-08-10
 

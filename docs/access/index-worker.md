@@ -51,8 +51,11 @@ catalog*), computes folds/universe itself, then `DELETE WHERE source` +
 insert. Projections are **default-deny column allow-lists** in each source —
 never prices, `lent_to`, emails, read-state.
 
-⚠️ **Values for every token below live in the session scratchpad
-`estate-app-tokens.json` (LOCAL ONLY — never paste).** Names verified in
+⚠️ **Every token below is a write-only Cloudflare Worker secret — no readable
+copy of any of these values exists anywhere.** (Corrected 2026-08-17, F-7: this
+line used to name a session scratchpad `estate-app-tokens.json`; that file is
+gone and there is nothing to consult. A value that is needed gets **re-minted
+and set on both holders in one sitting**, never recovered.) Names verified in
 production 2026-08-14:
 
 | Secret | Index Worker holds | Source holds |
