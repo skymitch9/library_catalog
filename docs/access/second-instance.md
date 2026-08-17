@@ -60,27 +60,28 @@ vice versa.
 
 ## Secrets — names only, and who can set them
 
-Her env holds **two secrets**: `DONOR_TOKEN` (set 2026-08-16 — see the donor
-section above; the main instance holds the same value under the same name) and
+Her env holds **three secrets**: `DONOR_TOKEN` (set 2026-08-16 — see the donor
+section above; the main instance holds the same value under the same name),
 `ESTATE_APP_TOKEN_LIBRARY` (set 2026-08-16, minted fresh for her as her own
-estate consumer). Deliberately never set: `INDEX_PUSH_TOKEN`
-(federation is phase 2 — push code logs one line, inert), `EBOOK_INGEST_TOKEN`
-(her ebook surface is a 404 and stays one), `AUDIOBOOK_MAPPING_TOKEN` (no
-audiobook pipeline).
+estate consumer), and `ANTHROPIC_API_KEY` — **HER OWN key** (see below).
+Deliberately never set: `INDEX_PUSH_TOKEN` (federation is phase 2 — push code
+logs one line, inert), `EBOOK_INGEST_TOKEN` (her ebook surface is a 404 and
+stays one), `AUDIOBOOK_MAPPING_TOKEN` (no audiobook pipeline).
 
-`ANTHROPIC_API_KEY`: ⚠️ decision CHANGED 2026-08-16 late (was: leave unset,
-scanPhoto dark). The owner now wants her running on **a copy of his own key
-for now** — the value is a write-only Cloudflare secret with no local copy, so
-only he can paste it, in his own terminal (never through a synced transcript):
-
-```bash
-cd apps/worker && npx wrangler secret put ANTHROPIC_API_KEY --env friend
-```
-
-Swapping her to the **separate capped-workspace key** (still the intended end
-state, design §4) is that same one command with the new value. The moment the
-secret exists her sweep upgrades itself from donor-only to donor-then-AI on
-the next `:07` tick, and scanPhoto lights up — no deploy needed.
+`ANTHROPIC_API_KEY` history, all within 2026-08-16 late (three states in one
+evening; the LAST one is current): (1) design said leave unset, scanPhoto
+dark; (2) owner ordered a copy of HIS key as a stopgap, pushed from the main
+`.dev.vars` (which turned out to hold it — it is the repo's documented
+single-source-of-truth secrets file); (3) owner then minted **Samantha's own
+key** and it replaced his the same night, pushed via the
+`ANTHROPIC_API_KEY_FRIEND_SAM` drop-box line in `apps/worker/.dev.vars`
+(paste → pipe to `wrangler secret put ANTHROPIC_API_KEY --env friend` → line
+blanked; the drop-box name is in no push allowlist, so it can never ship by
+accident). Rotation = same drop-box, same pipe. ⚠️ Not verified: whether her
+key sits in a capped workspace — the $10-cap workspace remains the design
+recommendation (§4); confirm with the owner before assuming a cap exists.
+Her sweep runs donor-then-AI on every `:07` tick and scanPhoto is live — no
+deploy was needed at any step.
 
 Owner/conductor steps (values unreadable from the main Worker, so they cannot
 be copied by an agent):
