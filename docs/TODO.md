@@ -51,6 +51,19 @@
   — the 1 truly coverless EPUB gets a web lookup; **PDFs get no cover hunt —
   instead a "show PDFs" checkbox on the ebooks page, DEFAULT OFF** (hidden
   from grid and page search until ticked, preference persisted).
+  📋 **Follow-up (owner ask 2026-08-16, deliberately NOT in the wave-1
+  batch): PDF covers from content.** Two ideas weighed, owner prefers the
+  second: (1) borrow the cover of the series the PDF belongs to — rejected as
+  primary (a Mistborn RPG handbook wearing the novel's cover misrepresents
+  what you'd open); (2) **scour the web for the actual product's cover art**
+  — the 4 PDFs are real published products (Mistborn Adventure Game books,
+  the Stormlight Handbook) whose covers exist online. Design note: source
+  from the product's own listing (publisher page / DriveThruRPG / Google
+  Books), stage through the same sha256 + upload_covers_r2 path, and mark
+  `cover_source: 'web'` for provenance. Series-borrow stays the documented
+  fallback for a PDF whose product art genuinely cannot be found. The
+  "show PDFs" checkbox stays default-off regardless — covers make the hidden
+  rows nicer, not more prominent.
   ⚠️ **And a MECHANICAL GUARD (owner: "this is so so important to me"):**
   every-EPUB-has-a-cover becomes a promote gate AND a test-suite failure in
   audiobook_catalog — failing output names the offending titles; escape
