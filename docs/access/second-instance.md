@@ -60,13 +60,27 @@ vice versa.
 
 ## Secrets — names only, and who can set them
 
-Her env holds **one secret**: `DONOR_TOKEN` (set 2026-08-16 — see the donor
-section above; the main instance holds the same value under the same name).
-Deliberately never set: `INDEX_PUSH_TOKEN`
+Her env holds **two secrets**: `DONOR_TOKEN` (set 2026-08-16 — see the donor
+section above; the main instance holds the same value under the same name) and
+`ESTATE_APP_TOKEN_LIBRARY` (set 2026-08-16, minted fresh for her as her own
+estate consumer). Deliberately never set: `INDEX_PUSH_TOKEN`
 (federation is phase 2 — push code logs one line, inert), `EBOOK_INGEST_TOKEN`
 (her ebook surface is a 404 and stays one), `AUDIOBOOK_MAPPING_TOKEN` (no
-audiobook pipeline), `ANTHROPIC_API_KEY` (owner decision — scanPhoto dark;
-when set later it should be a **separate capped-workspace key**, design §4).
+audiobook pipeline).
+
+`ANTHROPIC_API_KEY`: ⚠️ decision CHANGED 2026-08-16 late (was: leave unset,
+scanPhoto dark). The owner now wants her running on **a copy of his own key
+for now** — the value is a write-only Cloudflare secret with no local copy, so
+only he can paste it, in his own terminal (never through a synced transcript):
+
+```bash
+cd apps/worker && npx wrangler secret put ANTHROPIC_API_KEY --env friend
+```
+
+Swapping her to the **separate capped-workspace key** (still the intended end
+state, design §4) is that same one command with the new value. The moment the
+secret exists her sweep upgrades itself from donor-only to donor-then-AI on
+the next `:07` tick, and scanPhoto lights up — no deploy needed.
 
 Owner/conductor steps (values unreadable from the main Worker, so they cannot
 be copied by an agent):
