@@ -18,6 +18,89 @@
 > were extracted from this same history.
 
 
+### ✅ Content warnings — the LIBRARY half, built 2026-08-17 (`e5934d1`)
+
+Owner, 2026-08-17: *"port content warning feature over to all physical book and
+the ebook site."*
+
+**Built and deployed on both instances.** The ebooks half is deliberately NOT
+built and stays on [`TODO.md`](TODO.md) — that page was mid-rebuild into the
+permission-gated shim the same day, and a panel added to a page being replaced
+is work done twice or a merge conflict. Full design, measurements and the
+carry-over list: [`info/content-warnings.md`](info/content-warnings.md).
+
+#### The trap this item existed to avoid
+
+The store is the audiobook site's own `user_content_warnings` (doc id
+`{bookId}_{nameLower}_{topicId}`), and `bookId` is a slug of the title **as that
+catalog spells it**. Measured against production D1 that day:
+
+| | |
+|---|---|
+| works | 351 |
+| with an `audiobook_holding` row | 92 (1 stale) |
+| spelled differently by the two catalogs | 33 |
+| …producing a **different key** | **27** |
+
+`ours "Sunrise on the Reaping"` vs `theirs "Sunrise on the Reaping - A Hunger
+Games Novel"`. Keying on `work.title` would file notes the other site never asks
+about **and** find none of the ones written there — both halves silent, with no
+error to notice.
+
+⚠️ **The mechanism reviews use was unavailable.** Reviews span on a second
+field, `workKey`, stamped by a backfill onto 870 documents. A warning document
+carries none, the audiobook site will never write one, and **both collections
+were measured empty (0 docs, prod and `_dev`)**, so there was nothing to
+backfill and nothing to query. The join is `audiobook_holding.title` — the other
+side's own spelling, cached in D1 by migration 0010, which
+`routes/audiobook-mapping.ts` already trusts in the opposite direction. Write
+under their key; read under theirs **and** ours; never write to a stale one.
+
+#### What landed
+
+- `packages/core/src/warnings.ts` — the join, the doc id ported verbatim
+  (including the topic segment that IS the one-note-per-person-per-topic
+  dedupe), the document, the delete verdict, the published lookup. No I/O.
+- `apps/worker/src/routes/warnings.ts` — `GET /:workId/keys`, `POST
+  /:workId/draft`; **writes nothing**, exactly as the review and TBR routes do.
+  `authorUid` is stamped from the **verified token**, not claimed by the browser.
+- `apps/web/src/components/ContentNotes.tsx` — the panel, above `Reviews`: a
+  content note is read *before* the book, a review after it.
+- `moderateContent` — new capability, moderator+, its own name rather than
+  reusing `reviewFindings` (identical role set, indistinguishable in a refusal).
+- **No `firestore.rules` change**, and none was needed: `validUserWarning()`
+  asserts label/bookId/displayName and ignores the rest.
+
+#### The published pipeline warnings came free, and were measured before being trusted
+
+`content_warnings.json` answers `Access-Control-Allow-Origin: *`, is keyed by
+the **full audiobook title** (339 keys), and we hold that string. **15 of 92**
+holdings match, **8** carry at least one warning, and matching on our own title
+reached **zero** extra books — so that fallback was not implemented rather than
+added "just in case". ~200 KB, so it is fetched once per session and only for a
+book that has a holding.
+
+#### The honest gap, stated rather than hidden
+
+`moderateContent` is this catalog's role; `canDeleteUserWarning()` reads the
+**estate's `site_roles`**. They are different records, so a library moderator
+with no estate role is offered the control and refused by Firestore.
+`describeStoreError(err, { need: 'the estate-wide moderator role' })` turns that
+into a sentence instead of the SDK's *"Missing or insufficient permissions."*
+
+#### Evidence
+
+The join test's fixtures are real production pairs, and it was **watched failing
+on a deliberate mutation** (`writeBookId` = our own slug): 5 red, green on
+revert. The route was **exercised locally** against a seeded holding — keys,
+draft, the 80-character refusal, the blank refusal, the 404 — rather than
+reasoned about. `npm run typecheck` clean.
+
+⚠️ **NOT verified, and it needs the owner:** no signed-in add/delete round trip
+on either instance; nobody has watched a library note appear on the audiobook
+site's book page; and whether the owner's uid has a `site_roles` document at all
+is unknown from here.
+
 ### 🔨 Cover swap — port it from the Board Game Catalog
 
 *Landed here 2026-08-17 by the docs hygiene sweep — it still opened "⚠️ **We do not have it.**" VERIFIED in the tree: `apps/web/src/components/CoverSwap.tsx` (commits `6672b3f` "The cover swap — every cover this book could wear, side by side", `1e63193`) is wired into `CoverPanel.tsx`, and its own header records the two things this item demanded — the sibling implementation was read first ("Ported as an *idea* from the board game catalog's CoverPicker"), and the write goes through the same verified PUT, so migration 0040's `cover_status`-travels-with-`cover_url` rule is not bypassed.*

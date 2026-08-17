@@ -526,6 +526,7 @@ and `backfill-read-from-ratings.mjs` prints the same warning.
 | Which book a review is about | Firestore `reviews.workKey` — stamped 2026-08-12 | **both**, and §7.7 cannot work without it |
 | Whether the book was any good | Firestore `reviews` | **both** |
 | **Whether you mean to read it** | Firestore `readingLists` — the audiobook site's own TBR store, joined 2026-08-17 | **both**; see [`tbr.md`](tbr.md) |
+| **What is IN the book** | Firestore `user_content_warnings` — the audiobook site's own warning store, joined 2026-08-17 | **both**; see [`content-warnings.md`](content-warnings.md) |
 | The rating, for sorting | D1 `user_book.rating_cached` | this app, never authoritative |
 
 ⚠️ **`reviews` is not the only shared collection any more.** The cross-catalog
@@ -534,3 +535,14 @@ TBR follows every rule in this document — one store, browser-written, keyed by
 order** of a review's, because that is what the other site already writes.
 [`tbr.md`](tbr.md) carries the whole design; §7.7's read-state sweep is what
 clears an intention settled by a rating.
+
+⚠️ **And content warnings are the third — with a join this document's mechanism
+could NOT supply.** `user_content_warnings` (joined 2026-08-17) follows every
+rule here except one: a warning document carries no `workKey`, the other site
+will never write one, and both lanes were measured **empty**, so §5's backfill
+has nothing to stamp and §6's two-query trick has no second field to ask about.
+It joins on `audiobook_holding.title` instead — the other catalog's own spelling
+of the title, cached in D1 by migration 0010 — and **27 of 92 matched works
+spell it differently enough to matter**. [`content-warnings.md`](content-warnings.md)
+§2 carries the whole argument. Do not reach for `workKey` there and assume it
+works because it works for reviews.
