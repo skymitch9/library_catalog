@@ -295,7 +295,14 @@ h1, h2, .page-title { text-shadow: var(--et-glow-title); }
      300.7px against 296px of usable width — four pixels over, which costs a
      whole extra row. Taking 0.1rem off each brings them to ~285 and leaves
      room for the count to reach three digits. The tools cluster tightens the
-     same amount for the same reason, on the line above. */
+     same amount for the same reason, on the line above.
+
+     ⚠️ Those numbers are the APPLE theme's. Verified live 2026-08-17: `hearts`
+     sets the chips in its display face, which is wider, so at 320px the fourth
+     chip still takes a second row there — measured on padhard, three chip-rows
+     of bar instead of two. That is the wrap doing its job rather than a
+     failure, and it is why the fix is `flex-wrap` and not a set of widths: no
+     amount of padding arithmetic holds for five themes at once. */
   .topbar__nav { gap: 0.3rem; }
   .topbar__nav a.chip { padding: 0 0.5rem; }
   .topbar__tools { gap: 0.3rem; }

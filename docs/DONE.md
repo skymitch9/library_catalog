@@ -17,6 +17,55 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## 📱 The top bar printed its chips over the wordmark on a phone — ✅ FIXED + DEPLOYED 2026-08-17
+
+*Moved whole from [`TODO.md`](TODO.md) on completion. The original item, kept
+verbatim:*
+
+> **📱 The top bar overlaps the wordmark on a phone (owner, 2026-08-17, with a
+> screenshot from `padhard.heygabi.ai` on an iPhone).** The action chips wrap
+> over "The Library" instead of below it, leaving fragment letters showing
+> behind them.
+
+**Commits:** `640974c` (the fix), `9ed359f` + `d64c474` (deploy log).
+**Live:** main `e1d9bd62-a282-46a9-825c-3c52e1ed5142`, friend
+`83914cae-736f-41ea-bd42-cf1b72e97773`.
+
+**What it actually was.** The seventh control (the GABI bubble) was the
+trigger, not the fault. `.topbar` was a `display: flex` row with **no
+`flex-wrap`**, so nothing could ever move to a second line, and
+`.topbar__brand` was `flex: 1; min-width: 0`, which invites the algorithm to
+shrink the wordmark to *zero* rather than shrink anything else. A zero-width
+box does not clip its text — the letters spill out and the later DOM paints
+over them. Measured before touching anything: at 320/390/430 the bar also
+**overflowed the viewport horizontally**, so the cog and Sign out were off the
+right-hand edge entirely. The owner's photograph was the mild version.
+
+**The fix, in one line:** the bar wraps, and the wordmark is the one thing that
+may not shrink (`flex-wrap: wrap` unconditionally, `min-width: max-content` on
+the brand). Everything else is arrangement: a new `.topbar__tools` element so
+the four person-and-session controls move as one cluster, and below a measured
+**56rem** the nav chips take a line of their own (`order: 1`, 100% basis, 44px
+tap targets), with the display name hidden at that same breakpoint instead of
+30rem.
+
+**What the bar does now at narrow widths:** line one is the wordmark with the
+GABI bubble, the search magnifier, the cog and Sign out; line two is the chips,
+wrapping among themselves if needed. Two lines at 390 and 430. At 320 the
+wordmark and the tools cluster no longer fit together (112 + 220 against 296 of
+usable width), so it is three lines — title, tools, chips.
+
+**Measured**, Chrome, the shipped bundle, at 300/320/360/390/430/480/560/700/
+880/920/1024/1280: nothing overlaps the wordmark at any width, the wordmark is
+never clipped, no horizontal overflow, every tap target in the bar ≥ 44px below
+56rem, and one row from 920px up — the desktop bar is unchanged. Verified live
+on **padhard (hearts)** and **library (retro)** after deploy.
+
+⚠️ **NOT verified: a real iPhone.** Chrome device emulation is not a device.
+⚠️ **Theme-dependent detail:** the 320px chip row fits on one line in `apple`
+and takes two in `hearts`, whose display face is wider. It wraps cleanly either
+way; that is the point of fixing the layout class rather than the chip count.
+
 ## 🤖 "Sam asks GABI to fix her books" — PHASE 0 ✅ BUILT + DEPLOYED 2026-08-17
 
 *Moved whole from [`TODO.md`](TODO.md) on completion of PHASE 0, with its

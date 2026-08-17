@@ -62,12 +62,6 @@ real work. New debt goes HERE, never scattered.
 
 ## 🔥 Owner asks 2026-08-16 late evening — status board
 
-### Fourth wave (2026-08-17 afternoon)
-- **📱 The top bar overlaps the wordmark on a phone (owner, 2026-08-17, with a
-  screenshot from `padhard.heygabi.ai` on an iPhone).** The action chips wrap
-  over "The Library" instead of below it, leaving fragment letters showing
-  behind them. IN FLIGHT — see the section below the status board.
-
 ### Third wave (2026-08-17 morning)
 - **🤖 GABI, the conversational fixer — PHASE 0 SHIPPED; DISCORD IS NEXT.**
   Phase 0 (read-only) is built, deployed to both instances and archived whole in
