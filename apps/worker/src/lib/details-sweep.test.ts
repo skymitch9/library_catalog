@@ -18,13 +18,16 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import type { Env } from '../env.js';
+import type { DonorDetailsReply } from '../routes/donor.js';
 import {
   DETAILS_SWEEP_CRON,
   SWEEP_BUDGET,
   SWEEP_LIMIT,
+  donorFindings,
   estimateSubrequests,
   planSweep,
   runDetailsSweep,
+  sweepMode,
   unaskedGaps,
   type SweepCandidate,
 } from './details-sweep.js';
@@ -33,6 +36,7 @@ function candidate(overrides: Partial<SweepCandidate> = {}): SweepCandidate {
   return {
     workId: 1,
     title: 'Unsouled',
+    authors: 'Will Wight',
     missing: ['firstPublished', 'description'],
     asked: [],
     lastAttemptAt: null,
@@ -182,6 +186,113 @@ test('the item cap binds even when the budget would allow more', () => {
 test('the per-book estimate is per field, because auto-apply is per field', () => {
   assert.equal(estimateSubrequests(0), 12);
   assert.equal(estimateSubrequests(4), 28);
+});
+
+// ---------------------------------------------------------------------------
+// The donor path (owner ask 2026-08-16: check other libraries before the AI)
+// ---------------------------------------------------------------------------
+
+test('sweepMode: the donor needs BOTH its vars; either alone is not a donor', () => {
+  // Half a configuration silently doing nothing is this codebase's named
+  // enemy — a URL with no token would fetch and be refused every tick.
+  assert.deepEqual(sweepMode({}), { ai: false, donor: false });
+  assert.deepEqual(sweepMode({ DONOR_URL: 'https://library.heygabi.ai' }), { ai: false, donor: false });
+  assert.deepEqual(sweepMode({ DONOR_TOKEN: 't' }), { ai: false, donor: false });
+  assert.deepEqual(
+    sweepMode({ DONOR_URL: 'https://library.heygabi.ai', DONOR_TOKEN: 't' }),
+    { ai: false, donor: true },
+  );
+  assert.deepEqual(sweepMode({ ANTHROPIC_API_KEY: 'k' }), { ai: true, donor: false });
+});
+
+test('the estimate is mode-aware — a donor-blind estimate silently kills the invocation', () => {
+  // Header table: AI 12, donor 5, apply 4 per field, applied once whichever
+  // path answered.
+  assert.equal(estimateSubrequests(2, { ai: false, donor: true }), 13);
+  assert.equal(estimateSubrequests(2, { ai: true, donor: true }), 25);
+  assert.equal(estimateSubrequests(4, { ai: true, donor: true }), 33);
+});
+
+test('with both paths live, two ordinary books no longer fit one tick — one is picked, honestly', () => {
+  // 2 × 25 = 50 is the whole ceiling. Fitting both in on the AI-only estimate
+  // (2 × 20 = 40) is exactly the silent-termination bug the budget exists for.
+  const plan = planSweep(
+    [candidate({ workId: 1 }), candidate({ workId: 2 })],
+    SWEEP_LIMIT,
+    SWEEP_BUDGET,
+    { ai: true, donor: true },
+  );
+  assert.equal(plan.pick.length, 1);
+  assert.equal(plan.deferred, 1);
+  assert.ok(plan.estimated <= SWEEP_BUDGET);
+});
+
+test('donorFindings proposes only what was unasked, only what is usable, as donor-sourced', () => {
+  const reply: DonorDetailsReply = {
+    matched: true,
+    workId: 7,
+    title: 'The Way of Kings',
+    details: {
+      firstPublished: 2010,
+      series: 'The Stormlight Archive',
+      seriesIndex: 1,
+      description: 'A description the donor holds.',
+    },
+  };
+  // `description` was already asked here — the donor volunteering it must not
+  // re-open a settled question.
+  const findings = donorFindings(['firstPublished', 'series', 'seriesIndex'], reply, 'https://library.heygabi.ai');
+  assert.deepEqual(
+    findings.map((f) => f.field),
+    ['firstPublished', 'series', 'seriesIndex'],
+    'DETAIL_FIELDS order, series before seriesIndex — the apply path depends on it',
+  );
+  for (const f of findings) {
+    assert.equal(f.sourceTier, 'donor', 'a copied value must never wear a web tier');
+    assert.equal(f.value.kind, 'found');
+    assert.equal(f.sourceUrl, 'https://library.heygabi.ai/work/7');
+  }
+  assert.equal(findings[0]?.value.value, 2010);
+});
+
+test('donorFindings drops blanks and non-scalars instead of proposing overwrites', () => {
+  const reply = {
+    matched: true,
+    workId: 7,
+    title: 'X',
+    details: { firstPublished: null, series: '   ', description: { nested: 'garbage' } },
+  } as unknown as DonorDetailsReply;
+  assert.deepEqual(donorFindings(['firstPublished', 'series', 'description'], reply, 'https://d'), []);
+});
+
+test('an unmatched donor reply proposes nothing at all', () => {
+  assert.deepEqual(
+    donorFindings(['firstPublished'], { matched: false, details: {} }, 'https://d'),
+    [],
+  );
+});
+
+test('donor-only mode: no AI key no longer skips the tick', async () => {
+  // ⚠️ THE key behaviour of the donor build: her instance has no
+  // ANTHROPIC_API_KEY and its sweep used to skip every tick. With a donor
+  // configured it must get PAST the key gate — proven here by it reaching the
+  // queue read and reporting that failure, with the honest mode note first.
+  const env = {
+    DONOR_URL: 'https://library.heygabi.ai',
+    DONOR_TOKEN: 'set',
+    DB: {
+      prepare() {
+        throw new Error('D1 is gone');
+      },
+    },
+  } as unknown as Env;
+
+  const result = await runDetailsSweep(env);
+  assert.deepEqual(result.skipped, [
+    'no ANTHROPIC_API_KEY — donor-only mode',
+    'queue read failed: D1 is gone',
+  ]);
+  assert.equal(result.attempted, 0);
 });
 
 test('an empty queue plans nothing at all', () => {
