@@ -652,7 +652,7 @@ pdfjsLib.getDocument({
   httpHeaders: { Authorization: `Bearer ${await getIdToken()}` },
   withCredentials: false,
   disableRange:  false,   // the whole point
-  disableStream: false,
+  disableStream: true  ⚠️ CORRECTED 2026-08-17 (phase-1 measured: `false` runs the full-file GET to completion — all 189,930,310 B; `true` aborts it at 0.3%; see catalog-platform docs/info/ebook-viewer-phase1.md §6),
   disableAutoFetch: true, // ⚠️ see §5.3 — do NOT let it prefetch the whole file
   isEvalSupported: false, // keeps the CSP tight (§4.4)
   cMapUrl: '/static/pdfjs/cmaps/',  cMapPacked: true,   // CJK — Goblin Slayer
