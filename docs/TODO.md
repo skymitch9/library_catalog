@@ -46,8 +46,11 @@
   `MAX_COVER_BYTES = 2MB` — measured 2.1–3.4MB high-res images, dropped by
   the size guard as if absent. Fix: **downscale-not-reject** (Pillow 11.3.0
   is in the env; resize ~1600px longest side, JPEG q85, keep sha256 naming) —
-  never just raise the cap, that ships 3MB images to every page load. Web
-  lookup remains only for the 1 truly coverless EPUB + 4 PDFs. Original
+  never just raise the cap, that ships 3MB images to every page load.
+  **Owner mandates (2026-08-16 late): every EPUB ends with a cover, minimum**
+  — the 1 truly coverless EPUB gets a web lookup; **PDFs get no cover hunt —
+  instead a "show PDFs" checkbox on the ebooks page, DEFAULT OFF** (hidden
+  from grid and page search until ticked, preference persisted). Original
   census for context: 168 ebooks, 148 covered (92 self-extracted, 56
   audiobook-sibling). (The bookshelf itself shipped and PROMOTED — DONE.md.)
 - **💗 Pixel-hearts theme** (owner ask): pink-and-white theme in the retro
