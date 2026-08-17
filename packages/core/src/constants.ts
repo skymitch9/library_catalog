@@ -511,10 +511,36 @@ export type SourceTier = (typeof SOURCE_TIERS)[number];
 export const DONOR_SOURCE_TIER = 'donor' as const;
 
 /**
- * What `research_finding.source_tier` may actually hold: one of the model's
- * four tiers, or the donor. Must match migration 0320's CHECK list.
+ * The donor's second rung: a value copied from the sibling instance where the
+ * canonical key did **not** match and an AI judge said the two rows are the
+ * same WORK anyway (owner ask 2026-08-16 — *"have our ai model do a back up
+ * search on donors for fuzzy match before going to web"*). Migration 0321.
+ *
+ * ⚠️ A separate value from `DONOR_SOURCE_TIER`, and the separation is
+ * load-bearing rather than decorative. `'donor'` means *the canonical
+ * `work_key` (or a unique folded title) matched* — an identity this codebase
+ * computes and can re-check. This one means *a model was asked whether two
+ * differently-named rows are the same book*, which is exactly the §4.4 failure
+ * shape (right title, wrong book) the donor route otherwise refuses to guess
+ * at. One column tells the two apart for ever, in SQL, without joining to the
+ * run that produced them.
+ *
+ * It is also the **mechanical** half: `autoApplyFindings` refuses to apply a
+ * finding wearing this tier unless its caller opts in by name, so a judged
+ * match that was not confident stays `pending` for a person no matter which
+ * later run sweeps the work. See `apps/worker/src/lib/research-run.ts`.
  */
-export type FindingSourceTier = SourceTier | typeof DONOR_SOURCE_TIER;
+export const DONOR_FUZZY_SOURCE_TIER = 'donor_fuzzy' as const;
+
+/**
+ * What `research_finding.source_tier` may actually hold: one of the model's
+ * four tiers, or either donor rung. Must match migration 0321's CHECK list
+ * (which extends 0320's).
+ */
+export type FindingSourceTier =
+  | SourceTier
+  | typeof DONOR_SOURCE_TIER
+  | typeof DONOR_FUZZY_SOURCE_TIER;
 
 /**
  * What a `research_run` can be a run *of*. Three name a source tier; `details`

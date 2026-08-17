@@ -1,5 +1,6 @@
 import { CAPABILITY_MATRIX, ROLE_LADDER, type Capability, type Role } from '@lc/core';
 import { ApiError } from '../api.js';
+import { describeUnavailable } from './error-wording.js';
 
 /**
  * Turns a failed request into a sentence a person can act on.
@@ -88,10 +89,14 @@ export function describeError(err: unknown): string {
       return 'You do not have permission to do that.';
     }
 
-    // estate_unreachable: the directory could not be asked, which is an
-    // outage, not a verdict. Must not read as "you are not allowed".
+    // The body says WHICH 503 this is: `scan_unavailable` is the scan service
+    // being unconfigured (an outage with nothing to do with the person asking,
+    // whose sentence the Worker already wrote), while `estate_unreachable`
+    // keeps the access wording because it is the one 503 that really is about
+    // not being able to CHECK access. `error-wording.ts` holds the decision —
+    // it is a leaf so a test can reach it without Vite.
     if (err.status === 503) {
-      return "Couldn't check your access right now. Try again in a moment.";
+      return describeUnavailable(body);
     }
 
     if (err.status === 404) {

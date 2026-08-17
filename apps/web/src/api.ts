@@ -755,8 +755,12 @@ export interface ResearchFinding {
   workId: number;
   field: string;
   value: FindingValue;
-  /** 'donor' = copied from the sibling library instance, not a web claim. Migration 0320. */
-  sourceTier: 'official' | 'crowdfunding' | 'retail' | 'community' | 'donor';
+  /**
+   * 'donor' = copied from the sibling library instance on an exact key match
+   * (migration 0320); 'donor_fuzzy' = copied from a donor row an AI judge tied
+   * to this book rather than a key (migration 0321). Neither is a web claim.
+   */
+  sourceTier: 'official' | 'crowdfunding' | 'retail' | 'community' | 'donor' | 'donor_fuzzy';
   sourceUrl: string | null;
   /** Always null. See `FindingValue.basis`. */
   confidence: number | null;
@@ -782,8 +786,12 @@ export interface AutoApplied {
   authors: string | null;
   field: string;
   value: FindingValue;
-  /** 'donor' = copied from the sibling library instance, not a web claim. Migration 0320. */
-  sourceTier: 'official' | 'crowdfunding' | 'retail' | 'community' | 'donor';
+  /**
+   * 'donor' = copied from the sibling library instance on an exact key match
+   * (migration 0320); 'donor_fuzzy' = copied from a donor row an AI judge tied
+   * to this book rather than a key (migration 0321). Neither is a web claim.
+   */
+  sourceTier: 'official' | 'crowdfunding' | 'retail' | 'community' | 'donor' | 'donor_fuzzy';
   sourceUrl: string | null;
   appliedAt: string | null;
 }

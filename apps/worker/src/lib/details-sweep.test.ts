@@ -19,18 +19,23 @@ import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import type { Env } from '../env.js';
 import type { DonorDetailsReply } from '../routes/donor.js';
+import type { DonorCandidate } from '../routes/donor.js';
 import {
   DETAILS_SWEEP_CRON,
+  DONOR_FUZZY_RUN_MODEL,
   SWEEP_BUDGET,
   SWEEP_LIMIT,
+  donorAskUrl,
   donorFindings,
   estimateSubrequests,
+  judgedOutcome,
   planSweep,
   runDetailsSweep,
   sweepMode,
   unaskedGaps,
   type SweepCandidate,
 } from './details-sweep.js';
+import { heldForPerson } from './research-run.js';
 
 function candidate(overrides: Partial<SweepCandidate> = {}): SweepCandidate {
   return {
@@ -206,16 +211,28 @@ test('sweepMode: the donor needs BOTH its vars; either alone is not a donor', ()
 });
 
 test('the estimate is mode-aware — a donor-blind estimate silently kills the invocation', () => {
-  // Header table: AI 12, donor 5, apply 4 per field, applied once whichever
-  // path answered.
+  // Header table: AI 12; donor 5 alone, 6 where a judge is possible (the judge
+  // is a second fetch, and an exact MISS is the ordinary case); apply 4 per
+  // field, spent once by whichever rung answered.
   assert.equal(estimateSubrequests(2, { ai: false, donor: true }), 13);
-  assert.equal(estimateSubrequests(2, { ai: true, donor: true }), 25);
-  assert.equal(estimateSubrequests(4, { ai: true, donor: true }), 33);
+  assert.equal(estimateSubrequests(2, { ai: true, donor: true }), 26);
+  assert.equal(estimateSubrequests(4, { ai: true, donor: true }), 34);
+});
+
+test('the judged rung is COUNTED, not assumed free — the estimate rose by exactly one fetch', () => {
+  // ⚠️ The arithmetic is load-bearing: exceeding 50 subrequests terminates the
+  // invocation silently. A rung added without moving this number is a rung
+  // that eventually kills a tick mid-book.
+  const withJudge = estimateSubrequests(2, { ai: true, donor: true });
+  const donorOnly = estimateSubrequests(2, { ai: false, donor: true });
+  const aiOnly = estimateSubrequests(2, { ai: true, donor: false });
+  assert.equal(withJudge - (donorOnly + aiOnly - 4 * 2), 1, 'exactly one extra fetch, the judge call');
 });
 
 test('with both paths live, two ordinary books no longer fit one tick — one is picked, honestly', () => {
-  // 2 × 25 = 50 is the whole ceiling. Fitting both in on the AI-only estimate
-  // (2 × 20 = 40) is exactly the silent-termination bug the budget exists for.
+  // 2 × 26 = 52 is past the whole ceiling. Fitting both in on the AI-only
+  // estimate (2 × 20 = 40) is exactly the silent-termination bug the budget
+  // exists for.
   const plan = planSweep(
     [candidate({ workId: 1 }), candidate({ workId: 2 })],
     SWEEP_LIMIT,
@@ -345,4 +362,140 @@ test('the cron string the handler dispatches on matches wrangler.toml', async ()
     toml.includes(`"${DETAILS_SWEEP_CRON}"`),
     `wrangler.toml has no cron entry "${DETAILS_SWEEP_CRON}" — the sweep would never fire`,
   );
+});
+
+// ---------------------------------------------------------------------------
+// Rung 2: the judged donor match (owner ask 2026-08-16, "fuzzy match before
+// going to web"). Everything that decides what gets WRITTEN is pure, so it is
+// pinned here without a model, a donor or a database.
+// ---------------------------------------------------------------------------
+
+function donorCandidate(overrides: Partial<DonorCandidate> = {}): DonorCandidate {
+  return {
+    workId: 42,
+    title: 'Unsouled',
+    authors: 'Will Wight',
+    fold: 'unsouled',
+    titleScore: 0.5,
+    authorAgrees: true,
+    details: { firstPublished: 2016, series: 'Cradle', seriesIndex: 1 },
+    ...overrides,
+  };
+}
+
+test('⚠️ a donor-only instance never asks for a shortlist it could not judge', () => {
+  // THE no-key guarantee, and it is a property of the REQUEST, not of a branch
+  // further in: her sweep has no ANTHROPIC_API_KEY, so the URL it sends must be
+  // the one it sent before this rung existed.
+  const withoutAi = donorAskUrl('https://library.heygabi.ai', 'Unsouled', 'Will Wight', false);
+  assert.ok(!withoutAi.includes('candidates'), 'a shortlist costs the donor reads nobody here can use');
+  assert.equal(
+    withoutAi,
+    'https://library.heygabi.ai/api/donor/details?title=Unsouled&author=Will+Wight',
+  );
+  const withAi = donorAskUrl('https://library.heygabi.ai', 'Unsouled', 'Will Wight', true);
+  assert.ok(withAi.includes('candidates=1'));
+});
+
+test('a confident verdict applies, wearing the judged tier rather than the exact one', () => {
+  const outcome = judgedOutcome(
+    { verdict: 'same', workId: 42, confidence: 'high', why: 'Same author; the title adds the series.' },
+    [donorCandidate()],
+    ['firstPublished', 'series', 'seriesIndex'],
+    'https://library.heygabi.ai',
+  );
+  assert.equal(outcome.kind, 'apply');
+  if (outcome.kind !== 'apply') return;
+  assert.deepEqual(
+    outcome.findings.map((f) => f.field),
+    ['firstPublished', 'series', 'seriesIndex'],
+    'DETAIL_FIELDS order — series before seriesIndex, which the apply path depends on',
+  );
+  for (const f of outcome.findings) {
+    assert.equal(
+      f.sourceTier,
+      'donor_fuzzy',
+      '⚠️ a MATCHED-by-model copy must never wear the exact rung’s tier — migration 0321',
+    );
+    assert.equal(f.sourceUrl, 'https://library.heygabi.ai/work/42');
+    assert.match(String(f.value.basis), /high confidence/);
+  }
+});
+
+test('⚠️ an unsure verdict proposes, and is structurally incapable of applying itself', () => {
+  const outcome = judgedOutcome(
+    { verdict: 'unsure', workId: 42, confidence: 'medium', why: 'Could be the omnibus.' },
+    [donorCandidate()],
+    ['firstPublished'],
+    'https://d',
+  );
+  assert.equal(outcome.kind, 'pending', 'not confident is not a licence to write');
+  if (outcome.kind !== 'pending') return;
+  const [f] = outcome.findings;
+  assert.equal(f?.sourceTier, 'donor_fuzzy');
+  assert.match(String(f?.value.basis), /NOT confident/);
+  // The guarantee that outlives this tick: `autoApplyFindings` is default-deny
+  // on the judged tier, so the ordinary research run an hour from now cannot
+  // sweep this proposal up on its way past.
+  assert.equal(heldForPerson('donor_fuzzy', 7, undefined), true, 'no opt-in: held');
+  assert.equal(heldForPerson('donor_fuzzy', 7, {}), true, 'an options object is not an opt-in');
+  assert.equal(
+    heldForPerson('donor_fuzzy', 7, { applyJudgedDonorFromRun: 8 }),
+    true,
+    '⚠️ another run’s confident verdict authorises nothing about THIS proposal',
+  );
+  assert.equal(heldForPerson('donor_fuzzy', 7, { applyJudgedDonorFromRun: 7 }), false);
+  assert.equal(heldForPerson('donor', 7, undefined), false, 'an exact copy is unaffected');
+  assert.equal(heldForPerson('community', 7, undefined), false, 'a web claim is unaffected');
+});
+
+test('a same-work verdict at medium confidence is a proposal, not an answer', () => {
+  const outcome = judgedOutcome(
+    { verdict: 'same', workId: 42, confidence: 'medium', why: 'Probably.' },
+    [donorCandidate()],
+    ['firstPublished'],
+    'https://d',
+  );
+  assert.equal(outcome.kind, 'pending', 'only same + high writes unattended');
+});
+
+test('"different" writes nothing at all and costs no bookkeeping', () => {
+  const outcome = judgedOutcome(
+    { verdict: 'different', workId: null, confidence: 'high', why: 'Different author entirely.' },
+    [donorCandidate()],
+    ['firstPublished'],
+    'https://d',
+  );
+  assert.equal(outcome.kind, 'none');
+});
+
+test('⚠️ a work id the donor never offered is ignored, however confident the model sounds', () => {
+  // A model that invents an id would otherwise have values copied from a row
+  // nobody shortlisted — the §4.4 failure with no shortlist to blame.
+  const outcome = judgedOutcome(
+    { verdict: 'same', workId: 999, confidence: 'high', why: 'Certain.' },
+    [donorCandidate({ workId: 42 })],
+    ['firstPublished'],
+    'https://d',
+  );
+  assert.equal(outcome.kind, 'none');
+  if (outcome.kind !== 'none') return;
+  assert.match(outcome.why, /not on the shortlist/);
+});
+
+test('a confident match with nothing this book still needs writes no run', () => {
+  const outcome = judgedOutcome(
+    { verdict: 'same', workId: 42, confidence: 'high', why: 'Same book.' },
+    [donorCandidate({ details: { description: 'A description.' } })],
+    ['firstPublished'], // the donor holds a description; this book never asked for one
+    'https://d',
+  );
+  assert.equal(outcome.kind, 'none');
+});
+
+test('the judged run names both halves of its provenance', () => {
+  // "donor" alone would lose which model admitted the match; a model name alone
+  // would lose that the VALUES came from the donor, not from the web.
+  assert.match(DONOR_FUZZY_RUN_MODEL, /^donor\+/);
+  assert.match(DONOR_FUZZY_RUN_MODEL, /haiku/, 'the cheap judge is the point of the rung');
 });

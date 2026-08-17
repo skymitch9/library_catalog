@@ -17,6 +17,149 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ Donor fuzzy-match backstop — the judged rung between the donor and the web (2026-08-17)
+
+**The ask, moved whole from `TODO.md`:**
+
+- **Donor fuzzy-match backstop** (owner ask 2026-08-16, after the donor build
+  landed): *"have our ai model do a back up search on donors for fuzzy match
+  before going to web."* Ladder becomes: (1) donor exact canonical-fold match
+  (shipped today) → (2) when that misses, the donor returns a cheap candidate
+  shortlist (same author / fold-overlap SQL, no new normaliser) and ONE small
+  AI call judges "same work?" → on confident yes, use the donor's fields; on
+  no/unsure → (3) existing full web research. ⚠️ Fuzzy-matched donor answers
+  persist real data, so mirror the games matcher's confirm-first spirit: only
+  auto-apply on a high-confidence judge verdict, otherwise leave the finding
+  pending for a person. Donor-only instances (no AI key) stop at step 1
+  unchanged. 📋 QUEUED (reset batch).
+
+**What shipped** (worker `apps/worker/src/routes/donor.ts` + `lib/details-sweep.ts`
++ `lib/research-run.ts`, judge `packages/research/src/donor-match.ts`,
+migration **0321**):
+
+- **The ladder now reads exact → judged → web.** Rung 1 is unchanged (the
+  canonical `work_key`, or a unique folded title). On a MISS the donor now
+  answers a shortlist of up to **5** near-misses — `?candidates=1`, opt-in —
+  each carrying its fold, its scores and *exactly the fields it could donate*,
+  so a confident verdict needs no second round trip. Selection reuses
+  `titleSimilarity` / `MIN_TITLE_SIMILARITY` / `MIN_AUTHOR_SIMILARITY` (the
+  ported-verbatim gate `matching.ts` forbids re-implementing) over the one
+  `listWorksForMatching` read the exact rung already makes — no new normaliser,
+  no second SQL pass. ⚠️ **A shared author alone never shortlists anything**:
+  zero title overlap is dropped however well the author matches, because one
+  author writes forty books and offering all forty to a judge is how §4.4
+  (right author, wrong book) gets its opportunity.
+- **ONE small Claude call decides** (`judgeDonorMatch`, `claude-haiku-4-5`,
+  structured output, 20s timeout, no retries). It sees **titles and authors
+  only** — never the values it is authorising a copy of — so it cannot become a
+  second, unaudited research pass. Verdict is strict: `same` / `different` /
+  `unsure` plus `high` / `medium` / `low`.
+- **Only `same` + `high` writes unattended.** Everything else — `unsure`, a
+  medium confidence, or a `workId` the donor never offered (a hallucinated id is
+  ignored outright) — leaves the donor's values as a **pending** finding for a
+  person and falls through to the web pass. A pending judgement records
+  `unfilled: []`, so it marks nothing as asked and the question stays live.
+- **The confirm-first rule is MECHANICAL, not written down.** Judged copies wear
+  their own `source_tier = 'donor_fuzzy'` (migration 0321, the same CHECK
+  rebuild 0320 did), and `autoApplyFindings` is **default-deny** on that tier:
+  `heldForPerson` holds it unless the caller passes
+  `applyJudgedDonorFromRun: <this run's id>`. ⚠️ A run id rather than a
+  boolean, and that closed a real hole — `autoApplyFindings` applies
+  *everything pending for the work*, so a blanket flag would have let a later
+  confident verdict sweep up an earlier tick's unconfident proposal about a
+  different donor row. Nothing can auto-apply an unconfirmed judgement, in this
+  tick or any future one, including `scripts/apply-pending-findings.mjs`.
+- **Provenance is two-part and queryable.** The finding says `donor_fuzzy`; the
+  run says `model = 'donor+claude-haiku-4-5'`, `effort = 'judged'`, and a
+  sentence naming the donor work, the verdict and the measured judge cost. So
+  *"show me every value a model MATCHED rather than a key"* is one query, with
+  `revertFinding` at the end of it.
+- **Donor-only instances are byte-for-byte unchanged.** `candidates=1` is sent
+  only when `ANTHROPIC_API_KEY` exists, so the friend instance's request is the
+  one it sent yesterday and its ladder still stops at rung 1.
+- **Subrequest arithmetic updated honestly**, which is load-bearing: exceeding
+  50 terminates the invocation *silently*. The donor term is now **6** where a
+  judge is possible (1 donor fetch + 1 judge fetch + 4 bookkeeping) and 5
+  without — the two donor rungs are exclusive, so they do not add up. Both
+  paths live, a two-gap book estimates **26** and a four-gap book **34**, so
+  `planSweep` picks ONE book a tick rather than fitting two in on a
+  judge-blind estimate.
+- **Cost:** ≈**0.12¢ per judged book** (~550 tokens in, ~120 out, Haiku 4.5 at
+  $1/$5 per MTok — `estimateJudgeCents`), against ≈2¢ for the web pass it is
+  trying to avoid. ⚠️ The judged run deliberately records **no token counts**:
+  `toRunView` prices every run at Claude Opus 5's rate, and a Haiku count there
+  would render a fivefold overstatement on the queue's running total. The real
+  figure goes in the run's sentence instead.
+- Tests (behaviour-failing, no framework): shortlist admission and refusal, the
+  cap, both readings of an ambiguous fold, the no-key URL, confident-applies-
+  with-the-judged-tier, unsure-goes-pending, medium-is-not-confident,
+  hallucinated-id-ignored, nothing-to-donate, and the four `heldForPerson`
+  cases. Full `npm test` **954/954**.
+
+**Not verified:** no judged match has run against real data — the judge needs
+`ANTHROPIC_API_KEY` (main instance only) *and* a donor configured (friend
+instance only), so the first real one is **her next `:07` cron tick**, and the
+proof is a `research_run` row on `library-catalog-2nd` with
+`model = 'donor+claude-haiku-4-5'`. The Anthropic call itself has never been
+made from this code path; a wrong model id or schema rejection would show up
+there as a named `judge:` skip line, not as a broken tick.
+
+## ✅ The CLIENT half of the scan-503 wording (2026-08-17)
+
+**The spec, moved whole from `TODO.md`:**
+
+### 🔨 The CLIENT half of the scan-503 wording — one branch in `apps/web` (2026-08-17)
+
+The Worker half shipped and is archived in [`DONE.md`](DONE.md); this is the
+half that is still wrong in front of a person, and it is **five lines**.
+
+`describeError` in `apps/web/src/lib/errors.ts` maps **every** 503 to
+
+> "Couldn't check your access right now. Try again in a moment."
+
+That sentence belongs to `estate_unreachable` alone. The branch never looks at
+the body, so the Worker's new `error: 'scan_unavailable'` + worded `detail`
+cannot reach the screen: a scan outage still reads as an access problem, which
+is the exact thing the estate rule forbids (*a network or server failure is NOT
+a permission failure*).
+
+**The fix**, inside the existing `err.status === 503` branch:
+
+```ts
+// The body says WHICH 503 this is. `scan_unavailable` is the scan service
+// being unconfigured — an outage with nothing to do with the person asking —
+// and the Worker already wrote the sentence.
+if (body?.error === 'scan_unavailable' && typeof body.detail === 'string') return body.detail;
+// estate_unreachable keeps the existing wording; it is the only 503 that is
+// genuinely about not being able to CHECK access.
+```
+
+⚠️ Not done here because `apps/web` was another agent's zone in the session
+that fixed the Worker (concurrent theme work), and a stray edit there risked
+committing their WIP. It needs no coordination now — it is one file.
+
+Verify with `apps/web/test/` (no framework) — a test feeding
+`{ status: 503, body: { error: 'scan_unavailable', detail } }` must get the
+detail back, and one feeding `estate_unreachable` must still get the access
+wording. Mirror the two-sided assertions in
+`apps/worker/src/lib/vision.test.ts`.
+
+**What shipped:** exactly that, plus one structural move the spec could not
+have anticipated. `describeError`'s 503 branch is now one line calling
+`describeUnavailable` in the new **leaf** `apps/web/src/lib/error-wording.ts`
+(no imports at all), because the obvious test — feed `describeError` an
+`ApiError` — **cannot run**: `errors.ts` → `api.ts` → `firebase.ts` reads
+`import.meta.env`, which is `undefined` under `tsx`, so the file dies at module
+load before any assertion. (That is why `other-versions.test.ts` imports only a
+*type* from `api.ts`.) Recorded in
+[`info/gotchas.md`](info/gotchas.md) under the symptom.
+
+`apps/web/test/errors.test.ts` pins both directions the spec asked for —
+`scan_unavailable` + `detail` returns the Worker's sentence, `estate_unreachable`
+keeps the access wording — plus two the spec implied: an unrecognised 503 and a
+`scan_unavailable` with no `detail` both fall back to words rather than leaking
+a bare status or an error code to a person.
+
 ## ✅ 🌌 The universe LIST made single-writer — and the duplication was nothing (2026-08-17)
 
 Owner's ask, verbatim: *"I don't want duplicate universes."* The suspicion was

@@ -25,7 +25,13 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { Hono } from 'hono';
 import type { AppBindings, Env } from '../env.js';
-import { donorDetailsFor, donorRoutes, type DonorDetailsReply } from './donor.js';
+import {
+  CANDIDATE_LIMIT,
+  donorDetailsFor,
+  donorRoutes,
+  rankCandidates,
+  type DonorDetailsReply,
+} from './donor.js';
 
 function app() {
   const a = new Hono<AppBindings>();
@@ -213,6 +219,15 @@ describe('donor lookup', () => {
     assert.deepEqual(reply.details, {});
   });
 
+  it('a miss without ?candidates=1 answers exactly what it answered before the judged rung existed', async () => {
+    // ⚠️ The donor-only instance's request. Her sweep has no ANTHROPIC_API_KEY,
+    // so it never asks for a shortlist — and must get back the same shape it
+    // got yesterday, with no `candidates` key to misread.
+    const reply = await matched(stubDb([workRow(1, 'Unsouled', 'Will Wight')]), 'title=Nonexistent');
+    assert.equal(reply.matched, false);
+    assert.equal(reply.candidates, undefined, 'no shortlist unless it was asked for');
+  });
+
   it('an author narrows Gold to the right one via the canonical work key', async () => {
     const rows = [
       workRow(1, 'Gold', 'Author One', { first_published: 2001 }),
@@ -224,5 +239,114 @@ describe('donor lookup', () => {
     assert.equal(reply.matched, true);
     assert.equal(reply.workId, 1);
     assert.deepEqual(reply.details, { firstPublished: 2001 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The shortlist — rung 2's raw material (owner ask 2026-08-16: "fuzzy match
+// before going to web"). What it offers is what a model will be asked to
+// judge, so what it REFUSES to offer is the interesting half.
+// ---------------------------------------------------------------------------
+
+describe('rankCandidates', () => {
+  const rows = [
+    { id: 1, title: 'Unsouled', authors: 'Will Wight' },
+    { id: 2, title: 'Soulsmith', authors: 'Will Wight' },
+    { id: 3, title: 'The Way of Kings', authors: 'Brandon Sanderson' },
+  ];
+
+  it('a title variant is shortlisted on the canonical similarity floor alone', () => {
+    // "Unsouled (Cradle Book 1)" scores 0.5 against "Unsouled" — over
+    // MIN_TITLE_SIMILARITY (0.34), which is the ported-verbatim floor this
+    // must never re-implement.
+    const ranked = rankCandidates(rows, 'Unsouled (Cradle Book 1)', '');
+    assert.deepEqual(ranked.map((r) => r.row.id), [1]);
+  });
+
+  it('⚠️ a shared author with NO word of the title in common is never offered', () => {
+    // The §4.4 failure shape with the author as the alibi: one author writes
+    // forty books, and handing all forty to a judge is how the wrong one gets
+    // picked. "Soulsmith" and "The Way of Kings" share no title word with
+    // "Blood Line", so neither may appear however well the author matches.
+    const ranked = rankCandidates(rows, 'Blood Line', 'Will Wight');
+    assert.deepEqual(ranked, []);
+  });
+
+  it('an agreeing author outranks a stranger with an equally similar title', () => {
+    const ambiguous = [
+      { id: 10, title: 'Gold', authors: 'Chris Cleave' },
+      { id: 11, title: 'Gold', authors: 'Crouch, Blake' },
+    ];
+    // "Crouch, Blake" against "Blake Crouch" scores 1.0 on the canonical author
+    // gate; "Chris Cleave" scores 0. Both rows still travel — see the assertion.
+    const ranked = rankCandidates(ambiguous, 'Gold', 'Blake Crouch');
+    assert.deepEqual(
+      ranked.map((r) => r.row.id),
+      [11, 10],
+      'the author gate ranks; it never excludes the other reading of an ambiguous fold',
+    );
+    assert.equal(ranked[0]?.authorAgrees, true);
+    assert.equal(ranked[1]?.authorAgrees, false);
+  });
+
+  it('a whole series of near-identical titles is capped, not poured into the prompt', () => {
+    const series = Array.from({ length: 12 }, (_, i) => ({
+      id: i + 1,
+      title: `The Wandering Inn Volume ${i + 1}`,
+      authors: 'pirateaba',
+    }));
+    const ranked = rankCandidates(series, 'The Wandering Inn', 'pirateaba');
+    assert.equal(ranked.length, CANDIDATE_LIMIT);
+    assert.ok(CANDIDATE_LIMIT <= 5, 'every extra row is another chance to judge wrong');
+  });
+
+  it('an empty title asks for nothing rather than ranking the whole catalog', () => {
+    assert.deepEqual(rankCandidates(rows, '   ', 'Will Wight'), []);
+  });
+});
+
+describe('donor shortlist over the wire', () => {
+  it('a miss WITH ?candidates=1 offers the near-misses and exactly what each could donate', async () => {
+    const db = stubDb([
+      workRow(1, 'Unsouled', 'Will Wight', {
+        series: 'Cradle',
+        series_index_sort: 1,
+        first_published: 2016,
+      }),
+      workRow(2, 'Soulsmith', 'Will Wight', { first_published: 2016 }),
+    ]);
+    const reply = await matched(
+      db,
+      `title=${encodeURIComponent('Unsouled (Cradle Book 1)')}&author=${encodeURIComponent('Will Wight')}&candidates=1`,
+    );
+    assert.equal(reply.matched, false, 'the fold did not match — this is still a miss');
+    assert.equal(reply.candidates?.length, 1);
+    const [c] = reply.candidates!;
+    assert.equal(c?.workId, 1);
+    assert.equal(c?.fold, 'unsouled', 'the canonical fold, so the caller can see WHY the exact rung missed');
+    assert.equal(c?.authorAgrees, true);
+    assert.deepEqual(c?.details, { firstPublished: 2016, series: 'Cradle', seriesIndex: 1 });
+  });
+
+  it('⚠️ a candidate with nothing to donate is dropped — a judgement with no possible payoff', async () => {
+    const db = stubDb([workRow(1, 'Unsouled', 'Will Wight')]); // every detail null
+    const reply = await matched(
+      db,
+      `title=${encodeURIComponent('Unsouled (Cradle Book 1)')}&candidates=1`,
+    );
+    assert.deepEqual(reply.candidates, [], 'asked for, and honestly empty');
+  });
+
+  it('both readings of an ambiguous fold are offered — the rung the exact match refuses', async () => {
+    // Two works sharing a folded title match NOBODY on rung 1 (above). This is
+    // exactly the case rung 2 was asked for: offer both, let a judge and an
+    // author line settle it.
+    const db = stubDb([
+      workRow(1, 'Gold', 'Author One', { first_published: 2001 }),
+      workRow(2, 'Gold', 'Author Two', { first_published: 2002 }),
+    ]);
+    const reply = await matched(db, 'title=Gold&candidates=1');
+    assert.equal(reply.matched, false);
+    assert.deepEqual(reply.candidates?.map((c) => c.workId), [1, 2]);
   });
 });

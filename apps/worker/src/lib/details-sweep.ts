@@ -60,20 +60,28 @@
  * | Step | Subrequests |
  * |---|---|
  * | donor ask — one fetch to `DONOR_URL` | 1 |
- * | donor bookkeeping when it answers — createRun, saveFindings, listFindings (inside auto-apply), finishRun | 4 |
+ * | **judge — one fetch to Anthropic, only on an exact MISS with an AI key** | **1** |
+ * | donor bookkeeping when either donor rung answers — createRun, saveFindings, listFindings (inside auto-apply), finishRun | 4 |
  * | `claimRun` — closeStaleRuns, activeRun, getWork, gapsFor (getWork + verdicts), createRun | 6 |
  * | `runDetailsResearch` — getWork, the Claude call, saveFindings, finishRun | 5 |
  * | apply — 4 per field applied | 4·fields |
  * | **one book, AI only** | **12 + 4·fields** |
  * | **one book, donor only** | **5 + 4·fields** |
- * | **one book, both paths live** | **17 + 4·fields** |
+ * | **one book, both paths live** | **18 + 4·fields** |
+ *
+ * ⚠️ The donor's two rungs are **exclusive**, so they do not add up: the judge
+ * fires only when the exact match missed, and either way exactly one donor run
+ * is written. So the donor column is `1 + 4 = 5` on a donor-only instance and
+ * `1 + 1 + 4 = 6` where a judge is possible — the extra 1 is the judge fetch,
+ * and it is counted on every book because a MISS is the common case, not the
+ * rare one (that is the entire reason this rung was asked for).
  *
  * Each field is APPLIED at most once — by whichever path answered it — so the
  * `4·fields` term is never doubled when both paths run; what doubles is the
- * run bookkeeping, hence 17 rather than 24. On an AI-only instance a two-gap
- * book is ~20 and a four-gap book ~28; donor-only, 13 and 21; both live, 25
- * and 33. ⚠️ That last column is why `planSweep` and `estimateSubrequests`
- * take the mode: with both paths live, two ordinary books estimate to ~50 —
+ * run bookkeeping, hence 18 rather than 24. On an AI-only instance a two-gap
+ * book is ~20 and a four-gap book ~28; donor-only, 13 and 21; both live, 26
+ * and 34. ⚠️ That last column is why `planSweep` and `estimateSubrequests`
+ * take the mode: with both paths live, two ordinary books estimate past 50 —
  * the whole ceiling — so the plan honestly picks ONE, rather than fitting two
  * in on an AI-only estimate and killing the invocation mid-book.
  * `SWEEP_BUDGET` spends against the estimate rather than counting books.
@@ -123,6 +131,40 @@
  * entire mechanism by which the friend instance — which has no key, on
  * purpose — heals its details from the main library for free.
  *
+ * ## 4a. The judged rung — the donor gets a second chance before the web
+ *
+ * Owner ask 2026-08-16, once the rung above was live: *"have our ai model do a
+ * back up search on donors for fuzzy match before going to web."* The ladder
+ * a book now walks:
+ *
+ * | Rung | Matched by | Cost | Writes |
+ * |---|---|---|---|
+ * | 1 exact | `work_key`, or a unique folded title | one fetch | auto-applied, `source_tier='donor'` |
+ * | 2 **judged** | a ≤5-row donor shortlist + ONE Haiku call | one fetch, ≈0.1¢ | confident: auto-applied, `source_tier='donor_fuzzy'`; otherwise **pending for a person** |
+ * | 3 web | `researchDetails`, open-web search | ≈2¢ | auto-applied as before |
+ *
+ * Four rules keep the new rung honest, and each is mechanical rather than
+ * written down:
+ *
+ * - **It never runs without a key.** The shortlist is asked for with
+ *   `?candidates=1`, and that parameter is sent only when `mode.ai` — so a
+ *   donor-only instance's request is byte-for-byte the one it sent yesterday
+ *   and its behaviour stops at rung 1, exactly as before.
+ * - **Only `same` + `high` writes unattended.** Anything else — `unsure`, a
+ *   medium confidence, a verdict naming a row the donor never offered — leaves
+ *   the donor's values as a **pending** finding and falls through to rung 3.
+ *   `heldForPerson` in `research-run.ts` is what makes "never auto-applied"
+ *   true for ever rather than only in this tick: `autoApplyFindings` is
+ *   default-deny on `donor_fuzzy`, so no later ordinary run can sweep an
+ *   unconfirmed judgement up.
+ * - **A judged copy wears its own tier** (`DONOR_FUZZY_SOURCE_TIER`, migration
+ *   0321) and its own run model (`donor+claude-haiku-4-5`), so "which values
+ *   did a model *match* rather than a key" is one query — the question a
+ *   person asks when a judge turns out to have been wrong, with
+ *   `revertFinding` waiting at the end of it.
+ * - **A pending judgement marks nothing as asked.** The run records
+ *   `unfilled: []`, so rung 3 still gets the question and a later tick can too.
+ *
  * ## What it never does
  *
  * ⚠️ **It never throws.** Every section is caught and folded into the result,
@@ -148,10 +190,23 @@ import {
   type NeedsDetails,
   type SaveFindingInput,
 } from '@lc/db';
-import { DETAIL_FIELDS, DONOR_SOURCE_TIER, type DetailField } from '@lc/core';
+import {
+  DETAIL_FIELDS,
+  DONOR_FUZZY_SOURCE_TIER,
+  DONOR_SOURCE_TIER,
+  type DetailField,
+  type FindingSourceTier,
+} from '@lc/core';
+import {
+  DONOR_JUDGE_MODEL,
+  estimateJudgeCents,
+  judgeDonorMatch,
+  type DonorJudgeVerdict,
+} from '@lc/research';
 import type { Env } from '../env.js';
-import type { DonorDetailsReply } from '../routes/donor.js';
+import type { DonorCandidate, DonorDetailsReply } from '../routes/donor.js';
 import { autoApplyFindings, claimRun, runDetailsResearch } from './research-run.js';
+import { describeError } from './describe-error.js';
 
 /**
  * The most books one tick may pay for.
@@ -224,13 +279,28 @@ const DONOR_TIMEOUT_MS = 15_000;
 export const DONOR_RUN_MODEL = 'donor';
 
 /**
+ * `research_run.model` for a JUDGED donor copy — the donor plus the model that
+ * admitted the match, because both are load-bearing provenance and neither
+ * alone is the answer. Derived from `DONOR_JUDGE_MODEL` rather than typed out,
+ * so swapping the judge rewrites the history's story truthfully instead of
+ * leaving an old model's name on new rows.
+ */
+export const DONOR_FUZZY_RUN_MODEL = `donor+${DONOR_JUDGE_MODEL}`;
+
+/**
  * See the table in the header. Per field, because apply is per field; per
  * mode, because each live path carries its own run bookkeeping — an estimate
  * blind to the donor would under-count by 5 per book and the overrun does not
  * throw, it silently kills the invocation.
+ *
+ * ⚠️ The donor term is 6 rather than 5 wherever a judge is possible: the two
+ * donor rungs are exclusive (one fetch, one run either way) and the extra 1 is
+ * the judge's own fetch, counted on every book because an exact MISS is the
+ * ordinary case rather than the exception.
  */
 export function estimateSubrequests(fields: number, mode: SweepMode = AI_ONLY): number {
-  return (mode.ai ? 12 : 0) + (mode.donor ? 5 : 0) + 4 * fields;
+  const donor = mode.donor ? (mode.ai ? 6 : 5) : 0;
+  return (mode.ai ? 12 : 0) + donor + 4 * fields;
 }
 
 /**
@@ -352,28 +422,118 @@ export function donorFindings(
   donorUrl: string,
 ): SaveFindingInput[] {
   if (!reply.matched || !reply.details) return [];
+  return detailFindings(unasked, reply.details, {
+    tier: DONOR_SOURCE_TIER,
+    basis: `Recorded in the donor library's catalog for "${reply.title ?? 'this book'}" — a value that catalog already holds, not a web claim.`,
+    sourceUrl: reply.workId != null ? `${donorUrl}/work/${reply.workId}` : donorUrl,
+  });
+}
+
+/**
+ * The three refusals above, once, for both donor rungs.
+ *
+ * ⚠️ Shared rather than copied on purpose: the drop rules (unasked only,
+ * usable shapes only, `DETAIL_FIELDS` order) are the same rules whichever rung
+ * matched, and a second copy of them is how the two rungs would quietly start
+ * behaving differently.
+ */
+function detailFindings(
+  unasked: readonly DetailField[],
+  details: Partial<Record<DetailField, string | number>>,
+  meta: { tier: FindingSourceTier; basis: string; sourceUrl: string },
+): SaveFindingInput[] {
   const askable = new Set(unasked);
   const out: SaveFindingInput[] = [];
   for (const field of DETAIL_FIELDS) {
     if (!askable.has(field)) continue;
-    const raw = reply.details[field];
+    const raw = details[field];
     if (raw == null) continue;
     if (typeof raw !== 'string' && typeof raw !== 'number') continue;
     if (typeof raw === 'string' && raw.trim() === '') continue;
     out.push({
       field,
-      value: {
-        kind: 'found',
-        value: raw,
-        basis: `Recorded in the donor library's catalog for "${reply.title ?? 'this book'}" — a value that catalog already holds, not a web claim.`,
-      },
-      sourceTier: DONOR_SOURCE_TIER,
+      value: { kind: 'found', value: raw, basis: meta.basis },
+      sourceTier: meta.tier,
       // The donor's own book page — a person clicking the source lands where
       // a person maintains the value.
-      sourceUrl: reply.workId != null ? `${donorUrl}/work/${reply.workId}` : donorUrl,
+      sourceUrl: meta.sourceUrl,
     });
   }
   return out;
+}
+
+/**
+ * What the judge's answer means, in terms of what gets written. Pure, because
+ * this is the decision the whole rung exists to make and it must be pinnable
+ * without a model, a donor or a database.
+ *
+ * - `apply` — `same` at `high` confidence, naming a row the donor actually
+ *   offered, with something left to donate. The only outcome that writes
+ *   unattended.
+ * - `pending` — the judge leaned towards a row but not confidently. The
+ *   donor's values are proposed and left for a person; the caller still falls
+ *   through to the web pass.
+ * - `none` — nothing to propose: `different`, no named row, a row the donor
+ *   never offered (⚠️ a work id the model invented must never be trusted), or
+ *   a candidate with nothing this book still needs.
+ */
+export type JudgedOutcome =
+  | { kind: 'apply'; candidate: DonorCandidate; findings: SaveFindingInput[] }
+  | { kind: 'pending'; candidate: DonorCandidate; findings: SaveFindingInput[] }
+  | { kind: 'none'; why: string };
+
+export function judgedOutcome(
+  verdict: DonorJudgeVerdict,
+  candidates: readonly DonorCandidate[],
+  unasked: readonly DetailField[],
+  donorUrl: string,
+): JudgedOutcome {
+  if (verdict.verdict === 'different') {
+    return { kind: 'none', why: `The judge says none of the donor's rows is this book. ${verdict.why}` };
+  }
+  const candidate = candidates.find((c) => c.workId === verdict.workId);
+  if (!candidate) {
+    return {
+      kind: 'none',
+      why:
+        verdict.workId == null
+          ? `The judge named no donor row. ${verdict.why}`
+          : `The judge named donor work #${verdict.workId}, which was not on the shortlist — ignored.`,
+    };
+  }
+
+  const confident = verdict.verdict === 'same' && verdict.confidence === 'high';
+  const findings = detailFindings(unasked, candidate.details, {
+    tier: DONOR_FUZZY_SOURCE_TIER,
+    basis: confident
+      ? `Copied from the donor library's "${candidate.title}" (work #${candidate.workId}), which ${DONOR_JUDGE_MODEL} judged the same work as this book with high confidence: ${verdict.why}`
+      : `Proposed from the donor library's "${candidate.title}" (work #${candidate.workId}). ${DONOR_JUDGE_MODEL} was NOT confident it is the same book (${verdict.verdict}, ${verdict.confidence} confidence): ${verdict.why} — a person decides this one.`,
+    sourceUrl: `${donorUrl}/work/${candidate.workId}`,
+  });
+  if (findings.length === 0) {
+    return { kind: 'none', why: `Donor work #${candidate.workId} has nothing this book still needs.` };
+  }
+  return { kind: confident ? 'apply' : 'pending', candidate, findings };
+}
+
+/**
+ * The URL of one donor ask. Pure and exported for one property that is
+ * otherwise invisible: ⚠️ **`candidates=1` is sent only when this instance can
+ * actually judge them.** A donor-only instance must send the request it sent
+ * before the judged rung existed — the shortlist costs the donor D1 reads, and
+ * an instance with no key could do nothing with the answer.
+ */
+export function donorAskUrl(
+  base: string,
+  title: string,
+  authors: string | null,
+  wantCandidates: boolean,
+): string {
+  const url = new URL('/api/donor/details', base);
+  url.searchParams.set('title', title);
+  if (authors) url.searchParams.set('author', authors);
+  if (wantCandidates) url.searchParams.set('candidates', '1');
+  return url.toString();
 }
 
 /**
@@ -386,12 +546,11 @@ async function askDonor(
   env: Env,
   title: string,
   authors: string | null,
+  wantCandidates: boolean,
 ): Promise<{ ok: true; reply: DonorDetailsReply } | { ok: false; error: string }> {
   try {
-    const url = new URL('/api/donor/details', env.DONOR_URL);
-    url.searchParams.set('title', title);
-    if (authors) url.searchParams.set('author', authors);
-    const res = await fetch(url.toString(), {
+    const url = donorAskUrl(env.DONOR_URL as string, title, authors, wantCandidates);
+    const res = await fetch(url, {
       headers: { 'X-Donor-Token': env.DONOR_TOKEN ?? '' },
       signal: AbortSignal.timeout(DONOR_TIMEOUT_MS),
     });
@@ -415,9 +574,11 @@ export interface SweepResult {
   /** Of those, works with a question that has never been put. */
   eligible: number;
   /**
-   * Runs this tick actually claimed — donor copies (free) and AI lookups
-   * (paid) both count; a book served by both paths counts twice, because two
-   * runs happened.
+   * Runs this tick actually claimed — donor copies (free), judged donor copies
+   * (≈0.1¢) and AI lookups (≈2¢) all count; a book served by two rungs counts
+   * twice, because two runs happened. ⚠️ It does not equal
+   * `filled + notFound + errored`: a judged run held for a person wrote a real
+   * run and no value, and is counted in `heldForPerson` instead.
    */
   attempted: number;
   /** Runs that wrote at least one value or verdict. */
@@ -428,6 +589,20 @@ export interface SweepResult {
    * libraries first" is actually happening.
    */
   donorFilled: number;
+  /**
+   * Judge calls actually made this tick — one per book whose exact donor match
+   * missed while an AI key was available. The line that says what the middle
+   * rung cost: ≈0.1¢ each (`estimateJudgeCents`), against ≈2¢ for the web pass
+   * each one is trying to avoid.
+   */
+  judged: number;
+  /**
+   * Books where the judge leaned towards a donor row but not confidently, so
+   * the values are waiting on the findings queue for a person. ⚠️ Counted
+   * rather than silent: a proposal nobody knows exists is a proposal nobody
+   * decides.
+   */
+  heldForPerson: number;
   /** Runs that finished honestly with nothing — usually "could not identify". */
   notFound: number;
   errored: number;
@@ -455,6 +630,8 @@ export async function runDetailsSweep(
     attempted: 0,
     filled: 0,
     donorFilled: 0,
+    judged: 0,
+    heldForPerson: 0,
     notFound: 0,
     errored: 0,
     skipped: [],
@@ -519,7 +696,9 @@ export async function runDetailsSweep(
         // through to the AI claim below unchanged.
         let remaining = unaskedGaps(candidate.missing, candidate.asked);
         if (mode.donor && remaining.length > 0) {
-          const donor = await askDonor(env, candidate.title, candidate.authors);
+          // ⚠️ The shortlist is asked for ONLY when this instance can judge it
+          // — header §4a. A donor-only instance sends the pre-judge request.
+          const donor = await askDonor(env, candidate.title, candidate.authors, mode.ai);
           if (!donor.ok) {
             // Donor DOWN, not donor-has-no-answer. Nothing is recorded, so
             // the book stays exactly as eligible and is retried next tick;
@@ -545,6 +724,8 @@ export async function runDetailsSweep(
               await saveFindings(env.DB, run.id, candidate.workId, findings);
               // The same apply machinery as research — provenance rows say
               // source 'donor', decided_how 'auto', revertible like any batch.
+              // No judged opt-in: an exact match authorises nothing about a
+              // proposal some earlier judge left pending.
               const report = await autoApplyFindings(env.DB, candidate.workId, null);
               await finishRun(env.DB, run.id, {
                 status: 'done',
@@ -564,6 +745,98 @@ export async function runDetailsSweep(
                 result.notFound += 1;
               }
               remaining = remaining.filter((f) => !answered.includes(f));
+            } else if (mode.ai && !donor.reply.matched && (donor.reply.candidates?.length ?? 0) > 0) {
+              // ── Rung 2: the exact fold missed, so ask one small model
+              // whether any of the donor's near-misses is this book at all
+              // (header §4a). One call, titles and authors only.
+              const shortlist = donor.reply.candidates ?? [];
+              let verdict: DonorJudgeVerdict | null = null;
+              let judgeCents = 0;
+              try {
+                const answer = await judgeDonorMatch(env.ANTHROPIC_API_KEY, {
+                  title: candidate.title,
+                  authors: candidate.authors,
+                  candidates: shortlist.map((s) => ({
+                    workId: s.workId,
+                    title: s.title,
+                    authors: s.authors,
+                  })),
+                });
+                verdict = answer.verdict;
+                judgeCents = estimateJudgeCents(answer.usage.inputTokens, answer.usage.outputTokens);
+                result.judged += 1;
+              } catch (err) {
+                // A judge that failed is a rung that did not happen: nothing is
+                // recorded, nothing is marked asked, and the web pass below
+                // still gets its chance. Named, because a silent middle rung
+                // looks exactly like a rung with nothing to say.
+                result.skipped.push(`#${candidate.workId} judge: ${describeError(err)}`);
+              }
+
+              const outcome = verdict
+                ? judgedOutcome(verdict, shortlist, remaining, env.DONOR_URL as string)
+                : null;
+
+              if (outcome && outcome.kind !== 'none') {
+                const confident = outcome.kind === 'apply';
+                const answered = outcome.findings.map((f) => f.field);
+                // ⚠️ A pending judgement marks NOTHING as asked (`unfilled: []`)
+                // — the question is still open until a person answers it or the
+                // web pass does.
+                const run = await createRun(env.DB, {
+                  workId: candidate.workId,
+                  tier: 'details',
+                  model: DONOR_FUZZY_RUN_MODEL,
+                  effort: 'judged',
+                  triggeredBy: null,
+                  inputTitle: candidate.title,
+                  inputYear: null,
+                  unfilled: confident ? answered : [],
+                });
+                await saveFindings(env.DB, run.id, candidate.workId, outcome.findings);
+                // ⚠️ Scoped to THIS run: a confident verdict authorises the
+                // values it was about and nothing else pending on the work.
+                const report = await autoApplyFindings(
+                  env.DB,
+                  candidate.workId,
+                  null,
+                  confident ? { applyJudgedDonorFromRun: run.id } : undefined,
+                );
+                await finishRun(env.DB, run.id, {
+                  status: 'done',
+                  // ⚠️ Token counts deliberately NOT recorded. `toRunView`
+                  // prices every run at Claude Opus 5's rate, and this call ran
+                  // on Haiku — a token count here would render a fivefold
+                  // overstatement on the queue's running cost total. The real
+                  // figure is in the sentence instead.
+                  result: {
+                    proposed: outcome.findings.length,
+                    applied: report.applied.length,
+                    detail:
+                      (confident
+                        ? `${DONOR_JUDGE_MODEL} judged the donor's "${outcome.candidate.title}" (work #${outcome.candidate.workId}) the same work, with high confidence, and copied what it had.`
+                        : `${DONOR_JUDGE_MODEL} was not confident the donor's "${outcome.candidate.title}" (work #${outcome.candidate.workId}) is this book, so nothing was applied — the values are waiting for a person on the findings queue.`) +
+                      ` Judge cost ≈${judgeCents.toFixed(2)}¢.` +
+                      (report.skipped.length > 0 ? ` Skipped — ${report.skipped.join('; ')}.` : ''),
+                  },
+                });
+                result.attempted += 1;
+                if (confident) {
+                  if (report.applied.length > 0) {
+                    result.filled += 1;
+                    result.donorFilled += 1;
+                  } else {
+                    result.notFound += 1;
+                  }
+                  remaining = remaining.filter((f) => !answered.includes(f));
+                } else {
+                  result.heldForPerson += 1;
+                }
+              } else if (outcome) {
+                // A verdict of "none of these" is an answer, and a cheap one.
+                // No run, so nothing is marked asked; the web pass follows.
+                result.skipped.push(`#${candidate.workId} judge: ${outcome.why}`);
+              }
             } else if (!mode.ai) {
               // Donor-only mode, donor reachable, nothing to copy. Record the
               // attempt with `unfilled` EMPTY: `lastAttemptAt` moves so the

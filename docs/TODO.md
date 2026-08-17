@@ -40,17 +40,6 @@ land with its own code.
 ## 🔥 Owner asks 2026-08-16 late evening — status board
 
 ### Second wave (rapid-fire, logged as they arrived)
-- **Donor fuzzy-match backstop** (owner ask 2026-08-16, after the donor build
-  landed): *"have our ai model do a back up search on donors for fuzzy match
-  before going to web."* Ladder becomes: (1) donor exact canonical-fold match
-  (shipped today) → (2) when that misses, the donor returns a cheap candidate
-  shortlist (same author / fold-overlap SQL, no new normaliser) and ONE small
-  AI call judges "same work?" → on confident yes, use the donor's fields; on
-  no/unsure → (3) existing full web research. ⚠️ Fuzzy-matched donor answers
-  persist real data, so mirror the games matcher's confirm-first spirit: only
-  auto-apply on a high-confidence judge verdict, otherwise leave the finding
-  pending for a person. Donor-only instances (no AI key) stop at step 1
-  unchanged. 📋 QUEUED (reset batch).
 - **Ebook cover healing** 📋 QUEUED (reset batch) — **ROOT CAUSE FOUND
   2026-08-16 late (owner: "the epub has the cover"): he was right.** 15 of
   the 16 "coverless" EPUBs (All The Skills 2/4/6, Arcane Pathfinder 5, six
@@ -134,42 +123,6 @@ land with its own code.
   self-hosted reader lib off R2 range requests; PDFs via pdf.js; the real
   design work is auth-gating the file streams so the shared pool doesn't
   become a public download endpoint.
-
-## 🔨 The CLIENT half of the scan-503 wording — one branch in `apps/web` (2026-08-17)
-
-The Worker half shipped and is archived in [`DONE.md`](DONE.md); this is the
-half that is still wrong in front of a person, and it is **five lines**.
-
-`describeError` in `apps/web/src/lib/errors.ts` maps **every** 503 to
-
-> "Couldn't check your access right now. Try again in a moment."
-
-That sentence belongs to `estate_unreachable` alone. The branch never looks at
-the body, so the Worker's new `error: 'scan_unavailable'` + worded `detail`
-cannot reach the screen: a scan outage still reads as an access problem, which
-is the exact thing the estate rule forbids (*a network or server failure is NOT
-a permission failure*).
-
-**The fix**, inside the existing `err.status === 503` branch:
-
-```ts
-// The body says WHICH 503 this is. `scan_unavailable` is the scan service
-// being unconfigured — an outage with nothing to do with the person asking —
-// and the Worker already wrote the sentence.
-if (body?.error === 'scan_unavailable' && typeof body.detail === 'string') return body.detail;
-// estate_unreachable keeps the existing wording; it is the only 503 that is
-// genuinely about not being able to CHECK access.
-```
-
-⚠️ Not done here because `apps/web` was another agent's zone in the session
-that fixed the Worker (concurrent theme work), and a stray edit there risked
-committing their WIP. It needs no coordination now — it is one file.
-
-Verify with `apps/web/test/` (no framework) — a test feeding
-`{ status: 503, body: { error: 'scan_unavailable', detail } }` must get the
-detail back, and one feeding `estate_unreachable` must still get the access
-wording. Mirror the two-sided assertions in
-`apps/worker/src/lib/vision.test.ts`.
 
 ## 📖 TBR should span all catalogs, the way "read" does (owner ask 2026-08-16)
 

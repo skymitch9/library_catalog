@@ -190,11 +190,17 @@ outage sends people asking for access they already have.*
 
 Both halves were wrong. Server-side the message was written for an operator
 ("Set ANTHROPIC_API_KEY in .dev.vars"), which tells the person holding the
-phone nothing about whether it is their fault. Client-side is worse and is
-**still open**: `describeError` in `apps/web/src/lib/errors.ts` maps *every*
-503 to `"Couldn't check your access right now."` — wording that belongs to
-`estate_unreachable` alone — and it ignores the body, so a scan outage cannot
-currently say anything else.
+phone nothing about whether it is their fault. Client-side was worse: `describeError` in
+`apps/web/src/lib/errors.ts` mapped *every* 503 to `"Couldn't check your access
+right now."` — wording that belongs to `estate_unreachable` alone — and ignored
+the body, so a scan outage could not say anything else.
+
+**Both halves are now fixed (2026-08-17).** The client half reads the body:
+`scan_unavailable` with a worded `detail` surfaces that sentence; everything
+else keeps the access wording, so an unrecognised 503 still gets words rather
+than a bare status. ⚠️ The decision lives in `apps/web/src/lib/error-wording.ts`
+— a leaf with **no imports** — for the reason in the next section, and
+`apps/web/test/errors.test.ts` pins both directions.
 
 Worker side is fixed: `SCAN_UNAVAILABLE_MESSAGE` / `SCAN_KEY_REJECTED_MESSAGE`
 in `lib/vision.ts` each say what happened, what it needs (an *operator* sets
@@ -208,3 +214,30 @@ insufficient role / service unavailable. They have four different fixes, so
 they need four different sentences. `lib/vision.test.ts` and the
 `scan-jobs.test.ts` block assert *both* sides — the message must say the
 operator half AND must not contain the vocabulary the other three own.
+
+
+---
+
+## A web test dies at import with "Cannot read properties of undefined (reading 'VITE_…')"
+
+**Found 2026-08-17**, writing the client half of the 503 fix. The symptom is a
+test file that fails *whole* — no assertion runs, no test name is printed, just
+a `TypeError` at module load:
+
+```
+apps/web/src/lib/firebase.ts:55
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY ?? '…'
+TypeError: Cannot read properties of undefined (reading 'VITE_FIREBASE_API_KEY')
+```
+
+**`import.meta.env` is Vite's, not the runtime's.** `npm test` runs `tsx`, where
+it is `undefined`. The import chain does the damage:
+`lib/errors.ts` → `api.ts` (for `ApiError`) → `firebase.ts` → boom. So **any**
+web test that imports a runtime value from `api.ts` — or from anything that
+reaches it — dies before it can assert.
+
+⚠️ That is why `other-versions.test.ts` imports only a **type** from `api.ts`:
+type imports are erased, so they cost nothing at runtime. The fix when a real
+value is needed is to put the decision in a leaf module with no imports and test
+that (`lib/error-wording.ts` is the worked example), not to reach for a mock
+loader.

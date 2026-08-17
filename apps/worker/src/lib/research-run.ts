@@ -79,6 +79,7 @@
 
 import {
   DETAIL_FIELDS,
+  DONOR_FUZZY_SOURCE_TIER,
   detailGaps,
   verdictFor,
   type DecisionMode,
@@ -606,6 +607,58 @@ export interface AutoApplyReport {
   skipped: string[];
   /** Findings left `pending` because their value was not usable. */
   unusable: number;
+  /**
+   * Findings left `pending` because a person has to confirm the MATCH — a
+   * donor row an AI judge could not confidently call the same work. See
+   * `heldForPerson`.
+   */
+  held: number;
+}
+
+/** What a caller is allowed to apply unattended. Default-deny; see `heldForPerson`. */
+export interface AutoApplyOptions {
+  /**
+   * The run id whose judged-donor findings (`DONOR_FUZZY_SOURCE_TIER`,
+   * migration 0321) this caller is holding a confident verdict for.
+   *
+   * ⚠️ A run id rather than a boolean, and the difference is a real hole
+   * closed. `autoApplyFindings` applies **everything pending for the work**,
+   * so a blanket "judged donor is fine" flag would also sweep up an *earlier*
+   * tick's unconfident proposal about a completely different donor row — the
+   * one thing this whole mechanism exists to prevent. Scoped to one run, the
+   * confident verdict authorises only the values it was actually about.
+   */
+  applyJudgedDonorFromRun?: number;
+}
+
+/**
+ * Whether this finding must wait for a person however many runs sweep the work.
+ *
+ * ⚠️ **This is not the confidence threshold the head of this file forbids, and
+ * the difference is what it is a threshold *on*.** That rule refuses to drop a
+ * *value* because a score disliked it — everything the model finds still gets
+ * applied, and everything unapplied is reported by name. This asks a prior
+ * question: **is this even the same book?** The donor route already refuses to
+ * guess at that (two works sharing a folded title match nobody); the judged
+ * rung is allowed to answer it, and when it answers with anything short of a
+ * confident yes, the proposal is a person's to accept. Nothing is discarded —
+ * the finding stays `pending`, visible on the queue, and `PATCH /findings/:id`
+ * is how it lands.
+ *
+ * Default-deny on purpose. `autoApplyFindings` applies **everything pending for
+ * the work**, not just the run that called it (a deliberate rule, see below),
+ * so without this gate an unconfirmed judged match would be swept up by the
+ * next ordinary research run an hour later — auto-applied by a code path that
+ * never saw the verdict. Pure and exported so that guarantee is pinned by a
+ * test rather than by a comment.
+ */
+export function heldForPerson(
+  sourceTier: string,
+  runId: number,
+  options: AutoApplyOptions | undefined,
+): boolean {
+  if (sourceTier !== DONOR_FUZZY_SOURCE_TIER) return false;
+  return options?.applyJudgedDonorFromRun !== runId;
 }
 
 /**
@@ -627,6 +680,7 @@ export async function autoApplyFindings(
   db: D1Database,
   workId: number,
   userId: number | null,
+  options?: AutoApplyOptions,
 ): Promise<AutoApplyReport> {
   const pending = await listFindings(db, workId, 'pending');
 
@@ -639,9 +693,20 @@ export async function autoApplyFindings(
   };
   const ordered = [...pending].sort((a, b) => order(a) - order(b) || a.id - b.id);
 
-  const report: AutoApplyReport = { applied: [], skipped: [], unusable: 0 };
+  const report: AutoApplyReport = { applied: [], skipped: [], unusable: 0, held: 0 };
 
   for (const finding of ordered) {
+    // ⚠️ Before anything is written: a match only a model believes in waits for
+    // a person. Left `pending` and named, never marked accepted — see
+    // `heldForPerson`.
+    if (heldForPerson(finding.sourceTier, finding.runId, options)) {
+      report.held += 1;
+      report.skipped.push(
+        `${finding.field}: copied from a donor row an AI judge was not confident about — waiting for a person to confirm it is the same book`,
+      );
+      continue;
+    }
+
     const outcome = await applyFinding(db, finding, userId, 'auto');
 
     if (outcome.applied) {
