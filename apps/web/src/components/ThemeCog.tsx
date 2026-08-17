@@ -22,26 +22,19 @@ import { useEffect, useRef, useState } from 'react';
 import {
   estateTheme,
   onEstateChange,
+  themeLabel,
   type EstateMode,
   type EstateState,
-  type EstateThemeName,
 } from '../lib/estate-theme.js';
 
 /**
- * ⚠️ Labels only — the LIST comes from `api.themes` (the switcher), never from
- * this object. A theme added upstream shows up in the dropdown on the next
- * vendor sync wearing its raw id until it is named here; a hardcoded list
- * would instead hide it entirely, which is the harder bug to notice.
+ * ⚠️ NEITHER the theme list NOR their names live in this repo. The list comes
+ * from `api.themes` and the names from `themeLabel()`, which asks the switcher.
+ * The map that used to sit here made a new theme arrive wearing its raw id
+ * until somebody typed a name for it — a smaller bug than a hidden theme, but
+ * still one the owner's 2026-08-17 order rules out: "when a theme is added all
+ * sites get it". MODE_LABELS stays: MODES is a closed set of three.
  */
-const THEME_LABELS: Record<EstateThemeName, string> = {
-  classic: 'Classic',
-  apple: 'Apple',
-  cyberpunk: 'Cyberpunk',
-  retro: 'Retro',
-  // Pink and white, 8-bit hearts — padhard's default (owner, 2026-08-16).
-  hearts: 'Hearts',
-};
-
 const MODE_LABELS: Record<EstateMode, string> = {
   auto: 'Auto',
   light: 'Light',
@@ -118,7 +111,7 @@ export function ThemeCog() {
             >
               {api.themes.map((t) => (
                 <option key={t} value={t}>
-                  {THEME_LABELS[t] ?? t}
+                  {themeLabel(t)}
                 </option>
               ))}
             </select>

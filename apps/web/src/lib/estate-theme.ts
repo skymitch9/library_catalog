@@ -32,6 +32,15 @@ export interface EstateState {
 interface EstateThemeApi {
   themes: EstateThemeName[];
   modes: EstateMode[];
+  /**
+   * Human names for the themes, added to canonical 2026-08-17 so a new theme
+   * arrives with its LABEL and not just its id (owner order: "when a theme is
+   * added all sites get it"). Optional because a stale vendored theme.js will
+   * not have them — `themeLabel()` below is the one place that decides what to
+   * do about that.
+   */
+  labels?: Record<string, string>;
+  label?: (theme: string) => string;
   get(): EstateState;
   setTheme(theme: string): void;
   setMode(mode: string): void;
@@ -46,6 +55,22 @@ declare global {
 /** The switcher, or null when its script never ran. */
 export function estateTheme(): EstateThemeApi | null {
   return typeof window !== 'undefined' && window.estateTheme ? window.estateTheme : null;
+}
+
+/**
+ * The human name for a theme id.
+ *
+ * ⚠️ There is deliberately no label map in this repo. The switcher owns the
+ * names beside the ids it owns, so theme #6 arrives in this cog fully dressed
+ * on the next sync — it used to arrive wearing its raw id until someone typed a
+ * name here, which is a smaller bug than a hidden theme but still a bug the
+ * owner's 2026-08-17 order rules out ("when a theme is added all sites get
+ * it"). The capitalise is only for a vendored theme.js older than that day.
+ */
+export function themeLabel(theme: string): string {
+  const api = estateTheme();
+  if (api && typeof api.label === 'function') return api.label(theme);
+  return theme ? theme.charAt(0).toUpperCase() + theme.slice(1) : theme;
 }
 
 /**

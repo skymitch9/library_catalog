@@ -125,14 +125,50 @@ describe('hearts is a real theme, not just a stylesheet block', () => {
     assert.match(texture, /crispEdges/, 'without crispEdges the 8-bit heart antialiases into a blob');
   });
 
-  it('every theme the switcher offers has a human label in the cog', () => {
+  it('every theme the switcher offers has a human label — IN THE SWITCHER', () => {
+    // Moved 2026-08-17 (owner: "when a theme is added all sites get it"). This
+    // used to assert a THEME_LABELS map in ThemeCog.tsx, which meant a theme
+    // added upstream landed in the dropdown wearing its raw id until somebody
+    // typed a name in THIS repo — a smaller bug than a hidden theme, but the
+    // same shape, and this test would have gone red for a change made
+    // correctly elsewhere. Names now live beside the ids they name, in
+    // canonical's LABELS, and arrive with the sync.
     for (const theme of registeredThemes()) {
       assert.match(
-        THEME_COG,
+        THEME_JS,
         new RegExp(`^\\s*${theme}:\\s*'`, 'm'),
-        `ThemeCog has no label for \`${theme}\` — the dropdown would show its raw id`,
+        `theme.js's LABELS has no entry for \`${theme}\` — every cog on the estate would show ` +
+          'its raw id. The registry and its names are both in ' +
+          'catalog-platform/sites/heygabi-home/public/assets/theme.js.',
       );
     }
+  });
+
+  it('the cog keeps NO theme list and NO label map of its own', () => {
+    // The invariant that replaces the map: this repo may not hold a second
+    // registry in any form. Both halves come from window.estateTheme.
+    assert.match(
+      THEME_COG,
+      /api\.themes\.map/,
+      'ThemeCog no longer renders api.themes — if it has grown its own list, that list will go stale',
+    );
+    assert.match(
+      THEME_COG,
+      /themeLabel\(/,
+      'ThemeCog no longer asks themeLabel() for names — a local label map goes stale the same way',
+    );
+    assert.doesNotMatch(
+      THEME_COG,
+      /^\s*(classic|apple|cyberpunk|retro|hearts):\s*'/m,
+      'ThemeCog has grown a per-theme map again. Names belong in canonical theme.js, beside the ids.',
+    );
+  });
+
+  it('the switcher exposes those labels to consumers that render their own control', () => {
+    // The library, games and audiobook cogs are all React/JS rather than the
+    // apex's markup contract, so the API is how they get names at all.
+    assert.match(THEME_JS, /label:\s*labelFor/, 'window.estateTheme.label() is missing from the vendored switcher');
+    assert.match(THEME_JS, /labels:\s*\(function/, 'window.estateTheme.labels is missing from the vendored switcher');
   });
 });
 

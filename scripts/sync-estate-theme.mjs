@@ -73,6 +73,11 @@ const FONT_FILES = [
   'bangers.woff2',
   'luckiest-guy.woff2',
   'OFL-bangers-luckiestguy.txt',
+  // Added 2026-08-17. Rajdhani and Share Tech Mono had been served from every
+  // estate origin since 2026-08-13 with no licence text beside them — canonical
+  // was missing the file, so every sync propagated the omission. Self-hosting
+  // under the SIL OFL requires the licence to travel with the faces.
+  'OFL-rajdhani-sharetechmono.txt',
 ];
 
 mkdirSync(join(OUT_DIR, 'fonts'), { recursive: true });
