@@ -241,3 +241,50 @@ type imports are erased, so they cost nothing at runtime. The fix when a real
 value is needed is to put the decision in a leaf module with no imports and test
 that (`lib/error-wording.ts` is the worked example), not to reach for a mock
 loader.
+
+---
+
+## "The deploy did not ship" — but the origin is fine and the EDGE is stale
+
+**Found 2026-08-17**, verifying the content-notes deploy on both instances. Two
+different traps fired within a minute of each other, and each one *looked
+exactly like a bad deploy*.
+
+### 1. `https://<host>/` can be a Cloudflare edge HIT despite `Cache-Control: no-cache`
+
+The live page named `assets/index-C6qTDWn7.js` — a bundle from a previous
+deploy, whose asset no longer exists, so fetching it fell through to the SPA
+`index.html` and every grep for new code came back **0**. Response headers said
+`CF-Cache-Status: HIT`, `Cache-Control: no-cache`.
+
+⚠️ `no-cache` means *revalidate*, not *do not store*, and the edge served the
+stored copy anyway. `index.ts` sets that header deliberately (a cached
+index.html pins a browser to the previous deploy's JavaScript — the Safari
+failure recorded there), and it is still not a guarantee.
+
+**The check that works:** add a cache-buster.
+
+```bash
+curl -s "https://library.heygabi.ai/?cb=$RANDOM" | grep -o 'assets/index-[A-Za-z0-9_-]*\.js'
+```
+
+With the buster it named the freshly built bundle, and that asset answered 200.
+Same shape as the `ebooks.json` edge-cache item in `TODO.md`: **origin clean,
+edge stale**, and only a busted URL tells them apart.
+
+### 2. `curl -o <file>` silently returns nothing for a ~900 KB asset here
+
+The follow-up check wrote the bundle to a file and grepped it. The file was
+either 3,989 bytes (the SPA fallback, from trap 1) or absent, with
+`http=000 size=0` — the Git Bash curl artifact this household has already met
+(`curl -o /dev/null` reporting exit 43 / status 000 against a host that is
+plainly up).
+
+**Pipe instead of writing**, and the same URL answers correctly:
+
+```bash
+curl -s "https://library.heygabi.ai/assets/index-BMOsf5fN.js" | grep -c "Content notes"
+```
+
+⚠️ Both traps produce a **zero**, and a zero is exactly what a genuinely failed
+deploy produces. Before believing one, bust the cache and drop the `-o`.
