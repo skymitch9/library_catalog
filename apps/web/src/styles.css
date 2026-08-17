@@ -124,13 +124,49 @@ h1, h2, .page-title { text-shadow: var(--et-glow-title); }
 
 /* --- shell --------------------------------------------------------------- */
 
+/*
+ * ## The top bar wraps. It does not squeeze, and it never overlaps.
+ *
+ * ⚠️ Rewritten 2026-08-17 after the owner sent a photograph of `padhard` on an
+ * iPhone: the action chips were sitting ON TOP of the wordmark, with a few
+ * fragment letters showing between them. The GABI speech bubble had just
+ * arrived as a seventh control, which is what tipped it over — but the count
+ * was the trigger, not the fault, and adding an eighth must not bring it back.
+ *
+ * The fault was two lines working together. `.topbar` was a `display: flex`
+ * row with NO `flex-wrap`, so nothing could ever move to a second line; and
+ * `.topbar__brand` was `flex: 1; min-width: 0`, which invites the flexbox
+ * algorithm to shrink the wordmark to *zero* rather than shrink anything else.
+ * A zero-width box does not clip its text — the letters spill out of it and
+ * the controls, which come later in the DOM, paint straight over them. So the
+ * bar failed in the one way that loses information silently: it looked like a
+ * missing title rather than a full one behind a chip.
+ *
+ * The rule now, and the reason each half exists:
+ *
+ *   1. `flex-wrap: wrap` on the bar — there is a second line to fall to. This
+ *      is unconditional, at every width, so a long display name or a
+ *      four-digit chore count degrades into a taller bar rather than a broken
+ *      one. It is the guard, and it is why this is not a breakpoint fix.
+ *   2. `min-width: max-content` on the wordmark — it is the ONE thing here
+ *      that may not shrink. Everything else has somewhere to go; the title has
+ *      nothing to say if it is half a word.
+ *
+ * `.topbar__tools` groups the four person-and-session controls so the bar
+ * cannot break through the middle of them, and the narrow-width block further
+ * down gives the nav a line of its own. Both are described where they live.
+ */
 .topbar {
   position: sticky;
   top: 0;
   z-index: 20;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.5rem;
+  /* Tighter than the column gap on purpose: two lines of controls should read
+     as one bar with a second row, not as two stacked bars. */
+  row-gap: 0.4rem;
   padding: 0.6rem 1rem;
   border-bottom: 1px solid var(--et-hairline);
   /* Opaque, not translucent: a blur behind a scrolling grid of covers is the
@@ -139,8 +175,13 @@ h1, h2, .page-title { text-shadow: var(--et-glow-title); }
   background: var(--lc-tint);
 }
 .topbar__brand {
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 auto;
+  /* ⚠️ `max-content`, NOT `0`. See the block above — a `0` here is what let the
+     wordmark be squeezed to nothing and painted over. It still GROWS (that is
+     what pushes the controls to the right edge); it simply will not give up
+     its own letters to do it. */
+  min-width: max-content;
+  white-space: nowrap;
   font-family: var(--et-font-display);
   font-size: 1.15rem;
   font-weight: 600;
@@ -163,8 +204,101 @@ h1, h2, .page-title { text-shadow: var(--et-glow-title); }
   white-space: nowrap;
   max-width: 10rem;
 }
-@media (max-width: 30rem) {
+/* ⚠️ The `display: none` that used to be here at 30rem now lives in the 56rem
+   block below, with the rest of the narrow-bar rules. The name is the one
+   thing in the bar that is nice-to-have, so it goes as soon as the bar stops
+   being a single line — hiding it at 30rem but not at 45rem was why a 480px
+   window came out WORSE than a 430px phone: the name came back and pushed the
+   tools cluster onto a line of its own. */
+
+/*
+ * The two clusters in the bar, and why they are clusters at all.
+ *
+ * `.topbar__nav` is PLACES in this catalog — Missing, My TBR, Wishlist, Export.
+ * `.topbar__tools` is the person and their session — ask GABI, search the whole
+ * estate, pick a theme, sign out. That split already existed in App.tsx's
+ * comments; what is new (2026-08-17) is that the second one is a real element,
+ * so a wrapping bar can no longer break between the cog and Sign out.
+ *
+ * Each is `flex: none`, so a cluster moves to the next line WHOLE rather than
+ * being cut in half — an icon stranded on a line by itself is how the old bar
+ * looked its worst. `.topbar__nav` is the one exception below 50rem, where it
+ * is given the whole line and allowed to wrap inside itself.
+ */
+.topbar__nav {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.topbar__tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  /* Holds the cluster against the right edge on whichever line it lands on —
+     including a line it has fallen to alone, where the wordmark's `flex-grow`
+     is no longer there to push it. */
+  margin-left: auto;
+}
+
+/*
+ * ⚠️ 56rem (896px) is a MEASURED breakpoint, not a device — measured in the
+ * browser on 2026-08-17, not reasoned about. Laid out on one line the full bar
+ * comes to about 881px: wordmark 137, name up to 160, the four chips 283, the
+ * three icon buttons and Sign out 237, plus gaps and padding. 56rem is that
+ * with a little air. It is deliberately nowhere near a desktop width, so the
+ * desktop bar is the bar it always was.
+ *
+ * Below it the bar has to become two lines, and this block chooses WHICH two
+ * rather than letting the wrap fall where it may.
+ *
+ * The choice: the wordmark keeps the top line, with the three compact icon
+ * controls and Sign out beside it; the text chips — the space hogs, and the
+ * things that were overlapping the title — take a full line underneath and
+ * wrap among themselves if even that is not enough. `order: 1` is what puts a
+ * cluster that comes EARLIER in the DOM onto the LOWER line; the DOM order is
+ * left alone because it is the right reading order for a screen reader and for
+ * tabbing (places, then session controls).
+ *
+ * Measured on the shipped bundle: two lines at 390px (the width the bug was
+ * reported at) and at 430px. At 320px the wordmark and the tools cluster no
+ * longer fit on one line together either — 112 + 220 + gaps against 296 of
+ * usable width — so the bar is three lines: title, tools, chips. Nothing
+ * overlaps and every control is on screen. That is the floor, and it is a
+ * designed one rather than a failure.
+ */
+@media (max-width: 56rem) {
+  /* The display name goes here rather than at 30rem. See the note above
+     `.topbar__brand`: it is the only thing in the bar nobody needs, and
+     keeping it to 45rem cost the tools cluster a whole line. */
   .topbar__who { display: none; }
+  .topbar__nav {
+    order: 1;
+    flex: 1 0 100%;
+    /* So a chip row that still overflows wraps INSIDE the nav rather than
+       pushing the last chip off the edge. */
+    min-width: 0;
+  }
+  /* 44px, not the 36px a chip wears in a page body: this is a row of thumb
+     targets at the top of a phone, and the icon buttons beside it are already
+     44. Below 56rem the bar is a touch surface. */
+  .topbar__nav a.chip { min-height: 44px; padding: 0 0.6rem; }
+}
+@media (max-width: 26rem) {
+  /* The wordmark gives up a little size — it is the only thing on the line
+     that can, and it stays whole. */
+  .topbar__brand { font-size: 1rem; }
+  .topbar { padding: 0.5rem 0.75rem; }
+  /* ⚠️ Measured, and the reason the chips are one line at 320px instead of
+     two: at 0.6rem of padding and a 0.35rem gap the four of them come to
+     300.7px against 296px of usable width — four pixels over, which costs a
+     whole extra row. Taking 0.1rem off each brings them to ~285 and leaves
+     room for the count to reach three digits. The tools cluster tightens the
+     same amount for the same reason, on the line above. */
+  .topbar__nav { gap: 0.3rem; }
+  .topbar__nav a.chip { padding: 0 0.5rem; }
+  .topbar__tools { gap: 0.3rem; }
 }
 
 .muted { color: var(--et-muted); }
@@ -1064,12 +1198,13 @@ textarea {
  * fact, so they wear the same colour.
  */
 
-.topbar__nav { display: flex; gap: 0.35rem; }
-@media (max-width: 26rem) {
-  /* On a phone the wordmark, two nav chips and Sign out do not fit. The nav is
-     what stays: it is how you reach two of the five screens. */
-  .topbar__brand { font-size: 1rem; }
-}
+/* ⚠️ `.topbar__nav` and the phone-sized wordmark USED TO LIVE HERE, half a
+   file away from `.topbar` itself. They moved up beside it 2026-08-17, into
+   the shell section, because the header's wrapping behaviour is one design
+   and reading half of it here while the other half sat at line 130 is how it
+   went wrong: the bar had no `flex-wrap`, this had no way to say so, and the
+   chips ended up printed over the wordmark. Nothing is lost — search
+   `.topbar__tools` in the shell block for the whole account. */
 
 .page-title { margin: 0.2rem 0 0.6rem; font-size: 1.5rem; }
 .series-claim { margin: 0 0 0.4rem; font-weight: 600; font-size: 1.05rem; }

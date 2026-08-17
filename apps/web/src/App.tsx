@@ -326,15 +326,33 @@ export function App() {
               nothing behind it. ⚠️ Hiding is not the lock and never was — the
               route answers a worded 404 where the posture is off and a 403
               naming `runResearch` where the role is short. */}
-        {me.gabiPanel && me.capabilities.includes('runResearch') && (
-          <GabiToggle open={gabiOpen} onToggle={() => setGabiOpen((o) => !o)} />
-        )}
-        <EstateSearchToggle open={estateOpen} onToggle={() => setEstateOpen((o) => !o)} />
-        {/* The settings cog — the estate theme dropdown and light/dark/auto
-            live here (ThemeCog.tsx). Beside "Sign out" because both are
-            about the person, not the catalog; the nav chips stay places. */}
-        <ThemeCog />
-        <button onClick={() => void signOutNow()}>Sign out</button>
+        {/* ⚠️ ONE ELEMENT, and the wrapper is load-bearing rather than tidiness
+            — added 2026-08-17 to fix a phone header that overlapped its own
+            wordmark (styles.css `.topbar__tools` carries the full account).
+
+            The four controls in here were four separate children of the top
+            bar, so on a narrow screen the flex line broke wherever it ran out
+            of room: between the cog and Sign out, or between the chips and the
+            search. Grouped, they are a single unbreakable cluster that either
+            sits beside the wordmark or drops below it whole — the top bar can
+            no longer wrap through the middle of them.
+
+            They belong together for a reason that predates the bug, which is
+            why this grouping costs nothing: every one of them is about the
+            PERSON and their session — ask GABI, search the whole estate, pick
+            a theme, sign out — where `.topbar__nav` beside it is places in
+            this catalog. Two clusters, two jobs. */}
+        <div className="topbar__tools">
+          {me.gabiPanel && me.capabilities.includes('runResearch') && (
+            <GabiToggle open={gabiOpen} onToggle={() => setGabiOpen((o) => !o)} />
+          )}
+          <EstateSearchToggle open={estateOpen} onToggle={() => setEstateOpen((o) => !o)} />
+          {/* The settings cog — the estate theme dropdown and light/dark/auto
+              live here (ThemeCog.tsx). Beside "Sign out" because both are
+              about the person, not the catalog; the nav chips stay places. */}
+          <ThemeCog />
+          <button onClick={() => void signOutNow()}>Sign out</button>
+        </div>
       </header>
 
       {estateOpen && <EstateSearchPanel />}
