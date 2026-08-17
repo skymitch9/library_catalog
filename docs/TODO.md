@@ -71,10 +71,6 @@
   coverage reaches 100% and is proven able to fail before trusted. Original
   census for context: 168 ebooks, 148 covered (92 self-extracted, 56
   audiobook-sibling). (The bookshelf itself shipped and PROMOTED — DONE.md.)
-- **💗 Pixel-hearts theme** (owner ask): pink-and-white theme in the retro
-  pixel family — "those pixel gamer hearts" — for the library app, and it
-  becomes the DEFAULT theme on padhard (her instance; per-instance default
-  var, posture-style). 📋 QUEUED (reset batch).
 - **Series linking, owner's words on the desired UX:** *"I want missing books
   to say you don't have book 1 but audio and ebook do and Skylar also owns
   it."* So the series view is per-VOLUME ownership across mediums and owners:

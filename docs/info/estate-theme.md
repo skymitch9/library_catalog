@@ -1,8 +1,9 @@
 # Estate theme adoption — Information Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
-> Last verified: **2026-08-13** — all three themes exercised in the running app
-> (dev worker + vite, real D1 data) before this was written.
+> Last verified: **2026-08-17** — `hearts` exercised on the deployed site in
+> both modes (§4); the rest last verified **2026-08-13**, all three themes
+> exercised in the running app (dev worker + vite, real D1 data).
 
 The web app styles against the estate's `--et-*` token contract and carries the
 shared theme switcher. THE contract is `catalog-platform/docs/info/estate-themes.md`
@@ -14,13 +15,14 @@ shared theme switcher. THE contract is `catalog-platform/docs/info/estate-themes
 |---|---|---|
 | Vendored asset | `apps/web/public/estate/` | **Gitignored build artifact**, written by `scripts/sync-estate-theme.mjs` on every build/test/typecheck (sibling of the universes and estate-auth syncs; same loud failure when `catalog-platform` is missing). |
 | The one transformation | inside the sync script | Font URLs re-rooted `/assets/fonts/` → `/estate/fonts/`, because this app's `/assets/*` is Vite hash space with an immutable cache rule. Pattern-checked: zero replacements fails the build. |
-| Pre-paint stamp | `apps/web/index.html` | `<html data-default-theme="apple">` + `estate-theme.css` + `theme.js` as a **classic synchronous script in `<head>`, before the module bundle** — the React bundle is far too late and flashes the wrong theme. |
+| Pre-paint stamp | `apps/web/index.html` | `<html data-default-theme="apple">` + `estate-theme.css` + `theme.js` as a **classic synchronous script in `<head>`, before the module bundle** — the React bundle is far too late and flashes the wrong theme. Since 2026-08-17 a six-line inline script runs between the CSS and `theme.js` and rewrites that attribute per instance — §4. |
 | Settings surface | `ThemeCog.tsx` in the topbar | Drives `window.estateTheme` (typed in `src/lib/estate-theme.ts`); deliberately NOT the apex's `#hg-cog` markup ids — theme.js wires those at DOMContentLoaded, which races React's render (comment in the component has the full argument). |
 | `theme-color` meta | `src/lib/estate-theme.ts` | Follows the computed `--et-bg` on every `hg-themechange`. |
 | Caching | `apps/web/public/_headers` | `/estate/*` 1h (bytes change without renames), `/estate/fonts/*` 1y. |
 
 Storage (`hg_theme` / `hg_mode`) belongs to theme.js alone; nothing in this app
-touches those keys. Default is `apple` — defaults are identity, the owner's call.
+touches those keys. Default is `apple` on `library.heygabi.ai` and `hearts` on
+`padhard.heygabi.ai` — defaults are identity, the owner's call (§4).
 
 ## 2. How the old palette's roles map (the part worth re-reading)
 
@@ -61,3 +63,40 @@ where the contract has two.
 - `npm run dev` does NOT run `prebuild` — the vendored copy exists because
   typecheck/test/build all sync it. On a fresh clone run `npm run
   estate-theme:sync` (or any build) once before `npm run dev`.
+
+## 4. The per-INSTANCE default (2026-08-17)
+
+Owner: *"let it be the default for padhard"*. Her instance boots `hearts`;
+this one still boots `apple`.
+
+⚠️ **Both instances serve the same `apps/web/dist`** — `[assets]` and
+`[env.friend.assets]` in `wrangler.toml` point at one directory — so there is
+ONE `index.html` for two sites. That kills the two obvious mechanisms: a
+build-time flag cannot tell the instances apart, and the Worker's per-env
+`DEFAULT_THEME` var cannot reach a document the Worker hands straight out of
+`ASSETS` without rewriting it.
+
+So the default is resolved **in the browser, from the hostname, before
+`theme.js` runs**:
+
+| Piece | Where |
+|---|---|
+| The map | `<html data-default-theme-by-host='{"padhard.heygabi.ai":"hearts"}'>` |
+| The resolver | six lines of inline classic script in `<head>`, between the CSS link and `theme.js` — anything going wrong leaves the declared default in place |
+| The posture of record | `DEFAULT_THEME` in **both** `[vars]` and `[env.friend.vars]`; nothing in the Worker reads it |
+| The drift guard | `apps/web/test/instance-default-theme.test.ts` reads `wrangler.toml` and fails if the var and the map disagree — the details-sweep-cron pattern |
+
+A person's own pick still wins: the resolver moves the FALLBACK attribute only
+and never touches `hg_theme`. Proven live — `library.heygabi.ai` declares
+`apple` and renders `retro`, because the owner picked retro there.
+
+**When the Worker grows a config surface** the web app reads at boot, that var
+becomes the live source and the hostname map goes away. Until then the map is
+the only thing that actually decides.
+
+⚠️ **Do not verify a theme deploy against a warm browser.** Seen both ways on
+2026-08-17: the first navigation after the deploy still got the previous
+`index.html` (so the default read `apple`), and the page then styled itself
+from a cached `/estate/estate-theme.css` — `_headers` gives `/estate/*`
+`max-age=3600` — rendering the previous tile while the origin already served
+the new one. Hard-reload, or fetch with `cache: 'no-store'` and compare.

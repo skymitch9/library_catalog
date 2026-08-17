@@ -6,8 +6,10 @@
 > `catalog-platform/docs/info/estate-themes.md`; this app's mapping:
 > [`../info/estate-theme.md`](../info/estate-theme.md).
 
-Four themes — `classic | apple | cyberpunk | retro` — × light/dark on one
-`--et-*` token contract, switched per site (and per page since v2) by a cog.
+Five themes — `classic | apple | cyberpunk | retro | hearts` — × light/dark on
+one `--et-*` token contract, switched per site (and per page since v2) by a
+cog. `hearts` (pink/white, 8-bit hearts, retro's chunky grammar) was added
+2026-08-16 for the second library instance.
 
 ## ⚠️ The one rule
 
@@ -29,6 +31,12 @@ selector, a token is missing — add it to the contract, never fork.
 ⚠️ Manual copies drift: the games copy lagged the `classic` theme until its
 re-vendor (`a7b0318`). After editing canonical, sweep the vendored copies.
 
+⚠️ **Drifting again as of 2026-08-17:** `hearts` is in canonical
+(`6e93350`, `aaa20fb`) and live on both library instances, but the apex has
+NOT been redeployed and games/audiobook have NOT been re-copied — their cogs
+still offer four themes. Deliberate: the owner asked for a library theme, not
+an estate wave. Sweep them when one is next deployed for its own reasons.
+
 ## Storage keys (localStorage, origin-scoped so "per site" is free)
 
 | Key | Values |
@@ -45,11 +53,18 @@ re-vendor (`a7b0318`). After editing canonical, sweep the vendored copies.
 | `heygabi.ai` | `classic` |
 | `heygabi.ai/admin` | `apple` |
 | `library.heygabi.ai` | `apple` |
+| `padhard.heygabi.ai` | `hearts` (owner, 2026-08-16) |
 | `audiobooks.heygabi.ai` | `cyberpunk` |
 | `boardgames.heygabi.ai` | `retro` |
 
 Every consumer sets `<html data-default-theme="…">` and loads `theme.js`
 synchronously in `<head>` (pre-paint). Themes are SKIN, never page structure.
+
+⚠️ **The two library instances share one bundle**, so `padhard`'s default is
+not a second `data-default-theme` — it is resolved from `location.hostname` by
+an inline script before `theme.js`. `DEFAULT_THEME` in `wrangler.toml` is the
+posture of record and a test pins the two together. Full mechanism and its
+caching traps: [`../info/estate-theme.md` §4](../info/estate-theme.md).
 
 ## Deploy-wave order + what is live (curled 2026-08-14)
 

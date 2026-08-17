@@ -17,6 +17,92 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ 💗 Pixel-hearts theme, and padhard boots wearing it (2026-08-17)
+
+The item as it stood in `TODO.md`, moved whole:
+
+> - **💗 Pixel-hearts theme** (owner ask): pink-and-white theme in the retro
+>   pixel family — "those pixel gamer hearts" — for the library app, and it
+>   becomes the DEFAULT theme on padhard (her instance; per-instance default
+>   var, posture-style). 📋 QUEUED (reset batch).
+
+Owner's words, verbatim: *"Make a new book theme with hearts. A pink and white
+theme that kind of matches the retro theme. Like those pixel gamer hearts. Make
+that a theme and let it be the default for padhard."*
+
+**Commits.** `2723ffa` (web + wrangler + tests) and `a170cb0` (deploy log)
+here; **`6e93350` + `aaa20fb` in `catalog-platform`** — the theme itself.
+
+⚠️ **The theme had to be built in the OTHER repo, and that is not a detour.**
+`theme.js` validates a stored `hg_theme` against its own `THEMES` array, and
+`apps/web/public/estate/` here is a gitignored artifact that
+`scripts/sync-estate-theme.mjs` rewrites on every build/test/typecheck. A
+`hearts` added locally could have been picked once and would have vanished on
+reload, and the next build would have deleted the CSS. So `hearts` is the
+estate's **fifth** theme, in the canonical asset, exactly like the other four.
+
+**What it looks like.** It borrows retro's GRAMMAR — 2px ink outline, flat card
+face, hard no-blur offset shadows, press-INTO-shadow, Luckiest Guy display
+(already self-hosted, so no new font file) — and none of its palette: white
+card faces on a blush ground, plum ink, a rose accent, a deep-berry second
+voice, and an 8-bit heart tiled as `--et-bg-texture` from an inline SVG data
+URI. ⚠️ Retro's own "no arcade elements" ban is UNCHANGED; hearts exists so
+that impulse has somewhere legitimate to go.
+
+⚠️ **The first cut was wrong in a way no test could catch, and only a browser
+found it.** Every token was "correct", the contrast assertions passed — and the
+rendered page was a solid pink knit, hearts fused edge-to-edge into rows, with
+the white ground the owner asked for nowhere to be seen. The second cut halves
+the density (a half-drop PAIR on an 18×16 grid, tiled 63×56) and softens the
+fill. *Look at it in a browser before touching either number.*
+
+**How padhard's default works.** ⚠️ Both instances serve the SAME
+`apps/web/dist` — one bundle, one `index.html`, two sites — so a build-time
+flag cannot tell them apart, and `[env.friend.vars]` cannot reach a document
+the Worker hands straight out of `ASSETS` without rewriting it. So six lines of
+inline classic script in `index.html` read `data-default-theme-by-host` and
+stamp the right default from `location.hostname`, before `theme.js` and before
+first paint. `wrangler.toml` still carries `DEFAULT_THEME` on **both**
+instances as the posture of record, beside every other per-instance setting,
+and `apps/web/test/instance-default-theme.test.ts` reads that file and fails if
+the two ever disagree — the same guard the details-sweep cron string has. When
+the Worker grows a config surface the app reads at boot, the var becomes live
+and the hostname map goes away.
+
+**Tests: 13 new, four failure modes** — theme unregistered (unselectable),
+unstyled (a token missing against retro's set), unreadable (WCAG contrast
+computed for both modes, so "pink on pink" fails the build), wrangler/index
+drift, and the resolver running after `theme.js` instead of before. Proven able
+to fail: flipping the friend var to `retro` turned the suite red, back to
+`hearts` green. Full suite **915 pass / 0 fail**; typecheck clean.
+
+**Deployed both instances from `e68fb4e`'s tree:**
+
+| instance | worker | version id | host |
+|---|---|---|---|
+| main | `library-catalog` | `0007e16c-c46b-4ee9-b001-4d4b0d63779a` | library.heygabi.ai |
+| friend | `library-catalog-friend` | `ec721da6-1f6e-4fed-b095-0137402a085b` | padhard.heygabi.ai |
+
+**Verified live, in a browser, not by curl:** padhard stamps
+`data-theme="hearts"` with `hg_theme` **null** — i.e. as the default, not as a
+stored pick — and renders the soft pink-and-white wallpaper in light and a plum
+ground in dark. library.heygabi.ai still declares `apple` and rendered `retro`,
+because the owner has an explicit stored choice there: the "a person's pick
+beats the default" requirement, proven on the live site rather than argued.
+"Hearts" is in the live cog's dropdown on both.
+
+⚠️ **Two caching gotchas seen during that verification, both expected and both
+temporary:** the first navigation after the deploy still got the PREVIOUS
+`index.html` (so the default read `apple`), and the page then styled itself
+from a cached `/estate/estate-theme.css` (`_headers` gives it `max-age=3600`)
+and rendered the FIRST tile while the origin was already serving the second.
+A hard reload proved both; both age out within the hour. **Neither is a bug to
+chase** — but do not verify a theme deploy against a warm browser.
+
+**NOT done, on purpose:** the apex has not been redeployed and the manual
+vendored copies (games, audiobook) have not been swept, so those cogs still
+offer four themes until someone runs that wave.
+
 ## ✅ Two worded-error fixes in the Worker (2026-08-17)
 
 ⚠️ **Neither item was ever in `TODO.md`** — they were identified in an earlier
