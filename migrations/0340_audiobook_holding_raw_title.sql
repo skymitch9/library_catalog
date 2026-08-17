@@ -1,0 +1,61 @@
+-- The sibling catalog's title, UNCLEANED — the content-warning bridge key.
+--
+-- ## The bug this closes, measured 2026-08-17 against production
+--
+-- Migration 0010 stores `audiobook_holding.title` "already stripped of Audible's
+-- series decoration by `cleanTitleWithSeries`", and says so in its own comment.
+-- That is exactly right for what it was built for: showing a person the name
+-- that matched, and comparing two catalogs' idea of a book.
+--
+-- It is exactly WRONG as a content-warning key, and `docs/info/content-warnings.md`
+-- §2 shipped believing otherwise. That section claims `audiobook_holding.title`
+-- is "the other side's own spelling" and that slugging it "reproduces their
+-- `bookId` byte for byte". It does so only for a row whose raw title carried no
+-- decoration — and the whole point of the join is the rows where the two
+-- catalogs disagree.
+--
+--     catalog.csv   "Onyx Storm - Empyrean, Book 3"   <- what the audiobook site keys on
+--     audiobook_holding.title  "Onyx Storm"           <- what we key on today
+--     bookIdFromTitle          onyx-storm-empyrean-book-3  vs  onyx-storm
+--
+-- Both halves then fail silently, which is the same failure §2 exists to
+-- prevent, reintroduced one layer down:
+--
+--   * `content_warnings.json` is keyed by the raw title, so the published
+--     warnings never resolve — **18 of 92 holdings**, measured, match a key in
+--     that file only after folding, and reach the physical book with nothing.
+--   * a note written here files under `onyx-storm`, and the audiobook site's own
+--     book page queries `onyx-storm-empyrean-book-3`. A silo, not a note.
+--
+-- ⚠️ The ebook shelf in `audiobook_catalog` already got this right — its
+-- manifest publishes `audiobook_title` as "a raw title, never a slug"
+-- (`scripts/build_ebook_manifest.py`). So today an ebook and a paperback of one
+-- book file their warnings under two different keys. This column is what makes
+-- all three surfaces agree.
+--
+-- ## Why a column and not a rekey, and not an alias table
+--
+-- Nothing persisted moves. `user_content_warnings` and its `_dev` lane were
+-- **re-measured empty on 2026-08-17** over the REST API (0 documents in both,
+-- and 0 in both `cw_requests` lanes), so there is no stored document id to
+-- migrate — and even if there were, `warningKeysFor` READS the union of every
+-- candidate id, so an old key stays readable forever. The bridge is additive by
+-- construction; that is the aliasing property, and it is why no rekey was
+-- considered further.
+--
+-- A separate alias table was considered and refused: the mapping already exists,
+-- one row per work, produced by this project's ONE matcher, with its rung
+-- (`matched_via`), its score (`title_similarity`) and the alias that unlocked it
+-- (`via_alias`) stored beside it and printed by the backfill. A second table
+-- would be a second answer to a question this one already answers — the exact
+-- "one canonical implementation" rule `CLAUDE.md` states. What was missing was
+-- never the mapping. It was one field of it, computed in `scripts/lib/
+-- audiobooks.mjs` as `rawTitle` and then dropped on the floor at the D1 boundary.
+--
+-- ## NULL is honest, and readers must treat it as such
+--
+-- Every row predating this migration has NULL here until
+-- `npm run backfill:audiobooks` runs again. NULL means "not recorded", never
+-- "same as `title`" — `warningKeysFor` falls back to `title` and the panel says
+-- which spelling it looked under, exactly as it already does for a stale row.
+ALTER TABLE audiobook_holding ADD COLUMN raw_title TEXT;

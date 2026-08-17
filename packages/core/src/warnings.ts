@@ -142,7 +142,15 @@ export interface UserWarningDoc {
 export interface WarningKeys {
   /** The id a note written on THIS site is filed under. */
   writeBookId: string;
-  /** Every id to query, `writeBookId` first. Deduplicated, never empty. */
+  /**
+   * Every id to query, `writeBookId` first. Deduplicated, never empty.
+   *
+   * ⚠️ **This list is the alias layer, and it is why nothing had to be
+   * rekeyed** when migration 0340 moved the write key from the cleaned title to
+   * the raw one. Every spelling this catalog has ever filed under stays in the
+   * read set forever, so a note written under yesterday's key is still found
+   * today. Add to this list; never replace it.
+   */
   bookIds: string[];
   /**
    * The exact title to look the PUBLISHED pipeline warnings up under, or null.
@@ -161,9 +169,39 @@ export interface WarningKeys {
  * The identity join, in one function.
  *
  * @param title this catalog's own spelling — the fallback candidate.
- * @param audiobookTitle `audiobook_holding.title`, or null when unmatched.
+ * @param audiobookRawTitle `audiobook_holding.raw_title` (migration 0340) — the
+ *   sibling catalog's string **verbatim**. ⚠️ This is the canonical key when it
+ *   is known; everything else here is a fallback or an alias.
+ * @param audiobookTitle `audiobook_holding.title` — the same row's title with
+ *   Audible's series decoration stripped. A read alias, never the write key.
  * @param audiobookTitleStale `stale_at IS NOT NULL` — the sibling catalog no
  *   longer confirms the match.
+ *
+ * ## ⚠️ RAW, not cleaned — migration 0340, and the bug it closes
+ *
+ * This function shipped on 2026-08-17 taking only `audiobookTitle`, on the
+ * belief that `audiobook_holding.title` was "the other side's own spelling".
+ * **It is not.** Migration 0010 stores that column already stripped by
+ * `cleanTitleWithSeries`, which is right for showing a person the name that
+ * matched and wrong for a key. Measured against production the same day:
+ *
+ *     ours            "Onyx Storm (The Empyrean)"
+ *     holding.title   "Onyx Storm"                      <- what this used
+ *     catalog.csv     "Onyx Storm - Empyrean, Book 3"   <- what BOTH other
+ *                                                          surfaces key on
+ *
+ * **18 of the 92 holdings** matched an entry in `content_warnings.json` only
+ * after folding — the whole Percy Jackson set, *Words of Radiance*, *Onyx
+ * Storm*, two *Dungeon Crawler Carl* volumes — so their published warnings
+ * reached the physical book as nothing at all, and a note added here would have
+ * filed under a slug the audiobook site never queries.
+ *
+ * The third surface settles it: `audiobook_catalog`'s ebook shelf publishes
+ * `audiobook_title` per manifest row as *"a raw title, never a slug"*
+ * (`scripts/build_ebook_manifest.py`). Keying on the cleaned title here meant an
+ * ebook and a paperback of one book filed under two different ids. One work, one
+ * key, every format — that is the whole requirement, and the raw title is the
+ * only spelling all three surfaces can agree on.
  *
  * ## ⚠️ A stale holding is READ but never WRITTEN to
  *
@@ -178,28 +216,64 @@ export interface WarningKeys {
  *   stopped confirming buries it. `routes/audiobook-mapping.ts` excludes stale
  *   rows from its outbound join for the same reason: better to answer with our
  *   own key than to propagate one already flagged as doubtful.
+ *
+ * ## ⚠️ `matched_via` is deliberately NOT a write gate, and that was measured
+ *
+ * A containment match is a claim (migration 0010), so blocking writes on it
+ * looked like the cautious move. Production says otherwise — all four
+ * containment rows, 2026-08-17:
+ *
+ * | work | matched to | verdict |
+ * |---|---|---|
+ * | Harry Potter and the Goblet of Fire | …*(Full-Cast Edition)* | the SAME work, another edition — the exact case the owner asked to unify |
+ * | Harry Potter and the Sorcerer's Stone | …*(Full-Cast Edition)* | same |
+ * | Tamer: King of Dinosaurs Book 11 | *Tamer: King of Dinosaurs* | wrong volume — but already **stale**, so already write-excluded |
+ * | Space Knight Book 1 | *Space Knight* | over-shares with Book 2 |
+ *
+ * So the rule would refuse two matches it should welcome, add nothing to the
+ * one it would catch by staleness anyway, and still miss the real over-share:
+ * *Space Knight Book 2* reaches the same title on the **exact** rung, through an
+ * owner-authored `work_alias`. The mapping is reviewable — `matched_via`,
+ * `title_similarity` and `via_alias` are stored per row and printed by the
+ * backfill — and that is where an over-share is corrected, not by a read-time
+ * heuristic in here.
  */
 export function warningKeysFor(params: {
   title: string;
+  audiobookRawTitle?: string | null;
   audiobookTitle?: string | null;
   audiobookTitleStale?: boolean;
 }): WarningKeys {
   const ours = bookIdFromTitle(params.title);
-  const theirTitle = (params.audiobookTitle ?? '').trim();
-  const theirs = theirTitle ? bookIdFromTitle(theirTitle) : '';
 
+  // ⚠️ Raw first, and the fallback is not cosmetic: every `audiobook_holding`
+  // row written before migration 0340 has `raw_title` NULL, and NULL means "not
+  // recorded", never "same as `title`". Falling back to the cleaned title
+  // reproduces the pre-0340 behaviour for those rows rather than losing the
+  // holding entirely — they recover their real key the next time
+  // `npm run backfill:audiobooks` runs.
+  const rawTitle = (params.audiobookRawTitle ?? '').trim();
+  const cleanedTitle = (params.audiobookTitle ?? '').trim();
+  const theirTitle = rawTitle || cleanedTitle;
+
+  const theirs = theirTitle ? bookIdFromTitle(theirTitle) : '';
   const live = theirs && !params.audiobookTitleStale ? theirs : '';
   const writeBookId = live || ours;
 
+  // Every id this work's notes could sit under, newest convention first. The
+  // cleaned-title id is in here precisely BECAUSE it used to be the write key:
+  // dropping it would orphan anything filed between the feature shipping and
+  // 0340 landing. An alias costs one Firestore query; an orphan is invisible.
+  const alsoCleaned = cleanedTitle ? bookIdFromTitle(cleanedTitle) : '';
   const bookIds: string[] = [];
-  for (const id of [writeBookId, theirs, ours]) {
+  for (const id of [writeBookId, theirs, alsoCleaned, ours]) {
     if (id && !bookIds.includes(id)) bookIds.push(id);
   }
 
   return {
     writeBookId,
     bookIds,
-    // The published file is the audiobook pipeline's own, keyed by its own
+    // The published file is the audiobook pipeline's own, keyed by its own raw
     // titles — a stale holding's title is still the title those entries were
     // filed under, so it is offered for the same reason a stale holding is
     // shown at all. The page names the title it looked under.
@@ -230,6 +304,8 @@ export function warningDocFor(params: {
   displayName: string;
   email?: string | null;
   authorUid?: string | null;
+  /** `audiobook_holding.raw_title` — the key spelling. See `warningKeysFor`. */
+  audiobookRawTitle?: string | null;
   audiobookTitle?: string | null;
   audiobookTitleStale?: boolean;
 }): { id: string; doc: UserWarningDoc } {
@@ -248,6 +324,7 @@ export function warningDocFor(params: {
 
   const keys = warningKeysFor({
     title: params.title,
+    audiobookRawTitle: params.audiobookRawTitle,
     audiobookTitle: params.audiobookTitle,
     audiobookTitleStale: params.audiobookTitleStale,
   });
@@ -255,11 +332,15 @@ export function warningDocFor(params: {
   // ⚠️ `bookTitle` is the spelling `writeBookId` was derived FROM, not always
   // this catalog's own. The audiobook site prints this string beside the note,
   // and printing our title against their slug would show a book name that does
-  // not match the page it is on.
+  // not match the page it is on. Since 0340 that spelling is the RAW one, so
+  // the fallback chain has to follow `warningKeysFor`'s exactly — raw, then
+  // cleaned, then ours — or the printed name and the id it was built from
+  // disagree, which is the one thing this field exists to prevent.
+  const theirBookTitle = (params.audiobookRawTitle ?? '').trim() || params.audiobookTitle || null;
   const bookTitle =
     keys.writeBookId === bookIdFromTitle(params.title)
       ? params.title
-      : (params.audiobookTitle ?? params.title);
+      : (theirBookTitle ?? params.title);
 
   const doc: UserWarningDoc = {
     bookId: keys.writeBookId,

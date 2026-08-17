@@ -746,6 +746,7 @@ export async function findWorkByKey(db: D1Database, workKey: string): Promise<Wo
 
 interface AudiobookHoldingRow {
   title: string;
+  raw_title: string | null;
   authors: string | null;
   series: string | null;
   index_display: string | null;
@@ -770,6 +771,18 @@ export interface AudiobookHolding {
   /** Their title, already stripped of Audible's decoration. Show it when it
    *  differs from ours — that difference is the point of storing it. */
   title: string;
+  /**
+   * Their title **verbatim**, decoration and all — migration 0340.
+   *
+   * ⚠️ **This, not `title`, is the content-warning key.** `content_warnings.json`
+   * and the audiobook site's own book page are both keyed off the raw catalog
+   * string, so `bookIdFromTitle(title)` reproduces their id only for a row that
+   * happened to carry no decoration. `warningKeysFor` takes this one.
+   *
+   * Null on any row not re-run since 0340 landed. Null means **not recorded**,
+   * never "same as `title`", and every reader falls back rather than assuming.
+   */
+  rawTitle: string | null;
   authors: string | null;
   /** That catalog's own series spelling and volume — deliberately not folded
    *  to ours. See migration 0010's header. */
@@ -804,7 +817,7 @@ export async function getAudiobookHolding(
 ): Promise<AudiobookHolding | null> {
   const row = await db
     .prepare(
-      `SELECT title, authors, series, index_display, cover_href, matched_via,
+      `SELECT title, raw_title, authors, series, index_display, cover_href, matched_via,
               title_similarity, stale_at
          FROM audiobook_holding
         WHERE work_id = ?`,
@@ -814,6 +827,7 @@ export async function getAudiobookHolding(
   if (!row) return null;
   return {
     title: row.title,
+    rawTitle: row.raw_title,
     authors: row.authors,
     series: row.series,
     indexDisplay: row.index_display,

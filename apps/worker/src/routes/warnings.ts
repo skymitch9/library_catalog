@@ -80,6 +80,7 @@ export const warningRoutes = new Hono<AppBindings>()
     const holding = await getAudiobookHolding(c.env.DB, workId);
     const keys = warningKeysFor({
       title: work.title,
+      audiobookRawTitle: holding?.rawTitle ?? null,
       audiobookTitle: holding?.title ?? null,
       audiobookTitleStale: holding?.staleAt != null,
     });
@@ -94,7 +95,11 @@ export const warningRoutes = new Hono<AppBindings>()
       // and it is the fact that makes the feature cross-catalog rather than
       // merely local.
       writeBookId: keys.writeBookId,
-      audiobookTitle: holding?.title ?? null,
+      // ⚠️ The RAW spelling, because that is the one the write key came from
+      // (migration 0340) and this string is what the panel prints in "your note
+      // goes on the audiobook catalog's record for «…»". Printing the cleaned
+      // title here would name a spelling nothing is actually filed under.
+      audiobookTitle: keys.publishedTitle,
     });
   })
 
@@ -151,6 +156,7 @@ export const warningRoutes = new Hono<AppBindings>()
       displayName,
       email: user.email,
       authorUid: user.firebaseUid,
+      audiobookRawTitle: holding?.rawTitle ?? null,
       audiobookTitle: holding?.title ?? null,
       audiobookTitleStale: holding?.staleAt != null,
     });

@@ -150,6 +150,172 @@ describe('⚠️ the identity join — a note must be filed under the AUDIOBOOK 
   });
 });
 
+/**
+ * ⚠️ **The second load-bearing block — migration 0340.**
+ *
+ * The block above pins that a note is filed under the AUDIOBOOK spelling. This
+ * one pins *which* audiobook spelling, and the two are not the same question:
+ * `audiobook_holding` stores the title twice, once verbatim (`raw_title`) and
+ * once with Audible's series decoration stripped (`title`, migration 0010), and
+ * this feature shipped on 2026-08-17 keying on the stripped one.
+ *
+ * Every fixture below is a REAL production row — `work.title`,
+ * `audiobook_holding.title`, and the matching key in the live
+ * `content_warnings.json`, read the same day. All are in the **18 of 92**
+ * holdings that reach an entry in that file only after folding, i.e. the ones
+ * whose published warnings arrived on the physical book as nothing at all.
+ *
+ * To watch it fail on the mutation it exists to catch, make `warningKeysFor`
+ * prefer `audiobookTitle` over `audiobookRawTitle`.
+ */
+const RAW_VS_CLEANED = [
+  {
+    ours: 'Onyx Storm (The Empyrean)',
+    cleaned: 'Onyx Storm',
+    raw: 'Onyx Storm - Empyrean, Book 3',
+  },
+  {
+    ours: 'Words of Radiance',
+    cleaned: 'Words of Radiance',
+    raw: 'Words of Radiance - The Stormlight Archive, Book 2',
+  },
+  {
+    ours: 'The Lightning Thief',
+    cleaned: 'The Lightning Thief',
+    raw: 'The Lightning Thief - Percy Jackson and the Olympians, Book 1',
+  },
+  {
+    ours: "Carl's Doomsday Scenario",
+    cleaned: "Carl's Doomsday Scenario",
+    raw: "Carl's Doomsday Scenario - Dungeon Crawler Carl, Book 2",
+  },
+];
+
+describe('⚠️ migration 0340 — the RAW audiobook title is the key, not the cleaned one', () => {
+  for (const row of RAW_VS_CLEANED) {
+    it(`"${row.ours}" keys on the catalog's verbatim spelling`, () => {
+      const keys = warningKeysFor({
+        title: row.ours,
+        audiobookRawTitle: row.raw,
+        audiobookTitle: row.cleaned,
+      });
+
+      assert.equal(
+        keys.writeBookId,
+        bookIdFromTitle(row.raw),
+        'the write key is not the RAW audiobook spelling — invisible on the audiobook site and on the ebook shelf',
+      );
+      assert.notEqual(
+        keys.writeBookId,
+        bookIdFromTitle(row.cleaned),
+        `"${row.raw}" and "${row.cleaned}" slug the same — pick a different fixture, this one proves nothing`,
+      );
+      // The published file is keyed by that same verbatim string. This is the
+      // half that was reaching the physical book with nothing.
+      assert.equal(keys.publishedTitle, row.raw);
+    });
+
+    it(`"${row.ours}" still reads the cleaned-title key it used to write`, () => {
+      const keys = warningKeysFor({
+        title: row.ours,
+        audiobookRawTitle: row.raw,
+        audiobookTitle: row.cleaned,
+      });
+      // ⚠️ This IS the alias layer, and it is why 0340 needed no rekey. A note
+      // filed between the feature shipping and 0340 landing sits under the
+      // cleaned slug; dropping it from the read set would orphan it silently.
+      assert.ok(
+        keys.bookIds.includes(bookIdFromTitle(row.cleaned)),
+        'the pre-0340 write key is gone from the read set — those notes are orphaned',
+      );
+      assert.ok(keys.bookIds.includes(bookIdFromTitle(row.ours)), 'our own slug is still a candidate');
+      assert.equal(keys.bookIds[0], keys.writeBookId, 'the write key must be asked first');
+    });
+  }
+
+  /**
+   * ⚠️ NULL `raw_title` is "not recorded", never "same as `title`". Every row
+   * written before 0340 has it, until `npm run backfill:audiobooks` runs again,
+   * and those rows must keep working exactly as they did — degraded, not broken.
+   */
+  it('a pre-0340 row with no raw title falls back to the cleaned one', () => {
+    const keys = warningKeysFor({
+      title: 'Onyx Storm (The Empyrean)',
+      audiobookRawTitle: null,
+      audiobookTitle: 'Onyx Storm',
+    });
+    assert.equal(keys.writeBookId, 'onyx-storm');
+    assert.equal(keys.publishedTitle, 'Onyx Storm');
+  });
+
+  /** An empty string is the same non-answer as null — CSV columns produce both. */
+  it('an empty raw title is not a key', () => {
+    const keys = warningKeysFor({
+      title: 'Onyx Storm (The Empyrean)',
+      audiobookRawTitle: '   ',
+      audiobookTitle: 'Onyx Storm',
+    });
+    assert.equal(keys.writeBookId, 'onyx-storm');
+  });
+
+  /**
+   * ⚠️ ONE WORK, ONE KEY, EVERY FORMAT — the owner's ask, 2026-08-17, in one
+   * assertion. `audiobook_catalog`'s ebook shelf keys on the manifest's
+   * `audiobook_title`, which `scripts/build_ebook_manifest.py` publishes as the
+   * raw catalog title; the audiobook site's own book page keys on
+   * `bookIdFromTitle(<its catalog title>)`. Both are the same string, so the
+   * library agreeing with it is what makes a paperback, an ebook and an
+   * audiobook of one book share one warning set.
+   */
+  it('the paperback, the ebook and the audiobook agree on one key', () => {
+    const rawCatalogTitle = 'Onyx Storm - Empyrean, Book 3';
+
+    const audiobookSiteKey = bookIdFromTitle(rawCatalogTitle);
+    const ebookShelfKey = bookIdFromTitle(rawCatalogTitle); // manifest.audiobook_title
+    const libraryKey = warningKeysFor({
+      title: 'Onyx Storm (The Empyrean)',
+      audiobookRawTitle: rawCatalogTitle,
+      audiobookTitle: 'Onyx Storm',
+    }).writeBookId;
+
+    assert.equal(libraryKey, audiobookSiteKey);
+    assert.equal(libraryKey, ebookShelfKey);
+  });
+
+  /**
+   * The stale split survives 0340: a stale row's RAW title is read and never
+   * written to, exactly as its cleaned title was.
+   */
+  it('a stale holding does not become writable just because it has a raw title', () => {
+    const keys = warningKeysFor({
+      title: 'Tamer: King of Dinosaurs Book 11',
+      audiobookRawTitle: 'Tamer: King of Dinosaurs',
+      audiobookTitle: 'Tamer: King of Dinosaurs',
+      audiobookTitleStale: true,
+    });
+    assert.equal(keys.writeBookId, bookIdFromTitle('Tamer: King of Dinosaurs Book 11'));
+    assert.ok(keys.bookIds.includes('tamer-king-of-dinosaurs'));
+  });
+
+  /** `bookTitle` must name the spelling `writeBookId` was actually built from. */
+  it('the document prints the raw spelling its key came from', () => {
+    const { doc } = warningDocFor({
+      title: 'Onyx Storm (The Empyrean)',
+      authors: 'Rebecca Yarros',
+      label: 'Graphic violence',
+      displayName: 'Skylar',
+      audiobookRawTitle: 'Onyx Storm - Empyrean, Book 3',
+      audiobookTitle: 'Onyx Storm',
+    });
+    assert.equal(doc.bookId, bookIdFromTitle('Onyx Storm - Empyrean, Book 3'));
+    assert.equal(
+      doc.bookTitle,
+      'Onyx Storm - Empyrean, Book 3',
+      'the printed name and the id it was built from must not disagree',
+    );
+  });
+});
+
 describe('the document id, ported verbatim from site/user-warnings.js', () => {
   it('is bookId _ name _ topic — and the topic is the label slugged', () => {
     assert.equal(

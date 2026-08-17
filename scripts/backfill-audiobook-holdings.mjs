@@ -203,14 +203,21 @@ for (const w of works) {
   matched.push({ work: w, ...best });
 
   statements.push(
-    `INSERT INTO audiobook_holding (work_id, title, authors, series, index_display,` +
+    // ⚠️ `raw_title` is `best.row.rawTitle`, NOT `best.row.title` — migration
+    // 0340. `title` is stripped by `cleanTitleWithSeries` and is what a person
+    // is shown; `raw_title` is the sibling catalog's verbatim string and is the
+    // one the content-warning key is derived from, because that is what the
+    // audiobook site and `content_warnings.json` are both keyed by. This value
+    // was already computed in `scripts/lib/audiobooks.mjs` and thrown away here.
+    `INSERT INTO audiobook_holding (work_id, title, raw_title, authors, series, index_display,` +
       ` index_sort, cover_href, matched_via, title_similarity, via_alias)` +
-      ` VALUES (${lit(w.id)}, ${lit(best.row.title)}, ${lit(best.row.authors)},` +
+      ` VALUES (${lit(w.id)}, ${lit(best.row.title)}, ${lit(best.row.rawTitle)}, ${lit(best.row.authors)},` +
       ` ${lit(best.row.series)}, ${lit(best.row.seriesIndexDisplay)},` +
       ` ${lit(best.row.seriesIndexSort)}, ${lit(best.row.coverHref)},` +
       ` ${lit(best.via)}, ${lit(Number(best.similarity.toFixed(4)))}, ${lit(best.alias)})` +
       ` ON CONFLICT(work_id) DO UPDATE SET` +
-      ` title = excluded.title, authors = excluded.authors, series = excluded.series,` +
+      ` title = excluded.title, raw_title = excluded.raw_title,` +
+      ` authors = excluded.authors, series = excluded.series,` +
       ` index_display = excluded.index_display, index_sort = excluded.index_sort,` +
       ` cover_href = excluded.cover_href, matched_via = excluded.matched_via,` +
       ` title_similarity = excluded.title_similarity, via_alias = excluded.via_alias,` +
