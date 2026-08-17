@@ -27,7 +27,29 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const DEV_VARS = join(root, 'apps', 'worker', '.dev.vars');
+
+/**
+ * `--env friend` targets the second instance (wrangler `[env.friend]`): reads
+ * `.dev.vars.friend` — wrangler's own per-environment convention, so
+ * `wrangler dev --env friend` would read the same file — and pushes with
+ * `--env friend`. No flag = the main instance, `.dev.vars`, unchanged.
+ * ⚠️ Two files on purpose: the instances hold DIFFERENT key material (hers
+ * deliberately has no ANTHROPIC_API_KEY, for one), and one shared file would
+ * make pushing the owner's keys to her Worker a default instead of a choice.
+ */
+const envArgIdx = process.argv.findIndex((a) => a === '--env' || a.startsWith('--env='));
+const wranglerEnv =
+  envArgIdx === -1
+    ? null
+    : process.argv[envArgIdx].includes('=')
+      ? process.argv[envArgIdx].split('=')[1]
+      : (process.argv[envArgIdx + 1] ?? null);
+if (envArgIdx !== -1 && !wranglerEnv) {
+  console.error('--env needs a value, e.g. --env friend');
+  process.exit(1);
+}
+
+const DEV_VARS = join(root, 'apps', 'worker', wranglerEnv ? `.dev.vars.${wranglerEnv}` : '.dev.vars');
 const CONFIG = join(root, 'apps', 'worker', 'wrangler.toml');
 
 /**
@@ -135,9 +157,20 @@ if (process.argv.includes('--dry')) {
 // command line, a process listing, or shell history.
 const WRANGLER = join(root, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
 
-const child = spawn(process.execPath, [WRANGLER, 'secret', 'bulk', '--config', CONFIG], {
-  stdio: ['pipe', 'inherit', 'inherit'],
-});
+const child = spawn(
+  process.execPath,
+  [
+    WRANGLER,
+    'secret',
+    'bulk',
+    '--config',
+    CONFIG,
+    ...(wranglerEnv ? ['--env', wranglerEnv] : []),
+  ],
+  {
+    stdio: ['pipe', 'inherit', 'inherit'],
+  },
+);
 
 child.stdin.end(JSON.stringify(payload));
 child.on('exit', (code) => {

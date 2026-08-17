@@ -26,6 +26,15 @@ const LOG = join(ROOT, 'docs', 'deploys.log');
 
 const holder = process.env['DEPLOY_HOLDER'] || 'unknown';
 
+/**
+ * `--instance=friend` = the second library's wrangler env; nothing = the main
+ * instance, whose log line stays exactly the pre-instance four-field shape.
+ * A non-default instance appends a fifth field `env=<name>`, which is what
+ * deploy-guard.mjs keys its per-instance ancestry filtering on.
+ */
+const instance =
+  process.argv.find((a) => a.startsWith('--instance='))?.slice('--instance='.length) || 'default';
+
 let head = 'unknown';
 try {
   head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim();
@@ -42,7 +51,14 @@ let version = '';
 try {
   const out = execFileSync(
     'npx',
-    ['wrangler', 'deployments', 'list', '--config', 'apps/worker/wrangler.toml'],
+    [
+      'wrangler',
+      'deployments',
+      'list',
+      '--config',
+      'apps/worker/wrangler.toml',
+      ...(instance === 'default' ? [] : ['--env', instance]),
+    ],
     { cwd: ROOT, encoding: 'utf8', timeout: 45_000, stdio: ['ignore', 'pipe', 'ignore'] },
   );
   version = out.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/)?.[0] ?? '';
@@ -53,12 +69,14 @@ try {
 mkdirSync(dirname(LOG), { recursive: true });
 appendFileSync(
   LOG,
-  `${new Date().toISOString()}\t${head}\t${holder}\t${version || 'version-unknown'}\n`,
+  `${new Date().toISOString()}\t${head}\t${holder}\t${version || 'version-unknown'}` +
+    `${instance === 'default' ? '' : `\tenv=${instance}`}\n`,
 );
 if (existsSync(LOCK)) rmSync(LOCK);
 
 console.log(
   `deploy-done: recorded ${head.slice(0, 8)} by "${holder}"` +
-    `${version ? ` as ${version.slice(0, 8)}` : ''} in docs/deploys.log — lock released.`,
+    `${version ? ` as ${version.slice(0, 8)}` : ''}` +
+    `${instance === 'default' ? '' : ` (instance: ${instance})`} in docs/deploys.log — lock released.`,
 );
 console.log('deploy-done: ⚠️ commit docs/deploys.log so the other run can see it.');

@@ -7,9 +7,12 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "deploy:friend": "wrangler deploy --env friend",
     "db:migrate:local": "wrangler d1 migrations apply library-catalog --local",
     "db:migrate": "wrangler d1 migrations apply library-catalog --remote",
+    "db:migrate:friend": "wrangler d1 migrations apply library-catalog-2nd --remote --env friend",
     "tail": "wrangler tail",
+    "tail:friend": "wrangler tail --env friend",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

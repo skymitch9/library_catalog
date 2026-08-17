@@ -152,3 +152,115 @@ INDEX_URL = "https://index.heygabi.ai"
 # is the intended order, and it is safe.
 ESTATE_CHECK = "enforce"
 ESTATE_AUTH_URL = "https://auth.heygabi.ai"
+
+# ═════════════════════════════════════════════════════════════════════════════
+# [env.friend] — the SECOND library instance (friend-ingest-design.md §6).
+#
+# Same Worker code, own data. Deploys as a separate Worker named
+# `library-catalog-friend` with its own D1, its own covers bucket, and its own
+# hostname. ⚠️ Wrangler environments do NOT inherit bindings, vars, routes or
+# triggers from the top level, so everything her instance needs is restated
+# here explicitly — an omission here is a missing binding on HER worker, not a
+# fallback to the main one.
+#
+# ⚠️ NAMING: the hostname `sam.heygabi.ai` is explicitly TEMPORARY (owner
+# decision 2026-08-16) and may change. Everything PERMANENT is therefore
+# identity-neutral: env `friend`, D1 `library-catalog-2nd`, bucket
+# `library-2nd-covers`. Never rename those to match whatever the hostname
+# becomes — the hostname is the only thing allowed to change.
+#
+# Deploy with `npm run deploy:friend` (never plain `wrangler deploy --env
+# friend` — the npm script carries the clean-tree and overlap guards).
+# ═════════════════════════════════════════════════════════════════════════════
+
+[env.friend]
+# Worker name would default to `library-catalog-friend` anyway; pinned so a
+# wrangler behaviour change can never silently deploy over the main Worker.
+name = "library-catalog-friend"
+workers_dev = true
+
+# Same built PWA — one product, two instances.
+[env.friend.assets]
+directory = "../web/dist"
+binding = "ASSETS"
+
+[[env.friend.d1_databases]]
+binding = "DB"
+database_name = "library-catalog-2nd"
+# Created 2026-08-16 in region WNAM, account nbaslamking@gmail.com. Empty at
+# creation; the shared migrations_dir means her schema is applied from the
+# same files as the main instance's — `npm run db:migrate:friend`.
+database_id = "9dcf4af9-d1a2-4de4-adcf-ac7eea77f1c8"
+migrations_dir = "../../migrations"
+
+[[env.friend.r2_buckets]]
+binding = "COVERS"
+bucket_name = "library-2nd-covers"
+
+# Same cron STRING as the main instance, deliberately — `scheduled()` in
+# src/index.ts dispatches on DETAILS_SWEEP_CRON and an unrecognised cron does
+# nothing. A different minute here would silently disable her details sweep.
+# With no ANTHROPIC_API_KEY on this env the sweep runs and skips itself
+# (`skipped: no ANTHROPIC_API_KEY`, details-sweep.ts:273) — free, and it
+# starts healing details the day a key is ever added.
+[env.friend.triggers]
+crons = ["7 * * * *"]
+
+# ⚠️ TEMPORARY hostname (owner decision 2026-08-16) — see the naming note
+# above. Changing it later is: edit this pattern, add the new host to Firebase
+# Authorised domains, redeploy. Nothing else in her instance knows the name.
+#
+# ⚠️ Firebase: add this host to Authentication → Settings → Authorised domains
+# BEFORE she sees the URL, or Google sign-in fails `auth/unauthorized-domain`.
+# The workers.dev URL (library-catalog-friend.<account>.workers.dev) works
+# regardless, subject to the same Firebase-domain requirement.
+[[env.friend.routes]]
+pattern = "sam.heygabi.ai"
+custom_domain = true
+
+[env.friend.vars]
+APP_VERSION = "0.1.0"
+ENVIRONMENT = "production"
+
+# The bucket's managed r2.dev public URL, enabled 2026-08-16. This WORKS —
+# the app only ever concatenates `COVERS_BASE_URL + '/' + objectKey` — but
+# r2.dev is rate-limited and uncacheable (the exact reason the main instance
+# fronts its bucket with bookcovers.heygabi.ai). Fine for launch; when her
+# hostname settles, attach a custom domain to the bucket + a 1-year Cache Rule
+# (object names are content hashes, so a cached copy can never be stale) and
+# change only this line.
+COVERS_BASE_URL = "https://pub-6521c378bf4b4ac3b17d5ac898832819.r2.dev"
+
+# Same shared Firebase project as every catalog — one Google account is one
+# person estate-wide. See the main [vars] warning; it applies verbatim.
+FIREBASE_PROJECT_ID = "audiobook-catalog"
+
+# The owner's break-glass standing on her instance (friend-ingest-design.md
+# §5): remote support is "sign into her hostname and do anything she can".
+OWNER_EMAILS = "nbaslamking@gmail.com"
+
+# ⚠️ INDEX_URL deliberately ABSENT — her estate-index integration is PHASE 2
+# (friend-ingest-design.md §7). Unset means every push trigger in
+# lib/index-push.ts logs one line and does nothing: inert by design, the
+# games-catalog precedent. Same for the INDEX_PUSH_TOKEN secret.
+
+# Estate auth: same mode as the main instance's production posture (enforce,
+# flipped after its shadow soak). ⚠️ Until the ESTATE_APP_TOKEN_LIBRARY secret
+# is set on THIS env, the gate logs `estate_config_unset` and behaves as OFF —
+# local-only auth, new sign-ins land as `pending` with no role. That ordering
+# is safe and intended: code before secret.
+ESTATE_CHECK = "enforce"
+ESTATE_AUTH_URL = "https://auth.heygabi.ai"
+
+# ── The paused owner decision: her default role ──────────────────────────────
+# friend-ingest-design.md §3 recommends auto-granting `moderator` on HER
+# instance (so shelf-photo scanning works with no coordination call). The
+# owner has PAUSED that decision, so she launches as `member` like everyone
+# else. When the owner decides, the flip is EXACTLY this one line:
+#
+# ESTATE_DEFAULT_ROLE = "moderator"
+#
+# (Read by packages/estate-auth/src/gate.ts — unset or invalid falls back to
+# the posture's `member`. Access-increasing: anyone the estate approves with
+# visibility into her catalog gets that role there. Do not flip it as a side
+# effect of anything.)

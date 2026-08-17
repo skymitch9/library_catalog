@@ -51,6 +51,26 @@ const STALE_MINUTES = 20;
 const holder = process.env['DEPLOY_HOLDER'] || 'unknown';
 const override = process.env['ALLOW_OVERLAP'] === '1';
 
+/**
+ * Which instance this deploy targets: `--instance=friend` for the second
+ * library (wrangler `[env.friend]`), nothing for the main one. The ancestry
+ * check below compares against the last deploy OF THE SAME INSTANCE — the two
+ * Workers are separate artifacts, so the friend Worker being behind main's
+ * log line (or vice versa) is normal, not a regression.
+ *
+ * ⚠️ The LOCK stays shared across instances on purpose: both deploys build
+ * into the same `apps/web/dist`, so two concurrent deploys — even of
+ * different instances — can still ship each other's half-built assets.
+ */
+const instance =
+  process.argv.find((a) => a.startsWith('--instance='))?.slice('--instance='.length) || 'default';
+
+/** The instance a deploys.log line belongs to (5th field `env=<name>`, absent = default). */
+function lineInstance(line) {
+  const fifth = line.split('\t')[4];
+  return fifth?.startsWith('env=') ? fifth.slice(4) : 'default';
+}
+
 function git(args) {
   return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' }).trim();
 }
@@ -104,8 +124,12 @@ if (existsSync(LOCK)) {
 
 if (existsSync(LOG)) {
   const lines = readFileSync(LOG, 'utf8').trim().split('\n').filter(Boolean);
-  const last = lines.at(-1);
-  // Format is written by deploy-done.mjs: ISO<TAB>commit<TAB>holder<TAB>note
+  // Only lines for THIS instance — see lineInstance above. For the default
+  // instance this is every line the log ever had before instances existed,
+  // so pre-instance behaviour is unchanged byte for byte. A first-ever deploy
+  // of a new instance has no lines and skips the ancestry check.
+  const last = lines.filter((l) => lineInstance(l) === instance).at(-1);
+  // Format is written by deploy-done.mjs: ISO<TAB>commit<TAB>holder<TAB>note[<TAB>env=<instance>]
   const liveCommit = last?.split('\t')[1];
   if (liveCommit && /^[0-9a-f]{7,40}$/.test(liveCommit)) {
     let contains = false;
@@ -143,6 +167,9 @@ if (existsSync(LOG)) {
 mkdirSync(dirname(LOCK), { recursive: true });
 writeFileSync(
   LOCK,
-  `${JSON.stringify({ holder, pid: process.pid, head, startedAt: new Date().toISOString() }, null, 2)}\n`,
+  `${JSON.stringify({ holder, instance, pid: process.pid, head, startedAt: new Date().toISOString() }, null, 2)}\n`,
 );
-console.log(`deploy-guard: ok — lock taken by "${holder}" at ${head.slice(0, 8)}.`);
+console.log(
+  `deploy-guard: ok — lock taken by "${holder}" at ${head.slice(0, 8)}` +
+    `${instance === 'default' ? '' : ` (instance: ${instance})`}.`,
+);

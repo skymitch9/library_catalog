@@ -6,6 +6,10 @@ dist/
 .env.*
 !.env.example
 .dev.vars
+# Per-environment variants (wrangler's own convention — `.dev.vars.friend` is
+# the second instance's). Same key material rules: never tracked.
+.dev.vars.*
+!.dev.vars.example
 .DS_Store
 *.log
 # ⚠️ …EXCEPT the deploy record. `*.log` above would swallow it, and this file is

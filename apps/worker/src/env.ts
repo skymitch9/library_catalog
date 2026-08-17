@@ -162,6 +162,18 @@ export interface Env {
   ESTATE_AUTH_URL?: string;
 
   /**
+   * Per-instance posture lever: the role the estate auto-grant hands out on
+   * THIS instance, overriding LIBRARY_POSTURE's `member`. Built for the
+   * second instance (friend-ingest-design.md §3 — its wrangler env can say
+   * `moderator` in one line); unset everywhere today, and unset or invalid
+   * means the posture default, unchanged. Only `member`/`contributor`/
+   * `moderator` are accepted — see `resolveDefaultRole` in
+   * packages/estate-auth/src/gate.ts. ⚠️ Access-increasing to set; an
+   * explicit owner decision, never a side effect.
+   */
+  ESTATE_DEFAULT_ROLE?: string;
+
+  /**
    * This app's own bearer for `POST /api/estate/seen` (design §4.4 — the check
    * carries a per-app token, never the user's). Secret, set with
    * `wrangler secret put ESTATE_APP_TOKEN_LIBRARY` (or `.dev.vars` +

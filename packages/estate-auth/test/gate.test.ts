@@ -17,6 +17,7 @@ import {
   LIBRARY_POSTURE,
   estateGateCheck,
   parseEstateMode,
+  resolveDefaultRole,
   type GateEnv,
   type GateSubject,
 } from '../src/gate.js';
@@ -546,4 +547,68 @@ test('cached visibility JSON is parsed at the boundary; garbage text is no fact,
   assert.equal(calls.length, 0);
   assert.equal(garbage.verdict, 'proceed');
   assert.equal(JSON.parse(garbage.logLine ?? 'null').visibility, null);
+});
+
+// ═════════ Part 3: the per-instance posture lever (friend-ingest-design §3) ═
+
+test('resolveDefaultRole: unset → posture member; valid override taken; garbage falls back loudly', () => {
+  assert.deepEqual(resolveDefaultRole(undefined), { role: 'member', overridden: false, invalid: null });
+  assert.deepEqual(resolveDefaultRole(''), { role: 'member', overridden: false, invalid: null });
+  assert.deepEqual(resolveDefaultRole(' moderator '), { role: 'moderator', overridden: true, invalid: null });
+  assert.deepEqual(resolveDefaultRole('contributor'), { role: 'contributor', overridden: true, invalid: null });
+  // ⚠️ The escalation rungs are NOT overridable — one env var must never be
+  // able to hand out admin/owner. Falls back, and names the rejected value.
+  assert.deepEqual(resolveDefaultRole('admin'), { role: 'member', overridden: false, invalid: 'admin' });
+  assert.deepEqual(resolveDefaultRole('owner'), { role: 'member', overridden: false, invalid: 'owner' });
+  assert.deepEqual(resolveDefaultRole('moderater'), { role: 'member', overridden: false, invalid: 'moderater' });
+});
+
+test('ESTATE_DEFAULT_ROLE=moderator: enforce auto-grants moderator, and the log says so', async () => {
+  const { impl } = seenFetch('approved');
+  const out = await estateGateCheck(
+    { ...ENFORCE, ESTATE_DEFAULT_ROLE: 'moderator' },
+    subject({ role: 'pending', approvedAt: null }),
+    { fetchImpl: impl, nowMs: NOW },
+  );
+  assert.equal(out.verdict, 'default_grant');
+  assert.deepEqual(out.autoGrant, { role: 'moderator' });
+  const line = JSON.parse(out.logLine ?? 'null');
+  assert.equal(line.auto_grant, 'moderator');
+  assert.equal(line.default_role_override, 'moderator');
+});
+
+test('ESTATE_DEFAULT_ROLE=moderator in shadow: would-grant only, still no directive', async () => {
+  const { impl } = seenFetch('approved');
+  const out = await estateGateCheck(
+    { ...ENV, ESTATE_DEFAULT_ROLE: 'moderator' },
+    subject({ role: 'pending', approvedAt: null }),
+    { fetchImpl: impl, nowMs: NOW },
+  );
+  assert.equal(out.wouldAutoGrant, 'moderator');
+  assert.equal(out.autoGrant, null); // shadow's inertness survives the override
+});
+
+test('invalid ESTATE_DEFAULT_ROLE: grants the posture member and flags the typo in the log', async () => {
+  const { impl } = seenFetch('approved');
+  const out = await estateGateCheck(
+    { ...ENFORCE, ESTATE_DEFAULT_ROLE: 'moderater' },
+    subject({ role: 'pending', approvedAt: null }),
+    { fetchImpl: impl, nowMs: NOW },
+  );
+  assert.deepEqual(out.autoGrant, { role: 'member' }); // the inert direction
+  const line = JSON.parse(out.logLine ?? 'null');
+  assert.equal(line.default_role_invalid, 'moderater');
+  assert.equal(line.default_role_used, 'member');
+});
+
+test('no override set: log lines carry NO default_role fields (main-instance lines stay byte-shaped)', async () => {
+  const { impl } = seenFetch('approved');
+  const out = await estateGateCheck(
+    ENFORCE,
+    subject({ role: 'pending', approvedAt: null }),
+    { fetchImpl: impl, nowMs: NOW },
+  );
+  const line = JSON.parse(out.logLine ?? 'null');
+  assert.ok(!('default_role_override' in line));
+  assert.ok(!('default_role_invalid' in line));
 });

@@ -99,6 +99,40 @@ export const LIBRARY_POSTURE = declareAuthPosture({
   defaultRole: 'member',
 });
 
+/**
+ * The roles a per-instance override may name — deliberately NARROWER than
+ * `@lc/core`'s six-rung ladder (which this package cannot import; it is
+ * core-free by design). This is a policy allowlist, not a duplicate of the
+ * ladder: an auto-grant is the estate handing out standing with nobody in the
+ * loop, and `admin`/`owner` must never be grantable by editing one var, while
+ * `guest`/`pending` are not grants at all.
+ */
+const OVERRIDABLE_DEFAULT_ROLES = Object.freeze(['member', 'contributor', 'moderator']);
+
+/**
+ * The second-instance posture lever (friend-ingest-design.md §3): a wrangler
+ * env may set `ESTATE_DEFAULT_ROLE` to change what role its auto-grant hands
+ * out, so two instances of one codebase can hold different postures. Unset —
+ * every instance today — means the declared posture's `member`, unchanged.
+ * An unrecognised value falls back to the posture default (the inert
+ * direction) and surfaces in the log line rather than silently, same
+ * treatment as a typo'd ESTATE_CHECK.
+ */
+export function resolveDefaultRole(raw: string | undefined): {
+  /** Nullable because the generated posture type allows a null defaultRole
+   *  (a posture that auto-grants nothing); this library's declares `member`. */
+  role: string | null;
+  /** True only when a valid override is in effect. */
+  overridden: boolean;
+  /** The rejected raw value when one was set but not recognised, else null. */
+  invalid: string | null;
+} {
+  const v = (raw ?? '').trim();
+  if (v === '') return { role: LIBRARY_POSTURE.defaultRole, overridden: false, invalid: null };
+  if (OVERRIDABLE_DEFAULT_ROLES.includes(v)) return { role: v, overridden: true, invalid: null };
+  return { role: LIBRARY_POSTURE.defaultRole, overridden: false, invalid: v };
+}
+
 export type EstateMode = 'off' | 'shadow' | 'enforce';
 
 export interface ParsedMode {
@@ -127,6 +161,8 @@ export interface GateEnv {
   ESTATE_CHECK?: string;
   ESTATE_AUTH_URL?: string;
   ESTATE_APP_TOKEN_LIBRARY?: string;
+  /** Per-instance auto-grant role override — see `resolveDefaultRole`. */
+  ESTATE_DEFAULT_ROLE?: string;
 }
 
 /** What the gate needs to know about the already-resolved local user. */
@@ -294,7 +330,8 @@ export async function estateGateCheck(
   });
 
   const wouldDeny = verdict === 'revoked' || verdict === 'estate_unreachable';
-  const wouldAutoGrant = verdict === 'default_grant' ? LIBRARY_POSTURE.defaultRole : null;
+  const defaultRole = resolveDefaultRole(env.ESTATE_DEFAULT_ROLE);
+  const wouldAutoGrant = verdict === 'default_grant' ? defaultRole.role : null;
 
   // The enforce directives — null everywhere except the acting mode.
   let deny: GateDenial | null = null;
@@ -346,6 +383,13 @@ export async function estateGateCheck(
       src,
       visibility: result.visibility,
       verdict,
+      // Only present when ESTATE_DEFAULT_ROLE is set — the main instance's
+      // lines stay byte-shaped as before. An invalid value is loud here so a
+      // typo'd posture flip never reads as a clean bill of health.
+      ...(defaultRole.overridden ? { default_role_override: defaultRole.role } : {}),
+      ...(defaultRole.invalid !== null
+        ? { default_role_invalid: defaultRole.invalid, default_role_used: defaultRole.role }
+        : {}),
       ...(mode === 'enforce'
         ? {
             // Enforce vocabulary: what IS happening, not what would.
