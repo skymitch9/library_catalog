@@ -108,6 +108,53 @@ Measured effect: `series` goes from *13 to ask* to **0 to ask, 13 answered**.
 That is thirteen pieces of research showing up as work already done rather than
 as an absence, and it is the single reason the queue is honest.
 
+### 3.1 Dragonsteel Prime — the recorded discrepancy, settled (2026-08-16)
+
+The standing note (docs/DONE.md, 2026-08-16 entry) recorded a disagreement:
+`gap_verdict` id 5 (work 3, field `series`) holds **`unknown`** from the
+2026-08-11 research pass (run 11, sourced to coppermind.net), while
+`series-overrides.json` says **`standalone`** (Wikipedia bibliography +
+dragonsteelbooks.com). Both sources were re-read fresh on **2026-08-16** and the
+discrepancy has evaporated — every reachable source now agrees there is no
+reading-order series:
+
+| Source (read 2026-08-16) | What it says |
+|---|---|
+| coppermind.net/wiki/Dragonsteel_Prime | `{{book}}` infobox carries publisher + release date (2024-03-29) and **no series field**; honors-thesis seventh novel, released during the Words of Radiance Leatherbound campaign |
+| coppermind.net/wiki/Dragonsteel_(series) | the Dragonsteel series proper is *"an unpublished series"*, still in development (planned trilogy, after Stormlight 10); Prime is its abandoned origin draft, *"no longer canon"* |
+| en.wikipedia.org/wiki/Brandon_Sanderson_bibliography | "Other works" table, series column **"Sanderson Curiosities"** — an imprint label, which this catalog already refuses to record as a series (same ruling as *Long Chills and Case Dough*) |
+| dragonsteelbooks.com/products/dragonsteel-prime-hardcover | *"Published exclusively by Dragonsteel as a 'Sanderson Curiosity'"*, *"a non-canon peek at what might have been"*; no series name or volume number |
+
+**Verdict: `none`** (a true standalone). `series-overrides.json` was refreshed
+with all four sources (confidence high) so the seed carries the decision.
+
+Two things found on the way:
+
+- ⚠️ **The seed would have regressed Firstborn / Defending Elysium.** The file
+  said `unknown` (2026-08-10) but the owner accepted a **`none`** verdict
+  through the app on 2026-08-11 (gap_verdict id 7, run 17,
+  brandonsanderson.com's own page for the bind-up). `seed:verdicts` upserts on
+  any difference, so a `--commit` would have overwritten the newer human
+  decision with the file's older one. The file is now synced to the app's
+  decision; the general lesson stands — **an in-app verdict newer than the
+  file's entry must be copied back into the file before any seed run.**
+- ⚠️ **coppermind.net returns 403 to non-browser user agents.** WebFetch and
+  bare curl both bounce; the MediaWiki API
+  (`/w/api.php?action=parse&page=…&prop=wikitext`) with a browser UA works.
+
+⚠️ **The write itself is PENDING.** This session's permission layer declined to
+execute against remote, so the row still reads `unknown` until someone runs:
+
+```bash
+npm run seed:verdicts -- --remote            # dry run — expect "1 to write: no series  Dragonsteel Prime"
+npm run seed:verdicts -- --remote --commit
+```
+
+Verify after: `gap_verdict` work 3 / field `series` reads `verdict='none'`
+with the 2026-08-16 sources. (Work 3 also carries `series_index_sort = 1`
+with `series` NULL — noticed while confirming the row, not investigated, and
+not touched.)
+
 ---
 
 ## 4. Research proposes; a person accepts

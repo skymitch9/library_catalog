@@ -366,13 +366,15 @@
   "dragonsteel prime|brandon sanderson": {
     "series": null,
     "verdict": "standalone",
-    "confidence": "medium",
+    "confidence": "high",
     "source": [
-      "en.wikipedia.org/wiki/Brandon_Sanderson_bibliography — \"Other works\", a Sanderson Curiosities novel (2024)",
-      "dragonsteelbooks.com \"Sanderson Curiosity\" filter, unnumbered",
+      "coppermind.net/wiki/Dragonsteel_Prime — re-read 2026-08-16 via the MediaWiki API: the {{book}} infobox carries publisher and release date (2024-03-29) and NO series field; prose calls it Sanderson's honors-thesis seventh novel, released during the Words of Radiance Leatherbound campaign",
+      "coppermind.net/wiki/Dragonsteel_(series) — re-read 2026-08-16: the Dragonsteel series proper is \"an unpublished series\" still in development (planned trilogy, after Stormlight book 10); Dragonsteel Prime is its abandoned origin draft, \"no longer canon\" to it",
+      "en.wikipedia.org/wiki/Brandon_Sanderson_bibliography — re-read 2026-08-16: \"Other works\" table, series column \"Sanderson Curiosities\" (an imprint label, per the note below)",
+      "dragonsteelbooks.com/products/dragonsteel-prime-hardcover — \"Published exclusively by Dragonsteel as a 'Sanderson Curiosity'\", \"a non-canon peek at what might have been\"; no series name or volume number anywhere on the page",
       "audiobook_catalog/site/catalog.csv carries it with an empty series column"
     ],
-    "note": "Same reasoning as Long Chills and Case Dough. Non-canon, and not the published Dragonsteel series."
+    "note": "Same reasoning as Long Chills and Case Dough. Non-canon, and not the published Dragonsteel series. 2026-08-16: re-checked both sides of the recorded Coppermind-'unknown' vs Wikipedia-'standalone' discrepancy and it has evaporated — no reachable source asserts a reading-order series for this book; 'Sanderson Curiosities' is a publisher category this file already refuses to put in the series column, and the Dragonsteel series it foreshadows remains unpublished. gap_verdict for work 3 upgraded unknown → none via npm run seed:verdicts."
   },
   "tenth island finding joy beauty and unexpected love in the azores|diana marcum": {
     "series": null,
@@ -401,13 +403,14 @@
   },
   "firstborn defending elysium|brandon sanderson": {
     "series": null,
-    "verdict": "unknown",
-    "confidence": "low",
+    "verdict": "standalone",
+    "confidence": "medium",
     "source": [
+      "brandonsanderson.com/blogs/blog/2013-convention-exclusive-firstborn-defending-elysium — the author's own page presents it as a one-off two-story convention volume, in no numbered series",
       "en.wikipedia.org/wiki/Brandon_Sanderson_bibliography: Firstborn is under \"Other works\" (standalone, 2008); Defending Elysium is under \"Cytoverse\" (short story, 2008)",
       "Open Library /works/OL20109892W, 2 editions, no series"
     ],
-    "note": "A two-novella bind-up whose halves sit in different places: one uncollected, one Cytoverse. The bound volume is in no series, but calling it a standalone would bury the Cytoverse half, and calling it Cytoverse would be wrong about the other half. Left unset on purpose — an empty column is the honest answer here."
+    "note": "A two-novella bind-up whose halves sit in different places: one uncollected, one Cytoverse (Defending Elysium is only later tied to the Skyward setting). The bound volume itself is in no series. This file said 'unknown' on 2026-08-10; the owner accepted a 'none' verdict through the app on 2026-08-11 (gap_verdict id 7, research run 17) and that newer decision supersedes — synced here 2026-08-16 so a seed:verdicts re-run cannot regress the row back to 'unknown'."
   },
   "undead knight|erik colombe": {
     "series": null,
