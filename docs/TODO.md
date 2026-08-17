@@ -136,8 +136,13 @@ TBR is what it looks like from the reader's side. Decide them together, and
 consider whether "read", wishlist and TBR are three names for one per-person
 state machine (want → have → reading → read) rather than three features.
 
-**Games:** "all catalogs" plausibly includes a to-PLAY list. Ask before
-assuming — it may be the same feature or a deliberately different one.
+**Games: DECIDED — NO to-play list (owner, 2026-08-16 late):** *"lets not
+make a to play list, most people except weirdos like me buy games they arent
+going to immediatly play where as books can stack up."* So TBR spans
+audiobook + ebook + physical books ONLY; games are deliberately out, and the
+reason is recorded so nobody "helpfully" adds them later: an unplayed game on
+a shelf is normal ownership, an unread book on a list is an intention. If the
+owner ever wants it, that's a NEW ask, not this feature grown sideways.
 
 ### ⚠️ SCOPE NARROWED by the owner, 2026-08-16 — read this before building anything above
 
