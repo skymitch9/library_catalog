@@ -15,6 +15,15 @@
 > third way that adds a keying class this document did not have a name for.
 > Counts there are measured against that repo's live 168-row ebook manifest.
 >
+> ⚠️ **CORRECTED 2026-08-17, later the same day — §2 was WRONG about which
+> column holds the key, and §9 is the correction.** This document asserted that
+> `audiobook_holding.title` is "the other side's own spelling" and that slugging
+> it reproduces their `bookId` byte for byte. Migration 0010 says otherwise in
+> its own header: that column is stored **already stripped** by
+> `cleanTitleWithSeries`. Read §2 for the shape of the join and §9 for the
+> column it actually runs on. **18 of 92 holdings** were reaching the physical
+> book with no published warnings because of it.
+>
 > **NOT verified:** no signed-in round trip has been performed on either
 > instance — see §8. The ebooks shelf's own round trip is likewise unverified
 > (it is behind a sign-in wall); see that repo's `docs/DONE.md`.
@@ -109,6 +118,11 @@ available here:
   tomorrow.
 
 ### What this catalog uses instead
+
+> ⚠️ **The paragraph below names the WRONG COLUMN. It is kept as written
+> because the shape of the join it describes is right and is still what the
+> code does — only the column changed. `audiobook_holding.raw_title`
+> (migration 0340) is the key; `.title` is a read alias. See §9.**
 
 **`audiobook_holding.title` — the other side's own spelling of the title**,
 cached in D1 by `npm run backfill:audiobooks` (migration 0010).
@@ -368,3 +382,188 @@ test watched failing on a deliberate mutation.
   `catalog-platform`** (`generated/SOURCE.txt` stamped 2026-08-17T17:47Z), and
   the field belongs to the concurrent ebooks-gate work. Not touched, not fixed —
   it is that agent's zone.
+
+---
+
+## 9. ⚠️ THE CORRECTION — the key was the CLEANED title, and all three surfaces disagreed
+
+*Added 2026-08-17, hours after §2 was written, on the owner's next ask:*
+
+> *"lets also move all content warnings from audiobooks to physical books and
+> not relook them up. and make sure any edition has the same content warnings."*
+
+Chasing "why do so few physical books show a warning" landed on §2's own
+premise. **`audiobook_holding.title` is not the audiobook catalog's spelling.**
+Migration 0010's header says so outright — the column is stored *"already
+stripped of Audible's series decoration by `cleanTitleWithSeries`"* — and
+`scripts/lib/audiobooks.mjs` computes both, `rawTitle` and `title`, then the
+backfill wrote only the second. The raw string was dropped on the floor at the
+D1 boundary.
+
+```
+catalog.csv     "Onyx Storm - Empyrean, Book 3"   <- what BOTH other surfaces key on
+holding.title   "Onyx Storm"                      <- what §2 keyed on
+bookIdFromTitle  onyx-storm-empyrean-book-3   vs   onyx-storm
+```
+
+§2's claim is true only for a row whose raw title carried no decoration — and
+the rows where the two catalogs disagree are the entire point of the join. So
+the bug is §2's own failure mode, reintroduced one layer down, with the same two
+silent halves and the same "nobody has added a warning yet" appearance.
+
+### Measured, 2026-08-17, production D1 + the live published file
+
+| | Before | After |
+|---|---|---|
+| holdings reaching an entry in `content_warnings.json` | **15** | **32** |
+| published warning labels surfaced across the catalog | **57** | **164** |
+| holdings whose write key equals the audiobook catalog's own | 36 | **90** |
+| …of which the pre-0340 key was a different, siloed slug | — | **54** |
+| `audiobook_holding` rows carrying `raw_title` | 0 | **90 of 92** |
+
+The 18 books that gained a published entry are the whole Percy Jackson set,
+*Words of Radiance*, *Onyx Storm*, *Quicksilver*, two *Dungeon Crawler Carl*
+volumes, *The Wandering Inn* (and *No Killing Goblins*, which is aliased to it),
+plus six that gained a **checked-clean** entry — a different fact from "nobody
+looked", and §3's rule keeps them apart.
+
+⚠️ **One book LOST an entry, and that is the correction working.** *Space Knight
+Book 2* was showing the entry keyed *"Space Knight"* — which is **Book 1's**,
+carrying zero warnings. Its raw title is *"Space Knight, Book 2"*, which the
+published file has never held. The panel now says nobody has checked published
+sources for it, which is true. A wrong answer replaced by an honest absence is
+not a regression.
+
+⚠️ **2 of 92 rows have `raw_title` NULL** — the two stale holdings (*Isles of
+the Emberdark*, newly stale this run, and *Tamer: King of Dinosaurs Book 11*).
+An unmatched row is not rewritten, so it keeps the old behaviour: NULL means
+**not recorded**, never "same as `title`", and `warningKeysFor` falls back.
+
+### The decision: an ALIAS layer, and no rekey — the store was re-measured empty
+
+`user_content_warnings`, `user_content_warnings_dev`, `cw_requests` and
+`cw_requests_dev` were **re-read over the REST API on 2026-08-17 and all four
+hold 0 documents.** So moving the write key orphans nothing, and no persisted
+Firestore id moves — the migration-with-blast-radius this estate is careful
+about never arose.
+
+It would not have arisen even with documents in there, and that is the point
+worth keeping: **`WarningKeys.bookIds` is a union, so every spelling this
+catalog has ever filed under stays in the read set forever.** The cleaned-title
+slug is still queried, precisely *because* it used to be the write key. Add to
+that list; never replace it.
+
+A separate alias table was considered and refused. **The mapping already
+exists** — one row per work in `audiobook_holding`, produced by this project's
+ONE matcher, carrying its rung (`matched_via`), its score (`title_similarity`)
+and the alias that unlocked it (`via_alias`), and printed in full by the
+backfill. That is the reviewable stored mapping, not a read-time guess. A second
+table would be a second answer to a question this one already answers.
+
+### ⚠️ `matched_via` is deliberately NOT a write gate
+
+Blocking writes on a containment match looked cautious. All four containment
+rows, measured:
+
+| work | matched to | verdict |
+|---|---|---|
+| Harry Potter and the Goblet of Fire | …*(Full-Cast Edition)* | the SAME work, another edition — the case the owner asked to unify |
+| Harry Potter and the Sorcerer's Stone | …*(Full-Cast Edition)* | same |
+| Tamer: King of Dinosaurs Book 11 | *Tamer: King of Dinosaurs* | wrong volume — but already **stale**, so already write-excluded |
+| Space Knight Book 1 | *Space Knight* | over-shares with Book 2 |
+
+The rule would refuse two matches it should welcome, add nothing to the one
+staleness already catches, and still miss the real over-share: **Space Knight
+Book 2 reaches the same title on the `exact` rung, through an owner-authored
+`work_alias`.** Three titles are each held by two works this way — *Space
+Knight*, *Fae and Fare*, *The Wandering Inn* — two of them deliberately (a
+volume aliased to its series' catalog row). ⚠️ **This is the one open
+over-share, and it is a mapping question, corrected in `work_alias`, not with a
+read-time heuristic here.**
+
+### The queue: one work is answered ONCE — `audiobook_catalog`, commit `17ec82d`
+
+"Not relook them up" is enforced in `app/tools/fetch_content_warnings.py`, not
+at the button, because that file is the one choke point every producer flows
+through: `cw_requests`, `cw_requests_dev` and `cw_requests.txt`. One
+implementation covers any future surface that learns to queue — including a
+library-side request button, which **does not exist today** (this catalog has no
+CW request surface at all; see §10).
+
+⚠️ **No fifth title-fold was written.** `titles.ts` records the rule — a second
+language needing those folds brings the cross-language parity check with it — so
+the dedupe uses only vocabulary that file already owned: `main_title()`, the
+"Main Title - Subtitle" split written for Hardcover, plus the catalog's own
+author column, case-folded. Two rungs, ambiguity dropped on both:
+
+| Rung | Key | Measured on the live 1,079-row catalog |
+|---|---|---|
+| `by_author` | `(main title, author)` | 1,069 buckets, **5 ambiguous → dropped** |
+| `by_title` | main title alone, across all authors | 1,066 buckets, **5 ambiguous → dropped** |
+
+⚠️ **The title-only rung is the one the real queue lands on**, and the first
+draft did not have it: a `cw_requests` document carries a `bookTitle` and **no
+author**, so an author-gated rung fired on nothing. Found by running it, not by
+reading it — the tripwire proof entered the paid chain on the first attempt.
+That rung is *stricter* about collisions, not looser: it drops any main title
+two different authors share, which keeps the two different books called *Wicked*
+apart. **117 books** are reachable by their bare main title.
+
+`carry_over` writes the canonical answer under the requested title with a
+`carried_from` field — a **copy, not a pointer**. An `{"alias_of": …}` entry
+would need all three front ends taught to follow it, two of them in another
+repo, and any that was missed would render a book with no warnings. The copy
+keeps the canonical entry's own `source` and `checked_at`, because those are
+facts about when *that* answer was found; only `carried_from` is new, so the
+join is reviewable in the file itself and undone by deleting the copies.
+
+Exercised over the real `catalog.csv` and a copy of the real
+`content_warnings.json`, with `check_book` replaced by a tripwire that raises if
+entered — four requests, none of them a key in the file:
+
+```
+fulfilled: 4        PAID CHAIN ENTERED: NEVER — 0 lookups
+Onyx Storm -> 10 warnings, carried_from "Onyx Storm - Empyrean, Book 3"
+canonical entries untouched: True
+SECOND run over the same queue — fulfilled: 4, paid chain: NEVER
+```
+
+### Where the change landed
+
+| Repo | File | What |
+|---|---|---|
+| library | `migrations/0340_audiobook_holding_raw_title.sql` | the column, and why it is not a rekey |
+| library | `scripts/backfill-audiobook-holdings.mjs` | writes `raw_title` — the value it already had |
+| library | `packages/db/src/works.ts` | `AudiobookHolding.rawTitle` |
+| library | `packages/core/src/warnings.ts` | raw preferred; cleaned kept as a read alias |
+| library | `apps/worker/src/routes/warnings.ts` | passes it, and names the raw spelling to the panel |
+| library | `packages/core/test/warnings.test.ts` | 24 assertions, real production rows |
+| audiobook | `app/tools/fetch_content_warnings.py` | the two-rung queue dedupe + `carry_over` |
+| audiobook | `tests/test_content_warnings.py` | 10 assertions |
+
+---
+
+## 10. Still open after §9
+
+- ⚠️ **The ebooks shelf is CORRECT and needs no change** — it already keys on
+  the manifest's raw `audiobook_title`. It was the surface that proved which
+  spelling is canonical. Nothing was deferred there. (Its own page was being
+  rebuilt by another agent while §9 was written, and no template or `site/*.js`
+  in that repo was touched.)
+- **This catalog has no "request an AI check" button.** The audiobook site has
+  one; the library does not, so nothing here can queue a lookup. If one is ever
+  added it must write `cw_requests/{bookIdFromTitle(rawTitle)}` with
+  `bookTitle` = the **raw** audiobook title, so the fulfiller's exact-key path
+  answers it with no fold at all.
+- **The `work_alias` over-share** above: *Space Knight Book 1* and *Book 2*
+  resolve to one audiobook row and therefore share one warning set. Correct it
+  in the alias, not in the key derivation.
+- **The friend instance holds 0 `audiobook_holding` rows**, so nothing bridges
+  there and every work keys on its own title. Migration 0340 is applied to that
+  D1 anyway, so the shared bundle cannot meet an old schema.
+- **`content_warnings.json` has not yet been swept** to carry answers onto the
+  spellings the pipeline has never been asked about. The dedupe fires on the
+  next request, sync or `--all` run; nothing backfills the file today.
+- The round trips in §8 remain unverified for the same reason: they need a
+  signed-in session. §9's own live check was `/api/health` (`database: up`,
+  version `bd72dbcf`), not a rendered panel.

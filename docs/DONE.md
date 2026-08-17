@@ -17,6 +17,68 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## 📌 Content warnings unified across every edition and format — ✅ DONE 2026-08-17
+
+**New ask, landed the same session it was raised, so it never sat in
+`TODO.md`.** The owner, verbatim:
+
+> *"lets also move all content warnings from audiobooks to physical books and
+> not relook them up. and make sure any edition has the same content warnings."*
+
+**The defect.** The content-warning bridge shipped earlier the same day keyed on
+`audiobook_holding.title`, believing it to be the audiobook catalog's own
+spelling. Migration 0010's header says otherwise — that column is stored already
+stripped by `cleanTitleWithSeries`. The raw string *was* computed, in
+`scripts/lib/audiobooks.mjs` as `rawTitle`, and dropped at the D1 boundary.
+`catalog.csv` says *"Onyx Storm - Empyrean, Book 3"*; we keyed on *"Onyx
+Storm"*. The published file and the audiobook site's own book page are both keyed
+on the former, and the ebook shelf publishes it per manifest row as
+`audiobook_title` — so a paperback and an ebook of one book filed under two
+different ids.
+
+**Measured, production D1 + the live `content_warnings.json`:**
+
+| | Before | After |
+|---|---|---|
+| holdings reaching a published entry | 15 | **32** |
+| published warning labels surfaced | 57 | **164** |
+| holdings writing the audiobook catalog's own key | 36 | **90** |
+| …previously siloed under a different slug | — | **54** |
+
+**Alias, not rekey.** All four Firestore collections re-measured empty over REST,
+so no persisted id moved; and `WarningKeys.bookIds` is a union, so the old
+cleaned-title slug stays in the read set forever and nothing filed under it can
+be orphaned. A separate alias table was refused: the mapping already exists, one
+row per work, with `matched_via` / `title_similarity` / `via_alias` stored and
+printed by the backfill.
+
+**The queue.** `audiobook_catalog`'s `fetch_content_warnings.py` gained a
+two-rung dedupe at the one choke point every request producer flows through, so
+a work already answered under another spelling is carried across rather than
+re-researched. No fifth title-fold was written — it reuses that file's own
+`main_title()` plus the catalog's author column, and refuses ambiguity (5 of
+1,069 buckets, dropped). ⚠️ The title-only rung is the one the real queue lands
+on, and the first draft lacked it: `cw_requests` documents carry no author, so
+the author-gated rung fired on nothing. Caught by running it, not reading it.
+
+**Proof.** `GET /api/warnings/:id/keys` for *Onyx Storm (The Empyrean)* answers
+`writeBookId: "onyx-storm-empyrean-book-3"` with the old `onyx-storm` retained as
+a read alias, and `publishedTitle` now resolves 10 live warnings where the old
+key resolved none (that key is not in the file at all). The queue proof ran the
+real fulfiller with the source chain replaced by a tripwire: 4 requests, **0
+lookups**, idempotent on a second run. 1,166 library tests and 1,203 audiobook
+tests pass; the join test watched failing on its mutation (6 red) and green on
+revert.
+
+- library `e2e46d3`, migration 0340 applied to **both** instances' D1, deployed
+  `bd72dbcf`
+- audiobook `17ec82d`
+- design of record: [`info/content-warnings.md`](info/content-warnings.md) §9,
+  which also **corrects §2** rather than quietly rewriting it
+- ⚠️ still open, in §10: `content_warnings.json` is not back-swept (the dedupe
+  fires on the next request/sync); the *Space Knight* `work_alias` over-share;
+  and the signed-in round trip remains unverified
+
 ## 📌 foliate-js pinned to a commit — ✅ DONE 2026-08-17 (viewer phase 2)
 
 **Moved whole from `TODO.md`'s tech-debt list, not summarised.** The item as it
