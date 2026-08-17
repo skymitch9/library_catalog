@@ -119,8 +119,12 @@ DEFAULT_THEME = "apple"
 # ⚠️ This var is the same POSTURE-OF-RECORD idiom as DEFAULT_THEME above, with
 # one difference: the Worker DOES read this one (`gabiPanelEnabled` in
 # `@lc/core`, the only thing that reads it), and it gates the ROUTE as well as
-# the panel — `POST /api/gabi/turn` answers a worded 403 here. Hiding a control
-# has never been the lock in this app; see the /people nav comment in App.tsx.
+# the panel — `POST /api/gabi/turn` answers a worded **404** here: disabled, not
+# open, the same idiom EBOOK_INGEST_TOKEN and DONOR_TOKEN use. ⚠️ NOT 403, which
+# in this app means exactly one thing — your ROLE does not permit this — and
+# reusing it for "this feature does not exist here" would send somebody asking
+# for a role that would not help. Hiding a control has never been the lock in
+# this app either; see the /people nav comment in App.tsx.
 #
 # Unset or unrecognised both mean OFF. It is written out rather than omitted so
 # that "is GABI on here?" has an answer in this file, not an absence — and
@@ -283,7 +287,8 @@ DEFAULT_THEME = "hearts"
 # conversation and risks nothing in her catalog.
 #
 # ⚠️ It gates the ROUTE too, not just the panel — `POST /api/gabi/turn` answers
-# a worded 403 wherever this is not "on". See the main [vars] block for why.
+# a worded 404 (disabled, not open) wherever this is not "on", never a 403.
+# See the main [vars] block for why that distinction is load-bearing.
 GABI_PANEL = "on"
 
 # The bucket's managed r2.dev public URL, enabled 2026-08-16. This WORKS —
