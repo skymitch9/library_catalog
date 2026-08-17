@@ -48,9 +48,6 @@ real work. New debt goes HERE, never scattered.
   whose console is cp1252, always BETWEEN setup and cleanup. Mechanical fix
   candidates: set `PYTHONIOENCODING=utf-8` in the pipeline .bat/task env
   globally, or a repo lint rule banning non-ASCII in print strings.
-- **foliate-js is unpinned (`@main`)** in the EPUB probe findings — MUST be
-  pinned to a commit when the real EPUB reader build starts (the findings
-  doc says so; listed here so it survives until that build).
 - **CSP `frame-src` asymmetry on apex** — `/universes` + `/status` don't
   name `auth.heygabi.ai` while `/`, `/admin`, `/series` do (series-page
   agent's XS flag, catalog-platform TODO). Measure whether anything breaks

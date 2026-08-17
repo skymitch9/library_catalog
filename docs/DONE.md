@@ -17,6 +17,34 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## 📌 foliate-js pinned to a commit — ✅ DONE 2026-08-17 (viewer phase 2)
+
+**Moved whole from `TODO.md`'s tech-debt list, not summarised.** The item as it
+stood:
+
+> - **foliate-js is unpinned (`@main`)** in the EPUB probe findings — MUST be
+>   pinned to a commit when the real EPUB reader build starts (the findings
+>   doc says so; listed here so it survives until that build).
+
+**It did survive until that build, which is the whole reason the line existed.**
+Viewer phase 2 (`audiobook_catalog` `70fb145`) vendored foliate-js at commit
+**`78914aef4466eb960965702401634c2cb348e9b1`** (2026-05-01, MIT), self-hosted at
+`site/static/foliate/`, with `@zip.js/zip.js` pinned alongside at the **2.7.45**
+the probe measured. The pin is enforced by a test rather than by a docstring
+(`tests/test_reader_page.py::FOLIATE_COMMIT`), and
+`site/static/foliate/VENDORED.md` carries the update procedure.
+
+⚠️ **The probe's numbers survived the pin by luck, not by design.** `78914ae`
+*was* `main` on the probe date — it is the repository's newest commit and
+nothing landed between — so the measured bytes and the shipped bytes are
+identical. A probe run a week later would have measured something no pin could
+recover. The generalisable form: **an unpinned measurement has a shelf life, and
+nobody knows how long it is until they try to cash it in.**
+
+Closed in [`info/epub-streaming-findings-2026-08-17.md`](info/epub-streaming-findings-2026-08-17.md)
+§7, whose §8 now records what the build measured against what the probe
+predicted.
+
 ## 💸 A spend cap printed its JSON at a person — ✅ FIXED + DEPLOYED 2026-08-17
 
 ⚠️ **Never in `TODO.md`** — the owner hit it live and reported it directly, so

@@ -7,6 +7,12 @@
 > measured. This document exists to settle
 > [`ebook-viewer-design.md`](ebook-viewer-design.md) §10's "single most
 > load-bearing unmeasured statement".
+>
+> ✅ **ACTED ON, same day.** Viewer phase 2 shipped on this recommendation —
+> foliate-js with a range-reading loader, `audiobook_catalog` `70fb145`. **§8
+> below records what the build measured**, including the two items §7 flagged
+> as unmeasured that turned out to matter, and the one prediction in §7 that
+> was exactly right.
 
 **The claim under test**, from `ebook-viewer-design.md` §4.1, verbatim:
 
@@ -326,25 +332,50 @@ practical reason to settle the renderer before the EPUB phase starts.
   a phone's data plan) is therefore **understated everywhere above**.
 - ⚠️ **Render durations are upper bounds, not measurements** — the rAF shim in
   §1. Network shape and heap are unaffected.
-- **No paginated reading session was exercised.** Sections were loaded and up to
-  three rendered; nobody read a chapter, resized, changed font size, or turned
-  50 pages. Whether foliate's range loader stays cheap deep into a book is
-  **unmeasured** — it should, because entries are fetched on demand, but that is
-  an inference.
-- **foliate-js was driven through its `EPUB` class directly, not through its
-  `View`/`paginator` UI.** Rendering quality, pagination, theming and RTL were
-  not assessed at all. The `makeLoader` helper in the probe is a faithful copy
-  of `view.js`'s `makeZipLoader` with the Reader swapped, but it is a copy —
-  **using foliate's real `view.js` may bring back the whole-file `BlobReader`
-  unless the loader is injected deliberately.** That integration point is the
-  main unknown for the build.
-- **Both libraries were loaded from jsdelivr**, not vendored. The design's §4.4
-  `'self'` CSP posture requires vendoring; **no vendored build was exercised**,
-  and no CSP was applied to the probe page at all. `blob:` requirements in
-  `img-src`/`frame-src` are therefore still unverified.
-- **foliate-js was taken from `@main`**, an unpinned moving target. The design's
-  vendoring discipline requires a pinned version; these numbers belong to
-  whatever `main` was on 2026-08-17.
+- ~~**No paginated reading session was exercised.**~~ ⚠️ **PARTLY CLOSED, and
+  the inference was too optimistic.** Phase 2 measured 25 page-turns: **+60
+  requests / +5.8 MB** on the reflowable Frugal Wizard handbook, and **+231
+  requests / +35.4 MB** on the omnibus — the latter because it is a
+  *fixed-layout comic* whose every page **is** a ~1.4 MB image. The loader does
+  stay range-only, so the shape of the inference held; but "cheap deep into a
+  book" is not true of an image-heavy fixed-layout title, and a reader who
+  finishes such a book will have transferred most of it. That is the content,
+  not overhead — but it is a real number for a data plan, and it is the figure
+  §6.2's Class-B arithmetic should be re-run against. Still unmeasured: resize,
+  font-size change mid-book, and sessions past 25 turns.
+- ~~**foliate-js was driven through its `EPUB` class directly, not through its
+  `View`/`paginator` UI.**~~ ✅ **CLOSED — and this paragraph's warning was the
+  single most useful sentence in the document.** Phase 2 drove the real
+  `<foliate-view>`, and the trap is exactly as described: `view.js`'s
+  `makeBook()` builds `new ZipReader(new BlobReader(file))`. The build avoids it
+  by constructing `new EPUB(loader).init()` itself and handing the finished book
+  to `view.open(book)`, which passes an already-built book straight through —
+  and by **not vendoring foliate's `vendor/zip.js` at all**, so the whole-file
+  path cannot resolve. See §8.
+  ⚠️ **Still not assessed:** RTL, vertical writing, annotations, search and TTS.
+  Rendering quality and pagination now are (§8).
+- ~~**Both libraries were loaded from jsdelivr**, not vendored … `blob:`
+  requirements in `img-src`/`frame-src` are therefore still unverified.~~
+  ✅ **CLOSED, and the answer was worse than the question.** Phase 2 exercised a
+  vendored build under the real policy string. `blob:` in `img-src`/`frame-src`
+  is necessary **and not sufficient**: `style-src` and `font-src` need it too,
+  because foliate rewrites a book's own CSS and embedded fonts to `blob:` URLs
+  and `'self'` does not cover `blob:`. Without it a book paginates perfectly in
+  the browser's default serif with all of the publisher's typography silently
+  discarded. Full note in
+  `catalog-platform/docs/info/ebook-viewer-phase1.md` §9.3.
+- ~~**foliate-js was taken from `@main`**, an unpinned moving target.~~
+  ✅ **CLOSED 2026-08-17.** Phase 2 vendored it at commit
+  **`78914aef4466eb960965702401634c2cb348e9b1`** (2026-05-01, MIT), and the pin
+  is enforced by a test rather than by a docstring
+  (`audiobook_catalog/tests/test_reader_page.py::FOLIATE_COMMIT`).
+  ⚠️ **These numbers are still valid for the pinned build**: `78914ae` *was*
+  `main` on 2026-08-17 — it is the repository's newest commit and nothing landed
+  between it and the probe — so the measured bytes and the shipped bytes are the
+  same bytes. That is luck to have kept, not a rule; a probe run a week later
+  would have measured something no pin could recover.
+  @zip.js/zip.js is pinned at the measured **2.7.45** for the same reason,
+  though 2.8.51 was current on the vendoring date.
 - **Nothing was tested against R2, the Worker, or any authenticated origin.**
   Whether Cloudflare's edge preserves this range pattern, and whether 15
   bearer-authenticated range requests behave, is **untested**. The probe origin
@@ -358,9 +389,64 @@ practical reason to settle the renderer before the EPUB phase starts.
 
 ---
 
+## 8. What the BUILD measured — viewer phase 2, same day
+
+`audiobook_catalog` `70fb145`. The full as-built record is
+`catalog-platform/docs/info/ebook-viewer-phase1.md` §9; this section is only
+the part that speaks back to the measurements above.
+
+### 8.1 The recommendation held, and the numbers moved slightly
+
+Same book (`huge`, 412,436,591 B), same technique, but through foliate's real
+`View` and rendering a first page rather than stopping at `init`:
+
+| | §5's probe | the shipped reader |
+|---|---|---|
+| Requests | 15 | **18** |
+| Bytes | 78,741 | **664,477** |
+| Peak heap | 10.4 MB | **16.6 MB** |
+| Time to init | 85 ms | **105 ms** |
+| Time to first page painted | not measured | **1,586 ms** |
+
+⚠️ **The 8× rise in bytes is not a regression — it is the cover.** §5's run
+stopped after loading three section documents; the shipped reader paints a page,
+and this book's first spread is a ~500 KB cover image. Against 412 MB the
+difference is still noise (0.019% → 0.161%), but a future comparison must know
+that the two figures measure different amounts of work.
+
+### 8.2 §5's finding 1 was right, and it is the one people will forget
+
+*"Even foliate's default whole-file path costs ~8 MB of heap where epub.js costs
+93 MB"* — i.e. **the memory problem is an epub.js problem, not an EPUB
+problem.** The corollary is that a future agent measuring only heap could
+conclude foliate's default loader is fine and drop the range reader, losing
+four orders of magnitude of *bytes* while the heap graph barely moves. The
+build's tests therefore count **requests and bytes**, not memory.
+
+### 8.3 §6.1's conclusion shipped exactly
+
+No 32 MiB size gate, no honest-refusal card, no omnibus decision. All three
+oversized books open. ⚠️ **The omnibus still cannot be opened LIVE**, but for
+phase 0a's reason and not this one: it is the single file over wrangler's
+300 MiB ceiling, still absent from `estate-ebooks`, and the Worker answers its
+worded `file_absent`.
+
+### 8.4 §6.4's migration argument is now banked
+
+*"Deciding foliate-js now, before phase 3 stores its first position, makes that
+migration cost exactly zero."* Phase 2 shipped foliate and stored **no**
+position; phase 3 inherits a settled renderer. This is the one place where a
+document changed a decision's cost rather than merely describing it.
+
+---
+
 ## Related
 
 - [`ebook-viewer-design.md`](ebook-viewer-design.md) — the design this
   measures; §4.1, §4.2, §8 and §11 all move on these numbers.
 - `catalog-platform/docs/info/audiobook-auth-migration.md` §5 Phase 4 — the
   gated-read sibling whose handler shape the byte stream shares.
+- `catalog-platform/docs/info/ebook-viewer-phase1.md` §9 — **the as-built for
+  the reader this document argued for**, including two silent defects it did
+  not predict (a CSP gap in `style-src`/`font-src`, and a token getter that
+  never existed).
