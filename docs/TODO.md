@@ -167,11 +167,21 @@ that repo is outstanding, and it belongs to the conductor, not to this file.
     and rclone'd to the shelf server. **An ingest phase exists that the
     framing did not price** — **1.805 GB / 1.681 GiB total** (138 EPUB =
     1.084 GiB, 30 PDF = 0.598 GiB), against R2's 10 GB free tier.
-  - ⚠️ **Range requests are a PDF technique, not an EPUB one.** An EPUB is a
+  - ~~⚠️ **Range requests are a PDF technique, not an EPUB one.** An EPUB is a
     ZIP; epub.js and foliate-js both fetch the whole archive. That inverts the
     phase order: **pdf.js first**, because it range-streams its own 181 MiB
     outlier by design where epub.js must *refuse* three books (393 / 143 /
-    27.7 MiB) behind a size gate.
+    27.7 MiB) behind a size gate.~~
+    🔬 **FALSIFIED BY MEASUREMENT 2026-08-17 →
+    [`info/epub-streaming-findings-2026-08-17.md`](info/epub-streaming-findings-2026-08-17.md).**
+    epub.js does fetch the whole archive (confirmed, 4 books, one `Range`-less
+    `GET` each) at ~3× file size in JS heap — **1,207 MB for the 393 MiB
+    omnibus**. But **ranges DO help EPUB**: foliate-js on a zip.js
+    `HttpRangeReader` opened that same book in **15 ranges / 76.9 KiB /
+    10.4 MB heap**. Consequences: **no 32 MiB size gate, no refusal card;
+    renderer becomes foliate-js not epub.js** (decide before phase 3 stores a
+    CFI, or it is a migration); **PDF-first loses its only deciding argument**,
+    so 🔴 owner decision #1 below re-opens with new evidence.
   - ✅ The auth-gating call was right, and it is smaller than feared: the
     **`download` capability (floor `member`) is already committed** in
     `audiobook-worker/src/capabilities.ts`, on a Worker already deployed with
@@ -192,7 +202,9 @@ that repo is outstanding, and it belongs to the conductor, not to this file.
   🔴 **Owner decisions before phase 1** (§11 of the doc, 8 of them; the two
   that matter most): **PDF first or EPUB first?** and **what "preview" means —
   ungated first chapter, or members-only read with a richer card + PDF
-  first-page thumbnail?** (recommended: PDF first; members-only).
+  first-page thumbnail?** (~~recommended: PDF first~~ — **the PDF-first
+  recommendation is now unsupported**, see the measurement above; members-only
+  still recommended).
 
 ## 📚 Ebooks may want to be their OWN site — the ownership boundary is per-FORMAT (owner insight 2026-08-16)
 

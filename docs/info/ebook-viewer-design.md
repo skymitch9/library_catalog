@@ -844,12 +844,24 @@ agents that each land beat one that dies at 90%.
 - **Which Cloudflare plan this account is on** (Workers Free vs Paid) — not
   found in any doc read. It changes CPU-time headroom and cache limits, not the
   design.
-- **epub.js's and foliate-js's fetch behaviour was reasoned from how EPUB and
+- ~~**epub.js's and foliate-js's fetch behaviour was reasoned from how EPUB and
   those libraries work, not exercised.** §4.1's claim that neither
   range-fetches by default is the single most load-bearing unmeasured statement
   in this document. ⚠️ **Exercise it before phase 2** — 20 minutes with one
   epub and a devtools network tab settles it, and if it is wrong the EPUB size
-  gate may be unnecessary.
+  gate may be unnecessary.~~
+  ✅ **MEASURED 2026-08-17 → [`epub-streaming-findings-2026-08-17.md`](epub-streaming-findings-2026-08-17.md).**
+  ⚠️ **It was half wrong, and the half that was wrong is the half this document
+  built on.** epub.js does fetch the whole archive in one `Range`-less `GET`
+  (confirmed, 4 books) and inflates it to ~3× file size in the JS heap
+  (1,207 MB for the 393 MiB omnibus). But **range requests help EPUB
+  enormously**: foliate-js with a zip.js `HttpRangeReader` opened that same
+  393 MiB book in **15 range requests / 76.9 KiB / 10.4 MB heap**. So the
+  **32 MiB size gate (§4.1) and its refusal card are unnecessary**, the
+  **renderer recommendation (§4.2) changes to foliate-js** — decide it *before*
+  phase 3 stores a CFI, or §7.3's migration becomes real — and **§8's sole
+  deciding argument for PDF-first no longer holds**, which re-opens §11 item 1
+  as an owner decision.
 - **pdf.js's `httpHeaders` option surviving in the current version** — the
   bearer-per-range design (§3.3) depends on it. Confirm against the exact
   vendored version at phase 1b.
