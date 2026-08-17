@@ -21,6 +21,7 @@ export * from './constants.js';
 export * from './capabilities.js';
 export * from './completeness.js';
 export * from './covers.js';
+export * from './gabi-tools.js';
 export * from './gaps.js';
 export * from './holdings.js';
 export * from './ebook-holding.js';

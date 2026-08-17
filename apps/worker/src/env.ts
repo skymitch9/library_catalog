@@ -213,6 +213,32 @@ export interface Env {
   ESTATE_APP_TOKEN_LIBRARY?: string;
 
   /**
+   * The GABI chat panel's per-instance posture — `on` on hers, absent on ours.
+   *
+   * ⚠️ **Unset means OFF, and so does anything unrecognised** (`gabiPanelEnabled`
+   * in `@lc/core`, which is the only thing that reads it). The design's §2 scopes
+   * v1 to `padhard.heygabi.ai` — *"The main library is out of scope and stays out
+   * until this has run on hers for a while"* — and the route it gates spends her
+   * key's money, so a typo in a var must not switch it on for a catalog it was
+   * never meant for. Same failure direction as `resolveDefaultRole` and
+   * `parseEstateMode`.
+   *
+   * ⚠️ **It gates the ROUTE as well as the panel**, in `lib/gabi-turn.ts`.
+   * Hiding a control has never been the lock in this app — `/people`'s nav
+   * comment says exactly that — and one deploy serves both instances the same
+   * bundle, so the flag has to mean something server-side or it means nothing.
+   *
+   * The posture-var idiom is `DEFAULT_THEME`'s (see `wrangler.toml`), with one
+   * difference: a theme must resolve before first paint so it is read in the
+   * browser from `location.hostname`, while a chat panel need not, so this one
+   * is read by the Worker and reported on `/api/me` (what the app reads at boot)
+   * and `/api/health` (what a curl can check with no sign-in). That is the
+   * "when the Worker grows a config surface the web app reads at boot" case
+   * `DEFAULT_THEME`'s own comment anticipated.
+   */
+  GABI_PANEL?: string;
+
+  /**
    * Local development only. Ignored unless ENVIRONMENT is not "production", so a
    * stray value in production vars can never bypass sign-in.
    */

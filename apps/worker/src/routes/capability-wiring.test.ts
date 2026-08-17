@@ -66,6 +66,7 @@ import { coverRoutes } from './covers.js';
 import { crowdfundingRoutes, provenanceRoutes } from './crowdfunding.js';
 import { enrichRoutes } from './enrich.js';
 import { exportRoutes } from './export.js';
+import { gabiRoutes } from './gabi.js';
 import { healthRoutes } from './health.js';
 import { ingestRoutes } from './ingest.js';
 import { isbnRoutes } from './isbn.js';
@@ -298,6 +299,18 @@ const WIRED: Wired[] = [
   // ⚠️ Spends money. Safe to admit only because the route's first act is the
   // `ANTHROPIC_API_KEY` check, and `stubEnv` has none — it 503s.
   { routes: researchRoutes, method: 'POST', path: '/works/1/run', capability: 'runResearch' },
+
+  // ── gabi.ts (/api/gabi) — the conversational fixer's one route ──
+  // ⚠️ `runResearch`, NOT `editCatalog`: the route spends her Anthropic key, and
+  // that is the risk it carries. The WRITING risk sits on the tool endpoints,
+  // each behind its own gate — routes/research.ts's header makes the same split
+  // for the same reason. Both hold identical role sets today, so this row is the
+  // only thing that can tell them apart if somebody swaps one for the other.
+  //
+  // Safe to admit past the gate: `stubEnv` has no `GABI_PANEL`, so the posture
+  // guard answers 404 (disabled, not open) as its first act — before the key
+  // check, before D1, and long before anything could bill Anthropic.
+  { routes: gabiRoutes, method: 'POST', path: '/turn', capability: 'runResearch' },
 
   // ── reviews.ts (/api/reviews) ──
   { routes: reviewRoutes, method: 'GET', path: '/collection', capability: 'read' },

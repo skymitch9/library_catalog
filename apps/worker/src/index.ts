@@ -21,6 +21,7 @@ import { crowdfundingRoutes, provenanceRoutes } from './routes/crowdfunding.js';
 import { donorRoutes } from './routes/donor.js';
 import { enrichRoutes } from './routes/enrich.js';
 import { exportRoutes } from './routes/export.js';
+import { gabiRoutes } from './routes/gabi.js';
 import { healthRoutes } from './routes/health.js';
 import { ingestRoutes } from './routes/ingest.js';
 import { isbnRoutes } from './routes/isbn.js';
@@ -134,6 +135,13 @@ app.route('/api/crowdfunding', crowdfundingRoutes);
 app.route('/api/isbn', isbnRoutes);
 app.route('/api/enrich', enrichRoutes);
 app.route('/api/research', researchRoutes);
+// The conversational fixer's one server-side surface — `POST /api/gabi/turn`,
+// gated on `runResearch` because what it carries is a bill, not a write. Beside
+// /api/research rather than under it: a conversation is not a kind of research
+// run, and the loop it serves runs in the browser (gabi-fixer-design.md §3.1).
+// ⚠️ Inert on any instance whose GABI_PANEL is not "on" — the route answers a
+// worded 403 there, because hiding the panel was never the lock.
+app.route('/api/gabi', gabiRoutes);
 app.route('/api/reviews', reviewRoutes);
 // The cross-catalog to-be-read list. Beside /api/reviews rather than under it:
 // both are keys into the SAME Firebase project's collections and neither owns

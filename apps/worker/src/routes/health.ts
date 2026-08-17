@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { gabiPanelEnabled } from '@lc/core';
 import { isDatabaseReachable } from '@lc/db';
 import { universeNames, universesDocument } from '@lc/universes';
 import type { AppBindings } from '../env.js';
@@ -27,6 +28,15 @@ import type { AppBindings } from '../env.js';
  * pre-existing shape verbatim. `version`/`database`/`universes`/`time` stay
  * at the top level too — additive only, nothing removed this pass; see
  * catalog-platform's docs/info/health-envelope.md for the transition plan.
+ *
+ * ⚠️ `gabi.panel` is here for the same reason `universes` is: it is the only
+ * way to prove a per-instance POSTURE from outside, in one curl, with no
+ * sign-in. `GABI_PANEL` decides whether the conversational fixer exists on this
+ * instance at all — panel and route both (`lib/gabi-turn.ts`) — and the two
+ * instances serve the same bundle from the same commit, so "is it on over
+ * there?" is otherwise a question only a signed-in browser can answer. A
+ * boolean about a feature's existence is not privileged information; nothing
+ * else about GABI is exposed here.
  */
 export const healthRoutes = new Hono<AppBindings>().get('/', async (c) => {
   const database = (await isDatabaseReachable(c.env.DB)) ? 'up' : 'down';
@@ -40,6 +50,8 @@ export const healthRoutes = new Hono<AppBindings>().get('/', async (c) => {
     version: c.env.APP_VERSION ?? 'unknown',
     database,
     universes: { count: universeNames.length, schemaVersion: universesDocument.schemaVersion },
+    /** The per-instance posture of the conversational fixer. See the header. */
+    gabi: { panel: gabiPanelEnabled(c.env.GABI_PANEL) },
     time: new Date().toISOString(),
   };
   return c.json(

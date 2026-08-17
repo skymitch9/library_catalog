@@ -77,6 +77,7 @@ import { coverRoutes } from './covers.js';
 import { crowdfundingRoutes, provenanceRoutes } from './crowdfunding.js';
 import { enrichRoutes } from './enrich.js';
 import { exportRoutes } from './export.js';
+import { gabiRoutes } from './gabi.js';
 import { isbnRoutes } from './isbn.js';
 import { relationRoutes } from './relations.js';
 import { researchRoutes } from './research.js';
@@ -112,6 +113,12 @@ const MOUNTS: [string, string, Hono<AppBindings>][] = [
   ['/api/isbn', 'isbnRoutes', isbnRoutes],
   ['/api/enrich', 'enrichRoutes', enrichRoutes],
   ['/api/research', 'researchRoutes', researchRoutes],
+  // ⚠️ Mounted AFTER exportRoutes, like everything from /api/series down. That
+  // is only harmless because the leak was fixed (export.ts lost its blanket
+  // `.use('*')`) — and because this route's own gate, `runResearch`, is
+  // strictly narrower than `editCatalog` anyway, so it would have been
+  // unaffected even before the fix.
+  ['/api/gabi', 'gabiRoutes', gabiRoutes],
   ['/api/reviews', 'reviewRoutes', reviewRoutes],
   ['/api/tbr', 'tbrRoutes', tbrRoutes],
   ['/api/warnings', 'warningRoutes', warningRoutes],

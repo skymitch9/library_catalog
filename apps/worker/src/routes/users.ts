@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { canGrantRole, capabilitiesFor, updateRoleSchema } from '@lc/core';
+import { canGrantRole, capabilitiesFor, gabiPanelEnabled, updateRoleSchema } from '@lc/core';
 import { countOwners, gapSummary, listUsers, setUserRole } from '@lc/db';
 import type { AppBindings } from '../env.js';
 import { requireCapability } from '../middleware/auth.js';
@@ -36,6 +36,18 @@ export const userRoutes = new Hono<AppBindings>()
       role: user.role,
       capabilities: capabilitiesFor(user.role),
       chores,
+      /**
+       * Whether the GABI chat panel exists on THIS instance — the per-instance
+       * posture var, resolved server-side and read at boot.
+       *
+       * ⚠️ It rides `/api/me` rather than getting a route of its own for the
+       * reason `chores` does: the app already makes this call, and a second
+       * fetch on every page load to learn one boolean is a request nobody
+       * would add on purpose. ⚠️ It is a POSTURE, not a permission — the panel
+       * also needs `runResearch`, which is in `capabilities` above, and the
+       * route re-checks both server-side. Neither of these is the lock.
+       */
+      gabiPanel: gabiPanelEnabled(c.env.GABI_PANEL),
       // The browser writes reviews to Firestore itself, and the document id is
       // `{bookId}_{displayNameLower}`. Send the name we have on file so it
       // updates the person's existing review rather than writing a second one

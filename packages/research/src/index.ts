@@ -9,5 +9,6 @@
 export * from './client.js';
 export * from './covers.js';
 export * from './details.js';
+export * from './gabi.js';
 export * from './donor-match.js';
 export * from './series-scan.js';

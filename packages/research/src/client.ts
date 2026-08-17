@@ -35,14 +35,24 @@ export class ResearchError extends Error {
   }
 }
 
-export function createClient(apiKey: string | undefined): Anthropic {
+/**
+ * `overrides.fetch` exists so a test can count HTTP calls to the Messages API
+ * without spending money — the GABI turn route's central claim is *exactly one
+ * model call per invocation* (design §3.2), and the only honest way to check a
+ * claim about calls is to count them. It is passed straight to the SDK, which
+ * uses it for every request; production passes nothing and gets the platform's.
+ */
+export function createClient(
+  apiKey: string | undefined,
+  overrides?: { fetch?: typeof fetch },
+): Anthropic {
   if (!apiKey) {
     throw new ResearchError(
       'No Anthropic API key configured. Put ANTHROPIC_API_KEY in apps/worker/.dev.vars and run `npm run secrets:push`.',
       503,
     );
   }
-  return new Anthropic({ apiKey });
+  return new Anthropic(overrides?.fetch ? { apiKey, fetch: overrides.fetch } : { apiKey });
 }
 
 export interface Usage {

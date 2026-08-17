@@ -108,6 +108,26 @@ ENVIRONMENT = "production"
 # becomes the live source and the hostname map in index.html goes away.
 DEFAULT_THEME = "apple"
 
+# ── GABI, the conversational fixer — OFF HERE, ON PURPOSE ────────────────────
+#
+# `docs/info/gabi-fixer-design.md` §2, first goal: "Her instance only.
+# `padhard.heygabi.ai`. The main library is out of scope and stays out until
+# this has run on hers for a while." §12 decision 8 keeps it that way for v1 —
+# when it does come here, the `runResearch` spend is the OWNER'S key rather than
+# hers, and the blast radius is this whole catalog instead of hers.
+#
+# ⚠️ This var is the same POSTURE-OF-RECORD idiom as DEFAULT_THEME above, with
+# one difference: the Worker DOES read this one (`gabiPanelEnabled` in
+# `@lc/core`, the only thing that reads it), and it gates the ROUTE as well as
+# the panel — `POST /api/gabi/turn` answers a worded 403 here. Hiding a control
+# has never been the lock in this app; see the /people nav comment in App.tsx.
+#
+# Unset or unrecognised both mean OFF. It is written out rather than omitted so
+# that "is GABI on here?" has an answer in this file, not an absence — and
+# `apps/worker/src/routes/gabi.test.ts` reads BOTH values below and fails if the
+# posture ever stops matching the design.
+GABI_PANEL = "off"
+
 # ⚠️ Where an uploaded cover is READ from. Both this and the COVERS binding must
 # be set or the route refuses to write — storing an object and then being unable
 # to say where it went is the failure that guard exists for.
@@ -248,6 +268,23 @@ ENVIRONMENT = "production"
 # hostname this string is paired with is the [[env.friend.routes]] pattern
 # above, and the test asserts exactly that pairing.
 DEFAULT_THEME = "hearts"
+
+# ── GABI, the conversational fixer — ON HERE, AND ONLY HERE ──────────────────
+#
+# The owner's ask, verbatim (2026-08-16 late): "in the future i want Sam to be
+# able to ask gabi to fix books for her like id ask you. it'd be done through
+# api but it would have the needed context to fix things." Surface order settled
+# 2026-08-17: SITE PANEL first, Discord DM the next phase after.
+#
+# PHASE 0 IS READ-ONLY. The four tools GABI holds today (find_book, get_book,
+# list_gaps, list_recent_changes) cannot change anything, and `@lc/core`'s
+# `packages/core/test/gabi-tools.test.ts` fails the build if a write tool is
+# added to the array. So switching this on here spends her ANTHROPIC_API_KEY on
+# conversation and risks nothing in her catalog.
+#
+# ⚠️ It gates the ROUTE too, not just the panel — `POST /api/gabi/turn` answers
+# a worded 403 wherever this is not "on". See the main [vars] block for why.
+GABI_PANEL = "on"
 
 # The bucket's managed r2.dev public URL, enabled 2026-08-16. This WORKS —
 # the app only ever concatenates `COVERS_BASE_URL + '/' + objectKey` — but
