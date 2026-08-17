@@ -373,7 +373,15 @@ export async function runDetailsResearch(
     // ⚠️ `describeError`, not `String(err)`: `errorMessage` is persisted on the
     // run row and shown on the findings screen, and the research client throws
     // SDK objects — `String({...})` would store `[object Object]` for ever.
+    //
+    // ⚠️ And since 2026-08-17 it also *classifies*: an SDK error's own
+    // `.message` is `"400 {json}"`, which is how a spend cap ended up printed
+    // on padhard's Missing screen, request id and all. What gets stored is now
+    // the worded form — see `@lc/core`'s `classifyLookupFailure`.
     const message = describeError(err);
+    // The raw shape is still worth having; it goes HERE, to `wrangler tail`,
+    // where an operator debugging the run can read it and a person cannot.
+    console.error('research run', runId, 'failed:', err);
     return await finishRun(env.DB, runId, { status: 'error', errorMessage: message }).catch(
       // The database is the only place left to report to. If that is gone too
       // there is nothing useful left to do.

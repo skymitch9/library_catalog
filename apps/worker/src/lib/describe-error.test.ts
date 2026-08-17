@@ -116,3 +116,55 @@ describe('describeError — never [object Object], never a bare status', () => {
     assert.ok(said.includes('rate_limited'));
   });
 });
+
+/**
+ * ⚠️ The follow-on defect, 2026-08-17: everything above passed and a person
+ * still read JSON off a live page.
+ *
+ * The Anthropic SDK's `Error.message` is `${status} ${JSON.stringify(body)}`
+ * whenever the body has no top-level `message` — which the error envelope never
+ * has, because its sentence is nested at `error.error.message`. The first
+ * branch of `describe()` found that string, saw a non-empty `string`, and
+ * returned it. Worded output, unworded message. `classifyLookupFailure` now
+ * runs ahead of all of it; the sentences themselves are pinned in
+ * `packages/core/test/lookup-errors.test.ts`.
+ */
+describe('describeError — a provider failure is named, not echoed', () => {
+  it('THE DEFECT: the SDK spend-cap error never reaches a caller as JSON', () => {
+    const raw =
+      '400 {"type":"error","error":{"type":"invalid_request_error","message":"You have reached ' +
+      'your specified API usage limits. You will regain access on 2026-09-01 at 00:00 UTC."},' +
+      '"request_id":"req_011Ce8wV2ToKAQnsf1Ahq1V6"}';
+    const said = describeError(
+      Object.assign(new Error(raw), {
+        status: 400,
+        type: 'invalid_request_error',
+        error: {
+          type: 'error',
+          error: {
+            type: 'invalid_request_error',
+            message:
+              'You have reached your specified API usage limits. You will regain access on 2026-09-01 at 00:00 UTC.',
+          },
+          request_id: 'req_011Ce8wV2ToKAQnsf1Ahq1V6',
+        },
+      }),
+    );
+    assertWorded(said);
+    assert.ok(!said.includes('{'), `no JSON may be persisted or shown — got: ${said}`);
+    assert.ok(!said.includes('request_id'), `no request id — got: ${said}`);
+    assert.ok(!said.includes('req_011'), `no request id — got: ${said}`);
+    assert.ok(/lookup allowance/i.test(said), said);
+    assert.ok(said.includes('1 September 2026'), said);
+  });
+
+  it('an ordinary 400 is left to the generic path — a bug must keep reading like a bug', () => {
+    const said = describeError({
+      status: 400,
+      error: { type: 'invalid_request_error', message: 'messages: roles must alternate' },
+    });
+    assertWorded(said);
+    assert.ok(said.includes('roles must alternate'), said);
+    assert.ok(!/lookup allowance/i.test(said), 'must not be dressed up as a spend cap');
+  });
+});

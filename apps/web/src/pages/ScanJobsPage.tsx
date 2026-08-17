@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { jobSummary, type ScanJob } from '@lc/core';
+import { jobSummary, wordLookupError, type ScanJob } from '@lc/core';
 import { api } from '../api.js';
 import { describeError } from '../lib/errors.js';
 import { Link, addPath, navigate } from '../router.js';
@@ -85,8 +85,15 @@ export function ScanJobsPage({ canSpend }: { canSpend: boolean }) {
                 <div className="muted small">
                   {jobSummary(job)} · {job.createdAt}
                 </div>
+                {/* ⚠️ Worded, never raw. `scan_job.error` is persisted the same
+                    way `research_run.error_message` is, so a row written before
+                    the classifier existed can still hold an SDK body — status,
+                    braces and request id. Same helper, same sentence as the
+                    Missing queue. */}
                 {job.status === 'failed' && (
-                  <div className="muted small">Failed: {job.error ?? 'no reason recorded'}</div>
+                  <div className="muted small">
+                    Failed: {job.error ? wordLookupError(job.error) : 'no reason recorded'}
+                  </div>
                 )}
               </div>
               <div className="row-tight">

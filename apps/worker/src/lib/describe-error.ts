@@ -34,7 +34,23 @@
  * the sentence that goes into `detail`, a D1 row, or a log line, and it knows
  * nothing about who is asking. Merging them would make the server's diagnostic
  * text leak role vocabulary into places where no role was involved.
+ *
+ * ## ⚠️ A worded OUTPUT is not the same as a worded MESSAGE (2026-08-17)
+ *
+ * The contract above was met and a person still read raw JSON off a live page.
+ * The Anthropic SDK builds its `Error.message` as `${status} ${JSON.stringify(
+ * body)}` whenever the body has no top-level `message` — and the error envelope
+ * never does, because its sentence is nested at `error.error.message`. So this
+ * file's first branch found a perfectly good `string`, returned it, and shipped
+ * `400 {"type":"error",…,"request_id":"req_…"}` to the Missing screen.
+ *
+ * `classifyLookupFailure` therefore runs FIRST, before any of the generic
+ * unwrapping below. It is in `@lc/core` rather than here because the queue page
+ * needs the identical sentence for rows already persisted in D1 — see the head
+ * of `packages/core/src/lookup-errors.ts`.
  */
+
+import { classifyLookupFailure } from '@lc/core';
 
 /** Fields that carry a human sentence, in the order we trust them. */
 const MESSAGE_FIELDS = ['message', 'detail', 'description', 'error_description', 'statusText'] as const;
@@ -59,6 +75,13 @@ const MAX_JSON = 240;
  * `null`, `undefined`, or an object with a circular reference.
  */
 export function describeError(err: unknown): string {
+  // ⚠️ First, and deliberately. A provider failure we can name gets the
+  // sentence a person can act on; everything below only knows how to find *a*
+  // string, and for an SDK error that string is the raw body. See the note at
+  // the head of this file.
+  const known = classifyLookupFailure(err);
+  if (known) return known.message;
+
   const said = describe(err, 0);
   return said && said.trim() ? said.trim() : NOTHING_TO_SAY;
 }

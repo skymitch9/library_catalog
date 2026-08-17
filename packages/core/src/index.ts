@@ -28,6 +28,7 @@ export * from './ebook-holding.js';
 export * from './preorders.js';
 export * from './rescan.js';
 export * from './isbn.js';
+export * from './lookup-errors.js';
 export * from './titles.js';
 export * from './matching.js';
 export * from './corroboration.js';

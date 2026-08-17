@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { wordLookupError } from '@lc/core';
 import {
   api,
   type AutoApplied,
@@ -683,7 +684,14 @@ function QueueRow({
                 lookup was out, and the old "Proposed 3 answers" would now be
                 describing work that may never have happened. */}
             {run.status === 'error'
-              ? (run.errorMessage ?? 'The lookup failed.')
+              ? /* ⚠️ NEVER `run.errorMessage` raw. The Worker classifies at
+                   store time now, but `error_message` is persisted: runs 5 and
+                   6 on padhard's instance hold `400 {"type":"error",…,
+                   "request_id":"req_…"}` and always will. `wordLookupError`
+                   words those legacy rows through the same classifier, so the
+                   screen cannot print a status, a body or a request id
+                   whatever is in the column. See `@lc/core`. */
+                wordLookupError(run.errorMessage)
               : run.proposed > 0
                 ? `${run.detail ?? ''} · ${formatCents(run.estimatedCents)} · ${run.inputTokens ?? 0} in / ${run.outputTokens ?? 0} out`
                 : (run.detail ?? 'Nothing to propose.')}

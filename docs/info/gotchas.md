@@ -1,9 +1,11 @@
 # Gotchas — library_catalog   (Information Reference)
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
-> Last verified: **2026-08-16** — extracted verbatim from `docs/TODO.md`
-> during the three-way split; the individual findings carry their own dates
-> and were **not** re-checked against the live system on that date.
+> Last verified: **2026-08-17** — the SDK-`Error.message` entry was verified
+> that day against the installed SDK (`@anthropic-ai/sdk` 0.116.0) and against
+> the two live D1 rows it describes. The **other** findings still carry their
+> own dates and were **not** re-checked; they were extracted verbatim from
+> `docs/TODO.md` on 2026-08-16 during the three-way split.
 
 The traps that cost real time, kept **findable by symptom** rather than by the
 day they happened — which is the whole reason they left the work log. Each is
@@ -178,6 +180,49 @@ number, never empty. `describe-error.test.ts` pins every shape.
 words for a screen; the Worker's decodes a *thrown value* for a log line, a D1
 row or a `detail` field. Merging them would put role vocabulary into messages
 where no role was involved — which is the next gotcha.
+
+---
+
+## The Anthropic SDK's `Error.message` IS the raw JSON body
+
+**Found 2026-08-17 — the owner read it off a live page**, on padhard's
+Missing/queue screen, hours after the fix above shipped:
+
+```
+400 {"type":"error","error":{"type":"invalid_request_error","message":"You have
+reached your specified API usage limits. You will regain access on 2026-09-01 at
+00:00 UTC."},"request_id":"req_011Ce8wV2ToKAQnsf1Ahq1V6"}
+```
+
+⚠️ **`describeError` did exactly what it promised and the defect shipped
+anyway.** The SDK builds its message as `` `${status} ${JSON.stringify(body)}` ``
+whenever the body has no **top-level** `message` field — and the error envelope
+never does, because its sentence is nested at `error.error.message`
+(`node_modules/@anthropic-ai/sdk/core/error.js`, `APIError.makeMessage`). So the
+first branch found a real, non-empty `string` and returned it. **A worded output
+is not the same as a worded message**, and no amount of "never `[object
+Object]`" testing catches that.
+
+The fix is `packages/core/src/lookup-errors.ts` — `classifyLookupFailure` /
+`wordLookupError` — which names three provider failures in words: the spend cap
+(400 `invalid_request_error` whose text carries the limit vocabulary, with the
+reset date **read** out of the message, never computed), the 429, and the 401.
+It runs **first** in the Worker's `describeError`, ahead of all the generic
+unwrapping.
+
+⚠️ **Why it lives in `@lc/core` and not beside either caller: `error_message` is
+PERSISTED, so a store-time fix reaches no row that already exists.** Runs 5 and 6
+on `library-catalog-2nd` hold the body above and always will. Both layers call
+the same function — the Worker at store time, `DetailsQueuePage`/`ScanJobsPage`
+at render time (`wordLookupError`) — so the sentence cannot drift between them
+and a legacy row reads the same as a fresh one. Any future column holding a
+provider error needs the render-side call too; `wordLookupError` guarantees its
+output contains **no brace**, whatever it is handed.
+
+⚠️ **It refuses to guess.** An ordinary 400 ("roles must alternate") returns
+null and keeps reading like the bug it is; the bare word *limit* is not enough
+(`max_tokens exceeds the model's limit` is a defect, not an allowance). Three
+tests exist purely to pin what must NOT be claimed.
 
 ---
 
