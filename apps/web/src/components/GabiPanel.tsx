@@ -353,8 +353,10 @@ export function GabiPanel({ hidden }: { hidden: boolean }) {
           Phase 0 is supposed to END with a MEASURED cost-per-conversation
           replacing the design's arithmetic, and `gabi_turn` holds the durable
           record; this is the same number where the person spending it can see
-          it. `cached` is the half that proves the cheap-prefix claim rather
-          than assuming it. */}
+          it. The cached count is the half that proves the cheap-prefix claim
+          rather than assuming it — and it is a SEPARATE count from the input
+          tokens, which is the thing that was got backwards until a real
+          conversation was run (see `gabiCents`). */}
       {spend.turns > 0 && (
         <p className="muted small gabi-spend">
           {spend.turns} model call{spend.turns === 1 ? '' : 's'} this conversation · about{' '}

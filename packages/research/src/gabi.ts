@@ -134,8 +134,50 @@ export interface GabiUsage {
    */
   cacheReadTokens: number;
   cacheCreationTokens: number;
-  /** ⚠️ An ESTIMATE — `estimateCents` prices cache reads as full input. See below. */
+  /** Cache-aware. See `gabiCents` for what it prices and what it still omits. */
   estimatedCents: number;
+}
+
+/**
+ * ⚠️ Cache multipliers, and the reason this function exists at all.
+ *
+ * `estimateCents` prices `input_tokens` and `output_tokens` and nothing else,
+ * which is right for `research_run` — that path has no meaningful cached prefix.
+ * Here it is **wrong in a way that is easy to get backwards**, and it was:
+ *
+ * > **MEASURED 2026-08-17**, first real conversation against the dev worker:
+ * > turn 1 reported `input_tokens: 85` with `cache_read_input_tokens: 1793`.
+ * > The ~1.8k system+tools prefix is **not inside `input_tokens`** — the API
+ * > reports the three classes SEPARATELY, and the total prompt is their sum.
+ *
+ * So `estimateCents(inputTokens, outputTokens)` alone silently omits the cached
+ * prefix entirely, which makes it an UNDER-estimate rather than the
+ * over-estimate this file first claimed. The comment was written from the
+ * design's arithmetic and corrected by running the thing — which is the whole
+ * argument for `gabi_turn` storing the raw columns.
+ *
+ * Rates: a cache read costs ~0.1× base input, a 5-minute cache write ~1.25×.
+ * Both are applied to the base price through `estimateCents` rather than to a
+ * second copy of the price table — one pricing function in this repo, still.
+ *
+ * ⚠️ Still an estimate: it is list pricing, and it counts tokens rather than an
+ * invoice. The raw columns on `gabi_turn` are what a real answer is computed
+ * from; this is what the panel can show while somebody is typing.
+ */
+export const GABI_CACHE_READ_MULTIPLIER = 0.1;
+export const GABI_CACHE_WRITE_MULTIPLIER = 1.25;
+
+export function gabiCents(usage: {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+}): number {
+  return (
+    estimateCents(usage.inputTokens, usage.outputTokens) +
+    estimateCents(usage.cacheReadTokens, 0) * GABI_CACHE_READ_MULTIPLIER +
+    estimateCents(usage.cacheCreationTokens, 0) * GABI_CACHE_WRITE_MULTIPLIER
+  );
 }
 
 export interface GabiTurnResult {
@@ -224,26 +266,22 @@ export async function gabiTurn(
     throw new ResearchError('That answer was cut off before it finished. Ask again, more narrowly.', 502);
   }
 
-  const usage = message.usage ?? {};
-  const inputTokens = usage.input_tokens ?? 0;
-  const outputTokens = usage.output_tokens ?? 0;
+  const raw = message.usage ?? {};
+  // ⚠️ Four SEPARATE counts, not one with parts. `input_tokens` excludes both
+  // cache classes — measured, see `gabiCents`. Summing them is how you get the
+  // prompt size; pricing only the first is how you under-report the bill.
+  const usage = {
+    inputTokens: raw.input_tokens ?? 0,
+    outputTokens: raw.output_tokens ?? 0,
+    cacheReadTokens: raw.cache_read_input_tokens ?? 0,
+    cacheCreationTokens: raw.cache_creation_input_tokens ?? 0,
+  };
 
   return {
     content: Array.isArray(message.content) ? message.content : [],
     stopReason: message.stop_reason ?? null,
     model: typeof message.model === 'string' ? message.model : GABI_MODEL,
-    usage: {
-      inputTokens,
-      outputTokens,
-      cacheReadTokens: usage.cache_read_input_tokens ?? 0,
-      cacheCreationTokens: usage.cache_creation_input_tokens ?? 0,
-      // ⚠️ Reused unchanged, and therefore an OVER-estimate from turn 2 onward:
-      // `estimateCents` prices every input token at $5/MTok, while a cache read
-      // costs ~0.1× of that. Kept deliberately — one pricing function in this
-      // repo, and an estimate that errs high is the safe direction. The raw
-      // cache columns above are what a real answer gets computed from.
-      estimatedCents: estimateCents(inputTokens, outputTokens),
-    },
+    usage: { ...usage, estimatedCents: gabiCents(usage) },
   };
 }
 

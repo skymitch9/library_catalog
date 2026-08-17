@@ -161,7 +161,7 @@ export interface GabiTurnResponse {
     outputTokens: number;
     cacheReadTokens: number;
     cacheCreationTokens: number;
-    /** ⚠️ An over-estimate: cache reads are priced as full input. See packages/research/src/gabi.ts. */
+    /** Cache-aware list pricing, not an invoice. See `gabiCents` in packages/research/src/gabi.ts. */
     estimatedCents: number;
   };
 }
