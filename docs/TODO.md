@@ -40,6 +40,13 @@ land with its own code.
 ## 🔥 Owner asks 2026-08-16 late evening — status board
 
 ### Third wave (2026-08-17 morning)
+- **TBR instant-clear on the audiobook site — APPROVED with promote
+  ("Do 8, promote heart thing", owner 2026-08-17):** the ~10-line spec in
+  [`info/tbr.md`](info/tbr.md) §6 — rating a book on the audiobook site flips
+  its TBR button back that second instead of on next load. 📋 Dispatches the
+  moment the warnings-split agent clears the audiobook templates zone; its
+  promote is covered by the same owner sentence (he was told it rides one and
+  said do it).
 - **🎨 Hearts everywhere + themes propagate mechanically (owner order,
   verbatim):** *"Add the pink theme as an option for every site, when a theme
   is added all sites get it some may just default right away."* Two halves:
