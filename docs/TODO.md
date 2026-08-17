@@ -40,6 +40,12 @@ land with its own code.
 ## 🔥 Owner asks 2026-08-16 late evening — status board
 
 ### Third wave (2026-08-17 morning)
+- **📱 Ebook reader PWA/offline — ON THE TABLE FOR LATER (owner, 2026-08-17:
+  "Add pwa back on the table for later"):** not in viewer v1. ⚠️ The design
+  constraint that must survive until then: offline caching stores book
+  content on the device, so it is A FORM OF DOWNLOAD and gets gated by
+  `downloadEbook`, never bundled free with reading. Whoever builds it later
+  starts from that sentence.
 - **🔒 EBOOKS GO PERMISSION-GATED (owner directive, 2026-08-17: "ebooks
   should be like the other site where we grant permission to view it. I
   don't want people scraping my books"):** ebooks.heygabi.ai becomes an
