@@ -1,8 +1,9 @@
 # docs/info — index
 
 > **Audience:** Claude sessions. How and why things work.
-> Last verified: **2026-08-17** — the `ebook-viewer-design.md` row is new that
-> day (design only, nothing built); the `estate-search.md` row is from 2026-08-16;
+> Last verified: **2026-08-17** — the `ebook-viewer-design.md` and
+> `gabi-fixer-design.md` rows are new that day (both design only, nothing
+> built); the `estate-search.md` row is from 2026-08-16;
 > everything else was last checked **2026-08-14** (index rows for the estate
 > docs checked against their files; the operational side of estate auth / the
 > index / themes now lives in `../access/estate-auth.md`,
@@ -17,6 +18,7 @@
 | [`identity-and-reviews.md`](identity-and-reviews.md) | One Google account across both catalogs; one shared review store; the `workKey` bridge and the backfill | touching auth, `titles.ts`, or anything that writes Firestore |
 | [`tbr.md`](tbr.md) | The cross-catalog to-be-read list. ⚠️ **The store already existed** — `readingLists`, the audiobook site's own TBR — so this joins it rather than inventing one, and needed **no rules change**. The document id is the REVERSE of a review's; why TBR is a flag and not a fifth `read_state`; how finishing any format clears it; and the audiobook-side hook that is deliberately NOT built, with its spec | touching `packages/core/src/tbr.ts`, `/api/tbr`, the My TBR screen, or the read-state sweep |
 | [`ebook-viewer-design.md`](ebook-viewer-design.md) | **DESIGN ONLY, nothing built.** The in-browser EPUB/PDF reader. **Measured: 168 files / 1.805 GB, and they are NOT in R2 today** — only covers are, so an ingest phase exists the first take did not price. ⚠️ **Range requests are a PDF technique, not an EPUB one** (an EPUB is a ZIP; epub.js fetches the whole archive), which is why pdf.js ships first. The gate is the audiobook Worker's already-committed `download` capability (member+) — **not** §4.5 visibility, whose default population includes the anonymous internet. Bearer-per-request, never a signed URL. Position sync becomes the first `uid`-keyed collection in this estate | building any of it, proposing a public bucket, or assuming the files are already in R2 |
+| [`gabi-fixer-design.md`](gabi-fixer-design.md) | **DESIGN ONLY, nothing built.** "Sam asks GABI to fix her books" — an Anthropic tool-use loop whose tools are this Worker's existing capability-gated endpoints. ⚠️ **The loop runs in HER BROWSER, not in the Worker**: a server-side loop blows the 50-subrequest ceiling, which *terminates the invocation silently*, and the browser design makes "her authority end to end" free rather than a thing to build. The allowlist is an explicit array in `@lc/core` (default-deny); `title`/`authors` are unreachable by construction (`work_key` + the Firestore `keyMove` attestation); the auto-vs-confirm lanes map exactly onto the existing `decided_how` semantics, so **no migration is needed to make a GABI write auditable**. ⚠️ Do NOT disable thinking on Opus 5 — tool calls can arrive as plain text and silently never run | building any of it, adding a route a conversation could reach, or assuming the loop belongs server-side |
 | [`data-model.md`](data-model.md) | What each table is for and the rules the schema enforces | changing the schema |
 | [`ios-camera.md`](ios-camera.md) | Copied from the Board Game Catalog. Every line is a WebKit constraint | touching `camera.ts` / `scanner.ts` |
 | [`research-and-gaps.md`](research-and-gaps.md) | **Measured** gap counts across the whole catalog, the four questions the details queue asks and the five it refuses, why `gap_verdict` exists, and the propose/accept rule the paid lookup obeys | touching `gaps.ts`, `packages/research`, the queue page, or adding a field anybody could be asked for |

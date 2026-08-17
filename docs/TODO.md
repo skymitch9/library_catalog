@@ -94,6 +94,47 @@ that repo is outstanding, and it belongs to the conductor, not to this file.
   - **Surface question for later:** her site (a chat panel) vs Discord DM to
     GABI — decide when built; the API loop is identical behind either.
   Cross-referenced from catalog-platform TODO §0 (GABI queue).
+  ✅ **DESIGN DONE 2026-08-17, awaiting owner read.**
+  📄 **[`info/gabi-fixer-design.md`](info/gabi-fixer-design.md)** — full design,
+  with rejected alternatives per section. **Nothing is built; no route, table,
+  secret or panel exists.** What the design settled that the seed left open:
+  - ⚠️ **The loop runs in HER BROWSER, not in the Worker.** A server-side loop
+    is the obvious shape and the wrong one: a six-turn conversation that
+    researches one book and patches two fields is ~40 of the **50 subrequests**
+    an invocation gets, and going over **terminates the invocation rather than
+    throwing** — a conversation whose failure mode is silence. The browser
+    already holds her live Firebase token and already calls every one of these
+    endpoints, so each tool call is *literally* the request the edit form makes:
+    "her authority end to end" becomes a thing the design declines to
+    circumvent rather than a thing it builds. The Worker keeps one thin route
+    (`POST /api/gabi/turn`, `runResearch`-gated) that holds the API key and
+    makes exactly ONE model call per turn.
+  - ⚠️ **`title`/`authors` are unreachable by construction**, not by validation
+    — they re-derive `work_key`, and moving a non-provisional key needs a
+    Firestore `keyMove` attestation the Worker structurally cannot make.
+    `applyFinding` already refuses the same two fields for the same reason.
+  - **No migration is needed to make a GABI write auditable.** `decided_how`
+    already means *"did anybody look at the value"*, not *"did a person ask"* —
+    so a blank-fill lands `'auto'` + her id, a confirmed overwrite lands
+    `'human'` + her id, and `Actor.note` carries `gabi:<conversationId>`. A
+    third enum value would have stretched the column's meaning for nothing.
+  - **Batches cap at 10** because `POST /api/research/undo` caps at 10: a batch
+    you cannot undo in one action should not be one action.
+  - ⚠️ **Do not disable thinking on Opus 5 to save money** — with it off, tool
+    calls can arrive as plain *text*: the turn succeeds, the call never runs,
+    nothing errors. Cost is controlled with `effort: 'low'` instead, exactly as
+    `RESEARCH_EFFORT` already does.
+  - **Cost: single-digit cents per conversation**, dominated by the ~2¢ paid
+    lookup, not by the loop. ⚠️ Haiku is a false economy — its 4096-token cache
+    minimum is above this prefix, so it pays full input price every turn.
+  - 🧑 **Owner action, before anything is built:** confirm **Samantha's role on
+    `padhard`**. The seed says `admin`; her `app_user.role` row was not read,
+    `ESTATE_DEFAULT_ROLE` is unset (the `moderator` flip is paused), and a
+    `member` gets 403 from every write tool — the whole feature is dark.
+  - **Discord needs four things that do not exist** (an `app_user` join, token
+    custody, a deferred-response path, persisted conversation state); the site
+    panel needs none. If Discord is wanted sooner, the propose-and-deep-link
+    shape is buildable today with no new auth.
 
 - **EPUB/PDF in-browser reader** (owner ask 2026-08-16: *"how hard would it be
   to have a reader for EPUBs and PDFs so users could either preview or a read a
