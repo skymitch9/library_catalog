@@ -805,6 +805,43 @@ identity never enters page JavaScript.
 (b).** Option (b) needs none of the four, because a proposing bot is a read-only
 bot with a link on the end.
 
+### ⚠️ SHAPE (b) IS BUILT AND DEPLOYED — 2026-08-17
+
+`/gabi <question>` is live on the estate Discord Worker
+(`catalog-platform/apps/discord-worker`, commit `4715b03`, Worker version
+`03bd6a3a-7f05-4fbe-a846-05bc614f97e6`; runbook
+`catalog-platform/docs/access/discord-bot.md` §10). It answers with **(a)** a
+best-effort nibble from the index's public slice — reusing `/have`'s own
+`lookupHave`, credential-free, so the scope decision is inherited rather than
+re-made — and **(b)** a deep link into this panel, worded *"GABI can dig deeper
+and propose fixes on the site"*.
+
+⚠️ **All four blockers above are STILL UNSOLVED, and shape (b) shipped anyway
+— that is the entire claim of this section, now demonstrated rather than
+argued.** The bot writes nothing, calls no model, and holds no new secret; a
+test asserts the whole flow makes exactly two requests (a GET to the index and
+the PATCH that edits the deferred message), so a model call or a write cannot
+appear later while every other test still passes.
+
+**What it can and cannot determine about panel access, stated in the reply
+itself:** it reads `discord_links/{id}` and so knows whether the caller is
+LINKED; it cannot resolve whether that identity holds `runResearch` here — that
+is blocker 1, and it is unchanged. The answer says so rather than promising a
+door that may be locked.
+
+⚠️ **FOLLOW-UP, and it is PANEL work, not Discord's:** the deep link carries no
+`?q=`, because **measured 2026-08-17 the panel supports no URL parameter at
+all** — `App.tsx` holds it open in `useState(false)` and `GabiPanel.tsx` parses
+no location. A `?q=` prefill (read the param, seed `draft`, open the panel)
+would let the link carry the question instead of quoting it back for
+copy-paste. Until then, adding a parameter on the Discord side would be a link
+that silently lies; `panelDeepLink()` in `apps/discord-worker/src/gabi.ts` is
+the one function to change if it lands.
+
+**Still owed before anyone can type it:** the slash-command registry must be
+re-published (`POST /admin/commands/register`, one button on the estate
+`/admin` page with an admin's own bearer). No agent holds that token.
+
 ⚠️ **DECIDED 2026-08-17 — and Discord is now NEXT, not later.** The owner settled
 the order as *"we can do discord right after"*: panel first (built), Discord the
 following phase, ahead of the write phases. Two things that carry forward:
