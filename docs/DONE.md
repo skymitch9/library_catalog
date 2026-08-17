@@ -17,6 +17,54 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+
+## ✅ TBR instant-clear on the audiobook site (2026-08-17)
+
+The TODO entry, moved whole:
+
+> ### Third wave (2026-08-17 morning)
+> - **TBR instant-clear on the audiobook site — APPROVED with promote
+>   ("Do 8, promote heart thing", owner 2026-08-17):** the ~10-line spec in
+>   [`info/tbr.md`](info/tbr.md) §6 — rating a book on the audiobook site flips
+>   its TBR button back that second instead of on next load. 📋 Dispatches the
+>   moment the warnings-split agent clears the audiobook templates zone; its
+>   promote is covered by the same owner sentence (he was told it rides one and
+>   said do it).
+
+**What landed, and where.** Nothing changed in this repo's code — the whole
+build is `audiobook_catalog` commit `2ff816f` on `main`, exactly the spec
+[`info/tbr.md`](info/tbr.md) §6 wrote for it. That file's §6 is rewritten
+accordingly: it described a gap, and now describes a mechanism.
+
+| | |
+|---|---|
+| The delete | `site/reviews.js` gains `clearTbrForRating`, called from `submitReview` on the SUCCESS path only. It performs the same `deleteDoc` on `col('readingLists')` that the audiobook modal's own TBR button performs when toggled off |
+| The flip | no new wiring — `app/web/templates/index.html` already re-rendered the reading-list button after a successful review. That call was incidental and is now load-bearing, and says so in a comment |
+| Reach | all three rating surfaces, because they all route through `submitReview`: the book modal, `club.html` and `club-read.html` |
+| Rules | untouched, as §1 argued. `validReadingList` already permits this delete; it is the delete the button has always performed |
+
+**The two ways it could have been wrong, both closed by tests that were watched
+failing.** The reading-list id is `{displayNameLower}_{bookId}` and a review's
+is `{bookId}_{displayNameLower}` (§2) — a decoy document seeded at the wrong key
+must SURVIVE the rating, and reversing the order in the source fails six of the
+ten new cases. And a *failed* review write must clear nothing, because a
+rejected rating settles no intention.
+
+**Green at that repo's promote settings** (lint blocks a promote silently, so
+this is checked rather than assumed): vitest 557, pytest 1028, flake8 clean on
+both passes, every inline module `node --check`ed, `site/index.html` regenerated
+from its template.
+
+⚠️ **NOT verified: the flip in a browser.** Rating a book signed-in and watching
+`✓ To Be Read` become `📋 Add to TBR` needs the owner's own session — it is the
+same item §7 already listed as "the audiobook site's own view of a clear has not
+been looked at", and this build does not close it. Everything either side of it
+is verified: the target document, the id order, the lane, the failure modes, and
+the shipped code's presence in the `/dev/` bundle.
+
+**Prod:** the audiobook repo's promote is the conductor's step, pre-authorised
+in the same owner sentence that approved the build.
+
 ## ✅ Hearts everywhere, and theme propagation stops depending on memory (2026-08-17)
 
 **Owner order, verbatim:** *"Add the pink theme as an option for every site,

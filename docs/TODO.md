@@ -40,13 +40,10 @@ land with its own code.
 ## 🔥 Owner asks 2026-08-16 late evening — status board
 
 ### Third wave (2026-08-17 morning)
-- **TBR instant-clear on the audiobook site — APPROVED with promote
-  ("Do 8, promote heart thing", owner 2026-08-17):** the ~10-line spec in
-  [`info/tbr.md`](info/tbr.md) §6 — rating a book on the audiobook site flips
-  its TBR button back that second instead of on next load. 📋 Dispatches the
-  moment the warnings-split agent clears the audiobook templates zone; its
-  promote is covered by the same owner sentence (he was told it rides one and
-  said do it).
+
+Landed and archived — the TBR instant-clear built in `audiobook_catalog`
+(`2ff816f`) and moved whole to [`DONE.md`](DONE.md). Only the prod promote of
+that repo is outstanding, and it belongs to the conductor, not to this file.
 
 ### Second wave (rapid-fire, logged as they arrived)
 - **Ebook cover healing** 📋 QUEUED (reset batch) — **ROOT CAUSE FOUND

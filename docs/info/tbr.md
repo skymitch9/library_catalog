@@ -9,6 +9,12 @@
 > `library.heygabi.ai`: an entry recorded on the audiobook site appeared here,
 > and a book marked read from an audiobook rating had its entry cleared. §7
 > carries the evidence and the four things still untested.
+>
+> **Updated later the same day:** §6 is no longer a gap. The audiobook-side
+> instant clear it specified was approved and BUILT — `audiobook_catalog`
+> `2ff816f`, live on that site's `/dev/` lane (`/dev/reviews.js` fetched and
+> read, 2026-08-17), prod promote pending. §6 now describes the mechanism;
+> §7 says what about it is still unwatched.
 
 The owner's ask, 2026-08-16:
 
@@ -185,36 +191,52 @@ given up presses **Off the list**. `reading` obviously stays.
 
 ---
 
-## 6. What is NOT built — the audiobook-side hook, with its exact spec
+## 6. The audiobook-side hook — BUILT 2026-08-17
 
-**The gap:** rating a book on the audiobook site does not clear that site's own
-`✓ To Be Read` button *at that moment*. It clears when the person next opens the
-library (§5). Between the two, the audiobook site shows a book on their TBR that
-they have just rated.
+**The gap this section used to describe:** rating a book on the audiobook site
+did not clear that site's own `✓ To Be Read` button *at that moment*. It cleared
+when the person next opened the library (§5), and in between the audiobook site
+showed a book on their TBR that they had just rated.
 
-**Why it was left:** the change is small in lines and not small to ship.
+It was left because it is a **product decision, not a repair** — rating a book
+you are halfway through drops it off your list — and because the button lives in
+a generated file in another repo. The owner approved it on 2026-08-17 (*"Do 8,
+promote heart thing"*), and it landed as `audiobook_catalog` commit **`2ff816f`**
+on `main`.
 
-1. The button lives in `app/web/templates/index.html`, and `site/index.html` is
-   **generated** from it — the change only reaches production through that
-   repo's build pipeline and its own promote, which this build was scoped away
-   from ("touch NOTHING else in the audiobook repo").
-2. It is a **product decision, not a repair**: rating a book you are halfway
-   through would silently drop it off your list. That is the owner's call.
-
-**The spec, for the day it is wanted** (≈10 lines, in `site/reviews.js`'s
-`submitReview` or beside `renderReadingListButtons`):
+**What it does now**, in the one place every rating surface already went
+through:
 
 ```js
-// After a successful review write, retire the intention it settles.
-const { deleteDoc, doc } = await import('…/firebase-firestore.js');
-const listId = `${session.displayName.toLowerCase()}_${bookIdFromTitle(title)}`;
-try { await deleteDoc(doc(db, col('readingLists'), listId)); } catch (e) { /* non-fatal */ }
+// site/reviews.js — called from submitReview's SUCCESS path only
+export async function clearTbrForRating(db, bookId, displayName) {
+  const docId = `${(displayName || '').toLowerCase()}_${bookId}`;
+  try {
+    await deleteDoc(doc(db, col('readingLists'), docId));
+    return { cleared: true };
+  } catch (e) {
+    return { cleared: false, error: describeActionError(e) };
+  }
+}
 ```
 
-⚠️ Three things it must not do: build the id with the review order
-(`${bookId}_${name}` — see §2); delete on a *failed* review write; or fire on a
-rating edit that was already counted (a delete of an absent document is a no-op,
-so re-running is harmless).
+That is the **same delete the button's own toggle performs**, against the same
+lane-suffixed collection — so the button falls back to `📋 Add to TBR` rather
+than being separately talked into looking unset. The flip needed no new wiring:
+`app/web/templates/index.html` already re-rendered the reading-list button after
+a successful review, and that call is now load-bearing and carries a comment
+saying so. Because the delete sits in `submitReview`, the club rating surfaces
+(`club.html`, `club-read.html`) get it too, and get it identically.
+
+⚠️ Three things it must not do, all three now pinned by tests: build the id with
+the review order (`${bookId}_${name}` — see §2; a decoy document seeded at the
+wrong key must survive a rating, and reversing the order fails six of ten
+cases); delete on a *failed* review write; or fail a saved review because the
+delete was refused — `clearTbrForRating` swallows its own error and describes it
+in words. Firing on a rating **edit** is fine and deliberate: deleting an absent
+document is a no-op, so re-running is harmless.
+
+No `firestore.rules` change was needed, for the reason §1 gives.
 
 ---
 
@@ -248,6 +270,12 @@ removed; the owner's own pre-existing entry was not touched.
 - **The audiobook site's own view of a clear has not been looked at.** Deleting
   the document is the same delete its toggle performs, so its button must fall
   back to `📋 Add to TBR` — but nobody has loaded that page to watch it happen.
+  ⚠️ **This now covers §6's instant clear as well**, and it is the one thing
+  that build could not verify: rating a book signed-in and watching the button
+  change at that moment needs the owner's own session. Everything either side of
+  it was verified — the target document, the id order, the lane, the failure
+  modes (ten unit cases, watched failing on a deliberate mutation), and the
+  shipped code's presence in the audiobook site's `/dev/` bundle.
 - **No `bookCover` written by the audiobook site has rendered here.** The one
   entry that came from there has no cover on the document, so the placeholder
   drew instead — which is itself the correct behaviour, just not a test of
