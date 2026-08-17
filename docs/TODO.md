@@ -50,7 +50,12 @@
   **Owner mandates (2026-08-16 late): every EPUB ends with a cover, minimum**
   — the 1 truly coverless EPUB gets a web lookup; **PDFs get no cover hunt —
   instead a "show PDFs" checkbox on the ebooks page, DEFAULT OFF** (hidden
-  from grid and page search until ticked, preference persisted). Original
+  from grid and page search until ticked, preference persisted).
+  ⚠️ **And a MECHANICAL GUARD (owner: "this is so so important to me"):**
+  every-EPUB-has-a-cover becomes a promote gate AND a test-suite failure in
+  audiobook_catalog — failing output names the offending titles; escape
+  hatch `ALLOW_COVERLESS_EPUBS=1`, emergency-only; guard ships only AFTER
+  coverage reaches 100% and is proven able to fail before trusted. Original
   census for context: 168 ebooks, 148 covered (92 self-extracted, 56
   audiobook-sibling). (The bookshelf itself shipped and PROMOTED — DONE.md.)
 - **💗 Pixel-hearts theme** (owner ask): pink-and-white theme in the retro
