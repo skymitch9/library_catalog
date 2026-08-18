@@ -67,8 +67,23 @@ export const healthRoutes = new Hono<AppBindings>().get('/', async (c) => {
     version: c.env.APP_VERSION ?? 'unknown',
     database,
     universes: { count: universeNames.length, schemaVersion: universesDocument.schemaVersion },
-    /** The per-instance posture of the conversational fixer. See the header. */
-    gabi: { panel: gabiPanelEnabled(c.env.GABI_PANEL) },
+    /**
+     * The per-instance posture of the conversational fixer. See the header.
+     *
+     * ⚠️ `delegated` (2026-08-18) reports only whether the SECRET NAME is
+     * populated — never the value, never a fingerprint — and it is the one way
+     * to tell "GABI's Discord door is wired here" from "it 401s everything"
+     * without a sign-in and without holding the credential. `false` means the
+     * delegated verbs answer a worded 503 and write nothing, which is the
+     * ships-dark state the code is allowed to be deployed in.
+     * ⚠️ `true` is NOT proof the pairing is right: it says the name exists on
+     * this env, not that the bot holds the same value. The only proof of the
+     * VALUE is a real delegated call answering something other than 401.
+     */
+    gabi: {
+      panel: gabiPanelEnabled(c.env.GABI_PANEL),
+      delegated: Boolean(c.env.ESTATE_APP_TOKEN_DISCORD),
+    },
     /** The per-instance ESTATE IDENTITY and its config state. See the header. */
     estate: describeEstateGate(c.env),
     time: new Date().toISOString(),

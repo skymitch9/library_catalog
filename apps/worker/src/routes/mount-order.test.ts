@@ -190,7 +190,22 @@ describe('index.ts mount order', () => {
     // see MOUNTS' comment for why they are out of scope here. `donorRoutes`
     // joined the machine set 2026-08-16 (X-Donor-Token gated, 404 otherwise;
     // its gate is covered in donor.test.ts).
-    const inFront = ['healthRoutes', 'ingestRoutes', 'audiobookMappingRoutes', 'donorRoutes', 'adminRoutes'];
+    // ⚠️ `gabiDelegatedRoutes` joined the machine set 2026-08-18 and is the
+    // only one of them that can WRITE on somebody's behalf. It is out of scope
+    // for the capability sweep below for the same reason as the others — it
+    // never sees `c.get('user')` — but NOT out of scope for authorisation: it
+    // resolves the on-behalf-of Firebase uid to an `app_user` row itself and
+    // checks that person's capability, which is what `gabi-delegated.test.ts`
+    // pins (bearer gate, four refusal causes, the verb→capability mapping
+    // asserted against CAPABILITY_MATRIX itself).
+    const inFront = [
+      'healthRoutes',
+      'ingestRoutes',
+      'audiobookMappingRoutes',
+      'donorRoutes',
+      'gabiDelegatedRoutes',
+      'adminRoutes',
+    ];
     const behindAuth = found.filter(([, name]) => !inFront.includes(name));
 
     assert.deepEqual(

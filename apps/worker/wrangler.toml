@@ -222,6 +222,37 @@ ESTATE_AUTH_URL = "https://auth.heygabi.ai"
 # fails if the two instances ever name the same app.
 ESTATE_APP = "library"
 
+# ── GABI's DELEGATED DOOR (routes/gabi-delegated.ts, 2026-08-18) ─────────────
+#
+# Owner ask 2026-08-17: *"Can I dm her an isbn or a photo and she adds it to
+# the catalog?"* / *"Hey Gabi, fix all my missing details."* Approved as Tier 1
+# of the T0–T4 ladder: additive writes with easy undo, auto-apply then report.
+#
+# There is NO var here, on purpose — the door is switched on entirely by the
+# presence of ONE SECRET, which is never written in this file:
+#
+#   wrangler secret put ESTATE_APP_TOKEN_DISCORD        (main instance)
+#   npm run secret:friend -- ESTATE_APP_TOKEN_DISCORD   (her instance)
+#
+# ⚠️ ONE VALUE, THREE HOLDERS, THE SAME NAME ON ALL THREE — the estate's
+# established pairing idiom (DONOR_TOKEN's, INDEX_PUSH_TOKEN's): mint it once
+# with `openssl rand -hex 32`, pipe it to BOTH instances of this Worker AND to
+# `catalog-platform/apps/discord-worker`. Never echoed, never pasted on a
+# terminal line, never in a tracked file.
+#
+# ⚠️ Unset means the delegated routes answer a WORDED 503 and write nothing —
+# so this code is safe to deploy before the secret exists, which is the
+# intended order. `GET /api/health` reports `gabi.delegated` as the boolean
+# "is the NAME populated here" (never the value, and never proof of a pairing).
+#
+# ⚠️ Holding the value authorises NO WRITE. It proves only "this request came
+# from the estate's Discord Worker". Every writing verb then resolves the
+# on-behalf-of Firebase uid to an `app_user` row ON THIS INSTANCE and checks
+# that person's own capability — `editCatalog` to add a book, `runResearch` to
+# run the details sweep, exactly what the equivalent button needs. That is the
+# whole security design: GABI holds nothing and borrows the asker's role, and
+# the DESTINATION site is what checks it.
+
 # ═════════════════════════════════════════════════════════════════════════════
 # [env.friend] — the SECOND library instance (friend-ingest-design.md §6).
 #

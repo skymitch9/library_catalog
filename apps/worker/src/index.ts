@@ -22,6 +22,7 @@ import { donorRoutes } from './routes/donor.js';
 import { enrichRoutes } from './routes/enrich.js';
 import { exportRoutes } from './routes/export.js';
 import { gabiRoutes } from './routes/gabi.js';
+import { gabiDelegatedRoutes } from './routes/gabi-delegated.js';
 import { healthRoutes } from './routes/health.js';
 import { ingestRoutes } from './routes/ingest.js';
 import { isbnRoutes } from './routes/isbn.js';
@@ -82,6 +83,21 @@ app.route('/api/machine/audiobook-mapping', audiobookMappingRoutes);
 // unset token OR wrong token both answer 404 — disabled/invisible, never open,
 // and never advertised. Read-only, DETAIL_FIELDS values only. See routes/donor.ts.
 app.route('/api/donor', donorRoutes);
+
+// ⚠️ Mounted BEFORE requireAuth, FOURTH of the machine routes and the only one
+// that can WRITE on somebody's behalf: the caller is the estate's Discord
+// Worker relaying a person who has no browser session here (GABI Tier 1, owner
+// approved 2026-08-17). Bearer-gated on ESTATE_APP_TOKEN_DISCORD — unset
+// answers a worded 503, wrong answers a worded 401, and NEITHER is a licence to
+// write: every writing verb resolves the on-behalf-of Firebase uid to an
+// `app_user` row on THIS instance and checks that person's own capability, the
+// same one the equivalent button is gated on. See routes/gabi-delegated.ts.
+//
+// ⚠️ Mounted BEFORE `/api/gabi` below, and the paths cannot collide: Hono
+// matches the longer mount first regardless of order, but the ordering is
+// written this way so a reader sees the machine door and the signed-in door
+// beside each other rather than discovering the split later.
+app.route('/api/gabi/delegated', gabiDelegatedRoutes);
 
 // CORS for the estate's federated admin page (exactly https://heygabi.ai —
 // see routes/admin.ts). ⚠️ Before requireAuth on purpose: a preflight OPTIONS

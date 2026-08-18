@@ -152,6 +152,38 @@ export interface Env {
   DONOR_TOKEN?: string;
 
   /**
+   * ⚠️ **The estate Discord Worker's bearer for the DELEGATED GABI verbs**
+   * (`routes/gabi-delegated.ts`, built 2026-08-18 for the owner's Tier-1
+   * approval: *"Can I dm her an isbn or a photo and she adds it to the
+   * catalog?"*).
+   *
+   * The estate's established *one value, two holders, the same NAME on both
+   * sides* idiom — `DONOR_TOKEN`'s shape, and `INDEX_PUSH_TOKEN`'s: the value
+   * is minted once and piped to `catalog-platform/apps/discord-worker` AND to
+   * both instances of this Worker. Generate with `openssl rand -hex 32`; never
+   * echoed, never printed, never in a file this repo tracks.
+   *
+   * ⚠️ **What holding it does and does not buy.** It proves only *"this request
+   * came from the estate's Discord Worker"*. It authorises **no write on its
+   * own**: every writing verb also resolves the on-behalf-of Firebase uid to an
+   * `app_user` row ON THIS INSTANCE and checks that person's real capability.
+   * A leaked value can therefore act only for people who already hold the
+   * capability, which is a smaller blast radius than `EBOOK_INGEST_TOKEN`'s
+   * (that one can create works with no person involved at all).
+   *
+   * ⚠️ **Unset means the routes answer a worded 503 and write nothing** — the
+   * ships-dark direction every machine route in this Worker takes, and the
+   * reason the code may be deployed before the secret exists.
+   *
+   * ⚠️ Held under the SAME name on both instances, unlike `ESTATE_APP_TOKEN_*`
+   * whose name varies with `ESTATE_APP`. The difference is deliberate: those
+   * assert *which consumer is speaking to the directory*, and the two instances
+   * are two consumers. This one authenticates ONE caller (the bot) to both
+   * shelves, and the instance question is answered by which hostname it dialled.
+   */
+  ESTATE_APP_TOKEN_DISCORD?: string;
+
+  /**
    * The shared index Worker (catalog-platform/apps/index-worker), where this
    * catalog pushes its projection. See lib/index-push.ts and
    * packages/db/src/index-projection.ts.

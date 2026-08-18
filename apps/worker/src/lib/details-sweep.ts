@@ -617,13 +617,36 @@ export interface SweepResult {
 }
 
 /**
+ * Who asked for this tick.
+ *
+ * ⚠️ **`null` is the clock, a number is a person** — that is the whole meaning
+ * of `research_run.triggered_by`, and the reason the delegated GABI verb
+ * (`routes/gabi-delegated.ts`, owner ask *"Hey Gabi, fix all my missing
+ * details"*) passes an option rather than getting a sweep of its own: one
+ * implementation of the donor-then-AI ladder, the never-ask-twice history and
+ * the subrequest arithmetic. A second, chat-shaped copy would be a second place
+ * for every one of those to be got wrong.
+ *
+ * The value travels exactly where a person's Run button already sends it —
+ * into `createRun`, `claimRun` and `runDetailsResearch` — so it lands on
+ * `gap_verdict.decided_by` and `research_finding.reviewed_by` too. What it does
+ * NOT change is `decided_how`, which stays `'auto'`: GABI did not read the
+ * values she applied any more than the cron did.
+ */
+export interface SweepOptions {
+  triggeredBy?: number | null;
+}
+
+/**
  * One tick. Never throws; the return value is the whole report.
  */
 export async function runDetailsSweep(
   env: Env,
   limit = SWEEP_LIMIT,
   budget = SWEEP_BUDGET,
+  opts: SweepOptions = {},
 ): Promise<SweepResult> {
+  const triggeredBy = opts.triggeredBy ?? null;
   const result: SweepResult = {
     queued: 0,
     eligible: 0,
@@ -716,7 +739,7 @@ export async function runDetailsSweep(
                 tier: 'details',
                 model: DONOR_RUN_MODEL,
                 effort: 'copy',
-                triggeredBy: null,
+                triggeredBy,
                 inputTitle: candidate.title,
                 inputYear: null,
                 unfilled: answered,
@@ -726,7 +749,7 @@ export async function runDetailsSweep(
               // source 'donor', decided_how 'auto', revertible like any batch.
               // No judged opt-in: an exact match authorises nothing about a
               // proposal some earlier judge left pending.
-              const report = await autoApplyFindings(env.DB, candidate.workId, null);
+              const report = await autoApplyFindings(env.DB, candidate.workId, triggeredBy);
               await finishRun(env.DB, run.id, {
                 status: 'done',
                 result: {
@@ -788,7 +811,7 @@ export async function runDetailsSweep(
                   tier: 'details',
                   model: DONOR_FUZZY_RUN_MODEL,
                   effort: 'judged',
-                  triggeredBy: null,
+                  triggeredBy,
                   inputTitle: candidate.title,
                   inputYear: null,
                   unfilled: confident ? answered : [],
@@ -799,7 +822,7 @@ export async function runDetailsSweep(
                 const report = await autoApplyFindings(
                   env.DB,
                   candidate.workId,
-                  null,
+                  triggeredBy,
                   confident ? { applyJudgedDonorFromRun: run.id } : undefined,
                 );
                 await finishRun(env.DB, run.id, {
@@ -848,7 +871,7 @@ export async function runDetailsSweep(
                 tier: 'details',
                 model: DONOR_RUN_MODEL,
                 effort: 'copy',
-                triggeredBy: null,
+                triggeredBy,
                 inputTitle: candidate.title,
                 inputYear: null,
                 unfilled: [],
@@ -878,13 +901,16 @@ export async function runDetailsSweep(
           continue;
         }
 
-        // `triggeredBy: null` — nobody pressed anything. `research_run.triggered_by`
-        // being null is how the history tells a sweep from a person without
-        // inventing a column for it, and it travels into `gap_verdict.decided_by`
-        // and `research_finding.reviewed_by` for the same reason. The values it
-        // writes are still stamped `decided_how = 'auto'` by `autoApplyFindings`,
-        // exactly as they are when a person presses Run.
-        const claim = await claimRun(env.DB, candidate.workId, null);
+        // `triggeredBy` is NULL on the cron's own tick — nobody pressed
+        // anything — and `research_run.triggered_by` being null is how the
+        // history tells a sweep from a person without inventing a column for
+        // it. It travels into `gap_verdict.decided_by` and
+        // `research_finding.reviewed_by` for the same reason. ⚠️ A DELEGATED
+        // tick (`SweepOptions.triggeredBy`, the GABI verb) carries the asker's
+        // id here instead, which is what makes *"what did GABI fill for me"* one
+        // query. Either way the values are stamped `decided_how = 'auto'` by
+        // `autoApplyFindings`, exactly as they are when a person presses Run.
+        const claim = await claimRun(env.DB, candidate.workId, triggeredBy);
 
         if (claim.kind === 'running') {
           // Somebody is looking at this book right now. Theirs wins; the sweep
@@ -909,7 +935,7 @@ export async function runDetailsSweep(
           claim.run.id,
           candidate.workId,
           claim.fields,
-          null,
+          triggeredBy,
         );
 
         if (!finished || finished.status === 'error') {

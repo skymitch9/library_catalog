@@ -39,6 +39,42 @@ export async function findUserByEmail(db: D1Database, email: string): Promise<Ap
 }
 
 /**
+ * Find a catalog user by the Firebase uid recorded on their row.
+ *
+ * ⚠️ **A LOOKUP, NEVER A CREATE — and that asymmetry is the whole safety of the
+ * delegated GABI verbs** (`apps/worker/src/routes/gabi-delegated.ts`). Every
+ * other door into this table is `upsertUserOnLogin`, which runs only after a
+ * Firebase ID token this Worker verified itself. The delegated door has no such
+ * token: it carries a bot's app bearer plus somebody else's uid, so it must
+ * never be able to *mint* standing on this instance. A uid nobody here has
+ * signed in with resolves to `null`, and the caller answers in words.
+ *
+ * ⚠️ **The join is deliberately on `firebase_uid`, not on email**, even though
+ * `upsertUserOnLogin` keys on email for the reasons written above it. The
+ * Discord `/link` document records a `firebaseUid` and no email at all (that is
+ * a deliberate minimisation in `catalog-platform/apps/discord-worker/src/link.ts`),
+ * so a uid is the only identifier the bot can present. It is also the one that
+ * survives an email change on the Google account.
+ *
+ * ⚠️ **A row whose `firebase_uid` is NULL can never match**, because the bind is
+ * a real string and SQL never equates NULL. That is the correct direction: those
+ * rows predate uid capture, and matching one on an empty uid would hand a
+ * stranger the first unmigrated account in the table.
+ */
+export async function findUserByFirebaseUid(
+  db: D1Database,
+  firebaseUid: string,
+): Promise<AppUser | null> {
+  const uid = firebaseUid.trim();
+  if (!uid) return null;
+  const row = await db
+    .prepare(`SELECT ${COLS} FROM app_user WHERE firebase_uid = ?`)
+    .bind(uid)
+    .first<UserRow>();
+  return row ? toUser(row) : null;
+}
+
+/**
  * Resolve the signed-in Google identity to a catalog user, creating the row on
  * first sight.
  *
