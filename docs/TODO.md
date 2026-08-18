@@ -37,9 +37,13 @@ real work. New debt goes HERE, never scattered.
   uses it. Revoke from the dashboard. Its sibling "Edit Cloudflare Workers
   2" (Aug 17) IS the live CI-deploy token — keep, but it's broader than CI
   needs; narrowing = mint scoped replacement + `gh secret set` ×3 repos.
-- **Sam's ANTHROPIC key → capped workspace** — her key works but whether it
-  sits in a spend-capped workspace is UNVERIFIED (second-instance.md flags
-  it). One dashboard move at platform.claude.com ends the tail risk.
+- **Sam's ANTHROPIC key → capped workspace** — ⚠️ UPDATED 2026-08-18: the
+  owner says he CLEARED/raised the limit on 2026-08-17 ("i cleared this
+  yesterday"), superseding every "dead until Sep 1" note in this repo's
+  docs. Not yet re-measured from this side; the 5-second confirmation is
+  pressing "Look again" on either FAILED row (runs 5/6) at
+  padhard.heygabi.ai/queue while signed in — those rows never retry
+  themselves. If it completes, delete this item.
 - **audiobook `scripts/` not linted in CI** — the lint workflow covers `app
   tests` only; `build_ebook_manifest.py` carries a pre-existing C901 on
   `extract_epub_cover`. Add scripts/ to the lint matrix + fix or waive C901.
