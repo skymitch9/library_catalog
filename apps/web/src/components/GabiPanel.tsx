@@ -123,7 +123,7 @@ export function GabiToggle({ open, onToggle }: { open: boolean; onToggle: () => 
   );
 }
 
-export function GabiPanel({ hidden }: { hidden: boolean }) {
+export function GabiPanel({ hidden, prefill }: { hidden: boolean; prefill?: string | null }) {
   /**
    * The conversation, in the API's own message shape. ⚠️ It is the transcript —
    * the Worker persists nothing (§3.2, stateless) — so closing the tab ends it.
@@ -151,6 +151,49 @@ export function GabiPanel({ hidden }: { hidden: boolean }) {
   useEffect(() => {
     log.current?.scrollTo({ top: log.current.scrollHeight, behavior: 'smooth' });
   }, [messages, busy]);
+
+  /**
+   * A question the URL brought — `?gabi=…`, parsed in `App.tsx` (see
+   * `lib/gabi-deeplink.ts` for why the parameter is not `q`).
+   *
+   * ⚠️ IT PREFILLS. IT DOES NOT SEND. A link that fires a model call on
+   * arrival would spend the instance's Anthropic key on a click, and the asker
+   * would have no chance to correct a question Discord mangled or a link
+   * somebody else pasted. The whole point is that the box opens with the
+   * sentence already in it and the send button is still theirs to press.
+   *
+   * ONCE, and `seeded` is why: `App.tsx` strips the parameter immediately, but
+   * a prop that arrived twice — a re-render, a remount, a restored PWA tab —
+   * must not overwrite what the asker has since typed. First prefill wins, and
+   * only into an empty box.
+   */
+  const seeded = useRef(false);
+  const input = useRef<HTMLInputElement>(null);
+  const [seedFocus, setSeedFocus] = useState(false);
+  useEffect(() => {
+    if (!prefill || seeded.current) return;
+    seeded.current = true;
+    setDraft((current) => (current ? current : prefill));
+    setSeedFocus(true);
+  }, [prefill]);
+
+  /**
+   * ⚠️ A SECOND effect, and not tidiness — the focus cannot ride the one above.
+   * The input is CONTROLLED, so its DOM `value` is still empty while the effect
+   * that called `setDraft` is running: the new value lands on the next commit.
+   * Placing the caret there would put it at index 0 of an empty box. This runs
+   * after that commit, when `draft` is really in the element.
+   */
+  useEffect(() => {
+    if (!seedFocus) return;
+    setSeedFocus(false);
+    const el = input.current;
+    if (!el) return;
+    el.focus();
+    // At the END, so the arrival state is "ready to edit or press Ask", not
+    // "ready to overwrite what was just filled in".
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, [seedFocus]);
 
   const send = useCallback(
     async (text: string) => {
@@ -337,6 +380,7 @@ export function GabiPanel({ hidden }: { hidden: boolean }) {
         }}
       >
         <input
+          ref={input}
           type="text"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}

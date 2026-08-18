@@ -675,6 +675,17 @@ a.topbar__brand { text-decoration: none; }
 .gabi-compose input { flex: 1 1 auto; min-width: 0; }
 .gabi-spend { margin: 0; text-align: right; }
 
+/* The dead-end words for a `?gabi=` link that landed where the panel is not
+   open to the reader (App.tsx). Laid out like the panel it stands in for, so
+   the message occupies the place the box would have — not tucked into a corner
+   as if it were a footnote. */
+.gabi-unavailable {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 0.9rem 1rem 0;
+  text-wrap: pretty;
+}
+
 /* --- stats --------------------------------------------------------------- */
 
 .stat-strip {

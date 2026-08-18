@@ -40,12 +40,14 @@ import {
   backTarget,
   collectionPath,
   navigate,
+  replaceUrl,
   seriesListPath,
   seriesPath,
   useRoute,
   workPath,
   type Route,
 } from './router.js';
+import { gabiPrefillFrom, searchWithoutGabiPrefill } from './lib/gabi-deeplink.js';
 import { EstateSearchPanel, EstateSearchToggle } from './components/EstateSearch.js';
 import { GabiPanel, GabiToggle } from './components/GabiPanel.js';
 import { ThemeCog } from './components/ThemeCog.js';
@@ -100,7 +102,33 @@ export function App() {
    * you go — so it is state, not a route.
    */
   const [gabiOpen, setGabiOpen] = useState(false);
+  /**
+   * A question a link brought with it — `?gabi=…`, the deep-link target
+   * Discord's `/gabi` points at (`lib/gabi-deeplink.ts`, which records why the
+   * parameter is not `q`: `q` is already the collection's own search, on the
+   * exact route the link lands on).
+   *
+   * ⚠️ READ ONCE, FROM THE URL THE PAGE OPENED ON, and that is what the lazy
+   * `useState` initialiser buys. The parameter is stripped a moment later, so
+   * reading it in an effect or on every render would race its own cleanup.
+   */
+  const [gabiPrefill] = useState(() => gabiPrefillFrom(window.location.search));
   const route = useRoute();
+
+  /**
+   * Open the panel for a link that carried a question, and take the parameter
+   * back out of the URL.
+   *
+   * `replaceUrl`, so there is no second history entry and no popstate — the
+   * asker's Back button still leaves the site rather than landing them on the
+   * same page with the question mysteriously back. Nothing is SENT: see
+   * `GabiPanel`'s own note on why a link must not spend money on arrival.
+   */
+  useEffect(() => {
+    if (!gabiPrefill) return;
+    setGabiOpen(true);
+    replaceUrl(window.location.pathname + searchWithoutGabiPrefill(window.location.search));
+  }, [gabiPrefill]);
 
   const check = useCallback(async () => {
     try {
@@ -363,7 +391,32 @@ export function App() {
           stateless, no transcript). Unmounting would throw away the transcript
           every time somebody closed the box to look at a book, which is
           precisely the moment a conversation is worth keeping. */}
-      {me.gabiPanel && me.capabilities.includes('runResearch') && <GabiPanel hidden={!gabiOpen} />}
+      {me.gabiPanel && me.capabilities.includes('runResearch') && (
+        <GabiPanel hidden={!gabiOpen} prefill={gabiPrefill} />
+      )}
+      {/* ⚠️ THE DEAD-END CASE, and it is the one a deep link creates. Hiding a
+          control somebody cannot use is right (see the toggle's note) — but
+          somebody who FOLLOWED A LINK CARRYING A QUESTION has been sent here on
+          purpose, and silence would read as a broken page rather than as a
+          closed door. So the words appear only when a question arrived and
+          there is nowhere to put it, and they name which of the two gates is
+          shut: the instance posture, or this account's capability. Never a bare
+          status, and never a control that refuses.
+
+          `gabiPanel` is per-INSTANCE (`GABI_PANEL` in wrangler.toml — "on" for
+          padhard, off on this one), `runResearch` is per-PERSON; the design's
+          blocker 1 is precisely that Discord cannot tell which of them a linked
+          identity holds, so it links anyway and says so. This is the other end
+          of that honesty. */}
+      {gabiPrefill && !(me.gabiPanel && me.capabilities.includes('runResearch')) && (
+        <p className="muted small gabi-unavailable">
+          That link was carrying a question for GABI, but the chat panel is not open to you here
+          {me.gabiPanel
+            ? ' — your account does not have the research permission it needs. An owner can add it on the People screen.'
+            : ' — this catalogue does not run the GABI panel. The other one does; ask the owner for the right link.'}{' '}
+          Your question was: “{gabiPrefill}”
+        </p>
+      )}
 
       <Screens
         route={route}
