@@ -413,7 +413,17 @@ describe('the approved content, so an edit in catalog-platform cannot land unnot
       // universe' onto CAL Verse.
       'CAL Verse': [9, 1, 0],
       Maasverse: [3, 0, 0],
-      Riordanverse: [3, 0, 0],
+      // 6 since 2026-08-18, all three added because the box-set split made D1
+      // store series strings the list did not spell. catalog-platform a7beeba
+      // added 'The Heroes of Olympus' (a SPELLING of the existing 'Heroes Of
+      // Olympus' — normaliseUniverseText keeps leading articles on purpose, so
+      // the two can never fold together) and 'The Trials of Apollo' (a NEW
+      // membership, not a spelling: the series was not listed under any form).
+      // e9df6a0 added 'The Nico di Angelo Adventures' as item 4 of the owner's
+      // cleanup pack ("Yes to the clean up pack") — also not a fold, since it
+      // shares no words with 'From the World of Percy Jackson', under which the
+      // same book was already claimed. All three are Camp Half-Blood continuity.
+      Riordanverse: [6, 0, 0],
       Solaria: [2, 0, 0],
       // Cradle and The Last Horizon are owned; The Elder Empire and The
       // Traveler's Gate are listed so a future purchase files itself.
@@ -458,7 +468,11 @@ describe('the approved content, so an edit in catalog-platform cannot land unnot
       // 'Firstborn / Defending Elysium', which carries no series at all —
       // Defending Elysium's own ebook edition is subtitled 'A Cytoverse
       // Novella'.
-      Cytoverse: [1, 1, 0],
+      // 2 series since 2026-08-18: catalog-platform a7beeba added 'Skyward',
+      // the spelling D1 actually stores after the box-set split, alongside the
+      // audiobook catalog's 'The Skyward Series'. A sibling spelling, never an
+      // override of the owner's own string.
+      Cytoverse: [2, 1, 0],
       // New 2026-08-15, owner-approved during the same sweep. Two series
       // because the spin-off carries a DIFFERENT series value ('Texas
       // Reckoners series', on Lux), and one override because Snapshot carries
