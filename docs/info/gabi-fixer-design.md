@@ -829,14 +829,49 @@ LINKED; it cannot resolve whether that identity holds `runResearch` here — tha
 is blocker 1, and it is unchanged. The answer says so rather than promising a
 door that may be locked.
 
-⚠️ **FOLLOW-UP, and it is PANEL work, not Discord's:** the deep link carries no
-`?q=`, because **measured 2026-08-17 the panel supports no URL parameter at
-all** — `App.tsx` holds it open in `useState(false)` and `GabiPanel.tsx` parses
-no location. A `?q=` prefill (read the param, seed `draft`, open the panel)
-would let the link carry the question instead of quoting it back for
-copy-paste. Until then, adding a parameter on the Discord side would be a link
-that silently lies; `panelDeepLink()` in `apps/discord-worker/src/gabi.ts` is
-the one function to change if it lands.
+⚠️ **FOLLOW-UP — THE PANEL HALF IS BUILT AND DEPLOYED (2026-08-18), AND THE
+PARAMETER IS `?gabi=`, NOT `?q=`.** The panel now reads a question out of the
+URL, prefills the box and opens itself; `apps/web/src/lib/gabi-deeplink.ts` is
+the module and `apps/web/test/gabi-deeplink.test.ts` pins the contract.
+
+⚠️ **`?q=` — which this section named until today — WAS MEASURED AND IS
+WRONG.** The 2026-08-17 measurement above was of the PANEL ("supports no URL
+parameter at all"), which was true and beside the point: nobody had looked at
+the ROUTER. `apps/web/src/router.tsx` `parseCollection()` reads `q` as the
+collection's own server-side search, and `parse()` maps `/` — the exact path
+the deep link points at — to the collection. So
+
+```
+https://padhard.heygabi.ai/?q=the+Sanderson+one+with+the+wrong+cover
+```
+
+would do **two** things with one value: prefill the panel *and* filter the book
+list to a sentence no title matches. The asker would land on an empty
+catalogue with a panel floating over it — the link looking broken at the exact
+moment it worked. `parseSeriesList()` reads `q` as well, so the collision is
+not even unique to one route. A test asserts `?q=` does **not** prefill, so a
+later "fix" back to the parameter this doc used to name fails instead of
+shipping.
+
+**Properties worth not re-litigating:** it PREFILLS and never sends (a link
+that fired a model call on arrival would spend the instance's Anthropic key on
+a click, with no chance to correct a mangled or forwarded question); the
+parameter is stripped with `replaceUrl` so a reload or a restored PWA tab
+cannot re-seed over what was typed since, and every OTHER parameter survives
+the strip in order, because the panel is global and a future link may point at
+a filtered view; and a link landing on an account without `GABI_PANEL` or
+`runResearch` gets WORDS naming which gate is shut, since somebody who
+followed a link carrying a question would otherwise read silence as a broken
+page.
+
+🧑 **STILL OWED, and it is Discord's half:** `panelDeepLink()` in
+`catalog-platform/apps/discord-worker/src/gabi.ts` still emits a bare `/` and
+must emit `?gabi=<question>` — one line plus a discord-worker deploy, in the
+other repo. Until it does, the panel reads a parameter nothing sends, which is
+the **harmless direction**: a panel that accepts more than it is given. The
+reverse — Discord emitting a parameter the panel ignores — is the "link that
+silently lies" this section refused to ship, and is exactly why the panel half
+went first.
 
 **Still owed before anyone can type it:** the slash-command registry must be
 re-published (`POST /admin/commands/register`, one button on the estate

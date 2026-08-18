@@ -17,6 +17,77 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## 🔗 A LINK CAN CARRY THE QUESTION INTO THE GABI PANEL — ✅ DONE 2026-08-18
+
+The panel half of Discord's `/gabi` deep link, recorded as panel work in
+[`info/gabi-fixer-design.md`](info/gabi-fixer-design.md) §10.2 (which is
+updated in place, since it is the living design). Shape (b) — *propose and
+deep link* — shipped with a link that carried **no question**, so the asker
+landed on an empty box and retyped what they had just typed in Discord.
+
+**Shipped** (`8745191`, deployed to both instances — `4b881b74` main,
+`8965a8a4` friend; same bundle `index-BStS9t-N.js` verified live on both):
+
+| File | What |
+|---|---|
+| `apps/web/src/lib/gabi-deeplink.ts` | DOM-free parse + strip; the parameter named once |
+| `apps/web/src/App.tsx` | reads it once from the opening URL, opens the panel, strips it |
+| `apps/web/src/components/GabiPanel.tsx` | seeds `draft`, focuses at the end, never sends |
+| `apps/web/test/gabi-deeplink.test.ts` | 15 tests |
+
+### ⚠️ THE PARAMETER IS `gabi`, NOT `q` — a measurement, not a preference
+
+The design named `?q=`, written before anybody read this app's router. `q` is
+**already taken, on the exact route the deep link points at**:
+`router.tsx` `parseCollection()` reads it as the collection's own server-side
+search and `parse()` maps `/` to the collection, so
+`…/?q=the+Sanderson+one+with+the+wrong+cover` would prefill the panel **and**
+filter the book list to a sentence no title matches — an empty catalogue under
+a floating panel, a link looking broken at the moment it worked.
+`parseSeriesList()` reads `q` too, so it is not one route's problem.
+
+⚠️ **The first test in the file is a regression guard**: `?q=` must NOT
+prefill, so a later "fix" back to the parameter the doc used to name fails
+instead of shipping.
+
+**Four properties that will otherwise be undone by a well-meaning edit:**
+
+1. **It prefills; it never sends.** A link that fired a model call on arrival
+   would spend the instance's Anthropic key on a click, with no chance to fix
+   a question Discord mangled or a link somebody else forwarded.
+2. **Once only.** `App.tsx` strips the parameter with `replaceUrl` (no history
+   entry, no popstate — Back still leaves the site), and the panel refuses to
+   write over a non-empty box, so a reload or a restored PWA tab cannot
+   re-seed on top of what was typed since.
+3. **Every other parameter survives the strip, in order.** The panel is global
+   — rendered outside the route switch — so a future link may legitimately
+   point at a filtered collection or a series ladder.
+4. **The dead end gets words.** Somebody who followed a link carrying a
+   question but holds neither `GABI_PANEL` nor `runResearch` would otherwise
+   meet silence and read it as a broken page. The message names *which* of the
+   two gates is shut, and appears **only** when a question actually arrived —
+   the ordinary visitor still sees no control they cannot use.
+
+Also here: whitespace collapsed (a Discord copy-paste arrives ragged), 500-char
+ceiling, and the focus is a **second** `useEffect` on purpose — the input is
+controlled, so its DOM value is still empty inside the effect that seeds it,
+and placing the caret there would put it at index 0 of an empty box.
+
+🧑 **STILL OWED, in the OTHER repo:** `panelDeepLink()` in
+`catalog-platform/apps/discord-worker/src/gabi.ts` still emits a bare `/`. One
+line plus a discord-worker deploy. Until then the panel reads a parameter
+nothing sends — the harmless direction; the reverse is the "link that silently
+lies" the design refused to ship, which is why the panel half went first.
+
+⚠️ **NOT VERIFIED — needs the owner's eyes.** The live bundles were confirmed
+to CONTAIN the code (cache-busted fetch of `index-BStS9t-N.js` on both hosts),
+which is not the same as seeing it work: the panel only renders for a
+signed-in account holding `runResearch`. **Open
+<https://padhard.heygabi.ai/?gabi=what%20still%20needs%20fixing> signed in**
+— the panel should open with *"what still needs fixing"* already in the box,
+nothing sent, the `?gabi=` gone from the address bar, and the collection
+behind it unfiltered.
+
 ## 🔑 TBR keyed to the ACCOUNT, not the display name — ✅ DONE 2026-08-18
 
 The owner, verbatim, in answer to the measured finding that
