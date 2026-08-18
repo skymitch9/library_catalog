@@ -470,7 +470,7 @@ rows, measured:
 | Harry Potter and the Goblet of Fire | …*(Full-Cast Edition)* | the SAME work, another edition — the case the owner asked to unify |
 | Harry Potter and the Sorcerer's Stone | …*(Full-Cast Edition)* | same |
 | Tamer: King of Dinosaurs Book 11 | *Tamer: King of Dinosaurs* | wrong volume — but already **stale**, so already write-excluded |
-| Space Knight Book 1 | *Space Knight* | over-shares with Book 2 |
+| Space Knight Book 1 | *Space Knight* | ⚠️ said "over-shares with Book 2" — **wrong, corrected below** |
 
 The rule would refuse two matches it should welcome, add nothing to the one
 staleness already catches, and still miss the real over-share: **Space Knight
@@ -480,6 +480,65 @@ Knight*, *Fae and Fare*, *The Wandering Inn* — two of them deliberately (a
 volume aliased to its series' catalog row). ⚠️ **This is the one open
 over-share, and it is a mapping question, corrected in `work_alias`, not with a
 read-time heuristic here.**
+
+### ⚠️ THE OVER-SHARE ABOVE DOES NOT EXIST — re-measured 2026-08-17, evening
+
+The paragraph and table row above were written from the *cleaned* title, which
+is the exact mistake §9 exists to correct — reintroduced one more layer down, in
+prose this time. **Both works already resolve to their own audiobook row**, and
+they did so before this was ever written down. Production D1, read the same day:
+
+| work | `raw_title` | `title` (cleaned) | `matched_via` | `via_alias` | `index_sort` |
+|---|---|---|---|---|---|
+| 249 *Space Knight Book 1* | **Space Knight** | Space Knight | containment (0.80) | — | 1 |
+| 250 *Space Knight Book 2* | **Space Knight, Book 2** | Space Knight | exact (1.00) | Space Knight | 2 |
+
+Two different `raw_title`s, so two different keys — and `warningKeysFor` has
+preferred `raw_title` since migration 0340:
+
+```
+#249  writeBookId space-knight          published "Space Knight"         -> checked, 0 warnings
+#250  writeBookId space-knight-book-2   published "Space Knight, Book 2" -> NO entry (nobody has looked)
+```
+
+Verified on the **live signed-in pages** (`/work/249`, `/work/250`) the same
+evening: 249's panel says *"Published sources have been checked for this book
+and listed none"*; 250's says only *"No content notes yet"*, with no published
+line at all. Their write spellings are named on the page and differ, exactly as
+above. So the correction §9 announces for *Space Knight Book 2* — a wrong answer
+replaced by an honest absence — is the whole of the fix, and no mapping edit was
+outstanding.
+
+**What settles the volume is `disambiguateByVolume`, not row order.** The
+`add-space-knight-alias.mjs` header worried that "the vol-2 row happens to sit
+first in the index"; that stopped being true when the volume rule landed.
+Exercised against the live `catalog.csv`:
+
+```
+lookup("Space Knight Book 2", author, vol 2)  -> containment  raw "Space Knight, Book 2"   <- alias not needed
+lookup("Space Knight",        author, vol 2)  -> exact        raw "Space Knight, Book 2"
+lookup("Space Knight",        author, vol 1)  -> exact        raw "Space Knight"            <- the volume decides
+lookup("Space Knight",        author, null)   -> NO MATCH                                   <- refuses to guess
+```
+
+⚠️ **So `work_alias` row 26 was left in place, and that is deliberate.** It is
+`source='manual'` (a person's researched answer, which migration 0001 says a
+re-import must never delete), it changes nothing about which row #250 reaches —
+only the rung it reaches it on — and it is **not warnings-only**: `work_alias` is
+also read by `routes/ingest.ts`, `routes/scan-jobs.ts` and `routes/enrich.ts`, so
+removing it would change what an incoming bare *"Space Knight"* scan folds into.
+It is visible and removable by the owner under *Also known as* on `/work/250`.
+
+**The one residual, and it is CODE, not mapping.** `warningKeysFor` keeps every
+spelling in `bookIds` forever, so #250's read set is
+`["space-knight-book-2", "space-knight"]` — and `space-knight` is #249's write
+key. A *reader-contributed* note on Book 1 would therefore also render on Book
+2's page. It is irreducible in data: `space-knight` is genuinely #250's own
+pre-0340 key **and** #249's current one. Both lanes of the store were re-read
+over the REST API on 2026-08-17 and hold **0 documents**, so nothing is
+mis-rendered today. Narrowing the union is a read-set design change with its own
+orphaning risk; it was not made, and it is recorded in §10 rather than guessed
+at.
 
 ### The queue: one work is answered ONCE — `audiobook_catalog`, commit `17ec82d`
 
@@ -555,9 +614,20 @@ SECOND run over the same queue — fulfilled: 4, paid chain: NEVER
   added it must write `cw_requests/{bookIdFromTitle(rawTitle)}` with
   `bookTitle` = the **raw** audiobook title, so the fulfiller's exact-key path
   answers it with no fold at all.
-- **The `work_alias` over-share** above: *Space Knight Book 1* and *Book 2*
-  resolve to one audiobook row and therefore share one warning set. Correct it
-  in the alias, not in the key derivation.
+- ~~**The `work_alias` over-share**: *Space Knight Book 1* and *Book 2* resolve
+  to one audiobook row and therefore share one warning set.~~ ✅ **CLOSED
+  2026-08-17 — the premise was false.** They resolve to two different rows
+  (`raw_title` *"Space Knight"* vs *"Space Knight, Book 2"*), so their published
+  warnings already differ; measured in production D1 and confirmed on both live
+  signed-in pages. No mapping edit was made and none was needed — see §9's
+  *"THE OVER-SHARE ABOVE DOES NOT EXIST"*.
+- ⚠️ **What IS still open is a read-set collision, and it is code.** #250's
+  `bookIds` contains `space-knight`, which is #249's write key, so a
+  reader-contributed note on Book 1 would also show on Book 2's page. **0
+  documents in either lane today**, so it is unobservable; and it cannot be
+  fixed in data, because that id is legitimately #250's pre-0340 key as well.
+  Any fix narrows `warningKeysFor`'s union, which is the one thing that comment
+  says never to do without weighing the orphaning it prevents.
 - **The friend instance holds 0 `audiobook_holding` rows**, so nothing bridges
   there and every work keys on its own title. Migration 0340 is applied to that
   D1 anyway, so the shared bundle cannot meet an old schema.

@@ -228,15 +228,35 @@ export interface WarningKeys {
  * | Harry Potter and the Goblet of Fire | …*(Full-Cast Edition)* | the SAME work, another edition — the exact case the owner asked to unify |
  * | Harry Potter and the Sorcerer's Stone | …*(Full-Cast Edition)* | same |
  * | Tamer: King of Dinosaurs Book 11 | *Tamer: King of Dinosaurs* | wrong volume — but already **stale**, so already write-excluded |
- * | Space Knight Book 1 | *Space Knight* | over-shares with Book 2 |
+ * | Space Knight Book 1 | *Space Knight* | ⚠️ said "over-shares with Book 2" — **wrong, see below** |
  *
- * So the rule would refuse two matches it should welcome, add nothing to the
- * one it would catch by staleness anyway, and still miss the real over-share:
- * *Space Knight Book 2* reaches the same title on the **exact** rung, through an
- * owner-authored `work_alias`. The mapping is reviewable — `matched_via`,
- * `title_similarity` and `via_alias` are stored per row and printed by the
- * backfill — and that is where an over-share is corrected, not by a read-time
- * heuristic in here.
+ * So the rule would refuse two matches it should welcome and add nothing to the
+ * one it would catch by staleness anyway.
+ *
+ * ## ⚠️ The Space Knight "over-share" was a FALSE PREMISE — re-measured 2026-08-17
+ *
+ * That last row (and the paragraph that used to follow it) read the *cleaned*
+ * title, which is the very mistake migration 0340 exists to correct. The two
+ * works resolve to two DIFFERENT audiobook rows, and always did:
+ *
+ *     #249 Space Knight Book 1   raw_title "Space Knight"          -> published "Space Knight"          checked, 0 warnings
+ *     #250 Space Knight Book 2   raw_title "Space Knight, Book 2"  -> published "Space Knight, Book 2"  no entry, nobody looked
+ *
+ * Confirmed on the live signed-in pages the same evening. The owner-authored
+ * `work_alias` on #250 changes only the RUNG it matches on, never the row:
+ * `disambiguateByVolume` in `matching.ts` is what picks the volume, so asking
+ * under "Space Knight" with volume 1 answers vol 1 and with volume 2 answers
+ * vol 2. It was left in place — it is `source='manual'`, and `work_alias` is
+ * read by ingest, scan-jobs and enrich too, so it is not warnings-only.
+ *
+ * ⚠️ **One residual, and it lives in `bookIds` above, not in the mapping.**
+ * #250's read set is `["space-knight-book-2", "space-knight"]`, and
+ * `space-knight` is #249's write key — so a reader note on Book 1 would render
+ * on Book 2's page as well. It is irreducible in data (that id is genuinely
+ * #250's own pre-0340 key too), both store lanes held **0 documents** when
+ * re-read on 2026-08-17, and narrowing the union is the one thing the comment on
+ * `WarningKeys.bookIds` warns against. Recorded in `content-warnings.md` §10;
+ * deliberately not "fixed" here.
  */
 export function warningKeysFor(params: {
   title: string;

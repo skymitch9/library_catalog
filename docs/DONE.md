@@ -79,6 +79,23 @@ revert.
   fires on the next request/sync); the *Space Knight* `work_alias` over-share;
   and the signed-in round trip remains unverified
 
+### ⚠️ Two of those three are now answered — 2026-08-17, same evening
+
+- **The *Space Knight* over-share was a false premise and is CLOSED**, with no
+  data change. #249 and #250 already resolve to *different* audiobook rows
+  (`raw_title` "Space Knight" vs "Space Knight, Book 2"), so their published
+  warnings already differ; `work_alias` row 26 was left in place, deliberately.
+  Measurements, the volume-rule proof and the residual that *is* still open (a
+  read-set collision in `bookIds`, code not data, 0 documents affected) are in
+  `info/content-warnings.md` §9's *"THE OVER-SHARE ABOVE DOES NOT EXIST"* and
+  the rewritten §10 bullet.
+- **The signed-in round trip is no longer wholly unverified.** Both panels were
+  read on the live pages while signed in — `/work/249` shows *"Published sources
+  have been checked for this book and listed none"*, `/work/250` shows no
+  published line and names *"Space Knight, Book 2"* as its write spelling. ⚠️
+  The **write** half (adding and deleting a note) is still unexercised; only the
+  read path and the derived keys were confirmed.
+
 ## 📌 foliate-js pinned to a commit — ✅ DONE 2026-08-17 (viewer phase 2)
 
 **Moved whole from `TODO.md`'s tech-debt list, not summarised.** The item as it
