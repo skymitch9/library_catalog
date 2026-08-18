@@ -306,6 +306,17 @@ It is deliberately the dullest thing in the design:
 - **Stateless.** The browser sends the message array; the Worker attaches the
   system prompt and the tool definitions from `@lc/core` and returns the model's
   response. No conversation is persisted in v1 beyond §7's usage row.
+  > ⚠️ **SUPERSEDED 2026-08-18 — see [`gabi-panel-v2.md`](gabi-panel-v2.md).**
+  > Half of this still holds and half is the feature that changed. The browser
+  > still sends the message array and the *loop* is still stateless: one call,
+  > no `waitUntil`, no retry, and the tool round-trips still happen in the tab.
+  > But the Worker now keeps a **30-minute rolling window** of what was said
+  > (`gabi_conversation`, migration 0350) and prepends the part a *returning*
+  > tab was not present for. The shape and the limits are not this repo's — they
+  > come from `@platform/gabi-conversation`, the same module GABI's Discord
+  > surface reads, because the owner's ask was that upgrades land once for both.
+  > Everything else on this list is unchanged, including "one call" and the
+  > turn ceiling, and there is still exactly **one route**.
 - **One call. No loop, no `waitUntil`, no retry.** `maxRetries: 0`, same as
   `researchDetails`, for the same reason: a retried turn is double spend on an
   answer that may already have landed.
@@ -891,6 +902,18 @@ following phase, ahead of the write phases. Two things that carry forward:
    the last one for free, which is exactly why phase 0 did not need to build it.
    Shape **(b)**, propose-and-deep-link, needs none of the four and is what
    "right after" should mean unless the owner says otherwise.
+   > ⚠️ **SUPERSEDED 2026-08-18, and by a route nobody predicted here.** All
+   > four were answered — **in the other repo**. GABI's Discord surface shipped
+   > in `catalog-platform/apps/discord-worker` (the `/link` binding is the
+   > `app_user` join; the gateway object is the token custody and the persisted
+   > state; deferred interaction responses are built), and the delegated verbs
+   > call **into** this Worker rather than this repo growing a Discord front
+   > end. Blocker 4 then travelled back the other way: the conversation store
+   > that repo built for Discord is now **this panel's memory too**, shared as a
+   > module — see [`gabi-panel-v2.md`](gabi-panel-v2.md) and
+   > `docs/access/gabi-delegated.md`. The recommendation "build the panel first"
+   > was right; the assumption that a Discord surface would be built *here* was
+   > not.
 
 ---
 

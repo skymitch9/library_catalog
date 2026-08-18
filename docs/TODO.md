@@ -90,6 +90,24 @@ real work. New debt goes HERE, never scattered.
     measured conversation so far ran against the MAIN catalog's data on the
     OWNER'S key through the dev worker. Nobody has talked to GABI on her site,
     on her key, about her books. That is the acceptance test.
+  - ⚠️ **THE MEMORY'S ACCEPTANCE TEST IS THE SAME SHAPE, AND ALSO UNRUN.**
+    Panel v2 shipped 2026-08-18 to both instances — the panel now uses GABI's
+    conversation substrate, shared with Discord
+    ([`info/gabi-panel-v2.md`](info/gabi-panel-v2.md)). Everything below the
+    model call is proven by tests and by direct SQL against both databases;
+    **nobody has held a real conversation, closed the tab, come back inside
+    half an hour and seen her continue it.** Script:
+    1. <https://library.heygabi.ai> (or `padhard.heygabi.ai`) → speech bubble →
+       ask *"what do we know about Unsouled?"* and let her answer.
+    2. **Close the tab.** Open a new one, same site, same account, within
+       30 minutes. Ask *"and what was the last thing I asked you?"*
+    3. Expected: she answers from the earlier exchange, and the panel shows
+       *"Picking up where you left off — GABI still has the last 2 things said
+       here…"* above the answer.
+    4. Wait past 30 minutes and repeat step 2. Expected: she does **not**
+       remember, and the line does not appear.
+    ⚠️ Step 4 is the half that is easy to skip and the one that proves the
+    privacy posture rather than the feature.
   - **💬 Discord DM is the NEXT phase** (owner, 2026-08-17: *"we can do
     discord right after"*) — promoted ahead of the write phases. Two of the
     three parts already exist and are front-end-agnostic (`GABI_TOOLS`, the turn
