@@ -386,7 +386,17 @@ our shared view), and answering that first will change what gets deployed.
 Related: the combined-site architecture already sketched for our own three
 catalogs.
 
-## 📸 Owner note — Illumicrate edition photos (2026-08-14)
+## 📸 Owner note — Illumicrate edition photos (2026-08-14) — ⚠️ THE DASHBOARD NAG IS GONE, THIS NOTE IS NOW THE ONLY REMINDER
+
+> **2026-08-18 (~14:15 Phoenix), owner order: "yes remove the need cover but
+> keep it in our todolist."** Works 224–228 had `cover_status = 'standin'`
+> cleared to NULL (art unchanged, 5 change_log rows, batch
+> `illumicrate-standin-clear-20260818`) so `/?needs=cover` measures **0**.
+> The stand-in flag was the reminder mechanism — with it gone, THIS section
+> is the reminder of record. When the photos are taken: each work page →
+> Cover panel → upload; every prior cover stays selectable in the
+> "Choose from known covers" grid forever (content-addressed R2 + audit
+> history), so nothing about the interim art is lost.
 
 The Percy Jackson ILLUMICRATE editions need their own photos added as
 edition/cover images — the audiobook covers now being pulled are the standard
