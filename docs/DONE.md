@@ -17,6 +17,369 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## 📸 THREE BOOKS WANTED THE OWNER'S OWN PHOTOGRAPH — ✅ ALL THREE CLOSED 2026-08-18
+
+Moved whole from [`TODO.md`](TODO.md). Recorded 2026-08-14/18 as an owner
+photograph pass over `/?needs=cover`; **all three rows are now off that list**,
+by three different routes, none of them a photograph.
+
+**Measured in production D1 2026-08-18, after the cleanup pack:**
+
+| # | Book | How it closed | Evidence |
+|---|---|---|---|
+| **376** | Doctrine and Covenants / Pearl of Great Price | **Resolved.** The Real-ESRGAN upscale was accepted and `cover_status` went `standin` → `ok`. | `change_log` **1001**, `changed_how = 'human'`, `changed_by` 1, **13:51:00** |
+| **382** | The Holy Bible | **Resolved.** The 1805 KJV stand-in was accepted and `cover_status` went `standin` → `ok`. | `change_log` **1184**, `changed_how = 'human'`, `changed_by` 1, **15:41:43** |
+| **439** | Calvin and Hobbes boxed set | **Gone — deleted as a phantom set** in the shelf pass. | `change_log` **1148** |
+
+⚠️ **382's flip carries NO note, and it is the single most recent write in
+the whole audit log (id 1184, after the cleanup pack's 1183).** What is
+measured is that a human accepted the stand-in, which takes the row off
+`NEEDS_COVER`. What is **NOT verified** is *why* — whether the owner decided
+the stand-in is good enough permanently, or merely cleared the flag. **If his
+own photograph of the 1805 Bible is still wanted, this row will no longer ask
+for it**, because nothing on the needs-cover surface tracks it any more. Worth
+one question rather than an assumption. 376's flip (1001) is equally
+unannotated but far less ambiguous: the upscale was the thing he asked for.
+
+⚠️ **The Illumicrate Percy Jackson photos are a DIFFERENT, still-open item**
+and did not move with this one — see `TODO.md`.
+
+The record as it stood while the item was open follows, unedited:
+
+---
+
+`/?needs=cover` is the surface; it holds **8** works, and three of them are
+photo jobs rather than research jobs:
+
+| # | Book | Why it is on the list |
+|---|---|---|
+| **376** | *The Doctrine and Covenants / The Pearl of Great Price* | ⚠️ **Has a cover and still wants a better one.** The live image is this edition's **genuine** jacket (AbeBooks, ISBN 9781591565604) but the only copy that exists anywhere is **213×290**. Real-ESRGAN upscaled it to **639×870** and that is what renders now (`…-bad854eb05c8ede6.jpg`; the 213×290 original is preserved at `…-568492185ac13a7d.jpg` and still served). Owner's words: *"Keep small cover, can we maybe use a service to upscale? Mark it for cover upload too."* |
+| **382** | *The Holy Bible* | ⚠️ **Now carries a same-translation STAND-IN, so it still wants the owner's photograph.** No rung can reach this row (hand-typed 1805, no ISBN, no author, no edition), and nothing in the row or its description names a translation — an English Bible printed 1805 is the King James / Authorized Version by overwhelming likelihood. Applied 2026-08-18 on the owner's instruction *"Use any bible photo as long as it's the same version translation as ours."*: the **title page of an actual 1805 KJV** (Morris-Town, N.J., Mann and Douglass; Library of Congress scan, [archive.org/details/holybiblecontain00unse_18](https://archive.org/details/holybiblecontain00unse_18) leaf 9), rehosted to R2 as `…holy-bible-unknown-2cb82b7d18deab63.jpg`. The page's own wording — *"translated out of the original tongues, and with the former translations diligently compared and revised"* — **is** the Authorized Version formula, so the image evidences its own translation. `cover_status='standin'` per 0040. Owner can correct if his copy is rarer (Douay-Rheims etc.). |
+| **439** | *Calvin and Hobbes* boxed set | No cover any rung can reach. |
+
+⚠️ **376 carries `cover_status = 'standin'` for the MACHINERY, not for the
+word.** `coverNeeded` / `NEEDS_COVER` are `cover_url IS NULL OR cover_status =
+'standin'`, so that value is the *only* one that keeps an image rendering while
+keeping the book on the "cover needed" list — migration 0040's Illumicrate
+trick, used here for a different reason. **The cover is not the wrong book.**
+
+⚠️ **Known copy gap, deliberately not fixed here.** `CoverPanel` states the
+stand-in case as *"the image above is not this book's own cover"*, which is
+false for 376 — the schema has no value for "right cover, too small". Either a
+fourth `cover_status` (`'lowres'`, feeding the same `NEEDS_COVER`) or softer
+panel copy would close it; both touch `apps/web` and were left to whoever owns
+those files.
+
+## 🧹 THE CLEANUP PACK — ✅ DONE 2026-08-18
+
+Owner approved verbatim: *"Yes to the clean up pack"*. Four items, each of
+which had been left open by an earlier pass **on purpose** rather than missed.
+
+### 1. Work 435 — the withdrawn verdict
+
+`gap_verdict` 249 recorded `seriesIndex = 'unknown'` (run 594, `decided_how
+auto`), sourced to Goodreads numbering that contradicts itself — #0 in one
+place, #1 in another. The owner had already ruled on it during the shelf pass:
+**"Author says 0 it's 0"**, recorded as `change_log` 1130/1131
+(`seriesIndexDisplay "0"`, `seriesIndexSort 0`). The verdict was therefore
+**superseded, not wrong-at-the-time**, and was withdrawn the way the queue's
+own Undo does it: `DELETE` guarded on `decided_how = 'auto'`, plus
+`research_finding` 1065 marked `rejected` (`reviewed_by` NULL, `decided_how`
+human) — the pair `revertFinding` writes.
+
+⚠️ **Recorded by hand as `change_log` 1181, because
+`deleteGapVerdict`/`deleteAutoVerdict` write no `change_log` row at all.** A
+verdict can otherwise vanish leaving no trace that it ever existed, which is
+the shape of bug that makes a later audit unable to tell "never decided" from
+"decided and withdrawn".
+
+### 2. Work 435 — the title de-decorated, as a key move
+
+`"Naiya and the Foxdragon (The Isles of Antarah, #1)"` → **`"Naiya and the
+Foxdragon"`** (`change_log` 1182, `work_key` move 1183).
+
+The stripped parenthetical is a **Goodreads-style listing decoration, not part
+of the title**: Goodreads `/book/show/50498354` renders `<h1>Naiya and the
+Foxdragon</h1>` and labels the volume **#0**, and Google Books volume
+`XxaPzQEACAAJ` — the source of this work's stored `cover_url` — also says #0.
+So the stored `#1` was **wrong twice over**, and the series already lives in
+`work.series` where it belongs. Read live 2026-08-18.
+
+**Treated as a migration, not an edit**, because `title` derives `work_key` and
+`bookIdFromTitle`. Measured before the write: **28 Firestore probes
+(positive-controlled) and every title-keyed D1 table returned zero.** Nothing
+to carry, nothing to orphan, so **no `work_alias`** — the same test
+`scripts/strip-mm-suffix.mjs` applies, and the `work_key` note is exactly
+`reviews restamped: 0` for the reason set out in the title-migration entry
+below.
+
+**Not verified:** Open Library has nothing for ISBN 9781734774511 or for the
+title, and the Google Books API was quota-exhausted at the time of the write.
+The two sources above are what the call rests on. `series` untouched.
+
+### 3. Sun and the Star resolves — the fourth Riordanverse label
+
+`catalog-platform` **`e9df6a0`** adds `"The Nico di Angelo Adventures"` to
+Riordanverse. `a7beeba` had left this one open **deliberately** — it was not in
+that brief — and the cleanup pack names it as item 4, so it is owner-approved
+and closed.
+
+⚠️ **NOT a spelling fold.** The two labels share no words, so
+`normaliseUniverseText` could never bridge them; it is an add-series in the
+shape `The Trials of Apollo` took in `a7beeba`. It differs in the direction
+that matters: **no new book enters the universe**, because work 456 was already
+claimed under `"From the World of Percy Jackson"` — Riordanverse's own notes
+name it. What it adds is a forward claim on future Nico di Angelo Adventures
+volumes, which is correct: the imprint is Camp Half-Blood continuity by
+construction. `validate` clean, 43 fixtures pass.
+
+### 4. The backfill stamped 16 works
+
+`npm run backfill:universes -- --remote --commit`, after the two list commits.
+**Measured in production D1 2026-08-18, every row `universe_how = 'list'`:**
+
+| series (the D1 spelling) | works | universe |
+|---|---|---|
+| `Skyward` | 5 | **Cytoverse** |
+| `The Heroes of Olympus` | 5 | **Riordanverse** |
+| `The Trials of Apollo` | 5 | **Riordanverse** |
+| `The Nico di Angelo Adventures` | 1 | **Riordanverse** |
+| | **16** | |
+
+Every one of these resolved to **no universe** before the two commits. The
+backfill touches nothing where `universe_how = 'human'`, including
+`universe IS NULL AND universe_how = 'human'` — a person saying *this book is
+in no verse* — which is the whole reason the `how` column exists.
+
+⚠️ **The backfill writes NO `change_log` rows**, by design: it is a machine
+re-resolution, not a decision. So its work is evidenced by the resulting state
+above and by the script's own output, not by the audit log. Anyone auditing
+this later should count rows, not look for entries.
+
+---
+
+## 📚 THE SHELF PASS — ✅ DONE 2026-08-18
+
+The owner walked the physical shelf and relayed what the covers actually say.
+Seven strands, all of which needed the object in hand rather than a lookup.
+
+### 1. Fourteen volume numbers, read off the covers
+
+`changed_how = 'human'`, note `"owner read the cover (2026-08-18 shelf pass,
+relayed)"` — `change_log` 1002 and 1118–1131.
+
+| work | book | number |
+|---|---|---|
+| 389 | Fletch's Fortune | Book 3 |
+| 436 | Calvin & Hobbes | 1 |
+| 440 | Yukon Ho! | 3 |
+| 441 | Weirdos from Another Planet | 4 |
+| 438 | The revenge of the baby-sat | 5 |
+| 437 | …Deranged Mutant Killer Monster Snow Goons | 7 |
+| 411 | Edgedancer | 2.5 |
+| 410 | Dawnshard | 3.5 |
+| 406 | Lyra's Oxford | 3.5 |
+| 444 | Harry Potter and the Cursed Child | 8 |
+| 456 | The Sun and the Star | 1 |
+| 408 | Treasures from grandma | 4 |
+| 390 | Blues Brothers | 1 |
+| 435 | Naiya and the Foxdragon | **0** |
+
+⚠️ **435's zero is a ruling, not a reading** — *"Author says 0 it's 0"* — and
+it settles `gap_verdict` 249, which had recorded `unknown` on the conflicting
+Goodreads #0/#1 numbering. It is the only row here that also moved
+`seriesIndexSort` (1131). The verdict itself was withdrawn in the cleanup pack
+above.
+
+### 2. The Harry Potter and Percy Jackson boxes — 10 member copies, 2 set rows retired
+
+Owner's order 2026-08-18: **"We need to break all the box sets up, that's a
+layer I don't want to deal with."**
+
+| set row | asked | answered | became |
+|---|---|---|---|
+| **443** Harry Potter Paperback Boxed Set (Books 1-5) | does the box duplicate the loose books? | **"2 a second set"** | 5 copies on works 347, 449, 448, 334, 447 |
+| **453** Percy Jackson boxed set | is this the Illumicrate set? | **"Percy Jackson is another set not the crate ones."** | 5 copies on works 224, 225, 226, 227, 228 |
+
+Both set rows are **deleted**; ten copies exist that did not before. The
+owner's two answers are what makes this addition rather than deduplication —
+the loose Harry Potter 1–7 plus Cursed Child were typed in during the
+2026-08-18 05:11–05:13 session and the box was typed in the same session as a
+separate object, and the five Percy Jackson works already carry the
+Illumicrate editions.
+
+⚠️ **The set barcode is not lost.** `9780439682589` is preserved in every
+member edition's `edition_name` and in the copy notes — the slipcase precedent
+from works 280, 298 and 349–355 (2026-08-13). An ISBN on a member row would
+claim the box's barcode belongs to one volume, which is false.
+
+⚠️ **A copy had to be removed before each work could be deleted**
+(`change_log` 1174 and the HP equivalent): the delete route refuses while any
+copy records property (`copyBlocksDeletion`; work **#139** is the lesson).
+Both were logged whole-row first, so the deletion is reversible from the audit
+log.
+
+**Not verified:** Open Library `/books/OL7514736M` (Scholastic, 1 Oct 2004)
+records **no** `physical_format` for the HP set; `paperback` was taken from the
+set's own title, which says Paperback.
+
+### 3. Work 439 deleted — a phantom set
+
+`"Calvin and Hobbes SET (Attack of the Deranged…)"` was hand-entered by title
+in the 2026-08-18 05:09 add session and was **alone among that session's
+set-shaped rows in carrying NO edition and NO ISBN**. The four titles it named
+are all accounted for elsewhere: 437 Snow Goons, 438 Revenge of the Baby-Sat,
+440 Yukon Ho! as their own rows, and *Something Under the Bed Is Drooling*
+owned only inside the treasury at work 425. Owner ruling: **"I don't own any
+more Calvin and Hobbes that aren't scanned. Use the omnibuses."**
+`reviews_seen_count` was 0, observed 2026-08-18 14:07:57.
+
+⚠️ **Cascade casualties the delete route does NOT log, recorded by hand in
+`change_log` 1148:** `work_watch` #5 (resolved first — its note read *"RESCAN
+THIS ROW… Check the physical object, then retitle this row to what it really
+is or remove it"*, which this pass is the answer to), 1 `gap_verdict`, and 2
+`research_run` rows. Copy 351 was removed first and logged whole-row.
+
+### 4. The treasuries say what they contain
+
+Two `work_relation` `contains` rows — **425 → 436** and **426 → 438** — plus
+`edition.collects` prose on editions 549 and 550.
+
+⚠️ **The prose is not redundant with the relation; it carries what the relation
+structurally cannot.** `work_relation.to_work_id` is `NOT NULL REFERENCES
+work(id)`, so a member with no work row of its own **cannot be named by a
+relation at all** — and minting an ownerless work to satisfy the link would put
+a book on the shelf that is not there. So *Something Under the Bed Is Drooling*
+(inside 425) and *Scientific Progress Goes "Boink"* (inside 426) live in
+`collects` as sentences. Same idiom as edition 191 and the White Sand omnibus
+in migration 0060.
+
+### 5. Work 426's author — a key move
+
+`"William Patterson"` → **`"Bill Watterson"`** (`change_log` 1132).
+
+"William Patterson" was never the author of any Calvin and Hobbes book, and
+**the row's own description — auto-filled 2026-08-18 05:22:45 — already named
+Watterson**. Open Library gives ISBN 9781449437077 the same title with
+Watterson as author (`/books/OL26682030M`). The other treasury typed in the
+same minute (work 425) was filed under Bill Watterson correctly, so this is a
+**single mistyped row, not a systematic import** — worth stating, because the
+two conclusions call for very different follow-up.
+
+⚠️ **This MOVES `work_key`** (it is derived from author as well as title).
+The **title is unchanged**, so every `bookIdFromTitle`-derived Firestore
+document id — `reviews`, `readingLists`, `user_content_warnings` — is
+untouched. The two halves of the key surface move independently; this is the
+case where only one does.
+
+### 6. Four Calvin and Hobbes editions backfilled from Open Library
+
+| work | ISBN | Open Library | source |
+|---|---|---|---|
+| 437 Snow Goons | 9780836218831 | `/books/OL24300482M` | Andrews McMeel 1992, **Paperback**, 128pp |
+| 438 Revenge of the Baby-Sat | 9780836218664 | `/books/OL1898651M` | Andrews and McMeel 1991, 127pp |
+| 440 Yukon Ho! | 9780836218350 | `/books/OL2070394M` | Andrews and McMeel 1989, 126pp |
+| 441 Weirdos from Another Planet | 9780836218626 | `/books/OL2229702M` | Andrews McMeel 1990, **Paperback**, 127pp |
+
+⚠️ **Not verified, and marked as such in the rows themselves:** Open Library
+records **no `physical_format`** for 438 and 440. Both were recorded as
+`paperback` — the format Andrews McMeel published these collections in —
+**inferred, NOT read off the object.** 441's ISBN was researched during this
+pass; the brief carried none.
+
+### 7. Three universe spellings, so the split box sets resolve
+
+`catalog-platform` **`a7beeba`**. The box-set split turned five set rows into
+fifteen works, and fifteen of them landed with **no universe**, because the
+series strings D1 stores are not the strings the shared list spells.
+
+| universe | added | kind |
+|---|---|---|
+| Riordanverse | `"The Heroes of Olympus"` | spelling of `"Heroes Of Olympus"` |
+| Riordanverse | `"The Trials of Apollo"` | ⚠️ **NEW membership, not a spelling** |
+| Cytoverse | `"Skyward"` | spelling of `"The Skyward Series"` |
+
+⚠️ **`normaliseUniverseText` keeps leading articles ON PURPOSE**, so
+`"Heroes Of Olympus"` could never match `"The Heroes of Olympus"` — the fix is
+to **add the sibling spelling, never to override the owner's**. The Trials of
+Apollo is flagged as a membership call rather than a fold because the series
+was not on the list under any spelling; it is Camp Half-Blood continuity, the
+same claim already made for the three listed series. `validate` clean, 43
+fixtures pass. Consumers pick it up on their next build — this repo's
+`prebuild` / `pretest` / `pretypecheck` sync.
+
+---
+
+## 🔑 TWO TITLE-CORRECTION MIGRATIONS (works 428, 390) — ✅ DONE 2026-08-18
+
+Owner confirmed, verbatim: *"Confirm"*, after the details fill surfaced two
+works filed under a string that was not the book's title.
+
+| work | was | now | ISBN | evidence |
+|---|---|---|---|---|
+| 428 | `A Series of Unfortunate Events` (the SERIES name) | **The Miserable Mill** | 9780064407694 | HarperCollins/lemonysnicket.com publish this ISBN as *"A Series of Unfortunate Events #4: The Miserable Mill"*; `research_finding` 1019/1021 (run 550, tier **official**). The description already in D1 was the real book's. |
+| 390 | `Drake And Josh: Chapter Book` (the imprint descriptor) | **Blues Brothers** | 9780439831628 | Open Library gives this ISBN the subtitle *"Blues Brothers (Teenick)"*; Scholastic Teenick chapter book **1**. `research_finding` 989/990 (run 523). |
+
+⚠️ **Work 391 (`Sibling revelry`, 9780439831635, Drake & Josh #2) is a
+DIFFERENT book and was not touched** — verified unchanged before and after.
+
+### Treated as a migration, not an edit
+
+`title` derives `work_key` (the Firestore review bridge) and
+`bookIdFromTitle(title)` (the doc-id half of `reviews`, `readingLists`,
+`user_content_warnings`). The whole dependent surface was **measured before the
+write**, and every title-keyed store was empty:
+
+* D1 per work — `user_book` 0, `work_alias` 0, `work_relation` 0,
+  `audiobook_holding` 0, `ebook_holding` 0, `work_watch` 0, `gap_verdict` 0.
+  (`edition`/`copy`/`research_finding`/`change_log` rows exist but hang off
+  `work_id` and are title-blind.)
+* Firestore, live over the REST API on both lanes of `reviews`,
+  `readingLists`, `user_content_warnings` and `cw_requests` — **0 documents**
+  under the old bookId, the new bookId, the old workKey or the new workKey.
+  Probes positive-controlled against a known-populated key first, so the zero
+  is measured, not a broken query.
+* `keyMoveEvidence` said no reviews for either work (428 even carried a live
+  browser check: `reviews_seen_count = 0` at 2026-08-18 06:21:49).
+
+So there was nothing to carry and nothing to orphan — the same test
+`scripts/strip-mm-suffix.mjs` applies.
+
+### ⚠️ No `work_alias` was left behind, deliberately
+
+The repo's alias-over-orphan pattern exists to keep an OLD KEY resolving. Here
+nothing resolved to the old strings (0 documents, 0 aliases, 0 holdings), and
+both old strings are **generic**: `A Series of Unfortunate Events` is the series
+name (aliasing it to book 4 would capture books 1–13 on any future ingest) and
+`Drake And Josh: Chapter Book` is the imprint descriptor shared with work 391.
+`work_alias` is read by ingest, scan-jobs, enrich and the audiobook matcher, so
+either alias would have been a mis-match waiting to happen. Say so out loud if
+one is ever wanted anyway — it is one INSERT.
+
+### ⚠️ The `work_key` change_log note is EXACTLY `reviews restamped: 0`
+
+`keyMoveEvidence` counts a carried move as
+`note LIKE 'reviews restamped: %' AND note <> 'reviews restamped: 0'`.
+Appending any explanation to that string would make a zero-review move look
+like evidence that reviews exist, and would raise the evidence floor against
+the next legitimate move. The rationale therefore lives on the `title` row's
+note instead. Four `change_log` rows written, two per work, one `batch_id`
+each — the shape `updateWork` writes.
+
+### Verified live
+
+`/work/428` renders **The Miserable Mill** with the description that already
+made sense for it; `/work/390` renders **Blues Brothers**; `/work/391` still
+`Sibling revelry`. `/series/Drake & Josh` reads *1 Blues Brothers, 2 Sibling
+revelry*; `/series/A Series of Unfortunate Events` now reads *book 4 = The
+Miserable Mill* with 1–3 as gaps instead of the series name occupying slot 4.
+Content-notes and reviews surfaces answer on both pages. The estate index
+re-pushed at 13:44:16Z, after the 13:42:05Z write.
+
+**Not fixed, noticed in passing:** work 390 has `series_index_sort = 1` but
+`series_index_display = NULL`, so its page shows "Drake & Josh" with no number
+while 391 shows "2". Cosmetic, moves no key.
+
 ## 📖 "RECENTLY ADDED" IS THE PHYSICAL SHELF — ✅ DONE 2026-08-18
 
 Owner ask, verbatim: *"in the library site its showing recently added for

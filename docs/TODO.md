@@ -391,29 +391,31 @@ and upload via each work's cover UI (Replace cover / the edition row).
 Owner's words: "Leave me a note somewhere to add the illumicrate editions
 photos."
 
-## 📸 Owner note — three books want the owner's own photograph (2026-08-18)
+## 🖼️ The needs-cover list is now the box-set split's offspring (2026-08-18)
 
-`/?needs=cover` is the surface; it holds **8** works, and three of them are
-photo jobs rather than research jobs:
+⚠️ **All three of the 2026-08-18 photo jobs are CLOSED** — moved whole to
+[`DONE.md`](DONE.md). What is left on `/?needs=cover` is a different, larger
+job created by the box-set split.
 
-| # | Book | Why it is on the list |
+**Measured in production D1, 2026-08-18 (after the cleanup pack): 26 works.**
+
+| Group | works | state |
 |---|---|---|
-| **376** | *The Doctrine and Covenants / The Pearl of Great Price* | ⚠️ **Has a cover and still wants a better one.** The live image is this edition's **genuine** jacket (AbeBooks, ISBN 9781591565604) but the only copy that exists anywhere is **213×290**. Real-ESRGAN upscaled it to **639×870** and that is what renders now (`…-bad854eb05c8ede6.jpg`; the 213×290 original is preserved at `…-568492185ac13a7d.jpg` and still served). Owner's words: *"Keep small cover, can we maybe use a service to upscale? Mark it for cover upload too."* |
-| **382** | *The Holy Bible* | ⚠️ **Now carries a same-translation STAND-IN, so it still wants the owner's photograph.** No rung can reach this row (hand-typed 1805, no ISBN, no author, no edition), and nothing in the row or its description names a translation — an English Bible printed 1805 is the King James / Authorized Version by overwhelming likelihood. Applied 2026-08-18 on the owner's instruction *"Use any bible photo as long as it's the same version translation as ours."*: the **title page of an actual 1805 KJV** (Morris-Town, N.J., Mann and Douglass; Library of Congress scan, [archive.org/details/holybiblecontain00unse_18](https://archive.org/details/holybiblecontain00unse_18) leaf 9), rehosted to R2 as `…holy-bible-unknown-2cb82b7d18deab63.jpg`. The page's own wording — *"translated out of the original tongues, and with the former translations diligently compared and revised"* — **is** the Authorized Version formula, so the image evidences its own translation. `cover_status='standin'` per 0040. Owner can correct if his copy is rarer (Douay-Rheims etc.). |
-| **439** | *Calvin and Hobbes* boxed set | No cover any rung can reach. |
+| Illumicrate Percy Jackson | 224, 225, 226, 227, 228 | `standin`, image renders — the original migration 0040 case, still waiting on the owner's photos (see the section above) |
+| **Box-set split offspring** | 412, 419, 454, 455, 462–473 | **`cover_url IS NULL`** — the set rows' covers were the BOX and were cleared on purpose |
+| A Court of Thorns and Roses | 325, 458, 459, 460, 461 | `cover_url IS NULL` |
 
-⚠️ **376 carries `cover_status = 'standin'` for the MACHINERY, not for the
-word.** `coverNeeded` / `NEEDS_COVER` are `cover_url IS NULL OR cover_status =
-'standin'`, so that value is the *only* one that keeps an image rendering while
-keeping the book on the "cover needed" list — migration 0040's Illumicrate
-trick, used here for a different reason. **The cover is not the wrong book.**
+⚠️ **The 20 NULL-cover rows are not a regression.** When a set row was split,
+its `cover_url` was cleared deliberately — *"the image was the box, not this
+novel"* (`change_log` 1053 and siblings) — and the volumes minted beside it
+never had one. These are ordinary covers-flow work: they have ISBNs or
+resolvable titles, so the normal rungs should reach most of them. **Nobody has
+run the covers backfill over them yet.**
 
-⚠️ **Known copy gap, deliberately not fixed here.** `CoverPanel` states the
-stand-in case as *"the image above is not this book's own cover"*, which is
-false for 376 — the schema has no value for "right cover, too small". Either a
-fourth `cover_status` (`'lowres'`, feeding the same `NEEDS_COVER`) or softer
-panel copy would close it; both touch `apps/web` and were left to whoever owns
-those files.
+**Next step:** `npm run backfill:covers` / `backfill:missing-covers` against
+these 20, then re-measure. The five Illumicrate rows must NOT be swept into
+that — they already render and are waiting on a photograph, not a lookup.
+
 
 ---
 
