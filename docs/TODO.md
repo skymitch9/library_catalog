@@ -373,6 +373,30 @@ and upload via each work's cover UI (Replace cover / the edition row).
 Owner's words: "Leave me a note somewhere to add the illumicrate editions
 photos."
 
+## 📸 Owner note — three books want the owner's own photograph (2026-08-18)
+
+`/?needs=cover` is the surface; it holds **8** works, and three of them are
+photo jobs rather than research jobs:
+
+| # | Book | Why it is on the list |
+|---|---|---|
+| **376** | *The Doctrine and Covenants / The Pearl of Great Price* | ⚠️ **Has a cover and still wants a better one.** The live image is this edition's **genuine** jacket (AbeBooks, ISBN 9781591565604) but the only copy that exists anywhere is **213×290**. Real-ESRGAN upscaled it to **639×870** and that is what renders now (`…-bad854eb05c8ede6.jpg`; the 213×290 original is preserved at `…-568492185ac13a7d.jpg` and still served). Owner's words: *"Keep small cover, can we maybe use a service to upscale? Mark it for cover upload too."* |
+| **382** | *The Holy Bible* | No cover any rung can reach. |
+| **439** | *Calvin and Hobbes* boxed set | No cover any rung can reach. |
+
+⚠️ **376 carries `cover_status = 'standin'` for the MACHINERY, not for the
+word.** `coverNeeded` / `NEEDS_COVER` are `cover_url IS NULL OR cover_status =
+'standin'`, so that value is the *only* one that keeps an image rendering while
+keeping the book on the "cover needed" list — migration 0040's Illumicrate
+trick, used here for a different reason. **The cover is not the wrong book.**
+
+⚠️ **Known copy gap, deliberately not fixed here.** `CoverPanel` states the
+stand-in case as *"the image above is not this book's own cover"*, which is
+false for 376 — the schema has no value for "right cover, too small". Either a
+fourth `cover_status` (`'lowres'`, feeding the same `NEEDS_COVER`) or softer
+panel copy would close it; both touch `apps/web` and were left to whoever owns
+those files.
+
 ---
 
 ## Legend
