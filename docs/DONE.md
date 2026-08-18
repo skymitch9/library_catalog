@@ -17,6 +17,49 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## 📌 Copy trimmed across the web app — ✅ DONE 2026-08-17
+
+**Estate-wide ask, landed the session it was raised, so it never sat in
+`TODO.md`.** The owner, verbatim:
+
+> *"Let's trim text like this all over each of the sites. Only keep what's
+> mandatory and keep all the text short and useful"*
+
+Raised after he trimmed heygabi.ai/admin's header himself ("I think what we have
+is self explanatory"); `catalog-platform` commit `204fb9d` is the precedent this
+followed — prose out, home-of-record named in a comment beside the cut, string
+pins updated in the same commit.
+
+**Trimmed here** (8 blocks, 323 → 196 visible words, −39%):
+`apps/web/src/pages/DetailsQueuePage.tsx` (the "four questions" intro, the
+lookup-writes notice, the spend footnote, the answered-vs-to-ask definition),
+`apps/web/src/pages/ExportPage.tsx` (backup, spreadsheet and privacy notes),
+`apps/web/src/pages/ScanPage.tsx` (the camera refusal — only the repo path
+`docs/info/ios-camera.md` came out, which meant nothing to somebody reading it
+on a phone).
+
+**Deliberately NOT trimmed, and the reason is the rule:** every empty state
+(`TbrPage`, `WishlistPage`, `SeriesPage`, `ScanJobsPage`, `CollectionPage`,
+`Accessories`, `Aliases`, `Copies`, `Watches`, `CoverPanel`, `CoverSwap`,
+`Related`), every worded refusal and gate (`App.tsx`'s signed-out and
+waiting-for-approval screens, `PeoplePage`'s read-only notice and pending
+banner, `EstateSearch`'s degraded-search sentence), the cross-site honesty lines
+(`Tbr`, `Reviews`, `CollectionPage`'s read-sync notice), the per-photo cost
+disclosure on `ScanPage`, and the "flattened view, not the database" and
+"estimate is tokens only" markers. A short refusal is not padding.
+
+**Pins:** none. `apps/web/test/*.ts` pins refusal and error wording
+(`content-notes`, `errors`, `ebook-shadow`, `gabi-executor`) — none of it
+touched. Grepped every removed string across `apps/`, `packages/` and `scripts/`
+before cutting; no assertion named any of them. 1,166 tests pass, typecheck
+clean, UTF-8 sweep clean.
+
+⚠️ **Both instances need a deploy.** The two hosts run separate Workers built
+from the same `apps/web/dist` (see [`access/second-instance.md`](access/second-instance.md)),
+so `npm run deploy` reaches `library.heygabi.ai` and `npm run deploy:friend`
+reaches `padhard.heygabi.ai`. One code change, two deploys — a main-only deploy
+leaves padhard on the old copy.
+
 ## 📌 Content warnings unified across every edition and format — ✅ DONE 2026-08-17
 
 **New ask, landed the same session it was raised, so it never sat in

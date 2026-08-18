@@ -300,19 +300,30 @@ export function DetailsQueuePage({
       <p className="muted small">
         {/* Said plainly rather than left to be inferred from a long list. A page
             that quietly listed the whole catalog against every empty column
-            would look like a bug rather than a worklist. */}
-        Four questions are asked of every book, and only four. Everything else that is empty in
-        this catalog is either an answer already, or a fact about a printing we do not own —
-        see <em>what is not asked</em> below.
+            would look like a bug rather than a worklist.
+
+            ⚠️ TRIMMED 2026-08-17 on the owner's estate-wide order ("Let's trim
+            text like this all over each of the sites. Only keep what's
+            mandatory and keep all the text short and useful"). The dropped
+            clause said everything else empty is either an answer already or a
+            fact about a printing we do not own; the <em>what is not asked</em>
+            section below this page IS that explanation, in full, and is where
+            the reader was already being sent. */}
+        Four questions are asked of every book, and only four — see{' '}
+        <em>what is not asked</em> below.
       </p>
 
       {/* ⚠️ The page says what it is about to do to the catalog, before it does
           it. A screen that used to ask permission and now writes without asking
-          must not leave that change to be discovered. */}
+          must not leave that change to be discovered. This paragraph is a
+          CONSENT NOTICE, not an explainer: the 2026-08-17 trim shortened it but
+          did not remove it, and must never remove it. Dropped from it: that the
+          four fields are also editable on a book's own page — true, discovered
+          by going there, and stated in this file's header block (§ the lookup
+          fills the answer in) which is its home of record. */}
       <p className="muted small">
         A lookup <strong>fills the answer in</strong> — it does not ask first. Everything it
-        writes is listed under <em>Recently filled in</em> at the bottom, with an Undo beside
-        it, and every one of the four fields can be edited on the book&apos;s own page.
+        writes is listed under <em>Recently filled in</em> below, with an Undo beside it.
       </p>
 
       {error && <p className="notice notice--bad">{error}</p>}
@@ -329,10 +340,15 @@ export function DetailsQueuePage({
         </div>
         <p className="muted small">
           {/* Every figure above comes from `research_run`, not from this tab —
-              which is what makes it mean the same thing after a reload. */}
-          Counted from the run log, so it survives a reload. {data.model} at low effort; the
-          estimate is tokens only and does not include Anthropic's own charge for the web
-          searches.
+              which is what makes it mean the same thing after a reload.
+
+              The "tokens only" clause is an HONESTY MARKER on a MONEY figure
+              and survived the 2026-08-17 trim untouched: a spend estimate that
+              silently excludes a real charge must say so. Only the
+              survives-a-reload aside was dropped, and the comment above is its
+              home of record. */}
+          Counted from the run log. {data.model} at low effort; the estimate is tokens only
+          and excludes Anthropic&apos;s own charge for the web searches.
         </p>
       </section>
 
@@ -601,11 +617,18 @@ function GapSummary({ summary, field }: { summary: FieldGapCount[]; field: strin
       </table>
       <p className="muted small">
         {/* The distinction the whole feature turns on, stated where the numbers
-            are rather than in a doc nobody opens. */}
+            are rather than in a doc nobody opens — the DEFINITION stays, because
+            two column headings that look alike and mean different things are
+            unreadable without it.
+
+            Trimmed 2026-08-17 (owner's estate-wide trim). The dropped sentence
+            was the RATIONALE — keeping the two apart is what stops the catalog
+            paying to rediscover work it has already done — and its home of
+            record is packages/db/src/research.ts, which says the same thing at
+            the layer that enforces it. */}
         <strong>Answered</strong> means somebody looked and wrote down what they found — “this
         is a standalone”, “nobody knows” — with a source. It is not the same as{' '}
-        <strong>to ask</strong>, and keeping the two apart is what stops the catalog paying to
-        rediscover work it has already done.
+        <strong>to ask</strong>.
       </p>
     </section>
   );

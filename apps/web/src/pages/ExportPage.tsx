@@ -89,11 +89,15 @@ export function ExportPage() {
         <>
           <section className="panel">
             <h3>Backup</h3>
+            {/* Trimmed 2026-08-17 on the owner's estate-wide order ("Only keep
+                what's mandatory and keep all the text short and useful"). The
+                dropped half enumerated the tables; that inventory's home of
+                record is migrations/0001_init.sql, whose comments carry the
+                reasoning too. The migration stamp stays, because it is the fact
+                that decides whether a restore is safe. */}
             <p className="muted small">
-              Every row of every table — books, aliases, editions, copies, read-state, series
-              volumes and the links between books — with the list of applied migrations stamped on
-              it so a restore knows which schema it is looking at. <strong>This is the one to
-              keep</strong>, and the one worth taking before anything drastic.
+              Every row of every table, stamped with the applied migrations so a restore knows
+              which schema it is looking at. <strong>This is the one to keep.</strong>
             </p>
             <button className="primary" disabled={busy != null} onClick={() => void download('json')}>
               {busy === 'json' ? 'Building…' : 'Download JSON'}
@@ -102,21 +106,27 @@ export function ExportPage() {
 
           <section className="panel">
             <h3>Spreadsheet</h3>
+            {/* "flattened view, not the database" is an HONESTY MARKER and
+                stays: it is the only thing stopping this file being used as a
+                backup. Trimmed 2026-08-17 (owner's estate-wide trim) — the
+                Excel/Numbers/Sheets line went, since a .csv download needs no
+                introduction. */}
             <p className="muted small">
-              One row per book, with its formats, ISBNs, copies and your read-state flattened
-              beside it. Opens in Excel, Numbers or Sheets. It is a{' '}
-              <strong>flattened view, not the database</strong>: several editions collapse into one
-              cell, so it is for sorting and totting up rather than for rebuilding from.
+              One row per book — formats, ISBNs, copies and read-state flattened beside it. A{' '}
+              <strong>flattened view, not the database</strong>: several editions collapse into
+              one cell, so it is for sorting, not for rebuilding from.
             </p>
             <button disabled={busy != null} onClick={() => void download('csv')}>
               {busy === 'csv' ? 'Building…' : 'Download CSV'}
             </button>
           </section>
 
+          {/* The privacy claim is a thing the reader cannot check for himself,
+              so it stays. Only the "current as of that moment" restatement went
+              in the 2026-08-17 trim — the heading above already says it. */}
           <p className="muted small">
-            Both files are generated from the database when you press the button, so they are
-            current as of that moment. Nothing is stored on the server and nothing is sent
-            anywhere — the file goes straight to this device.
+            Generated when you press the button. Nothing is stored on the server and nothing is
+            sent anywhere — the file goes straight to this device.
           </p>
         </>
       )}

@@ -461,10 +461,13 @@ export function ScanPage({
     <main>
       {header}
 
+      {/* A worded REFUSAL with its way out — untouchable by the trim rule. The
+          2026-08-17 trim removed only the repo path (docs/info/ios-camera.md,
+          still the home of record for the HTTPS tunnel trick), which meant
+          nothing to the person reading it on a phone. */}
       {!cameraPlausible() && (
         <p className="muted small">
-          This browser will not give a camera to this page. It needs HTTPS — see
-          docs/info/ios-camera.md for the tunnel trick.{' '}
+          This browser will not give a camera to this page — it needs HTTPS.{' '}
           {mode === 'scan' ? 'You can still type an ISBN below.' : 'You can still pick a photo below.'}
         </p>
       )}
