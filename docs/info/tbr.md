@@ -1,7 +1,10 @@
 # Cross-catalog TBR — Information Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
-> Last verified: **2026-08-17** against `audiobook_catalog` at that date —
+> Last verified: **2026-08-18** (§8 — the account migration: live rules smoked
+> 17/17, the migration exercised end to end on the dev lane, prod measured
+> before and after). §§1–7 last verified **2026-08-17** against
+> `audiobook_catalog` at that date —
 > `app/web/templates/index.html` (the TBR button and the reading-list filter),
 > `site/community.html` (the per-person TBR count) and `firestore.rules`
 > (`validReadingList`, `/readingLists`, `/readingLists_dev`) were read line by
@@ -15,6 +18,23 @@
 > `2ff816f`, live on that site's `/dev/` lane (`/dev/reviews.js` fetched and
 > read, 2026-08-17), prod promote pending. §6 now describes the mechanism;
 > §7 says what about it is still unwatched.
+>
+> ## ⚠️ UPDATED 2026-08-18 — THE DOCUMENT ID CHANGED. READ §8 FIRST.
+>
+> The owner ordered *"Make tbr keyed to account"*. The id is now
+> `` `${uid}_${bookId}` ``, not `` `${displayNameLower}_${bookId}` ``.
+>
+> **Three statements below are SUPERSEDED and are kept only so nobody
+> re-derives them from scratch:**
+>
+> | Section | Said | Now |
+> |---|---|---|
+> | §1 table | id is `{displayNameLower}_{bookId}` | `{uid}_{bookId}` |
+> | §1 "No rules change was needed" | tightening `readingLists` would strand legacy sessions | half right — the rules DID change, and the legacy lane was kept open precisely so nothing was stranded |
+> | §2 "neither may be harmonised" | the id can never change | the ORDER never changed; the left-hand half did, via a migration |
+>
+> §2 was right that changing a persisted key orphans documents, and wrong
+> that this made the key permanent. The answer was to **migrate** them.
 
 The owner's ask, 2026-08-16:
 
@@ -42,9 +62,9 @@ button for a long time:
 | | |
 |---|---|
 | collection | `readingLists` (prod) / `readingLists_dev` (dev lane, via `col()`) |
-| document id | `` `${displayName.toLowerCase()}_${bookId}` `` |
+| document id | ⚠️ `` `${uid}_${bookId}` `` since 2026-08-18 — see §8. Was `` `${displayName.toLowerCase()}_${bookId}` ``, and 53 documents still are |
 | `bookId` | `bookIdFromTitle(title)` — the same slug the review store uses |
-| fields | `displayName, bookId, bookTitle, bookCover, status: 'tbr', addedAt` |
+| fields | `displayName, uid, bookId, bookTitle, bookCover, status: 'tbr', addedAt` |
 | readers | that site's own "Reading lists" filter, and `site/community.html`'s per-person TBR count |
 
 So this catalog did what `identity-and-reviews.md` §3 did for reviews: **joined
@@ -69,7 +89,7 @@ stamps its own covers, `padhard.heygabi.ai` stamps hers. Absolute,
 protocol-relative and `data:` values are passed through untouched, and anything
 unresolvable becomes `null` — a coverless entry is honest, a broken one is not.
 
-### ⚠️ No rules change was needed, and that is deliberate
+### ⚠️ No rules change was needed, and that is deliberate — SUPERSEDED 2026-08-18, see §8
 
 `validReadingList()` asserts `displayName`, `bookId` and `status` are strings
 and ignores unknown fields, exactly as `validReview()` does. `workKey`, `email`
@@ -91,15 +111,20 @@ for anyone on a legacy session.
 
 ```
 review        `${bookId}_${displayNameLower}`      site/reviews.js
-reading list  `${displayNameLower}_${bookId}`      app/web/templates/index.html
+reading list  `${uid}_${bookId}`                   app/web/templates/index.html
 ```
 
-Both are ported verbatim into `packages/core` (`reviewDocId`,
-`readingListDocId`) and **neither may be harmonised**. The id is the identity of
-documents that already exist in production; building one with the other's order
-files a second document beside somebody's real entry, and their button would
-disagree with this catalog forever. `packages/core/test/tbr.test.ts` asserts the
-two orders differ, so a well-meaning tidy-up fails a test instead of shipping.
+The **order** is still reversed and still must not be harmonised: building one
+with the other's order files a second document beside somebody's real entry, and
+their button would disagree with this catalog forever.
+`packages/core/test/tbr.test.ts` asserts the two orders differ, so a well-meaning
+tidy-up fails a test instead of shipping.
+
+⚠️ **What DID change, 2026-08-18: the left-hand half.** This section used to say
+the id could *never* change because it is the identity of documents that already
+exist. That reasoning was sound and its conclusion was wrong — the answer to
+"changing the key orphans the documents" is to **move the documents**, which is
+a migration and is exactly what happened. See §8.
 
 ---
 
@@ -285,3 +310,138 @@ removed; the owner's own pre-existing entry was not touched.
 - **Nobody without `trackReading` has visited.** The chip is hidden and `/tbr`
   answers "Not a page" for them by the same guard `/export` uses; that path was
   read, not exercised.
+
+---
+
+## 8. ⚠️ The TBR is keyed to the ACCOUNT — 2026-08-18
+
+The owner, in answer to the measured finding that a shared display name means a
+shared list:
+
+> *"Make tbr keyed to account"*
+
+### What was wrong
+
+```
+readingLists/{displayNameLower}_{bookId}
+```
+
+A display name is a string anybody can choose. Two members who pick the same one
+had **one document per book between them**: each saw the other's intentions on
+their own list, each could delete the other's, and nothing could tell them apart.
+`audiobook_catalog/firestore.rules` says so in its own header — *"no rule can
+bind a display name to a person"* — so this was never fixable with a rule. The
+key had to move, and moving a persisted key is a **migration**.
+
+```
+readingLists/{uid}_{bookId}      + a `uid` field
+```
+
+That id is `positionDocId` in `audiobook_catalog/site/reading-position.js`
+verbatim — the estate's uid-keyed precedent. No second idiom was invented.
+
+### ⚠️ The measurement that changed the design
+
+Taken live, 2026-08-18, before anything was written:
+
+| | |
+|---|---|
+| `readingLists` | **234** documents |
+| `readingLists_dev` | **0** — the dev lane has never held one |
+| migratable (name resolves to exactly one account) | **181** |
+| ambiguous (two accounts, one name) | **0** |
+| **unmappable** | **53** |
+| already account-keyed | 0 |
+
+**The 53 are one retired v1 passphrase account** (`users/…`, no Firebase
+identity at all). The migration **refuses to guess an owner** — a wrong guess
+puts somebody's reading list on another person's screen forever, and is
+invisible afterwards. They stay under the old id, and every one of them is
+`status: 'read'` rather than `'tbr'`, so **no live to-read entry was left
+behind**.
+
+### ⚠️ What actually maps a name to an account — and what does NOT
+
+The obvious candidates all fail, so they are written down here rather than
+re-tried:
+
+| Store | Result |
+|---|---|
+| `reviews` | 884 documents, **zero** carry an `authorUid` |
+| `user_content_warnings` (+`_dev`) | empty, both lanes |
+| `profiles` | ⚠️ the **doc id is the display NAME**, not a uid |
+| `site_roles` | ✅ doc id **is** the uid, and it carries a `displayName` |
+| Firebase Auth | ✅ the authoritative account list |
+
+### ⚠️ One collection, TWO models — told apart by the shape of the id
+
+`firestore.rules` now runs both at once. A **28-character alphanumeric** id head
+is an account; anything else is a legacy display name.
+
+| Lane | Write / delete |
+|---|---|
+| account-keyed | **owner only** — the id head must be the caller's uid, *and* the `uid` field must name the same account. Either half alone is a hole. |
+| legacy | shape-only, exactly as before — or those 53 become unreachable to the only person entitled to them |
+
+**Reads stay world-open**, deliberately and unchanged: three surfaces list this
+collection (this catalog's My TBR, the audiobook site's Reading-lists filter,
+`community.html`'s per-person counts). The order was to key the list to an
+account, and that is what fixes the reported bug — attribution is now exact, so
+a name-sharer's entries no longer land on your list and cannot be deleted by
+them. Making the collection unlistable is a larger, separate change.
+
+The predicate lives in three places and **they must agree**:
+`tbrIdIsUidKeyed` (firestore.rules), `isUidKeyedListId`
+(`audiobook_catalog/site/reviews.js`), and the 28-character constant in
+`migrate_tbr_to_uid.py`.
+
+### This catalog's side
+
+| File | Change |
+|---|---|
+| `packages/core/src/tbr.ts` | `readingListDocId(uid, bookId)`; `legacyReadingListDocId` added (read-only); `tbrDocFor` **requires** a `uid` and throws without one; **`ownsTbrDoc`** replaces `isMyReview` as the TBR ownership rule |
+| `apps/worker/src/routes/tbr.ts` | `uid` off the **verified token** (`user.firebaseUid`), never the body; `legacyDocId` rides along read-only; a uid-less account gets a worded `held`, not a 500 |
+| `apps/web/src/lib/reviews.ts` | `fetchMineFrom` gained a `where('uid','==',…)` query |
+| `apps/web/src/pages/TbrPage.tsx` | passes `currentUid()` — the live session, the same value the rules compare |
+| `apps/web/src/components/Tbr.tsx` | reads the account id, falls back to the legacy one, and deletes **whichever holds it** |
+
+⚠️ **`ownsTbrDoc` is NOT `isMyReview` and they are not interchangeable.** Reviews
+have no account key to prefer (884 documents, zero uids), so that store still
+uses the weak one. Applying the name fallback to an account-keyed TBR document
+would undo the whole migration while every other test still passed — pinned by
+its own test.
+
+### Removal condition for the legacy fallback
+
+Not "when it feels safe" — a number, from one command:
+
+```bash
+python scripts/migrate_tbr_to_uid.py --report   # in audiobook_catalog
+```
+
+When *uid-less documents remaining* prints **0**, delete
+`legacyReadingListDocId`, the `legacyDocId` field, the fallback read in
+`Tbr.tsx`, and the uid-less branch of `ownsTbrDoc`.
+
+### Verified
+
+- **Live rules smoke: 17/17** (`scripts/smoke_reading_list_rules.py`), asserting
+  both lanes — that another account cannot overwrite or delete your entry, that
+  the id and the `uid` field must agree, and that the legacy lane still works.
+- **Migration exercised end to end** on the dev lane against a replica of the
+  owner's real documents: 51/51 moved, his list **identical before and after**
+  (1 title, *Rise of the Living Forge*), prod untouched (234 documents, 0 uids).
+- Tests: audiobook 1,247 pytest + 712 vitest; library 1,178.
+
+### ⚠️ NOT done, and deliberately
+
+- **The 181-document prod move has NOT been applied.** It rides the audiobook
+  site's next promote, with the code that reads it. Applying it first would
+  leave the live site's per-book button reading an id that no longer exists.
+- **Browsing ANOTHER person's list is still name-addressed** (the audiobook
+  community page links by name, and nothing listable maps a name to an account).
+  That is a public read-only view of a world-readable collection: two
+  name-sharers' *public* lists read as one, but neither can write or delete the
+  other's. Closing it needs a listable name→account directory — a separate ask.
+- Nobody has exercised the signed-in flow in a browser on either instance since
+  the change; §7's untested list still applies.

@@ -42,6 +42,8 @@ export function Tbr({
   const [keys, setKeys] = useState<{
     collection: string;
     docId: string | null;
+    /** Read-only, and often absent. See heldId below. */
+    legacyDocId?: string | null;
     held?: string;
     doc: Record<string, unknown> | null;
   } | null>(null);
@@ -61,27 +63,52 @@ export function Tbr({
       .catch((err: unknown) => setError(describeError(err)));
   }, [workId]);
 
+  /**
+   * ⚠️ WHICH document holds this entry — which is not always where a new one
+   * would go (2026-08-18, "Make tbr keyed to account").
+   *
+   * The write target is always the ACCOUNT id. But an entry recorded before the
+   * migration reached it — and 53 documents it will never reach — lives under
+   * the old `{displayNameLower}_{bookId}` id. Reading only the account id would
+   * report "not on your list" for a book that is on it, and pressing Add would
+   * then file a SECOND document beside the person's real entry. Deleting the
+   * write target instead of the holder would be a silent no-op that left the
+   * book on the list.
+   *
+   * So: read the account id first (it wins whenever both exist), fall back to
+   * the legacy one, and remember which answered.
+   */
+  const [heldId, setHeldId] = useState<string | null>(null);
+
   useEffect(() => {
     if (!keys?.docId) return;
-    const { collection, docId } = keys;
+    const { collection, docId, legacyDocId } = keys;
     let live = true;
 
     void (async () => {
       try {
-        const entry = await getTbrEntry(collection, docId);
+        let entry = await getTbrEntry(collection, docId);
+        let holder = docId;
+        if (!entry && legacyDocId && legacyDocId !== docId) {
+          entry = await getTbrEntry(collection, legacyDocId);
+          holder = legacyDocId;
+        }
         if (!live) return;
         if (!entry) {
           setOn(false);
+          setHeldId(null);
           return;
         }
+        setHeldId(holder);
         // ⚠️ The clearing path. It runs on the read state as it stands, so it
         // catches a book that was marked read on a previous visit, or by the
         // whole-library sweep, or by a rating written on the audiobook site —
         // not only a press that happened while this component was mounted.
         if (readState === 'read') {
-          await removeFromTbr(collection, docId);
+          await removeFromTbr(collection, holder);
           if (!live) return;
           setOn(false);
+          setHeldId(null);
           setCleared(true);
           return;
         }
@@ -103,11 +130,17 @@ export function Tbr({
     setCleared(false);
     try {
       if (on) {
-        await removeFromTbr(keys.collection, keys.docId);
+        // Remove the document that actually HOLDS it — see heldId.
+        await removeFromTbr(keys.collection, heldId ?? keys.docId);
         setOn(false);
+        setHeldId(null);
       } else {
+        // ⚠️ Always the ACCOUNT id, never the legacy one. firestore.rules
+        // refuses a legacy-shaped id carrying a uid, so this cannot silently
+        // fall back into the display-name keying the migration removed.
         await addToTbr(keys.collection, keys.docId, keys.doc);
         setOn(true);
+        setHeldId(keys.docId);
       }
     } catch (err) {
       setError(describeError(err));

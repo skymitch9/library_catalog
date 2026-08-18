@@ -4,6 +4,7 @@ import { api, type Me, type TbrMatchView } from '../api.js';
 import { Cover } from '../components/Cover.js';
 import { audiobookDetailUrl, resolveAudiobookCover } from '../lib/audiobook-site.js';
 import { describeError } from '../lib/errors.js';
+import { currentUid } from '../lib/firebase.js';
 import { fetchMyTbr, removeFromTbr } from '../lib/tbr.js';
 import { Link, workPath } from '../router.js';
 
@@ -52,7 +53,17 @@ export function TbrPage({ me }: { me: Me }) {
     setError(null);
     try {
       const { collection } = await api.tbrCollection();
-      const entries = await fetchMyTbr(collection, me);
+      // ⚠️ THE ACCOUNT COMES FROM THE LIVE FIREBASE SESSION, not from `me`.
+      // Since 2026-08-18 ("Make tbr keyed to account") an entry is attributed
+      // by uid, and `currentUid()` is the same value `firestore.rules` compares
+      // against — so what this list shows and what the store would let this
+      // person delete can never disagree. `/api/me` carries no uid, and adding
+      // one there would be a second source for a fact the session already has.
+      //
+      // Null for a session with no live Firebase user: the list then falls back
+      // to the legacy uid-less entries only, which is the honest answer — those
+      // are the only ones such a session could have written.
+      const entries = await fetchMyTbr(collection, { ...me, uid: currentUid() });
       if (entries.length === 0) {
         setRows([]);
         return;

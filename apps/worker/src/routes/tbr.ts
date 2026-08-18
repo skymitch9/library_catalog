@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { absoluteCoverUrl, tbrDocFor, tbrResolveSchema } from '@lc/core';
+import { absoluteCoverUrl, legacyReadingListDocId, tbrDocFor, tbrResolveSchema } from '@lc/core';
 import { getWork, resolveTbrEntries } from '@lc/db';
 import type { AppBindings } from '../env.js';
 import { requireCapability } from '../middleware/auth.js';
@@ -30,20 +30,24 @@ const tbrCollection = (env: { ENVIRONMENT?: string }) =>
  *
  * What the server is for is the same thing it is for with reviews: **deriving
  * the keys**. The document id must be built with the audiobook site's own
- * `readingListDocId` (which is `${displayNameLower}_${bookId}` — the REVERSE of
- * a review's id, see `packages/core/src/tbr.ts`), and `workKey` must come from
- * the one implementation in `@lc/core`. Neither belongs in hand-written client
- * code, and the display name in the id is the server's `reviewName ??
- * displayName ?? email` ladder, which the browser must not re-derive.
+ * `readingListDocId` (which is `${uid}_${bookId}` — the REVERSE of a review's
+ * id, see `packages/core/src/tbr.ts`), and `workKey` must come from the one
+ * implementation in `@lc/core`. Neither belongs in hand-written client code.
  *
- * ## No rules change was needed
+ * ## ⚠️ The key moved to the ACCOUNT — and this time the rules DID change
  *
- * `validReadingList()` in `audiobook_catalog/firestore.rules` asserts
- * `displayName`, `bookId` and `status` are strings and ignores unknown fields,
- * so `workKey`, `email` and `source` ride along exactly as they do on a review
- * document. Verified against the live rules 2026-08-17. That matters for the
- * same reason it did in 2026-08-09: a rules deploy changes the audiobook site's
- * security posture, and this feature does not need one.
+ * Owner's order, 2026-08-18: *"Make tbr keyed to account"*. The id used to be
+ * `${displayNameLower}_${bookId}`, so two members with the same display name
+ * shared one document per book. `docs/info/tbr.md` §1 and §2 said no rules
+ * change was needed and that the two id orders could never be harmonised;
+ * both statements are now superseded and the doc records why.
+ *
+ * `firestore.rules` now makes an account-keyed document owner-only for writes
+ * and deletes, and pins the `uid` FIELD to the uid in the ID — both must be the
+ * caller's. That is why `uid` here comes off the verified token and nowhere
+ * else. Legacy display-name ids keep the old shape-only rules so the 53
+ * documents that could not be migrated stay reachable. Smoked against the live
+ * rules 2026-08-18: 17/17, both lanes.
  */
 export const tbrRoutes = new Hono<AppBindings>()
   /**
@@ -89,10 +93,32 @@ export const tbrRoutes = new Hono<AppBindings>()
     const user = c.get('user');
     const displayName = user.reviewName ?? user.displayName ?? user.email;
 
+    // ⚠️ THE ACCOUNT COMES OFF THE VERIFIED TOKEN, never off the request body.
+    // It is the document id since 2026-08-18 ("Make tbr keyed to account"), so
+    // a caller who could name it could file an entry on somebody else's list —
+    // the very thing the migration removed. `firebaseUid` is `payload.sub` from
+    // the token middleware/auth.ts already verified.
+    //
+    // ⚠️ Answered as a HELD STATE, not a 500. `firebase_uid` is nullable on
+    // `app_user` (migration 0001) — a row created before the column was
+    // populated, or by a path that never had a token, has none — and
+    // `tbrDocFor` throws on an empty one by design. A person in that state gets
+    // a sentence telling them what to do, not a bare failure: the estate rule
+    // is that nobody ever sees a bare status, and "sign in again" is an action.
+    if (!user.firebaseUid) {
+      return c.json({
+        collection: tbrCollection(c.env),
+        docId: null,
+        doc: null,
+        held: 'Your to-read list needs a signed-in account. Sign out and back in with Google, and this will work.',
+      });
+    }
+
     const { id, doc } = tbrDocFor({
       title: work.title,
       authors: work.authors,
       displayName,
+      uid: user.firebaseUid,
       email: user.email,
       // ⚠️ Absolute, against this request's own origin. `work.cover_url` is
       // usually `/covers/…` — a path this Worker serves — and the document is
@@ -101,7 +127,24 @@ export const tbrRoutes = new Hono<AppBindings>()
       coverUrl: absoluteCoverUrl(work.coverUrl, c.req.url),
     });
 
-    return c.json({ collection: tbrCollection(c.env), docId: id, doc });
+    // ⚠️ THE LEGACY ID RIDES ALONG, READ-ONLY. Until the audiobook site's
+    // 181-document move lands with its promote, every entry in this collection
+    // is still filed under `{displayNameLower}_{bookId}` — and 53 of them stay
+    // there permanently. A button that read only the account id would report
+    // "not on your list" for a book that is, and adding it would then file a
+    // SECOND document beside the person's real entry.
+    //
+    // ⚠️ It is never a write target. `firestore.rules` refuses a legacy-shaped
+    // id carrying a `uid`, and `doc` above always carries one, so an attempt
+    // fails loudly rather than quietly re-opening the display-name hole.
+    // REMOVAL CONDITION: drop this field, and `legacyDocId` in Tbr.tsx, when
+    // `migrate_tbr_to_uid.py --report` prints zero uid-less documents.
+    return c.json({
+      collection: tbrCollection(c.env),
+      docId: id,
+      legacyDocId: legacyReadingListDocId(displayName, doc.bookId),
+      doc,
+    });
   })
 
   /**

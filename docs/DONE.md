@@ -17,6 +17,53 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## 🔑 TBR keyed to the ACCOUNT, not the display name — ✅ DONE 2026-08-18
+
+The owner, verbatim, in answer to the measured finding that
+`readingLists/{displayNameLower}_{bookId}` lets two members who share a
+display name read and delete each other's lists:
+
+> *"Make tbr keyed to account"*
+
+**The full record is [`info/tbr.md`](info/tbr.md) §8** — the measurement, the
+two-lane rules model, the three stores that turned out NOT to map a name to an
+account, and the removal condition. This entry is the landing note.
+
+| | |
+|---|---|
+| New id | `readingLists/{uid}_{bookId}` + a `uid` field (`positionDocId`'s idiom) |
+| Measured population | 234 prod documents; `readingLists_dev` **0** |
+| Migratable | **181** · ambiguous **0** · **unmappable 53** |
+| Live rules smoke | **17/17**, both lanes |
+| Tests | audiobook 1,247 pytest + 712 vitest; library **1,178** |
+
+⚠️ **The 53** belong to one retired v1 passphrase account with no Firebase
+identity. The migration **refuses to guess an owner** for a reading list, so
+they keep the old id and the old shape-only rules. All 53 are `status: 'read'`,
+so **no live to-read entry was left behind**.
+
+⚠️ **The prod 181-document move has NOT been applied.** It rides
+`audiobook_catalog`'s next promote, with the client code that reads the new id
+— applying it first would leave that site's live per-book button reading an id
+that no longer exists. Command, from `audiobook_catalog`:
+
+```bash
+python scripts/migrate_tbr_to_uid.py            # report — writes nothing
+python scripts/migrate_tbr_to_uid.py --apply    # the move, ON PROMOTE DAY
+```
+
+⚠️ **Superseded three statements in `info/tbr.md`** (§1's "no rules change was
+needed", §1's id row, §2's "neither may be harmonised"). §2 was right that
+changing a persisted key orphans documents and wrong that this made the key
+permanent — the answer is to move the documents.
+
+**Left open on purpose:** browsing *another* person's list is still
+name-addressed (nothing listable maps a name to an account), which is a public
+read-only view — two name-sharers' public lists read as one, but neither can
+write or delete the other's.
+
+---
+
 ## 📌 Copy trimmed across the web app — ✅ DONE 2026-08-17
 
 **Estate-wide ask, landed the session it was raised, so it never sat in

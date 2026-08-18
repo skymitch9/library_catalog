@@ -1254,7 +1254,16 @@ export const api = {
   tbrKeys: (workId: number) =>
     request<{
       collection: string;
+      /** The ACCOUNT-keyed id, `{uid}_{bookId}` — the only write target. */
       docId: string | null;
+      /**
+       * ⚠️ The pre-2026-08-18 id, `{displayNameLower}_{bookId}`. READ-ONLY, and
+       * absent when the server could not build one. It exists so the button
+       * does not report "not on your list" for an entry the account migration
+       * has not reached (or, for 53 documents, never will) — see `routes/tbr.ts`
+       * for the removal condition.
+       */
+      legacyDocId?: string | null;
       doc: Record<string, unknown> | null;
       held?: string;
     }>(`/api/tbr/${workId}/keys`),

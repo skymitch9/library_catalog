@@ -56,15 +56,57 @@ import { cleanAudiobookTitle, workKeyFor } from './titles.js';
 
 /**
  * ⚠️ **PORTED VERBATIM** from `renderReadingListButtons` in
- * `audiobook_catalog/app/web/templates/index.html`:
+ * `audiobook_catalog/app/web/templates/index.html`, which since 2026-08-18
+ * reads:
  *
- *     const docId = `${session.displayName.toLowerCase()}_${bookId}`;
+ *     const docId = `${uid}_${bookId}`;
  *
- * Every existing reading-list document in production is filed under this exact
- * id. A change here does not migrate them, it orphans them — and it is NOT the
- * same order as `reviewDocId`. See the header.
+ * ## The key moved from a display name to an ACCOUNT, and that was a migration
+ *
+ * Owner's order, 2026-08-18, verbatim: *"Make tbr keyed to account"*.
+ *
+ * ⚠️ **THIS SUPERSEDES THE "MAY NOT BE HARMONISED" NOTE** that stood in this
+ * file's header and in `docs/info/tbr.md` §2. That note was right about the
+ * mechanism — changing a persisted key does not migrate documents, it orphans
+ * them — and wrong only about what follows from it. What follows is that you
+ * MIGRATE them, which `audiobook_catalog/scripts/migrate_tbr_to_uid.py` did:
+ * 234 documents enumerated, 181 moved, 53 left in place because their owner is
+ * a retired v1 passphrase account with no Firebase uid to key to.
+ *
+ * The old key filed every list under a string anybody can choose, so two
+ * members who picked the same display name shared one document per book — each
+ * saw and could delete the other's intentions. No Firestore rule could close
+ * that; a display name identifies nobody.
+ *
+ * ⚠️ NOT case-folded, unlike the old key. A uid is case-sensitive, and folding
+ * one builds an id that matches nothing and silently loses the entry.
+ *
+ * ⚠️ Still the REVERSE of `reviewDocId` — that much is unchanged and still
+ * deliberate. Only the left-hand half became an account. `test/tbr.test.ts`
+ * pins both facts.
  */
-export function readingListDocId(displayName: string, bookId: string): string {
+export function readingListDocId(uid: string, bookId: string): string {
+  return `${uid}_${bookId}`;
+}
+
+/**
+ * The id this collection used BEFORE the 2026-08-18 account migration.
+ *
+ * ⚠️ **READ-ONLY, AND NOT DEAD CODE.** 53 live documents still carry it — see
+ * `readingListDocId`. A reader that could not build this id would show those
+ * people an empty list.
+ *
+ * ⚠️ **NEVER WRITE THROUGH IT.** `firestore.rules` refuses a legacy-shaped id
+ * that carries a `uid` field, so an attempt fails loudly rather than quietly
+ * re-opening the hole one book at a time — but the rule is the backstop, not
+ * the design. The write path is `readingListDocId`, always.
+ *
+ * **REMOVAL CONDITION**, so this does not become permanent by inattention:
+ * delete this function, its callers, and the `uid`-less branch of
+ * `myTbrEntries` once `migrate_tbr_to_uid.py --report` prints zero uid-less
+ * documents. A number in one command, not a judgement call.
+ */
+export function legacyReadingListDocId(displayName: string, bookId: string): string {
   return `${displayName.toLowerCase()}_${bookId}`;
 }
 
@@ -81,6 +123,20 @@ export function readingListDocId(displayName: string, bookId: string): string {
  */
 export interface TbrDoc {
   displayName: string;
+  /**
+   * ⚠️ **The account this intention belongs to** — the Firebase uid, and since
+   * 2026-08-18 the left-hand half of the document id as well.
+   *
+   * This is what `myTbrEntries` attributes by and what `firestore.rules` pins
+   * the id to (they must name the same account, and both must be the caller —
+   * either half alone is a hole). `displayName` stays alongside it because
+   * three surfaces still render and count by name, but it is no longer the
+   * identity.
+   *
+   * Absent on the 53 pre-migration documents whose owner has no Firebase
+   * account, which is exactly why the name fallback is not optional.
+   */
+  uid?: string;
   /** Their key: `bookIdFromTitle(title)`, a slug of the title alone. */
   bookId: string;
   /** What that site shows in its own list. Written as this catalog spells it. */
@@ -122,12 +178,31 @@ export function tbrDocFor(params: {
   title: string;
   authors: string;
   displayName: string;
+  /**
+   * ⚠️ **The account, and it is REQUIRED.** Since 2026-08-18 an entry without
+   * one cannot be written: it would be filed under a display name, which is
+   * the shape the migration removed. The Worker takes it from the verified
+   * token (`user.firebaseUid`), never from anything the browser sent.
+   *
+   * A caller with no uid is a caller with no verified account, and the honest
+   * answer for them is a refusal rather than a document filed under a string —
+   * see the throw below, which is the same shape as the provisional-key one.
+   */
+  uid: string;
   email?: string | null;
   coverUrl?: string | null;
 }): { id: string; doc: TbrDoc } {
   if (params.authors === UNKNOWN_AUTHOR) {
     throw new Error(
       'tbrDocFor refuses a provisional work: add the author first — an entry written now would come loose when it arrives.',
+    );
+  }
+  // ⚠️ The same refusal, for the same reason: a document written under a key
+  // that identifies nobody is worse than no document. Before 2026-08-18 this
+  // was the ONLY thing that could happen, and it is what the migration undid.
+  if (!params.uid) {
+    throw new Error(
+      'tbrDocFor refuses an entry with no account: a TBR keyed to a display name is the bug the 2026-08-18 migration removed.',
     );
   }
   const clean = cleanAudiobookTitle(params.title);
@@ -138,6 +213,7 @@ export function tbrDocFor(params: {
   const bookId = bookIdFromTitle(params.title);
   const doc: TbrDoc = {
     displayName: params.displayName,
+    uid: params.uid,
     bookId,
     bookTitle: params.title,
     status: TBR_STATUS,
@@ -146,7 +222,7 @@ export function tbrDocFor(params: {
   };
   if (params.email) doc.email = params.email;
   if (params.coverUrl) doc.bookCover = params.coverUrl;
-  return { id: readingListDocId(params.displayName, bookId), doc };
+  return { id: readingListDocId(params.uid, bookId), doc };
 }
 
 /**
@@ -176,8 +252,44 @@ export function absoluteCoverUrl(coverUrl: string | null | undefined, base: stri
   }
 }
 
+/**
+ * Is this reading-list document MINE?
+ *
+ * ⚠️ **THE ORDER IS THE WHOLE POINT, and it is why this is not `isMyReview`.**
+ * Since the 2026-08-18 account migration a TBR document can carry a `uid`, and
+ * when it does that account is the answer — exactly, and with no fallback.
+ * The display-name comparison is consulted ONLY for a document with no `uid`,
+ * i.e. one of the 53 the migration could not move.
+ *
+ * Applying the name fallback to an account-keyed document would hand a
+ * name-sharer somebody else's list again and undo the migration while every
+ * other test still passed. That is the single most expensive thing to get
+ * wrong in this file, so it is pinned by its own test.
+ *
+ * ⚠️ Reviews still go through `isMyReview` and MUST keep doing so: all 884
+ * review documents carry no uid (measured 2026-08-18), so that store has no
+ * account key to prefer and the weak one is all there is. Two predicates that
+ * look alike but are not interchangeable — the same hazard `titles.ts` records
+ * for its four author-splitters, and stated here for the same reason.
+ */
+export function ownsTbrDoc(
+  doc: { uid?: string | null; displayName?: string | null; email?: string | null },
+  me: { uid?: string | null; email?: string | null; reviewName?: string | null },
+): boolean {
+  const docUid = typeof doc.uid === 'string' ? doc.uid.trim() : '';
+  if (docUid) {
+    const myUid = typeof me.uid === 'string' ? me.uid.trim() : '';
+    return !!myUid && docUid === myUid;
+  }
+  // Legacy, uid-less: the pre-migration rule, unchanged — email when both
+  // sides have one, display name otherwise. See isMyReview for why.
+  return isMyReview(doc, me);
+}
+
 /** The fields of a reading-list document these rules read. Nothing else. */
 export interface TbrLike {
+  /** The account, on everything written since 2026-08-18. */
+  uid?: string | null;
   displayName?: string | null;
   email?: string | null;
   bookId?: string | null;
@@ -214,13 +326,12 @@ export interface TbrEntry extends TbrEntryRef {
 /**
  * This person's own TBR, out of a pile of reading-list documents.
  *
- * ⚠️ **Ownership is decided by `isMyReview`, the ONE implementation**, shared
- * with the review path, the Worker and `backfill-read-from-ratings.mjs`. These
- * documents have exactly the review problem: everything the audiobook site
- * wrote carries a `displayName` and no `email`, so the weak key is the only one
- * that reaches them — and a looser rule here would put a housemate's intentions
- * on this person's list. A second, nearly-identical predicate is precisely the
- * drift `titles.ts` records four author-splitters' worth of.
+ * ⚠️ **Ownership is decided by `ownsTbrDoc`** — the ACCOUNT when the document
+ * carries one, and only then the weak display-name key, for the 53 documents
+ * that have no account to carry (2026-08-18, "Make tbr keyed to account").
+ * Read its header: the order is not a preference, it is the fix. Before the
+ * migration this used `isMyReview` outright, and a housemate who shared a
+ * display name genuinely did see this person's intentions.
  *
  * Anything whose `status` is not `'tbr'` is dropped: that field is the
  * audiobook site's own little ladder and it may grow values this catalog has
@@ -236,12 +347,12 @@ export interface TbrEntry extends TbrEntryRef {
  */
 export function myTbrEntries(
   docs: readonly (TbrLike & { docId: string })[],
-  me: { email?: string | null; reviewName?: string | null },
+  me: { uid?: string | null; email?: string | null; reviewName?: string | null },
 ): TbrEntry[] {
   const byKey = new Map<string, TbrEntry>();
 
   for (const doc of docs) {
-    if (!isMyReview(doc, me)) continue;
+    if (!ownsTbrDoc(doc, me)) continue;
     if ((doc.status ?? '') !== TBR_STATUS) continue;
 
     const bookId = typeof doc.bookId === 'string' ? doc.bookId.trim() : '';

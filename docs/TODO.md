@@ -56,6 +56,17 @@ real work. New debt goes HERE, never scattered.
   migration 0010's comment; it still holds 1s from its one-day life, and
   re-adding it to `COLS` would resurrect ghost grants. Debt = decide someday
   whether to zero the values; the guard comment is the current protection.
+- **The TBR legacy display-name fallback** (added 2026-08-18 with the account
+  migration, `info/tbr.md` §8). `legacyReadingListDocId`, the `legacyDocId`
+  field on `/api/tbr/:workId/keys`, the fallback read in `Tbr.tsx` and the
+  uid-less branch of `ownsTbrDoc` all exist for **53 documents** belonging to
+  a retired v1 passphrase account with no Firebase uid. ⚠️ **REMOVAL
+  CONDITION IS A NUMBER, not a judgement call:** run
+  `python scripts/migrate_tbr_to_uid.py --report` in `audiobook_catalog` and
+  delete all four when *uid-less documents remaining* prints **0**. It cannot
+  reach 0 while that account's documents exist, so the real question is
+  whether the owner wants them reassigned or deleted — **an owner decision,
+  not a cleanup.**
 
 ## 🔥 Owner asks 2026-08-16 late evening — status board
 

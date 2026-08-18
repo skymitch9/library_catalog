@@ -108,11 +108,23 @@ export async function fetchMyReviews(
  */
 export async function fetchMineFrom(
   collectionName: string,
-  me: { email?: string | null; reviewName?: string | null },
+  me: { uid?: string | null; email?: string | null; reviewName?: string | null },
 ): Promise<{ id: string; data: Record<string, unknown> }[]> {
   const ref = collection(firestore(), collectionName);
 
   const queries = [];
+  // ⚠️ THE ACCOUNT QUERY, added 2026-08-18 with the TBR account migration.
+  // Without it this function cannot see a single account-keyed TBR document:
+  // those carry a `uid` and are matched by it, and while they DO still carry a
+  // `displayName` that the name query would find, relying on that would make
+  // the whole migration cosmetic — the list would once again be assembled by
+  // display name and a name-sharer's entries would come back with it.
+  //
+  // Harmless on the reviews collection, which carries no `uid` on any of its
+  // 884 documents (measured): the query simply returns nothing, and the two
+  // below still answer. `me.uid` is null for a session with no live Firebase
+  // user, and then this query is not issued at all.
+  if (me.uid) queries.push(getDocs(query(ref, where('uid', '==', me.uid))));
   if (me.email) queries.push(getDocs(query(ref, where('email', '==', me.email))));
   if (me.reviewName) {
     queries.push(getDocs(query(ref, where('displayName', '==', me.reviewName))));

@@ -25,13 +25,20 @@ import { fetchMineFrom } from './reviews.js';
  * Every TBR entry this person has, from either catalog.
  *
  * The ownership rule and the `status === 'tbr'` filter are `myTbrEntries` in
- * `@lc/core` — the one implementation, and the same `isMyReview` predicate the
- * read-state sweep uses. See its header for why a looser rule here would put a
- * housemate's intentions on this person's list.
+ * `@lc/core` — the one implementation.
+ *
+ * ⚠️ **`uid` is not optional in practice, even though the type allows null.**
+ * Since the 2026-08-18 account migration `ownsTbrDoc` attributes an
+ * account-keyed document by uid ALONE, so a caller that omits it gets back only
+ * the legacy uid-less entries and the list silently looks nearly empty. The
+ * fetch below is deliberately still a superset — the display-name query pulls
+ * account-keyed documents too, name-sharers' included — and `myTbrEntries` is
+ * what rejects the ones that are not this account's. The query is the fetch;
+ * the predicate is the gate.
  */
 export async function fetchMyTbr(
   collectionName: string,
-  me: { email?: string | null; reviewName?: string | null },
+  me: { uid?: string | null; email?: string | null; reviewName?: string | null },
 ): Promise<TbrEntry[]> {
   const docs = await fetchMineFrom(collectionName, me);
   return myTbrEntries(
