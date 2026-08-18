@@ -445,3 +445,51 @@ When *uid-less documents remaining* prints **0**, delete
   other's. Closing it needs a listable name→account directory — a separate ask.
 - Nobody has exercised the signed-in flow in a browser on either instance since
   the change; §7's untested list still applies.
+
+---
+
+### ⚠️ Addendum, 2026-08-18 — the prod move is APPLIED (and one step is blocked)
+
+§8 above was written while the 181-document move was still pending a promote.
+It has now run. Recorded here rather than edited in, so the sequence stays
+readable.
+
+**The promote succeeded and prod was still serving the old client.** Both were
+true at once. `audiobook_catalog`'s Deploy workflow gates `build`+`deploy` on
+`lint`, and lint had been red on `main` since that repo's audio 0a/0b commits —
+so every deploy since had been *skipped, not run*, and `promote.yml` moved the
+`prod` branch and then dispatched a deploy that published nothing. Measured, not
+assumed: prod served an 18,970-byte `reviews.js` against 26,161 on disk. Cleared
+in `3bdf95a`; prod re-measured at **25,498 bytes with every uid marker** before
+anything touched the data.
+
+⚠️ **This is the general lesson, and it is not specific to that repo: a green
+promote is not a published site.** Verify the deployed artifact.
+
+**The move:** 181/181, conservation checked against before/after snapshots —
+234 → 234 documents, 0 → 181 uid-keyed, **the owner's list identical** (1 title),
+all three accounts' `bookId` sets unchanged, 0 doc-id shape mismatches, 53
+remaining uid-less and all `status: 'read'`. Live rules re-smoked after the
+move: **17/17**.
+
+**What this means for this catalog:** `readingLists` now holds account-keyed
+documents in production, so `ownsTbrDoc`'s uid branch is the live path and
+`fetchMineFrom`'s `where('uid','==',…)` query is the one that reaches them. The
+legacy branch is still load-bearing for **53** documents.
+
+🔴 **The last 53 are decided but NOT yet moved.** The owner ordered them
+reassigned to another household account, skipping duplicates;
+`audiobook_catalog/scripts/reassign_tbr_owner.py` is dry-run verified (53 to
+carry, **0 duplicates**) but ⚠️ **the run is refused by the operating
+environment's permission classifier** and was deliberately not forced.
+
+**So the removal condition in §8 is still 53, NOT 0** — do not delete
+`legacyReadingListDocId`, the `legacyDocId` field, the `Tbr.tsx` fallback read,
+or the uid-less branch of `ownsTbrDoc`. When the reassignment does run, that
+becomes reachable — and removing the fallback is then a **separate pass with its
+own test sweep**, not part of this one.
+
+⚠️ **Still unwatched:** nobody has loaded either catalog signed in since the
+change. The deployed bundle is confirmed to contain the code and the rules are
+smoked live, but no one has seen `✓ On my TBR` render against a migrated
+document. That remains the highest-value eyeball.

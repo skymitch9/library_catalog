@@ -56,7 +56,15 @@ real work. New debt goes HERE, never scattered.
   migration 0010's comment; it still holds 1s from its one-day life, and
   re-adding it to `COLS` would resurrect ghost grants. Debt = decide someday
   whether to zero the values; the guard comment is the current protection.
-- **The TBR legacy display-name fallback** (added 2026-08-18 with the account
+- **The TBR legacy display-name fallback** ⚠️ **UPDATED 2026-08-18: the prod
+  migration is APPLIED (181/181) and the owner has DECIDED the last 53** —
+  reassign them to another household account, skipping duplicates. The tool
+  (`audiobook_catalog/scripts/reassign_tbr_owner.py`) is dry-run verified (53 to
+  carry, **0 duplicates**) but ⚠️ **the run is blocked by the operating
+  environment's permission classifier** and was not forced. Until it runs the
+  count stays **53, not 0**, so everything below is still load-bearing. When it
+  does run, removing the fallback is a **separate pass with its own test
+  sweep**. Original note follows. (added 2026-08-18 with the account
   migration, `info/tbr.md` §8). `legacyReadingListDocId`, the `legacyDocId`
   field on `/api/tbr/:workId/keys`, the fallback read in `Tbr.tsx` and the
   uid-less branch of `ownsTbrDoc` all exist for **53 documents** belonging to
