@@ -164,6 +164,27 @@ export interface GabiTurnResponse {
     /** Cache-aware list pricing, not an invoice. See `gabiCents` in packages/research/src/gabi.ts. */
     estimatedCents: number;
   };
+  /**
+   * What GABI remembered from before this browser tab existed.
+   *
+   * ⚠️ **COUNTS, NEVER TEXT.** The server holds a 30-minute rolling window of
+   * what was said — the same window, the same shape and the same limits GABI's
+   * Discord surface uses (`@lc/gabi-conv`, materialised from catalog-platform's
+   * `@platform/gabi-conversation`) — and prepends the part this tab was not
+   * present for. It does not send the transcript back, because the tab already
+   * holds everything it was present for and a second copy of somebody's chat
+   * crossing the wire would serve nothing.
+   *
+   * `turns > 0` is the panel's cue to say she is picking up where they left off.
+   */
+  memory: {
+    /** Remembered turns prepended to this prompt. 0 on a fresh conversation. */
+    turns: number;
+    /** Their character count — continuity's share of the input, measured. */
+    chars: number;
+    /** Whether this exchange was written into the window. */
+    saved: boolean;
+  };
 }
 
 export interface WorkSummary {

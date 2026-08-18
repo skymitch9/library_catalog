@@ -42,25 +42,38 @@ interface Insert {
 }
 
 /**
- * A D1 stub that records what was inserted. Only `prepare().bind().run()` is
- * implemented, which is all `recordGabiTurn` uses — anything else throws, so a
- * function that reaches further is loud rather than silently satisfied.
+ * A D1 stub that records every statement and can answer one SELECT.
+ *
+ * ⚠️ `first()` was added 2026-08-18 with the memory. Before it, the stub had
+ * only `run()` — which meant `loadPanelConversation` threw, was caught by its
+ * own never-throws guard, and every test in this file silently exercised the
+ * *degraded* path while reporting green. That is exactly the silent-success
+ * class this repo keeps finding, so `stored` is now explicit: pass a record to
+ * mean "she remembers this", pass nothing to mean a fresh chat.
  */
-function recordingDb(inserts: Insert[]) {
+function recordingDb(inserts: Insert[], stored: unknown = null) {
   return {
     prepare(sql: string) {
-      return {
-        bind(...values: unknown[]) {
-          return {
-            async run() {
-              inserts.push({ sql, values });
-              return { success: true };
-            },
-          };
+      const step = (values: unknown[]) => ({
+        async run() {
+          inserts.push({ sql, values });
+          return { success: true, meta: { changes: 0 } };
         },
-      };
+        async first() {
+          inserts.push({ sql, values });
+          return /SELECT record FROM gabi_conversation/.test(sql) && stored
+            ? { record: JSON.stringify(stored) }
+            : null;
+        },
+      });
+      return { bind: (...values: unknown[]) => step(values), ...step([]) };
     },
   } as unknown as D1Database;
+}
+
+/** Only the `gabi_turn` accounting inserts — the memory's statements filtered out. */
+function turnRows(inserts: Insert[]): Insert[] {
+  return inserts.filter((i) => /INSERT INTO gabi_turn/.test(i.sql));
 }
 
 /** A D1 stub whose every write fails — the bookkeeping-is-not-the-outage case. */
@@ -124,6 +137,12 @@ const COLS = [
   'cacheCreationTokens',
   'toolCalls',
   'errorMessage',
+  // ⚠️ Migration 0350. The SAME two field names GABI's Discord accounting line
+  // uses, so the two surfaces compare without a translation step. Context
+  // tokens are charged on every turn, and these are the only way continuity's
+  // share of a conversation's bill is attributable rather than inferred.
+  'historyTurns',
+  'historyChars',
 ] as const;
 
 function row(insert: Insert): Record<(typeof COLS)[number], unknown> {
@@ -407,8 +426,12 @@ describe('the accounting row — what makes §7 measurable instead of arithmetic
       model.fn,
     );
 
-    assert.equal(inserts.length, 1, `wrote ${inserts.length} rows for one turn`);
-    const r = row(inserts[0]!);
+    assert.equal(
+      turnRows(inserts).length,
+      1,
+      `wrote ${turnRows(inserts).length} accounting rows for one turn`,
+    );
+    const r = row(turnRows(inserts)[0]!);
     assert.equal(r.conversationId, 'conv-abc');
     assert.equal(r.userId, 7);
     assert.equal(r.model, GABI_MODEL);
@@ -434,7 +457,7 @@ describe('the accounting row — what makes §7 measurable instead of arithmetic
       answer({ usage: { inputTokens: 3000, outputTokens: 50, cacheReadTokens: 2400, cacheCreationTokens: 2500, estimatedCents: 1.6 } }),
     );
     await runGabiTurn(envWith({}, inserts), 1, { conversationId: 'c', messages: HELLO }, model.fn);
-    const r = row(inserts[0]!);
+    const r = row(turnRows(inserts)[0]!);
     assert.equal(r.cacheReadTokens, 2400);
     assert.equal(r.cacheCreationTokens, 2500);
   });
@@ -453,8 +476,8 @@ describe('the accounting row — what makes §7 measurable instead of arithmetic
     );
 
     assert.equal(outcome.ok, false);
-    assert.equal(inserts.length, 1, 'the failure left no trace');
-    const r = row(inserts[0]!);
+    assert.equal(turnRows(inserts).length, 1, 'the failure left no trace');
+    const r = row(turnRows(inserts)[0]!);
     assert.equal(r.conversationId, 'conv-fail');
     assert.equal(r.userId, 3);
     assert.match(String(r.errorMessage), /declined/);
@@ -471,7 +494,10 @@ describe('the accounting row — what makes §7 measurable instead of arithmetic
       { conversationId: 'c', messages: HELLO },
       model.fn,
     );
-    assert.deepEqual(inserts, [], 'a misconfiguration was recorded as a cost');
+    assert.deepEqual(turnRows(inserts), [], 'a misconfiguration was recorded as a cost');
+    // ⚠️ And the memory was never even read. A refusal before the model call
+    // must not touch the store: the guards decide, THEN the memory is consulted.
+    assert.deepEqual(inserts, [], 'a refused turn reached the conversation store');
   });
 
   it('⚠️ a broken accounting write does NOT break the answer', async () => {
@@ -499,5 +525,225 @@ describe('the accounting row — what makes §7 measurable instead of arithmetic
     );
     assert.equal(outcome.ok, false);
     assert.match((outcome as { body: { detail: string } }).body.detail, /upstream exploded/);
+  });
+});
+
+// ── she remembers ───────────────────────────────────────────────────────────
+
+/**
+ * ⚠️ **THE MEMORY IS THE SAME MEMORY GABI HAS IN DISCORD.** The window
+ * arithmetic, the record shape and the alternation rule are pinned in
+ * catalog-platform's `@platform/gabi-conversation` and its own tests; nothing
+ * here re-tests them. What is pinned HERE is the part only this surface has:
+ *
+ *  1. the RESUME RULE — a browser tab carries its own transcript, so only turns
+ *     from *other* conversation ids may be prepended, or every turn is sent
+ *     twice and paid for twice;
+ *  2. the memory never being load-bearing for the answer;
+ *  3. a failed turn writing nothing into the window.
+ */
+describe('⚠️ SHE REMEMBERS — and the resume rule is exact, not heuristic', () => {
+  const at = Date.now() - 60_000; // inside the 30-minute window
+  const record = (cid: string) => ({
+    v: 1,
+    key: { surface: 'web_panel', space: 'library', person: '7' },
+    updatedAt: at,
+    turns: [
+      { role: 'user', text: 'who wrote Unsouled?', at, ref: { cid } },
+      { role: 'assistant', text: 'Will Wight.', at, ref: { cid } },
+    ],
+  });
+
+  it('a fresh chat remembers nothing, and says so as a count rather than a silence', async () => {
+    const model = countingModel();
+    const outcome = await runGabiTurn(
+      envWith({ ESTATE_APP: 'library' }),
+      7,
+      { conversationId: 'tab-1', messages: HELLO },
+      model.fn,
+    );
+    assert.equal(outcome.ok, true);
+    assert.deepEqual((outcome as { body: { memory: unknown } }).body.memory, {
+      turns: 0,
+      chars: 0,
+      saved: true,
+    });
+    assert.deepEqual(model.calls[0]!.messages, HELLO, 'a fresh chat was given a history');
+  });
+
+  it('⚠️ a RETURNING tab is given the earlier conversation — the whole feature', async () => {
+    const inserts: Insert[] = [];
+    const model = countingModel();
+    const env = {
+      DB: recordingDb(inserts, record('tab-1')),
+      GABI_PANEL: 'on',
+      ANTHROPIC_API_KEY: 'k',
+      ESTATE_APP: 'library',
+    } as unknown as Env;
+
+    const outcome = await runGabiTurn(env, 7, { conversationId: 'tab-2', messages: HELLO }, model.fn);
+
+    assert.equal(outcome.ok, true);
+    assert.deepEqual(model.calls[0]!.messages, [
+      { role: 'user', content: 'who wrote Unsouled?' },
+      { role: 'assistant', content: 'Will Wight.' },
+      ...HELLO,
+    ]);
+    const memory = (outcome as { body: { memory: { turns: number; chars: number } } }).body.memory;
+    assert.equal(memory.turns, 2);
+    assert.equal(memory.chars, 'who wrote Unsouled?'.length + 'Will Wight.'.length);
+  });
+
+  it('⚠️ the SAME tab is NOT given its own turns back — that is the double-send', async () => {
+    // The browser re-sends its whole transcript every turn. Prepending the
+    // stored copy of the same turns would send each one twice and pay for it
+    // twice, and the model would see the conversation stutter.
+    const inserts: Insert[] = [];
+    const model = countingModel();
+    const env = {
+      DB: recordingDb(inserts, record('tab-1')),
+      GABI_PANEL: 'on',
+      ANTHROPIC_API_KEY: 'k',
+      ESTATE_APP: 'library',
+    } as unknown as Env;
+
+    await runGabiTurn(env, 7, { conversationId: 'tab-1', messages: HELLO }, model.fn);
+    assert.deepEqual(model.calls[0]!.messages, HELLO);
+  });
+
+  it('the history counts land on the accounting row, by the names Discord uses', async () => {
+    const inserts: Insert[] = [];
+    const model = countingModel();
+    const env = {
+      DB: recordingDb(inserts, record('tab-1')),
+      GABI_PANEL: 'on',
+      ANTHROPIC_API_KEY: 'k',
+      ESTATE_APP: 'library',
+    } as unknown as Env;
+
+    await runGabiTurn(env, 7, { conversationId: 'tab-2', messages: HELLO }, model.fn);
+    const r = row(turnRows(inserts)[0]!);
+    assert.equal(r.historyTurns, 2);
+    assert.equal(r.historyChars, 'who wrote Unsouled?'.length + 'Will Wight.'.length);
+  });
+
+  it('⚠️ the exchange is written into the window, keyed per person per INSTANCE', async () => {
+    const inserts: Insert[] = [];
+    const model = countingModel();
+    await runGabiTurn(
+      envWith({ ESTATE_APP: 'library2' }, inserts),
+      7,
+      { conversationId: 'tab-1', messages: HELLO },
+      model.fn,
+    );
+    const write = inserts.find((i) => /INSERT INTO gabi_conversation/.test(i.sql));
+    assert.ok(write, 'the exchange was never written');
+    assert.equal(write.values[0], 'conv:web_panel:library2:7', 'the storage key is not the shared one');
+    const stored = JSON.parse(String(write.values[4])) as { turns: { role: string; text: string }[] };
+    assert.deepEqual(
+      stored.turns.map((t) => [t.role, t.text]),
+      [
+        ['user', 'How many books do I have?'],
+        ['assistant', 'You hold 157 books.'],
+      ],
+    );
+  });
+
+  it('⚠️ a turn that only asked for TOOLS writes nothing — a step is not an exchange', async () => {
+    const inserts: Insert[] = [];
+    const model = countingModel(
+      answer({
+        stopReason: 'tool_use',
+        content: [{ type: 'tool_use', id: 'toolu_1', name: 'find_book', input: { query: 'x' } }],
+      }),
+    );
+    await runGabiTurn(
+      envWith({ ESTATE_APP: 'library' }, inserts),
+      7,
+      { conversationId: 'tab-1', messages: HELLO },
+      model.fn,
+    );
+    assert.equal(
+      inserts.filter((i) => /INSERT INTO gabi_conversation/.test(i.sql)).length,
+      0,
+      'a tool-only turn was remembered as if it were an answer',
+    );
+  });
+
+  it('⚠️ a FAILED turn remembers nothing — half an exchange is worse than none', async () => {
+    const inserts: Insert[] = [];
+    const model = countingModel(() => {
+      throw new Error('upstream exploded');
+    });
+    await runGabiTurn(
+      envWith({ ESTATE_APP: 'library' }, inserts),
+      7,
+      { conversationId: 'tab-1', messages: HELLO },
+      model.fn,
+    );
+    assert.equal(
+      inserts.filter((i) => /INSERT INTO gabi_conversation/.test(i.sql)).length,
+      0,
+      'she would refer back to an answer that never existed',
+    );
+  });
+
+  it('⚠️ a BROKEN memory does not break the answer — it only forgets', async () => {
+    // The ordering that matters: a chat that works without recollection is a
+    // degraded feature; a chat that refuses because a memory row would not
+    // parse is an outage.
+    const model = countingModel();
+    const outcome = await runGabiTurn(
+      { DB: brokenDb(), GABI_PANEL: 'on', ANTHROPIC_API_KEY: 'k', ESTATE_APP: 'library' } as unknown as Env,
+      7,
+      { conversationId: 'tab-1', messages: HELLO },
+      model.fn,
+    );
+    assert.equal(outcome.ok, true);
+    assert.deepEqual((outcome as { body: { memory: unknown } }).body.memory, {
+      turns: 0,
+      chars: 0,
+      saved: false,
+    });
+  });
+
+  it('an unreadable stored record is treated as ABSENT, never guessed at', async () => {
+    const inserts: Insert[] = [];
+    const model = countingModel();
+    const env = {
+      // A record whose shape version this build does not know.
+      DB: recordingDb(inserts, { v: 99, key: {}, turns: [{ role: 'user', text: 'x', at }], updatedAt: at }),
+      GABI_PANEL: 'on',
+      ANTHROPIC_API_KEY: 'k',
+      ESTATE_APP: 'library',
+    } as unknown as Env;
+    const outcome = await runGabiTurn(env, 7, { conversationId: 'tab-2', messages: HELLO }, model.fn);
+    assert.deepEqual(model.calls[0]!.messages, HELLO);
+    assert.equal((outcome as { body: { memory: { turns: number } } }).body.memory.turns, 0);
+    // ⚠️ And it was DELETED rather than left to be re-read forever.
+    assert.ok(
+      inserts.some((i) => /DELETE FROM gabi_conversation/.test(i.sql)),
+      'an aged-out or unreadable record was archived rather than deleted',
+    );
+  });
+
+  it('⚠️ an anonymous caller gets NO memory rather than a shared one', async () => {
+    // `userId` is non-null for everybody the auth middleware admits. The null
+    // branch exists because the signature allows it, and a window keyed on
+    // "nobody" would be one memory shared by every unauthenticated caller.
+    const inserts: Insert[] = [];
+    const model = countingModel();
+    const outcome = await runGabiTurn(
+      envWith({ ESTATE_APP: 'library' }, inserts),
+      null,
+      { conversationId: 'tab-1', messages: HELLO },
+      model.fn,
+    );
+    assert.equal(outcome.ok, true);
+    assert.equal(
+      inserts.filter((i) => /gabi_conversation/.test(i.sql)).length,
+      0,
+      'an anonymous turn touched the conversation store',
+    );
   });
 });

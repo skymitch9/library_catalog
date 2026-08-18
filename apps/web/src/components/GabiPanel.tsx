@@ -125,11 +125,22 @@ export function GabiToggle({ open, onToggle }: { open: boolean; onToggle: () => 
 
 export function GabiPanel({ hidden, prefill }: { hidden: boolean; prefill?: string | null }) {
   /**
-   * The conversation, in the API's own message shape. ⚠️ It is the transcript —
-   * the Worker persists nothing (§3.2, stateless) — so closing the tab ends it.
-   * That is a real property, not an oversight: it is what makes conversation
-   * state cost nothing, and it is the thing a Discord front end would have to
-   * build (§10.2, blocker 4).
+   * The conversation, in the API's own message shape.
+   *
+   * ⚠️ **THIS TAB'S TRANSCRIPT, NOT THE CONVERSATION.** Superseded 2026-08-18:
+   * this comment used to say the Worker persists nothing and closing the tab
+   * ends the conversation. Half of that is still true and the other half is the
+   * feature that changed. The transcript — prose, tool cards and raw results —
+   * still lives only here and still dies with the tab. But the *conversation*
+   * now outlives it: the Worker keeps a 30-minute rolling window of what was
+   * said, under GABI's shared conversation shape, and hands the part this tab
+   * missed to the model on the next question. Closing the tab loses the
+   * rendering; it no longer loses her recollection.
+   *
+   * What that buys, and why it was worth a table: the owner's ask, verbatim
+   * (2026-08-18) — *"Yes this is priority. I want to make upgrades it apply to
+   * both."* The panel and Discord now share one substrate, so the next upgrade
+   * to how she remembers lands once. See `docs/info/gabi-panel-v2.md`.
    */
   const [messages, setMessages] = useState<Turn[]>([]);
   const [outcomes, setOutcomes] = useState<Record<string, GabiToolOutcome>>({});
@@ -137,6 +148,18 @@ export function GabiPanel({ hidden, prefill }: { hidden: boolean; prefill?: stri
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [spend, setSpend] = useState<Spend>({ turns: 0, cents: 0, cacheReadTokens: 0 });
+
+  /**
+   * How many remembered turns the first answer of this tab was given.
+   *
+   * ⚠️ Shown because a model that knows things this tab never said looks like a
+   * model that is making things up. One sentence naming the window turns that
+   * into a feature somebody can rely on — and it names the limit too, because
+   * "she remembers" without "for half an hour" is a promise the build does not
+   * keep. `null` until the first answer: before that there is nothing measured
+   * to say, and guessing is the thing this repo does not do.
+   */
+  const [resumed, setResumed] = useState<number | null>(null);
 
   // One id per conversation, minted here. It is the join that turns per-turn
   // `gabi_turn` rows into a cost-per-CONVERSATION — the figure §7 owes an
@@ -216,6 +239,15 @@ export function GabiPanel({ hidden, prefill }: { hidden: boolean; prefill?: stri
             cents: s.cents + turn.usage.estimatedCents,
             cacheReadTokens: s.cacheReadTokens + turn.usage.cacheReadTokens,
           }));
+
+          // ⚠️ The FIRST answer of this tab is the only one that can be a
+          // resumption — every later turn's remembered count is the same window
+          // plus what this tab has since added, so reporting it again would
+          // announce "picking up where we left off" in the middle of a
+          // conversation somebody is already having. `?? 0` rather than a
+          // truthiness check: an older Worker that predates the field must read
+          // as "nothing remembered", not as "unknown".
+          setResumed((r) => (r === null ? (turn.memory?.turns ?? 0) : r));
 
           history = [...history, { role: 'assistant', content: turn.content as Block[] }];
           setMessages(history);
@@ -312,6 +344,15 @@ export function GabiPanel({ hidden, prefill }: { hidden: boolean; prefill?: stri
               GABI can look things up. It cannot change anything yet — edits are still
               made on a book&rsquo;s own page.
             </p>
+            {/* ⚠️ The limit is stated with the capability, not instead of it.
+                "She remembers" on its own is a promise this build does not keep:
+                the window is half an hour and then it is gone, deliberately, and
+                somebody who expects yesterday's chat to still be there has been
+                misled by the friendlier half of the sentence. */}
+            <p className="muted small">
+              She remembers the last half hour of a conversation, so you can come back to
+              it in a new tab. After that it is gone.
+            </p>
             <ul className="gabi-suggestions">
               {[
                 'What still needs fixing?',
@@ -326,6 +367,19 @@ export function GabiPanel({ hidden, prefill }: { hidden: boolean; prefill?: stri
               ))}
             </ul>
           </div>
+        )}
+
+        {/* ⚠️ Rendered ONLY when something was genuinely remembered, and stating
+            the count. A model that refers to things this tab never said reads as
+            a model inventing them; naming the window is what turns that into a
+            feature. Zero remembered turns says nothing at all — an empty
+            reassurance is noise, and a "starting fresh" banner on every first
+            question would be the panel talking about itself. */}
+        {resumed !== null && resumed > 0 && (
+          <p className="muted small gabi-resumed">
+            Picking up where you left off — GABI still has the last {resumed} thing
+            {resumed === 1 ? '' : 's'} said here, from within the past half hour.
+          </p>
         )}
 
         {messages.map((turn, i) => {

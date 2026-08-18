@@ -1,0 +1,10 @@
+{
+  "name": "@lc/gabi-conv",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "GABI's conversation substrate for this catalog: the canonical @platform/gabi-conversation module materialised from catalog-platform at build time (generated/, gitignored), plus this repo's panel-side wiring (src/panel.ts). ⚠️ The THIRD package with a cross-repo dependency, after @lc/universes and @lc/estate-auth — same mechanism, same reasons, see scripts/sync-gabi-conversation.mjs.",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc --noEmit" },
+  "devDependencies": { "@cloudflare/workers-types": "^4.20250109.0" }
+}

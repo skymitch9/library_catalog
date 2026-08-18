@@ -20,6 +20,7 @@
     "@lc/core": "*",
     "@lc/db": "*",
     "@lc/estate-auth": "*",
+    "@lc/gabi-conv": "*",
     "@lc/isbn": "*",
     "@lc/research": "*",
     "@lc/universes": "*",

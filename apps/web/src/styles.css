@@ -658,6 +658,21 @@ a.topbar__brand { text-decoration: none; }
 }
 
 .gabi-busy { margin: 0; }
+
+/*
+ * "Picking up where you left off" — the one line that explains why GABI knows
+ * something this tab never said.
+ *
+ * ⚠️ Deliberately NOT styled as a turn. It is the panel talking about itself,
+ * not GABI talking, and giving it the same bubble treatment as an answer would
+ * put words in her mouth that she did not say. A rule under it, the same muted
+ * weight as the spend readout at the other end of the panel.
+ */
+.gabi-resumed {
+  margin: 0 0 0.2rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px dashed var(--et-border);
+}
 /*
  * Never a bare status: every sentence rendered here comes from `describeError`,
  * the one place an ApiError becomes words — a 404 says GABI is not switched on,

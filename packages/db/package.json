@@ -4,8 +4,18 @@
   "private": true,
   "type": "module",
   "description": "D1 queries. Every function takes the database as its first argument — no globals, no singletons.",
-  "exports": { ".": "./src/index.ts" },
-  "scripts": { "typecheck": "tsc --noEmit" },
-  "dependencies": { "@lc/core": "*", "@lc/universes": "*" },
-  "devDependencies": { "@cloudflare/workers-types": "^4.20250109.0" }
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@lc/core": "*",
+    "@lc/gabi-conv": "*",
+    "@lc/universes": "*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250109.0"
+  }
 }

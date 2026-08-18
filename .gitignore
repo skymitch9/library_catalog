@@ -74,6 +74,16 @@ packages/universes/generated/
 # the shared module exists to end.
 packages/estate-auth/generated/
 
+# ⚠️ Same mechanism, THIRD package: GABI's conversation substrate, materialised
+# from catalog-platform/packages/gabi-conversation/src/ by
+# scripts/sync-gabi-conversation.mjs on every build, test and typecheck. The ONE
+# implementation lives in that repo and is shared with GABI's DISCORD surface —
+# which is the entire point. A tracked copy here would be a site panel whose
+# memory quietly diverges from the memory she has in Discord, and the whole
+# reason the panel was unified (owner, 2026-08-18: "I want to make upgrades it
+# apply to both") is that an upgrade should land once. See docs/info/gabi-panel-v2.md.
+packages/gabi-conv/generated/
+
 # ⚠️ The deploy coordination lock — see scripts/deploy-guard.mjs. Local by
 # design: it is about one machine at one moment. The SHARED record is
 # docs/deploys.log, which IS tracked.
