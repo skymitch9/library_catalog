@@ -7,6 +7,7 @@
 
 | File | Covers |
 |---|---|
+| [`RECOVERY.md`](RECOVERY.md) | 🔴 **REBUILD FROM NOTHING (new 2026-08-18)** — *from a git clone and the blob backups, how do I rebuild this app?* Full inventory (⚠️ **both instances** — main and `padhard`), the rebuild order with the step everyone forgets (**paste the new `database_id`s**), every secret by NAME with custody and re-mint console, what a rebuild CANNOT recover, and a **drilled-vs-inference** table. ⚠️ `library-covers` has **no local master** — the dump is the only path back. Restore *mechanics* are not duplicated: `catalog-platform/docs/access/RECOVERY.md` is the source of truth |
 | [`cloudflare.md`](cloudflare.md) | **Everything Cloudflare**: what exists in the account, Workers-not-Pages and why, redeploy, rollback, logs, D1 queries, secrets, custom domains, troubleshooting |
 | [`deploy.md`](deploy.md) | The short "what order do I do things in" version, plus the Firebase step and the review backfill |
 | [`estate-auth.md`](estate-auth.md) | **`auth.heygabi.ai` (LIVE 2026-08-14)**: the estate directory Worker + D1, the admin API and the apex `/admin` page, `OWNER_EMAILS` break-glass, the three `ESTATE_APP_TOKEN_*` secrets by name and where each side holds them, seed script usage, deploy commands, the 10-min TTL = revocation delay |
