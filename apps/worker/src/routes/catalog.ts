@@ -92,6 +92,16 @@ function collectionQueryFrom(c: {
     // and adds no clause when it misses, so an unknown medium shows the
     // collection rather than a 400. Same rule the sort allowlist follows.
     medium: c.req.query('medium'),
+    // `?ebookOnly=hide` — the physical shelf. Not validated here for the same
+    // reason as the rest: `EBOOK_ONLY_CLAUSE` is a fixed map of literal SQL and
+    // an unknown value adds no clause.
+    //
+    // ⚠️ Read here rather than defaulted, so **nothing hides by default**. The
+    // 94 ebook-only works are real rows that cross-catalog features read; the
+    // owner asked for them off the "Recently added" shelf, and the caller that
+    // wants that says so. `packages/db/src/works.ts`'s `EBOOK_ONLY_CLAUSE`
+    // carries the census and why this is not `medium=physical`.
+    ebookOnly: c.req.query('ebookOnly'),
     // Not validated here either. `KIND_CLAUSE` is a fixed map of literal SQL —
     // `'collectors'` is compared against text written in that file, never
     // against this string — so an unknown value adds no clause and shows the

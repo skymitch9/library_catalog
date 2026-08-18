@@ -913,6 +913,25 @@ export interface CollectionQuery {
    */
   medium?: string | undefined;
   /**
+   * `'hide'` — drop the works this catalog holds ONLY as an ebook file.
+   *
+   * ⚠️ **This is not `medium=physical` and must never be replaced by it.**
+   * `MEDIUM_CLAUSE.physical` asks "does a physical *edition row* exist", and
+   * measured against the live database on 2026-08-18 that is a different set:
+   * **6 works have no `edition` row at all and a `copy` anyway** — five of them
+   * catalogued that morning — because `copy.work_id` is denormalised precisely
+   * so "a copy can exist before its exact printing is known", which is the
+   * ordinary case when a spine photo made the row. Filtering the shelf by
+   * `medium=physical` would have hidden the owner's four newest books to remove
+   * two ebooks. See `EBOOK_ONLY_CLAUSE` for the predicate that does not.
+   *
+   * `undefined` is the default and nothing is hidden — every other surface in
+   * this app (the collection grid, the facets, `medium=ebook`, the series and
+   * universe pages) still sees every row, because those rows are real data that
+   * cross-catalog features read. This narrows a *view*, it deletes nothing.
+   */
+  ebookOnly?: string | undefined;
+  /**
    * How fancy the printing is — `collectors`, or `unsorted`. Migration 0050.
    *
    * ⚠️ A third axis, and it is genuinely orthogonal to the two above.
@@ -1075,6 +1094,87 @@ const MEDIUM_CLAUSE: Record<string, string> = {
 };
 
 /**
+ * "This book is not one we hold ONLY as an ebook file", as SQL.
+ *
+ * ## Why this exists at all
+ *
+ * Ebooks moved to their own site (`ebooks.heygabi.ai`) — the shared-pool side,
+ * where the household's ebook files already live. `catalog-platform`'s
+ * `docs/info/ebook-split-design.md` §3 plans for this catalog's ebook rows to be
+ * demoted to a holding cache and then **pruned**; phases 1–4 have shipped and
+ * phase 5 (the export-and-delete) has not. So the rows are still here, and the
+ * "Recently added" strip was showing them — owner, 2026-08-18: *"in the library
+ * site its showing recently added for ebooks, remove those. this should just be
+ * physical books now since we have an ebook site."*
+ *
+ * This is the **display** answer to that, deliberately not the data one. Phase 5
+ * deletes rows after an export and a `--force-prune` ceremony; that is a
+ * migration a person performs, not something a filter should pre-empt. Until it
+ * runs, the rows keep serving the cross-catalog joins that read them (series and
+ * universe pages, `ebook_holding`, the "also as an ebook" chip), and this clause
+ * keeps them off the one surface the owner asked about.
+ *
+ * ## The predicate, and why it is not `medium=physical`
+ *
+ * "Ebook-only" is the split design's own definition, from its §1 census: **has
+ * an ebook edition, has no physical edition, and has no copy.** All three
+ * conjuncts are load-bearing.
+ *
+ * Measured on the live database, 2026-08-18 04:55Z (the same SELECTs §1
+ * records, re-run):
+ *
+ * | | |
+ * |---|---|
+ * | works | 387 |
+ * | works with a physical edition | 287 |
+ * | works with NO edition row at all | **6** — every one of them has a copy |
+ * | **ebook-only works** | **94** |
+ * | ebook editions | 127 |
+ * | works this clause shows | **293** |
+ *
+ * 287 + 6 = 293 = 387 − 94, which is the arithmetic that says the three
+ * conjuncts partition the catalog the way this clause claims.
+ *
+ * ⚠️ **The totals move and the ebook figures do not** — 25 works arrived during
+ * the twenty minutes this was being written (362 → 387; the owner was
+ * cataloguing) while `ebook_only` stayed 94 and `ebook_editions` stayed 127.
+ * That is the expected shape: the ebook rows are a closed 2026-08-09 import with
+ * no producer left pointed at this catalog. If a re-run ever finds those two
+ * numbers *growing*, the ingest is back on and this filter is treating a
+ * symptom — check `EBOOK_INGEST_TOKEN` before widening anything here.
+ *
+ * ⚠️ **The `copy` conjunct is what makes it safe, and the 6 are why.** A work
+ * with a copy and no edition row is a physical book somebody photographed before
+ * anybody typed its printing in — `copy`'s schema comment says so — and five of
+ * those six were catalogued in the hour this shipped, so they were *in* the
+ * strip. `medium=physical` would have deleted them from it. A predicate that
+ * removes the newest books to remove the unwanted ones is worse than the bug.
+ *
+ * ⚠️ **Excluding, not selecting.** It removes only what is provably ebook-only,
+ * so a work with no editions and no copies at all — none exist today — stays.
+ * The failure mode of a mis-measured row is that it is still shown, which is
+ * the right way round for a shelf.
+ *
+ * A fixed map keyed by a short vocabulary, like `MEDIUM_CLAUSE`, `KIND_CLAUSE`
+ * and `NEEDS_CLAUSE`: an unrecognised value adds no clause rather than erroring,
+ * so a stale link shows the collection.
+ *
+ * ⚠️ **Exported only so `packages/db/test/ebook-only-clause.test.ts` can run
+ * this exact SQL text against a real SQLite** — the sibling clauses are private
+ * and stay that way. A predicate whose whole job is to decide which of the
+ * owner's books he can see is one to exercise rather than reason about, and the
+ * six copy-without-an-edition rows are precisely the case a reader nods past.
+ */
+export const EBOOK_ONLY_CLAUSE: Record<string, string> = {
+  hide:
+    `NOT (EXISTS (SELECT 1 FROM edition e
+                   WHERE e.work_id = w.id AND e.format NOT IN (${PHYSICAL_PLACEHOLDERS}))
+          AND NOT EXISTS (SELECT 1 FROM edition e
+                            WHERE e.work_id = w.id AND e.format IN (${PHYSICAL_PLACEHOLDERS}))
+          AND NOT EXISTS (SELECT 1 FROM copy c WHERE c.work_id = w.id))`,
+};
+
+/**
  * "How fancy is the printing", as SQL. Migration 0050.
  *
  * ⚠️ **EXISTS, like every other filter on this page** — it means the book *has*
@@ -1206,6 +1306,15 @@ function collectionFilter(query: CollectionQuery): { sql: string; binds: unknown
   if (medium) {
     where.push(medium);
     binds.push(...PHYSICAL_FORMATS);
+  }
+  // Immediately after the medium clause so the binds land in the order the SQL
+  // text reads them — this one spells `PHYSICAL_FORMATS` twice, once per EXISTS.
+  // It composes with everything above rather than replacing anything: it is a
+  // narrowing of the *view*, not an axis somebody chose. See `EBOOK_ONLY_CLAUSE`.
+  const ebookOnly = query.ebookOnly ? EBOOK_ONLY_CLAUSE[query.ebookOnly] : undefined;
+  if (ebookOnly) {
+    where.push(ebookOnly);
+    binds.push(...PHYSICAL_FORMATS, ...PHYSICAL_FORMATS);
   }
   if (query.format) {
     where.push('EXISTS (SELECT 1 FROM edition e WHERE e.work_id = w.id AND e.format = ?)');

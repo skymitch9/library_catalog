@@ -9,9 +9,15 @@
  * book is new. Here the equivalent honest answer already exists — `work.created_at`
  * is when the row was catalogued, written once by SQLite and never updated after.
  *
- * That does mean the whole ebook import shares one timestamp, which is *correct*:
- * they were catalogued together. `id` breaks the tie so the order is stable
+ * That does mean a bulk import shares one timestamp, which is *correct*: those
+ * books were catalogued together. `id` breaks the tie so the order is stable
  * between requests rather than arbitrary.
+ *
+ * ⚠️ The bulk import that argument was written about — the 2026-08-09 ebook run
+ * — is no longer *on* this strip. `CollectionPage` asks for it with
+ * `ebookOnly: 'hide'`, because ebooks have their own site now; see the comment
+ * on that call and `EBOOK_ONLY_CLAUSE` in `@lc/db`. The timestamp reasoning
+ * still holds for every other batch, a BackerKit import above all.
  */
 
 import type { WorkSummary } from '../api.js';
@@ -22,11 +28,20 @@ export function Shelf({
   rows,
   onOpen,
   action,
+  note,
 }: {
   title: string;
   rows: WorkSummary[];
   onOpen: (id: number) => void;
   action?: React.ReactNode;
+  /**
+   * One line under the heading saying what the strip is showing.
+   *
+   * ⚠️ A prop and not a paragraph beside `<Shelf>` in the page, because this
+   * component returns `null` on an empty strip — a caption rendered outside it
+   * would survive the thing it captions and describe an empty screen.
+   */
+  note?: React.ReactNode;
 }) {
   if (rows.length === 0) return null;
 
@@ -36,6 +51,7 @@ export function Shelf({
         <h2>{title}</h2>
         {action}
       </div>
+      {note && <p className="controls__note muted">{note}</p>}
       <ul className="shelf__strip">
         {rows.map((w) => (
           <li key={w.id}>

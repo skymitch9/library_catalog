@@ -91,11 +91,35 @@ export type NeedsFilter = (typeof NEEDS_FILTERS)[number];
 export const EDITION_KIND_FILTERS = [...EDITION_KINDS, 'unsorted'] as const;
 export type EditionKindFilter = (typeof EDITION_KIND_FILTERS)[number];
 
+/**
+ * The values the physical-shelf narrowing accepts — one, and it is opt-in.
+ *
+ * A one-value vocabulary rather than `?ebookOnly=1`, because the other half of
+ * this pair already has a name it must not accidentally take: `show` would read
+ * as "ebooks only" and mean the opposite of what it does. There is nothing to
+ * turn *on* here — the whole catalog is the default — so the only word is the
+ * one that takes something away.
+ */
+export const EBOOK_ONLY_FILTERS = ['hide'] as const;
+export type EbookOnlyFilter = (typeof EBOOK_ONLY_FILTERS)[number];
+
 export interface CollectionFilters {
   q: string;
   series: string;
   /** The coarse axis — `physical` or `ebook`. Narrower than `format`, not instead of it. */
   medium: string;
+  /**
+   * `hide` or empty — whether to leave out the books held only as an ebook file.
+   *
+   * ⚠️ The one filter here with **no control of its own**, and that is on
+   * purpose rather than an omission. It is what "Recently added" means now that
+   * ebooks have their own site, and "See all" carries it into the list so the
+   * strip and the list it expands into cannot disagree. It is in the URL like
+   * every other filter so Back returns to the same shelf, and **Clear turns it
+   * off**, which is the whole escape hatch it needs: nothing about it is
+   * discoverable, so nothing about it may be inescapable.
+   */
+  ebookOnly: string;
   format: string;
   /**
    * How fancy the printing is — `collectors`, `unsorted`, or empty.
@@ -250,6 +274,9 @@ function parseCollection(search: string): CollectionFilters {
     // server already makes.
     universe: p.get('universe') ?? '',
     medium: pick(search, 'medium', EDITION_MEDIA) ?? '',
+    // Closed vocabulary, checked here, so `?ebooks=maybe` is simply the whole
+    // collection rather than a state the page has no rendering for.
+    ebookOnly: pick(search, 'ebooks', EBOOK_ONLY_FILTERS) ?? '',
     format: pick(search, 'format', EDITION_FORMATS) ?? '',
     editionKind: pick(search, 'kind', EDITION_KIND_FILTERS) ?? '',
     status: pick(search, 'status', COPY_STATUSES) ?? '',
@@ -278,6 +305,11 @@ export function collectionPath(f: CollectionFilters): string {
   if (f.series) p.set('series', f.series);
   if (f.universe) p.set('universe', f.universe);
   if (f.medium) p.set('medium', f.medium);
+  // `?ebooks=hide` in the address bar, `ebookOnly` in the API — the same
+  // shortening `readState` → `?read=` and `editionKind` → `?kind=` already use,
+  // and safe for the same reason: this function and `parseCollection` are the
+  // only two places that spell either name.
+  if (f.ebookOnly) p.set('ebooks', f.ebookOnly);
   if (f.format) p.set('format', f.format);
   if (f.editionKind) p.set('kind', f.editionKind);
   if (f.status) p.set('status', f.status);
@@ -304,6 +336,9 @@ export function collectionInUniversePath(universe: string): string {
     series: '',
     universe,
     medium: '',
+    // A universe spans catalogs and a link into it is a link to the whole world
+    // this shelf holds, so it carries no shelf narrowing of its own.
+    ebookOnly: '',
     format: '',
     editionKind: '',
     status: '',

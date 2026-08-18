@@ -70,6 +70,9 @@ export function CollectionPage({
   // The tier above the series. Composes with it rather than replacing it.
   const [universe, setUniverse] = useState(filters.universe);
   const [medium, setMedium] = useState(filters.medium);
+  // The physical shelf. No control of its own — "See all" under the strip is
+  // what sets it, and Clear is what turns it off. See `CollectionFilters`.
+  const [ebookOnly, setEbookOnly] = useState(filters.ebookOnly);
   const [format, setFormat] = useState(filters.format);
   // The third format-ish axis — how fancy the printing is. Migration 0050.
   const [editionKind, setEditionKind] = useState(filters.editionKind);
@@ -110,18 +113,30 @@ export function CollectionPage({
   const [error, setError] = useState<string | null>(null);
 
   const canEdit = me.capabilities.includes('editCatalog');
+  // ⚠️ `ebookOnly` counts as filtered, which is what hides the strip once "See
+  // all" has expanded it. A strip captioned "Recently added" sitting on top of
+  // the same list it just opened is the noise this flag exists to prevent.
   const filtered = Boolean(
-    q || series || universe || medium || format || editionKind || status || needs || readState,
+    q ||
+      series ||
+      universe ||
+      medium ||
+      ebookOnly ||
+      format ||
+      editionKind ||
+      status ||
+      needs ||
+      readState,
   );
 
   useEffect(() => savePrefs({ sort, dir, pageSize, view }), [sort, dir, pageSize, view]);
 
   const params = useMemo(
     () => ({
-      q, series, universe, medium, format, editionKind, status, needs, readState,
+      q, series, universe, medium, ebookOnly, format, editionKind, status, needs, readState,
       sort, dir, page, pageSize,
     }),
-    [q, series, universe, medium, format, editionKind, status, needs, readState, sort, dir, page, pageSize],
+    [q, series, universe, medium, ebookOnly, format, editionKind, status, needs, readState, sort, dir, page, pageSize],
   );
 
   const reload = useCallback(() => {
@@ -157,6 +172,7 @@ export function CollectionPage({
     series,
     universe,
     medium,
+    ebookOnly,
     format,
     editionKind,
     status,
@@ -188,6 +204,7 @@ export function CollectionPage({
         series,
         universe,
         medium,
+        ebookOnly,
         format,
         editionKind,
         status,
@@ -199,19 +216,35 @@ export function CollectionPage({
         page: page + 1,
       }),
     );
-  }, [q, series, universe, medium, format, editionKind, status, needs, readState, sort, dir, pageSize, page]);
+  }, [q, series, universe, medium, ebookOnly, format, editionKind, status, needs, readState, sort, dir, pageSize, page]);
 
   useEffect(() => {
     api
-      .facets({ q, universe, medium, format, editionKind, status, needs, readState })
+      .facets({ q, universe, medium, ebookOnly, format, editionKind, status, needs, readState })
       .then(setFacets)
       .catch(() => setFacets(null));
-  }, [q, universe, medium, format, editionKind, status, needs, readState]);
+    // ⚠️ `ebookOnly` is in here and not only in the list's params, or the
+    // counts stop describing the list they label — "Ebook (126)" over a
+    // physical shelf holding 32 of them is the disagreement `collectionFilter`
+    // exists as one builder to prevent.
+  }, [q, universe, medium, ebookOnly, format, editionKind, status, needs, readState]);
 
   const loadHeader = useCallback(() => {
     api.stats().then(setStats).catch(() => setStats(null));
+    // ⚠️ `ebookOnly: 'hide'` — the strip is the PHYSICAL shelf. Owner,
+    // 2026-08-18: *"in the library site its showing recently added for ebooks,
+    // remove those. this should just be physical books now since we have an
+    // ebook site."* Ebooks live at ebooks.heygabi.ai; this catalog still holds
+    // their rows because the split's prune phase has not run, and the rows are
+    // what the series pages and the "also as an ebook" chip read. So the strip
+    // narrows and nothing is deleted — `EBOOK_ONLY_CLAUSE` in `@lc/db` carries
+    // the census and the reason this is not `medium: 'physical'`.
+    //
+    // Hard-coded rather than read from the filter state: the strip is not a view
+    // of this page's filter, it is the way in — it renders only when nothing is
+    // filtered at all.
     api
-      .collection({ sort: 'added', dir: 'desc', pageSize: 10 })
+      .collection({ sort: 'added', dir: 'desc', pageSize: 10, ebookOnly: 'hide' })
       .then((r) => setRecent(r.rows))
       .catch(() => setRecent([]));
   }, []);
@@ -614,6 +647,10 @@ export function CollectionPage({
                 setSeries('');
                 setUniverse('');
                 setMedium('');
+                // The only way back to the whole catalog from a "See all" —
+                // this narrowing has no control of its own, so Clear is its
+                // escape hatch and must not forget it.
+                setEbookOnly('');
                 setFormat('');
                 setEditionKind('');
                 setStatus('');
@@ -695,18 +732,50 @@ export function CollectionPage({
           title="Recently added"
           rows={recent}
           onOpen={onOpen}
+          /* ⚠️ Written down for the reason the filter panel's four notes are:
+             the wrong guess is silent. Somebody who added an ebook and does not
+             see it here would read this strip as broken. Worded and NOT a link
+             — ebooks.heygabi.ai is permission-gated and this app cannot see who
+             holds that grant, so a link here would offer half the household a
+             door that refuses them. */
+          note={
+            <>
+              Physical books only. The household's ebooks have their own shelf now — they
+              are on the ebooks site, not in this catalog's recent additions.
+            </>
+          }
           action={
             <button
               className="link"
               onClick={() => {
                 setSort('added');
                 setDir('desc');
+                // ⚠️ The third line, and it is what makes "See all" honest:
+                // without it the list you land on is a DIFFERENT list from the
+                // strip you clicked, with the ebooks back in it.
+                setEbookOnly('hide');
               }}
             >
               See all
             </button>
           }
         />
+      )}
+
+      {/* ⚠️ The narrowing "See all" applied, said out loud, with its own way
+          out. It is the one filter with no control in the panel, so without
+          this line a shorter list has no visible cause — and a count that
+          quietly disagrees with the catalog is the silent-wrong-guess this page
+          writes notes to prevent everywhere else. The button is the escape
+          hatch a person will actually find; Clear is the other one. */}
+      {ebookOnly === 'hide' && (
+        <p className="controls__note muted">
+          Physical books only — books held <b>only</b> as an ebook file are on the ebooks
+          site.{' '}
+          <button className="link" onClick={() => setEbookOnly('')}>
+            Show them here too
+          </button>
+        </p>
       )}
 
       {error ? (

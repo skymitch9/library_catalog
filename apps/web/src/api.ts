@@ -270,6 +270,15 @@ export interface CollectionParams {
   /** The coarse axis: `physical` or `ebook`. Composes with `format`. */
   medium?: string;
   /**
+   * `'hide'` — leave out the books this catalog holds only as an ebook file.
+   *
+   * ⚠️ **Not a synonym for `medium: 'physical'`**, which asks whether a physical
+   * *edition row* exists and so drops the books whose printing nobody has typed
+   * in yet — the ordinary state of a book a spine photo just added. The server's
+   * `EBOOK_ONLY_CLAUSE` carries the measurement that settled it.
+   */
+  ebookOnly?: string;
+  /**
    * `collectors` or `unsorted` — how fancy the printing is. Migration 0050.
    * Travels as `?kind=`; the server reads it as `editionKind`.
    */

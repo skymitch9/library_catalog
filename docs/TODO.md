@@ -264,10 +264,43 @@ that repo is outstanding, and it belongs to the conductor, not to this file.
   recommendation is now unsupported**, see the measurement above; members-only
   still recommended).
 
-## 📚 Ebooks may want to be their OWN site — the ownership boundary is per-FORMAT (owner insight 2026-08-16)
+## 📚 Ebook split — ⚠️ PHASE 5 (retire ingest + prune) IS STILL OWED
 
-Raised mid-conversation and **not yet decided** — recorded because it reframes
-the federation question above rather than adding to it.
+**Decided and mostly built.** The insight below (owner, 2026-08-16) became
+`catalog-platform/docs/info/ebook-split-design.md`; phases 1–4 have shipped and
+ebooks live at **ebooks.heygabi.ai**. What is left in *this* repo is phase 5.
+
+**Phase 5, unchanged from the design's §6 table** — stop running
+`import-ebooks.mjs`; unset `EBOOK_INGEST_TOKEN` so `/api/ingest/ebook` 404s;
+export the ebook-only works and all ebook editions to a dated JSON committed
+here; `--force-prune` the `source='file'` ebook editions (deleting all of them
+exceeds the 20% guard **by design** — the ceremony is the point); delete the
+ebook-only works. ⚠️ **Re-measure `user_book` for `'human'`-asserted read states
+on those works before deleting — it must be 0**, and it was 0 at design time
+only because nobody had typed one in yet.
+
+**Measured 2026-08-18 04:55Z, so phase 5 knows what it is deleting:** 387 works,
+**94 ebook-only**, 127 ebook editions. ⚠️ The two ebook figures have not moved
+since the design measured them on 2026-08-16 while the catalog grew by 25 works
+in twenty minutes — the ebook rows are a closed 2026-08-09 import with no
+producer still pointed here. If they ever *grow*, the ingest is back on.
+
+**What landed instead, 2026-08-18 — the display half, on the owner's ask**
+(*"in the library site its showing recently added for ebooks, remove those"*):
+"Recently added" and its **See all** now ask for `ebookOnly=hide`, so the strip
+is the physical shelf. **No data was deleted** — that is phase 5's job, and the
+94 works still serve the series/universe joins, `ebook_holding`, and the "also
+as an ebook" chip. See `EBOOK_ONLY_CLAUSE` in `packages/db/src/works.ts`.
+
+⚠️ **Still showing all 387 works, and deliberately so — an owner decision, not
+an oversight:** the collection grid, the `Format: Ebook (94→126)` facet and the
+`/stats` counts are untouched. Narrowing those would make the `medium=ebook`
+filter near-pointless and would hide books with no way to reach them, which is
+phase 5's export-first ceremony done sloppily. **If the owner wants the whole
+site physical-only before phase 5 runs, that is one more line
+(`ebookOnly` defaulted on in `collectionQueryFrom`) — ask him, do not assume.**
+
+The original insight, kept because it reframes the federation question below:
 
 > *"we might need to now make ebooks its own site because we all share ebooks
 > like we do audiobooks but physical books obviously belong to someone"*
@@ -295,16 +328,13 @@ is it". Deciding the ebook split FIRST would likely simplify the federation,
 because it separates *the shared pool* from *the per-person shelves* before two
 households ever have to be joined.
 
-**Not a build yet.** Open questions, in the order they need answering:
-1. Does an ebook site mean a new catalog, or a VIEW over the shared index?
-   (The index already exists and already spans catalogs — a new Worker may be
-   the expensive answer to a question a query answers.)
-2. What happens to `library_catalog`'s existing ebook rows — move, mirror, or
-   leave and re-point?
-3. Does the shelf server change shape? It serves audiobooks by URL today;
-   ebooks are the same *kind* of thing.
-4. Who is the ingest owner once ebooks leave the physical catalog — step 1b
-   still produces the manifest.
+~~**Not a build yet.** Open questions…~~ — **all four were answered on
+2026-08-16** and the answers are the design doc's §2–§5, kept there rather than
+copied here so there is one source of truth: the ebooks page rides the
+audiobook site (Q1); this repo's ebook rows are **demoted to holdings, then
+pruned** (Q2 — the phase 5 above); the shelf server needs one runbook line
+because the ebooks already ride the same mirror (Q3); step 1b stays the
+manifest's producer and only the *consumer* moves home (Q4).
 
 ## 🤝 A second household's library, federated with ours (owner ask 2026-08-16)
 

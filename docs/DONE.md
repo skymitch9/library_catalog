@@ -17,6 +17,68 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## 📖 "RECENTLY ADDED" IS THE PHYSICAL SHELF — ✅ DONE 2026-08-18
+
+Owner ask, verbatim: *"in the library site its showing recently added for
+ebooks, remove those. this should just be physical books now since we have an
+ebook site."*
+
+### The measured mechanism — nothing was broken, a phase simply has not run
+
+The strip asks `/api/collection?sort=added&dir=desc&pageSize=10` with **no
+format narrowing at all**, and the ebook rows it returned are **real rows in
+this catalog's own D1** — the 2026-08-09 Calibre-Web import, 127 `ebook_epub`
+editions across 126 works, **94 of them ebook-only**. They were not estate-index
+rows leaking in and they were not created by the cross-catalog linking.
+
+They are still here because **`ebook-split-design.md` phase 5 (export + prune)
+has not run** — phases 1–4 shipped, ebooks moved to ebooks.heygabi.ai, and the
+library's rows were meant to be deleted after an export ceremony that nobody has
+performed. Sorted newest-first the strip was showing "All The Skills" ebooks from
+2026-08-14 alongside the morning's real books.
+
+### The fix: filter the view, delete nothing
+
+`EBOOK_ONLY_CLAUSE` in `packages/db/src/works.ts`, reached by
+`?ebookOnly=hide`. The strip asks for it; **See all** sets it too, so the list
+it opens is the same list. `Clear` turns it off, and a line above the results
+says what is narrowed with a one-click "Show them here too".
+
+⚠️ **The predicate is NOT `medium=physical`, and that is the whole trap.**
+`MEDIUM_CLAUSE.physical` asks whether a physical *edition row* exists; measured
+that morning, **6 works had no edition row at all and a copy anyway — 5 of them
+catalogued in the hour this shipped**, because `copy.work_id` is denormalised so
+a spine photo can create a copy before anybody types the printing in. The
+obvious filter would have hidden the owner's newest books to remove two ebooks.
+So the clause uses the split design's own definition — **an ebook edition, no
+physical edition, and no copy** — which excludes only what is provably ebook-only
+and fails towards *showing* a row.
+
+**Census, 2026-08-18 04:55Z:** 387 works · 287 with a physical edition · 6 with
+no edition row · **94 ebook-only** · 127 ebook editions · **293 shown**.
+287 + 6 = 293 = 387 − 94. The friend instance measured **6 works, 0 ebook
+editions** — the change is a no-op there, exactly as the design predicted
+(her instance never set `EBOOK_INGEST_TOKEN`).
+
+### Verified
+
+- **Exercised end-to-end against a real database**, not reasoned about. The
+  local D1 is 116 works of which 114 are ebook-only: unfiltered returned 116,
+  `?ebookOnly=hide` returned **2** — and both survivors were the interesting
+  case, a `wanted` copy on a work whose only edition is an EPUB.
+- `packages/db/test/ebook-only-clause.test.ts` runs the **shipped SQL text**
+  against `node:sqlite` (a new `packages/db/test/` lane, added to `npm test`).
+- Suites **1226 green** (was 1215), typecheck clean, UTF-8 sweep clean.
+
+### What was deliberately NOT changed
+
+The collection grid, the `Format` facet, `/stats` counts, search, series and
+universe pages all still see every row. Those rows feed `ebook_holding`, the
+"also as an ebook" chip and the cross-catalog joins, and the owner's standing
+decision on search stands. Making the whole site physical-only is one more line
+and is **a question for him**, recorded in [`TODO.md`](TODO.md)'s ebook-split
+section beside the phase 5 that should do it properly.
+
 ## 🤖 GABI'S DELEGATED DOOR — SHE WRITES WITH THE ASKER'S OWN ROLE — ✅ DONE 2026-08-18
 
 The library half of the estate's **GABI Tier 1** build. Owner ask 2026-08-17,
