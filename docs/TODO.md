@@ -391,31 +391,18 @@ and upload via each work's cover UI (Replace cover / the edition row).
 Owner's words: "Leave me a note somewhere to add the illumicrate editions
 photos."
 
-## 🖼️ The needs-cover list is now the box-set split's offspring (2026-08-18)
+⚠️ **These five works (224–228) are now the ENTIRE `/?needs=cover` list.**
+Measured in production D1 2026-08-18 19:16 UTC with the route's own predicate
+(`NEEDS_COVER`, `w.cover_url IS NULL OR w.cover_status = 'standin'`): it
+returns 224, 225, 226, 227, 228 and nothing else, out of 448 works. The
+box-set split's coverless offspring all filled — see [`DONE.md`](DONE.md).
 
-⚠️ **All three of the 2026-08-18 photo jobs are CLOSED** — moved whole to
-[`DONE.md`](DONE.md). What is left on `/?needs=cover` is a different, larger
-job created by the box-set split.
-
-**Measured in production D1, 2026-08-18 (after the cleanup pack): 26 works.**
-
-| Group | works | state |
-|---|---|---|
-| Illumicrate Percy Jackson | 224, 225, 226, 227, 228 | `standin`, image renders — the original migration 0040 case, still waiting on the owner's photos (see the section above) |
-| **Box-set split offspring** | 412, 419, 454, 455, 462–473 | **`cover_url IS NULL`** — the set rows' covers were the BOX and were cleared on purpose |
-| A Court of Thorns and Roses | 325, 458, 459, 460, 461 | `cover_url IS NULL` |
-
-⚠️ **The 20 NULL-cover rows are not a regression.** When a set row was split,
-its `cover_url` was cleared deliberately — *"the image was the box, not this
-novel"* (`change_log` 1053 and siblings) — and the volumes minted beside it
-never had one. These are ordinary covers-flow work: they have ISBNs or
-resolvable titles, so the normal rungs should reach most of them. **Nobody has
-run the covers backfill over them yet.**
-
-**Next step:** `npm run backfill:covers` / `backfill:missing-covers` against
-these 20, then re-measure. The five Illumicrate rows must NOT be swept into
-that — they already render and are waiting on a photograph, not a lookup.
-
+⚠️ **No backfill script can close this one, and re-running one is wasted
+time.** `backfill-work-covers.mjs` and `backfill-missing-covers.mjs` both
+select on `cover_url IS NULL OR cover_url = ''`; these rows have a populated,
+verified-loading URL (59–73 KB each, re-checked 2026-08-18) and are on the
+list only via the `cover_status = 'standin'` half of the predicate, which no
+script reads. It closes with a photograph and the cover UI, or not at all.
 
 ---
 

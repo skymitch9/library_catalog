@@ -17,6 +17,75 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## 🖼️ THE BOX-SET SPLIT'S COVERLESS OFFSPRING — ✅ ALL FILLED 2026-08-18
+
+Moved whole from [`TODO.md`](TODO.md). Opened 2026-08-18 as "nobody has run the
+covers backfill over these yet"; closed the same day, **verified by
+re-measurement against production D1 at 19:16 UTC**.
+
+**Measured: 448 works, `cover_url IS NULL OR = ''` → 0.** Every one of the rows
+carries a cover.
+
+⚠️ **The item said "20 NULL-cover rows" and the real number is 21.** Its own
+group lists add up that way — 412, 419, 454, 455, 462–473 is **16**, and
+325, 458–461 is **5** — and the 26-row total it also quoted is only reachable
+as 5 + 21. The counting error, not the row list, was wrong; nothing was
+missed by it.
+
+| Group | works | outcome |
+|---|---|---|
+| **Box-set split offspring** | 412, 419, 454, 455, 462–473 | **16/16 filled**, all `covers.openlibrary.org/b/id/…-L.jpg` |
+| **A Court of Thorns and Roses** | 325, 458, 459, 460, 461 | **5/5 filled**, same rung — 325 is the split set row itself, cleared by `change_log` 1010 |
+| Illumicrate Percy Jackson | 224–228 | **untouched, correctly** — still `standin`, still the only rows on `/?needs=cover` |
+
+**`/?needs=cover` now holds exactly 5.** Measured with the route's own
+predicate (`NEEDS_COVER` in `packages/db/src/works.ts`,
+`(w.cover_url IS NULL OR w.cover_status = 'standin')`) run against production:
+it returns 224, 225, 226, 227, 228 and nothing else. That is the Illumicrate
+photo job in [`TODO.md`](TODO.md), which is a different item and stays open.
+
+⚠️ **Nobody re-ran the backfill for this closure, and the fills were not this
+item's own work.** The 21 rows were already filled when the item was picked up:
+all 21 carry `updated_at = 2026-08-18 16:05:56` — **one identical timestamp**,
+the signature of `execute()` writing a single batched statement file, about two
+hours after the split cleared them at 14:01:22. What is **measured**: no
+`change_log` row accompanies the fills (so no human and no API write), no
+`research_finding` for a cover field exists that day, `details-sweep.ts` does
+not touch covers at all, and the cron fires at minute **:07** not :05. What is
+**inferred, not proven**: that the writer was
+`scripts/backfill-missing-covers.mjs --remote --commit`, rung 1 (Open Library
+by ISBN) — the URL shape `/b/id/{id}-L.jpg` is exactly that rung's
+`cover.large`, and the scripts deliberately write no `change_log`.
+
+**Both free rungs re-run as dry runs against production and confirm nothing is
+left:**
+
+| Command | Result |
+|---|---|
+| `node scripts/backfill-work-covers.mjs --remote` | `production: 0 work(s) with a stranded cover` |
+| `npm run backfill:missing-covers -- --remote` | `448 work(s), 0 with no cover` / `0 statement(s) to run` — no network calls made |
+
+**No paid rung was run and none is needed.** `--llm` would have had an empty
+candidate list; the leftover-for-money set is **zero books, $0.00**.
+
+⚠️ **Neither script could ever have swept 224–228, and this is structural, not
+luck.** Both gate their candidate set on `cover_url IS NULL OR cover_url = ''`,
+and the Illumicrate rows carry a populated URL — they are on `/?needs=cover`
+only via the `cover_status = 'standin'` half of the predicate, which no
+backfill script reads. The dry runs above confirmed the write set was empty
+before anything was committed.
+
+**Every stored URL was fetched and size-checked, independently of whoever wrote
+them.** All 26 rows (the 21 plus the 5 Illumicrate) were run through the repo's
+own `verifyCoverUrl` — `?default=false` plus the size floor, the guard against
+Open Library's 43-byte 1×1 placeholder-with-HTTP-200. **26 of 26 returned real
+images, 31–76 KB each; 0 rejections.** So the failure mode held: "found
+nothing", never a dead link.
+
+**Not verified:** which agent or session ran the write at 16:05:56, and whether
+the two rungs the ladder skipped (Google Books, Open Library by title) were
+reached at all — with rung 1 answering every row, they would not have been.
+
 ## 📸 THREE BOOKS WANTED THE OWNER'S OWN PHOTOGRAPH — ✅ ALL THREE CLOSED 2026-08-18
 
 Moved whole from [`TODO.md`](TODO.md). Recorded 2026-08-14/18 as an owner
