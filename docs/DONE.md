@@ -17,6 +17,67 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## 🤖 GABI'S DELEGATED DOOR — SHE WRITES WITH THE ASKER'S OWN ROLE — ✅ DONE 2026-08-18
+
+The library half of the estate's **GABI Tier 1** build. Owner ask 2026-08-17,
+verbatim: *"Can I dm her an isbn or a photo and she adds it to the catalog?"*
+and *"Hey Gabi, fix all my missing details… Hey @Sam i went ahead and fixed all
+your missing stuff."* Approved as Tier 1 of the T0–T4 ladder (*"that looks good,
+start with that"*, then *"all of it"*): **additive writes with easy undo,
+auto-apply then report.**
+
+Design of record: `catalog-platform/docs/info/gabi-application-map.md` §2a–2d.
+Operational reference: [`access/gabi-delegated.md`](access/gabi-delegated.md).
+
+**Shipped** (`5b4b860`; deployed both instances — main `7fdbe01b`, friend
+`5886875e`):
+
+- `POST /api/gabi/delegated/{whoami,add-isbn,run-details}`, mounted **before
+  `requireAuth`** as the fourth machine route. Bearer-gated on
+  `ESTATE_APP_TOKEN_DISCORD` (one value, THREE holders, same name — the
+  `DONOR_TOKEN` idiom).
+- ⚠️ **The bearer authorises no write.** It proves only that the caller is the
+  estate's Discord Worker. Every writing verb then resolves the on-behalf-of
+  Firebase uid to an `app_user` row **on this instance** and checks that
+  person's own capability — `editCatalog` to add, `runResearch` to sweep, the
+  same one the equivalent button is gated on.
+- Four refusal causes, four sentences, because they need four different fixes:
+  no account here / estate-revoked / awaiting approval / role too low. Plus a
+  worded 503 when the secret is unset and a worded 401 when the bearer is wrong
+  — ⚠️ deliberately NOT `/api/donor`'s blank 404, because these refusals are
+  relayed into a Discord message where a silent 404 reads as GABI saying nothing.
+- `packages/db`: `findUserByFirebaseUid` — **a lookup, never a create**. The
+  asymmetry is the point: this door must never be able to mint standing.
+- `lib/details-sweep.ts` gained `SweepOptions.triggeredBy` — ONE implementation,
+  the cron still passing `null`, the delegated tick passing the asker's id. It
+  travels into `gap_verdict.decided_by` and `research_finding.reviewed_by`
+  exactly as a person's Run button already does.
+
+**Provenance and undo.** `add-isbn` stamps `Actor{ userId: <asker>,
+how: 'auto', note: 'gabi-discord: …' }`, so `SELECT * FROM change_log WHERE note
+LIKE 'gabi-discord%'` is the whole of what she has ever added; `run-details`
+stamps `research_run.triggered_by`. The queue page's existing **auto-applied →
+Undo** list is the undo, unchanged and already built.
+
+⚠️ **What it deliberately will NOT do.** A barcode whose book is already on the
+shelf raises the four-way rescan question (`@lc/core/rescan.ts`) or the
+pre-order question. Nothing the catalog knows can tell those apart — this repo
+already carries residue from the version that guessed — so both are handed back
+**with nothing written**. They are T2 mutations and the confirm lane does not
+exist. Auto-apply is bounded to the genuinely additive cases: a new book (work +
+printing + copy), or a first physical printing on a work that had none.
+
+**Verified live 2026-08-18** on both instances: every verb answers a worded 401
+unauthenticated; with the real bearer, `whoami` answers `200 {known:false}` and
+`add-isbn` answers `403 unknown_here` with a sentence naming the site to sign in
+on. `/api/health` reports `gabi.delegated: true` on both. 1,200 tests pass,
+typecheck clean.
+
+⚠️ **NOT verified:** no real Discord DM has driven this end to end, so no
+`change_log` row wearing `gabi-discord` exists in production yet. That needs the
+owner and a Discord client — the exact messages to send are in
+`catalog-platform/docs/access/discord-bot.md` §13.4.
+
 ## 🔗 A LINK CAN CARRY THE QUESTION INTO THE GABI PANEL — ✅ DONE 2026-08-18
 
 The panel half of Discord's `/gabi` deep link, recorded as panel work in
