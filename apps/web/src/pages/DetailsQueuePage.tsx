@@ -387,7 +387,18 @@ export function DetailsQueuePage({
           <Stat n={data.spent.inputTokens} label="tokens in" />
           <Stat n={data.spent.outputTokens} label="tokens out" />
           <Stat text={formatCents(data.spent.estimatedCents)} label="spent, estimated" />
-          {data.spent.errors > 0 && <Stat n={data.spent.errors} label="failed" />}
+          {/* ⚠️ "all time", and the two words are not decoration. This tile read
+              "3 failed" on padhard for two days after the monthly-cap incident
+              of 2026-08-17, beside a lifetime run count, while **no row on the
+              page was red** — every one of those three runs had already been
+              superseded by a later successful one, two of them by the hourly
+              sweep the same night. A lifetime counter sitting in a strip of
+              lifetime figures still reads as "three things are broken right
+              now" when it is the only one of them that sounds like a fault, and
+              that reading was part of why the owner reported a fix that had
+              already happened. The number is honest; the label was not doing
+              its share of the work. */}
+          {data.spent.errors > 0 && <Stat n={data.spent.errors} label="failed, all time" />}
         </div>
         <p className="muted small">
           {/* Every figure above comes from `research_run`, not from this tab —

@@ -333,3 +333,33 @@ curl -s "https://library.heygabi.ai/assets/index-BMOsf5fN.js" | grep -c "Content
 
 ⚠️ Both traps produce a **zero**, and a zero is exactly what a genuinely failed
 deploy produces. Before believing one, bust the cache and drop the `-o`.
+
+## "The failed count never goes down" — it is a lifetime total (2026-08-19)
+
+**Symptom:** the details queue at `/queue` shows a `3 failed` tile that never
+changes, and nothing on the page is red.
+
+`data.spent.errors` comes from `runTotals`, which counts every `research_run`
+row with `status = 'error'` **ever**, exactly like the token and cost tiles
+beside it. It is not a count of anything currently broken. On padhard the three
+were all from the monthly-cap incident of 2026-08-17, and every one had already
+been superseded by a later successful run — two of them by the hourly sweep the
+same night, with nobody pressing anything.
+
+⚠️ **The question the tile looks like it is answering is a different query:**
+
+```sql
+SELECT w.id, w.title FROM work w
+  JOIN research_run r ON r.id = (SELECT MAX(id) FROM research_run x WHERE x.work_id = w.id)
+ WHERE r.status = 'error';
+```
+
+Empty means no book is showing a failure — which is what a person means by
+"is anything broken". Run that before believing the tile. The label now reads
+`failed, all time` for this reason.
+
+⚠️ Related, and the reason this cost real time: a tech-debt note in `TODO.md`
+told a future session to confirm a cleared API key by *"pressing Look again on
+either FAILED row (runs 5/6)"*. Those rows had not been on the page for two
+days — the works had been re-run and left the queue — so the instruction was
+unfollowable and its premise ("those rows never retry themselves") was wrong.
