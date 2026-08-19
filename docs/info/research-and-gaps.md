@@ -520,6 +520,37 @@ display, so the main catalog's 81 hand-quoted forms — strictly better than a
 derivation — are not offered to her sweep. Logged as tech debt, not convergence:
 the derivation already closes the rows.
 
+#### ⚠️ The residue, and rung 0 — the sweep now fixes rows for free
+
+Fixing `applyFinding` does nothing for rows already stranded, and there were
+some. **Caught live:** her `:07` tick on 2026-08-19, on the old code, spent real
+money on two books, succeeded on both —
+
+    {"proposed":1,"applied":1,
+     "detail":"Filled in 1 of 1: Volume number set to 1
+               (sorts correctly; the printed form still needs a person)."}
+
+— wrote only the sort, and left both rows on the queue. Worse, the run recorded
+`seriesIndex` as **asked**, so `planSweep` drops them for having no unasked gap:
+**a run that worked stranded the book it worked on, permanently.**
+
+So the sweep gained a **rung 0**, `fillPrintedVolumeNumbers`, which runs before
+everything else and spends nothing:
+
+| | |
+|---|---|
+| what it does | derives `series_index_display` from the `series_index_sort` already in the row |
+| cost | **no lookup, no key, no money** — one query plus `updateWork` per row |
+| ceiling | `PRINTED_FORM_LIMIT` = 4 a tick, and its subrequests are **subtracted from `SWEEP_BUDGET` before `planSweep` runs** — a free rung that silently ate the paid half's budget would be a worse bug than the one it fixes |
+| runs when | **always**, including with no `ANTHROPIC_API_KEY` and no donor: it is placed above the key gate on purpose |
+| writes through | ordinary `updateWork`, so it lands in `change_log` like everything else |
+| selection | `UNPRINTED_VOLUME_SQL`, pinned against real SQLite in `packages/db/test/unprinted-volume-clause.test.ts` |
+
+⚠️ It is not a one-off backfill and should not be replaced by one. A person can
+recreate the state any day: `WorkFields` lets them edit the sort and
+deliberately offers no display box, so a hand-typed volume number lands in
+exactly this shape and nothing else would ever close it.
+
 ### 10.7 A failure about the ACCOUNT is not a turn (2026-08-19)
 
 `detailsRunHistory.lastAttemptAt` was the newest attempt of any status, and

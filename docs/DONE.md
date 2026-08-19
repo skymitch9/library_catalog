@@ -107,6 +107,28 @@ run 7 worded), so a rule blind to the worded form would have fixed half of it.
 one, so re-classifying cannot silently downgrade a screen that already reads
 correctly.
 
+### Rung 0 — the sweep fixes rows for free, and it was needed within the hour
+
+Fixing `applyFinding` does nothing for rows already stranded, and the `:07` tick
+proved there were some **while this work was in progress**: on the old code it
+paid for two books, succeeded on both, wrote only the sort, and recorded
+`seriesIndex` as *asked* — so `planSweep` would never offer either again. A run
+that worked stranded the book it worked on, permanently.
+
+`fillPrintedVolumeNumbers` is the answer: it derives the printed form from the
+sort already in the row, costs **no lookup, no key and no money**, runs **above
+the key gate** (an instance with neither AI nor donor should still do the one
+thing it can always do), and charges its own subrequests against `SWEEP_BUDGET`
+before `planSweep` sees it — a free rung that quietly ate the paid half's budget
+would be a worse bug than the one it fixes. Capped at 4 rows a tick, written
+through ordinary `updateWork` so it lands in `change_log`, and its selection
+(`UNPRINTED_VOLUME_SQL`) is pinned against real SQLite rather than a TypeScript
+restatement of itself.
+
+⚠️ Not a one-off backfill, and it must not be replaced by one: `WorkFields` lets
+a person edit the sort and deliberately offers no display box, so a hand-typed
+volume number recreates this exact shape any day of the week.
+
 ### Also settled
 
 - **Her hourly sweep cron is VERIFIED, not claimed.** The proof this repo asks
@@ -121,12 +143,14 @@ correctly.
   both works the same night. Whether her key sits in a capped workspace remains
   unverified and is a question for the owner, not for this catalog.
 
-**Tests:** 1273 → **1291**, all green. New:
+**Tests:** 1273 → **1301**, all green. New:
 `packages/core/test/series-index-display.test.ts` (the derivation, and that undo
 cannot mistake a person's string for the machine's),
 `packages/db/test/last-real-attempt.test.ts` (the rotation rule, including that
-an *unexplained* error is conservatively treated as the book's own), and a
-round-trip block in `packages/core/test/lookup-errors.test.ts`.
+an *unexplained* error is conservatively treated as the book's own),
+`packages/db/test/unprinted-volume-clause.test.ts` (rung 0's selection, run as
+real SQL against real SQLite), and a round-trip block in
+`packages/core/test/lookup-errors.test.ts`.
 
 ## 📖 `browse-works` — GABI CAN FINALLY SEE THE PHYSICAL SHELF — ✅ DONE 2026-08-19
 

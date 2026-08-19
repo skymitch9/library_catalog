@@ -795,17 +795,40 @@ function clampWhole(value: unknown, fallback: number, min: number, max: number):
  * between a bot that looks broken and one that is being straight.
  */
 export function sweepSentence(
-  result: { queued: number; attempted: number; filled: number; donorFilled: number; notFound: number; errored: number; heldForPerson: number },
+  result: {
+    queued: number;
+    attempted: number;
+    filled: number;
+    donorFilled: number;
+    notFound: number;
+    errored: number;
+    heldForPerson: number;
+    /**
+     * ⚠️ Optional, and it is a real compatibility concern rather than
+     * politeness: the free rung landed after this function, so a caller
+     * assembled from an older shape must not start printing `undefined books`.
+     */
+    printedFilled?: number;
+  },
   site: string,
 ): string {
+  // The free rung, said first because it is the one that cost nothing. A tick
+  // that fixed something without spending is worth saying out loud — otherwise
+  // "I did not spend anything" reads as "I did nothing".
+  const derived =
+    result.printedFilled && result.printedFilled > 0
+      ? ` I also printed the volume number on ${result.printedFilled} book${result.printedFilled === 1 ? '' : 's'} that already knew it, which cost nothing.`
+      : '';
+
   if (result.queued === 0) {
-    return `Nothing on ${site} is missing a detail I can chase — the queue is empty. Nothing to do.`;
+    return `Nothing on ${site} is missing a detail I can chase — the queue is empty. Nothing to do.${derived}`;
   }
   if (result.attempted === 0) {
     return (
       `${result.queued} book${result.queued === 1 ? '' : 's'} on ${site} still ${result.queued === 1 ? 'has' : 'have'} ` +
       'a gap, but every one of them has already been asked the question it is missing and the ' +
-      'answer did not exist. I did not spend anything asking again.'
+      'answer did not exist. I did not spend anything asking again.' +
+      derived
     );
   }
   const parts: string[] = [];
@@ -827,7 +850,8 @@ export function sweepSentence(
   return (
     `${parts.join('; ')}. ` +
     `${result.queued} book${result.queued === 1 ? '' : 's'} on ${site} still ${result.queued === 1 ? 'has' : 'have'} ` +
-    'something missing — I take two an hour so I do not run the bill up, and the rest keep their turn.'
+    'something missing — I take two an hour so I do not run the bill up, and the rest keep their turn.' +
+    derived
   );
 }
 
