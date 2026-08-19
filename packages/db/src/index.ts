@@ -5,6 +5,7 @@ export * from './covers.js';
 export * from './crowdfunding.js';
 export * from './export.js';
 export * from './gabi.js';
+export * from './gabi-browse.js';
 export * from './gabi-conversation.js';
 export * from './users.js';
 export * from './health.js';

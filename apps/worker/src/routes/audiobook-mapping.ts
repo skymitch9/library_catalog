@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
-import { editionMedium, normaliseTitle } from '@lc/core';
+import { normaliseTitle } from '@lc/core';
 import type { AppBindings } from '../env.js';
+import { crossCatalogFormatLabels } from '../lib/format-labels.js';
 
 /**
  * Machine export for the audiobook pipeline's "Other versions available"
@@ -51,7 +52,7 @@ import type { AppBindings } from '../env.js';
  *
  * A `foldedTitle` of `null` is not "unfoldable" — `normaliseTitle` never
  * fails — it is a **collision tombstone**: two DIFFERENT holdings folded to
- * the identical key (see the collision handling below `formatLabelsFor`).
+ * the identical key (see the collision handling inside the route below).
  * Rather than hand out an ambiguous key and let either side guess which row
  * it means, both rows withhold `foldedTitle` and fall back to their own
  * exact `audiobookTitle` — the pre-2026-08-14 behaviour, for those two rows
@@ -78,30 +79,13 @@ import type { AppBindings } from '../env.js';
  * catalog's UI needs, not which of five ebook variants. Mirrors
  * `apps/web/src/lib/formats.ts` `FORMAT_LABEL`'s physical spellings exactly,
  * so the word is the same wherever a person reads it in this estate.
+ *
+ * ⚠️ **The mapping moved to `lib/format-labels.ts` on 2026-08-19** — unchanged,
+ * but no longer private, because `routes/gabi-delegated.ts`'s `browse-works`
+ * verb became its second caller and a second spelling of these four words would
+ * silently un-match rows in two other repos. The reasoning above is why the
+ * labels are what they are; that file is where they live.
  */
-
-const PHYSICAL_FORMAT_LABEL: Record<string, string> = {
-  hardcover: 'Hardcover',
-  paperback: 'Paperback',
-  mass_market: 'Mass market',
-};
-
-/** `EDITION_FORMATS` → the audiobook side's format label. See header above. */
-function formatLabelsFor(rawFormats: readonly string[]): string[] {
-  const labels = new Set<string>();
-  for (const format of rawFormats) {
-    if (editionMedium(format) === 'ebook') {
-      labels.add('Ebook');
-    } else {
-      labels.add(PHYSICAL_FORMAT_LABEL[format] ?? format);
-    }
-  }
-  // Stable, sensible order: physical formats as they're likely to be shelved,
-  // Ebook last — rather than whatever order SQLite's group_concat happened to
-  // return, which is otherwise insertion order and not meaningful here.
-  const order = ['Hardcover', 'Paperback', 'Mass market', 'Ebook'];
-  return order.filter((l) => labels.has(l));
-}
 
 /** Timing-safe string comparison — ported verbatim from `routes/ingest.ts`. */
 function secretEquals(a: string, b: string): boolean {
@@ -174,7 +158,7 @@ export const audiobookMappingRoutes = new Hono<AppBindings>()
         workId: r.workId,
         audiobookTitle: r.audiobookTitle,
         foldedTitle: ambiguous ? null : key,
-        formats: formatLabelsFor((r.rawFormats ?? '').split(',').filter(Boolean)),
+        formats: crossCatalogFormatLabels((r.rawFormats ?? '').split(',').filter(Boolean)),
       };
     });
 

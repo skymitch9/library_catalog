@@ -17,6 +17,82 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## 📖 `browse-works` — GABI CAN FINALLY SEE THE PHYSICAL SHELF — ✅ DONE 2026-08-19
+
+Opened and closed the same day, so this never sat in `TODO.md`. Operator doc:
+[`access/gabi-delegated.md`](access/gabi-delegated.md).
+
+**The failure that caused it, from the Discord archive that morning:** she asked
+*"audiobook, ebook, or a physical copy?"*, the owner answered *"physical
+please"*, and she replied *"Nothing's come through the scanner yet in that
+direction."* The scanner sentence was invented whole — but the emptiness behind
+it was real, and it was **ours**: her only view of print was the ~90-pair
+audiobook join table, **84 of 1,079 catalog rows, 64 of them physical**, against
+a catalog of 448 works.
+
+⚠️ **Neither existing road could be widened, and that is why a third one was
+built rather than a flag flipped.** `/api/machine/audiobook-mapping` is a **join
+table on purpose** — its own header refuses to become a catalog export — and the
+shared index **widens only for a caller holding a Firebase ID token**, which a
+Discord Worker structurally cannot mint. The delegated door was the only surface
+that already knew how to ask *"what may THIS PERSON be pointed at."*
+
+**Built:** `POST /api/gabi/delegated/browse-works` — the door's first READ verb.
+Gated on `read` (*"see the collection at all"*, guest+), **not** `editCatalog`:
+the Discord side's own note is right that *"a reader with no edit rights can
+still walk to the bookcase."* No new gate, no new secret, no new holder, no
+migration. Projection is a default-deny allow-list in
+`packages/db/src/gabi-browse.ts`, modelled on `index-projection.ts`.
+
+⚠️ **The predicate is a COPY-level question, and getting that right was the
+whole design.** A physical suggestion is an *errand* — it points somebody at an
+object in a house — so the clause asks whether a **held** copy (`owned`/`lent`)
+is a thing with mass, either linked to a physical printing or linked to **no**
+printing at all. Measured live before writing it: **177 of 390 copies carry no
+`edition_id`** (a copy may exist before its printing is known — the spine-photo
+case), so requiring a physical `edition` row would have hidden 6 works the
+household demonstrably has on a shelf.
+
+⚠️ **`EBOOK_ONLY_CLAUSE.hide` looked like the obvious reuse and is a trap.** Its
+third conjunct is `NOT EXISTS (copy)`, so beside a held-copy requirement it is
+always false and the whole clause degenerates to `TRUE` — a filter that reads as
+protection and applies none. Checked before writing, and pinned by a test so
+nobody simplifies it back.
+
+**Measured live 2026-08-19** (`wrangler d1 execute --remote`): 448 works → **341
+returned**, 6 of them with `formats: []`, 0 held copies linked to an ebook
+printing. ⚠️ **`formats: []` means "held, printing not typed in yet" — never "not
+physical"**; a consumer reading it the other way inverts the meaning of exactly
+the rows the clause exists to keep.
+
+**Verified by execution, not by reasoning.** A local `wrangler dev` on a seeded
+fixture exercised every gate branch and every predicate branch end-to-end
+against a real D1 — the only way to prove the bind order, which no stub can. A
+copy linked to a hardcover came back with formats; a copy linked to nothing came
+back empty and present; a copy linked to an ebook and a `wanted` copy were both
+absent; `limit: 99999` clamped to 500 rather than erroring.
+
+**Also landed, because a third copy would have been a review finding:** the
+four-word format mapping (`Hardcover` / `Paperback` / `Mass market` / `Ebook`)
+moved out of `routes/audiobook-mapping.ts` into
+`apps/worker/src/lib/format-labels.ts` — unchanged, now shared, and with the
+test the private version never had. ⚠️ Those strings are load-bearing in two
+other repos: the audiobook catalog stores them verbatim in `catalog.csv`'s
+`library_formats`, and the Discord bot matches them lower-cased.
+
+**Left open, and stated rather than papered over:**
+- ⚠️ **No REAL Discord caller has used it.** Every branch is proven locally with
+  a seeded fixture and the live door answers its refusals correctly; the ~20-line
+  client in `catalog-platform/apps/discord-worker` is another agent's follow-up,
+  and until it lands nothing has exercised this with the shared bearer.
+- ⚠️ **The bot's `PHYSICAL_FORMAT_TOKENS` is `['hardcover','paperback']` and
+  omits mass market** — a mass-market paperback from this verb would be dropped
+  on their side. Not this repo's bug; worth knowing before somebody debugs a
+  missing book.
+- **The order is `work.id` under a hard cap**, so a caller that ignores `total`
+  suggests from the front of the shelf forever. `offset` exists; whether the
+  client uses it is the client's problem to get right.
+
 ## 🖼️ THE BOX-SET SPLIT'S COVERLESS OFFSPRING — ✅ ALL FILLED 2026-08-18
 
 Moved whole from [`TODO.md`](TODO.md). Opened 2026-08-18 as "nobody has run the

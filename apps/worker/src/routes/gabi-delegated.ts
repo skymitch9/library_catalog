@@ -23,6 +23,7 @@
  * |---|---|---|
  * | `add-isbn` | `editCatalog` | the scan review screen's **Add** |
  * | `run-details` | `runResearch` | the details queue's **Run** |
+ * | `browse-works` | `read` | the collection grid itself — *"see the collection at all"* |
  * | `whoami` | — (identity only) | nothing; it writes nothing and spends nothing |
  *
  * ⚠️ **Two independent things must both be true**, and conflating them is the
@@ -79,6 +80,31 @@
  * **It never creates an `app_user` row.** `findUserByFirebaseUid` is a lookup;
  * an unknown uid is refused in words. A door that could mint standing would be
  * the estate-grant verb the ladder puts at T4.
+ *
+ * ## The one READ verb, added 2026-08-19, and why it is on THIS door
+ *
+ * `browse-works` is T0 — it changes nothing and spends nothing — but it lives
+ * here rather than on a machine route because the question it answers is *"what
+ * may THIS PERSON be pointed at"*, and this is the only door in the estate that
+ * can ask it. The two roads that already existed cannot:
+ *
+ *   - **`/api/machine/audiobook-mapping` is a JOIN TABLE on purpose** — ~90
+ *     pairs, only the works this catalog has already matched to an audiobook.
+ *     The Discord bot's physical suggestion lane was reading exactly that slice
+ *     and saying so out loud (*"I can only see print copies that the audiobook
+ *     catalogue has cross-linked"*). Widening it would make a narrow machine
+ *     export into a catalog export, which is the thing its header refuses.
+ *   - **The shared index widens only for a Firebase ID token**, which a Discord
+ *     Worker structurally cannot mint (`have.ts` measured it), and the index
+ *     projection deliberately carries no format or ownership.
+ *
+ * ⚠️ It borrows `read` — *"see the collection at all"* — which is the visibility
+ * floor the collection grid itself is gated on, and NOT a new gate. Every role
+ * but `pending` holds it, so in practice the refusals a person meets here are
+ * the existing four: unknown here / estate-revoked / awaiting approval / (a
+ * future role with no `read`). ⚠️ Deliberately NOT `editCatalog`: the Discord
+ * side's own note is right — *"a reader with no edit rights can still walk to
+ * the bookcase"*.
  */
 
 import { Hono } from 'hono';
@@ -97,6 +123,7 @@ import {
   type Role,
 } from '@lc/core';
 import {
+  browseHeldPhysicalWorks,
   createCopy,
   createEdition,
   createWork,
@@ -112,6 +139,7 @@ import {
 import { resolveIsbn } from '@lc/isbn';
 import type { AppBindings, Env } from '../env.js';
 import { runDetailsSweep } from '../lib/details-sweep.js';
+import { physicalFormatLabels } from '../lib/format-labels.js';
 import { secretEquals } from '../lib/secret-equals.js';
 
 /**
@@ -128,18 +156,42 @@ import { secretEquals } from '../lib/secret-equals.js';
  * tool list, pinned by its own build-failing test. Two allowlists, two ends,
  * neither of them a denylist.
  */
-export const DELEGATED_VERBS = ['whoami', 'add-isbn', 'run-details'] as const;
+export const DELEGATED_VERBS = ['whoami', 'add-isbn', 'run-details', 'browse-works'] as const;
 export type DelegatedVerb = (typeof DELEGATED_VERBS)[number];
 
 /**
- * Which capability each writing verb borrows. `whoami` is absent on purpose —
- * it writes nothing, spends nothing and answers only about the caller's own
- * uid, so gating it would refuse the very question *"what may I do here?"*.
+ * Which capability each gated verb borrows. `whoami` is absent on purpose — it
+ * writes nothing, spends nothing and answers only about the caller's own uid,
+ * so gating it would refuse the very question *"what may I do here?"*.
+ *
+ * ⚠️ `browse-works` IS here even though it writes nothing: it hands out rows,
+ * and *"see the collection at all"* is a capability this app already names. The
+ * floor is the same one the collection grid stands on, so there is no second
+ * opinion about who may look.
  */
-export const DELEGATED_VERB_CAPABILITY: Record<'add-isbn' | 'run-details', Capability> = {
+export const DELEGATED_VERB_CAPABILITY: Record<
+  'add-isbn' | 'run-details' | 'browse-works',
+  Capability
+> = {
   'add-isbn': 'editCatalog',
   'run-details': 'runResearch',
+  'browse-works': 'read',
 };
+
+/**
+ * Which verbs CHANGE something. ⚠️ It decides how a refusal is worded — *"nothing
+ * was changed"* is a lie about a read, and telling somebody their books were left
+ * alone when nothing was ever going to touch them is the kind of small
+ * dishonesty that teaches people to stop reading the sentence.
+ */
+export const DELEGATED_READ_VERBS: readonly DelegatedVerb[] = ['whoami', 'browse-works'];
+
+/** The default and the ceiling for `browse-works`. ⚠️ The cap is a HARD one and
+ *  is enforced on the way in, never trusted from the body: 341 works match the
+ *  clause today (measured live 2026-08-19), so one call at the ceiling is the
+ *  whole shelf, and a caller that wants more must page. */
+export const BROWSE_DEFAULT_LIMIT = 200;
+export const BROWSE_MAX_LIMIT = 500;
 
 /** The `change_log.note` prefix every delegated write wears. One string, so
  * *"what has GABI added"* is one `LIKE` and never a guess. */
@@ -164,19 +216,33 @@ export const DELEGATED_MSG = {
     'This request did not carry the estate’s own Discord credential, so nothing was read and ' +
     'nothing was changed. If you are seeing this in a chat, it means GABI and this catalog are ' +
     'holding different values for the same secret — that is an owner fix, not yours.',
-  unknownHere: (site: string) =>
-    `I could not find an account for you on ${site}, so I did not change anything there. Sign in ` +
+  unknownHere: (site: string, changes: boolean) =>
+    `I could not find an account for you on ${site}, so I did not ` +
+    `${changes ? 'change anything' : 'show you anything from'} there. Sign in ` +
     `once at ${site} with the same Google account you linked to Discord, and ask me again — ` +
     'signing in is what creates the account I look for.',
   insufficient: (site: string, capability: Capability, role: Role, needed: readonly Role[]) =>
     `Your account on ${site} is **${role}**, and adding to the catalog there needs ` +
     `**${capability}** — which is ${needed.join(' or ')}. Nothing was changed. An owner or admin ` +
     'can change your role on the People page.',
-  pendingHere: (site: string) =>
-    `Your account on ${site} is still waiting to be approved, so nothing was changed. An owner ` +
+  /**
+   * ⚠️ The READ twin of `insufficient`. Unreachable today — every role but
+   * `pending` holds `read`, and `pending` has its own sentence below — and
+   * written anyway, because default-deny means the refusal exists before the
+   * role that needs it does. It says *"nothing was shown"*, never *"nothing was
+   * changed"*: a read that claims to have spared your catalog is lying about
+   * what it was doing.
+   */
+  cannotSee: (site: string, role: Role) =>
+    `Your account on ${site} is **${role}**, which cannot see that collection at all, so I did ` +
+    'not show you anything from it. An owner or admin can change your role on the People page.',
+  pendingHere: (site: string, changes: boolean) =>
+    `Your account on ${site} is still waiting to be approved, so ` +
+    `${changes ? 'nothing was changed' : 'I did not show you anything from it'}. An owner ` +
     'or admin approves people on that site’s People page — once they do, ask me again.',
-  revoked: (site: string) =>
-    `The estate directory has your access to ${site} switched off, so nothing was changed. That ` +
+  revoked: (site: string, changes: boolean) =>
+    `The estate directory has your access to ${site} switched off, so ` +
+    `${changes ? 'nothing was changed' : 'I did not show you anything from it'}. That ` +
     'is an estate-level decision rather than anything about this request — an owner can turn it ' +
     'back on from the estate admin page.',
   notAnIsbn: (raw: string) =>
@@ -258,12 +324,17 @@ type Authority =
  * *has the estate switched me off* → *am I approved* → *is my role enough*. Four
  * causes, four sentences, because they need four different fixes — the estate's
  * no-bare-status rule spelled out.
+ *
+ * ⚠️ `changes` picks the HALF-SENTENCE, not the decision. The gate is identical
+ * for a read and a write; only the promise differs, and a read that says
+ * *"nothing was changed"* is describing work it was never going to do.
  */
 async function authority(
   env: Env,
   db: D1Database,
   uid: string,
   capability: Capability,
+  changes = true,
 ): Promise<Authority> {
   const { site } = instanceLabel(env);
   const user = await findUserByFirebaseUid(db, uid);
@@ -271,7 +342,7 @@ async function authority(
     return {
       ok: false,
       status: 403,
-      body: { error: 'unknown_here', message: DELEGATED_MSG.unknownHere(site) },
+      body: { error: 'unknown_here', message: DELEGATED_MSG.unknownHere(site, changes) },
     };
   }
 
@@ -286,7 +357,7 @@ async function authority(
     return {
       ok: false,
       status: 403,
-      body: { error: 'estate_revoked', message: DELEGATED_MSG.revoked(site) },
+      body: { error: 'estate_revoked', message: DELEGATED_MSG.revoked(site, changes) },
     };
   }
 
@@ -294,7 +365,7 @@ async function authority(
     return {
       ok: false,
       status: 403,
-      body: { error: 'pending', message: DELEGATED_MSG.pendingHere(site) },
+      body: { error: 'pending', message: DELEGATED_MSG.pendingHere(site, changes) },
     };
   }
 
@@ -306,7 +377,9 @@ async function authority(
         error: 'forbidden',
         capability,
         role: user.role,
-        message: DELEGATED_MSG.insufficient(site, capability, user.role, rolesFor(capability)),
+        message: changes
+          ? DELEGATED_MSG.insufficient(site, capability, user.role, rolesFor(capability))
+          : DELEGATED_MSG.cannotSee(site, user.role),
       },
     };
   }
@@ -622,7 +695,93 @@ export const gabiDelegatedRoutes = new Hono<AppBindings>()
     });
 
     return c.json({ outcome: 'swept', site, result, message: sweepSentence(result, site) });
+  })
+
+  /**
+   * **Verb 3 — the one READ. "What is actually on this shelf?"**
+   *
+   * Built 2026-08-19 for the Discord bot's PHYSICAL suggestion lane, which
+   * could previously see only the ~90-pair audiobook join table and said so in
+   * words. See the file header for why neither that route nor the shared index
+   * could answer this, and `@lc/db`'s `gabi-browse.ts` for the projection's
+   * allow-list and the measurements behind its predicate.
+   *
+   * ⚠️ **It writes nothing, spends nothing, and touches no network.** Two
+   * indexed D1 reads. It is on this door only because the question is *"what may
+   * THIS PERSON be pointed at"*, and the identity check is the whole point.
+   *
+   * ⚠️ **`formats: []` means "held, printing not typed in yet", NOT "not
+   * physical"** — 6 of the 341 matching works are in that state today. A
+   * consumer that reads an empty list as "no print copy" inverts the meaning of
+   * exactly the rows this projection exists to keep.
+   *
+   * ⚠️ **`total` is not decoration.** The order is `work.id` and the cap is
+   * hard, so a caller that ignores `total` suggests from the front of the shelf
+   * forever and never reaches the back. Page with `offset`, or ask for the
+   * ceiling — one call at `limit: 500` is the whole shelf today.
+   */
+  .post('/browse-works', async (c) => {
+    const body = (await c.req.json().catch(() => null)) as {
+      onBehalfOf?: unknown;
+      limit?: unknown;
+      offset?: unknown;
+    } | null;
+    const uid = onBehalfOf(body);
+    if (!uid) return c.json({ error: 'bad_request', detail: 'onBehalfOf is required' }, 400);
+
+    // ⚠️ Clamped, never trusted, and never 400 — a caller asking for 10,000 gets
+    // the ceiling rather than an error, the same posture every other allowlist
+    // on this app takes towards an out-of-vocabulary value. A refusal here would
+    // surface in a chat as GABI declining to look at a bookshelf over a number.
+    const limit = clampWhole(body?.limit, BROWSE_DEFAULT_LIMIT, 1, BROWSE_MAX_LIMIT);
+    const offset = clampWhole(body?.offset, 0, 0, Number.MAX_SAFE_INTEGER);
+
+    const verdict = await authority(
+      c.env,
+      c.env.DB,
+      uid,
+      DELEGATED_VERB_CAPABILITY['browse-works'],
+      false,
+    );
+    if (!verdict.ok) return c.json(verdict.body, verdict.status);
+    const { app, site } = instanceLabel(c.env);
+
+    const page = await browseHeldPhysicalWorks(c.env.DB, limit, offset);
+
+    return c.json({
+      outcome: 'works',
+      app,
+      site,
+      total: page.total,
+      limit,
+      offset,
+      rows: page.rows.map((row) => ({
+        ...row,
+        // The labels the rest of the estate already reads — `Hardcover`,
+        // `Paperback`, `Mass market` — rather than the raw enum. Same function
+        // `audiobook-mapping` uses, so `catalog.csv`'s `library_formats` and
+        // this verb never disagree about a word.
+        formats: physicalFormatLabels(row.formats),
+        // ⚠️ Pointer construction, exactly as `index-projection.ts` builds
+        // `detail_url`, and built HERE so no consumer has to know how this
+        // app's URLs are shaped. The host comes from `instanceLabel`, so the
+        // link points at the shelf that answered rather than at a constant.
+        url: `https://${site}/work/${row.id}`,
+      })),
+      generatedAt: new Date().toISOString(),
+    });
   });
+
+/**
+ * A whole number from an untrusted body, or the fallback. ⚠️ Rejects `NaN`,
+ * `Infinity` and fractions rather than letting `Math.min` launder them into a
+ * bound — an `Infinity` limit would clamp to the ceiling and look fine, a `NaN`
+ * one would sail through both comparisons and reach SQL.
+ */
+function clampWhole(value: unknown, fallback: number, min: number, max: number): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value)) return fallback;
+  return Math.min(Math.max(value, min), max);
+}
 
 /**
  * The sweep's own numbers, as one sentence somebody can act on.
