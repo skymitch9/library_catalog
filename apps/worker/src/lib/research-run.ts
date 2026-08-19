@@ -82,8 +82,6 @@ import {
   DONOR_FUZZY_SOURCE_TIER,
   detailGaps,
   isBlankDetail,
-  isDerivedSeriesIndexDisplay,
-  seriesIndexDisplayFrom,
   verdictFor,
   type DecisionMode,
   type DetailField,
@@ -435,8 +433,46 @@ function asYear(raw: string | number | null | undefined): number | null {
 
 /** A volume position: 1, 2.5, 07. */
 function asIndex(raw: string | number | null | undefined): number | null {
-  const n = typeof raw === 'number' ? raw : Number(String(raw ?? '').trim());
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
+  const text = String(raw ?? '').trim();
+  if (!text) return null;
+  const bare = Number(text);
+  if (Number.isFinite(bare)) return bare;
+  // ⚠️ A PRINTED designation carries its own number, and before 2026-08-19 this
+  // function threw it away: `Number("Volume 07")` is NaN, so a model that
+  // answered in the form a book actually prints was told its answer was "not a
+  // usable volume number" and the finding sat pending for a person. Now the
+  // number is read out of it and `printedFormIn` keeps the string itself.
+  //
+  // First run of digits only, and deliberately not a cleverer parse: "Volume
+  // 07" is 7 and "Book 2.5" is 2.5, while something with no number at all
+  // ("Prequel") still returns null — where a book files when it prints no
+  // number is a judgement, and a person should make it.
+  const found = /\d+(?:\.\d+)?/.exec(text);
+  if (!found) return null;
+  const n = Number(found[0]);
   return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * The printed designation a finding QUOTED, or null if it just gave a number.
+ *
+ * ⚠️ The distinction the owner's 2026-08-19 rule turns on. `2` is a position in
+ * a ladder; `Volume 07` is a claim about what is printed on a physical
+ * printing. Only the second is worth recording in `series_index_display`, and
+ * only because somebody found it written somewhere — this catalog never makes
+ * one up (see `seriesIndexDisplayFrom`, which is the ingest route's legacy
+ * default and explicitly not the semantics).
+ */
+function printedFormIn(raw: string | number | null | undefined): string | null {
+  if (typeof raw !== 'string') return null;
+  const text = raw.trim();
+  if (!text) return null;
+  // A bare number, however written, is not a printed form.
+  if (Number.isFinite(Number(text))) return null;
+  // It has to actually carry a number, or it is not a volume designation at
+  // all and `asIndex` will have refused it anyway.
+  return /\d/.test(text) ? text : null;
 }
 
 /**
@@ -535,28 +571,9 @@ export async function applyFinding(
 
     case 'seriesIndex': {
       if (work.seriesIndexSort != null) {
-        // ⚠️ The sort is already recorded, so there is no volume number left to
-        // buy — but the gap test reads BOTH columns, and a row that sorts
-        // correctly and prints nothing is still a gap. Until 2026-08-19 this
-        // branch stopped here and said so, which meant the row could never
-        // close: nothing downstream of ingest ever wrote `display`, so the
-        // queue asked, was answered, and kept the question.
-        //
-        // Now the printed form is filled from the number the catalog ALREADY
-        // trusts — one derivation, `seriesIndexDisplayFrom`, the same one the
-        // ingest route has always written. Nothing is invented that was not
-        // already implied by the column beside it.
-        if (isBlankDetail(work.seriesIndexDisplay)) {
-          const printed = seriesIndexDisplayFrom(work.seriesIndexSort);
-          await updateWork(db, work.id, { seriesIndexDisplay: printed });
-          return {
-            applied:
-              `Already volume ${work.seriesIndexSort} in the ladder; printed form set to ` +
-              `"${printed}". Replace it if the book itself says something else.`,
-            skipped: null,
-            reason: 'applied',
-          };
-        }
+        // The sort is recorded, so the question is answered and the row is
+        // COMPLETE — the printed form is optional data (owner rule 2026-08-19,
+        // `docs/info/volume-numbers.md`), so there is nothing left to fill.
         return {
           applied: null,
           skipped: `Already volume ${work.seriesIndexSort}.`,
@@ -581,25 +598,29 @@ export async function applyFinding(
           reason: 'unusable',
         };
       }
-      // ⚠️ BOTH columns, since 2026-08-19, and the change is argued in full in
-      // `seriesIndexDisplayFrom`'s header. In one line: the display is not a
-      // cover photograph and never was — `routes/ingest.ts` derives the same
-      // string arithmetically for every work it creates — and writing only the
-      // sort left a gap the queue could be paid for for ever and never close
-      // (55 of 55 remaining rows on the friend instance were exactly this).
+      // ⚠️ The SORT is what closes the gap (owner rule 2026-08-19 — the
+      // printed form is optional data, `docs/info/volume-numbers.md`). The
+      // display is written in exactly one case: the finding **quoted a printed
+      // designation verbatim** rather than returning a bare number — "Volume
+      // 07", "Prequel", "Book Two". Then it is a fact somebody found, not a
+      // string this catalog made up, and it is worth keeping for the few
+      // printings that really carry one.
       //
-      // ⚠️ The display is written only when it is BLANK, which keeps
+      // ⚠️ Never derived. `Book 3` beside `sort = 3` states that a physical
+      // printing says "Book 3", which nothing checked — and the whole point of
+      // the owner's rule is that most of this catalog has no such designation
+      // at all. It also only ever writes into a BLANK, which keeps
       // `revertFinding`'s "the value before an auto-apply was always empty"
-      // invariant true of both columns.
-      const printed = seriesIndexDisplayFrom(index);
-      const printedWasBlank = isBlankDetail(work.seriesIndexDisplay);
+      // invariant true of the second column too.
+      const quoted = printedFormIn(finding.value.value);
+      const writePrinted = quoted != null && isBlankDetail(work.seriesIndexDisplay);
       await updateWork(db, work.id, {
         seriesIndexSort: index,
-        ...(printedWasBlank ? { seriesIndexDisplay: printed } : {}),
+        ...(writePrinted ? { seriesIndexDisplay: quoted } : {}),
       });
       return {
-        applied: printedWasBlank
-          ? `Volume number set to ${index}, printed as "${printed}". Replace the printed form if the book itself says something else.`
+        applied: writePrinted
+          ? `Volume number set to ${index}, printed as "${quoted}" — the form the source quoted.`
           : `Volume number set to ${index}.`,
         skipped: null,
         reason: 'applied',
@@ -812,14 +833,15 @@ export async function revertFinding(
   const work = await getWork(db, finding.workId);
   if (!work) return { reverted: null, skipped: 'That book no longer exists.' };
 
-  // ⚠️ Invariant 3, added 2026-08-19 with the derived printed form: undo may
-  // take back the machine's OWN handwriting and must never take back a
-  // person's. `isDerivedSeriesIndexDisplay` is that test — a `Book 3` beside
-  // `sort = 3` is ours; a hand-quoted "Prequel" or "Volume 07" is not, and
-  // survives. A display string with no sort left beside it prints a volume
-  // number the ladder no longer holds, which is why this travels with the sort
-  // rather than being left behind.
-  const printedIsOurs = isDerivedSeriesIndexDisplay(work.seriesIndexSort, work.seriesIndexDisplay);
+  // ⚠️ Invariant 3, added 2026-08-19: undo may take back what THIS finding
+  // wrote and must never take back a person's typing. `applyFinding` writes the
+  // printed form only when the finding quoted one verbatim, so the proof is
+  // exact — the column still holds this finding's own value. A `Volume 07`
+  // somebody typed by hand does not match any finding and survives.
+  const printedIsOurs =
+    typeof finding.value.value === 'string' &&
+    typeof work.seriesIndexDisplay === 'string' &&
+    work.seriesIndexDisplay.trim() === finding.value.value.trim();
   const clearPrinted = printedIsOurs ? { seriesIndexDisplay: null } : {};
 
   switch (field) {

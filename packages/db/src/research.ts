@@ -929,63 +929,6 @@ function unpackVerdicts(raw: string | null): DetailField[] {
   return (raw ?? '').split(',').filter(Boolean) as DetailField[];
 }
 
-/** A work that files at a volume number and prints none. */
-export interface UnprintedVolume {
-  workId: number;
-  title: string;
-  /** Never null — the WHERE clause is what guarantees it. */
-  sort: number;
-}
-
-/**
- * Works whose volume number is recorded in the ladder and blank on the page.
- *
- * ## ⚠️ Why this is a QUERY and not a lookup
- *
- * These rows owe nothing to research. The number is already in the row; the
- * only thing missing is its printed form, which `seriesIndexDisplayFrom`
- * derives from that same number. Asking a model about them is paying for a
- * fact the database is holding.
- *
- * And they were, measurably, unreachable any other way. On 2026-08-19 the
- * friend instance's `:07` sweep spent real money on two books, succeeded on
- * both — `"Filled in 1 of 1: Volume number set to 1"` — and left both rows on
- * the queue, because only `sort` was written. Worse, the run marked
- * `seriesIndex` as **asked**, so `planSweep` will never offer either book
- * again: they were stranded by a run that worked. Three such rows existed when
- * this was written, and the state is reachable at any time by hand, because
- * `WorkFields` lets a person edit the sort and deliberately does not offer the
- * display.
- *
- * ⚠️ `series` must be present, matching `detailFieldsFor`: a volume number
- * belonging to no series is not a gap this queue recognises, and printing one
- * would state a position in a line the catalog does not believe in.
- * ⚠️ A recorded `gap_verdict` is respected for the same reason it is
- * everywhere else — an answered question is not a gap.
- */
-export const UNPRINTED_VOLUME_SQL = `SELECT w.id AS id, w.title AS title, w.series_index_sort AS sort
-     FROM work w
-    WHERE w.series_index_sort IS NOT NULL
-      AND (w.series_index_display IS NULL OR trim(w.series_index_display) = '')
-      AND w.series IS NOT NULL AND trim(w.series) <> ''
-      AND NOT EXISTS (
-            SELECT 1 FROM gap_verdict g
-             WHERE g.work_id = w.id AND g.field = 'seriesIndex'
-          )
-    ORDER BY w.id
-    LIMIT ?`;
-
-export async function worksWithUnprintedVolume(
-  db: D1Database,
-  limit: number,
-): Promise<UnprintedVolume[]> {
-  const { results } = await db
-    .prepare(UNPRINTED_VOLUME_SQL)
-    .bind(limit)
-    .all<{ id: number; title: string; sort: number }>();
-  return results.map((row) => ({ workId: row.id, title: row.title, sort: row.sort }));
-}
-
 export interface FieldGapCount {
   field: DetailField;
   /** Works still owing this field. */
@@ -1053,13 +996,13 @@ export async function gapSummary(db: D1Database): Promise<FieldGapCount[]> {
         bump(field, 'notApplicable');
         continue;
       }
-      // ⚠️ The volume number is filled only when BOTH columns are — the one
-      // policy in `seriesIndexIncomplete`, so this tally can never claim work
-      // the queue's rows still owe. A sort with no display sorts correctly
-      // and prints nothing; that is a gap, not a fill.
+      // ⚠️ The volume number is filled when the SORT is — the one policy in
+      // `seriesIndexIncomplete`, so this tally can never disagree with the
+      // rows. The printed form is optional data by owner rule of 2026-08-19;
+      // `docs/info/volume-numbers.md` is why.
       const filled =
         field === 'seriesIndex'
-          ? !seriesIndexIncomplete(row.series_index_sort, row.series_index_display)
+          ? !seriesIndexIncomplete(row.series_index_sort)
           : (() => {
               const v = value[field];
               return v != null && !(typeof v === 'string' && v.trim() === '');

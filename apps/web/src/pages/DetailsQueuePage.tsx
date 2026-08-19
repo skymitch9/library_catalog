@@ -12,6 +12,7 @@ import {
   type RunView,
 } from '../api.js';
 import { describeError } from '../lib/errors.js';
+import { residueSentence } from '../lib/details-residue.js';
 import { Link, queuePath, workPath } from '../router.js';
 
 /**
@@ -379,6 +380,27 @@ export function DetailsQueuePage({
 
       {error && <p className="notice notice--bad">{error}</p>}
 
+      {/* ⚠️ The list is SPLIT BY NAME, never left as one number. Owner rule
+          2026-08-19: a book either gets filled automatically within a day or
+          sits in a category the page states in words. A single count that stops
+          falling looks exactly like a broken feature — which is how a working
+          button got reported as broken. */}
+      {shown.length > 0 && (
+        <p className="muted small">
+          {(() => {
+            const settled = shown.filter((w) => residueSentence(w.missing, runs[w.workId])).length;
+            const waiting = shown.length - settled;
+            if (settled === 0) {
+              return `${waiting} ${waiting === 1 ? 'book is' : 'books are'} waiting for a lookup. The hourly sweep takes two an hour, oldest turn first, and needs nobody.`;
+            }
+            if (waiting === 0) {
+              return `All ${settled} left have been looked up and could not be answered from the open web — each row says what would settle it. Nothing here is waiting on a lookup.`;
+            }
+            return `${waiting} still waiting for a lookup (the hourly sweep takes two an hour and needs nobody); ${settled} already looked up and unanswerable from the open web — those rows say so, and need a person rather than another lookup.`;
+          })()}
+        </p>
+      )}
+
       <GapSummary summary={data.summary} field={field} />
 
       <section className="panel">
@@ -732,6 +754,7 @@ function QueueRow({
   // opened, so a closed row can still say it has something stuck on it.
   const proposals = (findings ?? []).filter((f) => f.reviewState === 'pending');
   const stuck = findings === undefined ? work.pending : proposals.length;
+  const residue = active ? null : residueSentence(work.missing, run);
 
   return (
     <li>
@@ -744,13 +767,18 @@ function QueueRow({
           {stuck > 0 && <span className="mark mark--gap">{stuck} could not be used</span>}
           {run?.status === 'done' && !active && (
             <span className="mark mark--attested">
-              {run.applied > 0 ? `filled in ${run.applied}` : 'asked'}
+              {/* ⚠️ "asked and answered" rather than "asked". A badge reading
+                  "asked" beside a row that is still on the list reads as an
+                  unfinished action; this row is finished, and what it is
+                  waiting for is a person. `residue` below says which. */}
+              {run.applied > 0 ? `filled in ${run.applied}` : residue ? 'asked and answered' : 'asked'}
             </span>
           )}
           {failed && <span className="mark mark--gap">failed</span>}
         </div>
         <div className="muted small">{work.authors}</div>
         <div className="muted small">missing: {work.missingLabels.join(', ')}</div>
+        {residue && <div className="muted small">{residue}</div>}
         {work.answeredLabels.length > 0 && (
           <div className="muted small">
             {/* Shown, not hidden: a row that says "series: answered" is the page

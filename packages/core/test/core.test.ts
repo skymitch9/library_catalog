@@ -1821,32 +1821,53 @@ describe('gaps — what is a question, and what is already an answer', () => {
     );
   });
 
-  it('⚠️ a volume number nobody can read is not an answer — both columns, or it is a gap', () => {
-    // The two-column trap, found live 2026-08-13: 22 works had `sort` set and
-    // `display` NULL. They filed into exactly the right ladder position and
-    // PRINTED NOTHING — and the old `seriesIndexSort == null` test reported
-    // zero gaps for all of them. A field whose absence is only visible from
-    // one direction. Production was backfilled; this is what stops the state
-    // being silently readmitted.
+  it('⚠️ the SORT alone answers the volume number — the printed form is optional', () => {
+    // ## ⚠️ SUPERSEDED 2026-08-19 — this test used to assert the opposite
+    //
+    // It was called *"a volume number nobody can read is not an answer — both
+    // columns, or it is a gap"*, and it was written for a real finding:
+    // 2026-08-13, 22 works had `sort` set and `display` NULL, filing into
+    // exactly the right ladder position and printing nothing, while the gap
+    // test reported zero gaps for all of them.
+    //
+    // **The diagnosis was right and the remedy was wrong**, and the wrongness
+    // took six days to become visible. Demanding `display` demanded a fact
+    // about a PHYSICAL PRINTING from a catalog of EPUB files, and nothing
+    // downstream of `routes/ingest.ts` ever wrote it — not research, not the
+    // donor, not any backfill. Measured on `library-catalog-2nd` the day it was
+    // reversed: **55 of 55 remaining queue rows were `seriesIndex`**, every one
+    // a row the queue could be paid for for ever and never close. The owner
+    // pressed the button, the lookups all succeeded, and the count did not move.
+    //
+    // Owner ruling, verbatim: *"We don't need physical volume if we have
+    // series. Only a few things have it like the 2 part Sanderson. Make it
+    // optional."* Canonical semantics: `docs/info/volume-numbers.md`.
+    //
+    // ⚠️ Kept as a dated supersession rather than deleted, because the old
+    // reasoning is genuinely persuasive and a future session will re-derive it.
+
+    // A sort with no printed form is COMPLETE. This is the assertion that
+    // reversed.
     assert.ok(
-      detailGaps({ series: 'He Who Fights with Monsters', seriesIndexSort: 1 }).includes(
+      !detailGaps({ series: 'He Who Fights with Monsters', seriesIndexSort: 1 }).includes(
         'seriesIndex',
       ),
     );
-    // Whitespace display is no more readable than a NULL one.
     assert.ok(
-      detailGaps({ series: 'X', seriesIndexSort: 8, seriesIndexDisplay: '  ' }).includes(
+      !detailGaps({ series: 'X', seriesIndexSort: 8, seriesIndexDisplay: '  ' }).includes(
         'seriesIndex',
       ),
     );
-    // The mirror state: a printed number that files nowhere is a gap too —
-    // the ladder would shove it to the end as if unnumbered.
+    // ⚠️ UNCHANGED, and still the point of the 2026-08-13 finding: a printed
+    // number that files nowhere IS a gap. The ladder would shove it to the end
+    // as if unnumbered, and that half was never about the physical printing.
     assert.ok(
       detailGaps({ series: 'X', seriesIndexSort: null, seriesIndexDisplay: 'Book 2' }).includes(
         'seriesIndex',
       ),
     );
-    // Both halves present closes it, whatever unusual form the cover printed.
+    // A printed form alongside a sort is kept and closes nothing extra — it is
+    // data, not a requirement.
     assert.ok(
       !detailGaps({ series: 'X', seriesIndexSort: 2.5, seriesIndexDisplay: 'Vol. 2.5' }).includes(
         'seriesIndex',

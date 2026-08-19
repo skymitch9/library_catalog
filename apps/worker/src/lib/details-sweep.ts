@@ -24,24 +24,28 @@
  * | Outcome | Why the gap survives | How common |
  * |---|---|---|
  * | `identified: false` | no findings at all are returned, so nothing becomes a verdict | isbn-ladder.md §4.2 — **roughly half this library**; 16 of 30 sampled titles have no record anywhere free |
- * | ~~volume number~~ | ~~`applyFinding` fills `series_index_sort` only~~ — **FIXED 2026-08-19**, see below | was 22 works on 2026-08-13; had become 54 of 55 on the friend instance |
+ * | ~~volume number~~ | ~~a filled `sort` left the gap open because `display` was blank~~ | **RETIRED 2026-08-19 by owner rule** — see below |
  * | an unusable value | the finding stays `pending` **on purpose**, so a person still gets asked | rare |
  *
  * Left alone, an hourly sweep would therefore re-buy the same nothing for the
  * same half of the catalog every hour, for ever. That is the "obviously skipping
  * ones it cant finish" half of the ask, and here it costs code.
  *
- * ⚠️ **The middle row of that table was not a "does not converge" case at all —
- * it was a case that COULD NOT converge, and it ate the whole queue.** Measured
+ * ⚠️ **The middle row of that table was never a convergence case — it was a
+ * predicate that could not be satisfied, and it ate the whole queue.** Measured
  * on `library-catalog-2nd` on 2026-08-19, after the owner pressed Look again and
- * reported no fix: **55 of 55 remaining rows were `seriesIndex`, 54 of them with
- * neither column set.** Research filled `sort`, `seriesIndexIncomplete` wanted
- * both, and nothing downstream of the ingest route had ever written `display` —
- * so every lookup was correct, every lookup was paid for, and the count did not
- * move. `applyFinding` now writes the derived printed form beside the sort
- * (`seriesIndexDisplayFrom` in `@lc/core` carries the argument). The rows below
- * about what this sweep refuses to silence still stand: nothing here writes a
- * verdict a person did not earn.
+ * reported no fix: **55 of 55 remaining rows were `seriesIndex`.** The gap test
+ * demanded both `series_index_sort` AND `series_index_display`, and nothing
+ * downstream of `routes/ingest.ts` had ever written the second — so every lookup
+ * was correct, every lookup was paid for, and the count did not move.
+ *
+ * The owner's ruling, verbatim: *"We don't need physical volume if we have
+ * series. Only a few things have it like the 2 part Sanderson. Make it
+ * optional."* The printed form is **optional data**; a series plus a sort is
+ * complete. `seriesIndexIncomplete` now reads the sort alone, and
+ * `docs/info/volume-numbers.md` is the permanent statement of the semantics.
+ * The rows below about what this sweep refuses to silence still stand: nothing
+ * here writes a verdict a person did not earn.
  *
  * **What was chosen: the sweep never asks the same book the same question
  * twice** (`detailsRunHistory` + `unaskedGaps` below). It is a read, not a
@@ -151,7 +155,6 @@
  *
  * | Rung | Matched by | Cost | Writes |
  * |---|---|---|---|
- * | **0 derived** | nothing — the answer is already in the row | **no fetch, no money** | the printed volume number, from the sort beside it (`fillPrintedVolumeNumbers`) |
  * | 1 exact | `work_key`, or a unique folded title | one fetch | auto-applied, `source_tier='donor'` |
  * | 2 **judged** | a ≤5-row donor shortlist + ONE Haiku call | one fetch, ≈0.1¢ | confident: auto-applied, `source_tier='donor_fuzzy'`; otherwise **pending for a person** |
  * | 3 web | `researchDetails`, open-web search | ≈2¢ | auto-applied as before |
@@ -208,8 +211,6 @@ import {
   finishRun,
   listWorksNeedingDetails,
   saveFindings,
-  updateWork,
-  worksWithUnprintedVolume,
   type NeedsDetails,
   type SaveFindingInput,
 } from '@lc/db';
@@ -217,7 +218,6 @@ import {
   DETAIL_FIELDS,
   DONOR_FUZZY_SOURCE_TIER,
   DONOR_SOURCE_TIER,
-  seriesIndexDisplayFrom,
   type DetailField,
   type FindingSourceTier,
 } from '@lc/core';
@@ -262,79 +262,6 @@ export const SWEEP_BUDGET = 44;
  * world fires at :00, and this one has no reason to join the stampede.
  */
 export const DETAILS_SWEEP_CRON = '7 * * * *';
-
-/**
- * ⚠️ The free rung: how many printed volume numbers one tick may derive.
- *
- * Small on purpose, and the smallness is not caution about the work — it is the
- * 50-subrequest ceiling again. Each row costs `updateWork`'s read plus its
- * write, so four rows is 9 including the query itself, and that 9 is charged
- * against `SWEEP_BUDGET` before a single lookup is planned. A rung that quietly
- * ate the budget for the paid half would be a worse bug than the one it fixes.
- *
- * Four is also enough. This is a residue, not a backlog: it drains at four an
- * hour and then costs one query a tick for ever.
- */
-export const PRINTED_FORM_LIMIT = 4;
-
-/** What one row of the free rung costs, and what the query itself costs. */
-const PRINTED_FORM_QUERY_COST = 1;
-const PRINTED_FORM_ROW_COST = 2;
-
-/**
- * ## The rung that spends nothing, and runs first
- *
- * A work with `series_index_sort` set and `series_index_display` blank owes
- * research NOTHING: the number is in the row, and the printed form is a
- * derivation of it (`seriesIndexDisplayFrom`). Paying a model to look it up
- * would be buying a fact the database already holds — the same reasoning
- * `research-and-gaps.md` §6 uses about the publication years sitting inside the
- * EPUB files.
- *
- * ⚠️ **It exists because these rows are otherwise unreachable, and that was
- * measured rather than feared.** The friend instance's `:07` tick on
- * 2026-08-19 spent real money on two books, succeeded on both — *"Filled in 1
- * of 1: Volume number set to 1"* — wrote only the sort, and left both rows on
- * the queue. The run also recorded `seriesIndex` as **asked**, so `planSweep`
- * will never offer either book again. A run that worked stranded the book it
- * worked on. `applyFinding` no longer creates that state, but nothing existing
- * would have cleared it, and a person editing the sort in `WorkFields` (which
- * deliberately offers no display box) recreates it any day of the week.
- *
- * Ordinary `updateWork`, so the write lands in `change_log` like every other —
- * a derived value that appeared with no history would be the silent-write this
- * repo keeps refusing.
- */
-export async function fillPrintedVolumeNumbers(
-  db: D1Database,
-  limit = PRINTED_FORM_LIMIT,
-): Promise<{ filled: string[]; failed: string[]; subrequests: number }> {
-  const filled: string[] = [];
-  const failed: string[] = [];
-  let subrequests = PRINTED_FORM_QUERY_COST;
-
-  let rows: Awaited<ReturnType<typeof worksWithUnprintedVolume>>;
-  try {
-    rows = await worksWithUnprintedVolume(db, limit);
-  } catch (err) {
-    // ⚠️ Never fatal. This rung is a bonus; a tick that cannot run it must still
-    // run the lookups, so the failure is named and the sweep carries on.
-    return { filled, failed: [`printed volume numbers: ${(err as Error).message}`], subrequests };
-  }
-
-  for (const row of rows) {
-    const printed = seriesIndexDisplayFrom(row.sort);
-    try {
-      await updateWork(db, row.workId, { seriesIndexDisplay: printed });
-      subrequests += PRINTED_FORM_ROW_COST;
-      filled.push(`#${row.workId} "${row.title}" now prints ${printed}`);
-    } catch (err) {
-      subrequests += PRINTED_FORM_ROW_COST;
-      failed.push(`#${row.workId} printed form: ${(err as Error).message}`);
-    }
-  }
-  return { filled, failed, subrequests };
-}
 
 /**
  * Which halves of the sweep this deployment can actually run. Pure and
@@ -705,14 +632,6 @@ export interface SweepResult {
    * decides.
    */
   heldForPerson: number;
-  /**
-   * Volume numbers whose printed form was derived from the number already in
-   * the row — the free rung, which costs no lookup and no money. ⚠️ Counted
-   * separately from `filled` on purpose: `filled` means "a lookup answered
-   * something", and folding a derivation into it would overstate what the paid
-   * half achieved.
-   */
-  printedFilled: number;
   /** Runs that finished honestly with nothing — usually "could not identify". */
   notFound: number;
   errored: number;
@@ -765,27 +684,12 @@ export async function runDetailsSweep(
     donorFilled: 0,
     judged: 0,
     heldForPerson: 0,
-    printedFilled: 0,
     notFound: 0,
     errored: 0,
     skipped: [],
   };
 
   try {
-    // ── The free rung, FIRST and unconditionally ────────────────────────────
-    //
-    // ⚠️ Deliberately above the key check. It needs no key, no donor and no
-    // network — it derives a printed volume number from the sort already in the
-    // row — so an instance with neither path configured should still heal these
-    // rather than return having done nothing. It also runs before the queue is
-    // read, so a work it closes leaves the worklist in the same tick instead of
-    // being counted as still owing.
-    const printed = await fillPrintedVolumeNumbers(env.DB);
-    result.printedFilled = printed.filled.length;
-    // Named rather than counted, the rule the whole `skipped[]` array follows:
-    // this line is the only thing anybody will ever read about this job.
-    result.skipped.push(...printed.filled, ...printed.failed);
-
     // Neither path, no sweep — and say so once, rather than failing twice.
     // ⚠️ A missing AI key alone no longer skips the tick: with a donor
     // configured the sweep runs donor-only (header §4), which is the friend
@@ -828,11 +732,7 @@ export async function runDetailsSweep(
       };
     });
 
-    // ⚠️ The free rung's subrequests come off the top. It is cheap but it is
-    // not free of the ONE resource that kills an invocation silently, and a
-    // plan blind to what has already been spent is exactly how the 50 gets
-    // exceeded — which terminates the tick rather than throwing.
-    const plan = planSweep(candidates, limit, budget - printed.subrequests, mode);
+    const plan = planSweep(candidates, limit, budget, mode);
     result.eligible = plan.pick.length + plan.deferred;
     if (plan.deferred > 0) {
       result.skipped.push(`${plan.deferred} eligible left for a later tick`);

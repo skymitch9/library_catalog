@@ -141,32 +141,36 @@ export interface GapSubject {
 }
 
 /**
- * Is the volume number missing — in either of its two halves?
+ * Is the volume number missing? **`series_index_sort` alone decides.**
  *
- * `sort == null` means the book files nowhere in the ladder; a blank `display`
- * means the page prints nothing. Both states are a gap: a number nobody can
- * read is not an answer, and a printed number that sorts nowhere is not one
- * either. ⚠️ `gapSummary` in `@lc/db` uses this too — the tally and the queue
- * must agree on what "filled" means, or the summary claims work the rows still
- * owe.
+ * ## ⚠️ OWNER RULE, 2026-08-19 — the printed form is OPTIONAL data
  *
- * ⚠️ **The predicate is unchanged; what changed is who can satisfy it.** Until
- * 2026-08-19 `applyFinding` filled `sort` only, so a research-filled volume
- * number left this gap open FOR EVER — nothing else in the pipeline ever wrote
- * `display`. Measured that day on the friend instance, that dead end had become
- * the entire remaining queue: 55 of 55 rows were `seriesIndex`, 54 of them with
- * neither column set. `applyFinding` now writes the derived printed form
- * (`seriesIndexDisplayFrom`) alongside the sort, which is exactly what the
- * INGEST route has always written; see that function's header for why that is
- * a correction rather than a loosening. A person quoting a real cover still
- * wins — the derived form is only ever written into a blank, and
- * `isDerivedSeriesIndexDisplay` is how undo tells the two apart.
+ * Verbatim: *"We don't need physical volume if we have series. Only a few
+ * things have it like the 2 part Sanderson. Make it optional."*
+ *
+ * So a work with a series and a `series_index_sort` is **COMPLETE**.
+ * `series_index_display` — the designation physically printed on a particular
+ * printing, *"Volume 07"*, *"Prequel"* — stays in the schema and is kept
+ * wherever it exists, but it is **never demanded and never a gap**. The full
+ * semantics, with dates, are in
+ * [`docs/info/volume-numbers.md`](../../../docs/info/volume-numbers.md); that
+ * document is the permanent answer, and this comment is its pointer.
+ *
+ * ⚠️ **Do not re-tighten this into a two-column test.** It was one from
+ * 2026-08-13 to 2026-08-19 and the earlier reasoning reads persuasively — *"a
+ * row that sorts correctly and prints nothing"* — so a future session will be
+ * tempted. What that version actually did, measured on the friend instance on
+ * the day it was reversed: **55 of 55 remaining queue rows were `seriesIndex`,
+ * and nothing in the pipeline downstream of `routes/ingest.ts` had ever written
+ * `display`.** Every one was a row research could be paid for for ever and
+ * never close. The predicate was demanding a fact about a physical printing
+ * from a catalog of EPUB files, which mostly do not have one.
+ *
+ * ⚠️ `gapSummary` in `@lc/db` uses this too — the tally and the queue must
+ * agree on what "filled" means, or the summary claims work the rows still owe.
  */
-export function seriesIndexIncomplete(
-  sort: number | null | undefined,
-  display: string | null | undefined,
-): boolean {
-  return sort == null || isBlankDetail(display);
+export function seriesIndexIncomplete(sort: number | null | undefined): boolean {
+  return sort == null;
 }
 
 /** True for null, undefined, and a string of nothing but spaces. */
@@ -175,59 +179,26 @@ export function isBlankDetail(value: string | number | null | undefined): boolea
 }
 
 /**
- * The printed form this catalog writes when a machine fills a volume number and
- * nobody has quoted a cover.
+ * ⚠️ **The ingest route's LEGACY DEFAULT for `series_index_display`. Not a
+ * requirement, and not a form anything else should reach for.**
  *
- * ## ⚠️ This is not new policy — it is the ingest route's policy, given a name
+ * `apps/worker/src/routes/ingest.ts` has written `Book ${sort}` on every work
+ * it has ever created with a volume number, on both instances, since the route
+ * existed — which is where the main catalog's 184 rows whose display is the
+ * bare sort number came from. It is kept, verbatim and here rather than inline,
+ * for exactly one reason: **changing it would change how newly imported books
+ * read on the shelf**, and that is a surface nobody asked about.
  *
- * `apps/worker/src/routes/ingest.ts` has written `Book ${sort}` into
- * `series_index_display` on **every work it has ever created with a volume
- * number**, on both instances, since the route existed. That is where the main
- * catalog's 184 rows whose display is exactly the sort number came from, and the
- * 81 that differ came from the TITLE STRING (*"High School DxD - Volume 07 - …"*
- * → `Volume 07`) — not from anybody photographing a cover.
- *
- * So the refusal `applyFinding` used to make — *"the display quotes the cover,
- * and research read a web page"* — was protecting a provenance that has never
- * existed anywhere in this repo, and it cost real convergence:
- * **measured 2026-08-19 on `library-catalog-2nd`, 55 of 55 remaining queue rows
- * were `seriesIndex`, and 54 of them had NEITHER column set.** Research fills
- * `sort`; `seriesIndexIncomplete` needs both; so every one of those rows was a
- * row research could be paid for for ever and never close. That is the whole
- * "this queue does not converge" problem, arrived at its end state.
- *
- * The rule now is: a machine that is trusted to write the SORT is trusted to
- * write the ordinary printed form of the same number, and nothing more. It is
- * still a derivation and it is still weaker than a person reading a cover —
- * which is why it is one function, used by both writers, so "what does the
- * machine print" has exactly one answer and `isDerivedSeriesIndexDisplay` can
- * recognise its own handwriting when undoing.
- *
- * ⚠️ It must stay derivable from `sort` ALONE. `isDerivedSeriesIndexDisplay` is
- * how `revertFinding` decides whether a display string is the machine's to take
- * back, and that test only works while this function has no other input.
+ * ⚠️ Under the owner's rule of 2026-08-19 (see `seriesIndexIncomplete`, and
+ * `docs/info/volume-numbers.md`) the printed form is **optional data**, present
+ * only where a printing physically carries a designation. So this derivation is
+ * a legacy default and NOT the semantics: nothing new should call it, research
+ * must not, and a row without a display is complete rather than unfinished.
  */
 export function seriesIndexDisplayFrom(sort: number): string {
   // `.0` is not something `toString()` produces; it is carried from the ingest
-  // route verbatim so the two writers cannot differ even on an input neither
-  // expects.
+  // route byte-for-byte so lifting the literal out changed nothing.
   return `Book ${Number(sort).toString().replace(/\.0$/, '')}`;
-}
-
-/**
- * Is this display string the machine's own derivation of this sort value?
- *
- * ⚠️ Used by `revertFinding` and by nothing else, for one reason: undo may clear
- * a column the machine filled and must NEVER clear one a person typed. A
- * hand-quoted *"Prequel"* or *"Volume 07"* fails this test and survives the
- * undo; a `Book 3` beside `sort = 3` is recognisably ours and goes.
- */
-export function isDerivedSeriesIndexDisplay(
-  sort: number | null | undefined,
-  display: string | null | undefined,
-): boolean {
-  if (sort == null || typeof display !== 'string') return false;
-  return display.trim() === seriesIndexDisplayFrom(sort);
 }
 
 /**
@@ -260,10 +231,11 @@ export function detailGaps(subject: GapSubject): DetailField[] {
       case 'series':
         return isBlankDetail(subject.series);
       case 'seriesIndex':
-        // ⚠️ Both columns, not one — see `seriesIndexIncomplete`. The old
-        // `seriesIndexSort == null` test was blind to a row that sorts
-        // correctly and prints nothing.
-        return seriesIndexIncomplete(subject.seriesIndexSort, subject.seriesIndexDisplay);
+        // ⚠️ The SORT alone, by owner rule of 2026-08-19 — the printed form is
+        // optional data, not a completeness requirement. See
+        // `seriesIndexIncomplete`, which carries the reversal and the measured
+        // reason it must not be re-tightened.
+        return seriesIndexIncomplete(subject.seriesIndexSort);
       case 'description':
         return isBlankDetail(subject.description);
     }

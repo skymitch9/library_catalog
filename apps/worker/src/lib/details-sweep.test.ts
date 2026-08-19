@@ -92,13 +92,15 @@ test('unaskedGaps counts a field as asked whether or not it was answered', () =>
 });
 
 test('a gap a finished run did not close is asked once, not hourly', () => {
-  // The volume number was the standing example: 22 works on 2026-08-13 (and 54
-  // of 55 on the friend instance by 2026-08-19) had a gap a lookup answered and
-  // could not close, because `applyFinding` wrote `series_index_sort` and
-  // nothing ever wrote `series_index_display`. ⚠️ That particular dead end was
-  // fixed on 2026-08-19 — `applyFinding` now writes the derived printed form
-  // too — but the RULE this pins is not about that field: an open gap whose
-  // question a finished run already put is asked once. Asked once is a
+  // The volume number was the standing example, and it is no longer one: the
+  // gap test demanded a printed form nothing in the pipeline wrote, which by
+  // 2026-08-19 had made 55 of the friend instance's 55 remaining rows
+  // unclosable. The owner made the printed form optional and the predicate now
+  // reads the sort alone (`docs/info/volume-numbers.md`).
+  //
+  // ⚠️ The RULE this pins survives that entirely, which is why the test does:
+  // an open gap whose question a finished run already put is asked once,
+  // whatever the field and whatever the reason it stayed open. Asked once is a
   // reasonable price; asked every hour is a subscription.
   const stillOpen = candidate({
     workId: 9,
@@ -308,11 +310,7 @@ test('donor-only mode: no AI key no longer skips the tick', async () => {
   } as unknown as Env;
 
   const result = await runDetailsSweep(env);
-  // ⚠️ The free rung runs before the key gate and fails first against this
-  // deliberately-broken D1 — so it is named FIRST, and the two lines that
-  // matter still follow it in order. A tick reports everything it could not do.
   assert.deepEqual(result.skipped, [
-    'printed volume numbers: D1 is gone',
     'no ANTHROPIC_API_KEY — donor-only mode',
     'queue read failed: D1 is gone',
   ]);
@@ -328,100 +326,9 @@ test('an empty queue plans nothing at all', () => {
 // ---------------------------------------------------------------------------
 
 test('no API key: it says so once and spends nothing', async () => {
-  // ⚠️ No DB either, so the free rung reports its own failure ahead of the key
-  // note. It STILL runs: the derivation needs no key, and an instance with
-  // neither path configured must not skip the one thing it can always do.
   const result = await runDetailsSweep({} as Env);
-  assert.equal(result.skipped.length, 2);
-  assert.match(result.skipped[0] ?? '', /^printed volume numbers: /);
-  assert.equal(result.skipped[1], 'no ANTHROPIC_API_KEY');
+  assert.deepEqual(result.skipped, ['no ANTHROPIC_API_KEY']);
   assert.equal(result.attempted, 0);
-  assert.equal(result.printedFilled, 0);
-});
-
-test('a write the free rung cannot make is NAMED and still charged', async () => {
-  // The rung `fillPrintedVolumeNumbers` exists for: a work that files at volume
-  // 3 and prints nothing. No lookup, no key, no money — the answer is in the
-  // column beside the blank one. Measured cause: the friend instance's 17:07
-  // tick on 2026-08-19 paid for two books, succeeded on both, wrote only the
-  // sort, and recorded the question as ASKED — stranding both rows where
-  // `planSweep` would never offer them again.
-  const updated: { id: number; display: unknown }[] = [];
-  const db = {
-    prepare(sql: string) {
-      if (/series_index_display/.test(sql) && /LIMIT/.test(sql)) {
-        return {
-          bind: () => ({
-            all: async () => ({
-              results: [
-                { id: 7, title: 'Bitten (Deluxe Limited Edition)', sort: 1 },
-                { id: 46, title: 'Adapt', sort: 2.5 },
-              ],
-            }),
-          }),
-        };
-      }
-      throw new Error('unexpected query');
-    },
-  };
-  const { fillPrintedVolumeNumbers } = await import('./details-sweep.js');
-  // `updateWork` is reached through @lc/db, so this exercises the query and the
-  // arithmetic; the write itself is pinned where updateWork lives.
-  const spy = {
-    ...db,
-    prepare(sql: string) {
-      if (/UPDATE|SELECT/.test(sql) && !/LIMIT \?/.test(sql)) {
-        // Anything updateWork does is fine for this test's purpose; the point
-        // being pinned is that a failure is NAMED, never thrown.
-        throw new Error('write refused');
-      }
-      return db.prepare(sql);
-    },
-  };
-  const out = await fillPrintedVolumeNumbers(spy as unknown as D1Database, 4);
-  assert.equal(out.filled.length, 0);
-  assert.equal(out.failed.length, 2, 'both failures named, neither thrown');
-  // ⚠️ The subrequest arithmetic is charged either way — a failed write still
-  // spent the call, and a budget that only counts successes overruns the 50.
-  assert.equal(out.subrequests, 1 + 2 * 2);
-  assert.equal(updated.length, 0);
-});
-
-test('the free rung never throws, whatever the database does', async () => {
-  const { fillPrintedVolumeNumbers } = await import('./details-sweep.js');
-  const out = await fillPrintedVolumeNumbers(
-    {
-      prepare() {
-        throw new Error('D1 is gone');
-      },
-    } as unknown as D1Database,
-    4,
-  );
-  assert.deepEqual(out.filled, []);
-  assert.deepEqual(out.failed, ['printed volume numbers: D1 is gone']);
-  // Only the query was attempted, so only the query is charged.
-  assert.equal(out.subrequests, 1);
-});
-
-test('a database that cannot be read is reported, not thrown', async () => {
-  // Resolving rather than rejecting is the whole contract with scheduled():
-  // there is no response for an exception to reach and no user to see it.
-  const env = {
-    ANTHROPIC_API_KEY: 'test',
-    DB: {
-      prepare() {
-        throw new Error('D1 is gone');
-      },
-    },
-  } as unknown as Env;
-
-  const result = await runDetailsSweep(env);
-  assert.equal(result.attempted, 0);
-  assert.equal(result.errored, 0, 'a failed READ is not a failed run — no money was spent');
-  assert.ok(
-    result.skipped.some((s) => /queue read failed: D1 is gone/.test(s)),
-    result.skipped.join(' | '),
-  );
 });
 
 // ---------------------------------------------------------------------------
