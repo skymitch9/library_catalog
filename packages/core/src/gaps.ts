@@ -150,13 +150,17 @@ export interface GapSubject {
  * must agree on what "filled" means, or the summary claims work the rows still
  * owe.
  *
- * ⚠️ Note the interaction with `applyFinding` (research-run.ts): research
- * fills `sort` only, deliberately — `display` quotes the cover, and research
- * read a web page, not a cover. So a research-filled volume number keeps this
- * gap open until a person confirms what the cover says. That is the honest
- * state: the ladder is ordered, the page still shows nothing, and the queue
- * says so. `applyFinding`'s "already volume N" refusal stops it re-buying the
- * answer meanwhile.
+ * ⚠️ **The predicate is unchanged; what changed is who can satisfy it.** Until
+ * 2026-08-19 `applyFinding` filled `sort` only, so a research-filled volume
+ * number left this gap open FOR EVER — nothing else in the pipeline ever wrote
+ * `display`. Measured that day on the friend instance, that dead end had become
+ * the entire remaining queue: 55 of 55 rows were `seriesIndex`, 54 of them with
+ * neither column set. `applyFinding` now writes the derived printed form
+ * (`seriesIndexDisplayFrom`) alongside the sort, which is exactly what the
+ * INGEST route has always written; see that function's header for why that is
+ * a correction rather than a loosening. A person quoting a real cover still
+ * wins — the derived form is only ever written into a blank, and
+ * `isDerivedSeriesIndexDisplay` is how undo tells the two apart.
  */
 export function seriesIndexIncomplete(
   sort: number | null | undefined,
@@ -168,6 +172,62 @@ export function seriesIndexIncomplete(
 /** True for null, undefined, and a string of nothing but spaces. */
 export function isBlankDetail(value: string | number | null | undefined): boolean {
   return value == null || (typeof value === 'string' && value.trim() === '');
+}
+
+/**
+ * The printed form this catalog writes when a machine fills a volume number and
+ * nobody has quoted a cover.
+ *
+ * ## ⚠️ This is not new policy — it is the ingest route's policy, given a name
+ *
+ * `apps/worker/src/routes/ingest.ts` has written `Book ${sort}` into
+ * `series_index_display` on **every work it has ever created with a volume
+ * number**, on both instances, since the route existed. That is where the main
+ * catalog's 184 rows whose display is exactly the sort number came from, and the
+ * 81 that differ came from the TITLE STRING (*"High School DxD - Volume 07 - …"*
+ * → `Volume 07`) — not from anybody photographing a cover.
+ *
+ * So the refusal `applyFinding` used to make — *"the display quotes the cover,
+ * and research read a web page"* — was protecting a provenance that has never
+ * existed anywhere in this repo, and it cost real convergence:
+ * **measured 2026-08-19 on `library-catalog-2nd`, 55 of 55 remaining queue rows
+ * were `seriesIndex`, and 54 of them had NEITHER column set.** Research fills
+ * `sort`; `seriesIndexIncomplete` needs both; so every one of those rows was a
+ * row research could be paid for for ever and never close. That is the whole
+ * "this queue does not converge" problem, arrived at its end state.
+ *
+ * The rule now is: a machine that is trusted to write the SORT is trusted to
+ * write the ordinary printed form of the same number, and nothing more. It is
+ * still a derivation and it is still weaker than a person reading a cover —
+ * which is why it is one function, used by both writers, so "what does the
+ * machine print" has exactly one answer and `isDerivedSeriesIndexDisplay` can
+ * recognise its own handwriting when undoing.
+ *
+ * ⚠️ It must stay derivable from `sort` ALONE. `isDerivedSeriesIndexDisplay` is
+ * how `revertFinding` decides whether a display string is the machine's to take
+ * back, and that test only works while this function has no other input.
+ */
+export function seriesIndexDisplayFrom(sort: number): string {
+  // `.0` is not something `toString()` produces; it is carried from the ingest
+  // route verbatim so the two writers cannot differ even on an input neither
+  // expects.
+  return `Book ${Number(sort).toString().replace(/\.0$/, '')}`;
+}
+
+/**
+ * Is this display string the machine's own derivation of this sort value?
+ *
+ * ⚠️ Used by `revertFinding` and by nothing else, for one reason: undo may clear
+ * a column the machine filled and must NEVER clear one a person typed. A
+ * hand-quoted *"Prequel"* or *"Volume 07"* fails this test and survives the
+ * undo; a `Book 3` beside `sort = 3` is recognisably ours and goes.
+ */
+export function isDerivedSeriesIndexDisplay(
+  sort: number | null | undefined,
+  display: string | null | undefined,
+): boolean {
+  if (sort == null || typeof display !== 'string') return false;
+  return display.trim() === seriesIndexDisplayFrom(sort);
 }
 
 /**

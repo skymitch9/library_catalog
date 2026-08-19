@@ -17,6 +17,117 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## 🔁 THE BUTTON WORKED AND THE COUNT DID NOT MOVE — the details queue converges — ✅ DONE 2026-08-19
+
+Owner, verbatim: *"Sam has 55 missing details, the button didnt fix, do some
+research then also strengthen out autofix."* Opened and closed the same day.
+Reference: [`info/research-and-gaps.md`](info/research-and-gaps.md) §10.6.
+
+### What the button actually did — measured, not reasoned
+
+Every figure below was read from `library-catalog-2nd` (remote) on 2026-08-19.
+
+| | |
+|---|---|
+| `research_run` rows | **80** — 77 `done`, 3 `error` |
+| the 3 errors | runs **5, 6** (2026-08-17 20:19, raw cap body) and **7** (21:07, worded) — all three from the monthly-cap incident, none since |
+| runs on 2026-08-19 16:33–16:37 UTC | **~45**, `model = claude-opus-5`, `triggered_by = 2`, every one `done` |
+| values written | **73 descriptions, 57 series names, 4 years, 2 volume numbers** — all `accepted` / `decided_how = 'auto'` |
+| works still on the queue | **55 of 74** |
+| …of which the gap is `firstPublished` / `series` / `description` | **0 / 0 / 0** |
+| …of which the gap is `seriesIndex` | **55** — and **54 had NEITHER `series_index_sort` NOR `series_index_display`** |
+
+⚠️ **So the key was never the problem and the button was never broken.** Her
+`ANTHROPIC_API_KEY` is live — the owner's *"i cleared this yesterday"* is
+confirmed by ~45 successful paid runs that afternoon — and the three failed rows
+are 2026-08-17 fossils that later runs already superseded (works 4 and 5 were
+both re-run successfully at 22:07/22:11 that night, by the hourly sweep, with
+nobody pressing anything). The count did not move because **filling `series` on
+57 books CREATED 55 volume-number questions**: `detailFieldsFor` refuses to ask
+"which volume is this?" of a book with no series, so the second rung of the
+ladder only comes into existence once the first is climbed.
+`scripts/research-queue.mjs`'s header had already recorded exactly this on the
+main instance — *"57 volume-number questions came into existence the moment [the
+series names landed]"* — and nobody connected it to the friend instance's number.
+
+### ⚠️ And that second rung could not be climbed at all
+
+`applyFinding` wrote `series_index_sort` and stopped. `seriesIndexIncomplete`
+requires **both** columns. Nothing downstream of `routes/ingest.ts` had ever
+written `series_index_display`. So all 54 of those rows were rows the queue
+could be paid for **for ever** and never close — the "this queue does not
+converge" note in `details-sweep.ts` §1, arrived at its end state, having eaten
+100% of the remaining worklist.
+
+The refusal's stated reason was *"the display quotes the cover, and research read
+a web page, not a cover."* **Nothing in this repo has ever read a cover.**
+Measured on the main instance the same day: of 270 works with both columns set,
+**184 hold the bare sort number and 81 differ because the TITLE STRING said so**
+(`High School DxD - Volume 07 - …` → `Volume 07`). And `routes/ingest.ts` has
+written `Book <sort>` — arithmetic, from the number — for every work it has ever
+created with a volume number, on both instances. The refusal was protecting a
+provenance that does not exist, and charging 54 rows for it.
+
+**Fixed:** one derivation, `seriesIndexDisplayFrom` in `@lc/core`, now used by
+BOTH writers — the literal was lifted out of `ingest.ts` rather than copied, so
+the two machines cannot start printing different things for the same number.
+`applyFinding` writes it beside the sort, **only into a blank**, so
+`revertFinding`'s *"the value before an auto-apply was always empty"* invariant
+stays true of both columns. Undo clears it only when
+`isDerivedSeriesIndexDisplay` recognises the machine's own handwriting — a
+hand-quoted `Prequel` or `Volume 07` survives an undo, and that test is the
+reason the derivation must stay a function of `sort` alone.
+
+### A failure about the ACCOUNT is not the book's turn
+
+Second strengthening. `detailsRunHistory` recorded `lastAttemptAt` as the newest
+attempt of **any** status, and the sweep rotates on it. That is right for a book
+that fails on its own merits and wrong for the failure that actually happened:
+the 2026-08-17 cap demoted three books behind every book that had been
+*answered*, taught nothing, spent nothing, and left them demoted after the owner
+cleared the cap.
+
+Now `classifyLookupFailure` weighs the newest error: `allowance_used_up`,
+`too_many_at_once` and `key_rejected` are facts about the KEY and leave the
+rotation exactly where it was; every other error still counts as a turn taken,
+which is the starvation guard the original rule existed for. ⚠️ Deliberately a
+**different rule from `asked`**, which has always ignored every error — that one
+is about eligibility, this one only about order.
+
+⚠️ **This exposed a real defect in the classifier itself.** `describeError`
+classifies at STORE time, so every run failing since 2026-08-17 holds one of
+`lookup-errors.ts`'s OWN sentences — and the vocabulary only matched Anthropic's
+phrasing, so the module could not read its own handwriting. Harmless while the
+only consumer was `wordLookupError` (which passes worded strings straight
+through); **not** harmless the moment something asked *what kind* of failure a
+stored row was. Both halves of the incident are live in one table (runs 5/6 raw,
+run 7 worded), so a rule blind to the worded form would have fixed half of it.
+`classifyLookupFailure` now round-trips every message this module writes, and
+`regainDate` reads the human date (`until 1 September 2026`) as well as the ISO
+one, so re-classifying cannot silently downgrade a screen that already reads
+correctly.
+
+### Also settled
+
+- **Her hourly sweep cron is VERIFIED, not claimed.** The proof this repo asks
+  for — a `research_run` row with `triggered_by` NULL — exists on
+  `library-catalog-2nd`: six of them, most recently `2026-08-19 16:07:16`, plus
+  a `model = 'donor'` row at `16:07:14` proving the donor rung fires too. Minute
+  :07, as configured. The `[env.friend.triggers]` block was already correct;
+  nothing needed adding.
+- **The `Sam's ANTHROPIC key → capped workspace` tech-debt item is closed.** Its
+  suggested five-second confirmation — press Look again on runs 5/6 — rested on
+  the theory that those rows never retry themselves. They do; the sweep re-ran
+  both works the same night. Whether her key sits in a capped workspace remains
+  unverified and is a question for the owner, not for this catalog.
+
+**Tests:** 1273 → **1291**, all green. New:
+`packages/core/test/series-index-display.test.ts` (the derivation, and that undo
+cannot mistake a person's string for the machine's),
+`packages/db/test/last-real-attempt.test.ts` (the rotation rule, including that
+an *unexplained* error is conservatively treated as the book's own), and a
+round-trip block in `packages/core/test/lookup-errors.test.ts`.
+
 ## 📖 `browse-works` — GABI CAN FINALLY SEE THE PHYSICAL SHELF — ✅ DONE 2026-08-19
 
 Opened and closed the same day, so this never sat in `TODO.md`. Operator doc:

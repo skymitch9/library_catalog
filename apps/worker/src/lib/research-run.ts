@@ -81,6 +81,9 @@ import {
   DETAIL_FIELDS,
   DONOR_FUZZY_SOURCE_TIER,
   detailGaps,
+  isBlankDetail,
+  isDerivedSeriesIndexDisplay,
+  seriesIndexDisplayFrom,
   verdictFor,
   type DecisionMode,
   type DetailField,
@@ -532,20 +535,31 @@ export async function applyFinding(
 
     case 'seriesIndex': {
       if (work.seriesIndexSort != null) {
-        // ⚠️ Two messages, because the gap test now reads both columns. With
-        // the sort set and the display blank the book still shows a
-        // volume-number gap — it sorts correctly and prints nothing — and
-        // research cannot close it (the display quotes the cover, and
-        // research read a web page). Saying only "already volume N" here
-        // would leave a person staring at a queue row research claims is done.
-        const displayStillNeeded =
-          work.seriesIndexDisplay == null || work.seriesIndexDisplay.trim() === '';
+        // ⚠️ The sort is already recorded, so there is no volume number left to
+        // buy — but the gap test reads BOTH columns, and a row that sorts
+        // correctly and prints nothing is still a gap. Until 2026-08-19 this
+        // branch stopped here and said so, which meant the row could never
+        // close: nothing downstream of ingest ever wrote `display`, so the
+        // queue asked, was answered, and kept the question.
+        //
+        // Now the printed form is filled from the number the catalog ALREADY
+        // trusts — one derivation, `seriesIndexDisplayFrom`, the same one the
+        // ingest route has always written. Nothing is invented that was not
+        // already implied by the column beside it.
+        if (isBlankDetail(work.seriesIndexDisplay)) {
+          const printed = seriesIndexDisplayFrom(work.seriesIndexSort);
+          await updateWork(db, work.id, { seriesIndexDisplay: printed });
+          return {
+            applied:
+              `Already volume ${work.seriesIndexSort} in the ladder; printed form set to ` +
+              `"${printed}". Replace it if the book itself says something else.`,
+            skipped: null,
+            reason: 'applied',
+          };
+        }
         return {
           applied: null,
-          skipped: displayStillNeeded
-            ? `Already volume ${work.seriesIndexSort} in the ladder — but the printed form ` +
-              `(what the cover actually says) is blank, and only a person with the book can fill it.`
-            : `Already volume ${work.seriesIndexSort}.`,
+          skipped: `Already volume ${work.seriesIndexSort}.`,
           reason: 'already',
         };
       }
@@ -567,16 +581,26 @@ export async function applyFinding(
           reason: 'unusable',
         };
       }
-      // ⚠️ `series_index_sort` only. `series_index_display` is what the COVER
-      // says — "Book 2", "Volume 07", "Prequel" — and research read a web page,
-      // not a cover. Filling it with "Book 2" would be inventing the one field
-      // in this trio whose entire job is to quote something.
-      await updateWork(db, work.id, { seriesIndexSort: index });
-      // Honest about what was and was not filled: the row now SORTS as volume
-      // N, but the printed form is still blank and the gap stays open until a
-      // person quotes the cover. See `seriesIndexIncomplete`.
+      // ⚠️ BOTH columns, since 2026-08-19, and the change is argued in full in
+      // `seriesIndexDisplayFrom`'s header. In one line: the display is not a
+      // cover photograph and never was — `routes/ingest.ts` derives the same
+      // string arithmetically for every work it creates — and writing only the
+      // sort left a gap the queue could be paid for for ever and never close
+      // (55 of 55 remaining rows on the friend instance were exactly this).
+      //
+      // ⚠️ The display is written only when it is BLANK, which keeps
+      // `revertFinding`'s "the value before an auto-apply was always empty"
+      // invariant true of both columns.
+      const printed = seriesIndexDisplayFrom(index);
+      const printedWasBlank = isBlankDetail(work.seriesIndexDisplay);
+      await updateWork(db, work.id, {
+        seriesIndexSort: index,
+        ...(printedWasBlank ? { seriesIndexDisplay: printed } : {}),
+      });
       return {
-        applied: `Volume number set to ${index} (sorts correctly; the printed form still needs a person).`,
+        applied: printedWasBlank
+          ? `Volume number set to ${index}, printed as "${printed}". Replace the printed form if the book itself says something else.`
+          : `Volume number set to ${index}.`,
         skipped: null,
         reason: 'applied',
       };
@@ -788,16 +812,26 @@ export async function revertFinding(
   const work = await getWork(db, finding.workId);
   if (!work) return { reverted: null, skipped: 'That book no longer exists.' };
 
+  // ⚠️ Invariant 3, added 2026-08-19 with the derived printed form: undo may
+  // take back the machine's OWN handwriting and must never take back a
+  // person's. `isDerivedSeriesIndexDisplay` is that test — a `Book 3` beside
+  // `sort = 3` is ours; a hand-quoted "Prequel" or "Volume 07" is not, and
+  // survives. A display string with no sort left beside it prints a volume
+  // number the ladder no longer holds, which is why this travels with the sort
+  // rather than being left behind.
+  const printedIsOurs = isDerivedSeriesIndexDisplay(work.seriesIndexSort, work.seriesIndexDisplay);
+  const clearPrinted = printedIsOurs ? { seriesIndexDisplay: null } : {};
+
   switch (field) {
     case 'firstPublished':
       await updateWork(db, work.id, { firstPublished: null });
       break;
     case 'series':
       // See invariant 1. Both, together, or neither.
-      await updateWork(db, work.id, { series: null, seriesIndexSort: null });
+      await updateWork(db, work.id, { series: null, seriesIndexSort: null, ...clearPrinted });
       break;
     case 'seriesIndex':
-      await updateWork(db, work.id, { seriesIndexSort: null });
+      await updateWork(db, work.id, { seriesIndexSort: null, ...clearPrinted });
       break;
     case 'description':
       await updateWork(db, work.id, { description: null });

@@ -1,7 +1,12 @@
 # The details queue and the research pipeline — Information Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
-> Last verified: **2026-08-10** — every count below was read from the **production**
+> ⚠️ **§10.5 – §10.7 were re-verified 2026-08-19** against the FRIEND instance
+> (`library-catalog-2nd`), and they supersede two claims made below: the hourly
+> cron is now proven by rows, and the "volume number is a gap research can never
+> close" line is fixed rather than true. §1 – §9's counts are still the main
+> instance as of 2026-08-10 and have NOT been re-read.
+> Last verified: **2026-08-10** — every count in §1 – §9 was read from the **production**
 > database that day through `query()` in `scripts/lib/d1.mjs`. The review, accept,
 > reject and verdict paths were driven in a browser against a local worker holding
 > a copy of those 116 rows. §10 (the hourly sweep) was added **2026-08-16**: its
@@ -437,15 +442,114 @@ promise is a scheduled handler's version of awaiting. An unrecognised cron does
 `DETAILS_SWEEP_CRON` have drifted, and `details-sweep.test.ts` reads the toml to
 catch exactly that.
 
-### 10.5 What has NOT been verified
+### 10.5 ✅ The trigger is now VERIFIED — on the friend instance (2026-08-19)
 
-⚠️ **The trigger is claimed, not verified.** By the sibling project's rule — *a
-cron is not working until something it writes has rows* — the proof here is a
-`research_run` row with **`triggered_by` NULL**, which is precisely what
-distinguishes a sweep's run from a person's. That row cannot exist until this is
-deployed, and it has not been. The 50-subrequest ceiling is also this repo's
-stated assumption (§5) rather than something re-measured against the account's
-plan; the budget carries slack for that reason.
+This section used to say *"the trigger is claimed, not verified"*. By the
+sibling project's rule — *a cron is not working until something it writes has
+rows* — the proof is a `research_run` row with **`triggered_by` NULL**, which is
+precisely what distinguishes a sweep's run from a person's. Read from
+`library-catalog-2nd` on 2026-08-19: **six such rows**, the newest at
+`2026-08-19 16:07:16`, plus one at `16:07:14` with `model = 'donor'` — so the
+donor rung fires as well as the AI one, on minute :07 as configured, without
+anybody pressing anything. Two of those rows are the runs that quietly re-ran
+works 4 and 5 at 22:07 and 22:11 on 2026-08-17 after the cap had failed them.
+
+⚠️ Still an assumption: **the 50-subrequest ceiling** (§5) is this repo's stated
+figure rather than something re-measured against the account's plan. The budget
+carries slack for that reason, and nothing above changes it.
+
+### 10.6 ⚠️ The volume-number dead end, and why it ate a whole queue (2026-08-19)
+
+§10.1's table lists three outcomes that leave a gap open. **The middle one was
+not a "does not converge" case at all — it was a case that COULD NOT converge**,
+and on the friend instance it grew until it was the entire remaining worklist.
+
+Measured on `library-catalog-2nd`, remote, 2026-08-19, after the owner pressed
+Look again and reported no fix:
+
+| | |
+|---|---|
+| works | 74 |
+| still on the details queue | **55** |
+| gap is `firstPublished` / `series` / `description` | **0 / 0 / 0** |
+| gap is `seriesIndex` | **55** |
+| …of those, with NEITHER `series_index_sort` nor `series_index_display` | **54** |
+
+Three separate facts, and each one matters:
+
+1. **The lookups worked.** ~45 paid `claude-opus-5` runs completed that
+   afternoon; 73 descriptions, 57 series names and 4 years were written. Her key
+   is live.
+2. **The count did not move because success created the next question.**
+   `detailFieldsFor` will not ask "which volume is this?" of a book with no
+   series, so filling 57 series names opened 55 volume-number gaps in the same
+   pass. `scripts/research-queue.mjs`'s header recorded exactly this on the main
+   instance — *"a second pass is not a retry here; it is the next rung of a
+   ladder that could not be climbed before."*
+3. **That rung had no top.** `applyFinding` filled `sort`;
+   `seriesIndexIncomplete` wants both columns; nothing downstream of
+   `routes/ingest.ts` had ever written `display`. Every one of those 54 rows was
+   payable for ever and closable never.
+
+**The refusal that caused it, and why it was wrong.** `applyFinding` and
+`donorDetailsFor` both said the display *"quotes the cover, and research read a
+web page, not a cover."* ⚠️ **Nothing in this repo has ever read a cover.**
+Measured on the main instance the same day: of 270 works holding both columns,
+**184 hold the bare sort number**, and the 81 that differ differ because the
+TITLE STRING said so (`High School DxD - Volume 07 - …` → `Volume 07`). The
+ingest route has written `Book <sort>` arithmetically for every work it ever
+created with a volume number. The rule was defending a provenance that has never
+existed anywhere in the pipeline.
+
+**What now happens.** `seriesIndexDisplayFrom` (`@lc/core`, beside
+`seriesIndexIncomplete`) is the one derivation, used by `routes/ingest.ts` and
+`applyFinding` alike — lifted out of ingest rather than copied, because two
+copies of "what does the machine print" is how the two writers would start
+disagreeing. It is written **only into a blank**, which is what keeps
+`revertFinding`'s *"the value before an auto-apply was always empty"* invariant
+true of the second column too; and undo takes it back only when
+`isDerivedSeriesIndexDisplay` recognises it, so a hand-quoted `Prequel` survives.
+
+⚠️ **What did NOT change: `seriesIndexIncomplete`.** Loosening the *predicate*
+was the tempting fix and it is the wrong one — it would silently reclaim the
+2026-08-13 finding that 22 works sorted correctly and printed nothing while the
+queue reported zero gaps. The predicate is honest; what was missing was a writer.
+
+**Still open, on purpose:** `routes/donor.ts` still refuses to donate the
+display, so the main catalog's 81 hand-quoted forms — strictly better than a
+derivation — are not offered to her sweep. Logged as tech debt, not convergence:
+the derivation already closes the rows.
+
+### 10.7 A failure about the ACCOUNT is not a turn (2026-08-19)
+
+`detailsRunHistory.lastAttemptAt` was the newest attempt of any status, and
+`planSweep` rotates on it. On 2026-08-17 her key hit its monthly cap and three
+runs died holding
+
+    "You have reached your specified API usage limits.
+     You will regain access on 2026-09-01 at 00:00 UTC."
+
+Nothing was asked, nothing spent, nothing learned — and all three books were
+demoted behind every book that HAD been answered, and stayed demoted after the
+owner cleared the cap. A whole-account outage was inventing a rotation.
+
+`classifyLookupFailure` now weighs the newest error: `allowance_used_up`,
+`too_many_at_once` and `key_rejected` are facts about the key, so they leave the
+rotation untouched; anything else still counts as a turn taken, which is the
+starvation guard (a book whose lookups keep timing out must cost one slot once,
+not every slot). ⚠️ Separate from `asked`, which has always ignored **every**
+error: that rule is about eligibility, this one only about order. The decision
+is `lastRealAttempt`, exported from `@lc/db` and pinned directly.
+
+⚠️ **It also found a defect in the classifier.** `describeError` classifies at
+store time, so runs failing since 2026-08-17 hold `lookup-errors.ts`'s own
+sentences — which its own vocabulary did not match. Invisible while the only
+consumer was `wordLookupError`; a silent half-fix the moment anything asked
+*what kind* of failure a stored row was, since both shapes are live in the same
+table (runs 5/6 raw, run 7 worded). `classifyLookupFailure` now round-trips its
+own messages and `regainDate` reads the human date as well as the ISO one, so
+re-classifying a stored row cannot downgrade a sentence that already reads
+correctly.
 
 ---
 

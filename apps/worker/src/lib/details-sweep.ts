@@ -24,12 +24,24 @@
  * | Outcome | Why the gap survives | How common |
  * |---|---|---|
  * | `identified: false` | no findings at all are returned, so nothing becomes a verdict | isbn-ladder.md §4.2 — **roughly half this library**; 16 of 30 sampled titles have no record anywhere free |
- * | volume number | `applyFinding` fills `series_index_sort` only; `series_index_display` quotes the cover, which research cannot read | 22 works on 2026-08-13 |
+ * | ~~volume number~~ | ~~`applyFinding` fills `series_index_sort` only~~ — **FIXED 2026-08-19**, see below | was 22 works on 2026-08-13; had become 54 of 55 on the friend instance |
  * | an unusable value | the finding stays `pending` **on purpose**, so a person still gets asked | rare |
  *
  * Left alone, an hourly sweep would therefore re-buy the same nothing for the
  * same half of the catalog every hour, for ever. That is the "obviously skipping
  * ones it cant finish" half of the ask, and here it costs code.
+ *
+ * ⚠️ **The middle row of that table was not a "does not converge" case at all —
+ * it was a case that COULD NOT converge, and it ate the whole queue.** Measured
+ * on `library-catalog-2nd` on 2026-08-19, after the owner pressed Look again and
+ * reported no fix: **55 of 55 remaining rows were `seriesIndex`, 54 of them with
+ * neither column set.** Research filled `sort`, `seriesIndexIncomplete` wanted
+ * both, and nothing downstream of the ingest route had ever written `display` —
+ * so every lookup was correct, every lookup was paid for, and the count did not
+ * move. `applyFinding` now writes the derived printed form beside the sort
+ * (`seriesIndexDisplayFrom` in `@lc/core` carries the argument). The rows below
+ * about what this sweep refuses to silence still stand: nothing here writes a
+ * verdict a person did not earn.
  *
  * **What was chosen: the sweep never asks the same book the same question
  * twice** (`detailsRunHistory` + `unaskedGaps` below). It is a read, not a
@@ -176,9 +188,17 @@
  * ⚠️ **It never fights a person for a book.** `claimRun` reports a run already
  * in flight; the sweep steps over it and sees the book again on a later tick.
  *
- * ⚠️ **It does not retry errors specially.** A run that ends `error` is not
- * recorded as asked, so the book stays eligible — but it also goes to the back
- * of the rotation, so a book that fails every time cannot starve the rest.
+ * ⚠️ **It retries errors, and since 2026-08-19 it distinguishes two kinds.** A
+ * run that ends `error` is never recorded as asked, so the book stays eligible
+ * either way. What changed is the ORDER: a failure about the ACCOUNT — the
+ * allowance, a rate limit, a rejected key — is not a turn this book took, so it
+ * no longer pushes the book to the back of the rotation. Every other error
+ * still does, which is the starvation guard: a book whose lookups keep timing
+ * out costs one slot once, not every slot for ever. The classification is
+ * `classifyLookupFailure` in `@lc/core` — the same leaf that words those three
+ * failures for the screen — applied in `detailsRunHistory`, whose header
+ * carries the incident that prompted it (three books on the friend instance
+ * demoted by a monthly cap and left demoted after it was cleared).
  */
 
 import {
@@ -335,7 +355,12 @@ export interface SweepCandidate {
   missing: readonly DetailField[];
   /** Fields a finished run already asked about. See `detailsRunHistory`. */
   asked: readonly string[];
-  /** Newest attempt of any status, or null if never attempted. */
+  /**
+   * Newest attempt that was really this book's turn, or null if it has never
+   * had one. ⚠️ Not "any status": `detailsRunHistory` skips runs that failed on
+   * the account's allowance, rate limit or key — those spent nothing and asked
+   * nothing, so demoting a book for one is a rotation the outage invented.
+   */
   lastAttemptAt: string | null;
 }
 

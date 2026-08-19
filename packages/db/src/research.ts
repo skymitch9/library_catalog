@@ -25,6 +25,7 @@
 import {
   DETAIL_FIELDS,
   UNKNOWN_AUTHOR,
+  classifyLookupFailure,
   detailGaps,
   seriesIndexIncomplete,
   type DecisionMode,
@@ -300,9 +301,39 @@ export async function listRunsForWork(db: D1Database, workId: number): Promise<R
  *   never got an answer, so the question has not really been put. The title
  *   match is the "unless an input changed" escape hatch — retitle a book and it
  *   becomes askable again, because identification may now succeed.
- * - `lastAttemptAt` — the newest attempt of ANY status, which is what stops one
- *   permanently-erroring book at the top of the alphabet starving every book
- *   below it. The sweep rotates on this.
+ * - `lastAttemptAt` — when this book last genuinely had its turn. The sweep
+ *   rotates on it, which is what stops one permanently-erroring book at the top
+ *   of the alphabet starving every book below it.
+ *
+ * ## ⚠️ A failure about the ACCOUNT is not a turn (2026-08-19)
+ *
+ * `lastAttemptAt` used to be the newest attempt of any status, full stop. That
+ * is right for a book that fails *on its own merits* — a lookup that times out
+ * or comes back unreadable has spent a slot and must go to the back. It is
+ * wrong for the failure this catalog actually hit: on 2026-08-17 the friend
+ * instance's key reached its monthly cap, and three books errored with
+ *
+ *     "You have reached your specified API usage limits.
+ *      You will regain access on 2026-09-01 at 00:00 UTC."
+ *
+ * Nothing was asked, nothing was spent, and nothing about those books was
+ * learned — yet all three were demoted behind every book that HAD been
+ * answered, and stayed demoted after the owner cleared the cap. A whole-account
+ * outage demotes the whole catalog in the order it happened to be swept, which
+ * is a rotation the outage invented rather than one the work justified.
+ *
+ * So an error is now weighed by `classifyLookupFailure` (`@lc/core`, the leaf
+ * that already words these three failures for the screen): `allowance_used_up`,
+ * `too_many_at_once` and `key_rejected` are facts about the KEY, so they leave
+ * the rotation exactly where it was; every other error still counts as a turn
+ * taken.
+ *
+ * ⚠️ This is deliberately a **different rule from `asked`**, and the two must
+ * not be merged. `asked` already ignores every error — a question that got no
+ * answer has not been put, whatever the reason. This one is about ORDER, not
+ * eligibility, and only account failures are exempt: a book whose lookups keep
+ * timing out is still eligible AND still goes to the back, which is precisely
+ * the starvation guard the original line was written for.
  *
  * One query for the whole catalog. `research_run` is one row per lookup ever
  * made — tens, not thousands — so grouping it in SQL costs nothing.
@@ -311,7 +342,11 @@ export interface WorkRunHistory {
   workId: number;
   /** Fields a finished run already asked about, with the same title in hand. */
   asked: DetailField[];
-  /** Newest attempt of any status: `finished_at`, or `started_at` if still out. */
+  /**
+   * The newest attempt that was really this book's turn: `finished_at`, or
+   * `started_at` if the run is still out. ⚠️ Runs that failed on the account's
+   * allowance, rate limit or key are skipped — see the header.
+   */
   lastAttemptAt: string | null;
 }
 
@@ -322,25 +357,71 @@ export async function detailsRunHistory(db: D1Database): Promise<WorkRunHistory[
       // ",a,b," (see packFields), so concatenating two of them gives ",a,b,,c,"
       // and splitting on the comma with empties dropped reads back correctly.
       // group_concat skips NULLs, which is what makes the CASE the filter.
+      //
+      // ⚠️ Three aggregates rather than one MAX, because SQLite cannot read an
+      // Anthropic error body and decide whether it was about the key. The split
+      // is: the newest NON-error attempt, then the newest error and its message,
+      // and the classification happens in TypeScript against the one
+      // implementation that already words these failures for the screen.
       `SELECT r.work_id AS work_id,
               group_concat(
                 CASE WHEN r.status = 'done' AND r.input_title = w.title THEN r.unfilled END, ''
               ) AS asked,
-              MAX(COALESCE(r.finished_at, r.started_at)) AS last_attempt_at
+              MAX(CASE WHEN r.status <> 'error'
+                       THEN COALESCE(r.finished_at, r.started_at) END) AS last_ok_at,
+              MAX(CASE WHEN r.status = 'error'
+                       THEN COALESCE(r.finished_at, r.started_at) END) AS last_error_at,
+              (SELECT e.error_message
+                 FROM research_run e
+                WHERE e.work_id = r.work_id AND e.tier = 'details' AND e.status = 'error'
+                ORDER BY COALESCE(e.finished_at, e.started_at) DESC, e.id DESC
+                LIMIT 1) AS last_error_message
          FROM research_run r
          JOIN work w ON w.id = r.work_id
         WHERE r.tier = 'details'
         GROUP BY r.work_id`,
     )
-    .all<{ work_id: number; asked: string | null; last_attempt_at: string | null }>();
+    .all<{
+      work_id: number;
+      asked: string | null;
+      last_ok_at: string | null;
+      last_error_at: string | null;
+      last_error_message: string | null;
+    }>();
 
   return results.map((row) => ({
     workId: row.work_id,
     // Deduplicated: two runs that both asked about `description` concatenate to
     // two entries, and every consumer wants the SET of questions already put.
     asked: [...new Set(unpackFields(row.asked))] as DetailField[],
-    lastAttemptAt: row.last_attempt_at,
+    lastAttemptAt: lastRealAttempt(row.last_ok_at, row.last_error_at, row.last_error_message),
   }));
+}
+
+/**
+ * Which of the two timestamps counts as this book's last turn. Pure and
+ * exported so the rule above is pinned by a test directly rather than through a
+ * copy of itself.
+ *
+ * ⚠️ Only the NEWEST error is classified, and that is enough: an older error
+ * either predates a successful attempt (which then wins on time anyway) or is
+ * itself superseded by the newer one. Reading every error row to be thorough
+ * would cost a query per work for an answer that cannot change.
+ */
+export function lastRealAttempt(
+  lastOkAt: string | null,
+  lastErrorAt: string | null,
+  lastErrorMessage: string | null,
+): string | null {
+  if (!lastErrorAt) return lastOkAt;
+  // A failure about the key is not a turn. Fall back to the last real one —
+  // which may be null, putting a never-successfully-attempted book back at the
+  // front where it started.
+  if (classifyLookupFailure(lastErrorMessage)) return lastOkAt;
+  if (!lastOkAt) return lastErrorAt;
+  // ISO-ish 'YYYY-MM-DD HH:MM:SS' from SQLite's datetime('now'), so string
+  // order is time order — the same reasoning `planSweep`'s sort relies on.
+  return lastErrorAt > lastOkAt ? lastErrorAt : lastOkAt;
 }
 
 /** Every token this feature has ever spent, from the table rather than a counter. */

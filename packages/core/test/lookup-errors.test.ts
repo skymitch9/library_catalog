@@ -231,3 +231,82 @@ describe('wordLookupError — the render layer never prints an envelope', () => 
     assert.equal(wordLookupError(TOO_MANY_AT_ONCE_MESSAGE), TOO_MANY_AT_ONCE_MESSAGE);
   });
 });
+
+/**
+ * ⚠️ The round trip, added 2026-08-19.
+ *
+ * `describeError` classifies at STORE time, so every run that has failed since
+ * 2026-08-17 holds one of THIS MODULE'S sentences in `research_run.error_message`
+ * rather than the provider's envelope. That was the whole point — and it quietly
+ * made the stored row unclassifiable, because the vocabulary only ever matched
+ * Anthropic's phrasing.
+ *
+ * It stopped being cosmetic when something started asking *what kind* of failure
+ * a stored row was: `detailsRunHistory` exempts account failures from the sweep's
+ * rotation, so a cap that read as "unrecognised" would demote the book exactly as
+ * the raw-bodied one did. A classifier that cannot read its own handwriting is a
+ * classifier that works once.
+ */
+describe('a stored sentence classifies as the failure it describes', () => {
+  it('recognises its own allowance message, and keeps the date', () => {
+    const stored = allowanceUsedUpMessage('2026-09-01');
+    const again = classifyLookupFailure(stored);
+    assert.equal(again?.kind, 'allowance_used_up');
+    assert.equal(again?.regainsOn, '2026-09-01');
+    // ⚠️ And the sentence must come back IDENTICAL. Losing the date here would
+    // re-word a screen that already reads correctly into the vaguer variant.
+    assert.equal(again?.message, stored);
+  });
+
+  it('recognises the dateless allowance message without inventing a date', () => {
+    const stored = allowanceUsedUpMessage(null);
+    const again = classifyLookupFailure(stored);
+    assert.equal(again?.kind, 'allowance_used_up');
+    assert.equal(again?.regainsOn, null);
+    assert.equal(again?.message, stored);
+  });
+
+  it('recognises the rate-limit and rejected-key messages', () => {
+    assert.equal(classifyLookupFailure(TOO_MANY_AT_ONCE_MESSAGE)?.kind, 'too_many_at_once');
+    assert.equal(classifyLookupFailure(KEY_REJECTED_MESSAGE)?.kind, 'key_rejected');
+  });
+
+  it('every message this module writes classifies back to its own kind', () => {
+    // The general property, so a fourth message cannot be added without a
+    // matching clause in `wordedKind`.
+    const cases = [
+      ['allowance_used_up', allowanceUsedUpMessage('2026-09-01')],
+      ['allowance_used_up', allowanceUsedUpMessage(null)],
+      ['too_many_at_once', TOO_MANY_AT_ONCE_MESSAGE],
+      ['key_rejected', KEY_REJECTED_MESSAGE],
+    ] as const;
+    for (const [kind, message] of cases) {
+      assert.equal(classifyLookupFailure(message)?.kind, kind, message);
+      // Still person-safe on the way back out.
+      assertPersonSafe(wordLookupError(message));
+    }
+  });
+
+  it('still refuses to guess at an ordinary sentence', () => {
+    // ⚠️ The counterweight. The clauses are distinctive on purpose — a bug
+    // report that happens to mention lookups must not be dressed up as a cap.
+    for (const ordinary of [
+      'That book was deleted while the lookup was running.',
+      'The lookup returned an answer we could not read.',
+      'Too many books were selected.',
+      LOOKUP_FAILED_MESSAGE,
+    ]) {
+      assert.equal(classifyLookupFailure(ordinary), null, ordinary);
+    }
+  });
+
+  it('reads a human date only where a reset is being described', () => {
+    assert.equal(regainDate('used up until 1 September 2026 — lookups pause'), '2026-09-01');
+    assert.equal(regainDate('used up until 12 December 2027.'), '2027-12-12');
+    assert.equal(regainDate('until 31 Smarch 2026'), null, 'not a month');
+    assert.equal(regainDate('nothing about dates here'), null);
+    // The ISO branch still wins, and humanDate is still its inverse.
+    assert.equal(regainDate('You will regain access on 2026-09-01 at 00:00 UTC.'), '2026-09-01');
+    assert.equal(humanDate('2026-09-01'), '1 September 2026');
+  });
+});

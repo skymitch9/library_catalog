@@ -139,6 +139,31 @@ export function classifyLookupFailure(raw: unknown): LookupFailure | null {
     return { kind: 'allowance_used_up', message: allowanceUsedUpMessage(regainsOn), regainsOn };
   }
 
+  // ⚠️ **This module must be able to read back its own handwriting** — added
+  // 2026-08-19. `describeError` classifies at STORE time, so from 2026-08-17
+  // onwards `research_run.error_message` holds the sentences below rather than
+  // the provider's envelope. A classifier blind to them can word a screen
+  // (`wordLookupError` passes an already-worded string through) but cannot
+  // answer *what kind of failure was that*, which is a question something now
+  // asks: `detailsRunHistory` decides whether an errored book keeps its place
+  // in the sweep's rotation, and a cap that read as "unrecognised" would demote
+  // the book exactly as the raw-bodied one used to.
+  //
+  // ⚠️ Matched on a distinctive clause of each sentence, never on the whole
+  // string — the middle of these messages carries an operator URL and a reset
+  // date that legitimately vary.
+  const worded = seen.message ? wordedKind(seen.message) : null;
+  if (worded === 'allowance_used_up') {
+    const regainsOn = regainDate(seen.message as string);
+    return { kind: 'allowance_used_up', message: allowanceUsedUpMessage(regainsOn), regainsOn };
+  }
+  if (worded === 'too_many_at_once') {
+    return { kind: 'too_many_at_once', message: TOO_MANY_AT_ONCE_MESSAGE, regainsOn: null };
+  }
+  if (worded === 'key_rejected') {
+    return { kind: 'key_rejected', message: KEY_REJECTED_MESSAGE, regainsOn: null };
+  }
+
   if (seen.status === 429 || seen.type === 'rate_limit_error') {
     return { kind: 'too_many_at_once', message: TOO_MANY_AT_ONCE_MESSAGE, regainsOn: null };
   }
@@ -147,6 +172,20 @@ export function classifyLookupFailure(raw: unknown): LookupFailure | null {
     return { kind: 'key_rejected', message: KEY_REJECTED_MESSAGE, regainsOn: null };
   }
 
+  return null;
+}
+
+/**
+ * Which of this module's own sentences a stored string is, if any.
+ *
+ * ⚠️ The clauses below are the load-bearing halves of the three messages above
+ * and changing either without the other breaks the round trip silently — which
+ * is why `lookup-errors.test.ts` feeds each message straight back in.
+ */
+function wordedKind(message: string): LookupFailureKind | null {
+  if (/\blookup allowance is used up\b/i.test(message)) return 'allowance_used_up';
+  if (/\btoo many lookups at once\b/i.test(message)) return 'too_many_at_once';
+  if (/\bthe lookup service rejected this catalog's key\b/i.test(message)) return 'key_rejected';
   return null;
 }
 
@@ -358,10 +397,27 @@ function stringOf(v: unknown): string | null {
  * a date nobody stated is a date that will eventually be a lie.
  */
 export function regainDate(message: string): string | null {
-  const m = /(?:regain (?:access|it)|resets?|available again)\D{0,20}(\d{4}-\d{2}-\d{2})/i.exec(
+  const iso = /(?:regain (?:access|it)|resets?|available again)\D{0,20}(\d{4}-\d{2}-\d{2})/i.exec(
     message,
   );
-  return m?.[1] ?? null;
+  if (iso?.[1]) return iso[1];
+
+  // ⚠️ The HUMAN form, because this module's own sentence is what gets stored.
+  // `allowanceUsedUpMessage` writes "used up until 1 September 2026", and from
+  // 2026-08-17 that string — not the provider's ISO one — is what sits in
+  // `research_run.error_message`. Without this branch, re-classifying a stored
+  // row silently loses the date and re-words the sentence into the vaguer
+  // "until it resets" variant, which is a worse message than the one already on
+  // the screen. Round-trip, not one-way.
+  const human = /\buntil\s+(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})\b/.exec(message);
+  if (human) {
+    const month = MONTHS.findIndex((m) => m.toLowerCase() === human[2]!.toLowerCase());
+    const day = Number(human[1]);
+    if (month >= 0 && day >= 1 && day <= 31) {
+      return `${human[3]}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
+  }
+  return null;
 }
 
 const MONTHS = [

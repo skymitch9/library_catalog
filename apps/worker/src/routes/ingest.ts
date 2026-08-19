@@ -7,6 +7,7 @@ import {
   foldAuthorNames,
   normaliseTitle,
   primaryAuthor,
+  seriesIndexDisplayFrom,
   splitSeriesPrefix,
   workKeyFor,
 } from '@lc/core';
@@ -228,10 +229,13 @@ export const ingestRoutes = new Hono<AppBindings>()
         authors: input.authors,
         series: input.series ?? null,
         seriesIndexSort: input.seriesIndexSort ?? null,
+        // ⚠️ The literal that used to be here is now `seriesIndexDisplayFrom`
+        // in `@lc/core` — because `applyFinding` needs the SAME string and a
+        // second copy of it is how the two writers would quietly start
+        // printing different things for the same number. Its header carries the
+        // reasoning this route established and research now inherits.
         seriesIndexDisplay:
-          input.seriesIndexSort != null
-            ? `Book ${Number(input.seriesIndexSort).toString().replace(/\.0$/, '')}`
-            : null,
+          input.seriesIndexSort != null ? seriesIndexDisplayFrom(input.seriesIndexSort) : null,
       });
       createdWork = true;
     }

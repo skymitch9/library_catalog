@@ -91,12 +91,15 @@ test('unaskedGaps counts a field as asked whether or not it was answered', () =>
   assert.deepEqual(unaskedGaps(['description'], []), ['description']);
 });
 
-test('the volume-number gap research can never close is asked once, not hourly', () => {
-  // Measured 2026-08-13: 22 works had `series_index_sort` set and
-  // `series_index_display` blank — they sort correctly and print nothing, so
-  // `seriesIndexIncomplete` stays true for ever. Research fills `sort` only
-  // (`display` quotes the cover), so this gap CANNOT be closed by a lookup.
-  // Asked once is a reasonable price; asked every hour is a subscription.
+test('a gap a finished run did not close is asked once, not hourly', () => {
+  // The volume number was the standing example: 22 works on 2026-08-13 (and 54
+  // of 55 on the friend instance by 2026-08-19) had a gap a lookup answered and
+  // could not close, because `applyFinding` wrote `series_index_sort` and
+  // nothing ever wrote `series_index_display`. ⚠️ That particular dead end was
+  // fixed on 2026-08-19 — `applyFinding` now writes the derived printed form
+  // too — but the RULE this pins is not about that field: an open gap whose
+  // question a finished run already put is asked once. Asked once is a
+  // reasonable price; asked every hour is a subscription.
   const stillOpen = candidate({
     workId: 9,
     missing: ['seriesIndex'],
