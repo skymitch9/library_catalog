@@ -389,7 +389,7 @@ produce neither:
 | Outcome | Why the gap survives | How common |
 |---|---|---|
 | `identified: false` | no findings at all are returned, so nothing can become a verdict | isbn-ladder.md §4.2 — **roughly half this library** |
-| the volume number | `applyFinding` fills `series_index_sort` only; `series_index_display` quotes the cover, which research cannot read | 22 works on 2026-08-13 |
+| ~~the volume number~~ | ~~`applyFinding` fills `series_index_sort` only~~ — **FIXED 2026-08-19, see §10.6**; it had grown from 22 works to 54 of the friend instance's 55 remaining rows before anyone noticed | was 22 on 2026-08-13 |
 | an unusable value | the finding stays `pending` **by design**, so a person is still asked | rare |
 
 A person pressing Run may re-buy any of those; they are choosing to. An hourly

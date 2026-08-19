@@ -287,7 +287,7 @@ export async function listRunsForWork(db: D1Database, workId: number): Promise<R
  * | Outcome | Why the gap survives |
  * |---|---|
  * | `identified: false` | no findings at all are returned — and per isbn-ladder.md §4.2 this is the *expected* answer for roughly half this library |
- * | the volume number | research fills `series_index_sort` only; `series_index_display` quotes the cover, so `seriesIndexIncomplete` stays true for ever (22 works on 2026-08-13) |
+ * | ~~the volume number~~ | ~~research fills `series_index_sort` only~~ — **fixed 2026-08-19**: `applyFinding` writes the derived printed form too (`seriesIndexDisplayFrom`), and the sweep's rung 0 heals rows stranded before it. The other two rows still stand. |
  * | an unusable value | the finding stays `pending` by design, so a person still gets asked |
  *
  * A person pressing Run is welcome to re-buy any of those; they are choosing to.

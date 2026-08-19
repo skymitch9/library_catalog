@@ -206,6 +206,17 @@ export function donorDetailsFor(
       case 'seriesIndex':
         // Sort only. Display quotes the cover, and the caller's copy of the
         // book has its own cover — see the header.
+        //
+        // ⚠️ This refusal is now the ODD ONE OUT and is kept deliberately, not
+        // by inertia. Since 2026-08-19 both machines that WRITE the column
+        // derive it (`seriesIndexDisplayFrom`), because nothing in this repo
+        // has ever actually read a cover — so the donor withholding a value it
+        // holds, while the caller writes a derivation of the same number, is
+        // strictly worse for the caller: this catalog's 81 hand-quoted forms
+        // (`Volume 07`, `Prequel`) are BETTER than what the caller will derive
+        // without them. Widening this is logged in docs/TODO.md; it needs a key
+        // wider than `DetailField`, which is why it is not a one-line change
+        // and why it did not ride along with the convergence fix.
         if (work.seriesIndexSort != null) details.seriesIndex = work.seriesIndexSort;
         break;
       case 'description':
