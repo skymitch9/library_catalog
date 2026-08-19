@@ -4,8 +4,10 @@
 > ⚠️ **§10.5 – §10.7 were re-verified 2026-08-19** against the FRIEND instance
 > (`library-catalog-2nd`), and they supersede two claims made below: the hourly
 > cron is now proven by rows, and the "volume number is a gap research can never
-> close" line is fixed rather than true. §1 – §9's counts are still the main
-> instance as of 2026-08-10 and have NOT been re-read.
+> close" line is gone — the owner made the printed volume form OPTIONAL, and
+> [`volume-numbers.md`](volume-numbers.md) is the canonical statement of that.
+> §1 – §9's counts are still the main instance as of 2026-08-10 and have NOT
+> been re-read.
 > Last verified: **2026-08-10** — every count in §1 – §9 was read from the **production**
 > database that day through `query()` in `scripts/lib/d1.mjs`. The review, accept,
 > reject and verdict paths were driven in a browser against a local worker holding
@@ -59,7 +61,7 @@ Four questions, and only four.
 |---|---|---|
 | `firstPublished` | 116 | Every book was published in a year, including the Kindle-native half. Knowable for all, recorded for none. **But see §6 — there is a free rung that has not been run.** |
 | `series` | 13, minus verdicts → **0** | The 13 are answers. The field stays on the list because the next book added will be a real question. |
-| `seriesIndex` | 10 | "Which volume is this?" A real question for a light novel; a real *answer* of `none` for a side story. |
+| `seriesIndex` | 10 | "Which volume is this?" A real question for a light novel; a real *answer* of `none` for a side story. ⚠️ **`series_index_sort` alone answers it** — the printed form is optional (owner rule 2026-08-19, [`volume-numbers.md`](volume-numbers.md)). |
 | `description` | 116 | One or two sentences on what the book is. Nothing else in the catalog answers "what is this". |
 
 The refusals matter more, and the queue page prints them with their reasons
@@ -491,65 +493,58 @@ Three separate facts, and each one matters:
    `routes/ingest.ts` had ever written `display`. Every one of those 54 rows was
    payable for ever and closable never.
 
-**The refusal that caused it, and why it was wrong.** `applyFinding` and
-`donorDetailsFor` both said the display *"quotes the cover, and research read a
-web page, not a cover."* ⚠️ **Nothing in this repo has ever read a cover.**
-Measured on the main instance the same day: of 270 works holding both columns,
-**184 hold the bare sort number**, and the 81 that differ differ because the
-TITLE STRING said so (`High School DxD - Volume 07 - …` → `Volume 07`). The
-ingest route has written `Book <sort>` arithmetically for every work it ever
-created with a volume number. The rule was defending a provenance that has never
-existed anywhere in the pipeline.
+**The predicate that caused it.** `seriesIndexIncomplete` demanded BOTH
+`series_index_sort` and `series_index_display`, and nothing downstream of
+`routes/ingest.ts` had ever written the second — not research, not the donor,
+no backfill. It was demanding a fact about a **physical printing** from a
+catalog of EPUB files.
 
-**What now happens.** `seriesIndexDisplayFrom` (`@lc/core`, beside
-`seriesIndexIncomplete`) is the one derivation, used by `routes/ingest.ts` and
-`applyFinding` alike — lifted out of ingest rather than copied, because two
-copies of "what does the machine print" is how the two writers would start
-disagreeing. It is written **only into a blank**, which is what keeps
-`revertFinding`'s *"the value before an auto-apply was always empty"* invariant
-true of the second column too; and undo takes it back only when
-`isDerivedSeriesIndexDisplay` recognises it, so a hand-quoted `Prequel` survives.
+⚠️ **The owner settled it, and the ruling is now canonical.** Verbatim:
+*"We don't need physical volume if we have series. Only a few things have it
+like the 2 part Sanderson. Make it optional."* So:
 
-⚠️ **What did NOT change: `seriesIndexIncomplete`.** Loosening the *predicate*
-was the tempting fix and it is the wrong one — it would silently reclaim the
-2026-08-13 finding that 22 works sorted correctly and printed nothing while the
-queue reported zero gaps. The predicate is honest; what was missing was a writer.
+- **`series` + `series_index_sort` = COMPLETE.** The predicate reads the sort
+  alone.
+- **`series_index_display` is optional data**, present only where a printing
+  physically carries a designation. Kept where it exists, never demanded.
+- **Research writes the sort always; the display only when a finding QUOTED a
+  printed form verbatim** (`"Volume 07"`, not `7`). Never derived — `Book 3`
+  beside `sort = 3` asserts something nothing checked. `asIndex` now reads the
+  number out of a quoted form, which it used to discard (`Number("Volume 07")`
+  is NaN, so a model answering in the form a book prints was told its answer
+  was unusable).
 
-**Still open, on purpose:** `routes/donor.ts` still refuses to donate the
-display, so the main catalog's 81 hand-quoted forms — strictly better than a
-derivation — are not offered to her sweep. Logged as tech debt, not convergence:
-the derivation already closes the rows.
+⚠️ **The full rules, with dates, provenance and the measured history of why the
+two-column predicate is the WRONG fix, are in
+[`volume-numbers.md`](volume-numbers.md).** That document is the canonical
+answer and this section is its pointer; do not re-argue the case here.
 
-#### ⚠️ The residue, and rung 0 — the sweep now fixes rows for free
+**Measured effect of the predicate change alone:** friend **55 → 53**, main
+**0 → 0**. It is not the whole answer — 53 of the 55 have no sort either and
+genuinely need the lookup — but it is the difference between a queue that
+converges and one that cannot.
 
-Fixing `applyFinding` does nothing for rows already stranded, and there were
-some. **Caught live:** her `:07` tick on 2026-08-19, on the old code, spent real
-money on two books, succeeded on both —
+**Still open, on purpose:** `routes/donor.ts` will not donate a printed form,
+so the main catalog's 81 hand-quoted ones are not offered to her sweep. Logged
+as tech debt; it needs a key wider than `DetailField` and buys quality, not
+convergence.
 
-    {"proposed":1,"applied":1,
-     "detail":"Filled in 1 of 1: Volume number set to 1
-               (sorts correctly; the printed form still needs a person)."}
+### 10.6a ⚠️ Two approaches were built and one was thrown away — read this before rebuilding either
 
-— wrote only the sort, and left both rows on the queue. Worse, the run recorded
-`seriesIndex` as **asked**, so `planSweep` drops them for having no unasked gap:
-**a run that worked stranded the book it worked on, permanently.**
+Between 09:00 and 11:00 on 2026-08-19 this repo shipped, and then removed, a
+different fix for the same symptom: `applyFinding` derived the printed form
+from the sort (`seriesIndexDisplayFrom`), and the sweep grew a free **rung 0**
+(`fillPrintedVolumeNumbers`) to heal rows stranded before it. Both worked.
+Both are gone, because the owner's ruling made the gap they closed not a gap.
 
-So the sweep gained a **rung 0**, `fillPrintedVolumeNumbers`, which runs before
-everything else and spends nothing:
+Kept from that pass, because it was right independently:
 
-| | |
-|---|---|
-| what it does | derives `series_index_display` from the `series_index_sort` already in the row |
-| cost | **no lookup, no key, no money** — one query plus `updateWork` per row |
-| ceiling | `PRINTED_FORM_LIMIT` = 4 a tick, and its subrequests are **subtracted from `SWEEP_BUDGET` before `planSweep` runs** — a free rung that silently ate the paid half's budget would be a worse bug than the one it fixes |
-| runs when | **always**, including with no `ANTHROPIC_API_KEY` and no donor: it is placed above the key gate on purpose |
-| writes through | ordinary `updateWork`, so it lands in `change_log` like everything else |
-| selection | `UNPRINTED_VOLUME_SQL`, pinned against real SQLite in `packages/db/test/unprinted-volume-clause.test.ts` |
-
-⚠️ It is not a one-off backfill and should not be replaced by one. A person can
-recreate the state any day: `WorkFields` lets them edit the sort and
-deliberately offers no display box, so a hand-typed volume number lands in
-exactly this shape and nothing else would ever close it.
+- `seriesIndexDisplayFrom` still holds ingest's literal, in one place, with one
+  caller. ⚠️ It is ingest's **legacy default**, not the semantics.
+- `classifyLookupFailure` can now read back its own sentences (§10.7).
+- The measured provenance table in `volume-numbers.md` §4 — the finding that
+  **nothing in this repo has ever read a cover** — which is what made the
+  owner's ruling obviously right rather than merely authoritative.
 
 ### 10.7 A failure about the ACCOUNT is not a turn (2026-08-19)
 

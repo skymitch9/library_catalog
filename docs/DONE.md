@@ -52,31 +52,61 @@ series names landed]"* — and nobody connected it to the friend instance's numb
 
 ### ⚠️ And that second rung could not be climbed at all
 
-`applyFinding` wrote `series_index_sort` and stopped. `seriesIndexIncomplete`
-requires **both** columns. Nothing downstream of `routes/ingest.ts` had ever
-written `series_index_display`. So all 54 of those rows were rows the queue
-could be paid for **for ever** and never close — the "this queue does not
-converge" note in `details-sweep.ts` §1, arrived at its end state, having eaten
-100% of the remaining worklist.
+`seriesIndexIncomplete` demanded BOTH `series_index_sort` and
+`series_index_display`, and nothing downstream of `routes/ingest.ts` had ever
+written the second — not research, not the donor, no backfill. All 55 rows were
+rows the queue could be paid for **for ever** and never close.
 
-The refusal's stated reason was *"the display quotes the cover, and research read
-a web page, not a cover."* **Nothing in this repo has ever read a cover.**
-Measured on the main instance the same day: of 270 works with both columns set,
-**184 hold the bare sort number and 81 differ because the TITLE STRING said so**
-(`High School DxD - Volume 07 - …` → `Volume 07`). And `routes/ingest.ts` has
-written `Book <sort>` — arithmetic, from the number — for every work it has ever
-created with a volume number, on both instances. The refusal was protecting a
-provenance that does not exist, and charging 54 rows for it.
+**The owner settled it the same day** (verbatim): *"We don't need physical
+volume if we have series. Only a few things have it like the 2 part Sanderson.
+Make it optional."* And, on why the predicate deserved no more argument:
+*"this volume bug is annoying, you've been right every time about volume."*
 
-**Fixed:** one derivation, `seriesIndexDisplayFrom` in `@lc/core`, now used by
-BOTH writers — the literal was lifted out of `ingest.ts` rather than copied, so
-the two machines cannot start printing different things for the same number.
-`applyFinding` writes it beside the sort, **only into a blank**, so
-`revertFinding`'s *"the value before an auto-apply was always empty"* invariant
-stays true of both columns. Undo clears it only when
-`isDerivedSeriesIndexDisplay` recognises the machine's own handwriting — a
-hand-quoted `Prequel` or `Volume 07` survives an undo, and that test is the
-reason the derivation must stay a function of `sort` alone.
+So: **`series` + `series_index_sort` = COMPLETE**, and the printed form is
+optional data — present only where a printing physically carries a designation,
+kept where it exists, never demanded. Research writes the sort always and the
+display **only when a finding quoted a printed form verbatim** (`"Volume 07"`,
+never a derived `Book 3`); `asIndex` now reads the number out of such a form,
+which it previously threw away, so a model answering in the shape a book
+actually prints is no longer told its answer is unusable.
+
+⚠️ **The canonical statement is [`info/volume-numbers.md`](info/volume-numbers.md)** —
+rules with dates, the two columns, the measured history of why the obvious
+two-column predicate is the wrong fix, and where a printed form actually comes
+from. It exists because the owner said *"We're wasting all our buffer usage on
+solving nonsense we've solved many times"*, and it is the permanent answer.
+
+⚠️ **Two fixes were built for this symptom and one was thrown away.** Earlier
+the same morning, `applyFinding` derived the printed form (`seriesIndexDisplayFrom`)
+and the sweep grew a free **rung 0** to heal rows stranded before it. Both
+worked; both were removed when the ruling made the gap they closed not a gap.
+Kept from that pass because each was right independently: the ingest literal now
+lives in one place, `classifyLookupFailure` can read back its own sentences, and
+the provenance table that made the ruling obviously correct — **nothing in this
+repo has ever read a cover.** Of the main instance's 270 works holding both
+columns, 184 hold the bare sort number (ingest's default) and 81 came from the
+TITLE STRING (`High School DxD - Volume 07 - …`).
+
+**Measured effect of the predicate change alone:** friend **55 → 53**, main
+**0 → 0**. The remaining 53 have no sort either and genuinely need the lookup —
+which the sweep now does, and which now closes the row when it lands.
+
+### The queue can no longer show an anonymous number
+
+Owner: *"a book missing details either gets them filled automatically within a
+day, or sits in a NAMED residue category that the queue page displays with those
+words — never an anonymous count that looks like a bug."* That is the other half
+of why a working button was reported broken: a row research had answered looked
+identical to a row nobody had reached.
+
+`residueSentence` (`apps/web/src/lib/details-residue.ts`, pure and tested) now
+says so per row — naming the volume case separately, and calling the
+could-not-identify case **an answer rather than a failure**, because
+`isbn-ladder.md` §4.2 measured 16 of 30 sampled titles as having no free record
+anywhere. A page-level line splits the list by name: waiting for a lookup versus
+looked up and unanswerable. ⚠️ It refuses to label a book settled while any of
+its questions is unasked, and refuses to call an **errored** run an answer —
+that would be the opposite lie from the one it fixes.
 
 ### A failure about the ACCOUNT is not the book's turn
 
@@ -107,28 +137,6 @@ run 7 worded), so a rule blind to the worded form would have fixed half of it.
 one, so re-classifying cannot silently downgrade a screen that already reads
 correctly.
 
-### Rung 0 — the sweep fixes rows for free, and it was needed within the hour
-
-Fixing `applyFinding` does nothing for rows already stranded, and the `:07` tick
-proved there were some **while this work was in progress**: on the old code it
-paid for two books, succeeded on both, wrote only the sort, and recorded
-`seriesIndex` as *asked* — so `planSweep` would never offer either again. A run
-that worked stranded the book it worked on, permanently.
-
-`fillPrintedVolumeNumbers` is the answer: it derives the printed form from the
-sort already in the row, costs **no lookup, no key and no money**, runs **above
-the key gate** (an instance with neither AI nor donor should still do the one
-thing it can always do), and charges its own subrequests against `SWEEP_BUDGET`
-before `planSweep` sees it — a free rung that quietly ate the paid half's budget
-would be a worse bug than the one it fixes. Capped at 4 rows a tick, written
-through ordinary `updateWork` so it lands in `change_log`, and its selection
-(`UNPRINTED_VOLUME_SQL`) is pinned against real SQLite rather than a TypeScript
-restatement of itself.
-
-⚠️ Not a one-off backfill, and it must not be replaced by one: `WorkFields` lets
-a person edit the sort and deliberately offers no display box, so a hand-typed
-volume number recreates this exact shape any day of the week.
-
 ### Also settled
 
 - **Her hourly sweep cron is VERIFIED, not claimed.** The proof this repo asks
@@ -143,14 +151,16 @@ volume number recreates this exact shape any day of the week.
   both works the same night. Whether her key sits in a capped workspace remains
   unverified and is a question for the owner, not for this catalog.
 
-**Tests:** 1273 → **1301**, all green. New:
+**Tests:** 1273 → **1296**, all green. New:
 `packages/core/test/series-index-display.test.ts` (the derivation, and that undo
 cannot mistake a person's string for the machine's),
 `packages/db/test/last-real-attempt.test.ts` (the rotation rule, including that
 an *unexplained* error is conservatively treated as the book's own),
-`packages/db/test/unprinted-volume-clause.test.ts` (rung 0's selection, run as
-real SQL against real SQLite), and a round-trip block in
-`packages/core/test/lookup-errors.test.ts`.
+`apps/web/test/residue-sentence.test.ts` (the named residue, and its two
+refusals), and a round-trip block in `packages/core/test/lookup-errors.test.ts`.
+`packages/core/test/series-index-display.test.ts` and the supersession note left
+in `core.test.ts` are the mechanical guard against the predicate being
+re-tightened.
 
 ## 📖 `browse-works` — GABI CAN FINALLY SEE THE PHYSICAL SHELF — ✅ DONE 2026-08-19
 

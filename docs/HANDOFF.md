@@ -14,40 +14,48 @@
 > production contains. **Re-measure before trusting any line here; if you
 > re-measure, update the date.**
 
-## 📌 State at 2026-08-19 ~10:40 MST — the details queue now CONVERGES
+## 📌 State at 2026-08-19 ~11:05 MST — the details queue CONVERGES
 
-**Deployed to the FRIEND instance only:** `fa75710f` (version
-`5e07d5f9-a167-481b-a1e5-026360cbd92f`, plus `4062520` comments-only after it).
-1301 tests, typecheck clean, tree clean. ⚠️ **The MAIN instance is NOT deployed**
-— `npm run deploy` was refused by this session's permission layer. Its queue is
-empty (0 of 448 works owe a detail, measured 2026-08-19), so the code is inert
-there, but the two Workers are out of step until someone runs `npm run deploy`.
+**Deployed to the FRIEND instance only:** commit `ed5881b5`. 1296 tests,
+typecheck clean, build clean, tree clean. ⚠️ **The MAIN instance is NOT
+deployed** — `npm run deploy` was refused by that session's permission layer.
+Main owes 0 details of 448 works, so the change is inert there, but the two
+Workers are out of step until someone runs `npm run deploy`.
 
-**What changed, and why it is the headline.** The owner reported *"Sam has 55
-missing details, the button didnt fix"*. The button was fine; the queue could
-not converge. All 55 remaining rows were `seriesIndex`, 54 with neither column
-set, and `applyFinding` wrote `series_index_sort` while `seriesIndexIncomplete`
-requires **both** — so every lookup succeeded, was paid for, and closed nothing.
-Full argument and every measured figure:
-[`info/research-and-gaps.md`](info/research-and-gaps.md) §10.5 – §10.7.
+**The owner's rules, and the one document that answers them permanently:**
+[`info/volume-numbers.md`](info/volume-numbers.md). `series` +
+`series_index_sort` = complete; the printed form (`series_index_display`) is
+optional data; research auto-applies. Written because he said *"We're wasting
+all our buffer usage on solving nonsense we've solved many times."* Do not
+re-argue the volume predicate anywhere else.
 
-⚠️ **Three claims elsewhere in this file are now WRONG and are left in place
-below only because this is a dated log:**
+**Measured 2026-08-19, both instances, `--remote`:**
 
-| Line below says | Reality since 2026-08-19 |
-|---|---|
-| *"the volume-number gap can never be closed by research at all"* | Fixed. `applyFinding` writes the derived printed form beside the sort (`seriesIndexDisplayFrom`, the literal lifted out of `routes/ingest.ts`, which has always written it). |
-| *"the sweep … deliberately does NOT write `gap_verdict: 'unknown'`"* | Still true, and still right. Nothing here silences a row a person could answer. |
-| the sweep is two paid rungs | Three. **Rung 0** (`fillPrintedVolumeNumbers`) runs first, above the key gate, costs no lookup and no money, and heals rows stranded before the fix — capped at 4 a tick with its subrequests charged against `SWEEP_BUDGET`. |
+| | friend (`library-catalog-2nd`) | main (`library-catalog`) |
+|---|---|---|
+| works | 74 | 448 |
+| details queue, before | 55 | 0 |
+| details queue, after the predicate change | **53** | **0** |
+| pending findings to apply | **0** | **0** |
 
-**Also now VERIFIED rather than claimed:** her `7 * * * *` cron fires. Ten
-`research_run` rows on `library-catalog-2nd` carry `triggered_by` NULL, one of
-them `model = 'donor'` — the proof this repo's own rule demands.
+⚠️ The predicate change closes only 2 — **53 of the 55 have no
+`series_index_sort` at all** and genuinely need a lookup. That is the honest
+number; the coordinator's expectation that most would close arithmetically was
+not what the data said.
 
-**What is left, and it needs nobody:** ~53 volume-number rows drain at 2/hour on
-HER key, ≈2¢ each, ≈$1.10 and ~27 hours in total. Pressing **Look up all** at
-<https://padhard.heygabi.ai/queue> does the same work in ~20 minutes, on the
-same key. Neither is required — the sweep gets there alone.
+**What finishes it, with nobody touching anything:** the hourly `7 * * * *`
+sweep takes 2 books a tick on HER key, ≈2¢ each. 53 books ≈ **27 hours,
+≈$1.10**. Pressing **Look up all** at <https://padhard.heygabi.ai/queue> does
+the same work in ~20 minutes on the same key. The cron is **verified, not
+claimed** — ten `research_run` rows carry `triggered_by` NULL, one of them
+`model = 'donor'`.
+
+⚠️ **The queue will not reach zero and must not be read as broken when it
+doesn't.** Roughly half this library has no free record anywhere
+(`isbn-ladder.md` §4.2), so some rows will end as *named residue*: the page now
+states, in words, that research asked and could not answer, and what would
+settle it. An anonymous count that stops falling is how a working button got
+reported as broken.
 
 ## 📌 State at 2026-08-16 ~15:45 PDT (Opus → Fable handoff)
 

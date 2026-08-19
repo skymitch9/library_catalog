@@ -80,6 +80,13 @@ export function WorkFields({
     illustrator: string | null;
     series: string | null;
     seriesIndexSort: number | null;
+    /**
+     * One series slot, several physical volumes (migration 0360). ⚠️ This
+     * checkbox is the ONLY place in the product that can set it — owner rule
+     * 2026-08-19. Research, the donor and every sweep are blind to it on
+     * purpose; see `packages/core/test/multi-volume-flag.test.ts`.
+     */
+    multiVolumePrinting: boolean;
     firstPublished: number | null;
     description: string | null;
   };
@@ -93,6 +100,7 @@ export function WorkFields({
   const [index, setIndex] = useState(
     work.seriesIndexSort == null ? '' : String(work.seriesIndexSort),
   );
+  const [multiVolume, setMultiVolume] = useState(work.multiVolumePrinting);
   const [year, setYear] = useState(work.firstPublished == null ? '' : String(work.firstPublished));
   const [description, setDescription] = useState(work.description ?? '');
   const [busy, setBusy] = useState(false);
@@ -145,6 +153,10 @@ export function WorkFields({
         illustrator: orNull(illustrator),
         series: orNull(series),
         seriesIndexSort: i,
+        // ⚠️ The one machine-unreachable field in this patch, and the reason it
+        // is safe to send unconditionally: it is a person's assertion either
+        // way, so an untick is as meaningful as a tick.
+        multiVolumePrinting: multiVolume,
         firstPublished: y,
         description: orNull(description),
       });
@@ -251,6 +263,32 @@ export function WorkFields({
               />
             </label>
           </div>
+
+          {/* ⚠️ THE ONE PLACE THIS FLAG CAN BE SET. Owner ask 2026-08-19,
+              verbatim: "make it a check box in the book edit for this book is
+              the same spot in the series but has multiple volumes."
+
+              It sits directly under Volume because it qualifies that number and
+              nothing else: the default model is that the series index IS the
+              volume, and this names the one case where a single position in the
+              reading order was printed as more than one physical book. Left
+              unticked — which is every ordinary book — it is not a gap, does not
+              appear on the details queue, and nothing asks about it. */}
+          <label className="field field--check">
+            <input
+              type="checkbox"
+              checked={multiVolume}
+              onChange={(e) => setMultiVolume(e.target.checked)}
+            />
+            <span className="field__label">
+              This book is the same spot in the series but has multiple volumes
+            </span>
+            <span className="muted small">
+              For a printing split across more than one physical book — the two-volume
+              leatherbound of <em>Words of Radiance</em>, a &ldquo;part 1 of 2&rdquo; edition.
+              Nothing looks this up: only somebody holding the book can say.
+            </span>
+          </label>
 
           <p className="muted small">
             {/* Said out loud, because clearing a field has a second effect that

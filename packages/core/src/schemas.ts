@@ -189,6 +189,23 @@ export type KeyMove = z.infer<typeof keyMoveSchema>;
 export const updateWorkSchema = createWorkSchema
   .partial()
   .extend({
+    /**
+     * **One position in the reading order, printed as more than one book.**
+     * Migration 0360; owner rule 2026-08-19, verbatim: *"make it a check box in
+     * the book edit for this book is the same spot in the series but has
+     * multiple volumes."*
+     *
+     * ⚠️ On the UPDATE contract and deliberately NOT on the create one, the
+     * same asymmetry `universe` uses two lines below and for a stronger reason:
+     * it is a fact about a physical printing that only somebody holding the
+     * book can assert. No importer, scan, donor or research pass may originate
+     * it — every new row starts `false` (the migration's DEFAULT 0), and it
+     * becomes true only by a person ticking the box.
+     *
+     * `packages/core/test/multi-volume-flag.test.ts` fails the build if it ever
+     * appears on a machine-writable path.
+     */
+    multiVolumePrinting: z.boolean().optional(),
     universe: optionalText,
     /**
      * ⚠️ Required (by the route, not the schema) whenever the patch would move a

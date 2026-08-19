@@ -47,8 +47,14 @@ interface WorkDetail {
     authors: string | null;
     series: string | null;
     seriesIndexDisplay: string | null;
-    /** Where it sorts. `seriesIndexDisplay` is what the cover says; see WorkFields. */
+    /**
+     * Where it sorts, and — by owner rule 2026-08-19 — the VOLUME itself.
+     * `seriesIndexDisplay` is the optional designation a printing physically
+     * carries; `docs/info/volume-numbers.md` is the canonical semantics.
+     */
     seriesIndexSort: number | null;
+    /** One series slot, several physical volumes. Human-set only (0360). */
+    multiVolumePrinting: boolean;
     firstPublished: number | null;
     description: string | null;
     coverUrl: string | null;

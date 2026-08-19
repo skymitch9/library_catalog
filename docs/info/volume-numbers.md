@@ -21,7 +21,10 @@
 | **R2** | **`series_index_display` is OPTIONAL DATA, never a gap.** It records the designation a particular printing *physically carries* — *"Volume 07"*, *"Prequel"*, *"Book Two"*. Most of this catalog is EPUB files, which mostly carry none. | Same. |
 | **R3** | **Nothing derives a printed form.** Research writes it only when a finding **quoted one verbatim**; a bare number fills the sort and nothing else. | Owner, 2026-08-19, on the honesty of provenance. |
 | **R4** | **Research findings for the volume number AUTO-APPLY**, like every other detail field. | Owner, 2026-08-19: *"this volume bug is annoying, you've been right every time about volume. Can we figure that out? Just apply it"* |
-| **R5** | **A sort with no series is still a gap.** *"Which volume is this?"* is not a question you can ask a standalone; a printed number that files nowhere sorts to the end as if unnumbered. | `detailFieldsFor`, unchanged since 2026-08-10. |
+| **R5** | **`series_index_sort` IS the volume.** There is no second volume concept in the default case; the displayed position is the series index. | Owner, 2026-08-19: *"series == volume unless human intervention on the ui or by me telling you there is 2 books sharing 1 series slot as 2 volumes."* |
+| **R6** | **The exception is a HUMAN-ONLY flag**, `work.multi_volume_printing` (migration 0360): *one position in the reading order, printed as more than one physical book*. Set by the checkbox in the book edit panel, or by the conductor on the owner's explicit word. ⚠️ **Research, the donor and every sweep are blind to it.** | Owner, 2026-08-19: *"make it a check box in the book edit for this book is the same spot in the series but has multiple volumes."* |
+| **R7** | **Where R6 is true the printed form is MEANINGFUL** (*"Vol 1 of 2"*); where it is false the printed form is noise, because the index already said everything. | Same. |
+| **R8** | **A sort with no series is still a gap.** *"Which volume is this?"* is not a question you can ask a standalone; a printed number that files nowhere sorts to the end as if unnumbered. | `detailFieldsFor`, unchanged since 2026-08-10. |
 
 ## 2. The two columns, and what each is for
 
@@ -41,10 +44,10 @@ session will re-derive it. Here is what happened.
 | 2026-08-13 | 22 works found with `sort` set and `display` NULL — filing correctly, printing nothing, and the gap test (then `sort == null`) reported **zero gaps** for all of them. | `seriesIndexIncomplete` widened to demand **both** columns. |
 | 2026-08-13 → 08-19 | Nothing downstream of `routes/ingest.ts` ever wrote `display`. Not research (`applyFinding` wrote the sort only), not the donor (`donorDetailsFor` withholds it), no backfill. | Every research-filled volume number left its gap **permanently open**. |
 | 2026-08-19 | Owner: *"Sam has 55 missing details, the button didnt fix."* Measured on `library-catalog-2nd`: **55 of 74 works on the queue, 55 of 55 of them `seriesIndex`.** ~45 paid lookups that afternoon had all succeeded. | The predicate was the bug. |
-| 2026-08-19 | R1–R5 above. | Predicate reads the sort alone. |
+| 2026-08-19 | R1–R8 above, including the human-only multi-volume flag (§3a). | Predicate reads the sort alone. |
 
 ⚠️ **The 2026-08-13 diagnosis was correct; only the remedy was wrong.** The
-mirror state it found — `display` set, `sort` NULL — really is a gap, and R5
+mirror state it found — `display` set, `sort` NULL — really is a gap, and R8
 still catches it. What was wrong was demanding a fact about a physical printing
 from a catalog of files.
 
@@ -55,6 +58,49 @@ code it spent real money on two books, succeeded on both —
 the queue. It also recorded `seriesIndex` as *asked*, so `planSweep` would never
 have offered either book again: **a run that worked stranded the book it worked
 on.** Both closed the moment R1 landed.
+
+## 3a. ⚠️ The multi-volume flag — the one field no machine may write
+
+`work.multi_volume_printing` (migration 0360, `INTEGER NOT NULL DEFAULT 0`,
+`multiVolumePrinting` in app shape). **False on every existing row**, which is
+the truth for all but a handful.
+
+**What it means:** this entry sits at ONE series position and was printed as
+more than one physical book. The two-volume leatherbound of *Words of Radiance*
+is the standing example; *"part 1 of 2"* printings are the general class. It is
+NOT "this is an omnibus", NOT "the audiobook is split in two", and NOT "there
+are two editions" — each of those is a different fact with its own home.
+
+⚠️ **It is human-only, and the guard is mechanical.** A model asked *"is this a
+two-volume printing?"* answers confidently and wrongly for any book with a
+part-1-of-2 audiobook, a boxed set or an omnibus, and nothing downstream could
+catch it — no title string to compare, no second source to corroborate. Same
+argument that keeps `isbn13` off the research list
+([`research-and-gaps.md`](research-and-gaps.md) §2).
+
+| Door | Open? | Pinned by |
+|---|---|---|
+| The checkbox in `WorkFields` | **Yes** — the only one in the product | — |
+| `updateWorkSchema` | Yes, boolean, both directions | `multi-volume-flag.test.ts` |
+| `createWorkSchema` | **No** — no importer, scan or ingest may originate it | same |
+| `DETAIL_FIELDS` / `detailGaps` | **No** — it is never a gap and never reaches the queue or the sweep | same |
+| `applyFinding` | **No** — its patch object names four columns and cannot name a fifth | `research-run.ts` header rule 3 |
+
+**Candidates for the owner to tick — NOT ticked, deliberately.** Searched both
+instances 2026-08-19 for `part 1/2`, `vol N of M`, `leatherbound`, and for two
+works sharing one series slot:
+
+| Instance | Row | Evidence | Verdict |
+|---|---|---|---|
+| main | **#220 *Words of Radiance*** (The Stormlight Archive 2) | **two `hardcover` editions** recorded on one work — consistent with the two-volume leatherbound, and it is the class the owner named | ⚠️ **Not ticked.** Two hardcovers is equally consistent with a trade hardcover *plus* a leatherbound, i.e. two printings rather than one printing in two volumes. Only somebody holding them can say. |
+| main | — | no two works share a series slot; no title or edition path matches the part-of-N patterns | nothing to tick |
+| friend | — | same searches, no matches | nothing to tick |
+
+⚠️ Noted in passing, not touched: works **#3 (*Dragonsteel Prime*)** and **#8
+(*Firstborn / Defending Elysium*)** both carry `series_index_sort = 1` with
+`series` NULL. Harmless under R8 (no series, so the volume question is not
+asked), and previously recorded as un-investigated in
+[`research-and-gaps.md`](research-and-gaps.md) §3.1.
 
 ## 4. Where a printed form actually comes from
 

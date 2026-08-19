@@ -1,0 +1,35 @@
+-- One series slot, several physical volumes.
+--
+-- Owner, 2026-08-19, verbatim: "series == volume unless human intervention on
+-- the ui or by me telling you there is 2 books sharing 1 series slot as 2
+-- volumes. make it a check box in the book edit for this book is the same spot
+-- in the series but has multiple volumes."
+--
+-- ## What this column MEANS, and what it does not
+--
+-- The default model is: `series_index_sort` IS the volume. Book 3 of a series
+-- is volume 3, and there is no second concept. `series_index_display` — the
+-- designation a printing physically carries — is OPTIONAL DATA and is noise on
+-- an ordinary book, because the number beside it already said everything.
+--
+-- This flag names the one case where that is false: an entry occupying ONE
+-- position in the reading order that was PRINTED as more than one physical
+-- book. The Words of Radiance two-volume leatherbound is the standing example;
+-- "part 1 of 2" printings are the general class. Where it is true, the printed
+-- designation becomes meaningful — "Vol 1 of 2" says something the series index
+-- cannot.
+--
+-- ⚠️ IT IS A FACT ABOUT A PHYSICAL PRINTING, WHICH IS EXACTLY WHY NO MACHINE
+-- MAY SET IT. Owner's rule: it is set only by the checkbox in the book edit
+-- surface, or by the conductor on his explicit word. Research, the donor and
+-- every sweep are blind to it — `applyFinding`'s patch object names four
+-- columns and cannot name a fifth, `DETAIL_FIELDS` does not contain it, and
+-- `packages/core/test/multi-volume-flag.test.ts` fails the build if any of that
+-- stops being true. A model asked "is this a two-volume printing?" will answer
+-- confidently and wrongly for any book with a part-1-of-2 audiobook, a boxed
+-- set, or an omnibus, and nothing downstream could catch it.
+--
+-- Additive, NOT NULL DEFAULT 0. Every existing row means "an ordinary book",
+-- which is the truth for all but a handful, and the handful are the owner's to
+-- tick.
+ALTER TABLE work ADD COLUMN multi_volume_printing INTEGER NOT NULL DEFAULT 0;

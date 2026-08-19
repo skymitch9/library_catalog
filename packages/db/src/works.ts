@@ -70,6 +70,8 @@ export interface WorkRow {
   cover_status: string | null;
   /** The illustrator credit, or NULL (nobody has recorded one). Migration 0130. */
   illustrator: string | null;
+  /** 0/1. One series slot, several physical volumes. Migration 0360. */
+  multi_volume_printing: number;
   /** The owner's canonical universe name, or NULL for *in no universe*. Migration 0080. */
   universe: string | null;
   /** 'list' | 'human' | NULL (nobody and nothing has decided). Migration 0080. */
@@ -148,6 +150,23 @@ export interface Work {
    * is meaningful with a null universe (a person saying "in no universe").
    */
   universeHow: UniverseSource | null;
+  /**
+   * **One position in the reading order, printed as more than one book.**
+   * Migration 0360. The Words of Radiance two-volume leatherbound is the
+   * standing example; "part 1 of 2" printings are the class.
+   *
+   * ⚠️ **HUMAN-ONLY.** Owner rule 2026-08-19: set by the checkbox in the book
+   * edit surface, or by the conductor on his explicit word — never by research,
+   * the donor, or any sweep. It is a fact about a PHYSICAL PRINTING, and a
+   * model asked about it answers confidently and wrongly for any book with a
+   * part-1-of-2 audiobook, a boxed set or an omnibus.
+   * `packages/core/test/multi-volume-flag.test.ts` fails the build if a machine
+   * path ever gains a way to write it.
+   *
+   * False is the ordinary answer and means nothing needs doing — it is not a
+   * gap, and it must never appear on the details queue.
+   */
+  multiVolumePrinting: boolean;
   /** When this row was catalogued. Drives the "recently added" view. */
   createdAt: string;
 }
@@ -174,6 +193,7 @@ export function toWork(row: WorkRow): Work {
     illustrator: row.illustrator,
     universe: row.universe,
     universeHow: (row.universe_how as UniverseSource | null) ?? null,
+    multiVolumePrinting: row.multi_volume_printing === 1,
     createdAt: row.created_at,
   };
 }
@@ -186,7 +206,7 @@ function assignmentOf(work: Work): UniverseAssignment {
 const WORK_COLS = `id, title, subtitle, sort_title, authors, primary_author, work_key,
                    series, series_index_sort, series_index_display, first_published,
                    openlibrary_work_id, description, cover_url, cover_status, illustrator,
-                   universe, universe_how, created_at, updated_at`;
+                   universe, universe_how, multi_volume_printing, created_at, updated_at`;
 
 export async function createWork(
   db: D1Database,
@@ -420,6 +440,15 @@ export async function updateWork(
     // feed `workKeyFor`. Correcting an illustrator moves no key and needs no
     // ceremony; that is the whole design of the column (migration 0130).
     illustrator: patch.illustrator !== undefined ? patch.illustrator : current.illustrator,
+    // ⚠️ HUMAN-ONLY (migration 0360). It reaches this object the same way every
+    // other field does — the guard is not here, it is that nothing machine-side
+    // can BUILD a patch containing it: `applyFinding`'s patch object names four
+    // columns, `DETAIL_FIELDS` does not list it, and the donor cannot propose
+    // it. `packages/core/test/multi-volume-flag.test.ts` pins all three.
+    multiVolumePrinting:
+      patch.multiVolumePrinting !== undefined
+        ? patch.multiVolumePrinting
+        : current.multiVolumePrinting,
     universe: verse.universe,
   };
 
@@ -453,6 +482,7 @@ export async function updateWork(
   consider('coverUrl', current.coverUrl, next.coverUrl);
   consider('coverStatus', current.coverStatus, next.coverStatus);
   consider('illustrator', current.illustrator, next.illustrator);
+  consider('multiVolumePrinting', current.multiVolumePrinting, next.multiVolumePrinting);
   if (patch.universe !== undefined) consider('universe', current.universe, next.universe);
 
   const update = db
@@ -461,7 +491,7 @@ export async function updateWork(
          title = ?, subtitle = ?, sort_title = ?, authors = ?, primary_author = ?, work_key = ?,
          series = ?, series_index_sort = ?, series_index_display = ?, first_published = ?,
          openlibrary_work_id = ?, description = ?, cover_url = ?, cover_status = ?,
-         illustrator = ?, universe = ?, universe_how = ?,
+         illustrator = ?, universe = ?, universe_how = ?, multi_volume_printing = ?,
          updated_at = datetime('now')
        WHERE id = ?
        RETURNING ${WORK_COLS}`,
@@ -484,6 +514,7 @@ export async function updateWork(
       next.illustrator,
       verse.universe,
       verse.how,
+      next.multiVolumePrinting ? 1 : 0,
       id,
     );
 
