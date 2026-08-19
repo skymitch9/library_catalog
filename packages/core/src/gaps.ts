@@ -243,6 +243,44 @@ export function detailGaps(subject: GapSubject): DetailField[] {
 }
 
 /**
+ * The questions this book has never been put, of the ones it still owes.
+ *
+ * Empty means there is nothing new to buy: every open gap has already been
+ * asked about by a finished run and the answer did not close it. Asking again
+ * costs the same money and returns the same nothing.
+ *
+ * ⚠️ A field is *asked*, not *answered*. That is the whole distinction — a run
+ * that came back `found`, `none` or `unknown` all count as asked, which is
+ * precisely why they stop repeating.
+ *
+ * ## ⚠️ Why this lives in the leaf and not next to its first caller
+ *
+ * It was `apps/worker/src/lib/details-sweep.ts`'s private helper until
+ * 2026-08-19, when the SECOND consumer turned up and the missing sharing was
+ * the bug. The queue page's "Look up N" button had its own idea of
+ * already-asked — `runs[workId] !== undefined`, keyed **by work** — so a
+ * research pass that filled `series` on 57 books marked those books asked, and
+ * the volume question, which only comes into existence once a book HAS a
+ * series, was born behind that marker. 51 unanswered questions sat behind it;
+ * the button read **"Every one already asked"** and was disabled one line under
+ * the page's own sentence *"51 books are waiting for a lookup."* The owner
+ * reported it twice as *"the button didnt fix"*.
+ *
+ * ⚠️ **Outstanding-ness is a fact about a (work, FIELD) pair, never about a
+ * work.** Anything that reduces it to "has this book been touched" reproduces
+ * the same bug, and the fix is not to drop the marker either — that reinstates
+ * the paid re-ask loop it exists to prevent. Both directions are lies; this
+ * function is the only shape that is neither.
+ */
+export function unaskedGaps(
+  missing: readonly DetailField[],
+  asked: readonly string[],
+): DetailField[] {
+  const already = new Set(asked);
+  return missing.filter((field) => !already.has(field));
+}
+
+/**
  * What a research finding proposes about one field.
  *
  * ⚠️ Three outcomes, not two, and the third is the one that is easy to drop.

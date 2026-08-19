@@ -45,6 +45,7 @@ import {
   setGapVerdictSchema,
 } from '@lc/core';
 import {
+  detailsRunHistory,
   gapSummary,
   getFinding,
   getWork,
@@ -93,14 +94,32 @@ export const researchRoutes = new Hono<AppBindings>()
    * `refused` is here for the same reason. A queue that silently omits ISBN
    * looks like an oversight; one that says "refused, and here is why" is a
    * decision somebody can argue with.
+   *
+   * ## ⚠️ `asked` — per (work, FIELD), and the page cannot be honest without it
+   *
+   * Added 2026-08-19. `runs` below is the LATEST run per work, and the page had
+   * been using its mere existence as "this book has already been asked". That
+   * is a fact about a BOOK, and the question is a fact about a FIELD: filling
+   * `series` on 57 books marked them asked, and the volume question only comes
+   * into existence once a book HAS a series, so 51 genuinely unanswered
+   * questions sat behind the marker. The button read *"Every one already
+   * asked"*, disabled, one line under the page's own *"51 books are waiting for
+   * a lookup."*
+   *
+   * `detailsRunHistory` is the canonical answer and the sweep has used it since
+   * 2026-08-16 — finished runs only, and only while `input_title` still matches,
+   * so an errored lookup has not asked anything and a retitled book becomes
+   * askable again. One grouped query over `research_run`, which holds tens of
+   * rows, not thousands. ⚠️ The page must not re-derive this from `runs`.
    */
   .get('/queue', requireCapability('read'), async (c) => {
-    const [works, summary, runs, totals, pending] = await Promise.all([
+    const [works, summary, runs, totals, pending, history] = await Promise.all([
       listWorksNeedingDetails(c.env.DB),
       gapSummary(c.env.DB),
       latestRuns(c.env.DB),
       runTotals(c.env.DB),
       listPendingFindings(c.env.DB),
+      detailsRunHistory(c.env.DB),
     ]);
 
     // ⚠️ Counted here rather than fetched per row when a row is expanded. A
@@ -110,12 +129,16 @@ export const researchRoutes = new Hono<AppBindings>()
     const pendingByWork = new Map<number, number>();
     for (const f of pending) pendingByWork.set(f.workId, (pendingByWork.get(f.workId) ?? 0) + 1);
 
+    const askedByWork = new Map<number, string[]>();
+    for (const h of history) askedByWork.set(h.workId, h.asked);
+
     return c.json({
       works: works.map((w) => ({
         ...w,
         pending: pendingByWork.get(w.workId) ?? 0,
         missingLabels: w.missing.map((f) => DETAIL_FIELD_LABEL[f]),
         answeredLabels: w.answered.map((f) => DETAIL_FIELD_LABEL[f] ?? f),
+        asked: askedByWork.get(w.workId) ?? [],
       })),
       summary: summary.map((s) => ({ ...s, label: DETAIL_FIELD_LABEL[s.field] })),
       refused: REFUSED_FIELDS,

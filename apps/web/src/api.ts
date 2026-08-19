@@ -799,6 +799,22 @@ export interface NeedsDetails {
   /** Fields already settled. Shown so the page can say what it is NOT asking. */
   answered: DetailField[];
   answeredLabels: string[];
+  /**
+   * Questions a **finished** run has already put to this book, answered or not.
+   *
+   * ⚠️ Not the same as `answered`, and not derivable from `runs`. `answered` is
+   * a `gap_verdict` — somebody wrote down a conclusion. This is the run log:
+   * the field was asked, and the answer (found / none / unknown / nothing) did
+   * not close it. `missing` minus this is what is still worth paying for; see
+   * `unaskedGaps` in `@lc/core` and `lib/details-outstanding.ts`.
+   *
+   * Errored runs are excluded server-side — a lookup that never got an answer
+   * has not put the question — so this is safe to treat as "already bought".
+   *
+   * Typed loosely as `string[]` because it is read straight out of
+   * `research_run.unfilled`, which is text this app does not own the shape of.
+   */
+  asked: string[];
 }
 
 /**

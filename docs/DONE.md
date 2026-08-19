@@ -17,6 +17,107 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ "Look up all" disables itself while real questions are open (found 2026-08-19)
+
+**Symptom the owner reported twice, in his words: *"the button didnt fix"*.**
+On `padhard.heygabi.ai/queue` the primary button reads **"Every one already
+asked"** and is disabled, while the page one line above says *N books are
+waiting for a lookup*. Both statements are true, which is the whole problem.
+
+**Cause.** `apps/web/src/pages/DetailsQueuePage.tsx`:
+
+```ts
+const outstanding = shown.filter((w) => runs[w.workId] === undefined);
+```
+
+`runs` is keyed **by work**, so "asked" is a fact about a BOOK, not about a
+QUESTION. Filling `series` on 57 books marked them asked; the volume question
+only came into existence *after* that fill, so 51 genuinely unanswered
+questions sat behind an "already asked" marker. ⚠️ **This is the same family
+as the bug the 2026-08-19 agent fixed** (`seriesIndexIncomplete` demanding a
+column nothing ever wrote): a book can be marked done for a question nobody
+put to it.
+
+**Why it is not urgent but must not be lost.** The hourly sweep is unaffected
+— it rotates oldest-turn-first and ignores the marker — so queues still drain
+without anyone. The damage is to trust: the one control a person reaches for
+says "nothing to do" when there is plenty, and that is how a working feature
+gets reported as broken.
+
+**The fix, when it is picked up.** Make outstanding-ness **per (work, field)**
+rather than per work: a book is "already asked" only for the fields its last
+run actually covered. `research_run` already records enough to know this.
+⚠️ Do not simply drop the filter — that reinstates the paid re-ask loop the
+marker exists to prevent.
+
+**Model guidance:** Kiro Claude Sonnet 5 (a contained change with tests
+alongside it).
+
+### Fixed 2026-08-19 — what was actually built
+
+Moved whole from `TODO.md`, verbatim; the only edit on the way out is the 🔴
+in the heading becoming ✅. Everything below this line was appended at landing.
+⚠️ It **supersedes the line in the entry immediately below** ("This is a live
+defect and is NOT fixed — see TODO.md"), which is left as written because this
+file is append-only.
+
+**Outstanding-ness is now per (work, FIELD), and both directions are pinned.**
+The predicate is `unaskedGaps`, which the hourly sweep had used since
+2026-08-16 — the bug was that the page had never been told about it. It moved
+from `apps/worker/src/lib/details-sweep.ts` (which re-exports it) to
+`packages/core/src/gaps.ts`, so the button and the cron cannot disagree about
+what is left.
+
+| Layer | Change |
+|---|---|
+| `packages/core/src/gaps.ts` | `unaskedGaps` lands here, with the incident and the two-lies table |
+| `apps/worker/src/routes/research.ts` | `/queue` now returns `asked` per work, from `detailsRunHistory` — finished runs only, `input_title` must still match |
+| `apps/web/src/lib/details-outstanding.ts` | **new.** `outstandingFields`, `outstandingWorks`, `askedFor`, `askedByRun`, `withSessionAsked` |
+| `apps/web/src/lib/details-residue.ts` | takes the asked SET instead of the latest run, so the row sentence and the button count are one definition |
+| `apps/web/src/pages/DetailsQueuePage.tsx` | button, cost estimate, waiting/settled sentence and the sweep driver all read the same list |
+
+**The refusals, which are the half that is easy to lose:**
+
+- ⚠️ **The marker is NOT dropped.** A field a finished run already bought is
+  never re-offered. Dropping it would reinstate the paid re-ask loop, which is
+  a worse bug than the one being fixed — roughly half this library has no free
+  record anywhere, so "asked, came back empty" is the expected outcome.
+- ⚠️ **An errored run asks nothing.** `askedByRun` returns `[]` for anything
+  that is not `done`, matching `detailsRunHistory`'s SQL. Recording it would
+  hide open work behind a marker one layer up.
+- ⚠️ **`startedRef` is now an ATTEMPT record and is no longer cleared on
+  failure.** Under the old per-work rule the reloaded run row is what stopped a
+  second press re-buying; under the per-field rule an errored run is correctly
+  not "asked", so nothing else would stop the driver returning to the same book
+  — a failure would become a loop with a bill. **Refresh** clears it, which is
+  a person choosing to retry.
+- The disabled label reads **"Every question already asked"**, not "Every one".
+
+**Measured.** Live remote D1, 2026-08-19: main 448 works / **0** on the queue;
+friend 77 works / **1** on the queue (a description gap, never asked) — the
+owner's hand fill had already drained the population that exposed the defect,
+so the live before/after is 0→0 and 1→1 and proves nothing. The reproduction
+was therefore rebuilt locally: 10 books, every one carrying a finished run,
+every one still owing a question that run did not cover. Old rule **0**
+outstanding ("Every one already asked", disabled); new rule **10**. Driven in
+a browser at `/queue?field=seriesIndex`: button reads **"Look up 7"** over the
+sentence *"7 still waiting for a lookup … 1 already looked up and
+unanswerable"* — the two agree, which is the thing that was broken. The 8th
+row (a done run that DID cover `seriesIndex`) shows *"asked and answered"* and
+is excluded; an errored run and a run recorded under a stale `input_title` are
+both still offered.
+
+**Tests.** `apps/web/test/details-outstanding.test.ts` (new, 16 cases) pins the
+exact defect — a run covering `series` leaves `seriesIndex` outstanding — and
+its mirror, a book whose every open gap has been asked counting as nothing to
+do. `residue-sentence.test.ts` rewritten for the new signature. Suite:
+**1317 pass, 0 fail**; typecheck clean across all workspaces.
+
+**Not verified:** the paid lookup itself was not run (no money spent), so the
+driver working down a real multi-book sweep is reasoned, not exercised. The
+local D1 fixture was overwritten to build the reproduction and was not backed
+up first.
+
 ## 📚 Samantha's volume queue emptied BY HAND — 51 waiting to 0 (2026-08-19)
 
 The same afternoon the volume rules landed, the owner chose not to wait for

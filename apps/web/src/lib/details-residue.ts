@@ -17,23 +17,34 @@
  * page's one piece of judgement and belongs under a test rather than inside a
  * render.
  *
- * ⚠️ Deliberately reads only a FINISHED run. An error asked nothing (it never
- * got an answer), and a book whose lookup failed is still waiting its turn —
- * saying "we looked" about it would be the opposite lie from the one this fixes.
+ * ## ⚠️ It takes the ASKED SET, not a run — changed 2026-08-19
+ *
+ * It used to take `runs[workId]`, the latest run, and read `run.asked` off it.
+ * That was only ever *most* of the answer: a book asked about `series` in one
+ * run and `seriesIndex` in the next has two runs' worth of questions behind it,
+ * and the latest one alone says a settled row is still waiting. It also put
+ * this sentence and the "Look up N" button on two different definitions of
+ * already-asked, which is the family of defect that produced both of the day's
+ * bugs. They now share one: `outstandingFields` is empty exactly when this
+ * returns a sentence, because both are `unaskedGaps`.
+ *
+ * ⚠️ The caller owes it a set built from **finished** runs only. An error never
+ * got an answer, so a book whose lookup failed is still waiting its turn, and
+ * saying "we looked" about it would be the opposite lie from the one this
+ * fixes. `askedByRun` and the server's `detailsRunHistory` each enforce that.
  */
+import { unaskedGaps, type DetailField } from '@lc/core';
+
 export function residueSentence(
   missing: readonly string[],
-  run: { status: string; asked: readonly string[] } | undefined,
+  asked: readonly string[],
 ): string | null {
-  if (!run || run.status !== 'done') return null;
-  const asked = new Set(run.asked);
-  const unanswered = missing.filter((field) => asked.has(field));
-  if (unanswered.length === 0) return null;
-  // Not every open question was put — the book is still genuinely queued for
-  // the rest, so it is not residue and must not be labelled as settled.
-  if (unanswered.length < missing.length) return null;
+  if (missing.length === 0) return null;
+  // Not every open question has been put — the book is still genuinely queued
+  // for the rest, so it is not residue and must not be labelled as settled.
+  if (unaskedGaps(missing as readonly DetailField[], asked).length > 0) return null;
 
-  if (unanswered.length === 1 && unanswered[0] === 'seriesIndex') {
+  if (missing.length === 1 && missing[0] === 'seriesIndex') {
     return (
       'Research asked which volume this is and no source says. ' +
       'Somebody who knows the series can set it on the book page — another lookup will not help.'
@@ -45,4 +56,3 @@ export function residueSentence(
     'it needs a person, not another lookup.'
   );
 }
-

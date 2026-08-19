@@ -24,42 +24,6 @@
 > living docs — they do not compete with this file for "what is happening
 > now", so do not helpfully re-merge them.
 
-## 🔴 "Look up all" disables itself while real questions are open (found 2026-08-19)
-
-**Symptom the owner reported twice, in his words: *"the button didnt fix"*.**
-On `padhard.heygabi.ai/queue` the primary button reads **"Every one already
-asked"** and is disabled, while the page one line above says *N books are
-waiting for a lookup*. Both statements are true, which is the whole problem.
-
-**Cause.** `apps/web/src/pages/DetailsQueuePage.tsx`:
-
-```ts
-const outstanding = shown.filter((w) => runs[w.workId] === undefined);
-```
-
-`runs` is keyed **by work**, so "asked" is a fact about a BOOK, not about a
-QUESTION. Filling `series` on 57 books marked them asked; the volume question
-only came into existence *after* that fill, so 51 genuinely unanswered
-questions sat behind an "already asked" marker. ⚠️ **This is the same family
-as the bug the 2026-08-19 agent fixed** (`seriesIndexIncomplete` demanding a
-column nothing ever wrote): a book can be marked done for a question nobody
-put to it.
-
-**Why it is not urgent but must not be lost.** The hourly sweep is unaffected
-— it rotates oldest-turn-first and ignores the marker — so queues still drain
-without anyone. The damage is to trust: the one control a person reaches for
-says "nothing to do" when there is plenty, and that is how a working feature
-gets reported as broken.
-
-**The fix, when it is picked up.** Make outstanding-ness **per (work, field)**
-rather than per work: a book is "already asked" only for the fields its last
-run actually covered. `research_run` already records enough to know this.
-⚠️ Do not simply drop the filter — that reinstates the paid re-ask loop the
-marker exists to prevent.
-
-**Model guidance:** Kiro Claude Sonnet 5 (a contained change with tests
-alongside it).
-
 ## 🧰 Tech debt (owner-ordered section, 2026-08-17: "all tech debt stuff move
 ## in to there so we can handle tech debt stuff later")
 

@@ -577,6 +577,56 @@ own messages and `regainDate` reads the human date as well as the ISO one, so
 re-classifying a stored row cannot downgrade a sentence that already reads
 correctly.
 
+### 10.8 ⚠️⚠️ THE PATTERN, not the instance: *a book can be marked done for a question nobody put to it*
+
+**Read this before touching anything that decides whether a book still owes
+something.** Two separate defects of this exact shape shipped and were fixed on
+2026-08-19, hours apart, in different files, by different people, neither
+noticing the other was the same bug. That is what makes it a pattern rather
+than an incident.
+
+| | The predicate | What it demanded | What it hid |
+|---|---|---|---|
+| §10.6 | `seriesIndexIncomplete` | **both** `series_index_sort` and `series_index_display` | 54 rows payable for ever and closable never — nothing downstream of ingest had ever written the second column |
+| §10.8 (this) | `outstanding` on the queue page | that the book had **no run at all** | 51 questions nobody had ever put, behind a *"Every one already asked"* marker earned by a different question |
+
+**The common shape.** Completeness got attached to the wrong noun. In the first
+it was attached to a *printing* (a fact about a physical object) when the row is
+a file; in the second it was attached to a *book* when the question is a fact
+about a **field**. Both read perfectly sensibly in the diff. Both were only
+visible from production, and only as *"the button didnt fix"* — the owner's
+words, both times.
+
+**Three things to check when you write or change such a predicate:**
+
+1. ⚠️ **Name the noun the fact is about.** Ask *"a fact about what, exactly?"*
+   and make the key match it. `(work, field)` — never `work` — for anything the
+   queue, the sweep or a button reasons about, because
+   `detailFieldsFor` **creates new questions out of answered ones**: filling
+   `series` is what brings the volume question into existence, so a marker
+   earned by the first answer sits in front of the second.
+2. ⚠️ **Check both directions, and say them out loud.** *Does this offer work
+   that is genuinely done?* (a paid re-ask loop — every run is 2–8¢ of somebody's
+   allowance, and per §4.2 "asked, came back empty" is the *expected* outcome
+   for half this library, not a retryable failure). *Does this hide work that is
+   genuinely open?* Fixing one by breaking the other is not a fix. Deleting the
+   marker is the tempting non-fix and is strictly worse than the bug.
+3. ⚠️ **Two pieces of code answering the same question is the smell.** The
+   sweep had `unaskedGaps` and the right answer since 2026-08-16; the page had
+   its own idea five feet away and was wrong for three days. `unaskedGaps` now
+   lives in `@lc/core` and the page, the row's residue sentence and the cron all
+   call it. When a screen contradicts itself in two adjacent lines — *"51 books
+   are waiting"* over *"Every one already asked"* — the cause is almost always
+   two definitions, not one broken one.
+
+⚠️ **A run that ERRORED asked nothing, everywhere.** `detailsRunHistory`
+excludes error runs in SQL, `askedByRun` excludes them in the browser, and
+`residueSentence` refuses to call one an answer. Three enforcements of one rule,
+deliberately, because each is the only guard on its own layer. Separately from
+that, an error IS an attempt: it must not be re-fired in a loop (the page keeps
+its own attempt set for the visit, cleared only by Refresh). Eligibility and
+rotation are different questions — §10.7 draws the same line.
+
 ---
 
 ## 11. Where things live
@@ -584,6 +634,8 @@ correctly.
 | | |
 |---|---|
 | the policy — what is a gap | `packages/core/src/gaps.ts` (leaf; imports only `constants.ts`) |
+| the policy — what is still worth ASKING | `unaskedGaps`, same file. ⚠️ One implementation for the page, the row sentence and the cron; see §10.8 |
+| the page's half of it | `apps/web/src/lib/details-outstanding.ts` + `details-residue.ts`, both pure, both under test |
 | the field list | `DETAIL_FIELDS` in `packages/core/src/constants.ts` |
 | tables and queries | `packages/db/src/research.ts` |
 | the Claude call | `packages/research/src/details.ts` |

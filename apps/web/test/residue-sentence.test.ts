@@ -18,17 +18,24 @@
  * matter most are the refusals: it must not call a book settled while any of
  * its questions is still unasked, and it must not call an ERRORED lookup an
  * answer — that would be the opposite lie from the one it exists to fix.
+ *
+ * ⚠️ **The second argument changed on 2026-08-19** from "the latest run" to
+ * "the set of questions finished runs have put". The latest run alone is only
+ * part of the record — a book asked about `series` in one run and `seriesIndex`
+ * in the next has two runs behind it — and it left this sentence and the "Look
+ * up N" button working from two different definitions of already-asked. The
+ * error rule did not go away; it moved one layer out, to `askedByRun`, which
+ * has its own tests beside these.
  */
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
 
 import { residueSentence } from '../src/lib/details-residue.js';
-
-const done = (asked: string[]) => ({ status: 'done', asked });
+import { askedByRun } from '../src/lib/details-outstanding.js';
 
 describe('residueSentence', () => {
   it('names the volume-number case specifically, and points at the person', () => {
-    const said = residueSentence(['seriesIndex'], done(['seriesIndex']));
+    const said = residueSentence(['seriesIndex'], ['seriesIndex']);
     assert.ok(said, 'expected a sentence');
     assert.match(said, /which volume/i);
     assert.match(said, /another lookup will not help/i);
@@ -39,7 +46,10 @@ describe('residueSentence', () => {
     // sampled titles as having no free record anywhere, so "nothing found" is
     // the expected outcome for much of this library. A page that presents it as
     // a failure teaches the owner to distrust a working system.
-    const said = residueSentence(['firstPublished', 'description'], done(['firstPublished', 'description']));
+    const said = residueSentence(
+      ['firstPublished', 'description'],
+      ['firstPublished', 'description'],
+    );
     assert.ok(said);
     assert.match(said, /could not identify/i);
     assert.match(said, /answer rather than a failure/i);
@@ -48,23 +58,33 @@ describe('residueSentence', () => {
   it('⚠️ says nothing while ANY open question is still unasked', () => {
     // Half-answered is not settled. This row is still genuinely queued, and
     // labelling it as looked-at would hide work the sweep is about to do.
-    assert.equal(residueSentence(['seriesIndex', 'description'], done(['description'])), null);
+    assert.equal(residueSentence(['seriesIndex', 'description'], ['description']), null);
   });
 
-  it('⚠️ an errored run is not an answer', () => {
+  it('⚠️ an errored run contributes nothing, so its row is not residue', () => {
     // An error never got an answer — the book is still waiting its turn, and
     // `detailsRunHistory` deliberately does not count it as asked either.
-    assert.equal(residueSentence(['description'], { status: 'error', asked: ['description'] }), null);
+    const contributed = askedByRun({ status: 'error', asked: ['description'] });
+    assert.deepEqual(contributed, []);
+    assert.equal(residueSentence(['description'], contributed), null);
   });
 
   it('says nothing for a book that has never been looked up', () => {
-    assert.equal(residueSentence(['description'], undefined), null);
-    assert.equal(residueSentence(['description'], done([])), null);
+    assert.equal(residueSentence(['description'], []), null);
   });
 
-  it('says nothing when the run asked about something the book no longer owes', () => {
+  it('says nothing when the runs asked about something the book no longer owes', () => {
     // The ordinary success case: asked about `series`, got it, and the only
-    // thing left is a question that has never been put.
-    assert.equal(residueSentence(['seriesIndex'], done(['series'])), null);
+    // thing left is a question that has never been put. ⚠️ This is the padhard
+    // row — 57 of them — and the whole reason the button lied.
+    assert.equal(residueSentence(['seriesIndex'], ['series']), null);
+  });
+
+  it('⚠️ reads the WHOLE run history, not just the latest run', () => {
+    // Two runs: one asked `series` (and filled it), a later one asked
+    // `seriesIndex` (and could not). The book is genuinely settled. Reading only
+    // the latest run happens to get this one right; reading only the FIRST — or
+    // any single row — does not, which is why the caller passes the union.
+    assert.ok(residueSentence(['seriesIndex'], ['series', 'seriesIndex']));
   });
 });

@@ -218,6 +218,7 @@ import {
   DETAIL_FIELDS,
   DONOR_FUZZY_SOURCE_TIER,
   DONOR_SOURCE_TIER,
+  unaskedGaps,
   type DetailField,
   type FindingSourceTier,
 } from '@lc/core';
@@ -330,21 +331,15 @@ export function estimateSubrequests(fields: number, mode: SweepMode = AI_ONLY): 
 /**
  * The questions this book has never been put, of the ones it still owes.
  *
- * Empty means the sweep has nothing new to buy: every open gap has already been
- * asked about by a finished run and the answer did not close it. Asking again
- * costs the same money and returns the same nothing.
- *
- * ⚠️ A field is *asked*, not *answered*. That is the whole distinction — the
- * three outcomes in the header all count as asked, which is precisely why they
- * stop repeating.
+ * ⚠️ **MOVED to `@lc/core` (`gaps.ts`) on 2026-08-19 and re-exported here**, so
+ * the queue page can reach the same predicate. It was private to this file
+ * while the sweep was its only consumer; the day a second consumer appeared,
+ * the *absence* of sharing was the defect — the page had invented its own
+ * per-WORK version of "already asked" and hid 51 open questions behind it. The
+ * incident, and why neither dropping nor per-work-ing the marker is acceptable,
+ * are in the core header. Do not re-implement it here.
  */
-export function unaskedGaps(
-  missing: readonly DetailField[],
-  asked: readonly string[],
-): DetailField[] {
-  const already = new Set(asked);
-  return missing.filter((field) => !already.has(field));
-}
+export { unaskedGaps } from '@lc/core';
 
 /** A queue row with what the run history knows about it. */
 export interface SweepCandidate {

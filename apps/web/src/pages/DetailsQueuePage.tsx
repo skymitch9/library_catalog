@@ -13,6 +13,13 @@ import {
 } from '../api.js';
 import { describeError } from '../lib/errors.js';
 import { residueSentence } from '../lib/details-residue.js';
+import {
+  askedByRun,
+  askedFor,
+  outstandingWorks,
+  withSessionAsked,
+  type SessionAsked,
+} from '../lib/details-outstanding.js';
 import { Link, queuePath, workPath } from '../router.js';
 
 /**
@@ -115,6 +122,16 @@ export function DetailsQueuePage({
    * one-at-a-time exists to prevent, and what the 50-subrequest ceiling punishes.
    */
   const [inFlight, setInFlight] = useState<ReadonlySet<number>>(new Set());
+
+  /**
+   * Questions this tab has put, by work — the live half of "already asked".
+   *
+   * ⚠️ State, not a ref, because the button's count is derived from it and has
+   * to fall as the sweep works down the list. The server half (`work.asked`) is
+   * only as fresh as the last `load()`, and a sweep does not refetch the
+   * worklist between books.
+   */
+  const [sessionAsked, setSessionAsked] = useState<SessionAsked>({});
 
   /** What the machine has written lately. The undo list; see the note below. */
   const [autoApplied, setAutoApplied] = useState<AutoApplied[]>([]);
@@ -222,12 +239,23 @@ export function DetailsQueuePage({
   }, []);
 
   /**
-   * Ask for one book, exactly once.
+   * Ask for one book, exactly once **per visit**.
    *
    * `startedRef` is the same guard the scan queue uses: a set of things already
    * asked for, consulted before asking. Without it the driver below re-fires in
    * the second between the POST returning and the run appearing in the polled
    * list, and buys the same answer twice.
+   *
+   * ⚠️ It is an ATTEMPT record and `sessionAsked` is an ANSWER record, and the
+   * two must stay separate — the same split `detailsRunHistory` draws between
+   * its `lastAttemptAt` and its `asked`. A lookup that errored attempted (so the
+   * driver must not go round again) and asked nothing (so the question is still
+   * genuinely open and the button must keep offering it). Merging them produces
+   * one of the two lies in `lib/details-outstanding.ts`, depending which way.
+   *
+   * Cleared only by **Refresh**, which is a person deliberately saying "try that
+   * again"; the 3-second poll must not clear it, or a failed lookup re-fires
+   * every tick.
    */
   const startedRef = useRef<Set<number>>(new Set());
 
@@ -238,6 +266,9 @@ export function DetailsQueuePage({
       try {
         const r = await api.runResearch(workId);
         setRuns((prev) => ({ ...prev, [workId]: r.run }));
+        // What this run actually put to the book, as the server reports it —
+        // and nothing at all if it errored. `askedByRun` carries that refusal.
+        setSessionAsked((s) => withSessionAsked(s, workId, askedByRun(r.run)));
         // ⚠️ Only expand when something is left to decide. The row used to open
         // every time because there was always something to read; now there
         // almost never is, and popping open an empty panel after each book
@@ -251,11 +282,15 @@ export function DetailsQueuePage({
         onChoresChanged();
       } catch (err) {
         setError(describeError(err));
-        startedRef.current.delete(workId);
+        // ⚠️ **Left in `startedRef` on purpose** — it used to be removed here.
         // The request failed, but the lookup behind it may not have: the server
         // registers the work with `waitUntil` before answering, so a dropped
-        // connection can still end in a finished run. Ask the table rather than
-        // assuming, or the next press buys the same answer twice.
+        // connection can still end in a finished, paid-for run. Under the old
+        // per-work rule the reloaded run row was what stopped a second press
+        // buying the same answer; under the per-field rule an errored run is
+        // correctly NOT "asked", so nothing else would stop the driver coming
+        // straight back to this book — a failure would become a loop with a
+        // bill. Refresh clears it, which is a person choosing to retry.
         void load();
       } finally {
         setInFlight((s) => {
@@ -274,11 +309,33 @@ export function DetailsQueuePage({
     : works;
 
   /**
+   * The books a sweep would actually spend money on.
+   *
+   * ⚠️ **Per (work, FIELD), and that is the whole fix.** This read
+   * `runs[w.workId] === undefined` until 2026-08-19 — "already asked" as a fact
+   * about a BOOK — and the day a research pass filled `series` on 57 books it
+   * marked all 57 asked, while the volume question those fills had just brought
+   * into existence had been put to nobody. The button said *"Every one already
+   * asked"*, disabled, directly under *"51 books are waiting for a lookup."*
+   *
+   * ⚠️ Do not "simplify" this back to a presence test on `runs`, and do not drop
+   * the filter: `lib/details-outstanding.ts` carries both failure modes and why
+   * only the per-field shape avoids each. It is the same predicate the hourly
+   * sweep plans with (`unaskedGaps`, `@lc/core`), so the button and the cron
+   * cannot disagree about what is left.
+   */
+  const outstanding = outstandingWorks(shown, sessionAsked);
+
+  /**
    * Work down the list, one book at a time.
    *
    * Driven by observed state rather than by a loop, so a run that outlives a
    * reload is not raced by a second one and "Stop" takes effect after the
    * current lookup instead of abandoning a call already paid for.
+   *
+   * ⚠️ It picks out of `outstanding`, so the list it works through is exactly
+   * the list the button counted. When those two were computed differently the
+   * button was a promise the driver did not keep.
    */
   useEffect(() => {
     if (!running) return;
@@ -287,15 +344,13 @@ export function DetailsQueuePage({
       return;
     }
     if (anyActive) return;
-    const next = shown.find(
-      (w) => !startedRef.current.has(w.workId) && runs[w.workId] === undefined,
-    );
+    const next = outstanding.find((w) => !startedRef.current.has(w.workId));
     if (!next) {
       setRunning(false);
       return;
     }
     void start(next.workId);
-  }, [running, stopping, anyActive, shown, runs, start]);
+  }, [running, stopping, anyActive, outstanding, start]);
 
   const canRun = me.capabilities.includes('runResearch');
   const canReview = me.capabilities.includes('reviewFindings');
@@ -343,8 +398,6 @@ export function DetailsQueuePage({
   }
   if (!data) return <main className="muted">Loading…</main>;
 
-  const outstanding = shown.filter((w) => runs[w.workId] === undefined);
-
   return (
     <main>
       <h2 className="page-title">What is missing</h2>
@@ -388,8 +441,14 @@ export function DetailsQueuePage({
       {shown.length > 0 && (
         <p className="muted small">
           {(() => {
-            const settled = shown.filter((w) => residueSentence(w.missing, runs[w.workId])).length;
-            const waiting = shown.length - settled;
+            // ⚠️ `outstanding` is the other half of this arithmetic and they are
+            // now one definition: `residueSentence` returns a sentence exactly
+            // when `outstandingFields` is empty, both being `unaskedGaps`. When
+            // they were two definitions this line read "51 books are waiting for
+            // a lookup" directly above a disabled button saying every one had
+            // been asked.
+            const waiting = outstanding.length;
+            const settled = shown.length - waiting;
             if (settled === 0) {
               return `${waiting} ${waiting === 1 ? 'book is' : 'books are'} waiting for a lookup. The hourly sweep takes two an hour, oldest turn first, and needs nobody.`;
             }
@@ -456,12 +515,20 @@ export function DetailsQueuePage({
                 setRunning(true);
               }}
             >
+              {/* ⚠️ "Every QUESTION already asked", not "every one". The old
+                  wording was answerable by a book having been touched at all,
+                  which is exactly the false claim this control made on
+                  2026-08-19 — disabled, over 51 questions nobody had put. It
+                  now means what it says: every gap still open on this list has
+                  been through a finished lookup, and what those rows are
+                  waiting for is a person, which the sentence above and each
+                  row's own residue line both say. */}
               {running
                 ? 'Working…'
                 : outstanding.length === 0
                   ? shown.length === 0
                     ? 'Nothing to ask'
-                    : 'Every one already asked'
+                    : 'Every question already asked'
                   : `Look up ${outstanding.length}`}
             </button>
             {running && !stopping && (
@@ -469,7 +536,19 @@ export function DetailsQueuePage({
             )}
           </>
         )}
-        <button onClick={() => void load()} disabled={running}>
+        <button
+          onClick={() => {
+            // ⚠️ The one place the per-visit attempt guard is cleared, and the
+            // reason it is a button rather than part of `load()`: the 3-second
+            // poll calls `load()` too, and clearing there would put a book whose
+            // lookup just failed straight back in front of the driver every
+            // tick. Pressing Refresh is a person saying "try that again".
+            startedRef.current.clear();
+            setError(null);
+            void load();
+          }}
+          disabled={running}
+        >
           Refresh
         </button>
         {field && (
@@ -491,6 +570,7 @@ export function DetailsQueuePage({
             key={w.workId}
             work={w}
             run={runs[w.workId]}
+            asked={askedFor(w, sessionAsked)}
             pending={inFlight.has(w.workId)}
             findings={findings[w.workId]}
             expanded={open.has(w.workId)}
@@ -722,6 +802,7 @@ function GapSummary({ summary, field }: { summary: FieldGapCount[]; field: strin
 function QueueRow({
   work,
   run,
+  asked,
   pending,
   findings,
   expanded,
@@ -734,6 +815,12 @@ function QueueRow({
 }: {
   work: NeedsDetails;
   run: RunView | undefined;
+  /**
+   * Every question a finished run has put to this book — across all its runs,
+   * not just the latest. ⚠️ Not derivable from `run`: that is one row of any
+   * status, and this row's sentence must agree with the button's count.
+   */
+  asked: readonly string[];
   /** This row's POST is still open. There is no run row to show yet. */
   pending: boolean;
   findings: ResearchFinding[] | undefined;
@@ -754,7 +841,7 @@ function QueueRow({
   // opened, so a closed row can still say it has something stuck on it.
   const proposals = (findings ?? []).filter((f) => f.reviewState === 'pending');
   const stuck = findings === undefined ? work.pending : proposals.length;
-  const residue = active ? null : residueSentence(work.missing, run);
+  const residue = active ? null : residueSentence(work.missing, asked);
 
   return (
     <li>
