@@ -16,16 +16,24 @@
 
 ## 📌 State at 2026-08-19 ~11:05 MST — the details queue CONVERGES
 
-**Deployed to the FRIEND instance only:** commit `ed5881b5`. 1296 tests,
+**Deployed to the FRIEND instance only:** commit `2a135abb`. 1301 tests,
 typecheck clean, build clean, tree clean. ⚠️ **The MAIN instance is NOT
 deployed** — `npm run deploy` was refused by that session's permission layer.
 Main owes 0 details of 448 works, so the change is inert there, but the two
 Workers are out of step until someone runs `npm run deploy`.
 
+⚠️ **Migration `0360_multi_volume_printing` is applied to BOTH remotes**, and
+main's deployed build does not know the column. Additive with a default, so the
+old code neither selects nor writes it — but that is one more reason to run the
+main deploy.
+
 **The owner's rules, and the one document that answers them permanently:**
 [`info/volume-numbers.md`](info/volume-numbers.md). `series` +
-`series_index_sort` = complete; the printed form (`series_index_display`) is
-optional data; research auto-applies. Written because he said *"We're wasting
+`series_index_sort` = complete and IS the volume; the printed form
+(`series_index_display`) is optional data; research auto-applies; and the one
+exception — one series slot printed as several physical books — is a
+HUMAN-ONLY checkbox (`multi_volume_printing`, migration 0360) that no machine
+path can reach. Written because he said *"We're wasting
 all our buffer usage on solving nonsense we've solved many times."* Do not
 re-argue the volume predicate anywhere else.
 
@@ -36,7 +44,9 @@ re-argue the volume predicate anywhere else.
 | works | 74 | 448 |
 | details queue, before | 55 | 0 |
 | details queue, after the predicate change | **53** | **0** |
+| details queue, after the 18:07 sweep tick | **51** | **0** |
 | pending findings to apply | **0** | **0** |
+| `seriesIndex` lookups that filled | **6 of 6** | — |
 
 ⚠️ The predicate change closes only 2 — **53 of the 55 have no
 `series_index_sort` at all** and genuinely need a lookup. That is the honest
@@ -44,8 +54,11 @@ number; the coordinator's expectation that most would close arithmetically was
 not what the data said.
 
 **What finishes it, with nobody touching anything:** the hourly `7 * * * *`
-sweep takes 2 books a tick on HER key, ≈2¢ each. 53 books ≈ **27 hours,
-≈$1.10**. Pressing **Look up all** at <https://padhard.heygabi.ai/queue> does
+sweep takes 2 books a tick on HER key, ≈2¢ each. 51 books ≈ **26 hours,
+≈$1.00**. ⚠️ **Tomorrow at this hour, untouched: 48 of the 51 will have been
+asked**, so on the measured 6-of-6 fill rate the queue should read in the
+single digits — the ~3 not yet reached plus whatever could not be identified,
+and every one of those rows now says in words why it is there. Pressing **Look up all** at <https://padhard.heygabi.ai/queue> does
 the same work in ~20 minutes on the same key. The cron is **verified, not
 claimed** — ten `research_run` rows carry `triggered_by` NULL, one of them
 `model = 'donor'`.
