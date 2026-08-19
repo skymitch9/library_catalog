@@ -129,22 +129,73 @@ export function DetailsQueuePage({
     }
   }, []);
 
+  /**
+   * Has this page loaded once? Only the FIRST load may skip the chore refresh.
+   *
+   * A ref rather than state on purpose: flipping it must not re-render, and it
+   * must not be a dependency of `load` (which would rebuild `load` and respin
+   * the effect below).
+   */
+  const loadedOnce = useRef(false);
+
   const load = useCallback(async () => {
-    try {
-      const next = await api.queue();
-      setData(next);
-      const byWork: Record<number, RunView> = {};
-      for (const run of next.runs) byWork[run.workId] = run;
-      setRuns(byWork);
-      setError(null);
-    } catch (err) {
-      setError(describeError(err));
-    }
-    // Reloaded together, always. These two views disagree the moment one is
+    // ⚠️ CONCURRENT, and the sequencing here was most of what the owner felt.
+    //
+    // MEASURED on live prod 2026-08-19, signed in, warm cache, wired desktop —
+    // the queue page's full request waterfall:
+    //
+    //     301→ 458  securetoken refresh            157 ms  ┐ Firebase restoring
+    //     459→ 641  accounts:lookup                182 ms  ┘ the session
+    //     642→ 910  auth.heygabi.ai/api/session    268 ms
+    //     643→1003  /api/me                        360 ms
+    //    1040→1154  /api/research/queue            115 ms  ← the actual worklist
+    //    1155→1262  /api/research/auto-applied     107 ms  ← was serial after it
+    //    1262→1361  /api/me  (a SECOND time)        98 ms  ← and serial after that
+    //
+    // The Worker is not slow: the worklist itself answers in 115 ms and
+    // /api/health in 52. The page was slow, and 205 ms of that — a sixth of the
+    // whole load — was these last two round trips queueing up behind the first
+    // for no reason. On a phone over cellular each of those hops is several
+    // times longer, which is where "not loading like the previous one" comes
+    // from: the cost is per ROUND TRIP, so removing trips beats shrinking them.
+    //
+    // ⚠️ "Reloaded together, always" is UNCHANGED and is why this is Promise.all
+    // rather than two loose calls. The two views disagree the moment one is
     // refreshed without the other — a book vanishing from the worklist with
     // nothing appearing below to say what filled it in reads as data loss.
-    await loadAutoApplied();
-    onChoresChanged();
+    // Concurrency does not weaken that: both are still awaited before `load`
+    // returns, so nothing observes one without the other. Only the *waiting* was
+    // sequential, never the pairing.
+    await Promise.all([
+      (async () => {
+        try {
+          const next = await api.queue();
+          setData(next);
+          const byWork: Record<number, RunView> = {};
+          for (const run of next.runs) byWork[run.workId] = run;
+          setRuns(byWork);
+          setError(null);
+        } catch (err) {
+          setError(describeError(err));
+        }
+      })(),
+      // ⚠️ Its own failure stays swallowed inside loadAutoApplied — a rejection
+      // here would abandon the queue result too, which is the one thing on the
+      // page that must survive a failed history fetch.
+      loadAutoApplied(),
+    ]);
+
+    // ⚠️ NOT on the first load — that call buys an answer we already have.
+    // `App` fetches `/api/me` before this page can mount at all (it gates render
+    // on being signed in), so the opening chore count is already fresh to the
+    // millisecond. Asking again immediately was a third serial round trip, and a
+    // write: `/api/me` runs the auth middleware, which upserts the user row.
+    //
+    // Every LATER load still refreshes it, and that is the case the count exists
+    // for — auto-apply drains the queue while this page is open, so the badge
+    // would otherwise sit at its opening value over an emptying worklist.
+    if (loadedOnce.current) onChoresChanged();
+    else loadedOnce.current = true;
   }, [loadAutoApplied, onChoresChanged]);
 
   useEffect(() => {
