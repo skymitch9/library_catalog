@@ -161,3 +161,87 @@ npx wrangler d1 execute library-catalog-2nd --remote --env friend \
 ```
 
 Drop the `--env friend` and use `library-catalog` for the main instance.
+
+---
+
+## 9. The hand-fill of 2026-08-19, and the four rules it added
+
+Same day, hours after the rules above landed, the owner emptied the friend
+instance's volume queue **by hand** rather than by lookup: *"Fix them by
+hand"*. 49 books numbered, 1 recorded as standalone, 1 boxed set split into
+three. **51 waiting to 0 waiting**, no research spend.
+
+### R9 — a novella between two numbered books gets `.5`
+
+Owner, asked one at a time and answered *"Yes 17.5 is fine, 3.5 is fine"*:
+
+| Book | Sort | Why |
+|---|---|---|
+| *Side Jobs* (Dresden) | `12.5` | Collection published between *Changes* (12) and *Ghost Story* (13). |
+| *Out Law* (Dresden) | `17.5` | Its own blurb places it after the Battle of Chicago — i.e. after *Battle Ground* (17). |
+| *Spectacular* (Caraval) | `3.5` | An explicitly post-series holiday novella; *Finale* is 3. |
+
+⚠️ This is a **convention, not a lookup**. A session that finds a novella with
+no number should propose the `.5` and ask, not research it — the answer is a
+decision about this catalog's ordering, and no source can settle it.
+
+### R10 — "standalone" is an ANSWER, recorded as a verdict, never a digit
+
+*Tusk Love* is the Critical Role tie-in novel; **"Critical Role" is a shelf
+label, not a numbered series**. It carries a `gap_verdict` row
+(`field='seriesIndex'`, `verdict='none'`) rather than a fabricated `1`.
+
+⚠️ **Why this matters more than it looks.** A blank is indistinguishable from
+an unanswered question, so a genuinely unnumbered book would sit on the queue
+for ever, and a fake `1` would read as fact. The verdict row is the only shape
+that says *"asked and answered: there is no such number"*.
+
+### R11 — a boxed set is a CONTAINER: split it, keep it, and let `collects` say so
+
+Owner: *"We need to split the box set up most likely"*, then *"Look up the isbn
+for the box set and then find the ISBNs inside of it and use that to split it
+up"*. What was done to work 50, as the pattern for the next one:
+
+1. **The set's own ISBN was looked up first.** Open Library returns
+   `9781250259530` = *Caraval Paperback Boxed Set*, **subtitle "Caraval,
+   Legendary, Finale"** — the container names its own contents, which is what
+   makes the split evidence rather than a guess.
+2. **Three new works**, keys from `workKeyFor()` itself — never hand-typed,
+   because a wrong key silently fails to match her reviews and read states.
+3. **One edition each, every ISBN verified before use** (Open Library,
+   2026-08-19): Caraval `9781250095268` (2018, 448pp) · Legendary
+   `9781250095329` (2019, 512pp) · Finale `9781250157683` (2020, 512pp).
+   ⚠️ `9781250157669` was **rejected** for Finale — it is the hardcover, and
+   this is a paperback set. A search summariser also volunteered
+   `9781250157676` while only echoing the number back out of the question;
+   that is not evidence and was not used.
+4. **The set row STAYS**, joined by `work_relation` `contains` — deleting it
+   would lose the fact that three books arrived as one purchase — and its
+   edition's **`collects`** column now reads *"Caraval, Legendary, Finale"*.
+   That column exists for exactly this (see `schemas.ts`, the White Sand rows).
+5. **The set gets a `none` verdict** on `seriesIndex`: a container has no
+   volume number, and per R10 that must be said rather than left blank.
+
+### R12 — a hand fill is `changed_how = 'human'`, and says whose knowledge it was
+
+All 49 numbers were written with `changed_how='human'`, batch
+`hand-volumes-20260819`, one `change_log` row each so any single one can be
+reverted. The note records the honest basis: *conductor knowledge of the
+series, not a quoted source.*
+
+⚠️ **Never label a hand fill `'auto'`.** `'auto'` means a finding with a source
+behind it. Filing knowledge-from-memory under it would corrupt the one signal
+that tells a later reader how much to trust a value — and R3 exists precisely
+because provenance is the thing being protected.
+
+**One fact came free.** *Twelve Months* needed no decision at all: the
+description already in her catalog says *"The eighteenth Dresden Files
+novel"*. ⚠️ Look at what the row already holds before proposing a lookup for
+it — the answer had been sitting in the record.
+
+### What the split left behind, on purpose
+
+Splitting created three works with no description, so the queue read **3
+waiting** immediately afterwards. That is correct and self-clearing: the
+hourly sweep fills descriptions two an hour. ⚠️ Expect a small rise in the
+queue after any split — it is new books arriving, not the fix failing.
