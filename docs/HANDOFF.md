@@ -14,6 +14,41 @@
 > production contains. **Re-measure before trusting any line here; if you
 > re-measure, update the date.**
 
+## 📌 State at 2026-08-19 ~10:40 MST — the details queue now CONVERGES
+
+**Deployed to the FRIEND instance only:** `fa75710f` (version
+`5e07d5f9-a167-481b-a1e5-026360cbd92f`, plus `4062520` comments-only after it).
+1301 tests, typecheck clean, tree clean. ⚠️ **The MAIN instance is NOT deployed**
+— `npm run deploy` was refused by this session's permission layer. Its queue is
+empty (0 of 448 works owe a detail, measured 2026-08-19), so the code is inert
+there, but the two Workers are out of step until someone runs `npm run deploy`.
+
+**What changed, and why it is the headline.** The owner reported *"Sam has 55
+missing details, the button didnt fix"*. The button was fine; the queue could
+not converge. All 55 remaining rows were `seriesIndex`, 54 with neither column
+set, and `applyFinding` wrote `series_index_sort` while `seriesIndexIncomplete`
+requires **both** — so every lookup succeeded, was paid for, and closed nothing.
+Full argument and every measured figure:
+[`info/research-and-gaps.md`](info/research-and-gaps.md) §10.5 – §10.7.
+
+⚠️ **Three claims elsewhere in this file are now WRONG and are left in place
+below only because this is a dated log:**
+
+| Line below says | Reality since 2026-08-19 |
+|---|---|
+| *"the volume-number gap can never be closed by research at all"* | Fixed. `applyFinding` writes the derived printed form beside the sort (`seriesIndexDisplayFrom`, the literal lifted out of `routes/ingest.ts`, which has always written it). |
+| *"the sweep … deliberately does NOT write `gap_verdict: 'unknown'`"* | Still true, and still right. Nothing here silences a row a person could answer. |
+| the sweep is two paid rungs | Three. **Rung 0** (`fillPrintedVolumeNumbers`) runs first, above the key gate, costs no lookup and no money, and heals rows stranded before the fix — capped at 4 a tick with its subrequests charged against `SWEEP_BUDGET`. |
+
+**Also now VERIFIED rather than claimed:** her `7 * * * *` cron fires. Ten
+`research_run` rows on `library-catalog-2nd` carry `triggered_by` NULL, one of
+them `model = 'donor'` — the proof this repo's own rule demands.
+
+**What is left, and it needs nobody:** ~53 volume-number rows drain at 2/hour on
+HER key, ≈2¢ each, ≈$1.10 and ~27 hours in total. Pressing **Look up all** at
+<https://padhard.heygabi.ai/queue> does the same work in ~20 minutes, on the
+same key. Neither is required — the sweep gets there alone.
+
 ## 📌 State at 2026-08-16 ~15:45 PDT (Opus → Fable handoff)
 
 **Deployed today:** `6e3a368f` (estate-search + the hourly details sweep before
