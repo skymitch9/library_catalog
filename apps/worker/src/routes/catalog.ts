@@ -334,19 +334,29 @@ export const catalogRoutes = new Hono<AppBindings>()
       listCopiesForWork(c.env.DB, id),
       getReadState(c.env.DB, id, user.id),
       listWatchesForWork(c.env.DB, id),
-      // "Do we already own this on audio?" — migration 0010's cache table,
-      // read the same way `watches` rides along above: it is a fact about the
-      // book, not a second request the page has to remember to make. Null for
-      // the ordinary case (no audiobook match) and the page renders nothing
-      // for it — see `AudiobookHolding` in `@lc/db`.
       getAudiobookHolding(c.env.DB, id),
-      // "Does the household pool hold this as an ebook?" — migration 0310,
-      // 0010's ebook twin, phase 4 of the ebook split. Runs BESIDE the
-      // edition rows above, not instead of them: the page renders both
-      // answers and says whether they agree, which is the visible evidence
-      // phase 5's edition-pruning is gated on. Null is the ordinary case.
       getEbookHolding(c.env.DB, id),
     ]);
+
+    // Peer holdings: does any connected library hold this same work?
+    let peerHoldings: Array<{
+      peerId: string;
+      peerLabel: string;
+      detailUrl: string | null;
+      formats: string | null;
+    }> = [];
+    if (work.work_key) {
+      const { results } = await c.env.DB.prepare(
+        `SELECT peer_id, peer_label, detail_url, formats
+         FROM peer_holding WHERE work_key = ?`
+      ).bind(work.work_key).all();
+      peerHoldings = (results ?? []).map((r: any) => ({
+        peerId: r.peer_id,
+        peerLabel: r.peer_label,
+        detailUrl: r.detail_url,
+        formats: r.formats,
+      }));
+    }
 
     return c.json({
       work,
@@ -356,6 +366,7 @@ export const catalogRoutes = new Hono<AppBindings>()
       watches,
       audiobookHolding,
       ebookHolding,
+      peerHoldings,
       /**
        * Which shared world this book belongs to — the tier above its series —
        * or null.

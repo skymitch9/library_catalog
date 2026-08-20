@@ -52,11 +52,67 @@ export const seriesRoutes = new Hono<AppBindings>()
     const name = decodeURIComponent(c.req.param('name'));
     const report = await getSeriesReport(c.env.DB, c.get('user').id, name);
     if (!report) return c.json({ error: 'not_found' }, 404);
-    // ⚠️ Told once here rather than making the page guess from a failed POST.
-    // Mirrors `/api/research/queue`'s `configured` field exactly, and for the
-    // same reason: a button that is going to 503 anyway should say so before it
-    // is pressed, not after.
-    return c.json({ ...report, configured: Boolean(c.env.ANTHROPIC_API_KEY) });
+
+    // Enrich gap rungs with peer holdings (migration 0370).
+    // A gap rung is one with workId === null and wanted === false.
+    const gapIndices = report.ladder
+      .filter((r) => r.workId === null && !r.wanted)
+      .map((r) => r.index);
+
+    let peerHoldings: Array<{
+      work_key: string;
+      peer_id: string;
+      peer_label: string;
+      title: string | null;
+      cover_url: string | null;
+      detail_url: string | null;
+      formats: string | null;
+      series_index: number | null;
+    }> = [];
+
+    if (gapIndices.length > 0) {
+      // Query peer_holding by series name + matching indices
+      const placeholders = gapIndices.map(() => '?').join(',');
+      const { results } = await c.env.DB.prepare(
+        `SELECT work_key, peer_id, peer_label, title, cover_url, detail_url, formats, series_index
+         FROM peer_holding
+         WHERE series = ? AND series_index IN (${placeholders})`
+      ).bind(name, ...gapIndices).all();
+      peerHoldings = (results ?? []) as typeof peerHoldings;
+    }
+
+    // Group by series_index for fast lookup
+    const peerByIndex = new Map<number, typeof peerHoldings>();
+    for (const ph of peerHoldings) {
+      if (ph.series_index === null) continue;
+      const existing = peerByIndex.get(ph.series_index) ?? [];
+      existing.push(ph);
+      peerByIndex.set(ph.series_index, existing);
+    }
+
+    // Attach peer info to each gap rung
+    const enrichedLadder = report.ladder.map((entry) => {
+      if (entry.workId !== null || entry.wanted) return entry;
+      const peers = peerByIndex.get(entry.index);
+      if (!peers || peers.length === 0) return entry;
+      return {
+        ...entry,
+        peerHoldings: peers.map((p) => ({
+          peerId: p.peer_id,
+          peerLabel: p.peer_label,
+          title: p.title,
+          coverUrl: p.cover_url,
+          detailUrl: p.detail_url,
+          formats: p.formats,
+        })),
+      };
+    });
+
+    return c.json({
+      ...report,
+      ladder: enrichedLadder,
+      configured: Boolean(c.env.ANTHROPIC_API_KEY),
+    });
   })
 
   /**

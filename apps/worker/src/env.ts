@@ -303,6 +303,31 @@ export interface Env {
    */
   DEV_EMAIL?: string;
   DEV_NAME?: string;
+
+  // ─── Cross-library peer push (migration 0370) ───────────────────────────────
+
+  /**
+   * Shared secret for the peer push endpoint (`POST /api/peer/push`).
+   * Same value on all instances in the network — one mint, set everywhere.
+   * Unset means the route answers 404 (disabled, not open).
+   */
+  PEER_TOKEN?: string;
+
+  /**
+   * JSON array of peer instances to push holdings to.
+   * Example: `[{"id":"padhard","label":"the Padhard Library","url":"https://padhard.heygabi.ai","token":"..."}]`
+   * Parsed at runtime by `lib/peer-push.ts`. Empty or unset = no outbound pushes.
+   */
+  PEERS?: string;
+
+  /** This instance's peer ID (e.g. 'sky', 'padhard'). Sent in outbound pushes. */
+  PEER_SELF_ID?: string;
+
+  /** This instance's display label (e.g. "Sky's Library"). Sent in outbound pushes. */
+  PEER_SELF_LABEL?: string;
+
+  /** This instance's public origin, no trailing slash (e.g. 'https://library.heygabi.ai'). */
+  SITE_ORIGIN?: string;
 }
 
 /** Values attached to the request context by middleware. */

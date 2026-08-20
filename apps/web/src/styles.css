@@ -1483,6 +1483,9 @@ ol.ladder > li::before {
 .fmt--physical { background: var(--et-accent); color: var(--et-accent-fg); }
 .fmt--ebook { border-color: var(--et-accent); color: var(--et-accent); }
 .fmt--audio { border-color: var(--et-muted); color: var(--et-muted); }
+.fmt--peer { border-color: var(--et-link); color: var(--et-link); }
+.fmt--peer a { color: inherit; text-decoration: none; }
+.fmt--peer a:hover { text-decoration: underline; }
 
 /* The count beside a section heading, ported from the sibling Board Game
    Catalog's `.count` — the same muted, unbolded weight, so the number reads as
@@ -2151,3 +2154,17 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
 }
 .cover-swap__label { font-size: 0.8rem; line-height: 1.3; }
 .cover-swap__caption { font-size: 0.72rem; color: var(--et-muted); line-height: 1.3; }
+
+/* -- Peer libraries (cross-library "In the Padhard Library" panel) ---------- */
+.peer-libraries { margin-top: 1rem; }
+.peer-list { list-style: none; padding: 0; margin: 0.5rem 0 0; }
+.peer-list__item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0;
+}
+.peer-list__icon { flex: none; }
+.peer-list__link { color: var(--et-link); text-decoration: none; }
+.peer-list__link:hover { text-decoration: underline; }
+.peer-list__format { color: var(--et-muted); font-size: 0.85em; }

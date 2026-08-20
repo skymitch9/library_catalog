@@ -143,6 +143,15 @@ export function SeriesDetailPage({
 
   const { completeness: c, ladder, unnumbered, holdings, ownedTwice } = report;
 
+  // Peer holdings by series index — "In the Padhard Library" badges on gap rungs.
+  // The enriched ladder carries these on gap entries (workId === null).
+  const peersByIndex = new Map<number, Array<{ peerId: string; peerLabel: string; detailUrl: string | null; formats: string | null }>>();
+  for (const entry of ladder) {
+    if ((entry as any).peerHoldings) {
+      peersByIndex.set(entry.index, (entry as any).peerHoldings);
+    }
+  }
+
   // The rungs, in order: everything we hold, plus everything reported missing,
   // plus the ones deliberately skipped.
   //
@@ -276,6 +285,7 @@ export function SeriesDetailPage({
                   canSuggest={canSuggest}
                   onChanged={load}
                   onOpen={onOpen}
+                  peerHoldings={peersByIndex.get(gap.index)}
                 />
               )
             )}
@@ -946,6 +956,7 @@ function MissingRung({
   canSuggest,
   onChanged,
   onOpen,
+  peerHoldings,
 }: {
   gap: SeriesGap;
   series: string;
@@ -954,6 +965,7 @@ function MissingRung({
   canSuggest: boolean;
   onChanged: () => void;
   onOpen: (workId: number) => void;
+  peerHoldings?: Array<{ peerId: string; peerLabel: string; detailUrl: string | null; formats: string | null }>;
 }) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
@@ -1032,6 +1044,18 @@ function MissingRung({
             whose word it is and (on a hedge) what was actually compared; the
             badge is only the at-a-glance answer. */}
         <GapMedia gap={gap} />
+        {/* Peer library badges — "In the Padhard Library" etc. */}
+        {peerHoldings && peerHoldings.length > 0 && peerHoldings.map((ph) => (
+          <span key={ph.peerId} className="fmt fmt--peer" title={ph.formats ? `Held as ${ph.formats}` : undefined}>
+            {ph.detailUrl ? (
+              <a href={ph.detailUrl} target="_blank" rel="noopener noreferrer" className="peer-link">
+                📚 In {ph.peerLabel}
+              </a>
+            ) : (
+              <>📚 In {ph.peerLabel}</>
+            )}
+          </span>
+        ))}
         {/* ⚠️ The audio answer comes FIRST, before the evidence for the gap.
             "you own this on audio" is the fact that changes what somebody does
             next; "earlier than the lowest you own" is why the rung is drawn at

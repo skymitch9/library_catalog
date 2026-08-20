@@ -15,6 +15,7 @@ import { EbookShadow } from '../components/EbookShadow.js';
 import { Editions, type EditionView } from '../components/Editions.js';
 import { Enrich } from '../components/Enrich.js';
 import { OtherVersions } from '../components/OtherVersions.js';
+import { PeerLibraries } from '../components/PeerLibraries.js';
 import { Provenance } from '../components/Provenance.js';
 import { Related } from '../components/Related.js';
 import { Reviews } from '../components/Reviews.js';
@@ -443,6 +444,8 @@ export function WorkPage({
           chip showed it, and a book with no series, or nobody happening to
           open that page, hid it completely). */}
       <OtherVersions holding={detail.audiobookHolding} ourSeries={work.series} />
+
+      <PeerLibraries holdings={detail.peerHoldings} />
 
       {/* Under Copies (and OtherVersions, which renders nothing on most books)
           because an accessory belongs to a copy — a plushie arrived in a

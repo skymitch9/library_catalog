@@ -183,6 +183,20 @@ OWNER_EMAILS = "nbaslamking@gmail.com"
 # INDEX_URL = "https://index.heygabi.ai"
 INDEX_URL = "https://index.heygabi.ai"
 
+# ── Cross-library peer push (migration 0370) ─────────────────────────────────
+#
+# Each instance pushes its work_key set to every configured peer after catalog
+# mutations. The peer stores the snapshot in `peer_holding` and the series +
+# work routes show "In the Padhard Library" badges on gap rungs. PEER_TOKEN
+# (shared secret, same value all instances) is set via `wrangler secret put`.
+#
+# ⚠️ Adding a new library to the network: append one entry here AND add an
+# entry for this instance to the new library's PEERS. Then deploy both.
+PEER_SELF_ID = "sky"
+PEER_SELF_LABEL = "Sky's Library"
+SITE_ORIGIN = "https://library.heygabi.ai"
+PEERS = '[{"id":"padhard","label":"the Padhard Library","url":"https://padhard.heygabi.ai","token":"4ceae4d63f8fc29d9cf5bb6e9198b424e59b035fe740aad7d7e6833a53c5e62b"}]'
+
 # ── Estate auth (catalog-platform/docs/info/estate-auth-design.md §14.5) ──────
 #
 # ⚠️ `off` ON PURPOSE: the deploy that carries the estate-auth code must be
@@ -389,6 +403,14 @@ OWNER_EMAILS = "nbaslamking@gmail.com"
 # that nag is the same INDEX_URL one documented in docs/access/
 # second-instance.md, and it is correct to ignore.
 DONOR_URL = "https://library.heygabi.ai"
+
+# ── Cross-library peer push (migration 0370) ─────────────────────────────────
+# Same mechanism as the main instance: pushes her holdings to all peers after
+# mutations. The main library appears on HER gap rungs as "In Sky's Library".
+PEER_SELF_ID = "padhard"
+PEER_SELF_LABEL = "the Padhard Library"
+SITE_ORIGIN = "https://padhard.heygabi.ai"
+PEERS = '[{"id":"sky","label":"Sky'\''s Library","url":"https://library.heygabi.ai","token":"4ceae4d63f8fc29d9cf5bb6e9198b424e59b035fe740aad7d7e6833a53c5e62b"}]'
 
 # ⚠️ INDEX_URL deliberately ABSENT — her estate-index integration is PHASE 2
 # (friend-ingest-design.md §7). Unset means every push trigger in

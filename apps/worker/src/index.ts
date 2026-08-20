@@ -10,6 +10,7 @@ import { cors } from 'hono/cors';
 import type { AppBindings, Env } from './env.js';
 import { DETAILS_SWEEP_CRON, runDetailsSweep } from './lib/details-sweep.js';
 import { indexBackstopOnRequest, indexPushAfterMutation } from './lib/index-push.js';
+import { peerPushAfterMutation } from './lib/peer-push.js';
 import { requireAuth } from './middleware/auth.js';
 import { accessoryRoutes } from './routes/accessories.js';
 import { adminCors, adminRoutes } from './routes/admin.js';
@@ -19,6 +20,7 @@ import { catalogRoutes } from './routes/catalog.js';
 import { coverRoutes } from './routes/covers.js';
 import { crowdfundingRoutes, provenanceRoutes } from './routes/crowdfunding.js';
 import { donorRoutes } from './routes/donor.js';
+import { peerRoutes } from './routes/peer.js';
 import { enrichRoutes } from './routes/enrich.js';
 import { exportRoutes } from './routes/export.js';
 import { gabiRoutes } from './routes/gabi.js';
@@ -63,6 +65,7 @@ app.route('/api/health', healthRoutes);
 // can touch a response: all index work runs on `waitUntil` after `next()`.
 app.use('/api/*', indexPushAfterMutation());
 app.use('/api/*', indexBackstopOnRequest());
+app.use('/api/*', peerPushAfterMutation());
 
 // ⚠️ Mounted BEFORE requireAuth, deliberately. The ebook importer is a script,
 // not a person: no browser, no Google session, nothing to refresh a Firebase ID
@@ -83,6 +86,12 @@ app.route('/api/machine/audiobook-mapping', audiobookMappingRoutes);
 // unset token OR wrong token both answer 404 — disabled/invisible, never open,
 // and never advertised. Read-only, DETAIL_FIELDS values only. See routes/donor.ts.
 app.route('/api/donor', donorRoutes);
+
+// ⚠️ Mounted BEFORE requireAuth, FIFTH of the machine routes: peer instances
+// push their holdings here on catalog mutations. X-Peer-Token gated; unset or
+// wrong token = 404. The GET /holdings sub-route is also pre-auth so the series
+// route can call it internally without a user session.
+app.route('/api/peer', peerRoutes);
 
 // ⚠️ Mounted BEFORE requireAuth, FOURTH of the machine routes and the only one
 // that can WRITE on somebody's behalf: the caller is the estate's Discord
