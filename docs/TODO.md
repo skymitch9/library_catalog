@@ -423,6 +423,33 @@ script reads. It closes with a photograph and the cover UI, or not at all.
 
 ---
 
+## ☐ Pagination does not scroll to top — physical book library
+
+Owner, 2026-08-20: *"when we paginate to a new page on the physical book
+libraries it doesnt scroll to the top, i know its an easy fix but we need to
+save credits so file it."*
+
+**Symptom:** clicking through to the next page of the physical book library
+leaves the viewport where it was, so the reader lands mid-list — or below it
+entirely on a short page — and has to scroll up to see what they just asked
+for. Worst on mobile, where the list is tallest relative to the screen.
+
+**Owner's own read: an easy fix.** Filed rather than fixed because the session
+was near the weekly limit; NOT investigated, so the note below is a pointer,
+not a diagnosis.
+
+☐ **Fix:** on page change, scroll the list container (or window) back to the
+  top — and move focus to the list heading at the same time, or a keyboard and
+  screen-reader user is left at the old position even when the pixels move.
+☐ Check the same handler covers **every** way the page changes: next/prev,
+  a numbered page, and any filter or sort that resets to page 1.
+
+**Not verified:** which component owns the pagination, whether the physical
+book library shares it with any other list, and whether the ebook/audiobook
+lists have the same behaviour. Look before assuming it is one call site.
+
+---
+
 ## Legend
 
 | Mark | Meaning |
@@ -896,3 +923,37 @@ nothing", not "stored a dead link".
 | 💤 | Gamefound — excluded, no books. |
 
 ---
+
+
+---
+
+## ✅ ISBN backfill — FREE RUNGS DONE 2026-08-20
+
+**89 ISBNs written** to production D1 via `npm run backfill:missing-isbns --
+--remote --commit`. Works without ISBN: **181 → 92**.
+
+| Rung | Found |
+|---|---|
+| Open Library (title+author) | 70 |
+| Google Books (title+author) | 24 |
+| UNIQUE conflicts (skipped) | 5 |
+| **Written** | **89** |
+
+The 92 remaining are correctly ISBN-less: Japanese light novels (DxD 12 vols,
+Seirei 22 vols — fan translations, no print ISBN exists), Michael-Scott Earle
+self-pub (Space Knight, Tamer — Kickstarter/crowdfund only), indie titles, and
+the Kickstarter exclusives already documented in
+[`isbn-barcode-worklist.md`](isbn-barcode-worklist.md). These stay blank by
+design.
+
+**LibraryThing API: DEAD END.** The key is valid but both API endpoints
+(`services/rest/1.1/` and `/api/thingISBN/`) are behind Cloudflare bot
+challenge and return 403 from any automated caller. Cannot be used as a rung.
+Key stored in `.dev.vars` in case the Cloudflare situation changes.
+
+**The `--llm` rung is available** (`npm run backfill:missing-isbns -- --remote
+--llm --commit`) for the ~20 titles among the 92 that might have a print ISBN
+the free rungs missed (e.g. some MSE books may have KDP-printed ISBNs). Cost
+~$1.20 for those 20. Owner decision.
+
+**Script:** `scripts/backfill-missing-isbns.mjs`, `npm run backfill:missing-isbns`.
