@@ -192,6 +192,10 @@ export function Reviews({
           {reviews
             .slice()
             .sort((a, b) => a.displayName.localeCompare(b.displayName))
+            // Dedup: one review per person — keep the most recent (or first encountered).
+            // Multiple audiobook editions (e.g. dramatized parts) can produce duplicate
+            // reviews for the same person on the same work.
+            .filter((r, i, arr) => arr.findIndex((x) => x.displayName.toLowerCase() === r.displayName.toLowerCase()) === i)
             .map((r, i) => (
               <li key={`${r.displayName}-${i}`}>
                 <div className="row-tight">
