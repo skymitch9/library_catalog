@@ -195,7 +195,7 @@ INDEX_URL = "https://index.heygabi.ai"
 PEER_SELF_ID = "sky"
 PEER_SELF_LABEL = "Sky's Library"
 SITE_ORIGIN = "https://library.heygabi.ai"
-PEERS = '[{"id":"padhard","label":"the Padhard Library","url":"https://padhard.heygabi.ai","token":"4ceae4d63f8fc29d9cf5bb6e9198b424e59b035fe740aad7d7e6833a53c5e62b"}]'
+PEERS = "[{\"id\":\"padhard\",\"label\":\"the Padhard Library\",\"url\":\"https://padhard.heygabi.ai\",\"token\":\"4ceae4d63f8fc29d9cf5bb6e9198b424e59b035fe740aad7d7e6833a53c5e62b\"}]"
 
 # ── Estate auth (catalog-platform/docs/info/estate-auth-design.md §14.5) ──────
 #
@@ -410,7 +410,7 @@ DONOR_URL = "https://library.heygabi.ai"
 PEER_SELF_ID = "padhard"
 PEER_SELF_LABEL = "the Padhard Library"
 SITE_ORIGIN = "https://padhard.heygabi.ai"
-PEERS = '[{"id":"sky","label":"Sky'\''s Library","url":"https://library.heygabi.ai","token":"4ceae4d63f8fc29d9cf5bb6e9198b424e59b035fe740aad7d7e6833a53c5e62b"}]'
+PEERS = "[{\"id\":\"sky\",\"label\":\"Sky's Library\",\"url\":\"https://library.heygabi.ai\",\"token\":\"4ceae4d63f8fc29d9cf5bb6e9198b424e59b035fe740aad7d7e6833a53c5e62b\"}]"
 
 # ⚠️ INDEX_URL deliberately ABSENT — her estate-index integration is PHASE 2
 # (friend-ingest-design.md §7). Unset means every push trigger in
