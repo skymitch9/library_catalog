@@ -36,6 +36,16 @@ import { Link, seriesPath, workPath } from '../router.js';
 import { Cover } from './Cover.js';
 
 /**
+ * Truncate an author string to at most `max` names, appending "…" if there
+ * are more. Splits on ", " which is the separator used in `work.authors`.
+ */
+function truncateAuthors(authors: string, max = 2): string {
+  const parts = authors.split(', ');
+  if (parts.length <= max) return authors;
+  return parts.slice(0, max).join(', ') + ' …';
+}
+
+/**
  * Paid for and not here yet.
  *
  * ⚠️ There is no `owned` counterpart and there should not be one. Being owned is
@@ -214,7 +224,7 @@ export function WorkList({ rows, view }: { rows: WorkSummary[]; view: 'grid' | '
                 {/* Null renders nothing here — the mark on the art already says
                     it, and an "unknown" byline on every authorless card would
                     say it twice. */}
-                {w.authors && <span className="muted small">{w.authors}</span>}
+                {w.authors && <span className="muted small">{truncateAuthors(w.authors)}</span>}
                 <SeriesLine work={w} />
               </div>
             </div>
@@ -242,7 +252,7 @@ export function WorkList({ rows, view }: { rows: WorkSummary[]; view: 'grid' | '
                 <AuthorMark authors={w.authors} />
                 <WatchMark count={w.openWatches} />
               </div>
-              {w.authors && <div className="muted small">{w.authors}</div>}
+              {w.authors && <div className="muted small">{truncateAuthors(w.authors)}</div>}
               <div className="row-open__meta">
                 <SeriesLine work={w} />
                 {/* Formats are what makes "in audio and paperback but not ebook"

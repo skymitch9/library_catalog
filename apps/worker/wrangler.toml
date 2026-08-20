@@ -183,6 +183,11 @@ OWNER_EMAILS = "nbaslamking@gmail.com"
 # INDEX_URL = "https://index.heygabi.ai"
 INDEX_URL = "https://index.heygabi.ai"
 
+# ── Donor reciprocity (owner decision 2026-08-20) ────────────────────────────
+# The main library now asks the friend for details too, before paying for AI.
+# Same DONOR_TOKEN secret already set on both instances (2026-08-16).
+DONOR_URL = "https://padhard.heygabi.ai"
+
 # ── Cross-library peer push (migration 0370) ─────────────────────────────────
 #
 # Each instance pushes its work_key set to every configured peer after catalog
