@@ -423,6 +423,39 @@ script reads. It closes with a photograph and the cover UI, or not at all.
 
 ---
 
+## ☐ The Wandering Inn — series and volumes need rectifying (split print run)
+
+Owner, 2026-08-20: *"wandering inn needs to have its series and volumes
+rectified because the author split the physical books."*
+
+**What is wrong:** the author published the physical books as SPLITS of the
+original volumes, so one source volume maps to several printed books. Whatever
+the catalogue currently holds treats those as if the numbering still lined up,
+so the series order and the volume numbers disagree with the objects on the
+shelf.
+
+⚠️ **THIS IS DATA/MACHINERY DRIFT, NOT A DESIGN QUESTION.** Volume semantics
+were settled 2026-08-19 and are recorded in
+[`info/volume-numbers.md`](info/volume-numbers.md): series + sort = complete,
+display optional, findings auto-apply. **Do not reopen that design to fix this
+title** — a one-off mapping problem is exactly the shape that tempts a
+re-litigation, and the settled rules already cover it.
+
+☐ **Establish the real mapping first**, from the publisher's own numbering —
+  which printed book covers which part of which source volume. Write it down
+  before touching a record; guessing the split is how a fix has to be redone.
+☐ Decide how a split book is IDENTIFIED so sort order stays stable and two
+  printed books never collide on one volume number.
+☐ Apply through the normal corrections path, not by hand-editing rows.
+
+**Not verified — look before assuming:** how many volumes are affected, what
+the catalogue holds for this series today, whether the same title in
+`audiobook_catalog` has the same problem (the audio releases follow their own
+numbering and may already differ), and whether any other serial-turned-print
+series has the same split (this will not be the only one).
+
+---
+
 ## ☐ Pagination does not scroll to top — physical book library
 
 Owner, 2026-08-20: *"when we paginate to a new page on the physical book
