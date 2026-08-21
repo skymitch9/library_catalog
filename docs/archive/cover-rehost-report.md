@@ -1,5 +1,11 @@
 # Cover rehost & cover hunt — run report
 
+> ⚠️ **ARCHIVED 2026-08-21** during the docs-tree restructure. Kept for the
+> reasoning and the evidence, **not as current fact** — do not act on anything
+> here without re-measuring. Current state: this repo's `docs/TODO.md`,
+> `docs/KNOWN_ISSUES.md` and the `access/` + `info/` indexes. Rules:
+> `catalog-platform/docs/DOCS_STANDARD.md` §6.
+
 > **Audience:** Claude sessions and the owner. **Status:** TRACKED.
 > Run date: **2026-08-13**, against production D1 (`library-catalog`) and R2 (`library-covers`).
 > SQL and R2 only — no repo source files were touched, no deploys, no migrations.

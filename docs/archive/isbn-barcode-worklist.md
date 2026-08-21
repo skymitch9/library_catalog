@@ -1,5 +1,11 @@
 # ISBN backfill — what needs the barcode — Information Reference
 
+> ⚠️ **ARCHIVED 2026-08-21** during the docs-tree restructure. Kept for the
+> reasoning and the evidence, **not as current fact** — do not act on anything
+> here without re-measuring. Current state: this repo's `docs/TODO.md`,
+> `docs/KNOWN_ISSUES.md` and the `access/` + `info/` indexes. Rules:
+> `catalog-platform/docs/DOCS_STANDARD.md` §6.
+
 > **Audience:** the owner at the shelf, and Claude sessions. **Status:** TRACKED.
 > Last verified: **2026-08-13** (all rows read from production D1 that morning;
 > every claim below states its source or says "not found").
