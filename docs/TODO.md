@@ -24,6 +24,13 @@
 > living docs — they do not compete with this file for "what is happening
 > now", so do not helpfully re-merge them.
 
+> 🚩 **KIRO'S RANKED QUEUE LIVES IN `catalog-platform/docs/TODO.md`**, in the
+> section **"KIRO — COMPLETE THIS WORK, by ease and quickness"** (added
+> 2026-08-21). Items from THIS repo appear there as K-numbers with plans. It is
+> kept in that repo because `catalog-platform/docs/` is the only one of the four
+> docs trees that is **tracked in git** and therefore survives a clone — this
+> file does not. Do not duplicate the queue here; one list, not two.
+
 ## ☐ GABI unification — Phase 1 code has LANDED, phases 2–3 not started (2026-08-21)
 
 Design of record: [`info/gabi-unification.md`](info/gabi-unification.md) (moved
