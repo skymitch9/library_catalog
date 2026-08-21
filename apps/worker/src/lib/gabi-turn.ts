@@ -80,7 +80,6 @@ import { loadPanelConversation, recordGabiTurn, savePanelConversation, sweepPane
 import {
   historyCost,
   lastUserText,
-  panelConversationKey,
   panelExchange,
   panelTurnText,
   rememberedFor,
@@ -88,6 +87,8 @@ import {
 } from '@lc/gabi-conv';
 import { GABI_EFFORT, GABI_MODEL, ResearchError, type GabiModelCall } from '@lc/research';
 import type { Env } from '../env.js';
+import { formatContextForPrompt, loadPersonalContext } from './gabi-context.js';
+import { sharedConversationKey } from './shared-conversation-key.js';
 
 /**
  * The biggest conversation this route will carry, in bytes of JSON.
@@ -311,7 +312,7 @@ export async function runGabiTurn(
   // everybody the auth middleware admits; the null branch exists because the
   // signature allows it, and a memory keyed on "nobody" would be one shared
   // window for every unauthenticated caller — the worst possible failure.
-  const key = userId === null ? null : panelConversationKey(env.ESTATE_APP, userId);
+  const key = userId === null ? null : sharedConversationKey(env.ESTATE_APP, userId);
   const remembered = key
     ? rememberedFor((await loadPanelConversation(env.DB, key)).turns, conversationId)
     : [];
@@ -322,10 +323,19 @@ export async function runGabiTurn(
   // with Discord, because getting it wrong is the same 400 on both surfaces.
   const prompt = withRemembered(remembered, messages as { role: string; content: unknown }[]);
 
+  // ── Personal context — who she is talking to. ─────────────────────────────
+  //
+  // Always included: ~950 tokens cached after turn 1 at ~0.05¢/turn as a cache
+  // read. Not worth the complexity of conditional loading. Returns empty string
+  // on any failure (same graceful degradation as memory).
+  const personalContext = userId !== null
+    ? formatContextForPrompt(await loadPersonalContext(env.DB, userId))
+    : '';
+
   // ── The one model call. ───────────────────────────────────────────────────
 
   try {
-    const turn = await callModel(env.ANTHROPIC_API_KEY, { messages: prompt });
+    const turn = await callModel(env.ANTHROPIC_API_KEY, { messages: prompt, personalContext: personalContext || undefined });
 
     // ⚠️ Saved BEFORE the accounting row and before the return, but its failure
     // changes nothing about either: the memory is never load-bearing for the

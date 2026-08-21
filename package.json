@@ -49,6 +49,7 @@
     "backfill:ebooks": "tsx scripts/backfill-ebook-holdings.mjs",
     "backfill:openlibrary-ids": "tsx scripts/backfill-openlibrary-ids.mjs",
     "backfill:missing-covers": "tsx scripts/backfill-missing-covers.mjs",
+    "backfill:missing-isbns": "tsx scripts/backfill-missing-isbns.mjs",
     "backfill:edition-kinds": "tsx scripts/backfill-edition-kinds.mjs",
     "backfill:universes": "tsx scripts/backfill-universes.mjs",
     "backfill:omnibus": "node scripts/backfill-omnibus-collects.mjs",

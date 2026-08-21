@@ -193,6 +193,7 @@ export interface ObservedWorkRating extends ObservedRating {
 /** The fields of a Firestore review document this rule reads. Nothing else. */
 export interface ReviewLike {
   workKey?: string | null;
+  bookId?: string | null;
   source?: string | null;
   rating?: unknown;
   displayName?: string | null;
@@ -249,6 +250,13 @@ export interface ReviewLike {
 export function observedRatingsFromReviews(
   reviews: readonly ReviewLike[],
   me: { email?: string | null; reviewName?: string | null },
+  /** Optional lookup: `bookId` → `workKey`. When provided, reviews that lack a
+   * `workKey` but carry a `bookId` present in this map can still be resolved.
+   * This is the bookId fallback the per-book path has always had
+   * (via `fetchReviews`'s legacy query) — extended to the sweep so that reviews
+   * written on the audiobook site *after* the last `backfill-review-keys.mjs`
+   * run are no longer invisible until the backfill is run again. */
+  bookIdToWorkKey?: ReadonlyMap<string, string>,
 ): ObservedWorkRating[] {
   const byKey = new Map<string, ObservedWorkRating>();
 
@@ -257,11 +265,20 @@ export function observedRatingsFromReviews(
     const rating = review.rating;
     if (!ratingImpliesRead(typeof rating === 'number' ? rating : null)) continue;
 
-    const workKey = typeof review.workKey === 'string' ? review.workKey.trim() : '';
+    let workKey = typeof review.workKey === 'string' ? review.workKey.trim() : '';
     // A key with no `|` is not one of ours — `workKeyFor` always joins a title
     // and an author with it — and a bare title would collide two books called
     // "Gold". Refusing beats landing a rating on the wrong shelf.
-    if (!workKey.includes('|')) continue;
+    if (!workKey.includes('|')) {
+      // Fallback: resolve via bookId if the caller provided a lookup map.
+      // This covers reviews written on the audiobook site after the last
+      // workKey backfill — they carry a bookId but no workKey.
+      const bookId = typeof review.bookId === 'string' ? review.bookId.trim() : '';
+      if (bookId && bookIdToWorkKey) {
+        workKey = bookIdToWorkKey.get(bookId) ?? '';
+      }
+      if (!workKey.includes('|')) continue;
+    }
 
     const source = reviewSourceOf(review);
     const seen = byKey.get(workKey);

@@ -95,10 +95,22 @@ export async function syncReadStatesFromRatings(me: Me): Promise<ReadSyncResult 
   const { collection } = await api.reviewCollection();
   const reviews = await fetchMyReviews(collection, me);
 
+  // Fetch the bookId→workKey index so reviews written on the audiobook site
+  // after the last backfill (which carry no workKey) can still be resolved.
+  // Non-fatal: if it fails, the sweep falls back to the workKey-only behaviour.
+  let bookIdToWorkKey: Map<string, string> | undefined;
+  try {
+    const { index } = await api.reviewBookIdIndex();
+    bookIdToWorkKey = new Map(Object.entries(index));
+  } catch {
+    // The endpoint may not be deployed yet, or the request failed. The sweep
+    // still works for every review that carries a workKey — same as before.
+  }
+
   // ⚠️ The one implementation of "which of these are mine, and which name a book
   // we can reach". Shared with the Worker and the backfill; a second, looser
   // rule here would mark this person's books read on a housemate's rating.
-  const observed = observedRatingsFromReviews(reviews, me);
+  const observed = observedRatingsFromReviews(reviews, me, bookIdToWorkKey);
   if (observed.length === 0) return { considered: 0, marked: [] };
 
   const marked: DerivedRead[] = [];

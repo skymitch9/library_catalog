@@ -45,7 +45,7 @@
  * turn of the conversation, because the whole history is re-sent each time.
  */
 
-import { isGabiToolName, type GabiToolName } from '@lc/core';
+import { isGabiToolName, GABI_BATCH_CAP, type GabiToolName } from '@lc/core';
 
 /**
  * The six calls phase 0's four tools need, as functions rather than an object,
@@ -71,6 +71,23 @@ export interface GabiReadApi {
   autoApplied: (limit: number) => Promise<unknown>;
   /** `GET /api/works/:id/changes` — one book's audit trail. */
   workChanges: (workId: number) => Promise<unknown>;
+}
+
+/**
+ * Phase 1 write methods. Each rides the same authenticated path the UI does.
+ * The panel wires these to `api.ts` just like the read methods.
+ */
+export interface GabiWriteApi {
+  /** `POST /api/research/works/:id/run` — trigger a paid details lookup. */
+  researchBook: (workId: number) => Promise<unknown>;
+  /** `PATCH /api/works/:id` — fill blank fields on one book. */
+  setBookDetails: (workId: number, fields: Record<string, unknown>) => Promise<unknown>;
+  /** `POST /api/research/undo` — revert auto-applied changes by finding ids. */
+  undoChanges: (findingIds: number[]) => Promise<unknown>;
+  /** `POST /api/works` — add a new book by ISBN. */
+  addBookByIsbn: (isbn: string) => Promise<unknown>;
+  /** `POST /api/gabi/note` — record something GABI learned about this person. */
+  noteAboutPerson: (note: string, kind: string) => Promise<unknown>;
 }
 
 /** What the panel renders and what goes back to the model as a `tool_result`. */
@@ -128,6 +145,19 @@ const TALLY_FIELDS = ['field', 'label', 'missing', 'filled', 'none', 'unknown'] 
 const APPLIED_FIELDS = ['findingId', 'workId', 'title', 'field', 'value', 'sourceTier', 'appliedAt'] as const;
 const CHANGE_FIELDS = ['field', 'oldValue', 'newValue', 'changedByName', 'changedHow', 'note', 'createdAt'] as const;
 
+// ── Phase 1 write-tool projections ──────────────────────────────────────────
+
+/** Fields to forward from a `POST /api/research/works/:id/run` response. */
+const RESEARCH_RESULT_FIELDS = ['status', 'runId', 'filled', 'skipped', 'message'] as const;
+/** Fields to forward from a `PATCH /api/works/:id` response. */
+const PATCH_RESULT_FIELDS = ['updated', 'message', 'work'] as const;
+/** Fields to forward from a `POST /api/research/undo` response. */
+const UNDO_RESULT_FIELDS = ['reverted', 'failed', 'message'] as const;
+/** Fields to forward from a `POST /api/works` (add by ISBN) response. */
+const ADD_BOOK_RESULT_FIELDS = ['workId', 'title', 'authors', 'message', 'alreadyExists'] as const;
+/** The only fields `set_book_details` ever sends in its PATCH body. */
+const SET_DETAILS_FIELDS = ['firstPublished', 'series', 'seriesIndexSort', 'seriesIndexDisplay', 'description', 'universe'] as const;
+
 function rowsOf(value: unknown, key: string): unknown[] {
   if (typeof value !== 'object' || value === null) return [];
   const rows = (value as Record<string, unknown>)[key];
@@ -158,7 +188,7 @@ function field(value: unknown, key: string): unknown {
  * the moderator role" and a panel that just stops.
  */
 export async function executeGabiTool(
-  api: GabiReadApi,
+  api: GabiReadApi & GabiWriteApi,
   call: { id: string; name: string; input: unknown },
   describeError: (err: unknown) => string,
 ): Promise<GabiToolOutcome> {
@@ -192,7 +222,7 @@ export async function executeGabiTool(
 }
 
 async function run(
-  api: GabiReadApi,
+  api: GabiReadApi & GabiWriteApi,
   name: GabiToolName,
   input: Record<string, unknown>,
 ): Promise<unknown> {
@@ -282,6 +312,80 @@ async function run(
         note:
           "changedHow 'auto' means nobody read the value before it landed; 'human' means somebody did.",
       };
+    }
+
+    // ── Phase 1 write tools ─────────────────────────────────────────────────
+
+    case 'research_book': {
+      const workId = Number(input['workId']);
+      if (!Number.isInteger(workId) || workId <= 0) {
+        return { error: 'That is not a work id. Use find_book first.' };
+      }
+      const answer = await api.researchBook(workId);
+      return {
+        workId,
+        ...pick(answer, RESEARCH_RESULT_FIELDS),
+      };
+    }
+
+    case 'set_book_details': {
+      const workId = Number(input['workId']);
+      if (!Number.isInteger(workId) || workId <= 0) {
+        return { error: 'That is not a work id. Use find_book first.' };
+      }
+      const fields = input['fields'];
+      if (typeof fields !== 'object' || fields === null || Array.isArray(fields)) {
+        return { error: 'fields must be an object with the values to set.' };
+      }
+      // ⚠️ Only forward allowed keys — the wrapper builds the body from a fixed
+      // field list, never forwarding the model's object verbatim.
+      const allowed = pick<Record<string, unknown>>(fields, SET_DETAILS_FIELDS);
+      if (Object.keys(allowed).length === 0) {
+        return { error: 'No recognised fields to set. Allowed: firstPublished, series, seriesIndexSort, seriesIndexDisplay, description, universe.' };
+      }
+      const answer = await api.setBookDetails(workId, allowed);
+      return {
+        workId,
+        ...pick(answer, PATCH_RESULT_FIELDS),
+      };
+    }
+
+    case 'undo_changes': {
+      const findingIds = input['findingIds'];
+      if (!Array.isArray(findingIds) || findingIds.length === 0) {
+        return { error: 'findingIds must be a non-empty array of finding ids.' };
+      }
+      const ids = findingIds
+        .slice(0, GABI_BATCH_CAP)
+        .map(Number)
+        .filter((n) => Number.isInteger(n) && n > 0);
+      if (ids.length === 0) {
+        return { error: 'None of the provided ids are valid integers.' };
+      }
+      const answer = await api.undoChanges(ids);
+      return {
+        ...pick(answer, UNDO_RESULT_FIELDS),
+      };
+    }
+
+    case 'add_book_by_isbn': {
+      const isbn = String(input['isbn'] ?? '').trim();
+      if (!isbn) {
+        return { error: 'An ISBN is required.' };
+      }
+      const answer = await api.addBookByIsbn(isbn);
+      return {
+        isbn,
+        ...pick(answer, ADD_BOOK_RESULT_FIELDS),
+      };
+    }
+
+    case 'note_about_person': {
+      const note = String(input['note'] ?? '').trim().slice(0, 120);
+      const kind = String(input['kind'] ?? 'preference');
+      if (!note) return { error: 'A note is required.' };
+      await api.noteAboutPerson(note, kind);
+      return { saved: true, note, kind };
     }
   }
 }

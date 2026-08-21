@@ -2168,3 +2168,100 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
 .peer-list__link { color: var(--et-link); text-decoration: none; }
 .peer-list__link:hover { text-decoration: underline; }
 .peer-list__format { color: var(--et-muted); font-size: 0.85em; }
+
+/* -- Multi-select mode ---------------------------------------------------- */
+
+/* Checkbox overlay on cards (grid view) */
+.card__check {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 2; /* Above .card__open::after */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+}
+.card__check input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--et-accent);
+  cursor: pointer;
+}
+
+/* Selected state — card glow */
+.card--selected {
+  outline: 2px solid var(--et-accent);
+  outline-offset: 2px;
+  border-radius: var(--et-radius, 4px);
+}
+.card--selected .cover {
+  opacity: 0.85;
+}
+
+/* Checkbox in list view */
+.row-open__check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  z-index: 2;
+  cursor: pointer;
+}
+.row-open__check input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--et-accent);
+  cursor: pointer;
+}
+
+/* Selected state — list row */
+.row-open--selected {
+  background: color-mix(in srgb, var(--et-accent) 8%, transparent);
+  border-radius: var(--et-radius, 4px);
+}
+
+/* Bulk action bar — fixed bottom */
+.bulk-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  background: var(--et-surface, #1a1a2e);
+  border-top: 1px solid var(--et-hairline);
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.3);
+  animation: bulk-bar-slide-up 0.2s ease-out;
+}
+@keyframes bulk-bar-slide-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+.bulk-bar__count {
+  font-weight: 600;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+.bulk-bar__progress {
+  font-size: 0.85rem;
+  color: var(--et-muted);
+}
+/* Push Cancel to the right */
+.bulk-bar button:last-child {
+  margin-left: auto;
+}
+
+/* In select mode, suppress the card's stretched link overlay so click handlers
+   on the card container can fire without being swallowed. */
+.card--selected .card__open::after,
+.card:has(.card__check) .card__open::after {
+  display: none;
+}

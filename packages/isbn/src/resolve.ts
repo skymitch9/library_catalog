@@ -56,7 +56,7 @@ export interface BookCandidate {
   /** Open Library's work id, when the rung knows it. Hardens the join later. */
   openlibraryWorkId: string | null;
   format: EditionFormat | null;
-  source: 'openlibrary' | 'googlebooks';
+  source: 'openlibrary' | 'googlebooks' | 'bookcover-api';
   sourceUrl: string | null;
 }
 
@@ -439,6 +439,62 @@ export async function verifyCoverUrl(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Rung 2.5 — Bookcover API (free, cover-only, no metadata)
+// ---------------------------------------------------------------------------
+
+/**
+ * `bookcover.longitood.com` — a free aggregator that searches multiple sources
+ * for a book cover by ISBN and returns a direct image URL. Unlike the other
+ * rungs it provides NO metadata (title, author, pages, etc.) — only a cover.
+ *
+ * ## Why it is rung 2.5 and not rung 3
+ *
+ * It is faster than Open Library title search (rung 3 in the backfill script)
+ * and keyed on ISBN, which is stronger evidence. But it is after Google Books
+ * because Google returns full metadata alongside its cover, and this does not.
+ *
+ * ## Availability
+ *
+ * As of 2026-08-10 the API returned 522 (origin unreachable) on all requests.
+ * It is kept as a rung because when it works it covers books that neither OL
+ * nor Google hold. The ladder degrades gracefully: a 522 is caught, traced as
+ * a miss, and the next rung proceeds.
+ */
+export async function lookupBookcoverApi(
+  isbn: string,
+  opts: ResolveOptions = {},
+): Promise<BookCandidate[]> {
+  const doFetch = opts.fetchImpl ?? fetch;
+  const url = `https://bookcover.longitood.com/bookcover/${isbn}`;
+  const res = await doFetch(url, {
+    headers: { 'User-Agent': opts.userAgent ?? DEFAULT_UA },
+  });
+  if (!res.ok) throw new Error(`bookcover-api ${res.status}`);
+
+  const body = (await res.json()) as { url?: string };
+  if (!body.url) return [];
+
+  // This API returns only a cover URL — no title, author, or other metadata.
+  // We build a minimal candidate so it integrates with `coverFrom`.
+  return [
+    {
+      isbn13: isbn.length === 13 ? isbn : null,
+      title: '',
+      authors: '',
+      publisher: null,
+      publishedYear: null,
+      pages: null,
+      language: null,
+      coverUrl: body.url.replace(/^http:/, 'https:'),
+      openlibraryWorkId: null,
+      format: null,
+      source: 'bookcover-api',
+      sourceUrl: url,
+    },
+  ];
+}
+
 /**
  * Ask every rung that can answer, in order, and return everything found.
  *
@@ -468,6 +524,21 @@ export async function resolveIsbn(
       found: 0,
       ms: 0,
       detail: 'skipped: no GOOGLE_BOOKS_API_KEY (anonymous calls return 429)',
+    });
+  }
+
+  // Rung 2.5: Bookcover API — only if no cover was found from the metadata rungs
+  if (!coverFrom(candidates)) {
+    candidates.push(
+      ...(await timed('bookcover-api', trace, () => lookupBookcoverApi(isbn13, opts))),
+    );
+  } else {
+    trace.push({
+      rung: 'bookcover-api',
+      ok: true,
+      found: 0,
+      ms: 0,
+      detail: 'skipped: cover already found by earlier rung',
     });
   }
 

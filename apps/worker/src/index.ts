@@ -25,6 +25,8 @@ import { enrichRoutes } from './routes/enrich.js';
 import { exportRoutes } from './routes/export.js';
 import { gabiRoutes } from './routes/gabi.js';
 import { gabiDelegatedRoutes } from './routes/gabi-delegated.js';
+import { gabiMemoryRoutes } from './routes/gabi-memory.js';
+import { gabiNoteRoutes } from './routes/gabi-note.js';
 import { healthRoutes } from './routes/health.js';
 import { ingestRoutes } from './routes/ingest.js';
 import { isbnRoutes } from './routes/isbn.js';
@@ -108,6 +110,14 @@ app.route('/api/peer', peerRoutes);
 // beside each other rather than discovering the split later.
 app.route('/api/gabi/delegated', gabiDelegatedRoutes);
 
+// ⚠️ Mounted BEFORE requireAuth, SIXTH of the machine routes: the shared GABI
+// conversation memory. The Discord Worker reads and writes the same conversation
+// history the site panel uses, so both surfaces see one continuous conversation.
+// Bearer-gated on ESTATE_APP_TOKEN_DISCORD — same secret as gabi-delegated, same
+// failure direction (unset = 503, wrong = 401). The endpoint resolves a Firebase
+// UID to an app_user and reads/writes under the 'shared' surface key.
+app.route('/api/gabi/memory', gabiMemoryRoutes);
+
 // CORS for the estate's federated admin page (exactly https://heygabi.ai —
 // see routes/admin.ts). ⚠️ Before requireAuth on purpose: a preflight OPTIONS
 // carries no bearer, so the blanket would 401 it. Only the preflight is
@@ -167,6 +177,11 @@ app.route('/api/research', researchRoutes);
 // ⚠️ Inert on any instance whose GABI_PANEL is not "on" — the route answers a
 // worded 403 there, because hiding the panel was never the lock.
 app.route('/api/gabi', gabiRoutes);
+// Personal context notes — `POST /api/gabi/note`, the tool's server-side half.
+// Gated on `read` because any signed-in user can save notes about themselves.
+// Not a catalog mutation, not money-spending: a cheaper surface than the turn
+// route, so it sits beside it with a lower gate.
+app.route('/api/gabi/note', gabiNoteRoutes);
 app.route('/api/reviews', reviewRoutes);
 // The cross-catalog to-be-read list. Beside /api/reviews rather than under it:
 // both are keys into the SAME Firebase project's collections and neither owns

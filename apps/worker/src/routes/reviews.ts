@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import {
   UNKNOWN_AUTHOR,
+  bookIdFromTitle,
   observedRatingSchema,
   observedRatingsSchema,
   reviewDocFor,
@@ -323,4 +324,46 @@ export const reviewRoutes = new Hono<AppBindings>()
     // "N of your M ratings are of books on these shelves" is a very different
     // claim from "N books were marked read", and only the server knows both.
     return c.json({ marked, considered: parsed.data.ratings.length });
+  })
+
+  /**
+   * The `bookId → workKey` index for every work that has an audiobook holding.
+   *
+   * ## Why this exists
+   *
+   * `observedRatingsFromReviews` needs a `workKey` to report a rating to the
+   * per-work endpoint. Reviews written on the audiobook site *after* the last
+   * `backfill-review-keys.mjs` run carry no `workKey` — only a `bookId` (the
+   * audiobook title slugified). This endpoint exposes the D1-side mapping so
+   * the browser sweep can resolve those reviews without needing the backfill to
+   * have run.
+   *
+   * The mapping is: `bookIdFromTitle(audiobook_holding.raw_title)` → the work's
+   * own `work_key`. Where `raw_title` is null (pre-migration-0340 rows), the
+   * cleaned `title` is used as a best-effort fallback.
+   */
+  .get('/bookid-index', requireCapability('trackReading'), async (c) => {
+    const rows = await c.env.DB.prepare(`
+      SELECT w.work_key, ah.raw_title, ah.title
+      FROM audiobook_holding ah
+      JOIN work w ON w.id = ah.work_id
+      WHERE w.work_key IS NOT NULL
+        AND w.authors IS NOT NULL
+    `).all<{ work_key: string; raw_title: string | null; title: string }>();
+
+    const index: Record<string, string> = {};
+    for (const row of rows.results ?? []) {
+      // Use raw_title (the audiobook catalog's verbatim title) when available;
+      // fall back to the cleaned title for older holdings.
+      const audiobookTitle = row.raw_title ?? row.title;
+      const bookId = bookIdFromTitle(audiobookTitle);
+      // First wins — same as the backfill script. A duplicate slug means two
+      // audiobook rows share a title; the first is deterministic.
+      if (bookId && !index[bookId]) {
+        index[bookId] = row.work_key;
+      }
+    }
+
+    return c.json({ index });
   });
+

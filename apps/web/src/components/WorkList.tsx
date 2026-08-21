@@ -195,15 +195,43 @@ function SeriesLine({ work }: { work: WorkSummary }) {
   );
 }
 
-export function WorkList({ rows, view }: { rows: WorkSummary[]; view: 'grid' | 'list' }) {
+export function WorkList({
+  rows,
+  view,
+  selectMode,
+  selected,
+  onToggleSelect,
+}: {
+  rows: WorkSummary[];
+  view: 'grid' | 'list';
+  /** When true, cards show checkboxes and clicks toggle selection. */
+  selectMode?: boolean;
+  /** The set of currently selected work IDs. */
+  selected?: Set<number>;
+  /** Toggle one work's selection. */
+  onToggleSelect?: (id: number) => void;
+}) {
   if (view === 'grid') {
     return (
       <ul className="grid">
         {rows.map((w) => (
           <li key={w.id}>
-            <div className="card">
+            <div
+              className={`card${selectMode && selected?.has(w.id) ? ' card--selected' : ''}`}
+              onClick={selectMode ? (e) => { e.preventDefault(); onToggleSelect?.(w.id); } : undefined}
+            >
               <div className="card__art">
                 <Cover src={w.coverUrl} title={w.title} authors={w.authors ?? undefined} size="grid" />
+                {selectMode && (
+                  <label className="card__check" aria-label={`Select ${w.title}`}>
+                    <input
+                      type="checkbox"
+                      checked={selected?.has(w.id) ?? false}
+                      onChange={() => onToggleSelect?.(w.id)}
+                      tabIndex={-1}
+                    />
+                  </label>
+                )}
                 {/* A column, because both can be true at once — see `.card__marks`. */}
                 <span className="card__marks">
                   <ReadMark state={w.readState} />
@@ -218,9 +246,13 @@ export function WorkList({ rows, view }: { rows: WorkSummary[]; view: 'grid' | '
                 </span>
               </div>
               <div className="card__text">
-                <Link to={workPath(w.id)} className="card__open">
+                {selectMode ? (
                   <strong className="card__title">{w.title}</strong>
-                </Link>
+                ) : (
+                  <Link to={workPath(w.id)} className="card__open">
+                    <strong className="card__title">{w.title}</strong>
+                  </Link>
+                )}
                 {/* Null renders nothing here — the mark on the art already says
                     it, and an "unknown" byline on every authorless card would
                     say it twice. */}
@@ -238,13 +270,30 @@ export function WorkList({ rows, view }: { rows: WorkSummary[]; view: 'grid' | '
     <ul className="works">
       {rows.map((w) => (
         <li key={w.id}>
-          <div className="row-open">
+          <div
+            className={`row-open${selectMode && selected?.has(w.id) ? ' row-open--selected' : ''}`}
+            onClick={selectMode ? (e) => { e.preventDefault(); onToggleSelect?.(w.id); } : undefined}
+          >
+            {selectMode && (
+              <label className="row-open__check" aria-label={`Select ${w.title}`}>
+                <input
+                  type="checkbox"
+                  checked={selected?.has(w.id) ?? false}
+                  onChange={() => onToggleSelect?.(w.id)}
+                  tabIndex={-1}
+                />
+              </label>
+            )}
             <Cover src={w.coverUrl} title={w.title} size="row" />
             <div className="row-open__text">
               <div className="row-open__head">
-                <Link to={workPath(w.id)} className="card__open">
+                {selectMode ? (
                   <strong>{w.title}</strong>
-                </Link>
+                ) : (
+                  <Link to={workPath(w.id)} className="card__open">
+                    <strong>{w.title}</strong>
+                  </Link>
+                )}
                 <ReadMark state={w.readState} />
                 <PreorderMark count={w.preordered} />
                 <CopiesMark count={w.copyCount} />

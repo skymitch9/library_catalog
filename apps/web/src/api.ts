@@ -1266,6 +1266,16 @@ export const api = {
   reviewCollection: () => request<{ collection: string }>('/api/reviews/collection'),
 
   /**
+   * The `bookId → workKey` lookup for works with an audiobook holding.
+   *
+   * Used by the sweep to resolve reviews that lack a `workKey` field — those
+   * written on the audiobook site after the last `backfill-review-keys.mjs` run.
+   * Without this, such reviews are invisible to the sweep (they are still picked
+   * up when the book page is opened, via the per-book fallback).
+   */
+  reviewBookIdIndex: () => request<{ index: Record<string, string> }>('/api/reviews/bookid-index'),
+
+  /**
    * Every rating this person has written, in one call. See `lib/read-sync.ts`
    * for what reads them out of Firestore and `routes/reviews.ts` for why the
    * browser is the only thing that can.
@@ -1848,5 +1858,12 @@ export const api = {
     request<GabiTurnResponse>('/api/gabi/turn', {
       method: 'POST',
       body: JSON.stringify({ conversationId, messages }),
+    }),
+
+  /** Save a note GABI made about the person (personal context). */
+  gabiNote: (body: { note: string; kind: string }) =>
+    request<{ ok: true }>('/api/gabi/note', {
+      method: 'POST',
+      body: JSON.stringify(body),
     }),
 };

@@ -85,11 +85,33 @@ export const GABI_TIMEOUT_MS = 60_000;
  */
 const GABI_SYSTEM = `You are GABI, helping somebody look after their own book catalog. You are talking to the person who owns this catalog, on their own site, and you are looking at their real books.
 
-## What you can do right now
+## What you can do
 
-You can READ this catalog and nothing else. You cannot change a book, run a lookup, swap a cover, or undo anything — those tools do not exist yet. When somebody asks for a change, say plainly that you cannot make it from here yet and tell them where on the site they can: the book's own page has the edit form, the cover panel and the research controls.
+You can read this catalog AND write to it. Your tools:
 
-Never imply you have done something. Never say "I've updated" or "that's fixed" or "let me change that". You looked, and you can say what you found.
+- **research_book** — triggers a paid details lookup on one book (~2¢). It fills in whatever it finds automatically. The preferred way to fill gaps.
+- **set_book_details** — fills blank fields on one book when you already know the value (because the person said it or another tool returned it). Only reaches: firstPublished, series, seriesIndexSort, seriesIndexDisplay, description, universe. Title and authors are excluded by construction.
+- **undo_changes** — reverts recent auto-applied values by their finding ids. Maximum 10 per call. Only machine-written values can be undone this way.
+- **add_book_by_isbn** — adds a new book by ISBN. The server creates the work from the ISBN's metadata.
+- **note_about_person** — record something you learned about this person for future conversations. Their preferences, what to call them, things to follow up on. The catalog handles book ownership; notes are about the PERSON.
+
+### Auto lane — executes without asking
+
+A write executes without asking only if ALL of:
+1. It fills a BLANK field (never overwrites a recorded value).
+2. It targets exactly ONE work.
+3. It is revertible in one action.
+
+Relaying the server's response verbatim IS the confirmation. Do not add "done!" or "I've updated" — quote what the server said.
+
+### Confirm lane — say what would happen, wait for "yes"
+
+You MUST describe the change and wait for explicit approval before:
+- Overwriting any non-blank value (someone recorded that).
+- Any batch affecting more than one work.
+- Anything the person did not explicitly ask for.
+
+Present the change as: what field, current value → proposed value, which book. Then stop and wait.
 
 ## Finding the right book
 
@@ -115,12 +137,23 @@ If you cannot do something, say so in one sentence and stop. Do not offer a work
 
 ## Tone
 
-Short. Plain. This is somebody's shelf, not a support ticket. Answer what was asked, lead with the answer, and skip the preamble — no "Great question", no restating the request back. Where a number or a title matters, give it exactly.`;
+Short. Plain. This is somebody's shelf, not a support ticket. Answer what was asked, lead with the answer, and skip the preamble — no "Great question", no restating the request back. Where a number or a title matters, give it exactly.
+
+## Remembering
+
+You can see personal context about the person you're talking to (what they're reading, what they finished, your own notes). Use it naturally — don't announce "I see you're reading X" unless it's relevant. When you learn something new about them (a preference, a name, a follow-up), record it with note_about_person so you'll know next time.`;
 
 /** What the browser sends. The Worker adds the system prompt and the tools. */
 export interface GabiTurnInput {
   /** The conversation so far, in Anthropic message shape. Browser-held (§3.2). */
   messages: unknown[];
+  /**
+   * Optional personal context preamble, assembled by `loadPersonalContext` in
+   * the Worker. When non-empty it becomes a second cached text block in the
+   * system prefix — ~950 tokens, cached after turn 1 at ~0.05¢/turn as a
+   * cache read. Empty string or undefined means no context to inject.
+   */
+  personalContext?: string;
 }
 
 export interface GabiUsage {
@@ -235,7 +268,13 @@ export async function gabiTurn(
       output_config: { effort: GABI_EFFORT },
       // Cached: tools render before system, so this one breakpoint covers both.
       // The prefix is ~2.5k tokens, comfortably over Opus 5's 512-token minimum.
-      system: [{ type: 'text', text: GABI_SYSTEM, cache_control: { type: 'ephemeral' } }],
+      // Personal context, when present, is a second cached block (~950 tokens).
+      system: [
+        { type: 'text', text: GABI_SYSTEM, cache_control: { type: 'ephemeral' } },
+        ...(input.personalContext
+          ? [{ type: 'text', text: input.personalContext, cache_control: { type: 'ephemeral' } }]
+          : []),
+      ],
       tools: apiTools(GABI_TOOLS),
       messages: input.messages,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the SDK's

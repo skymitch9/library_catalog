@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { COLLECTION_PAGE_SIZES, COPY_STATUSES, EDITION_MEDIA, READ_STATES } from '@lc/core';
 import { api, type CollectionFacets, type Me, type Stats, type WorkSummary } from '../api.js';
 import { describeError } from '../lib/errors.js';
+import { BulkActionBar } from '../components/BulkActionBar.js';
 import { Pager } from '../components/Pager.js';
 import { Shelf } from '../components/Shelf.js';
 import { WorkList } from '../components/WorkList.js';
@@ -112,6 +113,37 @@ export function CollectionPage({
   const [recent, setRecent] = useState<WorkSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
 
+  // -- Multi-select mode --
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+
+  const toggleSelect = useCallback((id: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelectMode(false);
+    setSelected(new Set());
+  }, []);
+
+  // Scroll to the top when the page changes, and move focus to the list
+  // region so a keyboard user lands where the new content starts rather than
+  // staying mid-page. The ref sits on the results wrapper; the heading is
+  // implicit (the pager above the list is the first focusable landmark).
+  const listTopRef = useRef<HTMLDivElement>(null);
+  const prevPageRef = useRef(page);
+  useEffect(() => {
+    if (prevPageRef.current === page) return;
+    prevPageRef.current = page;
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    listTopRef.current?.focus();
+  }, [page]);
+
   const canEdit = me.capabilities.includes('editCatalog');
   // ⚠️ `ebookOnly` counts as filtered, which is what hides the strip once "See
   // all" has expanded it. A strip captioned "Recently added" sitting on top of
@@ -131,12 +163,23 @@ export function CollectionPage({
 
   useEffect(() => savePrefs({ sort, dir, pageSize, view }), [sort, dir, pageSize, view]);
 
+  // Default to hiding ebooks unless the user has explicitly set a filter that
+  // implies they want to see them. The strip already does this with a hard-coded
+  // `ebookOnly: 'hide'`; the grid follows the same rule so the unfiltered
+  // collection is physical books only. Selecting "Ebook" in the medium or format
+  // dropdown, or clicking "Show them here too", clears this — and Clear resets
+  // it, because Clear sets ebookOnly back to '' which lands here again.
+  //
+  // `'show'` is the explicit opt-in: send nothing to the API so ebooks appear.
+  // `''` (default) means no user choice → hide. `'hide'` means explicitly set.
+  const effectiveEbookOnly = ebookOnly === 'show' ? '' : ebookOnly || 'hide';
+
   const params = useMemo(
     () => ({
-      q, series, universe, medium, ebookOnly, format, editionKind, status, needs, readState,
+      q, series, universe, medium, ebookOnly: effectiveEbookOnly, format, editionKind, status, needs, readState,
       sort, dir, page, pageSize,
     }),
-    [q, series, universe, medium, ebookOnly, format, editionKind, status, needs, readState, sort, dir, page, pageSize],
+    [q, series, universe, medium, effectiveEbookOnly, format, editionKind, status, needs, readState, sort, dir, page, pageSize],
   );
 
   const reload = useCallback(() => {
@@ -220,14 +263,14 @@ export function CollectionPage({
 
   useEffect(() => {
     api
-      .facets({ q, universe, medium, ebookOnly, format, editionKind, status, needs, readState })
+      .facets({ q, universe, medium, ebookOnly: effectiveEbookOnly, format, editionKind, status, needs, readState })
       .then(setFacets)
       .catch(() => setFacets(null));
     // ⚠️ `ebookOnly` is in here and not only in the list's params, or the
     // counts stop describing the list they label — "Ebook (126)" over a
     // physical shelf holding 32 of them is the disagreement `collectionFilter`
     // exists as one builder to prevent.
-  }, [q, universe, medium, ebookOnly, format, editionKind, status, needs, readState]);
+  }, [q, universe, medium, effectiveEbookOnly, format, editionKind, status, needs, readState]);
 
   const loadHeader = useCallback(() => {
     api.stats().then(setStats).catch(() => setStats(null));
@@ -368,6 +411,17 @@ export function CollectionPage({
           title={view === 'grid' ? 'Show as a list' : 'Show as a grid'}
         >
           {view === 'grid' ? '☰' : '▦'}
+        </button>
+        <button
+          className={selectMode ? 'primary' : ''}
+          onClick={() => {
+            if (selectMode) clearSelection();
+            else setSelectMode(true);
+          }}
+          aria-pressed={selectMode}
+          title={selectMode ? 'Exit select mode' : 'Select multiple books'}
+        >
+          {selectMode ? '✓ Selecting' : '☐ Select'}
         </button>
         {/* ⚠️ ONE entry point, and it goes to the scan screen.
             It used to open a type-it-in panel here while "Scan" sat separately
@@ -767,12 +821,16 @@ export function CollectionPage({
           this line a shorter list has no visible cause — and a count that
           quietly disagrees with the catalog is the silent-wrong-guess this page
           writes notes to prevent everywhere else. The button is the escape
-          hatch a person will actually find; Clear is the other one. */}
+          hatch a person will actually find; Clear is the other one.
+
+          Only when the user EXPLICITLY set it (via "See all") — in the default
+          case the strip's own note already says "Physical books only", and
+          doubling it would be noise. */}
       {ebookOnly === 'hide' && (
         <p className="controls__note muted">
           Physical books only — books held <b>only</b> as an ebook file are on the ebooks
           site.{' '}
-          <button className="link" onClick={() => setEbookOnly('')}>
+          <button className="link" onClick={() => setEbookOnly('show')}>
             Show them here too
           </button>
         </p>
@@ -787,14 +845,27 @@ export function CollectionPage({
           {filtered ? 'Nothing matches that.' : 'Nothing here yet. Add the first book.'}
         </p>
       ) : (
-        <div className={loading ? 'results results--stale' : 'results'}>
+        <div
+          ref={listTopRef}
+          tabIndex={-1}
+          className={loading ? 'results results--stale' : 'results'}
+          aria-label="Book list"
+        >
           <Pager page={page} pageSize={pageSize} total={total} onPage={setPage} />
           {/* No `onOpen`: the cards are real links now — see `WorkList`. The
               prop is still threaded to `Shelf`, which is still a button. */}
-          <WorkList rows={rows} view={view} />
+          <WorkList
+            rows={rows}
+            view={view}
+            selectMode={selectMode}
+            selected={selected}
+            onToggleSelect={toggleSelect}
+          />
           <Pager page={page} pageSize={pageSize} total={total} onPage={setPage} />
         </div>
       )}
+
+      <BulkActionBar selected={selected} onClear={clearSelection} onDone={reload} />
     </main>
   );
 }

@@ -106,3 +106,8 @@ packages/gabi-conv/generated/
 # Each script writes its own provenance file (SOURCE.txt / SOURCE-estate-search
 # .txt) so neither can clobber the other's record.
 apps/web/public/estate/
+
+# A hardcoded Anthropic API key in scripts/find-covers-tmp.mts was caught by
+# GitHub push protection on 2026-08-21, on a PUBLIC repo. Scratch scripts are
+# where keys get pasted "just for a second"; this repo does not carry them.
+scripts/*-tmp.*

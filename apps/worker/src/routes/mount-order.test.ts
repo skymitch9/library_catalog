@@ -203,7 +203,9 @@ describe('index.ts mount order', () => {
       'ingestRoutes',
       'audiobookMappingRoutes',
       'donorRoutes',
+      'peerRoutes',
       'gabiDelegatedRoutes',
+      'gabiMemoryRoutes',
       'adminRoutes',
     ];
     const behindAuth = found.filter(([, name]) => !inFront.includes(name));

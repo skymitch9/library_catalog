@@ -546,7 +546,7 @@ describe('⚠️ SHE REMEMBERS — and the resume rule is exact, not heuristic',
   const at = Date.now() - 60_000; // inside the 30-minute window
   const record = (cid: string) => ({
     v: 1,
-    key: { surface: 'web_panel', space: 'library', person: '7' },
+    key: { surface: 'shared', space: 'library', person: '7' },
     updatedAt: at,
     turns: [
       { role: 'user', text: 'who wrote Unsouled?', at, ref: { cid } },
@@ -638,7 +638,7 @@ describe('⚠️ SHE REMEMBERS — and the resume rule is exact, not heuristic',
     );
     const write = inserts.find((i) => /INSERT INTO gabi_conversation/.test(i.sql));
     assert.ok(write, 'the exchange was never written');
-    assert.equal(write.values[0], 'conv:web_panel:library2:7', 'the storage key is not the shared one');
+    assert.equal(write.values[0], 'conv:shared:library2:7', 'the storage key is not the shared one');
     const stored = JSON.parse(String(write.values[4])) as { turns: { role: string; text: string }[] };
     assert.deepEqual(
       stored.turns.map((t) => [t.role, t.text]),

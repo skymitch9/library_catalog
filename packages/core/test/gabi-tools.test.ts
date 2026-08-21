@@ -1,5 +1,6 @@
 /**
- * The GABI allowlist is DEFAULT-DENY, and phase 0 is READ-ONLY.
+ * The GABI allowlist is DEFAULT-DENY. Phase 1 adds write tools with confirm
+ * lanes.
  *
  * Two different failures, and neither test can see the other's:
  *
@@ -7,11 +8,9 @@
  *      a name without a definition, a duplicate, a capability string that names
  *      no row in `CAPABILITY_MATRIX`. Each of those turns "the array is the one
  *      source of truth" into a comment.
- *   2. ⚠️ **A write tool arrives.** The design's §9 ships the loop before it
- *      ships any writer, and the whole point of phase 0 is that the conversation,
- *      the wording and the disambiguation UX are proved *with zero write risk*.
- *      Adding `set_book_details` to the array is one line, it typechecks, and
- *      nothing else in the repo would notice. **This file is what notices.**
+ *   2. ⚠️ **A tool from a later phase arrives.** The remaining three cover tools
+ *      and `record_gap_verdict` are absent until their phase ships. This file is
+ *      what notices.
  *
  * The style is the repo's own — `capability-wiring.test.ts` reads the refusal
  * off the wire rather than trusting a constant, and `details-sweep.test.ts`
@@ -36,12 +35,9 @@ import {
   isGabiToolName,
 } from '../src/index.js';
 
-/** The seven writers §4.2 designs. None of them may exist yet. */
-const PHASE_1_PLUS_TOOLS = [
-  'research_book',
-  'set_book_details',
+/** The remaining writers §4.2 designs that are NOT yet shipped. */
+const PHASE_2_PLUS_TOOLS = [
   'record_gap_verdict',
-  'undo_changes',
   'list_cover_candidates',
   'set_cover_from_url',
   'mark_cover_wrong',
@@ -83,51 +79,77 @@ describe('the allowlist and the definitions are one thing', () => {
   });
 });
 
-describe('⚠️ PHASE 0 IS READ-ONLY — a write tool must fail this file', () => {
-  it('declares itself phase 0', () => {
-    assert.equal(GABI_PHASE, 0, 'GABI_PHASE moved — the invariants below are phase-0 invariants');
+describe('⚠️ PHASE 1 — read + write tools, governed by confirm lanes (§6)', () => {
+  it('declares itself phase 1', () => {
+    assert.equal(GABI_PHASE, 1, 'GABI_PHASE is not 1 — the invariants below are phase-1 invariants');
   });
 
-  it('no tool may mutate the catalog', () => {
-    const writers = GABI_TOOLS.filter((t) => t.mutates).map((t) => t.name);
-    assert.deepEqual(
-      writers,
-      [],
-      `phase 0 has no writers, but these declare mutates: ${writers.join(', ')}. ` +
-        'Shipping a write tool is a PHASE change: it needs the confirm lane (§6), the ' +
-        'provenance stamp (§5.2) and its own tests — not a line in an array.',
-    );
+  it('has exactly 9 tools: 4 read + 4 write + 1 personal-context', () => {
+    assert.equal(GABI_TOOLS.length, 9);
+    assert.equal(GABI_TOOL_NAMES.length, 9);
   });
 
-  it('no tool may reach a method that can change anything', () => {
-    for (const tool of GABI_TOOLS) {
+  it('the four read tools do NOT mutate and use GET only', () => {
+    const readTools = GABI_TOOLS.filter((t) => !t.mutates && t.methods.includes('GET'));
+    const readNames = readTools.map((t) => t.name).sort();
+    assert.deepEqual(readNames, ['find_book', 'get_book', 'list_gaps', 'list_recent_changes']);
+    for (const tool of readTools) {
       assert.deepEqual(
         [...tool.methods],
         ['GET'],
-        `'${tool.name}' declares ${tool.methods.join('/')} — phase 0 executors issue GET and nothing else`,
+        `read tool '${tool.name}' should only use GET`,
       );
     }
   });
 
-  it('every tool rides a route gated on `read`, the loosest capability there is', () => {
-    // Not decoration: `list_cover_candidates` is a GET that the route gates on
-    // `editCatalog`, so "it is a GET" is NOT the same statement as "it cannot
-    // write". Both are asserted, separately, on purpose.
-    for (const tool of GABI_TOOLS) {
+  it('the four write tools declare mutates: true', () => {
+    const writeTools = GABI_TOOLS.filter((t) => t.mutates);
+    const writeNames = writeTools.map((t) => t.name).sort();
+    assert.deepEqual(
+      writeNames,
+      ['add_book_by_isbn', 'research_book', 'set_book_details', 'undo_changes'],
+    );
+  });
+
+  it('note_about_person exists, has mutates: false, and uses POST', () => {
+    const tool = GABI_TOOLS.find((t) => t.name === 'note_about_person');
+    assert.ok(tool, 'note_about_person is missing from GABI_TOOLS');
+    assert.equal(tool.mutates, false, 'note_about_person should not mutate the catalog');
+    assert.deepEqual([...tool.methods], ['POST']);
+    assert.equal(tool.capability, 'read', 'note_about_person should gate on read capability');
+  });
+
+  it('write tools use POST or PATCH, never GET', () => {
+    const writeTools = GABI_TOOLS.filter((t) => t.mutates);
+    for (const tool of writeTools) {
+      assert.ok(
+        !tool.methods.includes('GET'),
+        `write tool '${tool.name}' should not use GET`,
+      );
+      assert.ok(
+        tool.methods.includes('POST') || tool.methods.includes('PATCH'),
+        `write tool '${tool.name}' should use POST or PATCH`,
+      );
+    }
+  });
+
+  it('write tools gate on runResearch capability', () => {
+    const writeTools = GABI_TOOLS.filter((t) => t.mutates);
+    for (const tool of writeTools) {
       assert.equal(
         tool.capability,
-        'read',
-        `'${tool.name}' rides a '${tool.capability}' route — phase 0 is read-only`,
+        'runResearch',
+        `write tool '${tool.name}' should gate on 'runResearch', got '${tool.capability}'`,
       );
     }
   });
 
-  it('none of phase 1+’s write tools has slipped into the allowlist', () => {
-    for (const name of PHASE_1_PLUS_TOOLS) {
+  it('none of phase 2+\'s remaining write tools has slipped into the allowlist', () => {
+    for (const name of PHASE_2_PLUS_TOOLS) {
       assert.equal(
         isGabiToolName(name),
         false,
-        `'${name}' is allowlisted, but it is a WRITE tool from a later phase (design §9)`,
+        `'${name}' is allowlisted, but it belongs to a later phase (design §9)`,
       );
       assert.equal(gabiToolByName(name), null);
     }
@@ -229,7 +251,7 @@ describe('the two ceilings', () => {
     assert.ok(Number.isInteger(GABI_MAX_TURNS) && GABI_MAX_TURNS > 0);
   });
 
-  it('⚠️ the batch cap equals POST /research/undo’s own cap, read from its source', () => {
+  it('⚠️ the batch cap equals POST /research/undo\u2019s own cap, read from its source', () => {
     // Design §6.3: "A batch you cannot undo in one action is a batch that should
     // not be one action." The number is only meaningful while the two agree, so
     // this reads the route rather than restating 10 in a second place. If the

@@ -21,6 +21,7 @@
  * |---|---|---|
  * | Open Library (`/api/books`) | **12** | exactly the 12 already stranded on an edition — **zero new** |
  * | Google Books (key required) | **19** more, of the 34 Open Library missed | the rung that actually earns its place here |
+ * | Bookcover API (free) | fallback | covers books neither OL nor Google hold, when the API is up |
  * | neither | 15 | plus 6 works that have no edition and so no ISBN at all |
  *
  * ⚠️ **The obvious idea does not work.** `covers.openlibrary.org/b/isbn/{isbn}-L.jpg`
@@ -207,6 +208,7 @@ console.log('');
 console.log(`covers found        ${found.length}`);
 console.log(`  from openlibrary  ${found.filter((f) => f.rung === 'openlibrary').length}`);
 console.log(`  from googlebooks  ${found.filter((f) => f.rung === 'googlebooks').length}`);
+console.log(`  from bookcover    ${found.filter((f) => f.rung === 'bookcover-api').length}`);
 console.log(`no cover anywhere   ${empty.length + withoutIsbn.length}`);
 
 if (empty.length) {

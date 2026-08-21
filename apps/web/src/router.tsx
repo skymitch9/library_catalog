@@ -92,15 +92,16 @@ export const EDITION_KIND_FILTERS = [...EDITION_KINDS, 'unsorted'] as const;
 export type EditionKindFilter = (typeof EDITION_KIND_FILTERS)[number];
 
 /**
- * The values the physical-shelf narrowing accepts — one, and it is opt-in.
+ * The values the physical-shelf narrowing accepts.
  *
- * A one-value vocabulary rather than `?ebookOnly=1`, because the other half of
- * this pair already has a name it must not accidentally take: `show` would read
- * as "ebooks only" and mean the opposite of what it does. There is nothing to
- * turn *on* here — the whole catalog is the default — so the only word is the
- * one that takes something away.
+ * `hide` excludes books held only as an ebook file; `show` explicitly includes
+ * them (overriding the default). When NEITHER is in the URL, the collection
+ * defaults to hiding ebooks — physical books only — matching the "Recently
+ * Added" strip. A one-word vocabulary rather than `?ebookOnly=1`, because `show`
+ * now means "I explicitly asked to see everything" and `hide` means the
+ * narrowing is active.
  */
-export const EBOOK_ONLY_FILTERS = ['hide'] as const;
+export const EBOOK_ONLY_FILTERS = ['hide', 'show'] as const;
 export type EbookOnlyFilter = (typeof EBOOK_ONLY_FILTERS)[number];
 
 export interface CollectionFilters {
@@ -109,7 +110,8 @@ export interface CollectionFilters {
   /** The coarse axis — `physical` or `ebook`. Narrower than `format`, not instead of it. */
   medium: string;
   /**
-   * `hide` or empty — whether to leave out the books held only as an ebook file.
+   * `hide`, `show`, or empty — whether to leave out the books held only as an
+   * ebook file.
    *
    * ⚠️ The one filter here with **no control of its own**, and that is on
    * purpose rather than an omission. It is what "Recently added" means now that
@@ -118,6 +120,9 @@ export interface CollectionFilters {
    * every other filter so Back returns to the same shelf, and **Clear turns it
    * off**, which is the whole escape hatch it needs: nothing about it is
    * discoverable, so nothing about it may be inescapable.
+   *
+   * When empty (no URL param), the page defaults to hiding ebooks. `show`
+   * is the explicit opt-in to see everything, used by "Show them here too".
    */
   ebookOnly: string;
   format: string;

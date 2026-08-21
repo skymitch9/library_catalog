@@ -45,7 +45,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type GabiTurnResponse } from '../api.js';
 import { describeError } from '../lib/errors.js';
-import { executeGabiTool, type GabiReadApi, type GabiToolOutcome } from '../lib/gabi.js';
+import { executeGabiTool, type GabiReadApi, type GabiWriteApi, type GabiToolOutcome } from '../lib/gabi.js';
 
 /**
  * A hard client-side ceiling on tool round-trips within one send.
@@ -57,13 +57,20 @@ import { executeGabiTool, type GabiReadApi, type GabiToolOutcome } from '../lib/
  */
 const MAX_TOOL_ROUNDS = 6;
 
-/** The six read calls the executor needs, wired to the one authenticated client. */
-const READ_API: GabiReadApi = {
+/** The read and write calls the executor needs, wired to the one authenticated client. */
+const GABI_API: GabiReadApi & GabiWriteApi = {
   searchCollection: (query) => api.collection({ q: query, pageSize: 12 }),
   work: (workId) => api.work(workId),
   queue: () => api.queue(),
   autoApplied: (limit) => api.autoApplied(limit),
   workChanges: (workId) => api.workChanges(workId),
+  // Phase 1 write methods
+  researchBook: (workId) => api.runResearch(workId),
+  setBookDetails: (workId, fields) => api.updateWork(workId, fields),
+  undoChanges: (findingIds) => api.undoAutoApplied(findingIds),
+  addBookByIsbn: (isbn) => api.createWork({ isbn }),
+  // Personal context
+  noteAboutPerson: (note, kind) => api.gabiNote({ note, kind }),
 };
 
 interface Block {
@@ -272,7 +279,7 @@ export function GabiPanel({ hidden, prefill }: { hidden: boolean; prefill?: stri
           const results: GabiToolOutcome[] = [];
           for (const call of calls) {
             const outcome = await executeGabiTool(
-              READ_API,
+              GABI_API,
               { id: String(call['id'] ?? ''), name: String(call['name'] ?? ''), input: call['input'] },
               describeError,
             );

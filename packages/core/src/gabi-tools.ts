@@ -14,15 +14,19 @@
  * `GABI_TOOL_NAMES` is therefore the **allowlist of record** and everything else
  * in this file — and in the Worker, and in the browser — is checked against it.
  *
- * ## ⚠️ PHASE 0 IS READ-ONLY, AND THAT IS ENFORCED HERE, NOT REMEMBERED
+ * ## ⚠️ PHASE 1 — READ + WRITE, GOVERNED BY CONFIRM LANES
  *
- * The design's §9 phasing ships the loop before it ships any writer:
- * *"**Phase 0 — read-only GABI.** `find_book`, `get_book`, `list_gaps`,
- * `list_recent_changes` … **No write tool exists yet.**"* Every entry below
- * therefore carries `mutates: false` and a GET-only `methods` list, and
- * `gabi-tools.test.ts` fails the build if any tool in the array claims
- * otherwise. Adding `set_book_details` is a phase-1 decision with its own
- * confirm lane and its own tests — it is not a line in an array.
+ * Phase 0 was read-only. Phase 1 adds four write tools (§4.2): `research_book`,
+ * `set_book_details`, `undo_changes`, `add_book_by_isbn`. Writes split into two
+ * lanes (§6):
+ *
+ * - **Auto lane** — fills a BLANK field on ONE book, executes without asking.
+ *   Relaying the server's response verbatim IS the confirmation.
+ * - **Confirm lane** — overwrites, batches, or anything not explicitly asked
+ *   for. GABI says what would happen and waits for "yes".
+ *
+ * The three cover tools and `record_gap_verdict` remain absent until a later
+ * phase ships.
  *
  * ## ⚠️ Mind the load-bearing import order (CLAUDE.md)
  *
@@ -44,23 +48,27 @@ type CapabilityName = keyof typeof CAPABILITY_MATRIX;
  * THE ALLOWLIST. Nothing GABI can do is absent from this array, and nothing in
  * this array is absent from `GABI_TOOLS` below (pinned by a test).
  *
- * Phase 0's four, in the order the design lists them. The seven write tools
- * §4.2 designs (`research_book`, `set_book_details`, `record_gap_verdict`,
- * `undo_changes`, `list_cover_candidates`, `set_cover_from_url`,
- * `mark_cover_wrong`) are deliberately **absent** until their phase ships —
- * see the header, and `gabi-tools.test.ts`.
+ * Phase 1: the four read tools from phase 0, plus four write tools from §4.2.
+ * The three cover tools (`list_cover_candidates`, `set_cover_from_url`,
+ * `mark_cover_wrong`) and `record_gap_verdict` remain **absent** until their
+ * phase ships — see the header, and `gabi-tools.test.ts`.
  */
 export const GABI_TOOL_NAMES = [
   'find_book',
   'get_book',
   'list_gaps',
   'list_recent_changes',
+  'research_book',
+  'set_book_details',
+  'undo_changes',
+  'add_book_by_isbn',
+  'note_about_person',
 ] as const;
 
 export type GabiToolName = (typeof GABI_TOOL_NAMES)[number];
 
 /** Which shipped slice of the design this build implements. §9. */
-export const GABI_PHASE = 0;
+export const GABI_PHASE = 1;
 
 /**
  * The turn ceiling the route refuses past (design §3.2).
@@ -87,6 +95,20 @@ export const GABI_MAX_TURNS = 24;
  */
 export const GABI_BATCH_CAP = 10;
 
+/** A single property in a tool's input schema. Supports primitives, objects, and arrays. */
+export type GabiToolProperty = {
+  type: string;
+  description: string;
+  enum?: readonly string[];
+  /** For `type: 'object'` — nested property definitions. */
+  properties?: Record<string, GabiToolProperty>;
+  additionalProperties?: false;
+  /** For `type: 'array'` — item schema. */
+  items?: { type: string };
+  /** For `type: 'array'` — max items. */
+  maxItems?: number;
+};
+
 /** One tool: what the model sees, plus what the executor is allowed to do with it. */
 export interface GabiTool {
   name: GabiToolName;
@@ -100,7 +122,7 @@ export interface GabiTool {
   /** JSON Schema, Anthropic tool shape. `additionalProperties: false` throughout. */
   input_schema: {
     type: 'object';
-    properties: Record<string, { type: string; description: string; enum?: readonly string[] }>;
+    properties: Record<string, GabiToolProperty>;
     required: readonly string[];
     additionalProperties: false;
   };
@@ -188,6 +210,139 @@ export const GABI_TOOLS: readonly GabiTool[] = [
     },
     capability: 'read',
     methods: ['GET'],
+    mutates: false,
+  },
+
+  // ── Phase 1 write tools ───────────────────────────────────────────────────
+
+  {
+    name: 'research_book',
+    description:
+      'Trigger a paid details lookup on one book. Call this when somebody asks to fill ' +
+      'in a book\'s missing details and you see blanks in get_book — it costs ~2¢ and ' +
+      'writes whatever it finds automatically. One book per call; the server refuses a ' +
+      'second concurrent run for the same book. After it returns, call get_book to see ' +
+      'what landed and what was skipped.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        workId: { type: 'integer', description: 'The numeric work id of the book to research.' },
+      },
+      required: ['workId'],
+      additionalProperties: false,
+    },
+    capability: 'runResearch',
+    methods: ['POST'],
+    mutates: true,
+  },
+  {
+    name: 'set_book_details',
+    description:
+      'Fill blank fields on one book without a paid lookup — when you already know the ' +
+      'value (because the person said it, or because another tool returned it). Call this ' +
+      'instead of research_book when the answer is already in the conversation. ' +
+      '⚠️ In the auto lane this only fills BLANKS; overwriting a recorded value requires ' +
+      'explicit confirmation first. Only the listed fields are reachable — title and ' +
+      'authors are excluded by construction.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        workId: { type: 'integer', description: 'The numeric work id of the book to update.' },
+        fields: {
+          type: 'object',
+          description:
+            'An object whose keys are the fields to set and whose values are the new values. ' +
+            'Allowed keys: firstPublished, series, seriesIndexSort, seriesIndexDisplay, ' +
+            'description, universe. Only include fields you intend to change.',
+          properties: {
+            firstPublished: { type: 'integer', description: 'Year of first publication.' },
+            series: { type: 'string', description: 'Series name, exactly as published.' },
+            seriesIndexSort: { type: 'number', description: 'Numeric sort position within the series.' },
+            seriesIndexDisplay: { type: 'string', description: 'Display form of the volume number (e.g. "2.5", "Part 1").' },
+            description: { type: 'string', description: 'A brief description or blurb for the book.' },
+            universe: { type: 'string', description: 'The shared fictional universe this book belongs to.' },
+          },
+          additionalProperties: false,
+        },
+      },
+      required: ['workId', 'fields'],
+      additionalProperties: false,
+    },
+    capability: 'runResearch',
+    methods: ['PATCH'],
+    mutates: true,
+  },
+  {
+    name: 'undo_changes',
+    description:
+      'Revert one or more recent auto-applied changes by their finding ids. Call this ' +
+      'when somebody says "undo that", "take that back", or "revert the last change". ' +
+      'Use list_recent_changes first to find the finding ids. ' +
+      `⚠️ Maximum ${GABI_BATCH_CAP} ids per call — the server refuses rather than ` +
+      'truncating. Only machine-written values (decided_how = \'auto\') are revertible; ' +
+      'a value a person typed cannot be undone this way.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        findingIds: {
+          type: 'array',
+          description: `Array of finding ids to revert. At most ${GABI_BATCH_CAP}.`,
+          items: { type: 'integer' },
+          maxItems: GABI_BATCH_CAP,
+        },
+      },
+      required: ['findingIds'],
+      additionalProperties: false,
+    },
+    capability: 'runResearch',
+    methods: ['POST'],
+    mutates: true,
+  },
+  {
+    name: 'add_book_by_isbn',
+    description:
+      'Add a new book to the catalog by ISBN. Call this when somebody says "add this ' +
+      'book" and provides an ISBN (10 or 13 digits). The server creates the work from ' +
+      'the ISBN\'s metadata. If the book is already in the catalog the server will say ' +
+      'so — this is not a duplicate risk, it is an answer.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        isbn: {
+          type: 'string',
+          description: 'The ISBN-10 or ISBN-13, digits only (no hyphens).',
+        },
+      },
+      required: ['isbn'],
+      additionalProperties: false,
+    },
+    capability: 'runResearch',
+    methods: ['POST'],
+    mutates: true,
+  },
+
+  // ── Personal context tool ─────────────────────────────────────────────────
+
+  {
+    name: 'note_about_person',
+    description:
+      'Record something you learned about this person for future conversations. Call this ' +
+      'when they state a preference ("I don\'t like spoilers"), tell you what to call them, ' +
+      'mention how they read (audiobook vs print), or ask you to remember something. ' +
+      'Do NOT record what books they own — the catalog already knows. Do NOT record ' +
+      'temporary facts or things from the current conversation that will be in the ' +
+      'memory window anyway.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        note: { type: 'string', description: 'One short sentence (max 120 chars) about the person.' },
+        kind: { type: 'string', enum: ['preference', 'thread', 'name'], description: 'preference = a lasting preference. thread = something to follow up on later. name = what to call them.' },
+      },
+      required: ['note', 'kind'],
+      additionalProperties: false,
+    },
+    capability: 'read',
+    methods: ['POST'],
     mutates: false,
   },
 ];
