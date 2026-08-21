@@ -363,3 +363,53 @@ told a future session to confirm a cleared API key by *"pressing Look again on
 either FAILED row (runs 5/6)"*. Those rows had not been on the page for two
 days — the works had been re-run and left the queue — so the instruction was
 unfollowable and its premise ("those rows never retry themselves") was wrong.
+
+---
+
+## "It's a gitignored scratch directory, so it's safe to delete" — 2026-08-21
+
+**Symptom:** you are about to `rm -rf` a `.claude/worktrees/` tree, or any
+ignored working directory, on the reasoning that git ignores it so nothing in
+it can matter.
+
+**What happened.** Sixteen stale agent worktrees were queued for deletion after
+an audit found their `apps/worker/.wrangler/tmp/*.js.map` build artefacts carry
+an **inlined live `ANTHROPIC_API_KEY`** — a wrangler dev source map embeds
+`.dev.vars` values, so an ignored artefact had become a duplicate credential
+store. Deleting them was correct.
+
+Fifteen were pure duplicates, and the check that proved it is worth copying:
+
+```bash
+for wt in .claude/worktrees/*/; do
+  sha=$(git -C "$wt" rev-parse --short HEAD)
+  git merge-base --is-ancestor "$sha" main && echo "$wt in-main"   # no unique history
+  git rev-list --count main.."$sha"                                # unique commits
+  git -C "$wt" status --porcelain -uall | wc -l                    # uncommitted work
+done
+```
+
+⚠️ **The sixteenth held `scripts/audit-universes.mjs` — 574 lines, written to an
+explicit owner instruction, in ZERO commits and absent from the main tree.** It
+existed in exactly one place on the machine: untracked, inside a gitignored
+directory that was one command away from deletion. `rm -rf` would have destroyed
+it with no trace and nothing to restore from — not git, not the R2 docs backup
+(which only walks `docs/`), not the blob archive.
+
+**The rule, which is the delete-side twin of "establish who wrote it before you
+revert a dirty file":** *a directory being ignored by git says nothing about
+whether the work inside it exists anywhere else.* Ignored means "git was told
+not to look", not "nothing here is unique". Run the three-line check above and
+rescue anything untracked BEFORE removing, every time.
+
+**Two Windows/OneDrive mechanics that will also bite:**
+
+- `git worktree remove --force` **deregistered all fifteen and then failed to
+  delete a single directory** (`Permission denied`, OneDrive holding handles).
+  That is the worst intermediate state available: git no longer lists them, so
+  they look gone, while the files — including the key-bearing source maps — are
+  still on disk. ⚠️ **Verify with `ls`, not with `git worktree list`.** Finish
+  with a PowerShell `Remove-Item -Recurse -Force` after clearing attributes.
+- `du -sm` over one of these trees ate a two-minute command timeout on its own.
+  Do not measure the size first; just delete, and check the count after.
+
