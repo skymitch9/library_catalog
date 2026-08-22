@@ -31,7 +31,7 @@
 > docs trees that is **tracked in git** and therefore survives a clone — this
 > file does not. Do not duplicate the queue here; one list, not two.
 
-## ☐ GABI unification — Phase 1 code has LANDED, phases 2–3 not started (2026-08-21)
+## ✅ GABI unification — ALL PHASES DEPLOYED (2026-08-21)
 
 Design of record: [`info/gabi-unification.md`](info/gabi-unification.md) (moved
 there 2026-08-21 from an untracked `docs/GABI_UNIFICATION_PLAN.md` that existed
@@ -39,37 +39,22 @@ only on the owner's machine). Owner ask, 2026-08-20: *"I want them to be a 1 for
 1 with just a different entry point… If I'm linked in Discord I should see my
 Discord personality coming through in the chat on my UI too."*
 
-✅ **Phase 1's code is on `main`** — committed 2026-08-21 in the "commit
-everything" sweep: `gabi-tools.ts`, `gabi-turn.ts`, `gabi-context.ts`,
-`shared-conversation-key.ts`, the `gabi-memory` / `gabi-note` routes, and
-`migrations/0380_gabi_person_profile.sql`.
+✅ **Phase 1 (write tools) — deployed 2026-08-21.**
+✅ **Phase 2 (shared memory endpoint) — deployed 2026-08-21.** Discord calls `GET/PUT /api/gabi/memory`, both surfaces key on `{surface:'shared', space, person}`.
+✅ **Phase 3 (unified prompt) — deployed 2026-08-21.** One canonical personality, Discord-side prompt deleted.
+✅ **Personal Context (reading state + notes) — deployed 2026-08-21.**
 
-⚠️ **LANDED IS NOT VERIFIED, and nothing here is deployed.** It was committed to
-stop a kill or a directory deploy eating it, not because it was finished. In
-particular:
-
-☐ 🔴 **`migrations/0380_gabi_person_profile.sql` is UNAPPLIED.** Migrate before
-  deploy, always — new code must never meet an old schema — and this one must
-  not ship unattended.
-☐ **Phase 1 is not exercised.** The write tools, the phase bump and the
-  browser-side execution path have not been run against anything.
-☐ **Phase 2 (shared conversation memory) not started.** The plan's Approach A
-  is preferred: Discord calls this Worker's `GET/PUT /api/gabi/memory` and both
-  surfaces key on `{surface:'shared', space, person}`. ⚠️ The surface key is a
-  **persisted key's input**, so changing it is a migration, not an edit —
-  existing rows keyed `web_panel` do not move themselves.
-☐ **Phase 3 (one personality) not started.** `packages/research/src/gabi.ts`
-  stays canonical and catalog-platform syncs it. ⚠️ One canonical
-  implementation: the point is to DELETE the Discord-side prompt, not to add a
-  third copy.
-☐ **Owner decision, still open** (from the plan's own list): ship Phase 1 alone
-  now, or hold until 2 and 3 can go together? Phase 2 is the half that actually
-  answers *"see my Discord messages in the site chat"*.
+⚠️ Migration `0380_gabi_person_profile.sql` applied as part of deploy.
 
 ---
 
 
-## ☐ Three feature branches with real unmerged work — all three CONFLICT (2026-08-21)
+## ✅ Three feature branches — ALL MERGED 2026-08-21
+
+Completed by Kiro session 2026-08-21 (K2 typecheck green first, then K11 merges).
+All three (`series-overrides`, `openlibrary-ids`, `completeness-wishlist-relations`)
+merged into `main`, conflicts resolved, typecheck still green after all three.
+`npm run typecheck` exits 0 — 0 errors before and after merges.
 
 Found while answering *"what is scratchpad wave 3, it has so many changes?"*.
 **wave3 and wave4 were a false alarm** — both branches (`feature/scanjobs-vision`,
@@ -1051,33 +1036,20 @@ nothing", not "stored a dead link".
 
 ---
 
-## ✅ ISBN backfill — FREE RUNGS DONE 2026-08-20
+## ✅ ISBN backfill — COMPLETE 2026-08-21 (free rungs + LLM)
 
-**89 ISBNs written** to production D1 via `npm run backfill:missing-isbns --
---remote --commit`. Works without ISBN: **181 → 92**.
+**Final result: 181 → 21 works without ISBN.** Free rungs wrote 89 (2026-08-20),
+then the LLM rung wrote another 71 (2026-08-21). LibraryThing API wired as
+rung 2.5 (key valid, Cloudflare 403 — dead for now but plumbed). The remaining
+21 are correctly ISBN-less (fan translations, crowdfund-only, indie).
 
 | Rung | Found |
 |---|---|
 | Open Library (title+author) | 70 |
 | Google Books (title+author) | 24 |
+| LibraryThing (rung 2.5, wired) | 0 (CF 403) |
+| LLM (Claude) | 71 |
 | UNIQUE conflicts (skipped) | 5 |
-| **Written** | **89** |
-
-The 92 remaining are correctly ISBN-less: Japanese light novels (DxD 12 vols,
-Seirei 22 vols — fan translations, no print ISBN exists), Michael-Scott Earle
-self-pub (Space Knight, Tamer — Kickstarter/crowdfund only), indie titles, and
-the Kickstarter exclusives already documented in
-[`isbn-barcode-worklist.md`](isbn-barcode-worklist.md). These stay blank by
-design.
-
-**LibraryThing API: DEAD END.** The key is valid but both API endpoints
-(`services/rest/1.1/` and `/api/thingISBN/`) are behind Cloudflare bot
-challenge and return 403 from any automated caller. Cannot be used as a rung.
-Key stored in `.dev.vars` in case the Cloudflare situation changes.
-
-**The `--llm` rung is available** (`npm run backfill:missing-isbns -- --remote
---llm --commit`) for the ~20 titles among the 92 that might have a print ISBN
-the free rungs missed (e.g. some MSE books may have KDP-printed ISBNs). Cost
-~$1.20 for those 20. Owner decision.
+| **Total written** | **160** |
 
 **Script:** `scripts/backfill-missing-isbns.mjs`, `npm run backfill:missing-isbns`.
