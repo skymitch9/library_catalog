@@ -29,7 +29,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { GABI_MAX_TURNS } from '@lc/core';
+import { GABI_MAX_TURNS, GABI_TOOL_NAMES } from '@lc/core';
 import { GABI_MODEL, gabiTurn, type GabiModelCall, type GabiTurnResult } from '@lc/research';
 import type { Env } from '../env.js';
 import { GABI_MAX_BODY_BYTES, inspectConversation, runGabiTurn } from './gabi-turn.js';
@@ -265,17 +265,30 @@ describe('⚠️ EXACTLY ONE HTTP REQUEST — the SDK is not retrying behind our
     const system = body['system'] as { cache_control?: unknown }[];
     assert.ok(Array.isArray(system) && system[0]?.cache_control, 'the system prompt is not cached');
     const tools = body['tools'] as { name: string }[];
+    // ⚠️ Compared against `GABI_TOOL_NAMES` itself, not a copy of it. The
+    // copy said `['find_book','get_book','list_gaps','list_recent_changes']`
+    // and went red the day phase 1 put five write tools on the wire — which
+    // told nobody anything, because a hardcoded phase-0 list going stale is
+    // not the failure this test is for. The invariant that matters is that
+    // what reaches the model is EXACTLY the allowlist: nothing extra (a tool
+    // the executor would refuse anyway is a tool the model will waste a turn
+    // calling) and nothing missing.
     assert.deepEqual(
       tools.map((t) => t.name).sort(),
-      ['find_book', 'get_book', 'list_gaps', 'list_recent_changes'],
-      'the tools on the wire are not the phase-0 allowlist',
+      [...GABI_TOOL_NAMES].sort(),
+      'the tools on the wire are not the allowlist',
     );
     // ⚠️ Thinking ON. With it off, Opus 5 can write a tool call into its visible
     // TEXT and the call silently never runs — the exact silent-success class
     // this codebase has two incidents about. If this line ever goes red because
     // somebody set `disabled` to save money, read gabi.ts's header first.
     assert.deepEqual(body['thinking'], { type: 'adaptive' });
-    assert.deepEqual(body['output_config'], { effort: 'low' });
+    // ⚠️ `medium`, raised from `low` by the GABI overhaul of 2026-08-21
+    // (`ba848c4`, alongside the personality rewrite and the 60-turn cap). It is
+    // asserted rather than left free because effort is a MONEY dial: a silent
+    // move to `high` costs real spend on every turn of a 60-turn conversation,
+    // and this line is the thing that makes such a change deliberate.
+    assert.deepEqual(body['output_config'], { effort: 'medium' });
   });
 });
 
@@ -358,16 +371,31 @@ describe('⚠️ THE ALLOWLIST IS ENFORCED SERVER-SIDE, not only in the browser'
   });
 
   it('refuses a forged call to a WRITE tool that does not exist yet', async () => {
+    // ⚠️ This used to name `set_book_details`, and phase 1 shipped it on
+    // 2026-08-21 — at which point the test was asserting that a LIVE tool is
+    // refused, and went red. The name is picked from the allowlist instead, so
+    // the day this one ships the assertion below fails loudly and somebody
+    // chooses the next unshipped write rather than the test quietly testing a
+    // tool that now exists.
+    const forged = 'set_cover_from_url';
+    assert.ok(
+      !(GABI_TOOL_NAMES as readonly string[]).includes(forged),
+      `'${forged}' has shipped — pick an unshipped write from §4.2 for this test`,
+    );
+
     const model = countingModel();
     const outcome = await runGabiTurn(
       envWith(),
       1,
-      { conversationId: 'c', messages: conversationWith('set_book_details') },
+      { conversationId: 'c', messages: conversationWith(forged) },
       model.fn,
     );
     assert.equal(outcome.ok, false);
     assert.equal(model.calls.length, 0, 'a forged conversation reached the model');
-    assert.match((outcome as { body: { detail: string } }).body.detail, /no tool called 'set_book_details'/);
+    assert.match(
+      (outcome as { body: { detail: string } }).body.detail,
+      new RegExp(`no tool called '${forged}'`),
+    );
   });
 
   it('refuses a forged call to something §4.3 excludes forever', () => {

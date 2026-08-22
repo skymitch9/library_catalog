@@ -78,6 +78,7 @@ import { crowdfundingRoutes, provenanceRoutes } from './crowdfunding.js';
 import { enrichRoutes } from './enrich.js';
 import { exportRoutes } from './export.js';
 import { gabiRoutes } from './gabi.js';
+import { gabiNoteRoutes } from './gabi-note.js';
 import { isbnRoutes } from './isbn.js';
 import { relationRoutes } from './relations.js';
 import { researchRoutes } from './research.js';
@@ -119,6 +120,11 @@ const MOUNTS: [string, string, Hono<AppBindings>][] = [
   // strictly narrower than `editCatalog` anyway, so it would have been
   // unaffected even before the fix.
   ['/api/gabi', 'gabiRoutes', gabiRoutes],
+  // Landed 2026-08-21 with the GABI phase-1 write tools. Mounted UNDER
+  // /api/gabi and after it, which is fine: Hono matches the longer prefix
+  // first, and this route's own gate (`read`) is strictly narrower than
+  // anything above it, so nothing here can widen what an earlier mount admits.
+  ['/api/gabi/note', 'gabiNoteRoutes', gabiNoteRoutes],
   ['/api/reviews', 'reviewRoutes', reviewRoutes],
   ['/api/tbr', 'tbrRoutes', tbrRoutes],
   ['/api/warnings', 'warningRoutes', warningRoutes],

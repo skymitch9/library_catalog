@@ -78,10 +78,20 @@ describe('the physical shelf in the address bar', () => {
     assert.equal(collectionInUniversePath('The Cosmere'), '/?universe=The+Cosmere');
   });
 
-  it('offers one word, and it is the one that takes something away', () => {
-    // ⚠️ There is deliberately no "show" — the whole catalog is the default, so
-    // a second value could only ever mean "ebooks only", which is the opposite
-    // of what this parameter's name would suggest it did.
-    assert.deepEqual([...EBOOK_ONLY_FILTERS], ['hide']);
+  it('offers two words, and neither of them means "ebooks only"', () => {
+    // ⚠️ **The default flipped on 2026-08-21 and this is what made `show`
+    // necessary.** It used to be that the whole catalog was the default, so
+    // `hide` was the only value that could mean anything and a second one could
+    // only have meant "ebooks only" — the opposite of what the parameter's name
+    // suggests. Now the collection defaults to HIDING ebooks (it is the
+    // physical shelf, matching the "Recently Added" strip), so there has to be
+    // a word for "I explicitly asked to see everything", and that word is
+    // `show`.
+    //
+    // ⚠️ `show` still does NOT mean "ebooks only". `CollectionPage` maps it
+    // to the EMPTY narrowing (`effectiveEbookOnly = ''`), not to an inverted
+    // one. If a third value ever turns up here, check that first — an
+    // "ebooks only" value belongs on `medium`, which already has one.
+    assert.deepEqual([...EBOOK_ONLY_FILTERS], ['hide', 'show']);
   });
 });

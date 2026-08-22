@@ -179,8 +179,24 @@ describe('⚠️ the executor is DEFAULT-DENY, the same way the route is', () =>
   });
 
   it('no executor exists for a write tool from a later phase', async () => {
+    // ⚠️ **This list is DERIVED, and it is derived because the hardcoded one
+    // went stale and went red.** It named the phase-1 writes —
+    // `set_book_details`, `research_book`, `undo_changes` — as "later phase",
+    // and on 2026-08-21 phase 1 shipped them. A guard that has to be rewritten
+    // every time a phase lands is a guard somebody eventually rewrites by
+    // deleting, so the invariant is stated the way the executor actually
+    // states it: **anything not in `GABI_TOOL_NAMES` is refused.**
+    //
+    // The names below are §4.2's planned writes that have NOT shipped. The
+    // filter is what keeps this honest: when one of them is allowlisted it
+    // drops out of the loop by itself, and the assertion under the loop is
+    // what stops the loop quietly emptying to nothing and testing air.
+    const planned = ['set_cover_from_url', 'merge_works', 'set_read_state'];
+    const unshipped = planned.filter((n) => !(GABI_TOOL_NAMES as readonly string[]).includes(n));
+    assert.ok(unshipped.length > 0, 'every planned write has shipped: name the next unshipped one');
+
     const { api, calls } = fakeApi();
-    for (const name of ['set_book_details', 'research_book', 'undo_changes', 'set_cover_from_url']) {
+    for (const name of unshipped) {
       const out = await call(api, name, { workId: 42 });
       assert.equal(out.isError, true, `'${name}' was executed`);
       assert.match(String((out.result as { error: string }).error), new RegExp(name));
