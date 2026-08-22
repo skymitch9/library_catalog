@@ -345,11 +345,11 @@ export const catalogRoutes = new Hono<AppBindings>()
       detailUrl: string | null;
       formats: string | null;
     }> = [];
-    if (work.work_key) {
+    if (work.workKey) {
       const { results } = await c.env.DB.prepare(
         `SELECT peer_id, peer_label, detail_url, formats
          FROM peer_holding WHERE work_key = ?`
-      ).bind(work.work_key).all();
+      ).bind(work.workKey).all();
       peerHoldings = (results ?? []).map((r: any) => ({
         peerId: r.peer_id,
         peerLabel: r.peer_label,

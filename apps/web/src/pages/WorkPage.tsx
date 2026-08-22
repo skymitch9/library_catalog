@@ -95,6 +95,12 @@ interface WorkDetail {
    * `EbookShadow`. Null is the ordinary case (physical-only book).
    */
   ebookHolding: WorkEbookHolding | null;
+  peerHoldings: Array<{
+    peerId: string;
+    peerLabel: string;
+    detailUrl: string | null;
+    formats: string | null;
+  }>;
   reading: {
     read_state: string;
     started_on: string | null;

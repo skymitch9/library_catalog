@@ -34,7 +34,7 @@ export interface PeerConfig {
  * Parse the PEERS JSON config. Returns [] if unset or invalid.
  */
 export function parsePeers(env: Env): PeerConfig[] {
-  const raw = (env as Record<string, unknown>).PEERS as string | undefined;
+  const raw = (env as unknown as Record<string, unknown>).PEERS as string | undefined;
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
@@ -144,9 +144,9 @@ export async function pushToPeers(env: Env): Promise<Array<{ peer: string; resul
   const peers = parsePeers(env);
   if (peers.length === 0) return [];
 
-  const selfId = (env as Record<string, unknown>).PEER_SELF_ID as string | undefined;
-  const selfLabel = (env as Record<string, unknown>).PEER_SELF_LABEL as string | undefined;
-  const siteOrigin = (env as Record<string, unknown>).SITE_ORIGIN as string | undefined;
+  const selfId = (env as unknown as Record<string, unknown>).PEER_SELF_ID as string | undefined;
+  const selfLabel = (env as unknown as Record<string, unknown>).PEER_SELF_LABEL as string | undefined;
+  const siteOrigin = (env as unknown as Record<string, unknown>).SITE_ORIGIN as string | undefined;
 
   if (!selfId || !selfLabel || !siteOrigin) {
     return [{ peer: '*', result: 'PEER_SELF_ID / PEER_SELF_LABEL / SITE_ORIGIN not configured' }];
