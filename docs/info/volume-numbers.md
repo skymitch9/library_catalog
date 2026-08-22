@@ -1,8 +1,10 @@
 # Volume numbers — Information Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
-> Last verified: **2026-08-19** — every count was read from `library-catalog`
-> and `library-catalog-2nd` (both `--remote`) that day.
+> Last verified: **2026-08-21** — §3b's counts were read from
+> `library-catalog-2nd --remote` that day; §1–§9's were read from
+> `library-catalog` and `library-catalog-2nd` (both `--remote`) on 2026-08-19
+> and have NOT been re-measured since.
 >
 > ⚠️ **This document is the CANONICAL answer to "the volume bug".** The owner's
 > words when it was written: *"We're wasting all our buffer usage on solving
@@ -10,6 +12,11 @@
 > first principles about `series_index_sort` versus `series_index_display`,
 > stop and read this instead. The code comments in
 > `packages/core/src/gaps.ts` point here rather than restating it.
+>
+> ⚠️ **It has come back TWICE, and the second time the rules were already
+> right.** §3 is the completeness predicate (2026-08-19); **§3b is the ASK
+> list (2026-08-21)**, a different half of the same pipeline. If the queue is
+> full of volume numbers again, check which half before touching either.
 
 ---
 
@@ -58,6 +65,84 @@ code it spent real money on two books, succeeded on both —
 the queue. It also recorded `seriesIndex` as *asked*, so `planSweep` would never
 have offered either book again: **a run that worked stranded the book it worked
 on.** Both closed the moment R1 landed.
+
+## 3b. ⚠️ The COMPANION ASK — the volume bug's second act (2026-08-21)
+
+**Owner, 2026-08-21:** *"why we're getting messages in missing details about
+missing volume number … didn't I already say to set it to series number unless
+specified"*.
+
+**The rules of §1 were intact and correctly implemented.** `seriesIndexIncomplete`
+read the sort alone, the printed form was never demanded, the multi-volume flag
+was still human-only. **The queue filled up with volume numbers anyway**, for a
+reason §3 does not cover: not what is *owed*, but what is *asked*.
+
+### What was measured, on `library-catalog-2nd` (padhard)
+
+| | |
+|---|---|
+| works | 127 |
+| rows still owing anything | **36** |
+| of those, `seriesIndex` | **36 — every one** |
+| `series` / `description` / `firstPublished` gaps | **0 / 0 / 0** |
+| runs that had asked `series` | **126** |
+| runs that had ever asked `seriesIndex` | **11** |
+| of the 36, ever asked the volume question | **0** |
+
+### The mechanism
+
+`detailFieldsFor` will not ask *"which volume is this?"* of a book with no
+series — correct, and §3 of `gaps.ts` explains why it must stay that way for the
+OWED list. But the **ASK list was the same list**, so a run sent to find a
+book's series came back, wrote the series, and thereby **created a brand-new
+volume gap that needed a second paid lookup**. Fill 126 series, manufacture 126
+volume questions. The queue could not converge; it could only change shape.
+
+⚠️ **And the number had already been bought.** Run **#135**, work 100
+*Summoned to the Wilds*, sent for `firstPublished, series, description`, wrote
+this into its own `result_json`:
+
+> `"Filled in 3 of 3: First published set to 2022. Series set to Villains and`
+> `Virtues. Description saved. `**`Villains and Virtues #2`**` by A. K. Caggiano…"`
+
+One search, one page fetch, **two invoices** — and the row still read *"missing
+volume number"* on the queue afterwards. The volume number was in the answer
+and was discarded because `seriesIndex` was not on that run's ask list.
+
+### R13 — the series and its volume number are ONE question, bought once
+
+`detailAsks` (`@lc/core`, `gaps.ts`) returns `detailGaps` **plus `seriesIndex`
+whenever `series` is being asked in the same call**, in `DETAIL_FIELDS` order.
+
+| Where | Uses | Why |
+|---|---|---|
+| `claimRun` → `gapsAndAsksFor` | `asks` for the fields sent and the `unfilled` stamp; **`missing`** to decide there is anything worth paying for | Gating on `asks` would let the companion question alone start a paid run |
+| the sweep's donor rung | `asks` | A donor handing over the series hands the number with it, free |
+| `planSweep`'s subrequest budget | `asks` | It must price what the run actually sends, or it undercounts by a field and blows the 50-subrequest ceiling |
+| `gapsFor`, `listWorksNeedingDetails().missing`, `gapSummary`, the queue page | **`missing`, unchanged** | — |
+
+⚠️ **This does not reopen anything in §1–§3.** It widens what gets *asked*,
+never what is *owed*. `seriesIndexIncomplete` still reads the sort alone; the
+printed form is still optional data and still never a gap. **Do not "simplify"
+`detailAsks` into `detailFieldsFor`** — that puts *"missing volume number"*
+under every standalone in the catalog and hands a model a blank to invent a
+series for, which is the failure `detailFieldsFor` exists to prevent.
+
+The apply side needed no change and never had: `applyFinding` already refuses a
+`seriesIndex` whose work has no series, and `autoApplyFindings` already sorts by
+`DETAIL_FIELDS` so `series` lands first. The comment there — *"`autoApplyFindings`
+orders `series` ahead of this one so the ordinary case never lands here"* — was
+describing a case that could not yet happen. Now it can, and it works.
+
+**Guard:** `packages/core/test/detail-asks.test.ts`, 7 tests, including one that
+pins `detailGaps` as untouched.
+
+**What was NOT done:** the 36 already-stranded rows were left to the hourly
+sweep, which asks the volume question of a book that already has a series and
+was already draining them (runs #137, #141, #142 on 2026-08-22 UTC). At 2/hour
+that is ~18 hours. Nothing was hand-filled and no backfill was run.
+
+---
 
 ## 3a. ⚠️ The multi-volume flag — the one field no machine may write
 

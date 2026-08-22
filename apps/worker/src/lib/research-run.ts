@@ -80,6 +80,7 @@
 import {
   DETAIL_FIELDS,
   DONOR_FUZZY_SOURCE_TIER,
+  detailAsks,
   detailGaps,
   isBlankDetail,
   verdictFor,
@@ -199,8 +200,24 @@ function describeRun(
   return parts.join(' ');
 }
 
-/** What a work still owes, decided by the one policy that decides it. */
-export async function gapsFor(db: D1Database, workId: number): Promise<DetailField[] | null> {
+/**
+ * What a work still owes, and what a lookup should be SENT to fill.
+ *
+ * ⚠️ **They are not the same list, and conflating them is a bug in both
+ * directions.** `missing` is what the queue displays and what completeness
+ * means; `asks` is `missing` plus the volume number whenever the series is
+ * being bought in the same call, because the search that settles one settles
+ * the other and splitting them buys the same page twice. `detailAsks` in
+ * `@lc/core` carries the measurement (126 series runs, 11 volume runs, 36 of
+ * 36 queue rows) and the reasons.
+ *
+ * One pair of reads, deliberately: `claimRun` is inside a subrequest budget
+ * (see `details-sweep.ts`'s table), so both answers come off the same two.
+ */
+export async function gapsAndAsksFor(
+  db: D1Database,
+  workId: number,
+): Promise<{ missing: DetailField[]; asks: DetailField[] } | null> {
   const work = await getWork(db, workId);
   if (!work) return null;
   const verdicts = await listGapVerdicts(db, workId);
@@ -214,7 +231,18 @@ export async function gapsFor(db: D1Database, workId: number): Promise<DetailFie
     description: work.description,
     verdicts: verdicts.map((v) => v.field),
   };
-  return detailGaps(subject);
+  const missing = detailGaps(subject);
+  return { missing, asks: detailAsks(subject, missing) };
+}
+
+/**
+ * What a work still owes, decided by the one policy that decides it.
+ *
+ * ⚠️ This is the OWED list — what the queue shows and what "complete"
+ * means. Anything about to spend money wants `gapsAndAsksFor().asks` instead.
+ */
+export async function gapsFor(db: D1Database, workId: number): Promise<DetailField[] | null> {
+  return (await gapsAndAsksFor(db, workId))?.missing ?? null;
 }
 
 /**
@@ -243,9 +271,13 @@ export async function claimRun(
   const work = await getWork(db, workId);
   if (!work) return { kind: 'not_found' };
 
-  const fields = await gapsFor(db, workId);
-  if (!fields) return { kind: 'not_found' };
-  if (fields.length === 0) return { kind: 'nothing_to_ask' };
+  const gaps = await gapsAndAsksFor(db, workId);
+  if (!gaps) return { kind: 'not_found' };
+  // ⚠️ `missing` decides whether there is anything worth paying for; `asks`
+  // decides what the one call covers. Gating on `asks` would let the companion
+  // volume question start a run of its own on a book that owed nothing.
+  if (gaps.missing.length === 0) return { kind: 'nothing_to_ask' };
+  const fields = gaps.asks;
 
   // Stamped before the call, not after: the record is of what the lookup had to
   // work from. A work edited while a run was in flight would otherwise be

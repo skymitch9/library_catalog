@@ -17,6 +17,63 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ The volume queue refilled itself — the ASK list, not the gap test (2026-08-21)
+
+**Owner, in his words:** *"why we're getting messages in missing details about
+missing volume number … didn't I already say to set it to series number unless
+specified and that its just for super rare use cases like words of radiance"*.
+Reported against `padhard.heygabi.ai/queue`.
+
+**⚠️ The rules he remembered setting were intact and correctly implemented.**
+`seriesIndexIncomplete` read the sort alone, the printed form was optional data
+and never a gap, `multi_volume_printing` was still human-only and unreachable by
+any machine. Nobody had re-tightened the predicate that caused the 2026-08-19
+incident. **The queue filled up with volume numbers anyway.**
+
+**Measured on `library-catalog-2nd --remote`, 2026-08-21:** 127 works, **36 rows
+still owing anything, and 36 of 36 of them `seriesIndex`** — series,
+description and firstPublished gaps all **zero**. 126 runs had asked `series`;
+only **11** had ever asked `seriesIndex`; **none** of the 36 had ever been asked
+the volume question.
+
+**Cause — a different half of the pipeline from last time.** `detailFieldsFor`
+will not ask *"which volume is this?"* of a book with no series, which is right
+for the OWED list. But the **ASK list was the same list**, so every run that
+filled a series *manufactured a fresh volume gap* that needed a second paid
+lookup. The catalog was creating its own queue.
+
+**⚠️ And the number had already been bought.** Run #135 (work 100, *Summoned
+to the Wilds*) was sent for `firstPublished, series, description` and wrote its
+own answer down: *"Series set to Villains and Virtues. … **Villains and
+Virtues #2** by A. K. Caggiano…"*. One search, one page fetch, two invoices,
+and the row still read "missing volume number" afterwards.
+
+**Fix — R13, the companion ask.** New `detailAsks` in `@lc/core` returns
+`detailGaps` **plus `seriesIndex` whenever `series` is being asked in the same
+call**, in `DETAIL_FIELDS` order. `claimRun` (via the new `gapsAndAsksFor`), the
+sweep's donor rung and `planSweep`'s subrequest budget all use it; `gapsFor`,
+`gapSummary` and the queue page keep the unchanged owed list. The apply side
+needed nothing — `applyFinding` already refused a `seriesIndex` with no series
+and `autoApplyFindings` already ordered `series` first, describing a case that
+could not yet happen.
+
+**⚠️ It widens what is ASKED, never what is OWED.** Collapsing `detailAsks`
+into `detailFieldsFor` would put "missing volume number" under every standalone
+in the catalog. `packages/core/test/detail-asks.test.ts` (7 tests) pins both
+halves, including one asserting `detailGaps` is untouched.
+
+**Verified:** `npm run typecheck` clean; 348/348 tests pass across
+`core`, `db`, `details-sweep` and `research` routes, new file included. Full
+write-up, with the measurements: [`info/volume-numbers.md`](info/volume-numbers.md) §3b.
+
+**What was NOT done, deliberately:** the 36 already-stranded rows were left to
+the hourly sweep, which asks the volume question of a book that already has a
+series and was already draining them (runs #137, #141, #142). ~18 hours at
+2/hour. No hand-fill, no backfill script, and the main instance was measured at
+**0** volume gaps and needed nothing.
+
+---
+
 ## ✅ "Look up all" disables itself while real questions are open (found 2026-08-19)
 
 **Symptom the owner reported twice, in his words: *"the button didnt fix"*.**

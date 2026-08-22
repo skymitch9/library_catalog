@@ -350,8 +350,15 @@ export interface SweepCandidate {
    * the donor can match on the canonical `work_key` instead of title alone.
    */
   authors: string | null;
-  /** Everything this work still owes — what a run would actually be sent for. */
+  /** Everything this work still owes. Decides eligibility and the rotation. */
   missing: readonly DetailField[];
+  /**
+   * What a lookup is actually SENT for — `missing` plus the volume number when
+   * the series is being bought in the same call (`detailAsks`). ⚠️ Not
+   * interchangeable with `missing`: `planSweep` must stay on the owed list, or
+   * the companion question alone could earn a book a paid slot.
+   */
+  asks: readonly DetailField[];
   /** Fields a finished run already asked about. See `detailsRunHistory`. */
   asked: readonly string[];
   /**
@@ -412,7 +419,12 @@ export function planSweep(
   let estimated = 0;
   for (const candidate of ordered) {
     if (pick.length >= limit) break;
-    const cost = estimateSubrequests(candidate.missing.length, mode);
+    // ⚠️ `asks`, not `missing` — the budget must price what the run will
+    // actually send, and a book being asked its series is sent one field more
+    // (the companion volume question, `detailAsks`). Pricing the owed list
+    // would undercount that book by a whole field's worth of subrequests and
+    // put the invocation over the ceiling this budget exists to stay under.
+    const cost = estimateSubrequests(candidate.asks.length, mode);
     // ⚠️ `break`, not `continue`. Skipping ahead to find a cheaper book would
     // reorder the rotation the sort above just established, and a book that is
     // always too expensive to fit beside another would never be reached at all.
@@ -446,7 +458,14 @@ export function donorFindings(
   donorUrl: string,
 ): SaveFindingInput[] {
   if (!reply.matched || !reply.details) return [];
-  return detailFindings(unasked, reply.details, {
+  // When the donor carries a printed volume designation (one of the 81
+  // hand-quoted forms — "Volume 07", "Prequel", etc.), merge it into the
+  // `seriesIndex` value so `applyFinding`'s existing `printedFormIn` logic
+  // writes both `series_index_sort` AND `series_index_display` on the caller.
+  const details = reply.seriesIndexDisplay
+    ? { ...reply.details, seriesIndex: reply.seriesIndexDisplay }
+    : reply.details;
+  return detailFindings(unasked, details, {
     tier: DONOR_SOURCE_TIER,
     basis: `Recorded in the donor library's catalog for "${reply.title ?? 'this book'}" — a value that catalog already holds, not a web claim.`,
     sourceUrl: reply.workId != null ? `${donorUrl}/work/${reply.workId}` : donorUrl,
@@ -527,7 +546,12 @@ export function judgedOutcome(
   }
 
   const confident = verdict.verdict === 'same' && verdict.confidence === 'high';
-  const findings = detailFindings(unasked, candidate.details, {
+  // Merge the candidate's printed volume designation into the seriesIndex
+  // value, same as `donorFindings` does for the exact-match path.
+  const details = candidate.seriesIndexDisplay
+    ? { ...candidate.details, seriesIndex: candidate.seriesIndexDisplay }
+    : candidate.details;
+  const findings = detailFindings(unasked, details, {
     tier: DONOR_FUZZY_SOURCE_TIER,
     basis: confident
       ? `Copied from the donor library's "${candidate.title}" (work #${candidate.workId}), which ${DONOR_JUDGE_MODEL} judged the same work as this book with high confidence: ${verdict.why}`
@@ -722,6 +746,7 @@ export async function runDetailsSweep(
         title: work.title,
         authors: work.authors,
         missing: work.missing,
+        asks: work.asks,
         asked: past?.asked ?? [],
         lastAttemptAt: past?.lastAttemptAt ?? null,
       };
@@ -741,7 +766,10 @@ export async function runDetailsSweep(
         // donor answers is recorded under its own run so the history counts
         // exactly those fields as asked, and whatever it cannot answer falls
         // through to the AI claim below unchanged.
-        let remaining = unaskedGaps(candidate.missing, candidate.asked);
+        // ⚠️ `asks`, not `missing` — so a donor that hands over the series
+        // hands over the volume number with it instead of leaving a gap the AI
+        // pass has to buy an hour later. `detailAsks` carries the measurement.
+        let remaining = unaskedGaps(candidate.asks, candidate.asked);
         if (mode.donor && remaining.length > 0) {
           // ⚠️ The shortlist is asked for ONLY when this instance can judge it
           // — header §4a. A donor-only instance sends the pre-judge request.

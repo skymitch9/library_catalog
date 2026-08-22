@@ -26,6 +26,7 @@ import {
   DETAIL_FIELDS,
   UNKNOWN_AUTHOR,
   classifyLookupFailure,
+  detailAsks,
   detailGaps,
   seriesIndexIncomplete,
   type DecisionMode,
@@ -871,6 +872,12 @@ export interface NeedsDetails {
   series: string | null;
   /** The fields this work is asked for and does not have. Never empty. */
   missing: DetailField[];
+  /**
+   * What a LOOKUP should be sent for — `missing`, plus the volume number when
+   * the series is being bought in the same call. ⚠️ Never use this to decide
+   * whether a book belongs on the queue or what it owes; see `detailAsks`.
+   */
+  asks: DetailField[];
   /** Fields already answered — shown so the page can say what it is not asking. */
   answered: DetailField[];
 }
@@ -919,6 +926,7 @@ export async function listWorksNeedingDetails(db: D1Database): Promise<NeedsDeta
       authors: row.authors,
       series: row.series,
       missing,
+      asks: detailAsks(subject, missing),
       answered,
     });
   }

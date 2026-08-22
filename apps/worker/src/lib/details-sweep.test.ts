@@ -38,11 +38,16 @@ import {
 import { heldForPerson } from './research-run.js';
 
 function candidate(overrides: Partial<SweepCandidate> = {}): SweepCandidate {
+  const missing = overrides.missing ?? (['firstPublished', 'description'] as const);
   return {
     workId: 1,
     title: 'Unsouled',
     authors: 'Will Wight',
-    missing: ['firstPublished', 'description'],
+    missing,
+    // Defaults to `missing`, which is what `detailAsks` returns for every book
+    // that is not being asked its series. A test about the companion ask sets
+    // it explicitly.
+    asks: missing,
     asked: [],
     lastAttemptAt: null,
     ...overrides,
@@ -292,6 +297,31 @@ test('an unmatched donor reply proposes nothing at all', () => {
     donorFindings(['firstPublished'], { matched: false, details: {} }, 'https://d'),
     [],
   );
+});
+
+test('donorFindings merges seriesIndexDisplay into seriesIndex value for applyFinding', () => {
+  const reply: DonorDetailsReply = {
+    matched: true,
+    workId: 7,
+    title: 'Unsouled',
+    details: { series: 'Cradle', seriesIndex: 1 },
+    seriesIndexDisplay: 'Volume 01',
+  };
+  const findings = donorFindings(['series', 'seriesIndex'], reply, 'https://library.heygabi.ai');
+  const siF = findings.find((f) => f.field === 'seriesIndex');
+  assert.equal(siF?.value.value, 'Volume 01', 'the printed form is the value — applyFinding writes both sort and display from it');
+});
+
+test('donorFindings uses bare sort when no seriesIndexDisplay is present', () => {
+  const reply: DonorDetailsReply = {
+    matched: true,
+    workId: 7,
+    title: 'Unsouled',
+    details: { series: 'Cradle', seriesIndex: 1 },
+  };
+  const findings = donorFindings(['series', 'seriesIndex'], reply, 'https://library.heygabi.ai');
+  const siF = findings.find((f) => f.field === 'seriesIndex');
+  assert.equal(siF?.value.value, 1, 'the sort number travels as-is when no printed form is available');
 });
 
 test('donor-only mode: no AI key no longer skips the tick', async () => {

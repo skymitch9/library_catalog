@@ -243,6 +243,60 @@ export function detailGaps(subject: GapSubject): DetailField[] {
 }
 
 /**
+ * The fields to ASK a lookup for. `detailGaps` plus the volume number whenever
+ * the series is being asked for in the same breath.
+ *
+ * ## ⚠️ Why this exists at all, and why it is NOT `detailGaps`
+ *
+ * "Which volume is this?" is only a *question* once a book has a series —
+ * `detailFieldsFor` is right about that, and widening the OWED list would put
+ * "missing volume number" under every seriesless book on the queue and hand a
+ * model a blank to invent a series for. So the owed list is unchanged.
+ *
+ * But the ASK list had the same restriction, and there it was a bug that cost
+ * real money. Measured on `library-catalog-2nd`, 2026-08-21: **126 runs had
+ * asked `series`, only 11 had ever asked `seriesIndex`, and 36 of 36 remaining
+ * queue rows were the volume number** — every one of them a gap the catalog
+ * had *created for itself* by filling the series and then having to buy a
+ * second lookup for the number.
+ *
+ * ⚠️ **The number had already been bought.** Run #135 (work 100, *Summoned to
+ * the Wilds*) was asked for `firstPublished, series, description`, and wrote
+ * this into its own `result_json`:
+ *
+ * > *"Series set to Villains and Virtues. … **Villains and Virtues #2** by
+ * > A. K. Caggiano…"*
+ *
+ * The same search that found the series found the volume, said so out loud,
+ * and the number was dropped on the floor because `seriesIndex` was not on
+ * that run's ask list. One search, one page fetch, two invoices.
+ *
+ * ⚠️ **This does NOT reopen the completeness rules of 2026-08-19.**
+ * `seriesIndexIncomplete` still reads the sort alone, the printed form is
+ * still optional data and still never a gap, and `multi_volume_printing` is
+ * still human-only. See `docs/info/volume-numbers.md`, which is the permanent
+ * answer; this function widens what gets *asked*, never what is *owed*.
+ *
+ * The apply side was already built for this: `applyFinding` refuses a
+ * `seriesIndex` whose work has no series, and `autoApplyFindings` sorts by
+ * `DETAIL_FIELDS` so `series` lands first. A run that learns both writes both;
+ * a run that cannot settle the series drops the volume number exactly as it
+ * always did.
+ */
+export function detailAsks(subject: GapSubject, missing: readonly DetailField[]): DetailField[] {
+  if (!missing.includes('series')) return [...missing];
+  if (missing.includes('seriesIndex')) return [...missing];
+  // A recorded answer stays answered. Without this the companion ask would
+  // re-buy the one question `gap_verdict` exists to stop being re-bought —
+  // *Tusk Love*'s "there is no such number" (R10) is the standing example.
+  if (new Set(subject.verdicts ?? []).has('seriesIndex')) return [...missing];
+  if (!seriesIndexIncomplete(subject.seriesIndexSort)) return [...missing];
+  // DETAIL_FIELDS order, so `series` is asked — and applied — ahead of the
+  // number that depends on it.
+  return DETAIL_FIELDS.filter((f) => missing.includes(f) || f === 'seriesIndex');
+}
+
+/**
  * The questions this book has never been put, of the ones it still owes.
  *
  * Empty means there is nothing new to buy: every open gap has already been
