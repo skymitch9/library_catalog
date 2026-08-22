@@ -78,10 +78,11 @@ describe('donor token gate — 404 for every way of being wrong', () => {
 
 describe('donorDetailsFor', () => {
   it('sends only filled fields — nulls and blanks are omitted, never sent as null', () => {
-    const details = donorDetailsFor({
+    const { details } = donorDetailsFor({
       firstPublished: 2016,
       series: null,
       seriesIndexSort: null,
+      seriesIndexDisplay: null,
       description: '   ',
     });
     assert.deepEqual(details, { firstPublished: 2016 });
@@ -90,18 +91,42 @@ describe('donorDetailsFor', () => {
   });
 
   it('seriesIndex carries the SORT value — the ladder position, usable by applyFinding', () => {
-    const details = donorDetailsFor({
+    const { details } = donorDetailsFor({
       firstPublished: null,
       series: 'Cradle',
       seriesIndexSort: 2.5,
+      seriesIndexDisplay: null,
       description: null,
     });
     assert.deepEqual(details, { series: 'Cradle', seriesIndex: 2.5 });
   });
 
+  it('seriesIndexDisplay is handed out when the donor holds a printed form', () => {
+    const result = donorDetailsFor({
+      firstPublished: null,
+      series: 'Cradle',
+      seriesIndexSort: 7,
+      seriesIndexDisplay: 'Volume 07',
+      description: null,
+    });
+    assert.deepEqual(result.details, { series: 'Cradle', seriesIndex: 7 });
+    assert.equal(result.seriesIndexDisplay, 'Volume 07');
+  });
+
+  it('seriesIndexDisplay is omitted when blank', () => {
+    const result = donorDetailsFor({
+      firstPublished: null,
+      series: 'Cradle',
+      seriesIndexSort: 1,
+      seriesIndexDisplay: '   ',
+      description: null,
+    });
+    assert.equal(result.seriesIndexDisplay, undefined);
+  });
+
   it('a fully-blank work answers an empty object, not a lie', () => {
     assert.deepEqual(
-      donorDetailsFor({ firstPublished: null, series: null, seriesIndexSort: null, description: null }),
+      donorDetailsFor({ firstPublished: null, series: null, seriesIndexSort: null, seriesIndexDisplay: null, description: null }).details,
       {},
     );
   });

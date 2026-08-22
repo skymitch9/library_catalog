@@ -104,6 +104,14 @@ export interface DonorCandidate {
   authorAgrees: boolean;
   /** Exactly what it could donate, so a confident verdict needs no second round trip. */
   details: Partial<Record<DetailField, string | number>>;
+  /**
+   * The printed volume designation this catalog holds — `"Volume 07"`,
+   * `"Book 1"`, `"Prequel"`. Present only when the work carries one. The
+   * caller's `applyFinding` already knows how to write a display string into
+   * `series_index_display` when the `seriesIndex` finding value is a
+   * non-numeric string, so `donorFindings` merges this into the value.
+   */
+  seriesIndexDisplay?: string;
 }
 
 /** What one donor lookup says. Shared with the sweep's caller-side typing. */
@@ -114,6 +122,17 @@ export interface DonorDetailsReply {
   title?: string;
   /** Only the filled DETAIL_FIELDS. `seriesIndex` is the sort position. */
   details: Partial<Record<DetailField, string | number>>;
+  /**
+   * The printed volume designation this catalog holds — `"Volume 07"`,
+   * `"Book 1"`, `"Prequel"`. Present only when the matched work carries one.
+   * Outside `details` because it is not a `DetailField` (it is a companion
+   * column of `seriesIndex`, not an independently-researched gap).
+   *
+   * The caller's `applyFinding` already writes a display string into
+   * `series_index_display` when the `seriesIndex` finding value is a
+   * non-numeric string — so `donorFindings` merges this into the value.
+   */
+  seriesIndexDisplay?: string;
   /**
    * Present only on a MISS, and only when the caller sent `candidates=1`.
    * Absent and empty mean the same thing to the caller — nothing to judge.
@@ -185,13 +204,14 @@ export function rankCandidates(
 }
 
 /**
- * The filled detail values of one work, in `DETAIL_FIELDS` order. Pure and
- * exported: this is the donor's whole editorial policy — what it will and will
- * not hand out — so it is pinned by tests directly.
+ * The filled detail values of one work, in `DETAIL_FIELDS` order, plus the
+ * printed volume designation when one exists. Pure and exported: this is the
+ * donor's whole editorial policy — what it will and will not hand out — so it
+ * is pinned by tests directly.
  */
 export function donorDetailsFor(
-  work: Pick<Work, 'firstPublished' | 'series' | 'seriesIndexSort' | 'description'>,
-): Partial<Record<DetailField, string | number>> {
+  work: Pick<Work, 'firstPublished' | 'series' | 'seriesIndexSort' | 'seriesIndexDisplay' | 'description'>,
+): { details: Partial<Record<DetailField, string | number>>; seriesIndexDisplay?: string } {
   const details: Partial<Record<DetailField, string | number>> = {};
   const blank = (v: string | number | null) =>
     v == null || (typeof v === 'string' && v.trim() === '');
@@ -204,19 +224,6 @@ export function donorDetailsFor(
         if (!blank(work.series)) details.series = work.series as string;
         break;
       case 'seriesIndex':
-        // Sort only. Display quotes the cover, and the caller's copy of the
-        // book has its own cover — see the header.
-        //
-        // ⚠️ This refusal is now the ODD ONE OUT and is kept deliberately, not
-        // by inertia. Since 2026-08-19 both machines that WRITE the column
-        // derive it (`seriesIndexDisplayFrom`), because nothing in this repo
-        // has ever actually read a cover — so the donor withholding a value it
-        // holds, while the caller writes a derivation of the same number, is
-        // strictly worse for the caller: this catalog's 81 hand-quoted forms
-        // (`Volume 07`, `Prequel`) are BETTER than what the caller will derive
-        // without them. Widening this is logged in docs/TODO.md; it needs a key
-        // wider than `DetailField`, which is why it is not a one-line change
-        // and why it did not ride along with the convergence fix.
         if (work.seriesIndexSort != null) details.seriesIndex = work.seriesIndexSort;
         break;
       case 'description':
@@ -224,7 +231,10 @@ export function donorDetailsFor(
         break;
     }
   }
-  return details;
+  const seriesIndexDisplay = !blank(work.seriesIndexDisplay)
+    ? (work.seriesIndexDisplay as string)
+    : undefined;
+  return seriesIndexDisplay ? { details, seriesIndexDisplay } : { details };
 }
 
 export const donorRoutes = new Hono<AppBindings>()
@@ -275,11 +285,11 @@ export const donorRoutes = new Hono<AppBindings>()
       for (const hit of ranked) {
         const row = await getWork(c.env.DB, hit.row.id);
         if (!row) continue; // Deleted between the two reads. Not an error.
-        const details = donorDetailsFor(row);
+        const donated = donorDetailsFor(row);
         // ⚠️ A candidate with nothing to donate is not a candidate — it is a
         // paid judgement whose best possible outcome is "yes, and I still have
         // nothing for you". Dropped here rather than judged and discarded.
-        if (Object.keys(details).length === 0) continue;
+        if (Object.keys(donated.details).length === 0) continue;
         candidates.push({
           workId: row.id,
           title: row.title,
@@ -287,17 +297,20 @@ export const donorRoutes = new Hono<AppBindings>()
           fold: normaliseTitle(row.title),
           titleScore: hit.titleScore,
           authorAgrees: hit.authorAgrees,
-          details,
+          details: donated.details,
+          ...(donated.seriesIndexDisplay ? { seriesIndexDisplay: donated.seriesIndexDisplay } : {}),
         });
       }
       return c.json({ matched: false, details: {}, candidates } satisfies DonorDetailsReply, 200);
     }
+    const donated = donorDetailsFor(work);
     return c.json(
       {
         matched: true,
         workId: work.id,
         title: work.title,
-        details: donorDetailsFor(work),
+        details: donated.details,
+        ...(donated.seriesIndexDisplay ? { seriesIndexDisplay: donated.seriesIndexDisplay } : {}),
       } satisfies DonorDetailsReply,
       200,
     );
