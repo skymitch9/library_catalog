@@ -75,10 +75,15 @@ export const GABI_PHASE = 1;
  *
  * *"A runaway loop is the one way a conversational surface can spend real
  * money, and a server-side count is the only place a browser bug cannot
- * bypass."* Start at 24, which is four times the six-turn conversation §7.1
- * costs out.
+ * bypass."*
+ *
+ * Budget math at Opus 5 pricing (2026-08):
+ *   Input: $5/MTok (cached reads ~$0.50/MTok after turn 1)
+ *   Output: $25/MTok
+ *   Typical turn: ~3k input tokens (mostly cached) + ~500 output ≈ 1.5¢
+ *   $1 budget ÷ 1.5¢/turn ≈ 65 turns → cap at 60 (generous but bounded at ~$1).
  */
-export const GABI_MAX_TURNS = 24;
+export const GABI_MAX_TURNS = 60;
 
 /**
  * The batch cap — owner-approved 2026-08-17, and **not arbitrary**.
@@ -252,13 +257,12 @@ export const GABI_TOOLS: readonly GabiTool[] = [
           type: 'object',
           description:
             'An object whose keys are the fields to set and whose values are the new values. ' +
-            'Allowed keys: firstPublished, series, seriesIndexSort, seriesIndexDisplay, ' +
+            'Allowed keys: firstPublished, series, seriesIndexSort, ' +
             'description, universe. Only include fields you intend to change.',
           properties: {
             firstPublished: { type: 'integer', description: 'Year of first publication.' },
             series: { type: 'string', description: 'Series name, exactly as published.' },
             seriesIndexSort: { type: 'number', description: 'Numeric sort position within the series.' },
-            seriesIndexDisplay: { type: 'string', description: 'Display form of the volume number (e.g. "2.5", "Part 1").' },
             description: { type: 'string', description: 'A brief description or blurb for the book.' },
             universe: { type: 'string', description: 'The shared fictional universe this book belongs to.' },
           },

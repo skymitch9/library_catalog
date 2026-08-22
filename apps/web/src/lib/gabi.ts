@@ -156,7 +156,7 @@ const UNDO_RESULT_FIELDS = ['reverted', 'failed', 'message'] as const;
 /** Fields to forward from a `POST /api/works` (add by ISBN) response. */
 const ADD_BOOK_RESULT_FIELDS = ['workId', 'title', 'authors', 'message', 'alreadyExists'] as const;
 /** The only fields `set_book_details` ever sends in its PATCH body. */
-const SET_DETAILS_FIELDS = ['firstPublished', 'series', 'seriesIndexSort', 'seriesIndexDisplay', 'description', 'universe'] as const;
+const SET_DETAILS_FIELDS = ['firstPublished', 'series', 'seriesIndexSort', 'description', 'universe'] as const;
 
 function rowsOf(value: unknown, key: string): unknown[] {
   if (typeof value !== 'object' || value === null) return [];
@@ -341,7 +341,7 @@ async function run(
       // field list, never forwarding the model's object verbatim.
       const allowed = pick<Record<string, unknown>>(fields, SET_DETAILS_FIELDS);
       if (Object.keys(allowed).length === 0) {
-        return { error: 'No recognised fields to set. Allowed: firstPublished, series, seriesIndexSort, seriesIndexDisplay, description, universe.' };
+        return { error: 'No recognised fields to set. Allowed: firstPublished, series, seriesIndexSort, description, universe.' };
       }
       const answer = await api.setBookDetails(workId, allowed);
       return {
