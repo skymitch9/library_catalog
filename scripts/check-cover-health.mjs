@@ -6,9 +6,15 @@
 import { query, parseFlags, ROOT } from './lib/d1.mjs';
 
 const flags = parseFlags();
-const BASE = process.argv.includes('--friend')
-  ? 'https://padhard.heygabi.ai'
-  : 'https://library.heygabi.ai';
+/**
+ * ⚠️ `--friend` switches the DATABASE and the base URL together, and until
+ * 2026-08-22 it switched only the URL. `query()` read the MAIN catalog's rows
+ * and fetched them against padhard, so this script had never audited a single
+ * second-instance row — while a clean run of it was being read as evidence that
+ * padhard was fine. It held 47 works needing a cover at the time. The pairing is
+ * now structural: both come off the same `flags.friend`.
+ */
+const BASE = flags.friend ? 'https://padhard.heygabi.ai' : 'https://library.heygabi.ai';
 
 const MIN_BYTES = 1000; // Below this is a placeholder, not a cover
 const UA = 'library_catalog cover-health-check';
@@ -18,7 +24,7 @@ const rows = query(
   flags,
 );
 
-console.log(`Checking ${rows.length} cover(s) against ${BASE}...\n`);
+console.log(`Checking ${rows.length} cover(s) from ${flags.friend ? 'library-catalog-2nd' : 'library-catalog'} against ${BASE}...\n`);
 
 const broken = [];
 let checked = 0;

@@ -142,7 +142,7 @@ const total = query(
 )[0];
 
 console.log(
-  `\n${flags.remote ? 'production' : 'local'}: ${total.works} work(s), ${total.blank} with no cover`,
+  `\n${flags.remote ? 'production' : 'local'} ${flags.friend ? 'library-catalog-2nd (padhard)' : 'library-catalog'}: ${total.works} work(s), ${total.blank} with no cover`,
 );
 if (Number(stranded?.n ?? 0) > 0) {
   console.log(
@@ -169,6 +169,23 @@ const targets = Number.isFinite(flags.limit) ? withIsbn.slice(0, flags.limit) : 
 const found = [];
 const empty = [];
 
+/**
+ * ⚠️ Which rungs COULD NOT BE ASKED, as opposed to which had no cover.
+ *
+ * Added 2026-08-22 after a padhard sweep reported "no cover anywhere: 40" in a
+ * run where **Google Books answered HTTP 429 to every single call** — the daily
+ * quota was spent. `resolveIsbn` records exactly that in its trace
+ * (`{ ok:false, detail:"googlebooks 429" }`) and this script was throwing the
+ * trace away, so an exhausted rung and a genuinely coverless book printed
+ * identically.
+ *
+ * That is the difference between "ask again tomorrow, for nothing" and "this
+ * needs a person or the paid rung", and the run was giving the wrong one. It is
+ * the worst rung to lose silently: `resolve.ts` measures Google Books as the one
+ * that actually moves the number.
+ */
+const rungDown = new Map();
+
 console.log(`\nasking the ISBN ladder for ${targets.length} work(s)…\n`);
 
 for (const [i, r] of targets.entries()) {
@@ -176,7 +193,17 @@ for (const [i, r] of targets.entries()) {
   let hit = null;
 
   for (const isbn of isbns) {
-    const { candidates } = await resolveIsbn(isbn, { googleBooksKey: key, userAgent: UA });
+    const { candidates, trace } = await resolveIsbn(isbn, {
+      googleBooksKey: key,
+      userAgent: UA,
+    });
+    // A rung that threw did not answer "no cover" — it did not answer at all.
+    for (const t of trace) {
+      if (t.ok) continue;
+      const at = rungDown.get(t.rung) ?? { calls: 0, detail: t.detail };
+      at.calls += 1;
+      rungDown.set(t.rung, at);
+    }
     const url = coverFrom(candidates);
     if (!url) {
       await sleep(PAUSE_MS);
@@ -211,8 +238,30 @@ console.log(`  from googlebooks  ${found.filter((f) => f.rung === 'googlebooks')
 console.log(`  from bookcover    ${found.filter((f) => f.rung === 'bookcover-api').length}`);
 console.log(`no cover anywhere   ${empty.length + withoutIsbn.length}`);
 
+// ⚠️ Printed BEFORE the list below, because that list's heading is only
+// true when every rung actually answered.
+if (rungDown.size) {
+  console.log('');
+  for (const [rung, at] of rungDown) {
+    const quota = /429|quota/i.test(String(at.detail));
+    console.log(
+      '⚠️ RUNG NOT ASKED: ' + rung + ' failed ' + at.calls + ' call(s) — ' + at.detail + '.',
+    );
+    console.log(
+      '   Those books are UNMEASURED by this rung, not coverless. ' +
+        (quota
+          ? 'A quota, not a missing book: re-run after it resets, for nothing.'
+          : 'Fix the rung and re-run BEFORE spending the paid --llm rung on them.'),
+    );
+  }
+}
+
 if (empty.length) {
-  console.log('\nHas an ISBN, but neither rung holds a cover:');
+  console.log(
+    rungDown.size
+      ? '\nHas an ISBN, and no cover from the rungs that ANSWERED (see the warning above):'
+      : '\nHas an ISBN, but neither rung holds a cover:',
+  );
   for (const r of empty) console.log(`  ${String(r.id).padStart(4)}  ${r.title}`);
 }
 

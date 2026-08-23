@@ -29,7 +29,44 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const CONFIG = path.join(ROOT, 'apps/worker/wrangler.toml');
-const DB_NAME = 'library-catalog';
+/**
+ * The two instances, and why the name is a function rather than a constant.
+ *
+ * ⚠️ This was `const DB_NAME = 'library-catalog'` until 2026-08-22, and that one
+ * line was the reason the SECOND instance could not be maintained at all. Every
+ * backfill in `scripts/` imports `query`/`execute` from here, so all of them —
+ * covers, series, ISBNs, universes — could only ever reach the main catalog.
+ * Measured that day: padhard held 369 works and **47 of them needed a cover**,
+ * every one from a row added after the last sweep, because no sweep could be
+ * pointed at it.
+ *
+ * The instances are the two D1 databases in `apps/worker/wrangler.toml`: the
+ * top-level binding, and `[[env.friend.d1_databases]]`.
+ */
+const MAIN_DB = 'library-catalog';
+const FRIEND_DB = 'library-catalog-2nd';
+
+/**
+ * Which database a run is talking to.
+ *
+ * ⚠️ `--friend` is REMOTE-ONLY, and refusing the local combination is
+ * deliberate rather than lazy. There is no local copy of the second instance —
+ * miniflare keeps one local D1 per binding name, and both instances bind
+ * `DB` — so `--friend` without `--remote` would read the MAIN local database
+ * and print a confident report about the wrong catalog. That is the exact
+ * failure mode this whole change exists to end, so it fails loudly instead.
+ */
+function dbName({ remote, friend }) {
+  if (!friend) return MAIN_DB;
+  if (!remote) {
+    throw new Error(
+      '--friend needs --remote. There is no local copy of the second instance: ' +
+        'both instances bind DB, so a local --friend run would silently read the ' +
+        'MAIN database and report about the wrong catalog.',
+    );
+  }
+  return FRIEND_DB;
+}
 
 /**
  * Where the LOCAL database lives, when the default will not do.
@@ -83,13 +120,13 @@ function runWrangler(args) {
  * quoting failure `git commit -m` produces on this machine, which CLAUDE.md
  * already bans for the same reason.
  */
-function runSql(sql, { remote }) {
+function runSql(sql, { remote, friend }) {
   const dir = mkdtempSync(path.join(tmpdir(), 'lc-d1-'));
   const file = path.join(dir, 'query.sql');
   try {
     writeFileSync(file, sql.endsWith('\n') ? sql : sql + '\n', 'utf8');
     const out = runWrangler([
-      'd1', 'execute', DB_NAME,
+      'd1', 'execute', dbName({ remote, friend }),
       '--config', CONFIG,
       ...targetArgs(remote),
       '--file', file,
@@ -132,7 +169,7 @@ function runSql(sql, { remote }) {
  * through the argument instead. `execFileSync` passes the SQL as a single argv
  * entry, so nothing re-splits it.
  */
-export function query(sql, { remote }) {
+export function query(sql, { remote, friend }) {
   const oneLine = sql.replace(/\s+/g, ' ').trim();
   // cmd.exe truncates a command line near 8k. Long enough to be a real risk only
   // if someone builds a SELECT with a huge IN (...) list — fail loudly rather
@@ -145,7 +182,7 @@ export function query(sql, { remote }) {
     );
   }
   const out = runWrangler([
-    'd1', 'execute', DB_NAME,
+    'd1', 'execute', dbName({ remote, friend }),
     '--config', CONFIG,
     ...targetArgs(remote),
     '--command', oneLine,
@@ -236,9 +273,9 @@ export function lit(value) {
  * has to carry 117 UPDATE statements containing apostrophes and em dashes is the
  * exact quoting failure `git commit -m` produces on this machine.
  */
-export function execute(statements, { remote }) {
+export function execute(statements, { remote, friend }) {
   if (statements.length === 0) return 0;
-  const results = runSql(statements.join('\n'), { remote });
+  const results = runSql(statements.join('\n'), { remote, friend });
 
   const failed = results.filter((r) => r?.success === false).length;
   if (failed) throw new Error(`${failed} of ${statements.length} statement(s) failed`);
@@ -266,6 +303,8 @@ export function parseFlags(argv = process.argv.slice(2)) {
   return {
     commit: argv.includes('--commit'),
     remote: argv.includes('--remote'),
+    /** The SECOND instance (padhard). Remote-only — see `dbName`. */
+    friend: argv.includes('--friend'),
     limit: (() => {
       const i = argv.indexOf('--limit');
       return i >= 0 && argv[i + 1] ? Number(argv[i + 1]) : Infinity;
