@@ -31,6 +31,91 @@
 > docs trees that is **tracked in git** and therefore survives a clone — this
 > file does not. Do not duplicate the queue here; one list, not two.
 
+## 🔜 START HERE NEXT SESSION — the audiobook link build, designed but NOT started
+
+> Owner, 2026-08-22 ~23:40 Phoenix: *"we need to add audiobook sweep to the
+> pipeline, we also need the schema change"* — then, on seeing the weekly budget:
+> *"youre right, i shouldnt have started this build … we come back fresh."*
+
+⚠️ **NOTHING WAS WRITTEN toward either item. No half-finished files, no partial
+migration, no dirty tree.** The design below is the expensive part and is done;
+what remains is typing. Weekly usage was **96%** with the reset at **16:00
+Phoenix Sunday 2026-08-23** — start after it.
+
+### A. The sweep becomes a pipeline step — `audiobook_catalog`
+
+`scripts/backfill-audiobook-holdings.mjs` is hand-run, and that is the whole
+defect: 401 of 493 works had arrived since its last run. It is **STEP 11**,
+modelled line-for-line on STEP 8 (`_run_drive_parity`).
+
+⚠️ **It must run on the IDLE path as well as the busy one**, and its reason is
+stronger than parity's: the drift arrives when the **library** gains books,
+which is completely uncorrelated with whether this machine gained an audiobook.
+Wiring it only to the busy path reproduces exactly the failure being fixed.
+
+Files, all of them — the step list is mirrored in four places and they must agree:
+
+| File | Change |
+|---|---|
+| `scripts/sync_to_drive.py` | `_run_sibling_link()` after `_mirror_estate_backups()` in **both** paths (busy ~line 1489, idle ~line 1180); `_step_link()`; `STEP_INFO["link"]`; `_STEP_HANDLERS["link"]` |
+| `app/pipeline_status.py` | append `("link", "Link sibling catalogues")` to `STEPS` |
+| `catalog-platform` `ops.ts` / `admin.js` / `status.js` | ⚠️ `STEP_INFO`'s comment (sync_to_drive.py:1752) says this mirror is **manual — there is no shared module.** Miss it and the step renders unlabelled |
+| `tests/test_pipeline_steps.py` | pins the list; update in the same commit |
+
+- **kind: `publishing`.** It writes another app's PRODUCTION D1, which deserves
+  the top confirmation tier, not `mutating`.
+- Shell out the way parity does: `subprocess.run`, `PYTHONIOENCODING=utf-8`,
+  a timeout, **never raises**, exactly one named line on every path
+  (applied / in sync / skipped / failed). `npx tsx scripts/backfill-audiobook-holdings.mjs --remote --commit`, cwd = the library repo.
+- ⚠️ It needs the **path to `library_catalog`**, which `app/config.py` does not
+  have (`ROOT_DIR` is the audio library, not the sibling repo). Add one env-var
+  constant with a named skip when it is unset — a machine that cannot reach the
+  sibling must be distinguishable from one that reached it and found nothing.
+
+### B. The schema change — two audio editions per work
+
+`audiobook_holding.work_id` is `PRIMARY KEY` (migration 0010), so one work holds
+one audio row. The household owns **two** Elantris audiobooks; the row that
+landed is the full-cast one, whose CSV entry has no series, while *Elantris –
+Tenth Anniversary Special Edition* carries `series=Elantris, volume 1`. **The
+edition that knew the series lost the tie**, which is exactly what the owner saw.
+
+**Design chosen — a table plus a VIEW, so no reader changes.** Only
+`backfill-audiobook-holdings.mjs` writes this table (verified by grep), so the
+view is safe:
+
+1. `CREATE TABLE audiobook_edition_holding` — same columns, PK `(work_id, audio_key)`, plus `narrator`.
+2. Copy the existing rows in.
+3. `DROP TABLE audiobook_holding`, then recreate it as a **VIEW** picking one WHOLE row per work:
+   `ROW_NUMBER() OVER (PARTITION BY work_id ORDER BY (series IS NULL), (index_display IS NULL), audio_key)`.
+
+⚠️ **Whole row, never merged fields.** Preferring the row that knows more is the
+right display call; stitching `title` from one edition onto `series` from
+another would be a Frankenstein row, and the `title` column exists precisely so a
+wrong match is noticeable.
+
+⚠️ **The script cannot yet produce more than one row.** It keeps a single `best`
+from `index.lookup(...)`. `scripts/lib/audiobooks.mjs` needs a `lookupAll` —
+**that is the real work in B, not the migration.**
+
+Migration number: next is **0390** (0380 is the latest).
+
+### C. Also found, not yet raised as work — "mark this copy signed"
+
+Owner, same session: *"i thought we had a way to mark signed books on the ui, i
+dont see that option anymore."* **It never went away and it was never on an
+existing copy.** The `Signed` checkbox lives in `Copies.tsx`'s **AddCopy** form
+only (line 455), inside the `intent === 'owned'` block — so it can only be set
+while first recording a copy.
+
+The API already supports the edit: `PATCH /api/copies/:id` → `updateCopy`
+(`packages/db/src/editions.ts:543` handles `patch.isSigned`). **Only the control
+is missing.** Small, self-contained, visible — a good first item next session.
+
+**Verify all three:** work 514 shows both audio editions and its series
+(<https://library.heygabi.ai/works/514>); `/status/processing` lists the new
+pipeline step by name; an existing copy can be marked signed without deleting it.
+
 ## ☐ Covers for the SECOND instance — owner ask, 2026-08-22
 
 > *"we need a way to get covers, can we have missing details fill in covers or
