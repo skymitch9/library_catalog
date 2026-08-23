@@ -188,6 +188,28 @@ export function Copies({
                         It arrived
                       </button>
                     )}
+                    {/* ⚠️ Signing is a fact about a COPY, learned at any time —
+                        a book comes home from an event signed months after it
+                        was recorded. Until 2026-08-22 the only Signed control
+                        was the checkbox on the AddCopy form below, so the fact
+                        could be captured while first recording a copy and never
+                        afterwards; the owner reported it as a control that had
+                        gone missing. `PATCH /api/copies/:id` already accepted
+                        `isSigned` (updateCopySchema is createCopySchema
+                        .partial(), so a one-key patch resets nothing) — only
+                        the button was absent.
+
+                        Both directions, spelled out, for CoverPanel’s reason:
+                        un-marking is the rarer press and the one nobody would
+                        guess exists, so neither is a checkbox whose meaning
+                        depends on which way it happens to be sitting. */}
+                    <button
+                      className="chip"
+                      disabled={busy === c.id}
+                      onClick={() => void change(c.id, { isSigned: !c.is_signed })}
+                    >
+                      {c.is_signed ? 'Not signed' : 'Mark signed'}
+                    </button>
                     <label className="field">
                       <span className="field__label">Status</span>
                       <select
