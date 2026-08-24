@@ -47,6 +47,8 @@
  *     npm run backfill:missing-covers -- --remote --repair # ALSO check stored covers still load
  *     npm run backfill:missing-covers -- --remote --standins  # ALSO re-try known stand-ins
  *     npm run backfill:missing-covers -- --remote --llm    # ⚠️ COSTS MONEY, see below
+ *     npm run backfill:missing-covers -- --remote --llm --commit   # ⚠️ the ONLY --llm run that spends
+ *     npm run backfill:missing-covers -- --remote --llm --llm-dry  # ⚠️ paid preview: spends, writes nothing
  *
  * `--repair` widens the question from "which works have no cover" to "which works
  * have no *working* cover". It fetches every stored URL, which is slow and mostly
@@ -78,6 +80,15 @@
  * URL it proposes is fetched and checked before it is written — a hallucinated
  * image link is well-formed, plausible and 404, and this is the only thing
  * standing between that and the database.
+ *
+ * ⚠️ **The paid call is gated on `--commit` — a dry `--llm` run spends NOTHING.**
+ * (Fixed 2026-08-24; before that the paid loop ran on the dry pass too, so a
+ * "dry then commit" workflow was billed TWICE and, because each pass re-asks,
+ * the dry pass was not even a preview of what the committing pass would write.)
+ * A dry `--llm` run now prices the rung — how many books WOULD be asked and the
+ * worst-case cost — and stops. `--llm-dry` (default OFF) is the explicit opt-in
+ * for anyone who genuinely wants a PAID preview that spends but writes nothing.
+ * The free rungs still run in dry mode; only this one paid rung is gated.
  *
  * ⚠️ **A `confidence: 'low'` proposal is never written, however well it
  * verifies.** `verifyCoverUrl` proves the bytes are an image; it cannot prove
@@ -124,6 +135,20 @@ const flags = parseFlags();
 const repair = process.argv.includes('--repair');
 /** ⚠️ Costs money per book. Opt-in per run, never automatic. See --llm below. */
 const useLlm = process.argv.includes('--llm');
+/**
+ * ⚠️ **The paid `--llm` call is gated on `--commit` — a dry run makes NO paid
+ * call.** Until 2026-08-24 the loop below ran on the dry pass too: only the SQL
+ * write was gated, so a "dry then commit" workflow was billed TWICE, and the
+ * dry pass wasn't even a reliable preview (each pass re-asks Claude, so results
+ * differ). Now a dry run prices the rung — how many books WOULD be asked and the
+ * worst-case cost — and stops without spending.
+ *
+ * `--llm-dry` is the deliberate opt-in for anyone who truly wants a PAID preview
+ * (it spends but writes nothing). Default OFF. The free rungs (Open Library,
+ * Google Books, Bookcover, title search) still run in dry mode — they cost
+ * nothing; only this one paid rung is gated.
+ */
+const llmDry = process.argv.includes('--llm-dry');
 /** Also go after works wearing a known stand-in. See `NEEDS_COVER` below. */
 const includeStandins = process.argv.includes('--standins');
 
@@ -551,8 +576,26 @@ if (useLlm) {
     );
   }
 
-  const apiKey = readDevVar(keyName);
-  if (!apiKey) {
+  /*
+   * ⚠️ **The paid call is gated on --commit — the dry pass NEVER spends.** The
+   * key is not even read unless we are actually going to call Claude, so a dry
+   * run cannot make a paid request by any path. Until 2026-08-24 the loop ran on
+   * the dry pass too, so "dry then commit" was billed twice; --commit gated only
+   * the SQL write, not the LLM call. `--llm-dry` is the explicit opt-in for a
+   * paid preview (spends, writes nothing); it is OFF by default.
+   */
+  const spendAllowed = flags.commit || llmDry;
+  const apiKey = spendAllowed ? readDevVar(keyName) : null;
+  if (!spendAllowed) {
+    console.log('');
+    console.log(
+      `  DRY RUN — the paid --llm rung is NOT called and nothing is spent.\n` +
+        `     ${remaining.length} book(s) WOULD be asked, about $${worst} worst case on ${keyName}.\n` +
+        `     Re-run with --commit to spend AND write, or --llm-dry for a paid preview that\n` +
+        `     spends but writes nothing (OFF by default; each pass re-asks Claude, so a\n` +
+        `     dry-then-commit workflow is TWO bills and the two passes differ).`,
+    );
+  } else if (!apiKey) {
     console.log(`  ⚠️ ${keyName} is empty or absent in apps/worker/.dev.vars — skipping this rung.`);
     if (overridden) {
       console.log(

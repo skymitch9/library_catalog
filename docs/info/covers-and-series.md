@@ -1,8 +1,11 @@
 # Covers, Series & Drive Links — Information Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
-> Last verified: **2026-08-23 21:45 Phoenix** for §0 and §0.2 — the cover-needed
-> table and the paid-rung run were re-measured against production at that hour.
+> Last verified: **2026-08-24** for §0.2's double-bill note — the paid `--llm`
+> rung is now gated on `--commit`; verified by a dry `--friend --remote` run (no
+> `--llm`) that made zero paid calls, and by reading the gated code path. The
+> cover-needed table and the paid-rung run in §0/§0.2 keep their **2026-08-23
+> 21:45 Phoenix** measurement and were NOT re-measured.
 > §0.1 keeps its **20:30 Phoenix** measurement, including the full re-fetch of
 > every Google Books cover on both instances, and was NOT re-checked at 21:45.
 > **Everything from §1 onward still carries its original 2026-08-10 measurement
@@ -261,10 +264,33 @@ repeats it. Measured live:
      ANTHROPIC_API_KEY_FRIEND_SAM. Every cent below lands on ANTHROPIC_API_KEY.
 ```
 
-⚠️ **`--llm` spends whether or not `--commit` is passed.** The paid loop runs on
-the dry pass; `--commit` only decides whether the SQL is executed. So "dry then
-commit" is **two** bills, and because each pass re-asks, the dry pass is not a
-preview of what the committing pass will write. Budget for it or run once.
+### ⚠️ The double-bill trap — the paid rung used to spend on the dry pass too (fixed 2026-08-24)
+
+Until **2026-08-24** `--llm` spent **whether or not `--commit` was passed**: the
+paid loop ran on the dry pass, and `--commit` gated only the SQL write, not the
+LLM call. So a "dry then commit" workflow was **two** bills — and because each
+pass re-asks Claude, the dry pass was not even a preview of what the committing
+pass would write.
+
+**Fixed 2026-08-24** (`backfill-missing-covers.mjs`): the paid call is now gated
+on `--commit`, and the key is not even read on the dry pass. A dry `--llm` run
+**makes no paid call** — it prices the rung (how many books WOULD be asked, the
+worst-case cost, on which key) and stops. Anyone who genuinely wants a paid
+preview passes the new **`--llm-dry`** flag (default OFF); it spends but writes
+nothing. The free rungs (Open Library, Google Books, Bookcover, title search)
+still run in dry mode — only the one paid rung is gated.
+
+```bash
+npx tsx scripts/backfill-missing-covers.mjs --friend --remote --llm            # dry: prices the rung, spends $0
+npx tsx scripts/backfill-missing-covers.mjs --friend --remote --llm --commit   # spends AND writes
+npx tsx scripts/backfill-missing-covers.mjs --friend --remote --llm --llm-dry  # paid preview: spends, writes nothing
+```
+
+This brings `backfill-missing-covers.mjs` into line with `scripts/research-queue.mjs`,
+which already gated its paid call on `--commit` (`const apiKey = commit ?
+anthropicKey(keyName) : 'estimate-only'`) and prints *"Estimate only. Nothing was
+asked and nothing was written"* on the dry pass. One shape for the paid rung
+across both scripts: the dry pass prices it, `--commit` spends.
 
 ⚠️ **The same flag, the same spelling, now exists on `scripts/research-queue.mjs`**,
 which had the identical defect and one worse besides — see [`DONE.md`](../DONE.md),
