@@ -2845,22 +2845,35 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
      (apple/cyberpunk/retro x light/dark) instead of a fixed warm-paper palette.
      The two hardcoded light/dark --bd-* blocks that used to live here were
      removed because --et-* already carries mode. Washes are theme-derived via
-     color-mix (same technique as --lc-tint). Fonts stay Fraunces/Hanken/Plex —
-     the display voice the owner liked; flip these three to --et-font* for full
-     theme typography. */
+     color-mix (same technique as --lc-tint). Fonts ALSO follow the theme now
+     (owner 2026-08-24): --bd-font-* alias --et-font*, so cyberpunk reads
+     Rajdhani, retro Bangers, apple system — not a fixed Fraunces/Hanken/Plex. */
   --bd-paper: var(--et-bg);
   --bd-surface: var(--et-surface);
   --bd-sunk: var(--lc-tint);
   --bd-ink: var(--et-fg);
   --bd-ink-soft: var(--et-muted);
   --bd-ink-faint: color-mix(in srgb, var(--et-fg) 45%, var(--et-bg));
-  --bd-line: var(--et-border);
-  --bd-line-soft: var(--et-hairline);
+  /* ⚠️ The estate contract has NO --et-border / --et-link / --et-accent-wash
+     token (verified 2026-08-24 against estate-theme.css — the line/link/wash
+     roles are carried by --et-hairline / --et-accent). The old aliases pointed
+     at those three non-existent tokens, so every --bd-line border, --bd-teal-ink
+     and --bd-teal-wash resolved to an invalid value (unset) in EVERY theme.
+     Mapped onto real tokens and derived washes via color-mix (as --lc-tint is). */
+  --bd-line: var(--et-hairline);
+  --bd-line-soft: color-mix(in srgb, var(--et-hairline) 55%, var(--et-bg));
   --bd-teal: var(--et-accent);
-  --bd-teal-ink: var(--et-link);
-  --bd-teal-wash: var(--et-accent-wash);
+  --bd-teal-ink: color-mix(in srgb, var(--et-accent) 70%, var(--et-fg));
+  --bd-teal-wash: color-mix(in srgb, var(--et-accent) 15%, var(--et-bg));
   --bd-brass: var(--et-accent-2);
   --bd-brass-wash: color-mix(in srgb, var(--et-accent-2) 18%, var(--et-bg));
+  /* Text-on-brass-wash ink. The estate's --et-accent-2 is a BRIGHT hue in some
+     themes (retro's mustard, cyberpunk's lemon), so accent-2 directly on its own
+     18% wash measured as low as 1.78:1 (retro light) for the "✍ Signed" badge and
+     the peer-availability chip. This darkens/mixes it toward the theme ink — the
+     mockup's own --brass was already a dark brass for exactly this — lifting every
+     theme to ≥4:1 while keeping the brass identity (measured 2026-08-24). */
+  --bd-brass-ink: color-mix(in srgb, var(--et-accent-2) 52%, var(--et-fg));
   --bd-good: var(--et-ok);
   --bd-good-wash: color-mix(in srgb, var(--et-ok) 18%, var(--et-bg));
   --bd-warn: var(--et-warn);
@@ -2869,9 +2882,12 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
   --bd-bad-wash: color-mix(in srgb, var(--et-danger) 18%, var(--et-bg));
   --bd-shadow: var(--et-shadow-lift);
   --bd-radius: var(--et-radius-lg);
-  --bd-font-body: 'Hanken Grotesk', ui-sans-serif, system-ui, sans-serif;
-  --bd-font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
-  --bd-font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
+  /* Fonts FOLLOW THE THEME (owner 2026-08-24): each theme's own faces —
+     cyberpunk Rajdhani, retro Bangers, apple system — loaded by estate-theme.css.
+     The Fraunces/Hanken/Plex <link> in index.html was removed with this change. */
+  --bd-font-body: var(--et-font);
+  --bd-font-display: var(--et-font-display);
+  --bd-font-mono: var(--et-font-mono);
 
   background: var(--bd-paper);
   color: var(--bd-ink);
@@ -2879,6 +2895,10 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
   line-height: 1.5;
   border-radius: var(--bd-radius);
   padding: 1.1rem 1.15rem 3rem;
+  /* WIDEN to the mockup's shell (owner 2026-08-24): the mockup .wrap/.topbar-in
+     are max-width:1120px. `main` caps at 64rem; this page is the wide layout, so
+     it overrides to 70rem (= 1120px). `margin:0 auto` is inherited from `main`. */
+  max-width: 70rem;
 }
 
 /* (Dark/light is inherited from the estate --et-* tokens above — no page-scoped
@@ -3043,14 +3063,22 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
 .book-detail button.primary,
 .book-detail .primary {
   background: var(--bd-teal);
-  color: #f6fbf9;
+  /* ⚠️ THEME-AWARE INK, not a hardcoded near-white (owner 2026-08-24). The
+     estate accent is LIGHT in some themes — cyberpunk's accent is bright cyan
+     #05d9e8 — so white text on it was near-invisible (the "editor almost
+     unreadable" report: Save / Write a review / Edit all use .primary). The
+     estate pairs accent with --et-accent-fg exactly for this (cyberpunk: near
+     black; apple: white; retro: cream), so text stays legible in every theme. */
+  color: var(--et-accent-fg);
   border-color: transparent;
 }
 .book-detail .chip.primary:hover,
 .book-detail button.primary:hover { background: var(--bd-teal-ink); }
 .book-detail .btn-brass {
   background: var(--bd-brass);
-  color: #fff;
+  /* Same reasoning as .primary: accent-2 is bright yellow in cyberpunk, so a
+     hardcoded white was unreadable. --et-accent-fg is the theme's on-accent ink. */
+  color: var(--et-accent-fg);
   border-color: transparent;
 }
 /* Bare (non-chip) buttons in the child panels and the scaffold rows — give them
@@ -3228,7 +3256,7 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
 }
 .book-detail .special-badge.special-badge--signed {
   background: var(--bd-brass-wash);
-  color: var(--bd-brass);
+  color: var(--bd-brass-ink);
   border-color: transparent;
 }
 .book-detail .bd-hold__meta { margin: 0.4rem 0 0; font-size: 0.8rem; color: var(--bd-ink-soft); }
@@ -3256,10 +3284,11 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
   border-radius: 9px;
   border: 1px solid var(--bd-line);
   background: var(--bd-brass-wash);
-  color: var(--bd-brass);
+  color: var(--bd-brass-ink);
   border-color: transparent;
   text-decoration: none;
 }
+.book-detail .bd-avail a { color: var(--bd-brass-ink); text-decoration: underline; }
 .book-detail .bd-avail-label { font-size: 0.78rem; color: var(--bd-ink-faint); }
 
 /* ---- your reading + content warnings ------------------------------------- */

@@ -47,21 +47,13 @@
       })();
     </script>
     <script src="/estate/theme.js"></script>
-    <!-- Fonts for the redesigned BOOK DETAIL page (owner ask 2026-08-24: the
-         Fraunces display serif, Hanken Grotesk body, IBM Plex Mono). ⚠️ SCOPED
-         BY USE, not globally: only `.book-detail` CSS references these families,
-         so every other route keeps its estate-theme typography untouched. There
-         is no enforced CSP on this app (apps/web/public/_headers sets only
-         Cache-Control, and index.html carries no CSP meta), so the Google Fonts
-         request is allowed; the CSS carries a real fallback stack, so a blocked
-         or slow fetch degrades to Georgia / system-ui / ui-monospace rather than
-         breaking the page. -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
-    />
+    <!-- The book-detail page's fonts now FOLLOW THE THEME (owner 2026-08-24):
+         its --bd-font-* tokens alias --et-font/-display/-mono, whose faces
+         (cyberpunk Rajdhani, retro Bangers, apple system) are loaded by
+         estate-theme.css. The former Fraunces/Hanken/IBM-Plex Google Fonts
+         <link> (and its two fonts.googleapis/gstatic preconnects) was removed
+         here because nothing references those families any more — the last
+         user, .book-detail, was switched to the theme fonts. -->
     <!-- Installable to the home screen. This app is used one-handed in front of
          a bookshelf; launching it from an icon in standalone mode, without a URL
          bar eating vertical space, is most of what makes the scan screen usable
