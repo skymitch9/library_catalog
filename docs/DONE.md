@@ -17,6 +17,95 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ Alias-aware research retry — BUILT 2026-08-24 (branch `feature/alias-aware-research`, NOT deployed)
+
+**BUILT — owner runs the paid re-ask when ready (it re-opens a paid question).**
+Build only: no research run (paid or free) against `--remote`, no deploy. The
+sized ~6–8h plan (moved whole below) was executed on branch
+`feature/alias-aware-research`. What shipped, and how the delicate accounting
+resolved:
+
+- **The ask now SEES aliases.** `research-run.ts` reads the work's title-kind
+  `work_alias` rows once (capped/deduped by the new shared `selectTitleAliases`,
+  cap `MAX_ALIAS_IDENTITIES = 4`, mirroring `enrich.ts`) and hands them to both
+  halves of the ladder. `packages/research/src/details.ts` sends them as "Also
+  known as" lines (`buildResearchIdentity`), lets a match on one count as
+  identification, and returns `matchedTitle` so an alias-sourced answer is
+  attributed on the run ("Identified as …"). `free-details.ts`'s one title-keyed
+  rung (`askIndex`) fans out over title+aliases and stops at the first identity
+  that names a series; `askAudiobook` (work_id) and the OL/Google rungs
+  (ISBN/key) have no title to vary, so they do not fan out — documented rather
+  than faked.
+- **The book becomes askable again correctly.** Migration **0410** adds
+  `research_run.input_aliases` (a JSON array — alias titles may contain commas,
+  so NOT the comma-packed form `unfilled` uses), stamped at run creation next to
+  `input_title`. `detailsRunHistory`'s asked-accounting is now the pure, exported
+  `askedForWork`: **a field counts as asked only while some done run's recorded
+  name-set COVERS the work's current name-set** (its `input_title` equals the
+  current title AND every current alias is among the run's `input_aliases`). This
+  subsumes the old `input_title = w.title` rule (retitle still re-opens
+  everything) and adds the alias case: **adding a NEW alias re-opens exactly the
+  still-empty fields it could newly answer, and nothing already answered under
+  the main title** (an answered field is filled, hence not a gap, so
+  `unaskedGaps` never re-asks it — the "no more" half holds a layer up). Coverage
+  must be met by a SINGLE run, which holds in practice because the paid ask sends
+  title+all current aliases together.
+- **Respects `gap_verdict` and the free-first ladder order** — unchanged.
+
+Verify: `npm run typecheck` clean; `npm test` **1515 pass, 0 fail** (was 1489).
+New tests: `packages/db/test/asked-for-work.test.ts`,
+`packages/db/test/details-run-history.test.ts` (shipped SQL vs real SQLite),
+`apps/worker/src/lib/alias-research.test.ts`, and `askIndex` fan-out cases in
+`free-details.test.ts`. ⚠️ NOT verified: no paid or free research was run; the
+`researchDetails` model call itself is unexercised (no live key), so it is pinned
+at its pure seams (`buildResearchIdentity`, `aliasAttribution`) rather than end
+to end. The owner runs the paid re-ask on his key; it re-opens a paid question
+for work 490 (and any other aliased book).
+
+The original sized-but-unbuilt entry, moved whole from `TODO.md`:
+
+### ⚠️ 490 now has a `work_alias` "The Ex Hex", and NOTHING on the details path reads it
+
+**Measured 2026-08-23 21:15 Phoenix** against production and the repo. The alias
+is there — `work_alias` id 1, `work_id 490`, `alias "The Ex Hex"`, `kind
+'title'`, `source 'manual'` — and it changes nothing, for two independent
+reasons:
+
+1. **The ask never sees it.** `apps/worker/src/lib/research-run.ts`,
+   `apps/worker/src/lib/free-details.ts` and `packages/research/src/details.ts`
+   contain **zero** occurrences of "alias", case-insensitive. `getWork` selects
+   `WORK_COLS` and no more. The paid ask is built from `work.title` /
+   `work.authors` (`research-run.ts:431–436`); the free rungs key off
+   `ctx.work.title` (`askIndex` :434, `askOpenLibrary` :491, `askAudiobook`
+   :354 — `askGoogleBooks` goes by ISBN and is unaffected).
+2. **The book is not even askable again.** `packages/db/src/research.ts:388`
+   counts a field as asked while `r.status = 'done' AND r.input_title = w.title`.
+   An alias is not a retitle, so run #645 still stands, `unaskedGaps` is still
+   empty, and the cron and the queue button both correctly skip it.
+
+⚠️ So the row above still says the right thing: **retitling is the fix, adding
+the alias is not.** The alias is not wasted — `GET /works/:id/candidates` does
+read it (`routes/enrich.ts:63–68`, the precedent for all of this) — it simply
+does not reach the details path.
+
+⚠️ **Corroborating evidence from the same evening:** the paid *cover* rung, which
+is also title-only, returned `not found` for "The Ex Hex Duo" at 1.85c. Two
+different paid lookups have now failed on that title string.
+
+**NOT BUILT, on purpose.** Sized rather than started, because point 2 is a money
+decision and not a code one:
+
+| Where | What | ~Hours |
+|---|---|---|
+| `research-run.ts` after the re-read (~:428) + `details.ts` prompt (:233) and identification gate (:140–153) | load `listAliasesForWork`, send an "also known as" line, let an alias match count as identified | 1.5 |
+| `research.ts:388` + `claimRun`'s `inputTitle` (`research-run.ts:340`) | decide what "already asked" means once a book has aliases, and record which name a run asked under | 2 — ⚠️ **the owner's call, like piece 3 of the covers entry: it decides whether adding an alias re-opens a paid question** |
+| `free-details.ts` — `askIndex`, `askOpenLibrary`, `askAudiobook` | fan out per alias, capped the way `enrich.ts` caps it (`MAX_QUERIES = 4`, :51), with the misses landing in `skipped` | 2 |
+| `free-details.test.ts`, `details-sweep.test.ts` | tests | 1.5 |
+
+**~6–8 hours**, and it should not start until the middle row is answered.
+
+---
+
 ## ✅ main DEPLOYED — the blocked deploy pass finished — 2026-08-24 03:55Z
 
 The entry below is moved here **whole**, exactly as the blocked session wrote
