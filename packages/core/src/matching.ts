@@ -640,6 +640,41 @@ export function matchIndexedWork<T extends MatchableWork>(
 }
 
 /**
+ * ⚠️ At most ONE row per folded title, chosen the only sanctioned way.
+ *
+ * Rows sharing a `titleKey` are, by that key's own definition, rows the matcher
+ * cannot tell apart — and `disambiguateByVolume` is the single place allowed to
+ * choose between them, on a volume number that survived outside the title text.
+ * A group it cannot settle contributes NOTHING, which is the same posture the
+ * exact tier takes.
+ *
+ * Only `matchIndexedWorkAll` needs this, and only because returning every
+ * passing row is what exposes the case: `matchIndexedWork` takes the single
+ * longest containment candidate, so an eleven-member fold could never surface
+ * as eleven answers. Measured 2026-08-23 against `catalog.csv`, the worst real
+ * one is *Reincarnated as a Sword*, where ten "(Light Novel)" volumes clean to
+ * one identical string and would otherwise all be filed as editions of book 5.
+ */
+function collapseAmbiguousFolds<E extends { titleKey: string; seriesIndex: number | null }>(
+  candidates: readonly E[],
+  seriesIndex: number | null | undefined,
+): E[] {
+  const byKey = new Map<string, E[]>();
+  for (const e of candidates) {
+    const group = byKey.get(e.titleKey);
+    if (group) group.push(e);
+    else byKey.set(e.titleKey, [e]);
+  }
+  const out: E[] = [];
+  for (const group of byKey.values()) {
+    // Handles the one-member case itself — see `disambiguateByVolume`.
+    const one = disambiguateByVolume(group, seriesIndex);
+    if (one) out.push(one);
+  }
+  return out;
+}
+
+/**
  * The same question as `matchIndexedWork`, asked of a catalog that can honestly
  * answer more than once.
  *
@@ -710,9 +745,33 @@ export function matchIndexedWorkAll<T extends MatchableWork>(
     out.push(match);
   };
 
+  /**
+   * ⚠️ Rows an earlier rung positively DECLINED, which containment must not
+   * hand back. This set is the whole difference between a multi-result matcher
+   * and a flat lie.
+   *
+   * When `disambiguateByVolume` settles an ambiguous fold, the other members
+   * of that fold were REJECTED — they are different volumes that clean down to
+   * the same string. Every one of them has `titleKey === target`, and
+   * containment is a substring test that any string trivially satisfies
+   * against itself, so without this the rung sweeps the entire fold back in.
+   *
+   * Measured 2026-08-23 against `audiobook_catalog/site/catalog.csv`: 22 of
+   * 1,026 distinct cleaned titles reach more than one row, and the bulk of
+   * them are exactly this shape — *The Eminence in Shadow* vols 1–5, *The
+   * Dragon Girl's Ascension* vols 1–6, *Hell Mode* vols 2–3, *Beyond Respawn*
+   * vols 1–3 — each a set of DIFFERENT BOOKS whose volume decoration the
+   * title cleaner strips. Handing volume 1 all six recordings is the flat
+   * "All 5 held on audio" claim `numbersAgree` documents, arriving through the
+   * one door `matchIndexedWork` never had to guard: it returned at the exact
+   * rung and never reached containment with these rows in play.
+   */
+  const declined = new Set<number>();
+
   // Rung 1 — the literal title. See `matchIndexedWork` for why an ambiguous
   // fold refuses rather than falling through.
   const exactCandidates = index.entries.filter((e) => e.titleKey === target);
+  if (exactCandidates.length > 1) for (const e of exactCandidates) declined.add(e.work.id);
   const exact = disambiguateByVolume(exactCandidates, seriesIndex);
   if (exact) {
     const a = authorOk(exact.authorKeys);
@@ -730,6 +789,7 @@ export function matchIndexedWorkAll<T extends MatchableWork>(
   const targetFolded = foldVolumeMarker(target);
   if (targetFolded !== target || index.entries.some((e) => e.matchKey !== e.titleKey)) {
     const foldedCandidates = index.entries.filter((e) => e.matchKey === targetFolded);
+    if (foldedCandidates.length > 1) for (const e of foldedCandidates) declined.add(e.work.id);
     const folded = disambiguateByVolume(foldedCandidates, seriesIndex);
     if (folded) {
       const a = authorOk(folded.authorKeys);
@@ -757,9 +817,15 @@ export function matchIndexedWorkAll<T extends MatchableWork>(
   // Rung 4 — containment, every row that passes rather than only the longest.
   // `numbersAgree` still gates pass 1, so a numbered volume can no more be
   // captured by its series-level row here than it can in `matchIndexedWork`.
-  const contained = index.entries
-    .filter((e) => isBaseContained(e, target, authorKey) && numbersAgree(e.titleKey, target))
-    .sort((a, b) => b.titleKey.length - a.titleKey.length);
+  const contained = collapseAmbiguousFolds(
+    index.entries.filter(
+      (e) =>
+        !declined.has(e.work.id) &&
+        isBaseContained(e, target, authorKey) &&
+        numbersAgree(e.titleKey, target),
+    ),
+    seriesIndex,
+  ).sort((a, b) => b.titleKey.length - a.titleKey.length);
 
   if (contained.length === 0) {
     // Pass 2 — the Space Knight shape, and still at most one row: an ambiguous
@@ -767,6 +833,7 @@ export function matchIndexedWorkAll<T extends MatchableWork>(
     // group. Unchanged from `matchIndexedWork`.
     const bareAmbiguous = index.entries.filter(
       (e) =>
+        !declined.has(e.work.id) &&
         isBaseContained(e, target, authorKey) &&
         numbersIn(e.titleKey).size === 0 &&
         (index.titleKeyCounts.get(e.titleKey) ?? 0) > 1,

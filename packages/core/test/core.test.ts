@@ -2504,6 +2504,11 @@ describe('matching — ambiguous-fold disambiguation by series volume (Space Kni
     // And it still resolves the one it can.
     const one = matchIndexedWorkAll(index, 'Space Knight Book 2', 'Michael-scott Earle', 2);
     assert.deepEqual(one.map((m) => m.work.id), [2]);
+
+    // ⚠️ The bare title hits the EXACT tier, where the volume DOES settle it —
+    // and the row it settled against must not come back through containment.
+    const bare = matchIndexedWorkAll(index, 'Space Knight', 'Michael-scott Earle', 1);
+    assert.deepEqual(bare.map((m) => [m.work.id, m.via]), [[1, 'exact']]);
   });
 });
 
@@ -2570,6 +2575,35 @@ describe('matching — matchIndexedWorkAll, every row that passes', () => {
       ),
       [2],
     );
+  });
+
+  it('⚠️ never hands back the rest of an ambiguous fold through containment', () => {
+    // The regression this file exists for. Five DIFFERENT books whose volume
+    // decoration the title cleaner strips — the real shape, measured
+    // 2026-08-23: `The Eminence in Shadow, Vol. 1` … `Vol. 5` all clean to the
+    // identical string. `disambiguateByVolume` picks vol 3 for our vol 3, and
+    // the other four are REJECTED, not merely unexamined. Every one of them
+    // has `titleKey === target`, and containment is a substring test a string
+    // trivially satisfies against itself, so an unguarded pass sweeps all five
+    // back in and the work page claims the household owns five recordings of
+    // one book. That is the flat "All 5 held on audio" lie in a new place.
+    const eminence = [1, 2, 3, 4, 5].map((v) => ({
+      id: v,
+      title: 'The Eminence in Shadow',
+      authors: 'Daisuke Aizawa',
+      seriesIndex: v,
+    }));
+    const index = buildWorkIndex(eminence);
+
+    assert.deepEqual(
+      matchIndexedWorkAll(index, 'The Eminence in Shadow', 'Daisuke Aizawa', 3).map((m) => [
+        m.work.id,
+        m.via,
+      ]),
+      [[3, 'exact']],
+    );
+    // No volume on our side: still the whole-fold refusal, not five answers.
+    assert.deepEqual(matchIndexedWorkAll(index, 'The Eminence in Shadow', 'Daisuke Aizawa'), []);
   });
 
   it('keeps the 60% containment floor', () => {
