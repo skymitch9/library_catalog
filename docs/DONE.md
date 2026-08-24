@@ -17,6 +17,53 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## 🟡 Move the leaked PEER_TOKEN out of public `PEERS` config into the `PEER_TOKEN` secret (audit CRITICAL) — FIXED-IN-CODE, owner rotation pending — 2026-08-24
+
+The 2026-08 audit's CRITICAL finding: `apps/worker/wrangler.toml` (lines ~203 &
+~418) carried the live shared peer credential as a plaintext `"token"` field
+inside the PUBLIC `[vars]` `PEERS` JSON, on a tracked file in a PUBLIC GitHub
+repo. Incoming auth (`routes/peer.ts`) was already secret-based (checks
+`X-Peer-Token` against the `PEER_TOKEN` secret); only the OUTGOING push
+(`lib/peer-push.ts`) read the plaintext `p.token`. The token is a single value
+SHARED across both instances.
+
+**Code change (branch `feature/peer-token-secret`, worktree `C:/lcw/peertoken`,
+not merged/deployed — conductor merges):**
+- `lib/peer-push.ts` — outbound `X-Peer-Token` now sends `env.PEER_TOKEN` (the
+  secret), not `p.token`. If `PEER_TOKEN` is unset, the push is skipped with a
+  named log (`PEER_TOKEN not set — outbound peer push skipped`) — never an empty
+  token. `PeerConfig` type and `parsePeers` no longer carry/read `token`.
+- `apps/worker/wrangler.toml` — the `,"token":"…"` segment removed from BOTH
+  `PEERS` entries (kept `id`, `label`, `url` — all public). The value was
+  deleted via `sed`, never printed/echoed.
+- `env.ts` — PEERS doc comment updated (no token field; notes the secret owns
+  the token).
+- Incoming auth unchanged.
+
+**SHARED-TOKEN REQUIREMENT (documented in a code comment):** the network uses
+ONE token, so `sky.PEER_TOKEN` and `padhard.PEER_TOKEN` must be the SAME value
+(they already are). Rotation means re-minting the same fresh value on both.
+
+**Why the strip is now safe to deploy without rotation:** the earlier reason
+for leaving `wrangler.toml` untouched was that outbound auth still read
+`p.token`; removing it would have broken peer push. Now outbound reads the
+already-set `PEER_TOKEN` secret, so the plaintext-free config deploys cleanly.
+
+**Verified:** `npm run typecheck` clean; `npm test` 1600 pass / 0 fail —
+including new tests (outbound uses `env.PEER_TOKEN`; unset → skipped not empty;
+`parsePeers` needs no token) and the unchanged incoming-auth test (404 without
+header). Not deployed; no `--remote`; no secret handling; token value never
+echoed.
+
+**Owner-pending to CLOSE the leak (until done, the old leaked value stays
+valid in git history):**
+1. `wrangler secret put PEER_TOKEN` a FRESH value on BOTH workers — main and
+   friend/`padhard` — same value on both.
+2. Deploy BOTH workers from this branch (once merged).
+3. Optional: purge the old value from git history (BFG / `git filter-repo`).
+
+**Source:** 2026-08 audit, `docs/info/audit-2026-08-findings.md`.
+
 ## ✅ Fix `scripts/research-queue.mjs` — mirror schema drift + non-atomic batch — branch, not merged — 2026-08-24
 
 The offline details runner replays the queue against an in-memory `node:sqlite`

@@ -13,8 +13,11 @@
  *
  * PEERS is a JSON array in wrangler.toml [vars], parsed at runtime:
  * ```json
- * [{"id":"padhard","label":"the Padhard Library","url":"https://padhard.heygabi.ai","token":"..."}]
+ * [{"id":"padhard","label":"the Padhard Library","url":"https://padhard.heygabi.ai"}]
  * ```
+ * The outbound auth token is NOT in PEERS (it is a public [vars] block). It is
+ * the `PEER_TOKEN` secret — a single shared value across all instances — sent
+ * as the `X-Peer-Token` header below.
  *
  * ⚠️ Fails SOFT everywhere, on purpose: a peer being down must never stall
  * this catalog. Unset PEERS or empty array = no-op.
@@ -36,7 +39,6 @@ export interface PeerConfig {
   id: string;
   label: string;
   url: string;
-  token: string;
 }
 
 /**
@@ -52,8 +54,7 @@ export function parsePeers(env: Env): PeerConfig[] {
       (p): p is PeerConfig =>
         typeof p.id === 'string' &&
         typeof p.label === 'string' &&
-        typeof p.url === 'string' &&
-        typeof p.token === 'string'
+        typeof p.url === 'string'
     );
   } catch {
     return [];
@@ -157,6 +158,17 @@ export async function pushToPeers(env: Env): Promise<Array<{ peer: string; resul
   const peers = parsePeers(env);
   if (peers.length === 0) return [];
 
+  // Outbound auth: the shared PEER_TOKEN secret, sent as X-Peer-Token. This is
+  // the value the RECEIVING instance checks against its own env.PEER_TOKEN in
+  // routes/peer.ts. ⚠️ REQUIREMENT: the network uses ONE shared token, so
+  // `sky.PEER_TOKEN` and `padhard.PEER_TOKEN` MUST be the SAME value (they
+  // already are). Rotating it means re-minting on BOTH workers, same value.
+  // If it is unset we must NOT send an empty token — skip the push entirely.
+  const peerToken = env.PEER_TOKEN;
+  if (!peerToken) {
+    return [{ peer: '*', result: 'PEER_TOKEN not set — outbound peer push skipped' }];
+  }
+
   const selfId = (env as unknown as Record<string, unknown>).PEER_SELF_ID as string | undefined;
   const selfLabel = (env as unknown as Record<string, unknown>).PEER_SELF_LABEL as string | undefined;
   const siteOrigin = (env as unknown as Record<string, unknown>).SITE_ORIGIN as string | undefined;
@@ -174,7 +186,7 @@ export async function pushToPeers(env: Env): Promise<Array<{ peer: string; resul
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          'X-Peer-Token': p.token,
+          'X-Peer-Token': peerToken,
         },
         body: JSON.stringify(payload),
       });

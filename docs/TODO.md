@@ -1533,9 +1533,12 @@ Ranked CRITICAL + HIGH items from the 2026-08 review/verify audit
 (`wf_69d2365f-d02`, 14 units, 97 candidate findings). Full severity-ranked
 list including MEDIUM/LOW: [`docs/info/audit-2026-08-findings.md`](info/audit-2026-08-findings.md).
 
-🔴 **The CRITICAL PEER_TOKEN item below is a live credential committed
-in plaintext to this PUBLIC repo** — see the findings doc's top section for
-the rotation steps (owner action required).
+🟡 **The CRITICAL PEER_TOKEN item below is now FIXED-IN-CODE** on
+`feature/peer-token-secret` (2026-08-24): the plaintext `token` was removed
+from both `PEERS` entries and the outbound `X-Peer-Token` now reads the
+`PEER_TOKEN` secret. **Owner action still required to close the leak:** rotate
+`PEER_TOKEN` to a fresh value on both workers, then deploy both. Until then the
+OLD leaked value stays valid in git history. See the findings doc's top section.
 
 ## ✅ [CRITICAL] `if (count === 0) return null;` sits BEFORE two `useCallback` hooks, so the first time a book is sel…
 
@@ -1549,11 +1552,11 @@ the rotation steps (owner action required).
 
 **Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
 
-## 🚩 [CRITICAL] The live cross-instance peer shared secret is committed in plaintext, twice, in a tracked file on a …
+## 🟡 [CRITICAL] The live cross-instance peer shared secret is committed in plaintext, twice, in a tracked file on a …
 
 **Where:** `apps/worker/wrangler.toml:203` (3 units: worker-scanjobs-isbn-enrich, infra-deploy-migrations-ci, worker-research-donor-peer)
 
-**Status:** 🚩 FLAGGED — left for the owner (not a clear code fix). See report.
+**Status:** 🟡 FIXED-IN-CODE on `feature/peer-token-secret` (2026-08-24) — plaintext `token` removed from both `PEERS` entries; outbound `X-Peer-Token` now reads the `PEER_TOKEN` secret; `parsePeers`/`PeerConfig` no longer carry `token`; incoming auth unchanged. Covered by tests. **Owner-pending to actually close the leak:** (1) `wrangler secret put PEER_TOKEN` a FRESH value on BOTH the main worker and the friend/`padhard` worker (same value); (2) deploy both. Until deployed, the old leaked value stays valid. Optionally purge history (BFG/`git filter-repo`).
 
 **Claim:** The live cross-instance peer shared secret is committed in plaintext, twice, in a tracked file on a PUBLIC GitHub repo — and it authenticates a route that wipes and rewrites `peer_holding` on both instances.
 

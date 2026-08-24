@@ -366,8 +366,10 @@ export interface Env {
   PEER_TOKEN?: string;
 
   /**
-   * JSON array of peer instances to push holdings to.
-   * Example: `[{"id":"padhard","label":"the Padhard Library","url":"https://padhard.heygabi.ai","token":"..."}]`
+   * JSON array of peer instances to push holdings to. PUBLIC config — carries
+   * no secret. The outbound auth token is the `PEER_TOKEN` secret, not a field
+   * here.
+   * Example: `[{"id":"padhard","label":"the Padhard Library","url":"https://padhard.heygabi.ai"}]`
    * Parsed at runtime by `lib/peer-push.ts`. Empty or unset = no outbound pushes.
    */
   PEERS?: string;
