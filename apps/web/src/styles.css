@@ -2632,29 +2632,85 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
 .work-head__desc { margin-top: 0.5rem; color: var(--et-fg); max-width: 60ch; }
 .work-head__actions { margin-top: 0.7rem; }
 
-/* --- "On your shelf" hero ------------------------------------------------- */
-.shelf-hero__lead { display: flex; gap: 0.9rem; align-items: center; flex-wrap: wrap; }
+/* --- "On your shelf": the EDITION LIST (owner model, 2026-08-24) ----------
+ * The single "hero" is gone. The shelf is a list of editions — the versions
+ * that exist — one row each, never empty, each marked Owned or Wanted with its
+ * held copies nested under it. The colour grammar is `.fmt--*`'s, one size up. */
+.shelf-rows { margin: 0; }
+.shelf-rows > li { padding: 0.55rem 0; border-bottom: 1px solid var(--et-hairline); }
+.shelf-rows > li:last-child { border-bottom: 0; }
 
-/* The format, big — the one-glance answer to "what do I have". Filled accent for
-   a physical object; outlined for a file; muted outline for audio (someone
-   else's catalog), matching the `.fmt--*` grammar one size up. */
-.shelf-hero__format {
-  font-size: 1.15rem;
-  font-weight: 800;
-  padding: 0.35rem 0.8rem;
+/* One edition row. ⚠️ Wraps rather than overflowing — the same trap `.copy`
+   answers one level up: a format pill beside its badges is wider than a 360px
+   phone's line, and nothing here may be `white-space: nowrap` at the row level. */
+.shelf-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+/* The version, as a format pill — the one-glance "what is this". Filled accent
+   for a physical object; outlined for a file; a dashed muted outline when the
+   version is only Wanted, so the eye lands on what is actually on the shelf. */
+.shelf-row__format {
+  font-size: 1rem;
+  font-weight: 700;
+  padding: 0.25rem 0.6rem;
   border-radius: var(--et-radius);
   border: 2px solid var(--et-accent);
   letter-spacing: 0.01em;
   white-space: nowrap;
 }
-.shelf-hero__format--physical { background: var(--et-accent); color: var(--et-accent-fg); border-color: var(--et-accent); }
-.shelf-hero__format--ebook { color: var(--et-accent); border-color: var(--et-accent); background: transparent; }
-.shelf-hero__format--audio { color: var(--et-muted); border-color: var(--et-muted); background: transparent; }
-.shelf-hero__format--unknown { color: var(--et-muted); border-color: var(--et-border); background: transparent; }
+.shelf-row__format--physical { background: var(--et-accent); color: var(--et-accent-fg); border-color: var(--et-accent); }
+.shelf-row__format--ebook { color: var(--et-accent); border-color: var(--et-accent); background: transparent; }
+.shelf-row__format--audio { color: var(--et-muted); border-color: var(--et-muted); background: transparent; }
+.shelf-row__format--unknown { color: var(--et-muted); border-color: var(--et-border); background: transparent; }
+/* Wanted overrides the medium colour: a dashed muted outline whatever it is. */
+.shelf-row__format--wanted {
+  background: transparent;
+  color: var(--et-muted);
+  border-color: var(--et-border);
+  border-style: dashed;
+}
 
-.shelf-hero__facts { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
-.shelf-hero__status { font-weight: 600; }
-.shelf-hero__badges { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+/* The state word beside the format. Owned = accent outline; Wanted = a quiet
+   dashed muted one, matching its format pill. */
+.shelf-row__own {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 1px 7px;
+  border-radius: var(--et-radius-pill, 999px);
+  white-space: nowrap;
+}
+.shelf-row__own--owned { border: 1px solid var(--et-accent); color: var(--et-accent); }
+.shelf-row__own--wanted { border: 1px dashed var(--et-border); color: var(--et-muted); }
+
+.shelf-row__kind {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--et-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.shelf-row__badges { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+
+/* The vendor's own name / contents, and the nested copies — all subordinate to
+   the edition row, indented a touch and quiet. */
+.shelf-row__meta { margin: 0.25rem 0 0; }
+.shelf-row__copies { margin: 0.3rem 0 0; }
+.shelf-row__copies > li { padding: 0.15rem 0; border: 0; }
+.shelf-row__copy {
+  margin: 0.25rem 0 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+.shelf-row__copy-badges { display: inline-flex; flex-wrap: wrap; gap: 0.3rem; }
 
 /* Special-edition badges — Signed / Sprayed edges / Leatherbound / Slipcase.
    A filled accent pill: these are facts about the premium object you hold, the
@@ -2706,3 +2762,50 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
 /* The record-control drawer wears danger red, not the warm/warn yellow — it
    holds the flag-this-record watch and the delete control (owner 2026-08-24). */
 .more-cluster--danger > summary { color: var(--et-danger); }
+
+/* =========================================================================
+ * Work-page redesign — MOBILE (owner: "almost unusable on mobile", 2026-08-24)
+ * Reuses the estate's own 26rem phone breakpoint (the one work-head and
+ * edition-form already collapse at); nothing new is invented. The base controls
+ * already carry a 44px touch height — it is `.chip` that trades it away for
+ * density, and the capped selects (14rem/10rem) that are wrong when a control is
+ * the only thing on a phone line. Both are put right here.
+ * ========================================================================= */
+@media (max-width: 26rem) {
+  /* Touch targets: chips regain the 44px the base `button,input,select` already
+     have. ⚠️ Height ONLY — how many chips fit a row is a WIDTH question, so the
+     ten-wide rating strip (which deliberately keeps 36px-ish density) still sits
+     on one line; a taller thumb target does not push a chip off the edge. */
+  button.chip,
+  a.chip { min-height: 44px; }
+
+  /* The edit-box tab strip already wraps (never clips); give each tab the 44px
+     touch height so the active one is always aimable on a phone. */
+  .edit-box__tabs { gap: 0.35rem; }
+  .edit-box__tabs .chip { min-height: 44px; }
+
+  /* Every form inside the edit box goes single-column and full-width. A select
+     capped at 14rem (a filter-bar width) or 10rem (a copy action) is wrong when
+     it is the only control on a phone line — uncap and fill. Bare inputs already
+     stretch in their `.stack`; this is for the capped selects and boxed fields. */
+  .edit-box .field select,
+  .edit-box .field input,
+  .edit-box .field textarea,
+  .edit-box .copy__actions select { max-width: none; width: 100%; }
+
+  /* The copy action cluster stops being a cramped inline-end row and becomes a
+     column of full-width controls, so nothing forces the page to scroll sideways
+     (the sibling's copy row took the document's horizontal scrollbar with it at
+     360px — this is the answer `.copy__text` gives with `min-width`, applied to
+     the actions). */
+  .copy__actions {
+    width: 100%;
+    flex-wrap: wrap;
+    align-items: stretch;
+  }
+  .copy__actions .field { flex: 1 1 100%; }
+
+  /* The nested copy list under an edition indents a touch; keep it from crowding
+     the screen edge on the narrowest phones. */
+  .shelf-row__copies { padding-left: 0.2rem; }
+}

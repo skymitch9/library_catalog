@@ -1,12 +1,20 @@
 /**
- * Pins `deriveShelfView` — the "On your shelf" hero + availability derivation
- * the redesign hoists to the top of the work page. The `other-versions.test.ts`
- * pattern: a pure function, no DOM, real-shaped inputs.
+ * Pins `deriveShelfView` — the "On your shelf" EDITION LIST + availability
+ * derivation the redesign hoists to the top of the work page. The
+ * `other-versions.test.ts` pattern: a pure function, no DOM, real-shaped inputs.
  *
- * ⚠️ The cases that earn this file: a book with NO copies (the common ebook-file
- * case, hero inferred from an edition), the special-edition badges read out of
- * edition prose, and the availability counts coming from the SERVER count rather
- * than `editions.length`.
+ * ## The owner model this pins (2026-08-24)
+ *
+ * ⚠️ Editions are the shelf, and the list is **never empty**. Each edition is a
+ * row marked **Owned** (a held copy, or a file you hold) or **Wanted** (it
+ * exists, no copy). Copies nest under the edition they are a copy of. A book with
+ * nothing gets one Wanted row; a book owned only on audio gets one Owned
+ * Audiobook row.
+ *
+ * ⚠️ The cases that earn this file: a book with NO copies (physical edition →
+ * Wanted, file edition → Owned), copies nesting under an edition, the never-empty
+ * fallback, the special-edition badges, and the availability counts coming from
+ * the SERVER count rather than `editions.length`.
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
@@ -64,53 +72,85 @@ const NONE = {
   peerHoldings: [],
 };
 
-describe('deriveShelfView — the hero', () => {
-  it('an owned copy linked to a hardcover leads with Hardcover', () => {
+/** The single row we expect, asserted with a helpful message when the count is off. */
+function only(v: { rows: unknown[] }): (typeof v.rows)[number] {
+  assert.equal(v.rows.length, 1, `expected exactly one shelf row, got ${v.rows.length}`);
+  return v.rows[0]!;
+}
+
+describe('deriveShelfView — editions are the shelf', () => {
+  it('an owned copy linked to a hardcover → one Owned Hardcover row, copy nested', () => {
     const v = deriveShelfView({
       ...NONE,
       copies: [copy({ edition_id: 10, location: 'Shelf 3' })],
       editions: [edition({ id: 10, format: 'hardcover' })],
     });
-    assert.equal(v.hero?.format, 'Hardcover');
-    assert.equal(v.hero?.medium, 'physical');
-    assert.equal(v.hero?.status, 'owned');
-    assert.equal(v.hero?.location, 'Shelf 3');
+    const row = only(v);
+    assert.equal(row.format, 'Hardcover');
+    assert.equal(row.medium, 'physical');
+    assert.equal(row.owned, true);
+    assert.equal(row.copies.length, 1);
+    assert.equal(row.copies[0]!.status, 'owned');
+    assert.equal(row.copies[0]!.location, 'Shelf 3');
   });
 
-  it('prefers the OWNED copy over a lent one for the hero', () => {
+  it('prefers the OWNED copy first among the nested copies of a printing', () => {
     const v = deriveShelfView({
       ...NONE,
       copies: [copy({ id: 1, status: 'lent', edition_id: 10 }), copy({ id: 2, status: 'owned', edition_id: 10 })],
       editions: [edition({ id: 10, format: 'paperback' })],
     });
-    assert.equal(v.hero?.status, 'owned');
-    assert.equal(v.hero?.otherHeldCount, 1);
+    const row = only(v);
+    assert.equal(row.owned, true);
+    assert.equal(row.copies.length, 2);
+    assert.equal(row.copies[0]!.status, 'owned');
   });
 
-  it('no copy at all — the hero is inferred from an edition, physical first', () => {
+  it('no copy: a physical edition is Wanted, a file edition is Owned; owned sorts first', () => {
     const v = deriveShelfView({
       ...NONE,
       editions: [edition({ id: 1, format: 'ebook_epub' }), edition({ id: 2, format: 'hardcover' })],
     });
-    assert.equal(v.hero?.status, null);
-    assert.equal(v.hero?.format, 'Hardcover');
-    assert.equal(v.hero?.medium, 'physical');
+    assert.equal(v.rows.length, 2);
+    const ebook = v.rows.find((r) => r.format === 'EPUB')!;
+    const hardcover = v.rows.find((r) => r.format === 'Hardcover')!;
+    assert.equal(ebook.owned, true, 'a file you hold is Owned');
+    assert.equal(hardcover.owned, false, 'a physical printing with no copy is Wanted');
+    // Owned (the ebook) leads the wanted physical row.
+    assert.equal(v.rows[0]!.owned, true);
   });
 
-  it('a wanted-only book (no held copy, no edition) has no hero', () => {
+  it('⚠️ NEVER empty: a wanted-only book (no edition, no held copy) still shows one Wanted row', () => {
     const v = deriveShelfView({ ...NONE, copies: [copy({ status: 'wanted' })] });
-    assert.equal(v.hero, null);
-    assert.equal(v.hasAnything, false);
+    const row = only(v);
+    assert.equal(row.owned, false);
+    assert.equal(row.format, null);
+    assert.equal(row.copies.length, 0);
   });
 
-  it('owns it only on audio — the hero says Audiobook', () => {
+  it('⚠️ NEVER empty: a book with nothing at all still shows one Wanted row', () => {
+    const row = only(deriveShelfView({ ...NONE }));
+    assert.equal(row.owned, false);
+  });
+
+  it('owns it only on audio → one Owned Audiobook row', () => {
     const v = deriveShelfView({
       ...NONE,
       audiobookHolding: { title: 'X' } as never,
       audioEditionCount: 1,
     });
-    assert.equal(v.hero?.format, 'Audiobook');
-    assert.equal(v.hero?.medium, 'audio');
+    const row = only(v);
+    assert.equal(row.format, 'Audiobook');
+    assert.equal(row.medium, 'audio');
+    assert.equal(row.owned, true);
+  });
+
+  it('a held copy with NO edition linked → one Owned row, the copy nested', () => {
+    const v = deriveShelfView({ ...NONE, copies: [copy({ edition_id: null, location: 'Box 2' })] });
+    const row = only(v);
+    assert.equal(row.owned, true);
+    assert.equal(row.copies.length, 1);
+    assert.equal(row.copies[0]!.location, 'Box 2');
   });
 });
 
@@ -149,12 +189,13 @@ describe('specialEditionBadges — first-class columns, prose as fallback', () =
   });
 });
 
-describe('deriveShelfView — leather ⊂ hardcover in the hero', () => {
+describe('deriveShelfView — leather ⊂ hardcover in a row', () => {
   it('a leatherbound copy with NO edition still leads with Hardcover', () => {
     const v = deriveShelfView({ ...NONE, copies: [copy({ leatherbound: 1 })] });
-    assert.equal(v.hero?.format, 'Hardcover');
-    assert.equal(v.hero?.medium, 'physical');
-    assert.ok(v.hero?.badges.some((b) => b.key === 'leather'));
+    const row = only(v);
+    assert.equal(row.format, 'Hardcover');
+    assert.equal(row.medium, 'physical');
+    assert.ok(row.badges.some((b) => b.key === 'leather'));
   });
 
   it('a linked edition still names the format — leather does not override it', () => {
@@ -163,7 +204,7 @@ describe('deriveShelfView — leather ⊂ hardcover in the hero', () => {
       copies: [copy({ leatherbound: 1, edition_id: 10 })],
       editions: [edition({ id: 10, format: 'hardcover' })],
     });
-    assert.equal(v.hero?.format, 'Hardcover');
+    assert.equal(only(v).format, 'Hardcover');
   });
 });
 
@@ -187,6 +228,8 @@ describe('deriveShelfView — availability', () => {
     const peers = [{ peerId: 'padhard', peerLabel: 'Padhard', detailUrl: null, formats: 'hardcover' }];
     const v = deriveShelfView({ ...NONE, peerHoldings: peers });
     assert.equal(v.availability.peers.length, 1);
-    assert.equal(v.hasAnything, true);
+    // The shelf is never empty even when only a peer holds it: one Wanted row.
+    assert.equal(v.rows.length, 1);
+    assert.equal(v.rows[0]!.owned, false);
   });
 });
