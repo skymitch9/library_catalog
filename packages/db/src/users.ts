@@ -118,18 +118,63 @@ export async function upsertUserOnLogin(
 ): Promise<AppUser> {
   const email = params.email.toLowerCase();
   const existing = await findUserByEmail(db, email);
+  const isRecoveryOwner = (params.ownerEmails ?? []).some(
+    (e) => e.trim().toLowerCase() === email,
+  );
 
   if (existing) {
-    // Refresh the mutable Google-side facts, but never the role and never
-    // review_name once it is set — see the note above.
+    // Refresh the mutable Google-side facts, but never review_name once it is
+    // set — see the note above.
     const nextName = params.displayName ?? existing.displayName;
     const nextPhoto = params.photoUrl ?? existing.photoUrl;
     const nextUid = params.firebaseUid ?? existing.firebaseUid;
-    if (
+
+    // ⚠️ THE RECOVERY HATCH, re-applied on sign-in — not only at INSERT. An
+    // email in OWNER_EMAILS is forced back to `owner` whenever its existing row
+    // holds any other role. Before this, OWNER_EMAILS was applied only when a
+    // NEW row was created, so it could not recover the one situation it is
+    // documented for: a row that already EXISTS with the wrong role (e.g. an
+    // owner demoted by mistake). OWNER_EMAILS is an owner-controlled deploy var,
+    // so this is the owner granting through a config only they can set, not an
+    // open escalation. The role change carries an audit row like every other.
+    const forceOwner = isRecoveryOwner && existing.role !== 'owner';
+    const factsChanged =
       nextName !== existing.displayName ||
       nextPhoto !== existing.photoUrl ||
-      nextUid !== existing.firebaseUid
-    ) {
+      nextUid !== existing.firebaseUid;
+
+    if (forceOwner) {
+      const now = new Date().toISOString();
+      await db.batch([
+        db
+          .prepare(
+            `UPDATE app_user
+                SET display_name = ?, photo_url = ?, firebase_uid = ?,
+                    role = 'owner', approved_at = ?, approved_by = NULL
+              WHERE id = ?`,
+          )
+          .bind(nextName, nextPhoto, nextUid, now, existing.id),
+        changeLogInsert(db, {
+          batchId: crypto.randomUUID(),
+          entity: 'app_user',
+          entityId: existing.id,
+          field: 'role',
+          oldJson: JSON.stringify(existing.role),
+          newJson: JSON.stringify('owner'),
+          actor: { userId: null, how: 'auto' },
+          note: 'OWNER_EMAILS recovery hatch: re-forced owner on sign-in',
+        }),
+      ]);
+      return {
+        ...existing,
+        displayName: nextName,
+        photoUrl: nextPhoto,
+        firebaseUid: nextUid,
+        role: 'owner',
+      };
+    }
+
+    if (factsChanged) {
       await db
         .prepare(
           'UPDATE app_user SET display_name = ?, photo_url = ?, firebase_uid = ? WHERE id = ?',
@@ -141,9 +186,6 @@ export async function upsertUserOnLogin(
     return existing;
   }
 
-  const isRecoveryOwner = (params.ownerEmails ?? []).some(
-    (e) => e.trim().toLowerCase() === email,
-  );
   const reviewName = params.displayName ?? email;
 
   // The role decision happens inside the INSERT so "is the table empty?" and the
