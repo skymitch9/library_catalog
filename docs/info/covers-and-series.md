@@ -1,10 +1,15 @@
 # Covers, Series & Drive Links — Information Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
-> Last verified: **2026-08-23 20:30 Phoenix** for §0 and §0.1 — both measured
-> against production that evening, including a full re-fetch of every Google
-> Books cover on both instances. **Everything from §1 onward still carries its
-> original 2026-08-10 measurement and was NOT re-checked.**
+> Last verified: **2026-08-24** for §0.2's double-bill note — the paid `--llm`
+> rung is now gated on `--commit`; verified by a dry `--friend --remote` run (no
+> `--llm`) that made zero paid calls, and by reading the gated code path. The
+> cover-needed table and the paid-rung run in §0/§0.2 keep their **2026-08-23
+> 21:45 Phoenix** measurement and were NOT re-measured.
+> §0.1 keeps its **20:30 Phoenix** measurement, including the full re-fetch of
+> every Google Books cover on both instances, and was NOT re-checked at 21:45.
+> **Everything from §1 onward still carries its original 2026-08-10 measurement
+> and was NOT re-checked.**
 >
 > 🔴 **Read §0 first. This document was written about 115 works in one
 > catalogue. There are now two catalogues and 1,025 works between them**, and
@@ -40,15 +45,22 @@ edition.source_url    116 of 117 set   ← the only thing these rows actually kn
 ## 0. ⚠️ TWO catalogues now, and one of them was unreachable — 2026-08-22/23
 
 Everything below §1 was measured against **115 works in `library-catalog`** on
-2026-08-10. Measured **2026-08-23 20:30 Phoenix**, after the sweep in §0.1:
+2026-08-10. Measured **2026-08-23 21:45 Phoenix**, after the owner's-key run in
+§0.2:
 
 | | works | no cover | stand-in | **cover needed** |
 |---|---|---|---|---|
-| `library-catalog` (library.heygabi.ai) | **493** | 3 | 1 | **4** |
-| `library-catalog-2nd` (padhard.heygabi.ai) | **532** | 15 | 2 | **17** |
+| `library-catalog` (library.heygabi.ai) | **493** | 2 | 2 | **4** |
+| `library-catalog-2nd` (padhard.heygabi.ai) | **532** | 13 | 2 | **15** |
 
-Before that sweep, 90 minutes earlier: main **5** (5 blank, 0 stand-in);
-padhard **32** (15 blank, 17 stand-in). The SQL both rows come from:
+⚠️ Main's split moved (3 + 1 → 2 + 2) while its total did not — one blank became
+a stand-in. Nothing in this session wrote to main; the split is quoted as
+measured, and where it moved was **not** investigated.
+
+At **20:30 Phoenix**, before §0.2: main **4** (3 blank, 1 stand-in); padhard
+**17** (15 blank, 2 stand-in). At 19:00, before §0.1's sweep: main **5**
+(5 blank, 0 stand-in); padhard **32** (15 blank, 17 stand-in). The SQL every row
+comes from:
 
 ```sql
 SELECT COUNT(*) AS works,
@@ -59,12 +71,13 @@ SELECT COUNT(*) AS works,
   FROM work;
 ```
 
-**Cover health, same evening:** `check-cover-health.mjs --remote` **0 broken of
-490**; `--friend --remote` **1 broken of 517** — work 356 *Evocation*, whose
-Open Library cover redirects to an archive.org object answering **HTTP 503** on
-three consecutive probes. Not cleared: the script's own rule is that a dead URL
-may be an outage and blanking it loses the only record of where the cover came
-from.
+**Cover health.** Re-run **2026-08-23 21:45 Phoenix**: `--friend --remote`
+**1 broken of 519** — still work 356 *Evocation*, whose Open Library cover
+redirects to an archive.org object answering **HTTP 503**, now on a fourth
+probe. Not cleared: the script's own rule is that a dead URL may be an outage
+and blanking it loses the only record of where the cover came from.
+⚠️ `--remote` (main) was **0 broken of 490** at 20:30 and was **NOT re-run** at
+21:45; nothing in between wrote to main.
 
 ⚠️ **"No cover" and "cover needed" are different questions.** §2.5 defines the
 real one — `coverNeeded` in `@lc/core`, and `NEEDS_CLAUSE` in
@@ -208,6 +221,80 @@ Worker holds it and **a secret store cannot be read back**. So padhard's
 remaining 15 blanks cannot be put through the paid rung until the owner pastes
 it in again. The rung says exactly this and refuses to fall back to the main
 key, which would bill her catalogue to him.
+
+---
+
+## 0.2 ⚠️ `--llm-key-from=main` — the one way out, and it is ugly on purpose
+
+> Added **2026-08-23 21:00 Phoenix**. Owner decision, verbatim: *"Run those 15 on
+> MY key instead."* His reason: *"it doesn't have limits and is from the same
+> account as my key"*, so on his account this is **attribution, not a transfer of
+> money**. ⚠️ That is his statement about his own billing and nothing in this
+> repo can verify it — which is precisely why the flag is loud rather than quiet.
+
+```bash
+npx tsx scripts/backfill-missing-covers.mjs --friend --remote --llm --llm-key-from=main
+#   ... then --commit
+```
+
+It makes a `--friend --llm` run read `ANTHROPIC_API_KEY` instead of
+`ANTHROPIC_API_KEY_FRIEND_SAM`. **The default above is unchanged**: with the flag
+absent the rung still refuses to fall back, and still says so.
+
+The spelling is deliberate — long, explicit, no short form, no env var, and
+nothing resembling `--llm-key=…` that could be mistaken for passing a key on the
+command line. ⚠️ **A custody rule you can opt out of by accident is not a custody
+rule**, so the only safe exception is one that has to be typed out in full.
+
+| It refuses | Because |
+|---|---|
+| any value but `main` | there is nothing else to point it at |
+| without `--llm` | that is the only rung that spends |
+| without `--friend` | a main run already reads `ANTHROPIC_API_KEY`; a silent no-op would read as "the flag did something" |
+
+All three are checked **before the free rungs run**, so a typo in the one flag
+that redirects a bill costs nothing. The banner names the key in use, says
+`OVERRIDE ACTIVE`, and names the key that is *not* being used; the spend line
+repeats it. Measured live:
+
+```
+  key in use: ANTHROPIC_API_KEY  (the OWNER's key — billed to him, for padhard's books)
+  ⚠️ OVERRIDE ACTIVE — --llm-key-from=main.
+     This is a --friend run (library-catalog-2nd, padhard) and it is NOT using
+     ANTHROPIC_API_KEY_FRIEND_SAM. Every cent below lands on ANTHROPIC_API_KEY.
+```
+
+### ⚠️ The double-bill trap — the paid rung used to spend on the dry pass too (fixed 2026-08-24)
+
+Until **2026-08-24** `--llm` spent **whether or not `--commit` was passed**: the
+paid loop ran on the dry pass, and `--commit` gated only the SQL write, not the
+LLM call. So a "dry then commit" workflow was **two** bills — and because each
+pass re-asks Claude, the dry pass was not even a preview of what the committing
+pass would write.
+
+**Fixed 2026-08-24** (`backfill-missing-covers.mjs`): the paid call is now gated
+on `--commit`, and the key is not even read on the dry pass. A dry `--llm` run
+**makes no paid call** — it prices the rung (how many books WOULD be asked, the
+worst-case cost, on which key) and stops. Anyone who genuinely wants a paid
+preview passes the new **`--llm-dry`** flag (default OFF); it spends but writes
+nothing. The free rungs (Open Library, Google Books, Bookcover, title search)
+still run in dry mode — only the one paid rung is gated.
+
+```bash
+npx tsx scripts/backfill-missing-covers.mjs --friend --remote --llm            # dry: prices the rung, spends $0
+npx tsx scripts/backfill-missing-covers.mjs --friend --remote --llm --commit   # spends AND writes
+npx tsx scripts/backfill-missing-covers.mjs --friend --remote --llm --llm-dry  # paid preview: spends, writes nothing
+```
+
+This brings `backfill-missing-covers.mjs` into line with `scripts/research-queue.mjs`,
+which already gated its paid call on `--commit` (`const apiKey = commit ?
+anthropicKey(keyName) : 'estimate-only'`) and prints *"Estimate only. Nothing was
+asked and nothing was written"* on the dry pass. One shape for the paid rung
+across both scripts: the dry pass prices it, `--commit` spends.
+
+⚠️ **The same flag, the same spelling, now exists on `scripts/research-queue.mjs`**,
+which had the identical defect and one worse besides — see [`DONE.md`](../DONE.md),
+2026-08-23. One name for one idea; do not invent a second.
 
 ## 1. ⚠️ The strongest rung in the project cannot fire here
 
