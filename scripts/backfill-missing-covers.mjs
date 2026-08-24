@@ -93,6 +93,18 @@
  * Samantha's own key — `apps/worker/.dev.vars` lines 79–85 say so. Her line is
  * a drop-box that lives BLANK; see the comment at the rung itself.
  *
+ * ⚠️ **`--llm-key-from=main` is the one way out of that, and it is deliberately
+ * ugly.** It makes a `--friend --llm` run read `ANTHROPIC_API_KEY` — the OWNER's
+ * key — instead of Samantha's, so padhard's covers land on his bill. It has to
+ * be typed in full, on purpose, for exactly one reason: the default is the
+ * custody rule, and a rule you can opt out of by accident is not one. What it
+ * does NOT do is change the default — with the flag absent the rung still
+ * refuses to fall back, and still says so. When the flag IS present the banner
+ * names the key in use and says the override is active, so the bill is never a
+ * surprise. Owner decision, 2026-08-23: *"Run those 15 on MY key instead."*
+ *
+ *     npm run backfill:missing-covers -- --friend --remote --llm --llm-key-from=main
+ *
  * Reads `GOOGLE_BOOKS_API_KEY` from `apps/worker/.dev.vars`. ⚠️ Without it rung 2
  * is skipped and this script is worth 0 new covers — anonymous Google Books
  * returned 429 on 40 of 40 calls (2026-08-09).
@@ -114,6 +126,52 @@ const repair = process.argv.includes('--repair');
 const useLlm = process.argv.includes('--llm');
 /** Also go after works wearing a known stand-in. See `NEEDS_COVER` below. */
 const includeStandins = process.argv.includes('--standins');
+
+/**
+ * ⚠️ **The escape hatch from the whose-key-pays rule — and it is meant to look
+ * like one.**
+ *
+ * `--llm-key-from=main` makes a `--friend` run spend `ANTHROPIC_API_KEY` rather
+ * than `ANTHROPIC_API_KEY_FRIEND_SAM`. The long, explicit spelling is the point:
+ * the default (refuse, never fall back) is a custody rule, and the only safe way
+ * to have an exception to a custody rule is to make it impossible to take by
+ * accident. There is no short form, no env var, and no `--llm-key=…` that could
+ * be confused with passing a key on the command line.
+ *
+ * It is validated HERE, before the free rungs run, rather than at the paid rung
+ * forty seconds later — a typo in the one flag that redirects a bill should cost
+ * nothing and stop immediately.
+ */
+const llmKeyFrom = (() => {
+  const arg = process.argv.find((a) => a === '--llm-key-from' || a.startsWith('--llm-key-from='));
+  if (!arg) return null;
+  const value = arg.includes('=') ? arg.slice(arg.indexOf('=') + 1).trim() : '';
+  if (value !== 'main') {
+    console.error(
+      `⚠️ --llm-key-from: the only accepted value is "main"` +
+        (value ? `, not "${value}".` : ' — it takes an "=", e.g. --llm-key-from=main.'),
+    );
+    console.error(
+      '   It exists to bill a --friend run to the OWNER\'s ANTHROPIC_API_KEY.\n' +
+        '   There is nothing else to point it at: the default already reads the key\n' +
+        '   belonging to whichever instance the run is aimed at.',
+    );
+    process.exit(1);
+  }
+  if (!useLlm) {
+    console.error('⚠️ --llm-key-from=main does nothing without --llm — that is the only rung that spends. Stopping.');
+    process.exit(1);
+  }
+  if (!flags.friend) {
+    console.error(
+      '⚠️ --llm-key-from=main does nothing without --friend: a main-instance run\n' +
+        '   already reads ANTHROPIC_API_KEY. Stopping rather than pretending the flag\n' +
+        '   changed something.',
+    );
+    process.exit(1);
+  }
+  return value;
+})();
 
 /**
  * "Cover needed", as SQL — ⚠️ **a MIRROR of `NEEDS_COVER` in
@@ -463,19 +521,54 @@ if (useLlm) {
    * So a `--friend --llm` run needs the owner to re-paste it first, and this
    * rung says exactly that rather than falling back to the main key.
    */
-  const keyName = flags.friend ? 'ANTHROPIC_API_KEY_FRIEND_SAM' : 'ANTHROPIC_API_KEY';
-  const whose = flags.friend ? "padhard — Samantha's own key" : "main instance — the owner's key";
+  /*
+   * ⚠️ **`--llm-key-from=main` is the one sanctioned exception, and it changes
+   * WHO PAYS — nothing else.** Owner decision 2026-08-23, for padhard's 15
+   * remaining blanks: *"Run those 15 on MY key instead."* Both keys are on the
+   * same Anthropic account, so on his account this is attribution rather than a
+   * transfer of money; that is HIS statement about HIS billing, not something
+   * this script can verify, and it is why the flag says the loud thing anyway.
+   *
+   * The default is untouched: with the flag absent, a `--friend` run reads
+   * Samantha's key and refuses to fall back. The exception is only ever taken by
+   * typing it out.
+   */
+  const defaultKeyName = flags.friend ? 'ANTHROPIC_API_KEY_FRIEND_SAM' : 'ANTHROPIC_API_KEY';
+  const overridden = llmKeyFrom === 'main';
+  const keyName = overridden ? 'ANTHROPIC_API_KEY' : defaultKeyName;
+  const whose = overridden
+    ? "the OWNER's key — billed to him, for padhard's books"
+    : flags.friend
+      ? "padhard — Samantha's own key"
+      : "main instance — the owner's key";
   console.log(`  key in use: ${keyName}  (${whose})`);
+  if (overridden) {
+    console.log(
+      `  ⚠️ OVERRIDE ACTIVE — --llm-key-from=main.\n` +
+        `     This is a --friend run (${'library-catalog-2nd'}, padhard) and it is NOT using\n` +
+        `     ${defaultKeyName}. Every cent below lands on ${keyName}.\n` +
+        `     Without this flag the rung refuses to fall back; that default is unchanged.`,
+    );
+  }
 
   const apiKey = readDevVar(keyName);
   if (!apiKey) {
     console.log(`  ⚠️ ${keyName} is empty or absent in apps/worker/.dev.vars — skipping this rung.`);
-    if (flags.friend) {
+    if (overridden) {
+      console.log(
+        '     ⚠️ That is the OWNER\'s key missing, not the drop-box: --llm-key-from=main\n' +
+          '     was passed, so ANTHROPIC_API_KEY is what was looked for. Nothing fell back\n' +
+          '     to Samantha\'s key either — an override in one direction is not a licence\n' +
+          '     to swap in the other.',
+      );
+    } else if (flags.friend) {
       console.log(
         '     That is the drop-box being blank, which is its resting state — not a\n' +
           '     misconfiguration. Paste her key after the `=` on that line, re-run, then\n' +
           '     blank it again. Runbook: docs/access/second-instance.md.\n' +
-          '     ⚠️ Do NOT substitute ANTHROPIC_API_KEY here: that bills padhard to the owner.',
+          '     ⚠️ Do NOT substitute ANTHROPIC_API_KEY here: that bills padhard to the owner.\n' +
+          '     If that IS what is wanted, it is a decision and it has a flag that says so:\n' +
+          '     --llm-key-from=main. Never a quiet edit of this line.',
       );
     }
   } else {
@@ -567,6 +660,7 @@ if (useLlm) {
     console.log(
       `--llm spend: ${spend.calls} call(s), ${spend.cents.toFixed(2)}c in tokens` +
         ` ($${(spend.cents / 100).toFixed(2)}) on ${keyName}` +
+        (overridden ? ` (⚠️ --llm-key-from=main — padhard's books, the owner's key)` : '') +
         (spend.errors ? `, plus ${spend.errors} errored call(s) whose usage never arrived` : '') +
         `.\n   ⚠️ Tokens only. Add up to 4c per call for server-side web search,` +
         ` which is billed separately and is not in usage — so at most` +
