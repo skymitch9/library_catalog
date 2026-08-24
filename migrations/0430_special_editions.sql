@@ -1,0 +1,55 @@
+-- Special-edition attributes become first-class, editable booleans on a COPY.
+--
+-- ## Why COPY-level and not EDITION-level
+--
+-- `is_signed` has been a copy column since migration 0001, and its schema
+-- comment there names exactly these attributes as the kind of thing it stands
+-- for: *"Signed, numbered, sprayed edges, exclusive cover — the things Open
+-- Library will never tell you."* These three belong on the same row for the same
+-- reason signing does: they are facts about **one physical object on a shelf**,
+-- not about a printing that exists in the world.
+--
+--   * Two backers of one Kickstarter get different piles — one a sprayed-edge
+--     leatherbound, one the plain trade hardcover — from the SAME `edition`.
+--     Filing the attribute on the edition would make both copies claim both
+--     facts. The signed/leatherbound one is a specific copy, which is precisely
+--     what `copy` rows are for.
+--   * A copy can exist before its exact printing is known (`copy.edition_id` is
+--     nullable, migration 0001) — a spine photographed onto a shelf. "This one
+--     is the leatherbound" must be sayable with no edition linked yet, which an
+--     edition-level column cannot express.
+--
+-- Until now these three lived only as free text inside `edition.edition_name`
+-- (the shop's own words — "Slipcased", "Signed and numbered") and were surfaced
+-- as READ-ONLY badges parsed from that prose (`apps/web/src/lib/shelf-view.ts`,
+-- `specialEditionBadges`). Parsing prose cannot be edited and cannot be filtered
+-- on; this makes them real. The prose parse stays as a back-compat fallback for
+-- un-migrated rows until the leather sweep (`scripts/sweep-special-editions.mjs`)
+-- maps the recorded ones across — nothing regresses in the meantime.
+--
+-- ## Leather ⊂ hardcover (owner rule)
+--
+-- Leatherbound implies the hardcover format — there is no leatherbound
+-- paperback. That subset rule is NOT encoded here as a CHECK, because format
+-- lives on the linked `edition` and this is the `copy` row: a row-level CHECK
+-- cannot see across the FK, and a leatherbound copy may have no edition linked
+-- yet. It is encoded once in code where format is derived — `LEATHER_IMPLIES_FORMAT`
+-- in `packages/core/src/constants.ts`, read by the shelf-view format derivation
+-- and by the collection "hardcover vs not" filter (`HARDCOVER_CLAUSE` in
+-- `packages/db/src/works.ts`), which treats a leatherbound copy as a hardcover.
+--
+-- ## Shape — three booleans, mirroring `is_signed` byte-for-byte
+--
+-- `INTEGER NOT NULL DEFAULT 0 CHECK (x IN (0, 1))`, exactly as `is_signed`
+-- (migration 0001). ADD COLUMN with a literal DEFAULT and a single-column CHECK
+-- is permitted by SQLite (unlike changing an existing CHECK, which forced the
+-- 0420 rebuild); no table rebuild is needed. Migration 0400 added copy columns
+-- the same way.
+--
+-- ⚠️ `IF NOT EXISTS` is not available for ADD COLUMN in SQLite, so this is not
+-- re-runnable by itself — `d1 migrations apply` records it in `d1_migrations`
+-- and it must not be applied out of band, the guard migration 0400 describes.
+
+ALTER TABLE copy ADD COLUMN sprayed_edges INTEGER NOT NULL DEFAULT 0 CHECK (sprayed_edges IN (0, 1));
+ALTER TABLE copy ADD COLUMN leatherbound  INTEGER NOT NULL DEFAULT 0 CHECK (leatherbound  IN (0, 1));
+ALTER TABLE copy ADD COLUMN slipcase      INTEGER NOT NULL DEFAULT 0 CHECK (slipcase      IN (0, 1));

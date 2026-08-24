@@ -335,6 +335,13 @@ export interface CollectionParams {
    * Travels as `?kind=`; the server reads it as `editionKind`.
    */
   editionKind?: string;
+  /**
+   * The multi-type format selector, as a comma-separated list — any of
+   * `hardcover`, `leatherbound`, `paperback`, `mass_market`, `ebook`,
+   * `audiobook`. Owner ask, 2026-08-24. Travels as `?binding=`; the server's
+   * `BINDING_CLAUSE` is a fixed map, so an unknown type adds no clause.
+   */
+  binding?: string;
   status?: string;
   /**
    * One shared fictional world, the tier above `series` — and it composes with

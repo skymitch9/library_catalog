@@ -382,6 +382,10 @@ export interface CopyRow {
   vendor: string | null;
   condition: string | null;
   is_signed: number;
+  /** Special-edition attributes, first-class since migration 0430. 0/1. */
+  sprayed_edges: number;
+  leatherbound: number;
+  slipcase: number;
   edition_notes: string | null;
   /** ⚠️ Deprecated by migration 0400 — read `person_name`. Still selected for one release. */
   lent_to: string | null;
@@ -393,7 +397,8 @@ export interface CopyRow {
 }
 
 const COPY_COLS = `id, work_id, edition_id, status, location, acquired_on, price_paid_cents,
-                   currency, vendor, condition, is_signed, edition_notes, lent_to,
+                   currency, vendor, condition, is_signed, sprayed_edges, leatherbound,
+                   slipcase, edition_notes, lent_to,
                    person_user_id, person_name, notes`;
 
 /**
@@ -505,9 +510,10 @@ export async function createCopy(
   const insert = db
     .prepare(
       `INSERT INTO copy (work_id, edition_id, status, location, acquired_on, price_paid_cents,
-                         currency, vendor, condition, is_signed, edition_notes, lent_to,
+                         currency, vendor, condition, is_signed, sprayed_edges, leatherbound,
+                         slipcase, edition_notes, lent_to,
                          person_user_id, person_name, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        RETURNING ${COPY_COLS}`,
     )
     .bind(
@@ -521,6 +527,9 @@ export async function createCopy(
       input.vendor ?? null,
       input.condition ?? null,
       input.isSigned ? 1 : 0,
+      input.sprayedEdges ? 1 : 0,
+      input.leatherbound ? 1 : 0,
+      input.slipcase ? 1 : 0,
       input.editionNotes ?? null,
       input.lentTo ?? null,
       input.personUserId ?? null,
@@ -545,6 +554,9 @@ export async function createCopy(
       vendor: input.vendor ?? null,
       condition: input.condition ?? null,
       isSigned: input.isSigned ?? false,
+      sprayedEdges: input.sprayedEdges ?? false,
+      leatherbound: input.leatherbound ?? false,
+      slipcase: input.slipcase ?? false,
       editionNotes: input.editionNotes ?? null,
       lentTo: input.lentTo ?? null,
       personUserId: input.personUserId ?? null,
@@ -689,6 +701,11 @@ export async function updateCopy(
     vendor: pick(patch.vendor, current.vendor),
     condition: pick(patch.condition, current.condition),
     isSigned: patch.isSigned === undefined ? current.is_signed : patch.isSigned ? 1 : 0,
+    sprayedEdges:
+      patch.sprayedEdges === undefined ? current.sprayed_edges : patch.sprayedEdges ? 1 : 0,
+    leatherbound:
+      patch.leatherbound === undefined ? current.leatherbound : patch.leatherbound ? 1 : 0,
+    slipcase: patch.slipcase === undefined ? current.slipcase : patch.slipcase ? 1 : 0,
     editionNotes: pick(patch.editionNotes, current.edition_notes),
     lentTo: pick(patch.lentTo, current.lent_to),
     personUserId: pick(patch.personUserId, current.person_user_id),
@@ -713,6 +730,9 @@ export async function updateCopy(
   consider('vendor', current.vendor, next.vendor);
   consider('condition', current.condition, next.condition);
   consider('isSigned', current.is_signed, next.isSigned);
+  consider('sprayedEdges', current.sprayed_edges, next.sprayedEdges);
+  consider('leatherbound', current.leatherbound, next.leatherbound);
+  consider('slipcase', current.slipcase, next.slipcase);
   consider('editionNotes', current.edition_notes, next.editionNotes);
   consider('lentTo', current.lent_to, next.lentTo);
   // ⚠️ Two rows, never one. "Samantha" being replaced by a LINK to Samantha is
@@ -726,7 +746,8 @@ export async function updateCopy(
     .prepare(
       `UPDATE copy SET
          edition_id = ?, status = ?, location = ?, acquired_on = ?, price_paid_cents = ?,
-         currency = ?, vendor = ?, condition = ?, is_signed = ?, edition_notes = ?,
+         currency = ?, vendor = ?, condition = ?, is_signed = ?, sprayed_edges = ?,
+         leatherbound = ?, slipcase = ?, edition_notes = ?,
          lent_to = ?, person_user_id = ?, person_name = ?, notes = ?,
          updated_at = datetime('now')
        WHERE id = ?
@@ -742,6 +763,9 @@ export async function updateCopy(
       next.vendor,
       next.condition,
       next.isSigned,
+      next.sprayedEdges,
+      next.leatherbound,
+      next.slipcase,
       next.editionNotes,
       next.lentTo,
       next.personUserId,

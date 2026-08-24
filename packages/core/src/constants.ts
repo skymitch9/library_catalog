@@ -196,6 +196,33 @@ export function isPhysicalFormat(format: string): boolean {
   return (PHYSICAL_FORMATS as readonly string[]).includes(format);
 }
 
+/**
+ * Leatherbound ⊂ hardcover — the owner's data-model rule, in the ONE place it
+ * is written.
+ *
+ * A leatherbound copy IS a hardcover by construction: there is no leatherbound
+ * paperback. `leatherbound` is a first-class boolean on a `copy` (migration
+ * 0430), orthogonal to the `edition.format` it is bound in, so the subset rule
+ * cannot be a schema CHECK — it lives here as code and is read by the two places
+ * that DERIVE a format from a copy rather than the UI:
+ *
+ *   * `apps/web/src/lib/shelf-view.ts` — a leatherbound hero with no linked
+ *     edition still shows "Hardcover".
+ *   * `HARDCOVER_CLAUSE` in `packages/db/src/works.ts` — the collection's
+ *     "hardcover vs not" filter counts a leatherbound copy as a hardcover.
+ *
+ * Encoding it once here is what keeps those two from hard-coding `'hardcover'`
+ * independently and drifting.
+ */
+export const LEATHER_IMPLIES_FORMAT: EditionFormat = 'hardcover';
+
+/** Does this copy count as a hardcover on the strength of being leatherbound? */
+export function leatherboundImpliesHardcover(copy: {
+  leatherbound?: boolean | number | null;
+}): boolean {
+  return copy.leatherbound === true || copy.leatherbound === 1;
+}
+
 /** Which side of the line a format falls on. Total over `EditionFormat`. */
 export function mediumOf(format: string): EditionMedium {
   return isPhysicalFormat(format) ? 'physical' : 'ebook';

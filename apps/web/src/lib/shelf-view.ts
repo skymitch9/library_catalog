@@ -14,14 +14,16 @@
  * ebook / peer holdings). The work-detail contract test (`work-detail-contract.
  * test.ts`) is unaffected because `deriveWorkView` reads no new `detail.` field.
  *
- * ⚠️ **The special-edition badges are DERIVED from existing prose, not from new
- * columns.** Only `copy.is_signed` is a real boolean today. "Sprayed edges",
- * "Leatherbound" and "Slipcase" live as free text in `edition.edition_name`
- * (see `EditionForm`'s placeholder — *"Slipcased", "Signed and numbered"*), so
- * they are read back out of that text here. Making them first-class editable
- * toggles needs a migration and is deliberately deferred; surfacing what is
- * already recorded needs neither.
+ * ⚠️ **The special-edition badges are now FIRST-CLASS copy booleans (migration
+ * 0430), with the old prose parse kept as a back-compat fallback.** `is_signed`,
+ * `sprayed_edges`, `leatherbound` and `slipcase` are real columns on `copy`; a
+ * badge lights when the column is set. For rows migrated 0430 has not yet swept
+ * (`scripts/sweep-special-editions.mjs`), the attribute may still live only as
+ * free text in `edition.edition_name` — so the prose is still scanned and
+ * OR-ed in, and nothing regresses until the sweep runs. Once a row is swept the
+ * column wins and the prose is redundant.
  */
+import { LEATHER_IMPLIES_FORMAT, leatherboundImpliesHardcover } from '@lc/core';
 import type { WorkAudioEdition, WorkAudiobookHolding, WorkEbookHolding } from '../api.js';
 import type { CopyView } from '../components/Copies.js';
 import type { EditionView } from '../components/Editions.js';
@@ -72,28 +74,41 @@ export interface ShelfView {
 /**
  * The special-edition badges for one held copy and its linked printing.
  *
- * `is_signed` is the one real boolean; the rest are read out of the edition's
- * own words. Leatherbound implies hardcover (the owner's data-model note), which
- * is why it is a badge in its own right rather than a format.
+ * ⚠️ **First-class copy columns win; edition prose is a back-compat fallback.**
+ * Since migration 0430 each attribute is a real boolean on the copy
+ * (`is_signed`, `sprayed_edges`, `leatherbound`, `slipcase`). A badge lights
+ * when the column is set OR — for a row the 0430 sweep has not reached — when
+ * the shop's own words in `edition.edition_name` / `edition.edition_kind` still
+ * carry it. Once a row is swept the column is authoritative and the prose is
+ * redundant; until then nothing regresses.
+ *
+ * Leatherbound implies hardcover (`LEATHER_IMPLIES_FORMAT`), which is why it is
+ * a badge in its own right rather than a format — the format derivation reads
+ * the same flag, see `buildHero`.
  */
 export function specialEditionBadges(
   copy: CopyView | null,
   edition: EditionView | null,
 ): SpecialEditionBadge[] {
+  // The prose the shop used, plus the canonical kind — both scanned so a
+  // "Collector's edition" whose name says "leatherbound" still lights the badge
+  // on an un-swept row.
+  const prose = [edition?.edition_name, edition?.edition_kind]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
   const badges: SpecialEditionBadge[] = [];
   if (copy?.is_signed) {
     badges.push({ key: 'signed', label: 'Signed', title: 'A signed copy' });
   }
-  // The prose the shop used, plus the canonical kind — both are scanned so a
-  // "Collector's edition" whose name says "leatherbound" still lights the badge.
-  const prose = [edition?.edition_name, edition?.edition_kind].filter(Boolean).join(' ').toLowerCase();
-  if (/spray|sprayed[- ]?edge|sprededge/.test(prose)) {
+  if (copy?.sprayed_edges || /spray|sprayed[- ]?edge|sprededge/.test(prose)) {
     badges.push({ key: 'sprayed', label: 'Sprayed edges', title: 'Coloured/sprayed page edges' });
   }
-  if (/leather/.test(prose)) {
+  if (copy?.leatherbound || /leather/.test(prose)) {
     badges.push({ key: 'leather', label: 'Leatherbound', title: 'A leatherbound hardcover' });
   }
-  if (/slip[- ]?case|slipcased/.test(prose)) {
+  if (copy?.slipcase || /slip[- ]?case|slipcased/.test(prose)) {
     badges.push({ key: 'slipcase', label: 'Slipcase', title: 'Comes in a slipcase' });
   }
   return badges;
@@ -128,11 +143,21 @@ function buildHero(
   if (held.length > 0) {
     const hero = held[0]!;
     const edition = editionOf(hero, editions);
-    const format = edition ? formatLabel(edition.format) : null;
+    // Leather ⊂ hardcover: a leatherbound copy IS a hardcover
+    // (`LEATHER_IMPLIES_FORMAT`). When no edition is linked to name a format, the
+    // flag still tells us this is a hardcover — so the hero says so rather than
+    // going blank. A recorded format is never overridden; this only FILLS an
+    // unknown one, which is the ordinary case for a copy with no edition yet.
+    const leatherHardcover = leatherboundImpliesHardcover(hero) && !edition;
+    const format = edition
+      ? formatLabel(edition.format)
+      : leatherHardcover
+        ? formatLabel(LEATHER_IMPLIES_FORMAT)
+        : null;
     return {
       status: hero.status,
       format,
-      medium: mediumOfFormat(edition?.format ?? null),
+      medium: edition ? mediumOfFormat(edition.format) : leatherHardcover ? 'physical' : null,
       badges: specialEditionBadges(hero, edition),
       location: hero.location,
       condition: hero.condition,

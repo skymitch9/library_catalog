@@ -104,6 +104,28 @@ export type EditionKindFilter = (typeof EDITION_KIND_FILTERS)[number];
 export const EBOOK_ONLY_FILTERS = ['hide', 'show'] as const;
 export type EbookOnlyFilter = (typeof EBOOK_ONLY_FILTERS)[number];
 
+/**
+ * The types the multi-type format selector offers. Owner ask, 2026-08-24 — every
+ * binding/cover type the catalog holds, each individually selectable.
+ *
+ * ⚠️ Kept here rather than in `@lc/core`, the rule `NEEDS_FILTERS` states: these
+ * are canned queries defined once as SQL in `BINDING_CLAUSE`
+ * (`packages/db/src/works.ts`) and once as a URL word here. `hardcover` includes
+ * leatherbound copies (leather ⊂ hardcover in the data); `leatherbound` is the
+ * subset, offered beside it. `audiobook` reads the sibling catalog's cached
+ * holding. The server's fixed map is the real guard — an unknown token here or
+ * there simply adds no clause.
+ */
+export const BINDING_FILTERS = [
+  'hardcover',
+  'leatherbound',
+  'paperback',
+  'mass_market',
+  'ebook',
+  'audiobook',
+] as const;
+export type BindingFilter = (typeof BINDING_FILTERS)[number];
+
 export interface CollectionFilters {
   q: string;
   series: string;
@@ -134,6 +156,16 @@ export interface CollectionFilters {
    * edition, and none of the three implies another.
    */
   editionKind: string;
+  /**
+   * The multi-type format selector — any of `BINDING_FILTERS`, individually
+   * chosen. Owner ask, 2026-08-24. A book matching ANY chosen type shows.
+   *
+   * A LIST (unlike the single-value filters here), serialised as a
+   * comma-separated `?binding=` and OR-ed by `BINDING_CLAUSE` in `@lc/db`.
+   * `leatherbound` is the subset of `hardcover` (leather ⊂ hardcover in the
+   * data) and both are offered. An unrecognised token adds no clause.
+   */
+  bindings: string[];
   status: string;
   /**
    * What is still outstanding — `cover`, `watch`, `any`, or empty.
@@ -318,6 +350,17 @@ function parseCollection(search: string): CollectionFilters {
     ebookOnly: pick(search, 'ebooks', EBOOK_ONLY_FILTERS) ?? '',
     format: pick(search, 'format', EDITION_FORMATS) ?? '',
     editionKind: pick(search, 'kind', EDITION_KIND_FILTERS) ?? '',
+    // A comma-separated list, each token kept only if it is a known type — so
+    // `?binding=hardcover,junk` filters to hardcover and ignores the rest, the
+    // page having no rendering for an unknown type. De-duplicated, order kept.
+    bindings: [
+      ...new Set(
+        (p.get('binding') ?? '')
+          .split(',')
+          .map((s) => s.trim())
+          .filter((v): v is BindingFilter => (BINDING_FILTERS as readonly string[]).includes(v)),
+      ),
+    ],
     status: pick(search, 'status', COPY_STATUSES) ?? '',
     needs: pick(search, 'needs', NEEDS_FILTERS) ?? '',
     // `?duplicates=1`, exactly as the board-game catalog spells it.
@@ -353,6 +396,11 @@ export function collectionPath(f: CollectionFilters): string {
   if (f.ebookOnly) p.set('ebooks', f.ebookOnly);
   if (f.format) p.set('format', f.format);
   if (f.editionKind) p.set('kind', f.editionKind);
+  // `?binding=hardcover,ebook` — the list joined; API and address bar spell it
+  // the same, so this and `parseCollection` are the only two places that name it.
+  // `?.` for the same tolerance every field above has (`if (f.x)`): a partial
+  // filter object omitting the list is treated as "none chosen", not a crash.
+  if (f.bindings?.length) p.set('binding', f.bindings.join(','));
   if (f.status) p.set('status', f.status);
   if (f.needs) p.set('needs', f.needs);
   // Emitted only when on, so an ordinary browse stays `/` — the same rule the
@@ -385,6 +433,7 @@ export function collectionInUniversePath(universe: string): string {
     ebookOnly: '',
     format: '',
     editionKind: '',
+    bindings: [],
     status: '',
     needs: '',
     // A link into a world is a link to its books, not to its filing mistakes.
