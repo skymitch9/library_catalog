@@ -198,6 +198,16 @@ export function WorkPage({
     setTimeout(() => editRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
   }
 
+  // Closing the focused editor restores every section AND makes sure the identity
+  // card (title / author / description) reflects any saved edits immediately.
+  // `onChanged={load}` already refreshes `detail` on each save while editing; the
+  // extra `load()` here covers a close made right after an edit, so the restored
+  // page is never a beat stale (owner 2026-08-24).
+  function closeEdit() {
+    setEditOpen(false);
+    load();
+  }
+
   return (
     <main className="book-detail">
       <button className="back" onClick={onBack}>
@@ -298,7 +308,7 @@ export function WorkPage({
             <div className="row-tight bd-actions">
               <button
                 className={editOpen ? 'chip' : 'chip primary'}
-                onClick={editOpen ? () => setEditOpen(false) : openEdit}
+                onClick={editOpen ? closeEdit : openEdit}
               >
                 {editOpen ? '✕ Close editor' : canEdit ? '✎ Edit this book' : 'Book details'}
               </button>
@@ -307,6 +317,34 @@ export function WorkPage({
         </div>
       </div>
 
+      {/* THE ONE EDIT BOX — Overview + tabs, all eleven former panels inside,
+          each with its guard intact. Opened by the single Edit button above.
+
+          ⚠️ When it is open the page becomes a FOCUSED FULL-SCREEN EDITOR (owner
+          2026-08-24): only the identity card above and this editor remain —
+          Ratings & reviews, On your shelf, Your reading, Content warnings and the
+          Record Control cluster are all hidden below on `!editOpen`. The editor
+          opens right where Ratings & reviews normally sits and extends down. */}
+      {editOpen && (
+        <div ref={editRef}>
+          <EditBox
+            workId={workId}
+            work={work}
+            me={me}
+            editions={editions}
+            copies={copies}
+            ebookHolding={ebookHolding}
+            onChanged={load}
+            onOpen={onOpen}
+          />
+        </div>
+      )}
+
+      {/* Everything from here down is hidden while the editor is open, so the
+          edit view is exactly identity card + editor. On close `closeEdit`
+          reloads the record and these sections return with fresh data. */}
+      {!editOpen && (
+        <>
       {/* 2 — RATINGS & REVIEWS, hoisted to right under the identity (it used to
           be #18 of 20). Reviews is still the only thing here that can see
           Firestore, so `onReadStateDerived` still reloads the reading panel when
@@ -318,6 +356,7 @@ export function WorkPage({
           peer?). A summary of the detailed panels in the More cluster below;
           `deriveShelfView` feeds both so they cannot disagree. */}
       <OnYourShelf
+        title={work.title}
         copies={copies}
         editions={editions}
         audiobookHolding={audiobookHolding}
@@ -366,23 +405,6 @@ export function WorkPage({
       <ContentNotes workId={workId} me={me} />
       <RequestContentWarnings canEdit={canEdit} />
 
-      {/* THE ONE EDIT BOX — Overview + tabs, all eleven former panels inside,
-          each with its guard intact. Opened by the single Edit button above. */}
-      {editOpen && (
-        <div ref={editRef}>
-          <EditBox
-            workId={workId}
-            work={work}
-            me={me}
-            editions={editions}
-            copies={copies}
-            ebookHolding={ebookHolding}
-            onChanged={load}
-            onOpen={onOpen}
-          />
-        </div>
-      )}
-
       {/* WARNING: RECORD CONTROL — the record-management drawer, collapsed by
           default. Renamed + recoloured danger-red (owner 2026-08-24): it holds the
           "flag this record" watch and the delete control, so it reads as a warning,
@@ -414,6 +436,8 @@ export function WorkPage({
             property; the panel's header comment carries the #139 story. */}
         <DeleteWork workId={workId} canEdit={canEdit} onDeleted={onBack} />
       </details>
+        </>
+      )}
     </main>
   );
 }

@@ -3154,6 +3154,27 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
 }
 .book-detail .bd-hold--wanted { background: var(--bd-sunk); }
 .book-detail .bd-hold--neutral { background: var(--bd-sunk); }
+/* An OWNED audio/ebook row is a link to its sibling catalog, opened in a new tab
+   (owner 2026-08-24). As an <a> it keeps the card's look — inherited ink, no
+   underline — and lifts a touch on hover/focus so the affordance reads without
+   a second colour scheme. Theme-aware via the same `--bd-*` tokens the card uses. */
+.book-detail a.bd-hold--link {
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  transition: box-shadow 0.12s ease;
+}
+.book-detail a.bd-hold--link:hover,
+.book-detail a.bd-hold--link:focus-visible {
+  box-shadow: 0 0 0 2px var(--bd-teal-ink);
+  outline: none;
+}
+.book-detail .bd-hold__open {
+  margin-left: auto;
+  font-size: 0.95rem;
+  color: var(--bd-teal-ink);
+  opacity: 0.8;
+}
 .book-detail .bd-hold__thumb {
   width: 52px;
   height: 70px;

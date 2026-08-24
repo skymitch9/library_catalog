@@ -703,12 +703,22 @@ export function Link({
   className,
   title,
   'aria-label': ariaLabel,
+  target,
+  rel,
 }: {
   to: string;
   children: React.ReactNode;
   className?: string;
   title?: string;
   'aria-label'?: string;
+  /**
+   * ⚠️ `target="_blank"` opts this link OUT of client-side routing — it opens a
+   * NEW TAB natively so the owner can compare several works side by side (owner
+   * 2026-08-24). Pair it with `rel="noopener noreferrer"`. Left unset, the link
+   * routes in place as before.
+   */
+  target?: string;
+  rel?: string;
 }) {
   return (
     <a
@@ -716,7 +726,12 @@ export function Link({
       className={className}
       title={title}
       aria-label={ariaLabel}
+      target={target}
+      rel={rel}
       onClick={(e) => {
+        // A new-tab link is a real navigation, not an in-app route change — let
+        // the browser open the tab and do not intercept it.
+        if (target === '_blank') return;
         // Let modified clicks (new tab, new window, download) behave natively.
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
         e.preventDefault();

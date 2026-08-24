@@ -10,6 +10,28 @@ import type { PeerHoldingView } from './PeerLibraries.js';
 import { editionKindLabel } from '../lib/formats.js';
 import { STATUS_LABEL } from '../lib/statuses.js';
 import { deriveShelfView, type ShelfCopy, type ShelfRow } from '../lib/shelf-view.js';
+import { audiobookDetailUrl } from '../lib/audiobook-site.js';
+import { ebookShelfUrl } from '../lib/ebook-site.js';
+
+/**
+ * The catalog a row opens in a NEW TAB, when it is one you actually OWN in a
+ * medium that has its own sibling site (owner 2026-08-24). Only owned audio/ebook
+ * rows link — a wanted or peer row has no file of yours to open:
+ *
+ *   - Owned **audio** → the audiobook site's title search (`audiobookDetailUrl`),
+ *     which lands on the book by putting it alone in the search box.
+ *   - Owned **ebook** → the ebook shelf (`ebookShelfUrl`). ⚠️ The shelf, NOT the
+ *     specific book: this catalog cannot compute the manifest anchor the shelf
+ *     deep-links by, and the shelf has no title-search hash — see `ebook-site.ts`.
+ *
+ * Returns null for every other row, which then renders as a plain (non-link) card.
+ */
+function rowCatalogHref(row: ShelfRow, title: string): string | null {
+  if (!row.owned) return null;
+  if (row.medium === 'audio') return audiobookDetailUrl(title);
+  if (row.medium === 'ebook') return ebookShelfUrl();
+  return null;
+}
 
 /**
  * The little emoji the mockup renders on each shelf thumbnail (owner: "the on
@@ -56,6 +78,7 @@ function rowEmoji(row: ShelfRow): string {
  * disagree about what is held.
  */
 export function OnYourShelf({
+  title,
   copies,
   editions,
   audiobookHolding,
@@ -64,6 +87,8 @@ export function OnYourShelf({
   ebookHolding,
   peerHoldings,
 }: {
+  /** The work's title — the search token for the owned-audio catalog link. */
+  title: string;
   copies: CopyView[];
   editions: EditionView[];
   audiobookHolding: WorkAudiobookHolding | null;
@@ -89,18 +114,12 @@ export function OnYourShelf({
       <h3>On your shelf</h3>
 
       <ul className="plain shelf-rows">
-        {rows.map((row) => (
-          <li key={row.key}>
-            {/* Each held/wanted format is a teal-wash holding card with its own
-                emoji thumb and the format word big in Fraunces — the mockup's
-                "On your shelf" rendering. The neutral "nothing yet" slot and a
-                wanted row wear quieter grounds so the eye lands on what is
-                actually owned. */}
-            <div
-              className={`bd-hold${
-                row.neutral ? ' bd-hold--neutral' : row.owned ? '' : ' bd-hold--wanted'
-              }`}
-            >
+        {rows.map((row) => {
+          const catalogHref = rowCatalogHref(row, title);
+          // The card body is the same whether or not the row links; only its
+          // wrapper differs (an <a> to the sibling catalog, or a plain <div>).
+          const cardInner = (
+            <>
               <div className="bd-hold__thumb" aria-hidden="true">
                 {rowEmoji(row)}
               </div>
@@ -132,6 +151,12 @@ export function OnYourShelf({
                   )}
                   {row.kind && (
                     <span className="bd-hold__kind">{editionKindLabel(row.kind)}</span>
+                  )}
+                  {/* An open-in-new-tab affordance, only on a row that links. */}
+                  {catalogHref && (
+                    <span className="bd-hold__open" aria-hidden="true">
+                      ↗
+                    </span>
                   )}
                 </div>
 
@@ -174,9 +199,39 @@ export function OnYourShelf({
                   </ul>
                 )}
               </div>
-            </div>
-          </li>
-        ))}
+            </>
+          );
+          const cardClass = `bd-hold${
+            row.neutral ? ' bd-hold--neutral' : row.owned ? '' : ' bd-hold--wanted'
+          }${catalogHref ? ' bd-hold--link' : ''}`;
+          return (
+            <li key={row.key}>
+              {/* Each held/wanted format is a teal-wash holding card with its own
+                  emoji thumb and the format word big in Fraunces — the mockup's
+                  "On your shelf" rendering. The neutral "nothing yet" slot and a
+                  wanted row wear quieter grounds so the eye lands on what is
+                  actually owned. An OWNED audio/ebook row is a link to its sibling
+                  catalog, opened in a new tab (owner 2026-08-24). */}
+              {catalogHref ? (
+                <a
+                  className={cardClass}
+                  href={catalogHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={
+                    row.medium === 'audio'
+                      ? 'Open this book on the audiobook catalog (new tab)'
+                      : 'Open the ebook shelf (new tab)'
+                  }
+                >
+                  {cardInner}
+                </a>
+              ) : (
+                <div className={cardClass}>{cardInner}</div>
+              )}
+            </li>
+          );
+        })}
       </ul>
 
       {/* ⚠️ "Also available" is now PEERS ONLY. Your own audiobook/ebook holdings

@@ -249,7 +249,15 @@ export function WorkList({
                 {selectMode ? (
                   <strong className="card__title">{w.title}</strong>
                 ) : (
-                  <Link to={workPath(w.id)} className="card__open">
+                  // New tab, so the owner can open several books to compare
+                  // (owner 2026-08-24). `.card__open`'s stretched ::after still
+                  // makes the whole card the tap target.
+                  <Link
+                    to={workPath(w.id)}
+                    className="card__open"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
                     <strong className="card__title">{w.title}</strong>
                   </Link>
                 )}
@@ -290,7 +298,13 @@ export function WorkList({
                 {selectMode ? (
                   <strong>{w.title}</strong>
                 ) : (
-                  <Link to={workPath(w.id)} className="card__open">
+                  // New tab (owner 2026-08-24) — compare several books at once.
+                  <Link
+                    to={workPath(w.id)}
+                    className="card__open"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
                     <strong>{w.title}</strong>
                   </Link>
                 )}
