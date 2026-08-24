@@ -282,5 +282,10 @@ function matchProvenance(holding: {
   if (holding.matchedVia === 'containment') {
     return `Matched by containment — a partial title match, worth a second look${pct}.`;
   }
+  // Reached from `audiobook_series_link` — the owner confirmed these two series
+  // are the same, and this rung matched on series + volume number, not on title.
+  if (holding.matchedVia === 'series_link') {
+    return 'Matched to the audiobook series you confirmed — by series and volume number.';
+  }
   return `Matched via ${holding.matchedVia}${pct}.`;
 }

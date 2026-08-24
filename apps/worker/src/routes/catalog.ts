@@ -31,6 +31,7 @@ import {
   findEditionByIsbn13,
   findWorkByKey,
   getAudiobookHolding,
+  deriveAudiobookHoldingFromSeriesLink,
   countAudioEditions,
   listAudioEditions,
   getEbookHolding,
@@ -393,7 +394,7 @@ export const catalogRoutes = new Hono<AppBindings>()
       copies,
       reading,
       watches,
-      audiobookHolding,
+      audiobookHoldingDirect,
       audioEditions,
       audioEditionCount,
       ebookHolding,
@@ -418,6 +419,23 @@ export const catalogRoutes = new Hono<AppBindings>()
         countAudioEditions(c.env.DB, id),
         getEbookHolding(c.env.DB, id),
       ]);
+
+    // ⚠️ The 507/508 fix. `getAudiobookHolding` answers from the per-work
+    // `audiobook_holding` VIEW, which the backfill fills by matching TITLES — so
+    // a work with a junk/typo title ("Fourth Wing - The Empyrean #1") has no row
+    // there and shows no audio, even when the household owns the recording. When
+    // that view is empty, derive the holding from the owner-CONFIRMED series link
+    // (`audiobook_series_link` + `audiobook_series_holding`), joined on this
+    // work's series and volume number — the safe number-line join migration 0090
+    // describes, gated on the live confirmation migration 0110 guards. Honest
+    // about confidence: `matchedVia = 'series_link'`, no title similarity.
+    //
+    // ⚠️ Fallback ONLY — the per-work view is the stronger answer when present,
+    // and this deliberately does not feed the content-warning key path (which
+    // needs the verbatim raw title the series holding does not carry).
+    const audiobookHolding =
+      audiobookHoldingDirect ??
+      (await deriveAudiobookHoldingFromSeriesLink(c.env.DB, work.series, work.seriesIndexSort));
 
     // Peer holdings: does any connected library hold this same work?
     let peerHoldings: Array<{

@@ -6,12 +6,14 @@ import {
   skipSeriesGapSchema,
 } from '@lc/core';
 import {
+  audioSeriesCandidates,
   confirmAudioSeries,
   deleteManualSeriesVolume,
   getSeriesReport,
   listSeries,
   setSeriesTotal,
   skipSeriesGap,
+  suggestSeriesNames,
   unconfirmAudioSeries,
   unskipSeriesGap,
   upsertSeriesVolume,
@@ -40,6 +42,21 @@ export const seriesRoutes = new Hono<AppBindings>()
 
   /** Every series, with its gaps worked out. Counted live, never cached. */
   .get('/', async (c) => c.json(await listSeries(c.env.DB, c.get('user').id)))
+
+  /**
+   * Autocomplete for the editor's series field — distinct names from our own
+   * `work.series` and the audiobook catalog's `audiobook_series_holding.series`,
+   * each tagged with where it came from. Static path, declared before `/:name`
+   * so "suggest" is never read as a series name.
+   *
+   * Read-only; `q` is a substring. Typing an EXISTING name is what groups a work
+   * with the rest of its series, and seeing an `audiobook`-tagged name is the cue
+   * that a confirmable audio equivalence exists.
+   */
+  .get('/suggest', async (c) => {
+    const q = c.req.query('q') ?? '';
+    return c.json({ suggestions: await suggestSeriesNames(c.env.DB, q) });
+  })
 
   /**
    * One series, with the ladder the page draws.
@@ -303,6 +320,20 @@ export const seriesRoutes = new Hono<AppBindings>()
    * no rung carries is a 404. Without that this endpoint would unhedge books
    * against a series name the sibling catalog has never used.
    */
+  /**
+   * What the editor's audio-equivalence control needs for one series: the works
+   * it would fold across, the audiobook-series it can be linked to (exactly the
+   * mappings `POST /audio-link` will accept), and the current link if any.
+   *
+   * `read`, like the rest of this file's GETs — it exposes no more than the
+   * series page already does, and it is what lets the editor say "this links all
+   * N books" before the owner commits.
+   */
+  .get('/:name/audio-candidates', async (c) => {
+    const name = decodeURIComponent(c.req.param('name'));
+    return c.json(await audioSeriesCandidates(c.env.DB, name));
+  })
+
   .post('/:name/audio-link', requireCapability('editCatalog'), async (c) => {
     const name = decodeURIComponent(c.req.param('name'));
     const parsed = confirmAudioSeriesSchema.safeParse(await c.req.json().catch(() => null));

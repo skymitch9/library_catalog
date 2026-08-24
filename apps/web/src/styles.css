@@ -3361,3 +3361,67 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
   .book-detail .bd-rate-head { align-items: flex-start; }
   .book-detail .bd-hold { flex-wrap: wrap; }
 }
+
+/* =========================================================================
+ * SERIES AUTOCOMPLETE + AUDIO-SERIES LINK (editor, 2026-08-24)
+ * The series field's suggestion dropdown and the "On audio" equivalence control.
+ * Scoped so it reads in the book-detail palette; falls back to --et-* off-page.
+ * ========================================================================= */
+.series-ac { position: relative; }
+.series-ac > input { width: 100%; }
+
+.series-ac__list {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 15rem;
+  overflow-y: auto;
+  background: var(--bd-surface, var(--et-panel, #fff));
+  border: 1px solid var(--bd-line, var(--et-border, #ccc));
+  border-radius: 10px;
+  box-shadow: var(--bd-shadow, 0 8px 24px -12px rgba(0, 0, 0, 0.3));
+}
+.series-ac__opt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: 7px;
+  cursor: pointer;
+  color: var(--bd-ink, var(--et-fg, inherit));
+}
+.series-ac__opt.is-active { background: var(--bd-teal-wash, var(--et-accent-wash, #eef)); }
+.series-ac__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.series-ac__tag {
+  flex: none;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: var(--bd-brass, var(--et-accent, #7a5)) ;
+  background: var(--bd-brass-wash, var(--et-accent-wash, #f3e9d6));
+}
+
+/* --- the "On audio" equivalence control ---------------------------------- */
+.audio-link__linked { margin: 0; font-weight: 600; color: var(--bd-teal-ink, var(--et-fg, inherit)); }
+.audio-link__cand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--bd-line, var(--et-border, #ddd));
+  border-radius: 10px;
+  background: var(--bd-sunk, transparent);
+}
+.audio-link__cand-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.audio-link__eq { font-weight: 600; }

@@ -1153,6 +1153,124 @@ export async function unconfirmAudioSeries(db: D1Database, series: string): Prom
   return (res.meta.changes ?? 0) > 0;
 }
 
+/** One autocomplete suggestion for the editor's series field. */
+export interface SeriesSuggestion {
+  /** The series name, exactly as it is stored — picking it makes this work group
+   *  with the others under the same spelling. */
+  name: string;
+  /** Which catalog(s) know this name: our own works, the audiobook catalog, or
+   *  both. Lets the field show where a suggestion comes from. */
+  sources: Array<'library' | 'audiobook'>;
+}
+
+/**
+ * Distinct series names for the editor's autocomplete — from **our own**
+ * `work.series` and the **audiobook catalog's** `audiobook_series_holding.series`
+ * (already folded to our spelling; migration 0090). A name known to both is one
+ * row carrying both sources, so the owner can see a match already exists.
+ *
+ * ⚠️ Read-only and additive — it invents no rows and folds nothing. Matching is a
+ * case-insensitive substring (`LIKE %q%`), and an empty query returns the head of
+ * the list so the field can open with suggestions.
+ */
+export async function suggestSeriesNames(
+  db: D1Database,
+  q: string,
+  limit = 12,
+): Promise<SeriesSuggestion[]> {
+  const like = `%${q ?? ''}%`;
+  const { results } = await db
+    .prepare(
+      `SELECT name, source FROM (
+         SELECT DISTINCT series AS name, 'library'   AS source FROM work                    WHERE series IS NOT NULL
+         UNION
+         SELECT DISTINCT series AS name, 'audiobook' AS source FROM audiobook_series_holding WHERE stale_at IS NULL
+       )
+       WHERE name LIKE ?1 COLLATE NOCASE
+       ORDER BY name`,
+    )
+    .bind(like)
+    .all<{ name: string; source: 'library' | 'audiobook' }>();
+
+  const byName = new Map<string, SeriesSuggestion>();
+  for (const r of results ?? []) {
+    const hit = byName.get(r.name);
+    if (hit) {
+      if (!hit.sources.includes(r.source)) hit.sources.push(r.source);
+    } else {
+      byName.set(r.name, { name: r.name, sources: [r.source] });
+    }
+  }
+  return [...byName.values()].slice(0, limit);
+}
+
+/** One audiobook-series a library series could be confirmed equivalent to. */
+export interface AudioSeriesCandidate {
+  /** The sibling catalog's own spelling — what `confirmAudioSeries` stores as the
+   *  guard and what the read path compares live rungs against. */
+  audiobookSeries: string;
+  /** How many live rungs the sibling catalog files under this mapping. */
+  rungs: number;
+}
+
+/**
+ * What the editor's "confirm this is on audio" control needs for a library
+ * series: the works it would fold across, the audiobook-series it can be linked
+ * to (the ones `confirmAudioSeries`'s guard will actually accept), and the
+ * current link if one already stands.
+ *
+ * ⚠️ The candidates are exactly the mappings a POST would accept — distinct
+ * `audiobook_series` among the LIVE rungs filed under this series — so the
+ * control can never offer a choice the confirm route then 404s. `works` is the
+ * fold size: confirming propagates to every work in this library series, and the
+ * control says so in those words.
+ */
+export async function audioSeriesCandidates(
+  db: D1Database,
+  series: string,
+): Promise<{
+  series: string;
+  works: number;
+  linked: { audiobookSeries: string; note: string | null; confirmedAt: string } | null;
+  candidates: AudioSeriesCandidate[];
+}> {
+  const [works, linkRow, cands] = await Promise.all([
+    db.prepare('SELECT COUNT(*) AS n FROM work WHERE series = ?1').bind(series).first<{ n: number }>(),
+    db
+      .prepare(
+        'SELECT audiobook_series, note, confirmed_at FROM audiobook_series_link WHERE series = ?1',
+      )
+      .bind(series)
+      .first<{ audiobook_series: string; note: string | null; confirmed_at: string }>(),
+    db
+      .prepare(
+        `SELECT audiobook_series, COUNT(*) AS rungs
+           FROM audiobook_series_holding
+          WHERE series = ?1 AND stale_at IS NULL
+          GROUP BY audiobook_series
+          ORDER BY rungs DESC, audiobook_series`,
+      )
+      .bind(series)
+      .all<{ audiobook_series: string; rungs: number }>(),
+  ]);
+
+  return {
+    series,
+    works: works?.n ?? 0,
+    linked: linkRow
+      ? {
+          audiobookSeries: linkRow.audiobook_series,
+          note: linkRow.note,
+          confirmedAt: linkRow.confirmed_at,
+        }
+      : null,
+    candidates: (cands.results ?? []).map((r) => ({
+      audiobookSeries: r.audiobook_series,
+      rungs: r.rungs,
+    })),
+  };
+}
+
 /**
  * Record that a source was consulted about a series, and what it said.
  *

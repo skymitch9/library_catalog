@@ -4,6 +4,7 @@ import type { WorkEbookHolding } from '../api.js';
 import type { WorkDetail } from '../lib/work-view.js';
 import { Accessories } from './Accessories.js';
 import { Aliases } from './Aliases.js';
+import { AudioSeriesLink } from './AudioSeriesLink.js';
 import { Copies } from './Copies.js';
 import { CoverPanel } from './CoverPanel.js';
 import { EbookShadow } from './EbookShadow.js';
@@ -104,6 +105,12 @@ export function EditBox({
         {show('Details') && (
           <div className="edit-box__section">
             <WorkFields workId={workId} work={work} canEdit={canEdit} onSaved={onChanged} />
+            {/* The audio-series equivalence sits under Details because it is keyed
+                on the series set just above it. Confirming folds across the whole
+                series — see AudioSeriesLink. This is the fix for a book owned on
+                audio (507/508) that reads as if it is not, because its title never
+                matched the per-work audiobook cache. */}
+            <AudioSeriesLink series={work.series} canEdit={canEdit} onChanged={onChanged} />
           </div>
         )}
 

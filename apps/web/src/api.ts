@@ -719,6 +719,34 @@ export interface AudioSeriesLink {
   confirmedAt: string;
 }
 
+/** One autocomplete suggestion for the editor's series field. */
+export interface SeriesSuggestion {
+  name: string;
+  /** Which catalog(s) know this name — our own works, the audiobook catalog, or both. */
+  sources: Array<'library' | 'audiobook'>;
+}
+
+/** One audiobook-series a library series could be confirmed equivalent to. */
+export interface AudioSeriesCandidate {
+  /** The sibling catalog's own spelling — sent back to `confirmAudioSeries` as the guard. */
+  audiobookSeries: string;
+  /** How many live rungs the sibling catalog files under this mapping. */
+  rungs: number;
+}
+
+/**
+ * What the editor's audio-equivalence control needs for one series: the works
+ * confirming would fold across, the audiobook-series it can be linked to, and
+ * the current link if one already stands. `GET /api/series/:name/audio-candidates`.
+ */
+export interface AudioSeriesCandidates {
+  series: string;
+  /** How many works are in this library series — the fold size. */
+  works: number;
+  linked: AudioSeriesLink | null;
+  candidates: AudioSeriesCandidate[];
+}
+
 export interface SeriesReport {
   completeness: SeriesCompleteness;
   holdings: SeriesHoldings;
@@ -1512,6 +1540,27 @@ export const api = {
 
   series: (name: string) =>
     request<SeriesReport>(`/api/series/${encodeURIComponent(name)}`),
+
+  /**
+   * Autocomplete for the editor's series field — distinct names from our own
+   * `work.series` and the audiobook catalog, each tagged with where it came
+   * from. Read-only; typing an existing name is what groups a work with its
+   * series, and an `audiobook`-tagged name signals a confirmable audio match.
+   */
+  suggestSeries: (q: string) =>
+    request<{ suggestions: SeriesSuggestion[] }>(
+      `/api/series/suggest?q=${encodeURIComponent(q)}`,
+    ),
+
+  /**
+   * For the editor's audio-equivalence control: the works this series folds
+   * across, the audiobook-series it can be linked to (exactly what
+   * `confirmAudioSeries` will accept), and the current link if any.
+   */
+  audioSeriesCandidates: (name: string) =>
+    request<AudioSeriesCandidates>(
+      `/api/series/${encodeURIComponent(name)}/audio-candidates`,
+    ),
 
   /** Hand-entered: "this series has a book 14". Always stored as `manual`. */
   addSeriesVolume: (

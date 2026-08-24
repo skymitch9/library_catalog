@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { api } from '../api.js';
+import { useEffect, useRef, useState } from 'react';
+import { api, type SeriesSuggestion } from '../api.js';
 import { describeError } from '../lib/errors.js';
 
 /**
@@ -238,11 +238,11 @@ export function WorkFields({
           <div className="controls">
             <label className="field">
               <span className="field__label">Series</span>
-              <input
-                value={series}
-                onChange={(e) => setSeries(e.target.value)}
-                placeholder="Cradle"
-              />
+              <SeriesAutocomplete value={series} onChange={setSeries} placeholder="Cradle" />
+              <span className="muted small">
+                Start typing to pick an existing series — that is what groups this book with the
+                rest of it. An <em>audio</em> tag means the audiobook catalog knows that series too.
+              </span>
             </label>
             <label className="field">
               <span className="field__label">Volume</span>
@@ -307,5 +307,141 @@ export function WorkFields({
 
       {said && <p className="muted small">{said}</p>}
     </section>
+  );
+}
+
+/**
+ * The series field, with autocomplete over both catalogs' series names.
+ *
+ * ⚠️ A **free text** combobox, never a closed picker. `work.series` is any string
+ * the catalog holds, and a genuinely new series (a first book) must still be
+ * typeable — so the suggestions only ASSIST the value, they never constrain it.
+ * Picking an existing name is how a stray spelling gets folded back onto the one
+ * the rest of the series uses, which is the whole point of showing them.
+ *
+ * Suggestions come from `GET /api/series/suggest` (our `work.series` ∪ the
+ * audiobook catalog's series), debounced so a fast typist does not fire a request
+ * per keystroke. The `audio` tag is load-bearing: it is the signal that an
+ * audiobook-series equivalence is confirmable below.
+ */
+function SeriesAutocomplete({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  const [suggestions, setSuggestions] = useState<SeriesSuggestion[]>([]);
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(-1);
+  // Suppress the fetch that a programmatic pick (or the initial mount value)
+  // would otherwise trigger — we only want suggestions for what a person typed.
+  const skipNextFetch = useRef(true);
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (skipNextFetch.current) {
+      skipNextFetch.current = false;
+      return;
+    }
+    const q = value.trim();
+    let cancelled = false;
+    const t = setTimeout(() => {
+      void api
+        .suggestSeries(q)
+        .then((r) => {
+          if (cancelled) return;
+          setSuggestions(r.suggestions);
+          setActive(-1);
+        })
+        .catch(() => {
+          // A failed suggest is not an error worth surfacing — the field still
+          // works as a plain input, which is the whole fallback.
+          if (!cancelled) setSuggestions([]);
+        });
+    }, 150);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [value]);
+
+  // Close when focus leaves the whole widget (input + list).
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, []);
+
+  const pick = (name: string) => {
+    skipNextFetch.current = true;
+    onChange(name);
+    setOpen(false);
+    setSuggestions([]);
+  };
+
+  const visible = open && suggestions.length > 0;
+
+  return (
+    <div className="series-ac" ref={boxRef}>
+      <input
+        value={value}
+        placeholder={placeholder}
+        role="combobox"
+        aria-expanded={visible}
+        aria-autocomplete="list"
+        autoComplete="off"
+        onChange={(e) => {
+          onChange(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={(e) => {
+          if (!visible) return;
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setActive((i) => (i + 1) % suggestions.length);
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setActive((i) => (i <= 0 ? suggestions.length - 1 : i - 1));
+          } else if (e.key === 'Enter' && active >= 0) {
+            e.preventDefault();
+            pick(suggestions[active]!.name);
+          } else if (e.key === 'Escape') {
+            setOpen(false);
+          }
+        }}
+      />
+      {visible && (
+        <ul className="series-ac__list" role="listbox">
+          {suggestions.map((s, i) => (
+            <li
+              key={s.name}
+              role="option"
+              aria-selected={i === active}
+              className={`series-ac__opt${i === active ? ' is-active' : ''}`}
+              // onMouseDown, not onClick — fires before the input's blur so the
+              // pick lands instead of the list closing out from under the cursor.
+              onMouseDown={(e) => {
+                e.preventDefault();
+                pick(s.name);
+              }}
+              onMouseEnter={() => setActive(i)}
+            >
+              <span className="series-ac__name">{s.name}</span>
+              {s.sources.includes('audiobook') && (
+                <span className="series-ac__tag" title="The audiobook catalog knows this series">
+                  audio
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

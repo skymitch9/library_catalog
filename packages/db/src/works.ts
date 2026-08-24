@@ -887,6 +887,88 @@ export async function getAudiobookHolding(
   };
 }
 
+/** The synthetic `matchedVia` a series-link-derived holding carries. Not one of
+ *  the per-work view's evidence values ('exact'/'alias'/'containment') — it says
+ *  plainly *how* this holding was reached, so the work page never launders an
+ *  owner-confirmed series mapping into a title-match claim. `matchProvenance` in
+ *  `OtherVersions.tsx` has the sentence for it. */
+export const SERIES_LINK_MATCHED_VIA = 'series_link';
+
+interface SeriesLinkHoldingRow {
+  title: string;
+  authors: string | null;
+  audiobook_series: string;
+  index_display: string | null;
+  cover_href: string | null;
+}
+
+/**
+ * The work's audio holding **derived from the owner-confirmed series link**, for
+ * a work the per-work `audiobook_holding` view has no row for.
+ *
+ * ## Why this exists (the 507/508 bug, measured 2026-08-24)
+ *
+ * `getAudiobookHolding` above answers only from `audiobook_edition_holding`
+ * (migration 0390) — a per-WORK cache the backfill fills by matching TITLES.
+ * When a work's title is junk or a typo ("Fourth Wing - The Empyrean #1"), that
+ * title match never lands, so the view is empty and the work page shows no
+ * audio — **even though the household owns the recording**. The audiobook
+ * catalog's own curated rows live in `audiobook_series_holding`, keyed on
+ * `(series, index_sort)` — the number line, no title matching — and the owner
+ * has confirmed the series equivalence in `audiobook_series_link`.
+ *
+ * So when the per-work view is empty, this reaches the same recording by the
+ * safe join migration 0090 describes: this work's `(series, series_index_sort)`
+ * → the series-holding rung, gated on a **live** confirmed link whose stored
+ * `audiobook_series` still matches the rung's (migration 0110's guard — a
+ * rename reverts to unconfirmed, exactly as the series ladder treats it).
+ *
+ * ⚠️ **Honest about confidence.** `matchedVia` is `SERIES_LINK_MATCHED_VIA`, not
+ * an evidence value, and `titleSimilarity` is null — there was no title match.
+ * `staleAt` is null because the query already filtered to live rungs; a stale
+ * rung means the sibling catalog withdrew it and there is nothing to claim.
+ *
+ * ⚠️ **A FALLBACK, never a replacement.** The per-work view is the stronger
+ * answer (it names the exact recording and its verbatim raw title); call this
+ * only when that view returned null. `rawTitle` is null here — the series
+ * holding carries no verbatim Audible string — so the content-warning key path
+ * (`warningKeysFor`) is deliberately NOT fed by this, which is why the fallback
+ * lives in the work-page route and not inside `getAudiobookHolding`.
+ */
+export async function deriveAudiobookHoldingFromSeriesLink(
+  db: D1Database,
+  series: string | null,
+  seriesIndexSort: number | null,
+): Promise<AudiobookHolding | null> {
+  if (!series || seriesIndexSort == null) return null;
+  const row = await db
+    .prepare(
+      `SELECT h.title, h.authors, h.audiobook_series, h.index_display, h.cover_href
+         FROM audiobook_series_holding h
+         JOIN audiobook_series_link l
+           ON l.series = h.series AND l.audiobook_series = h.audiobook_series
+        WHERE h.series = ?1 AND h.index_sort = ?2 AND h.stale_at IS NULL
+        LIMIT 1`,
+    )
+    .bind(series, seriesIndexSort)
+    .first<SeriesLinkHoldingRow>();
+  if (!row) return null;
+  return {
+    title: row.title,
+    // No verbatim Audible string on a series-holding rung — see the header.
+    rawTitle: null,
+    authors: row.authors,
+    // Their spelling, exactly as the per-work view stores it — OtherVersions
+    // compares this against ours to decide whether to note the difference.
+    series: row.audiobook_series,
+    indexDisplay: row.index_display,
+    coverHref: row.cover_href,
+    matchedVia: SERIES_LINK_MATCHED_VIA,
+    titleSimilarity: null,
+    staleAt: null,
+  };
+}
+
 /**
  * One audiobook edition of a work — a row of `audiobook_edition_holding`
  * (migration 0390), which `getAudiobookHolding` above sees only one of.
