@@ -31,6 +31,143 @@
 > docs trees that is **tracked in git** and therefore survives a clone — this
 > file does not. Do not duplicate the queue here; one list, not two.
 
+## ☐ Retire `docs/HANDOFF.md` — a competing living doc the standard forbids
+
+The estate docs standard says nothing sits at the top of `docs/` but the seven
+named pieces, and that a second place "current state" lives must be retired.
+`HANDOFF.md` is that second place: **`CLAUDE.md` line 3 tells every session to
+read it FIRST**, so when it is stale it does not merely fail to help — it
+actively misleads about what production contains. Its own header says so, having
+already been rewritten once for exactly that.
+
+⚠️ **It was made TRUE on 2026-08-23, not retired.** That was deliberate: it is
+still the first thing sessions are told to read, so leaving it wrong for the
+duration of a migration was the worse option.
+
+**Why this is a migration and not a `git mv`: 18 inbound references, and some are
+in SOURCE.** Repair them in the same commit — the standard is explicit, and a
+retired doc that still answers questions is worse than a deleted one.
+
+| Where | What it references |
+|---|---|
+| `CLAUDE.md:3` | "Read `docs/HANDOFF.md` first" — ⚠️ **the load-bearing one** |
+| `docs/README.md:45` | the map's "Current state / how to pick up" row |
+| `packages/core/src/constants.ts:117,149` · `packages/core/test/core.test.ts:1405` · `packages/db/src/export.ts:6` | ⚠️ **source + a test**, citing *"open question 5"* and the ebook-pipeline section |
+| `docs/access/cloudflare.md:349` · `docs/access/README.md:57` | operational pointers |
+| `docs/info/` — `completeness-wishlist-relations.md:24,536` · `covers-and-series.md:14` · `crowdfunding-and-accessories.md:109,164` · `openlibrary-ids.md:9` · `series-formats-and-audiobooks.md:120,128` | pending-command and open-question pointers |
+
+⚠️ **Do the content move BEFORE the link repair, or the links have nowhere to
+point.** *"Open question 5"* (audiobooks are not an `edition`) is cited by a test
+as settled design — that is `info/decisions.md` content, not handoff content, and
+until it moves the citation cannot be repaired honestly. Same for the
+pending-command pointers in `info/`: those commands were run long ago, so most of
+those lines should simply be deleted rather than re-pointed.
+
+**Order:** durable content out to `info/decisions.md` → the few genuinely open
+items into this file → husk to `archive/` with a dated banner naming what
+replaced it → `grep -rn HANDOFF` across the WHOLE repo until it returns only the
+archive copy and `DONE.md`'s history → last, `CLAUDE.md:3` repointed at
+[`TODO.md`](TODO.md).
+
+
+## ☐ Format fix — scan-time toggle + GABI confirmation (Kiro, queued 2026-08-22)
+
+Kiro's wording, recovered from the damaged work log: *"scan-time toggle (default
+PB, one-tap to change) + GABI research confirmation with auto-open
+persistence"*.
+
+A scanned book defaults to **paperback** and takes one tap to correct, with
+GABI's research confirming the format and the choice persisting so the panel
+re-opens where it was left. ⚠️ Recorded here verbatim because the detail is
+Kiro's, not mine — **confirm the intent with Kiro or the owner before
+building**, particularly what "auto-open persistence" should persist across.
+
+## ☐ Padhard cover audit — did placeholders creep back in? (Kiro, queued 2026-08-22)
+
+Kiro's own open question after its sweep: *"verify no Google Books placeholders
+crept back in"*. ⚠️ **It is the right question and it matters more than it
+looks**, because that sweep took **100% of its finds from Google Books** and
+this repo has already been bitten once by a provider answering a cover request
+with HTTP 200 and a placeholder image rather than a 404
+(`backfill-missing-covers.mjs`, the 43-byte Open Library pixel).
+
+⚠️ **STILL OPEN — the audit was started on 2026-08-23 and stopped before it
+finished, so nothing here is evidence either way.** The check is
+`node scripts/check-cover-health.mjs --remote`, and again with `--friend`; it
+fetches every stored cover (~1,000 across both instances) and reports any that
+404, are not an image, or are under the 1,000-byte placeholder floor. Run it
+after any future bulk cover write, not only this one.
+
+
+## ☐ OWNER FEATURE REQUESTS — written by him directly into this file, 2026-08-23
+
+> He added these himself, with the note *"This was added by the user not the Ai.
+> Please apply formatting and rules to these request"* and *"always ask more
+> details if needed"*. Formatted here, verbatim meaning preserved, with the open
+> questions named rather than guessed. ⚠️ **His original text was lost once
+> already** — see the encoding incident in [`info/gotchas.md`](info/gotchas.md).
+
+### OR-1. Record WHO has the book — lent out, borrowed, sold
+
+> *"optional Ability to enter a user when a book is in lent out, borrowed, or
+> sold status. also the ability to assign the status to a different member of
+> the catalog for record keeping … if i loaned out a book to Samantha I should
+> be able to put her name in a text box that matches the theme and saves. if
+> Samantha is a user in the estate i should be able to autofill to her user
+> profile so its linked to her."*
+
+**Two levels, and the second is the interesting one.** A free-text name that
+saves and matches the theme is the floor; the ask above it is that an estate
+member **autofills and links to her profile**, so the record points at a person
+rather than at a string.
+
+⚠️ **`copy.lent_to` already exists** and is already rendered (`Copies.tsx`
+shows *"Lent to …"*). So the floor is partly built — check what it does today
+before designing. What is NOT there is the link to an estate identity.
+
+**Future half, stated by him and deliberately not scoped yet:** *"a way to view
+books that are assigned to you in your status page window."*
+
+**Ask him before building:**
+1. Does a linked person's name change on the card if they later change their display name — i.e. is it a live join or a snapshot?
+2. Should the borrower see it, or only the owner?
+3. Sold — does the row stay in the catalogue at all, or leave a tombstone?
+
+### OR-2. Find duplicates — copy the board-game filter, don't redesign it
+
+> *"ability to search a catalog for duplicates with a filter, we have this
+> filter in boardgame catalog so lets mimic it from there instead of
+> redesigning the wheel"*
+
+⚠️ **This is an explicit reuse instruction, so the first step is to READ
+`Board_Game_Catalog`'s implementation, not to design one.** Match its grammar
+and its wording; a second, differently-shaped duplicate finder in the estate is
+exactly what he is saying not to build.
+
+**Ask him before building:** duplicates of a WORK (same book twice) or of a
+COPY (two physical copies, which is legitimate and common)? The two want
+different defaults.
+
+### OR-3. A manual pipeline pause should ask what it means
+
+> *"when i manually pause the pipeline it says nothing can override it. I want
+> it to ask me if i want to stop all work until unpaused or if scheduled window
+> is fine to continue."*
+
+Today the pause is absolute and says so. He wants the pause to be a **question
+with two answers**: stop everything until explicitly unpaused, or stop
+interactive work but let the scheduled window proceed.
+
+⚠️ **This lives in `audiobook_catalog`, not here** — the pipeline and its pause
+card are that repo's (`app/core/pipeline_schedule.py`, the ingestion-pause card
+on `/status`). Filed here only because he wrote it here; **move it to that
+repo's TODO when it is picked up**, and do not build two pauses.
+
+**Ask him before building:** does the choice stick as a preference, or is it
+asked afresh every time he pauses?
+
+---
+
 ## 🔜 START HERE NEXT SESSION — the audiobook link build, designed but NOT started
 
 > Owner, 2026-08-22 ~23:40 Phoenix: *"we need to add audiobook sweep to the

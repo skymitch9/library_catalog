@@ -15,6 +15,56 @@ reproduced whole, with its original reasoning intact.
 sheet). That is deliberate duplication of the *headline* only; the full
 reasoning lives here.
 
+### ⚠️ A DOC CAME BACK RE-SAVED IN CP1252 AND HALF ITS MEANING WAS GONE — found 2026-08-23
+
+**Symptom.** `git diff docs/TODO.md` shows **440 insertions / 392 deletions** on
+a file nobody meant to rewrite. Every `—` reads `�`, every `⚠️` reads `??`, and
+the leading BOM is gone. It looks like a colossal edit and is mostly not one.
+
+**What actually happened.** The file was re-saved in the system ANSI codepage
+(cp1252). Characters cp1252 cannot represent were replaced with literal `?` —
+so **the emoji are destroyed, not merely displayed wrongly.** No re-decoding
+recovers them; only the last good copy does. One code fence lost a character
+outright: `` `npm run …` `` became `Run \npm run …`, i.e. the `n` was eaten as
+an escape.
+
+⚠️ **The trap inside the trap: the diff was NOT purely cosmetic.** Buried in
+those 832 changed lines were a real new section and, at the very end, three
+feature requests **the owner had typed in himself**, headed *"This was added by
+the user not the Ai."* A `git checkout` to "undo the encoding mess" would have
+destroyed them silently — the diff is far too noisy to read by eye, so the
+damage and the content are indistinguishable at a glance.
+
+**How to tell them apart, in one command.** Reduce both versions to ASCII
+alphanumerics and compare line by line: encoding damage vanishes under that
+reduction and a real edit does not.
+
+```js
+const red = t => t.split(/\r?\n/).map(l => l.replace(/[^A-Za-z0-9]/g, ''));
+// lines where red(HEAD)[i] !== red(WORKING)[i] are REAL edits, not encoding
+```
+
+**The recovery, in order.** Copy the damaged file somewhere safe **first**;
+read every line the reduction flags as genuinely new and keep it in hand;
+restore the file from `HEAD` (the only intact UTF-8 copy); re-insert the new
+content by hand. Verify with a replacement-character count of **zero** and a
+positive check that a known emoji survived — an absence test alone passes on an
+empty file.
+
+**What wrote it was never identified**, and that is recorded rather than
+guessed. `find_covers.ps1` (untracked, repo root) was the obvious suspect and is
+innocent: it writes only `found_covers.json`, and explicitly with
+`-Encoding utf8`. Windows PowerShell 5.1's `Set-Content`/`Add-Content` default
+to ANSI, so any script or editor writing a doc without naming an encoding can do
+this.
+
+⚠️ **This is the same class the estate already killed once on the Python side**
+— `PYTHONIOENCODING=utf-8` was set globally in the pipeline task environment
+(audiobook K6, 2026-08-21) precisely so a cp1252 console could not crash a
+script. That fix does not cover a file being *written* in ANSI by anything else,
+which is why this one still bit.
+
+
 ### ⚠️ THE 1PASSWORD OVERLAY WAS EATING THE SAVE CLICK — found 2026-08-13
 
 **This explains most of tonight's "silent save failures", and it is not a bug in

@@ -17,6 +17,73 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ Cover sweep, both instances — DONE 2026-08-22/23
+
+Queued as *"40 books need covers"* on 2026-08-22 when Open Library was
+rate-limiting, and finished the same cycle. Moved here whole; the TODO entry
+that tracked it is gone rather than badged.
+
+| Catalog | Were missing | Found | Still missing | Coverage |
+|---|---|---|---|---|
+| Main library | 13 | 8 | 5 | 99% (493 works) |
+| Padhard | 59 | 44 | 15 | 96% (369 works) |
+| Ebook/audiobook | 0 | — | 0 | 100% (162 works) |
+
+**Who ran it: Kiro**, on ~36 remaining credits, in its own words — *"I'll do the
+cover sweep (cheap — it's DB queries + writes, no LLM needed) and skip the
+format fix feature (that's a larger build)"*. **52 covers written across both
+catalogues.** The format-fix item it deliberately skipped is still open in
+[`TODO.md`](TODO.md).
+
+⚠️ **"96%" and "cover needed" are two different questions, and the gap is 17
+books.** Kiro's percentages count blank `cover_url` only. This repo's own
+definition — `coverNeeded` in `@lc/core`, and `NEEDS_CLAUSE` in
+`packages/db/src/works.ts` — is `cover_url IS NULL OR cover_status = 'standin'`,
+because a knowingly-wrong cover is not a finished book. Measured 2026-08-23
+19:05 Phoenix:
+
+| | blank | stand-in | **cover needed** |
+|---|---|---|---|
+| main | 5 | 0 | **5** |
+| padhard | 15 | 17 | **32** |
+
+Padhard's stand-ins went 7 → 17 during the same period. Neither figure is wrong;
+they answer different questions, and a report that quotes one as the other will
+read as a regression later.
+
+⚠️ **NOT VERIFIED: whether any of the 52 are placeholders.** Kiro raised the
+question itself and it is still open — see `TODO.md`. It matters because the
+sweep took **100% of its finds from one provider**, and this repo has already
+been bitten by a provider answering a cover request with HTTP 200 and a
+placeholder rather than a 404. `check-cover-health.mjs` is the instrument;
+it had not been run at the time of writing.
+
+
+**Source: Google Books, 100% of the finds. Open Library 404'd on every ISBN
+tried** — which is the same verdict `backfill-missing-covers.mjs`'s own header
+recorded on 2026-08-10 ("the obvious idea does not work"), reached again
+independently.
+
+The ~20 that remain are indie/self-published titles no free database holds:
+- **Main** — Korean manhwa (화이트 블러드), indie fairy-tale retellings (*Beauty X Beast*, *Rob X Punzel*, *Snow X Dwight*), a Yuumei art book
+- **Padhard** — Kelsie Rae bundles, small romance imprints, indie fantasy
+
+They need the paid `--llm` rung (~$1.20) or a manual upload.
+
+⚠️ **Re-measured 2026-08-23 19:05 Phoenix and the figures moved, because both
+catalogues are being loaded live:** main **493 works / 5 with no cover**;
+padhard **532 works / 15 with no cover + 17 stand-ins = 32 needing one**.
+Padhard gained **163 works** between the two measurements. The percentages
+above are true of the moment they were taken and nothing else — this is the
+same growing-target problem the sweep tooling was fixed for.
+
+⚠️ **The queued note said to run padhard with `--env friend`. That is wrong and
+would have failed.** The flag is **`--friend`**, added to `scripts/lib/d1.mjs`
+on 2026-08-22 (commit `4a52589`); `--env` is wrangler's idiom, not this
+script's. Corrected here so the next person copying the command does not lose
+ten minutes to it.
+
+
 ## ✅ The volume queue refilled itself — the ASK list, not the gap test (2026-08-21)
 
 **Owner, in his words:** *"why we're getting messages in missing details about

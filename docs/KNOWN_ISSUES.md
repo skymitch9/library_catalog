@@ -1,7 +1,8 @@
 # library_catalog — Known Issues, Waivers & Exceptions
 
 > **Audience:** Claude/Kiro sessions and the owner. **Status:** TRACKED.
-> Last verified: **2026-08-21**.
+> Last verified: **2026-08-23** — every entry below was re-measured that day
+> against production and the repo; four were retired as no longer true.
 >
 > **This file exists to stop the same non-bug being re-reported every month.**
 > It holds things that ARE wrong, or look wrong, and are deliberately tolerated.
@@ -21,68 +22,41 @@
 
 ---
 
-## KI-1 · `npm run typecheck` is RED, in files nobody has touched — `ACCEPTED`, and it blocks other work
+## KI-5 · The Bookcover API rung is down — every call 522 — `WATCHING`
 
-**Symptom.** `npm run typecheck` fails with **7 errors** across three files.
-Measured 2026-08-21:
+**Symptom.** Rung 2.5 of the cover ladder (`bookcover.longitood.com`) answers
+**HTTP 522** — a Cloudflare "origin did not respond" — to every request. Until
+2026-08-22 a sweep printed this as *"no cover anywhere"*, indistinguishable from
+a book no database holds.
 
-| File | Error |
-|---|---|
-| `apps/web/src/pages/WorkPage.tsx:448` | `TS2339` — `peerHoldings` not on `WorkDetail` |
-| `apps/worker/src/lib/peer-push.ts:37,147,148,149` | `TS2352` x4 — `Env` to `Record<string, unknown>` |
-| `apps/worker/src/routes/catalog.ts:348,352` | `TS2551` x2 — `work_key` vs `workKey` |
+**Measured** 2026-08-22 ~23:15 and again **2026-08-23 19:10 Phoenix**, ~20 hours
+apart, on a control ISBN known to resolve elsewhere: 522 both times. It is the
+host, not us and not the ISBNs.
 
-**Why tolerated.** All three files are **unmodified in the working tree**, so the
-errors pre-date current work; runtime tests pass.
+**Why tolerated.** It is a free third-party service with no contract, and it is
+the *third* rung — Open Library and Google Books are asked first and answer for
+almost everything. Nothing is broken by its absence; the ladder degrades.
 
-**What would change it.** ⚠️ **Kiro item K2, and it is ranked early on purpose:
-it GATES the branch merges (K11).** Merging into a red tree means new breakage
-cannot be told from old, so those merges cannot be verified until this is zero.
-Removal condition: `npm run typecheck` exits 0.
-
----
-
-## KI-2 · Three feature branches are unmerged and all three conflict — `ACCEPTED`
-
-**Symptom.** `feature/completeness-wishlist-relations` (3 commits),
-`feature/series-overrides` (2) and `feature/openlibrary-ids` (1) sit unmerged,
-last touched 2026-08-10.
-
-**Why tolerated.** All three conflict with `main` — measured 2026-08-21 with
-`git merge-tree --write-tree`, not guessed. The worst conflicts across 8+ files
-in `apps/web`.
-
-**What would change it.** KI-1 first, then one branch per session. Detail and
-suggested order: [`TODO.md`](TODO.md).
+**What would change it.** ⚠️ **The silent half is already fixed and that was the
+real defect:** `backfill-missing-covers.mjs` now tallies rungs that could not be
+asked and says so, so a run distinguishes *"asked, nothing there"* from *"never
+asked"* (commit `4a52589`). Removal condition: **the control ISBN returns 200**.
+If it is still 522 in a month, delete the rung rather than keep a dead one —
+a ladder step that always fails is a step that always has to be explained.
 
 ---
 
-## KI-3 · `dl_ebooks` is a dead column that is still standing — `ACCEPTED`
+## Resolved and removed — 2026-08-23
 
-**Symptom.** A column deprecated by migration 0010's own comment still holds
-`1`s from its one-day life.
+⚠️ **Kept as a pointer, not as content.** These were live entries in this file
+and each was **re-measured** on 2026-08-23 and found no longer true. They are
+removed rather than left with a badge, per the docs standard; the numbers are
+recorded here so nobody re-opens them from memory.
 
-**Why tolerated.** ⚠️ Re-adding it to `COLS` would **resurrect ghost grants** —
-permissions nobody intended, from data nobody remembers. The guard comment is
-the current protection.
-
-**What would change it.** A decision about whether to zero the values. Until
-then the column is inert **only because nothing selects it** — that is a
-convention, not a constraint.
-
----
-
-## KI-4 · The donor refuses to hand out the printed volume number — `ACCEPTED`
-
-**Symptom.** `routes/donor.ts` gives `seriesIndex` (sort position) but not
-`series_index_display`, so a receiving instance cannot show `Volume 07`.
-
-**Why tolerated.** The original argument — "the caller's copy has its own cover"
-— is now the odd one out: since 2026-08-19 both writers derive the column, and
-the catalogue holds **81 hand-quoted forms** that are strictly better than a
-derivation and are not offered.
-
-**What would change it.** Kiro item **K7**. It needs a key wider than
-`DetailField`, which is why it was left. Quality, not convergence: nothing is
-broken today.
+| Was | Claimed | Re-measured 2026-08-23 |
+|---|---|---|
+| **KI-1** | `npm run typecheck` RED, 7 errors in 3 files | ⚠️ Its own stated removal condition was *"exits 0"*. **It exits 0.** Also 1,342 tests pass and `tsc --noEmit` on `apps/web` is clean |
+| **KI-2** | Three feature branches unmerged, all conflicting | **All three merged** 2026-08-21 (Kiro, K2 then K11). `feature/series-overrides` no longer exists locally; the other two survive only as `origin/*` pointers |
+| **KI-3** | `dl_ebooks` is a dead column still standing | **The column is gone.** `pragma_table_info('app_user')` on `--remote` lists 13 columns and `dl_ebooks` is not among them; the only match left in the repo is a comment in `packages/estate-auth/test/gate.test.ts` |
+| **KI-4** | The donor refuses to hand out `series_index_display` | **It hands it out.** `routes/donor.ts` carries `seriesIndexDisplay` (Kiro item K7, completed 2026-08-21) |
 

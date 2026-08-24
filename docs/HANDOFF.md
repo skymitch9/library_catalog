@@ -14,61 +14,43 @@
 > production contains. **Re-measure before trusting any line here; if you
 > re-measure, update the date.**
 
-## 📌 State at 2026-08-19 ~11:05 MST — the details queue CONVERGES
+## 📌 State at 2026-08-23 ~19:15 Phoenix — MEASURED THIS DAY
 
-**Deployed to the FRIEND instance only:** commit `2a135abb`. 1301 tests,
-typecheck clean, build clean, tree clean. ⚠️ **The MAIN instance is NOT
-deployed** — `npm run deploy` was refused by that session's permission layer.
-Main owes 0 details of 448 works, so the change is inert there, but the two
-Workers are out of step until someone runs `npm run deploy`.
+⚠️ **Everything below was re-measured on 2026-08-23.** The block this replaced
+described 2026-08-19 and its headline claim — *"the MAIN instance is NOT
+deployed"* — had become **false**: main was deployed on 2026-08-22 (`ede7ff3`,
+worker version `658069a6`, the signed-copy toggle), verified by fetching the
+live bundle rather than by trusting the deploy's own report.
 
-⚠️ **Migration `0360_multi_volume_printing` is applied to BOTH remotes**, and
-main's deployed build does not know the column. Additive with a default, so the
-old code neither selects nor writes it — but that is one more reason to run the
-main deploy.
+**Both instances are deployed and in step.** `docs/deploys.log` carries the line.
 
-**The owner's rules, and the one document that answers them permanently:**
-[`info/volume-numbers.md`](info/volume-numbers.md). `series` +
-`series_index_sort` = complete and IS the volume; the printed form
-(`series_index_display`) is optional data; research auto-applies; and the one
-exception — one series slot printed as several physical books — is a
-HUMAN-ONLY checkbox (`multi_volume_printing`, migration 0360) that no machine
-path can reach. Written because he said *"We're wasting
-all our buffer usage on solving nonsense we've solved many times."* Do not
-re-argue the volume predicate anywhere else.
-
-**Measured 2026-08-19, both instances, `--remote`:**
-
-| | friend (`library-catalog-2nd`) | main (`library-catalog`) |
+| | main (`library-catalog`) | friend (`library-catalog-2nd`, padhard) |
 |---|---|---|
-| works | 74 | 448 |
-| details queue, before | 55 | 0 |
-| details queue, after the predicate change | **53** | **0** |
-| details queue, after the 18:07 sweep tick | **51** | **0** |
-| pending findings to apply | **0** | **0** |
-| `seriesIndex` lookups that filled | **6 of 6** | — |
+| works | **493** | **532** |
+| no cover | 5 | 15 |
+| stand-in covers | 0 | 17 |
+| **cover needed** (`cover_url IS NULL OR cover_status='standin'`) | **5** | **32** |
+| no series | 110 | 151 |
+| no first-published | 28 | 1 |
+| no description | 19 | 2 |
+| audiobook holdings | 124 (2 stale) | — |
 
-⚠️ The predicate change closes only 2 — **53 of the 55 have no
-`series_index_sort` at all** and genuinely need a lookup. That is the honest
-number; the coordinator's expectation that most would close arithmetically was
-not what the data said.
+⚠️ **Both catalogues are being loaded live and these numbers move by the hour.**
+Padhard gained **163 works between 2026-08-22 evening and 2026-08-23 evening.**
+Re-measure before quoting any of them; a figure here has an age, and a stale one
+is not evidence.
 
-**What finishes it, with nobody touching anything:** the hourly `7 * * * *`
-sweep takes 2 books a tick on HER key, ≈2¢ each. 51 books ≈ **26 hours,
-≈$1.00**. ⚠️ **Tomorrow at this hour, untouched: 48 of the 51 will have been
-asked**, so on the measured 6-of-6 fill rate the queue should read in the
-single digits — the ~3 not yet reached plus whatever could not be identified,
-and every one of those rows now says in words why it is there. Pressing **Look up all** at <https://padhard.heygabi.ai/queue> does
-the same work in ~20 minutes on the same key. The cron is **verified, not
-claimed** — ten `research_run` rows carry `triggered_by` NULL, one of them
-`model = 'donor'`.
+**Landed 2026-08-22/23, all deployed:**
+- `--friend` targeting for every backfill (`scripts/lib/d1.mjs`) — the second
+  instance was previously unreachable by any sweep in `scripts/`
+- the cover-rung silent-failure fix, and Kiro's 52-cover sweep across both
+- the audiobook link sweep re-run: **124 holdings**, incl. work 514 *Elantris*
+- the signed-copy toggle on existing copies
+- work 511 linked by alias (`Beauty X Beast` ↔ the audiobook's `Beast X Beauty`)
 
-⚠️ **The queue will not reach zero and must not be read as broken when it
-doesn't.** Roughly half this library has no free record anywhere
-(`isbn-ladder.md` §4.2), so some rows will end as *named residue*: the page now
-states, in words, that research asked and could not answer, and what would
-settle it. An anonymous count that stops falling is how a working button got
-reported as broken.
+**Open, and designed but not built:** the audiobook sweep as a pipeline step,
+and the per-edition holdings schema. Both in [`TODO.md`](TODO.md).
+
 
 ## 📌 State at 2026-08-16 ~15:45 PDT (Opus → Fable handoff)
 
@@ -131,7 +113,7 @@ archive, and topic references — cross-linked, never duplicated.
 | [`info/`](info/README.md) | How and why it works — including [`gotchas.md`](info/gotchas.md) and [`decisions.md`](info/decisions.md), both extracted from the old work log |
 | [`access/`](access/README.md) | How to operate it — deploys, Cloudflare, [`rollback-points.md`](access/rollback-points.md) |
 
-## Production, measured 2026-08-16
+## Production — ⚠️ superseded, see the measured state at the top of this file
 
 | | |
 |---|---|
@@ -140,24 +122,17 @@ archive, and topic references — cross-linked, never duplicated.
 | **Estate auth** | `ESTATE_CHECK="enforce"` in production — no longer shadow. ⚠️ [`info/estate-auth-shadow.md`](info/estate-auth-shadow.md) still describes the shadow arm; read it for the design, not for the current setting. |
 | **Deploy record** | `docs/deploys.log`, one line per deploy, written by `scripts/deploy-done.mjs` |
 
-## Branches
+## Branches — ⚠️ the unmerged three are MERGED, 2026-08-21
 
-`main` is **363–373 commits ahead** of every `feature/*` branch in the repo, so
-none of them is "in flight" in any meaningful sense. Treat them as historical
-unless you deliberately revive one.
+This section listed `feature/completeness-wishlist-relations` (3 commits),
+`feature/series-overrides` (2) and `feature/openlibrary-ids` (1) as unmerged
+and conflicting. **All three were merged by Kiro on 2026-08-21** (item K11,
+after K2 took typecheck green). Verified 2026-08-23: `feature/series-overrides`
+no longer exists even as a local branch; the other two survive only as
+`origin/*` pointers. Nothing in this repo is in flight on a branch.
 
-| Branch | Commits not in `main` | Read as |
-|---|---|---|
-| `feature/library-parity` | 0 | Fully merged; pointer only |
-| `feature/apply-pending-findings` | 0 | Fully merged; pointer only |
-| `feature/override-aware-review-carry` | 0 | Fully merged; pointer only |
-| `feature/aliases-export-people` · `feature/scanjobs-vision` · `feature/research-details` · `feature/router` | 0 (merged into `main`) | Fully merged; pointer only |
-| `feature/completeness-wishlist-relations` | 3 | ⚠️ Unmerged tail, last commit 2026-08-10 — check whether `main` superseded it before reviving |
-| `feature/openlibrary-ids` | 1 | ⚠️ Same |
-| `feature/series-overrides` | 2 | ⚠️ Same |
-
-There are also ~9 `worktree-agent-*` branches from past subagent runs. They are
-not work in progress; leave them or prune them, but do not read them as state.
+⚠️ The ~9 `worktree-agent-*` branches from past subagent runs are not work in
+progress. Leave them or prune them; do not read them as state.
 
 ## The rules that keep biting
 
