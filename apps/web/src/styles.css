@@ -2840,27 +2840,35 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
  * following the mockup's own light+dark discipline.
  * ========================================================================= */
 .book-detail {
-  --bd-paper: #f4f2ec;
-  --bd-surface: #fcfbf7;
-  --bd-sunk: #eeebe2;
-  --bd-ink: #211c17;
-  --bd-ink-soft: #5c544a;
-  --bd-ink-faint: #8a8175;
-  --bd-line: #e3ded3;
-  --bd-line-soft: #ede9df;
-  --bd-teal: #2e5a4e;
-  --bd-teal-ink: #20443b;
-  --bd-teal-wash: #e4ede8;
-  --bd-brass: #9b6b25;
-  --bd-brass-wash: #f3e9d6;
-  --bd-good: #3f7a52;
-  --bd-good-wash: #e6f0e6;
-  --bd-warn: #b67c24;
-  --bd-warn-wash: #f7ecd5;
-  --bd-bad: #b04435;
-  --bd-bad-wash: #f6e3de;
-  --bd-shadow: 0 1px 2px rgba(33, 28, 23, 0.05), 0 8px 24px -12px rgba(33, 28, 23, 0.18);
-  --bd-radius: 14px;
+  /* ⚠️ THEME-AWARE (owner 2026-08-24): the --bd-* tokens are now ALIASES of the
+     estate --et-* theme contract, so this page follows the SELECTED theme
+     (apple/cyberpunk/retro x light/dark) instead of a fixed warm-paper palette.
+     The two hardcoded light/dark --bd-* blocks that used to live here were
+     removed because --et-* already carries mode. Washes are theme-derived via
+     color-mix (same technique as --lc-tint). Fonts stay Fraunces/Hanken/Plex —
+     the display voice the owner liked; flip these three to --et-font* for full
+     theme typography. */
+  --bd-paper: var(--et-bg);
+  --bd-surface: var(--et-surface);
+  --bd-sunk: var(--lc-tint);
+  --bd-ink: var(--et-fg);
+  --bd-ink-soft: var(--et-muted);
+  --bd-ink-faint: color-mix(in srgb, var(--et-fg) 45%, var(--et-bg));
+  --bd-line: var(--et-border);
+  --bd-line-soft: var(--et-hairline);
+  --bd-teal: var(--et-accent);
+  --bd-teal-ink: var(--et-link);
+  --bd-teal-wash: var(--et-accent-wash);
+  --bd-brass: var(--et-accent-2);
+  --bd-brass-wash: color-mix(in srgb, var(--et-accent-2) 18%, var(--et-bg));
+  --bd-good: var(--et-ok);
+  --bd-good-wash: color-mix(in srgb, var(--et-ok) 18%, var(--et-bg));
+  --bd-warn: var(--et-warn);
+  --bd-warn-wash: color-mix(in srgb, var(--et-warn) 18%, var(--et-bg));
+  --bd-bad: var(--et-danger);
+  --bd-bad-wash: color-mix(in srgb, var(--et-danger) 18%, var(--et-bg));
+  --bd-shadow: var(--et-shadow-lift);
+  --bd-radius: var(--et-radius-lg);
   --bd-font-body: 'Hanken Grotesk', ui-sans-serif, system-ui, sans-serif;
   --bd-font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
   --bd-font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
@@ -2873,54 +2881,8 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
   padding: 1.1rem 1.15rem 3rem;
 }
 
-/* Resolved dark (theme.js always stamps a data-mode). */
-:root[data-mode='dark'] .book-detail {
-  --bd-paper: #17140f;
-  --bd-surface: #201c16;
-  --bd-sunk: #100e0a;
-  --bd-ink: #ece6da;
-  --bd-ink-soft: #b4ac9c;
-  --bd-ink-faint: #7e7667;
-  --bd-line: #332c22;
-  --bd-line-soft: #2a241c;
-  --bd-teal: #68b29a;
-  --bd-teal-ink: #8fcbb6;
-  --bd-teal-wash: #1d2c27;
-  --bd-brass: #d2a25c;
-  --bd-brass-wash: #2c2416;
-  --bd-good: #6db27f;
-  --bd-good-wash: #1e2a20;
-  --bd-warn: #d6a24e;
-  --bd-warn-wash: #2c2413;
-  --bd-bad: #d8776a;
-  --bd-bad-wash: #2e1e1a;
-  --bd-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px -14px rgba(0, 0, 0, 0.6);
-}
-/* No-JS fallback: only when theme.js has NOT stamped a mode. */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-mode]) .book-detail {
-    --bd-paper: #17140f;
-    --bd-surface: #201c16;
-    --bd-sunk: #100e0a;
-    --bd-ink: #ece6da;
-    --bd-ink-soft: #b4ac9c;
-    --bd-ink-faint: #7e7667;
-    --bd-line: #332c22;
-    --bd-line-soft: #2a241c;
-    --bd-teal: #68b29a;
-    --bd-teal-ink: #8fcbb6;
-    --bd-teal-wash: #1d2c27;
-    --bd-brass: #d2a25c;
-    --bd-brass-wash: #2c2416;
-    --bd-good: #6db27f;
-    --bd-good-wash: #1e2a20;
-    --bd-warn: #d6a24e;
-    --bd-warn-wash: #2c2413;
-    --bd-bad: #d8776a;
-    --bd-bad-wash: #2e1e1a;
-    --bd-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px -14px rgba(0, 0, 0, 0.6);
-  }
-}
+/* (Dark/light is inherited from the estate --et-* tokens above — no page-scoped
+   dark block needed; the --bd-* aliases resolve per theme and mode.) */
 
 .book-detail a { color: var(--bd-teal); }
 .book-detail .muted { color: var(--bd-ink-soft); }
