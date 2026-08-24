@@ -37,6 +37,7 @@ export * from './crowdfunding.js';
 export * from './reviews.js';
 export * from './readstate.js';
 export * from './tbr.js';
+export * from './tbr-picker.js';
 export * from './warnings.js';
 export * from './vision.js';
 export * from './scanjobs.js';
