@@ -56,7 +56,7 @@
 import { universeIndex, universeOnUpdate } from '../packages/universes/src/index.ts';
 import { execute, lit, parseFlags, query } from './lib/d1.mjs';
 
-const { commit, remote, limit } = parseFlags();
+const { commit, remote, limit, friend } = parseFlags();
 
 /*
  * ⚠️ `universe_how` is selected, not just `universe`. Filtering the human rows
@@ -70,7 +70,7 @@ const WORKS = `
    ORDER BY id
 `;
 
-const rows = query(WORKS, { remote });
+const rows = query(WORKS, { remote, friend });
 
 const changes = [];
 const pinned = [];
@@ -137,7 +137,7 @@ const statements = targets.map(
     `(universe_how IS NULL OR universe_how = 'list');`,
 );
 
-execute(statements, { remote });
+execute(statements, { remote, friend });
 
 /*
  * ⚠️ Confirmed by re-reading, never by the writer's own count. `meta.changes` is
@@ -148,7 +148,7 @@ const after = query(
   `SELECT universe_how AS how, COUNT(*) AS n FROM work
     WHERE universe IS NOT NULL OR universe_how IS NOT NULL
     GROUP BY universe_how`,
-  { remote },
+  { remote, friend },
 );
 console.log(`\nwrote ${statements.length} statement(s). Now stored:`);
 for (const r of after) console.log(`  ${String(r.how ?? '(none)').padEnd(8)} ${r.n}`);
