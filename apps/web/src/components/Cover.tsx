@@ -14,40 +14,55 @@
  */
 
 import { useEffect, useState } from 'react';
+import { Link } from '../router.js';
 
 export function Cover({
   src,
   title,
   authors,
   size = 'grid',
+  to,
 }: {
   src: string | null;
   title: string;
   authors?: string;
   size?: 'row' | 'grid' | 'large';
+  /**
+   * Where clicking the cover goes. When set, the cover becomes a real link (the
+   * owner's ask: *"make book covers link to their work"*). ⚠️ Do NOT pass this
+   * where the cover already sits inside another link — a grid card stretches its
+   * title link over the whole tile (`.card__open::after`), and an `<a>` inside an
+   * `<a>` is invalid. This is for the standalone covers (the work-page hero),
+   * where nothing else owns the click.
+   */
+  to?: string;
 }) {
   const [failed, setFailed] = useState(false);
 
   // A different book in the same slot must retry its own image.
   useEffect(() => setFailed(false), [src]);
 
-  if (!src || failed) {
-    return (
+  const inner =
+    !src || failed ? (
       <div className={`cover cover--${size} cover--blank`} aria-hidden="true">
         <span className="cover__title">{title}</span>
         {authors && size !== 'row' && <span className="cover__author">{authors}</span>}
       </div>
+    ) : (
+      <img
+        className={`cover cover--${size}`}
+        src={src}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        onError={() => setFailed(true)}
+      />
     );
-  }
 
+  if (!to) return inner;
   return (
-    <img
-      className={`cover cover--${size}`}
-      src={src}
-      alt=""
-      loading="lazy"
-      decoding="async"
-      onError={() => setFailed(true)}
-    />
+    <Link to={to} className="cover-link" aria-label={`Open ${title}`}>
+      {inner}
+    </Link>
   );
 }
