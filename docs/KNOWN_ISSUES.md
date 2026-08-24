@@ -1,10 +1,12 @@
 # library_catalog — Known Issues, Waivers & Exceptions
 
 > **Audience:** Claude/Kiro sessions and the owner. **Status:** TRACKED.
-> Last verified: **2026-08-23** — KI-5 was re-measured that day against
-> production; four entries were retired as no longer true. KI-6 and KI-7 were
-> added the same day and measured against the repo and a LOCAL D1, not
-> production.
+> Last verified: **2026-08-23 21:00 Phoenix** — KI-7 was re-measured at that
+> hour against `apps/worker/.dev.vars` and rewritten: the 15 blank covers it
+> named are no longer what is blocked. KI-5 was re-measured 2026-08-23 against
+> production; four entries were retired as no longer true. KI-6 was added the
+> same day and measured against the repo and a LOCAL D1, not production.
+> ⚠️ **KI-6 and KI-8 were NOT re-checked at 21:00**; only KI-7 was.
 >
 > **This file exists to stop the same non-bug being re-reported every month.**
 > It holds things that ARE wrong, or look wrong, and are deliberately tolerated.
@@ -92,10 +94,18 @@ report it clean. Full record: `info/covers-and-series.md` §0.1.
 
 **Symptom.** `backfill-missing-covers.mjs --friend --remote --llm` prints
 *"ANTHROPIC_API_KEY_FRIEND_SAM is empty or absent"* and skips the paid rung, so
-padhard's remaining **15 blank covers** cannot be put through it.
+nothing on padhard can be put through a paid rung **on her key**.
 
 **Measured** 2026-08-23: `apps/worker/.dev.vars` line 85 is
-`ANTHROPIC_API_KEY_FRIEND_SAM = ""`.
+`ANTHROPIC_API_KEY_FRIEND_SAM = ""`. Re-measured 2026-08-23 21:00 Phoenix:
+still empty.
+
+⚠️ **The 15 blank covers this entry used to name are NOT what is blocked any
+more.** The owner decided on 2026-08-23 to run them on his own key
+(*"Run those 15 on MY key instead"*), and `--llm-key-from=main` exists for
+exactly that — see `info/covers-and-series.md` §0.2 and `DONE.md`. The block
+below is unchanged and still real: it is about anything that must be billed to
+**her**, not about those 15.
 
 **Why tolerated — it is not a fault, it is the design.** That line is a
 **drop-box**: the runbook pastes a key, pipes it to
@@ -107,7 +117,22 @@ fallback would bill her catalogue to the owner.
 
 **What would change it.** The owner pastes her key after the `=` on that line,
 the run happens, the line is blanked again — `docs/access/second-instance.md`.
-Worst case for the 15: **15 × 6c ≈ $0.90**, on her account.
+
+⚠️ **Or he takes the exception, which is now a flag rather than an edit.**
+`--llm-key-from=main` moves a `--friend --llm` run onto `ANTHROPIC_API_KEY`,
+names the key in the banner and says `OVERRIDE ACTIVE`. It refuses any other
+value, refuses without `--llm`, and refuses without `--friend`. The **default is
+unchanged** — absent the flag the rung still refuses to fall back. The same flag,
+the same spelling, is on `scripts/research-queue.mjs`.
+
+⚠️ **Do not "fix" this by editing line 85 to hold the owner's key.** That is the
+silent fallback the whole entry exists to prevent, wearing a disguise. If the
+owner is paying, the run says so on screen.
+
+⚠️ Her key is not limitless either: on **2026-08-17** the friend instance's key
+hit its monthly cap and three details runs errored with *"You have reached your
+specified API usage limits"* (`packages/db/src/research.ts`, the
+`lastAttemptAt` note). A run planned against her key should check that first.
 
 ---
 

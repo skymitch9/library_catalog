@@ -290,21 +290,27 @@ pipeline step by name; an existing copy can be marked signed without deleting it
 
 ⚠️ **Piece 1 of the three below is DONE (2026-08-22 and 2026-08-23). Pieces 2
 and 3 are not started, which is why this entry is still here.** The numbers in
-this section were re-measured **2026-08-23 20:30 Phoenix**; the durable record
-lives in [`info/covers-and-series.md`](info/covers-and-series.md) §0/§0.1 and
-that file, not this one, owns the figures.
+this section were re-measured **2026-08-23 21:45 Phoenix**; the durable record
+lives in [`info/covers-and-series.md`](info/covers-and-series.md) §0/§0.1/§0.2
+and that file, not this one, owns the figures.
 
 | Instance | Works | Cover needed | Broken stored covers |
 |---|---|---|---|
-| `library-catalog` (library.heygabi.ai) | 493 | **4** — 3 blank + 1 `standin` (was 5) | **0 of 490** |
-| `library-catalog-2nd` (padhard.heygabi.ai) | 532 | **17** — 15 blank + 2 `standin` (was 32) | **1 of 517** (work 356, a 503) |
+| `library-catalog` (library.heygabi.ai) | 493 | **4** — 2 blank + 2 `standin` | **0 of 490** — ⚠️ measured 20:30, not re-run |
+| `library-catalog-2nd` (padhard.heygabi.ai) | 532 | **15** — 13 blank + 2 `standin` (was 17) | **1 of 519** (work 356, a 503) |
 
-**What the 2026-08-23 sweep did.** `--standins` was added so the sweep asks the
+**What the 2026-08-23 sweeps did.** `--standins` was added so the sweep asks the
 app's own `coverNeeded` question instead of `cover_url IS NULL`; all **17**
 padhard stand-ins closed on the **free** rungs for **$0.00**, and the paid rung
 wrote **2** on main for **12.43c of tokens** (4 calls, one aborted). Three
 writes were then reverted to `standin` after *looking at the images* — see
 §0.1 and **KI-6**.
+
+Later the same evening the paid rung was pointed at padhard's 15 blanks on the
+**owner's** key via `--llm-key-from=main` (§0.2): **2 written, 1 held for him,
+81.65c of tokens over 30 calls**, and the entry moved WHOLE to
+[`DONE.md`](DONE.md). ⚠️ Two of those 30 calls bought nothing anybody kept —
+`--llm` spends on the dry pass as well, and the dry pass is not a preview.
 
 <details><summary>The 2026-08-22 figures this replaced</summary>
 
@@ -388,8 +394,49 @@ not the question the app asks. Then `check-cover-health.mjs --friend --remote`.
 | main | 516 *Sanctuary (Yuumei)* | `standin` — right book, 3D product photo | A flat jacket scan. The art book may not have one online |
 | padhard | 113 *Summer in the City* | `standin` — the Google placeholder, **KI-6** | Any real cover; the ISBN rungs had nothing |
 | padhard | 268 *The Villa* | `standin` — right book, **German** edition jacket | The English Berkley jacket, or the owner deciding the German one is fine |
-| padhard | 15 blank works | free rungs exhausted; paid rung **BLOCKED** | Owner pastes her key into the drop-box — **KI-7**. ~$0.90 worst case, on her account |
+| padhard | 435 *Risky Business* | blank; LLM proposed a **blog-hosted** image at **low confidence**, correctly NOT written | Owner opens <https://padhard.heygabi.ai/works/435> and presses Use, or rejects it. The model's doubt is provenance, not the book — the aspect ratio is a cover's |
+| padhard | 13 blank works | free rungs exhausted; **paid rung run 2026-08-23 on the owner's key** and it found nothing for these 13 | A publisher-page rung, or hand-linked URLs. ⚠️ Re-running the paid rung will re-bill ~40c and, on the evidence, mostly return the same nothing — see the non-determinism note in [`DONE.md`](DONE.md) |
+| padhard | 199 *Foxy Tales* | 🔴 has a cover and it is **50 pixels wide** | One word deleted from the stored URL — see below |
 | padhard | 356 *Evocation* | stored Open Library cover redirects to an archive.org object answering **503** on 3 probes | Wait and re-run `check-cover-health.mjs --friend --remote`. Not cleared: a dead URL may be an outage, and blanking it loses where the cover came from |
+
+### 🔴 A cover can be the RIGHT book and still be useless — 50 pixels wide
+
+**Found 2026-08-23 21:40 Phoenix** in the run that closed the 15 (see
+[`DONE.md`](DONE.md)). The paid rung wrote this onto padhard **199 *Foxy Tales***
+at **high confidence**, and it is the right book:
+
+```
+https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1738511384l/222114404._SX50_.jpg
+```
+
+⚠️ **`._SX50_` is a Goodreads size token and it means 50 pixels wide.** The grid
+renders covers at 150px and the detail panel at 190px (§2), so this is a smudge.
+Measured, same URL with the token deleted:
+
+| URL | Bytes |
+|---|---|
+| `…222114404._SX50_.jpg` (stored) | **1,980** |
+| `…222114404._SY475_.jpg` | 34,579 |
+| `…222114404.jpg` (no token) | **255,373** |
+
+**Settles it:** `UPDATE work SET cover_url = '…222114404.jpg' WHERE id = 199` on
+`library-catalog-2nd`, or the cover control on
+<https://padhard.heygabi.ai/works/199>. **Not applied** — it is a production
+write nobody asked for, and one word is cheap to review first.
+
+⚠️ **This is KI-6's family with the size test inverted, and every guard we own
+misses it.** `verifyCoverUrl` has a `MIN_COVER_BYTES` **floor** and no notion of
+*too small to be usable*; `check-cover-health.mjs`'s 1,000-byte floor passes 1,980
+comfortably; the KI-6 hash audit passes it because the hash is genuinely
+**distinct** — it is a real, unique, correct, tiny image. Only looking at it
+works, again.
+
+**Worth ~30 min if it recurs:** strip `._SX\d+_` / `._SY\d+_` / `._UY\d+_` from
+`i.gr-assets.com` and `m.media-amazon.com` URLs in `verifyCoverUrl`, re-verify
+the stripped form, and keep it when it answers. ⚠️ Do **not** add a blanket
+minimum-dimension check instead — the 43-byte Open Library pixel and the
+4,013-byte Google card are already handled, and a dimension floor would start
+rejecting legitimate small covers without saying why.
 
 ## ☐ Padhard's details queue is 2, and BOTH are named residue no lookup will close
 
@@ -432,10 +479,13 @@ identify the book**, in its own words:
   carry its *"research looked and could not identify this"* sentence.
 - **`scripts/research-queue.mjs` WOULD** — it selects on `gapsFor`, which is
   `missing`, not unasked — and it should not be pointed at these. It would buy
-  the same nothing twice. ⚠️ It also reads `ANTHROPIC_API_KEY` with no
-  instance awareness, so aimed at padhard it bills **the owner** for **her**
-  catalogue — the same defect just fixed in `backfill-missing-covers.mjs`, still
-  live here. Worth fixing before anyone runs it with `--friend`.
+  the same nothing twice. ⚠️ **Its key blindness is FIXED** (2026-08-23, moved to
+  [`DONE.md`](DONE.md)): it now reads `ANTHROPIC_API_KEY_FRIEND_SAM` under
+  `--friend`, names the key, and refuses to fall back. It was worse than
+  recorded here — `--friend` was parsed and then dropped, so the run would have
+  mirrored MAIN as well as billing the wrong key. **Still do not point it at
+  these two.** The instance question is settled; the buy-the-same-nothing-twice
+  question is not.
 
 ### 🧾 What would settle each
 
@@ -446,6 +496,46 @@ identify the book**, in its own words:
 
 Neither needs money and neither needs a deploy. Both need a signed-in human at
 <https://padhard.heygabi.ai/queue>.
+
+### ⚠️ 490 now has a `work_alias` "The Ex Hex", and NOTHING on the details path reads it
+
+**Measured 2026-08-23 21:15 Phoenix** against production and the repo. The alias
+is there — `work_alias` id 1, `work_id 490`, `alias "The Ex Hex"`, `kind
+'title'`, `source 'manual'` — and it changes nothing, for two independent
+reasons:
+
+1. **The ask never sees it.** `apps/worker/src/lib/research-run.ts`,
+   `apps/worker/src/lib/free-details.ts` and `packages/research/src/details.ts`
+   contain **zero** occurrences of "alias", case-insensitive. `getWork` selects
+   `WORK_COLS` and no more. The paid ask is built from `work.title` /
+   `work.authors` (`research-run.ts:431–436`); the free rungs key off
+   `ctx.work.title` (`askIndex` :434, `askOpenLibrary` :491, `askAudiobook`
+   :354 — `askGoogleBooks` goes by ISBN and is unaffected).
+2. **The book is not even askable again.** `packages/db/src/research.ts:388`
+   counts a field as asked while `r.status = 'done' AND r.input_title = w.title`.
+   An alias is not a retitle, so run #645 still stands, `unaskedGaps` is still
+   empty, and the cron and the queue button both correctly skip it.
+
+⚠️ So the row above still says the right thing: **retitling is the fix, adding
+the alias is not.** The alias is not wasted — `GET /works/:id/candidates` does
+read it (`routes/enrich.ts:63–68`, the precedent for all of this) — it simply
+does not reach the details path.
+
+⚠️ **Corroborating evidence from the same evening:** the paid *cover* rung, which
+is also title-only, returned `not found` for "The Ex Hex Duo" at 1.85c. Two
+different paid lookups have now failed on that title string.
+
+**NOT BUILT, on purpose.** Sized rather than started, because point 2 is a money
+decision and not a code one:
+
+| Where | What | ~Hours |
+|---|---|---|
+| `research-run.ts` after the re-read (~:428) + `details.ts` prompt (:233) and identification gate (:140–153) | load `listAliasesForWork`, send an "also known as" line, let an alias match count as identified | 1.5 |
+| `research.ts:388` + `claimRun`'s `inputTitle` (`research-run.ts:340`) | decide what "already asked" means once a book has aliases, and record which name a run asked under | 2 — ⚠️ **the owner's call, like piece 3 of the covers entry: it decides whether adding an alias re-opens a paid question** |
+| `free-details.ts` — `askIndex`, `askOpenLibrary`, `askAudiobook` | fan out per alias, capped the way `enrich.ts` caps it (`MAX_QUERIES = 4`, :51), with the misses landing in `skipped` | 2 |
+| `free-details.test.ts`, `details-sweep.test.ts` | tests | 1.5 |
+
+**~6–8 hours**, and it should not start until the middle row is answered.
 
 ## ☐ Audiobook links after a bulk import, and TWO audio editions — the residue of the free-checks ask
 

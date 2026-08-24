@@ -17,6 +17,128 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ Padhard's 15 blank covers, put through the paid rung on the OWNER's key — 2026-08-23
+
+Moved whole from [`TODO.md`](TODO.md), where it read:
+
+> | padhard | 15 blank works | free rungs exhausted; paid rung **BLOCKED** | Owner pastes her key into the drop-box — **KI-7**. ~$0.90 worst case, on her account |
+
+**What changed is who pays, and only that.** Owner decision, verbatim: *"Run
+those 15 on MY key instead"*, on the grounds that *"it doesn't have limits and is
+from the same account as my key"* — so on his account this is attribution rather
+than a transfer of money. ⚠️ That is his statement about his own billing and
+nothing here can verify it, which is why the exception is a loud flag and not a
+quiet edit of `.dev.vars`: `--llm-key-from=main`, documented in
+[`info/covers-and-series.md`](info/covers-and-series.md) §0.2. **The default —
+refuse, never fall back — is unchanged**, and KI-7 stays `BLOCKED` for anything
+that must be billed to *her*.
+
+```bash
+npx tsx scripts/backfill-missing-covers.mjs --friend --remote --llm --llm-key-from=main
+#   ... then the same line with --commit
+```
+
+⚠️ `--standins` deliberately NOT passed: the 17 stand-ins were closed earlier the
+same evening (§0.1), and re-offering them would buy answers already held.
+
+### Measured, 2026-08-23 21:00–21:45 Phoenix, against production
+
+| | works | blank | stand-in | **cover needed** |
+|---|---|---|---|---|
+| before | 532 | 15 | 2 | **17** |
+| after | 532 | **13** | 2 | **15** |
+
+The free rungs found **0 of 15** on both passes — Open Library by ISBN, Google
+Books and Open Library by title all empty, and **KI-5's Bookcover API answered
+522 on all 5 calls it was given**, so those five are *unmeasured* by that rung
+rather than coverless. The paid rung wrote **2**:
+
+| Work | Source | Bytes |
+|---|---|---|
+| 199 *Foxy Tales* | Goodreads | 1,980 — ⚠️ see the residue note in `TODO.md` |
+| 488 *Destroyers of the Light: Broken Prophecies Book Two* | Goodreads | 32,314 |
+
+**KI-6 audit re-run on both, as that entry requires after any bulk write.**
+Neither is the 4,013-byte Google card; the two hashes are distinct
+(`768812ad…`, `3dceab74…`). ⚠️ Distinct-and-not-the-placeholder is the *only*
+thing that proves; see the 50-pixel finding in `TODO.md`, which no hash check
+would have caught either.
+
+### 🧾 Spend — and the thing nobody had written down
+
+| Pass | Calls | Tokens | Written | Held |
+|---|---|---|---|---|
+| dry | 14 + **1 aborted** | 39.42c | (1 would have been) | 1 |
+| `--commit` | 15 | 42.23c | **2** | 1 |
+| **total** | **30** | **81.65c** | 2 | 1 |
+
+**$0.82 in tokens.** ⚠️ Web search is billed separately at up to 4c a call and
+never appears in `usage`, so the ceiling is **$2.02 all in** — against KI-7's
+$0.90 estimate for a single pass, which was right per pass and half the bill.
+
+🔴 **Why it was two bills: `--llm` spends on the DRY pass too.** The paid loop is
+gated on `useLlm` alone; `--commit` only decides whether the SQL is executed. So
+"dry run first" costs full price here — **and it is not even a preview**, because
+each pass re-asks and gets different answers. Measured on exactly these 15 books:
+the dry pass found *Foxy Tales* `not found` and *Messy Strokes* `high conf`; the
+committing pass found the reverse. Two of the three names differed between
+passes. Recorded in §0.2. Anyone who wants a genuine preview needs the rung to
+cache its proposals, which it does not do.
+
+### Held for the owner — nothing was written
+
+**435 *Risky Business - Kelsie Rae***, low confidence, so correctly not stored:
+
+```
+url    https://static.wixstatic.com/media/1aa3e8_e1426acf813e4f798605286a7547fbf7~mv2.jpg/v1/fill/w_297,h_475,al_c,q_80,enc_avif,quality_auto/1aa3e8_e1426acf813e4f798605286a7547fbf7~mv2.jpg
+source https://readaholicdeb.wixsite.com/website/post/risky-business-by-kelsie-rae  (37,287 B)
+note   book-review blog post about 'Risky Business' (Wrecked Roommates #4);
+       cover aspect ratio (297x475) suggests it IS the cover, but blog-hosted
+       rather than publisher or library, and the model's search budget ran out
+       before it could confirm. "Please have a person eyeball it before storing."
+```
+
+⚠️ The dry pass held a *different* book — **228 *Seabird bundle***, a Kelsie Rae
+store bundle graphic — which the committing pass returned `not found` for. Same
+non-determinism; that proposal is gone unless it is re-bought.
+
+To accept: the cover control on <https://padhard.heygabi.ai/works/435>, or
+`PUT /api/works/435/cover` (it re-verifies). To reject: do nothing.
+
+---
+
+## ✅ `research-queue.mjs` made instance-aware — 2026-08-23
+
+`TODO.md` carried this as a one-line warning under padhard's details queue: *"It
+also reads `ANTHROPIC_API_KEY` with no instance awareness, so aimed at padhard it
+bills the owner for her catalogue."* True, and **it was the smaller half**.
+
+`--friend` was parsed by `parseFlags` and then **dropped**: `buildMirror` and
+`flush` passed `{ remote }` to `query`/`execute`, so `dbName` fell through to
+`library-catalog` whatever was asked for. A `--friend` run would have mirrored
+MAIN, spent money on MAIN's gaps and written the answers back to MAIN, **while
+its own output said padhard**. Both halves fixed together, because either alone
+leaves the run lying about itself.
+
+- key name follows the instance, printed on every run, **refuses to fall back**;
+  the `process.env` short-circuit is per-name too (it read
+  `process.env.ANTHROPIC_API_KEY` first, which under `--friend` is the same
+  silent fallback wearing a different hat)
+- `--llm-key-from=main` — the same flag, the same spelling as the covers script
+- the key is resolved **before** the mirror is built: four full remote table
+  reads to then discover the drop-box is blank wastes the slow part of the run
+- config refusals print and exit instead of throwing a Node stack trace
+
+**Verified by transcript, not by tests** — `scripts/` has no harness (the `test`
+glob covers `packages/` and `apps/` only). `--friend --remote` estimate-only now
+mirrors **532 works / 724 runs**, which is padhard; before the fix it would have
+read main's 493. ⚠️ **NOT verified: no `--commit` run happened on either
+instance**, so `friend` threaded through `flush`'s write path is reasoned about
+and not exercised. The script was deliberately not run — the two padhard works
+it would offer are named residue that no lookup will close.
+
+---
+
 ## ✅ Padhard cover audit — ANSWERED 2026-08-23: Kiro brought in ZERO placeholders
 
 Kiro's own open question after its sweep: *"verify no Google Books placeholders
