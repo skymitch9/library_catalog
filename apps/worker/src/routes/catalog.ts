@@ -30,6 +30,7 @@ import {
   findEditionByIsbn13,
   findWorkByKey,
   getAudiobookHolding,
+  countAudioEditions,
   listAudioEditions,
   getEbookHolding,
   getCopy,
@@ -330,7 +331,16 @@ export const catalogRoutes = new Hono<AppBindings>()
     // panel is above the fold on a book that has one, and a book page that
     // rendered and *then* grew a "check this" note is the one place a late
     // arrival actually misleads. Resolved ones come too — see `listWatchesForWork`.
-    const [editions, copies, reading, watches, audiobookHolding, audioEditions, ebookHolding] =
+    const [
+      editions,
+      copies,
+      reading,
+      watches,
+      audiobookHolding,
+      audioEditions,
+      audioEditionCount,
+      ebookHolding,
+    ] =
       await Promise.all([
         listEditionsForWork(c.env.DB, id),
         listCopiesForWork(c.env.DB, id),
@@ -343,6 +353,12 @@ export const catalogRoutes = new Hono<AppBindings>()
         // 0390, and the two are ordered identically so they cannot disagree
         // about which edition is the primary one.
         listAudioEditions(c.env.DB, id),
+        // ⚠️ NOT `audioEditions.length`, and the difference is deliberate: this
+        // counts LIVE editions only, while the list above carries stale ones so
+        // the page can caveat them. Owner, 2026-08-23 — *"have it say 2 on the
+        // physical and ebook libraries"* — and the 2 he wants is books he owns,
+        // not rows on record. `audioEditionCountSql` is the one definition.
+        countAudioEditions(c.env.DB, id),
         getEbookHolding(c.env.DB, id),
       ]);
 
@@ -374,6 +390,8 @@ export const catalogRoutes = new Hono<AppBindings>()
       watches,
       audiobookHolding,
       audioEditions,
+      /** How many recordings the household holds NOW — see `countAudioEditions`. */
+      audioEditionCount,
       ebookHolding,
       peerHoldings,
       /**
