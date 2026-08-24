@@ -23,10 +23,15 @@ clean). Rows are marked `✅ FIXED` in the table below.
 
 **Left open (🚩 FLAGGED), by design:**
 
-- 🔴 **PEER_TOKEN** (`wrangler.toml:203`/`:418`) — an OWNER rotation, not a code
-  edit. `wrangler.toml` was deliberately **not touched**: stripping the
-  plaintext before the secret is rotated would break peer auth. See the section
-  immediately below.
+- 🟡 **PEER_TOKEN** (`wrangler.toml:203`/`:418`) — now **FIXED-IN-CODE** on
+  branch `feature/peer-token-secret` (2026-08-24). The plaintext `token` field
+  was removed from both `PEERS` entries, and outbound `X-Peer-Token` now reads
+  the already-set `PEER_TOKEN` secret instead of the PEERS literal — so the
+  strip is safe to deploy without breaking peer auth (the earlier reason for
+  leaving it untouched no longer applies). **Still owner-pending:** rotate
+  `PEER_TOKEN` to a FRESH value on both workers and deploy both — until then the
+  OLD leaked value remains valid in git history. See the section immediately
+  below.
 - **HIGH — LibraryThing rung** (`scripts/backfill-missing-isbns.mjs:246`) — the
   correct fix depends on the live LibraryThing `thingTitle` XML shape (whether
   it returns a per-item title/author to gate on — the code parses only
@@ -43,11 +48,22 @@ that carry it (`backfill-work-covers`, `backfill-edition-kinds`,
 bare `{ remote }` to d1 and share the latent gap — recommend a consistent
 `--friend` sweep across all writing backfills as a follow-up.
 
-## 🔴 PEER_TOKEN — rotate now, OWNER ACTION
+## 🔴 PEER_TOKEN — rotate now, OWNER ACTION  ·  🟡 FIXED-IN-CODE 2026-08-24
+
+**Code fix (2026-08-24, branch `feature/peer-token-secret`):** the `token`
+field has been removed from both `PEERS` entries in `wrangler.toml`, and
+`lib/peer-push.ts` now sends the `PEER_TOKEN` secret as the outbound
+`X-Peer-Token` header (skipping the push, with a named log, if it is unset)
+instead of the PEERS plaintext. `parsePeers` and the `PeerConfig` type no
+longer carry `token`. Incoming auth (`routes/peer.ts`) was already
+secret-based and is unchanged. Because both instances share one token value,
+`sky.PEER_TOKEN` must equal `padhard.PEER_TOKEN` (they already do). **Not yet
+deployed, and NOT rotated** — the two owner steps below still close the leak.
 
 **File:** `apps/worker/wrangler.toml:203` (and its mirror at line 418) — the
-`PEERS` var's `token` field, present in **plaintext** on both catalog
-instances.
+`PEERS` var's `token` field **(now removed on the branch above; still present
+in `main` and in git history)**, previously present in **plaintext** on both
+catalog instances.
 
 **Tracked status:** `git ls-files --error-unmatch apps/worker/wrangler.toml`
 confirms the file is **TRACKED** (committed, not gitignored). The repo's
@@ -62,14 +78,20 @@ second route has **no token check at all** despite being classified as
 token-gated).
 
 **Action required (owner):**
-1. Rotate `PEER_TOKEN` via `wrangler secret put` on both instances to a fresh
-   value.
-2. Remove the plaintext value from both `PEERS` entries in
-   `apps/worker/wrangler.toml` (lines 203 and 418) and reference the secret at
-   runtime instead of a tracked `[vars]` literal.
+1. Rotate `PEER_TOKEN` to a FRESH value via `wrangler secret put PEER_TOKEN`
+   on BOTH workers — the main library worker AND the friend/`padhard` worker —
+   using the SAME value on both (the network shares one token).
+2. Deploy BOTH workers from `feature/peer-token-secret` (once merged), so the
+   plaintext-free `wrangler.toml` and the secret-reading `peer-push.ts` go
+   live. Until this deploy, nothing changes: the live workers still run the old
+   code and the old leaked value stays valid.
 3. Consider purging the old value from git history (`git filter-repo` /
    BFG) — it remains readable in every historical commit and clone even after
    rotation, since the repo is public.
+
+   ~~Remove the plaintext value from both `PEERS` entries~~ — **DONE in code**
+   on branch `feature/peer-token-secret` (2026-08-24); the outbound token now
+   reads the `PEER_TOKEN` secret at runtime.
 
 This same underlying defect was independently found by **3 separate audit
 units** (`worker-scanjobs-isbn-enrich`, `infra-deploy-migrations-ci`,
@@ -125,7 +147,7 @@ it). It is listed once in the table below, with all 3 units named.
 | Severity | Unit | File:line | Category | Claim | What would fix it |
 |---|---|---|---|---|---|
 | CRITICAL | library_catalog / web-components | `apps/web/src/components/BulkActionBar.tsx:26` | correctness | `if (count === 0) return null;` sits BEFORE two `useCallback` hooks, so the first time a book is selected the component renders more hooks than the previous render and React throws — with no error boundary anywhere in the app, the whole collection page white-screens. | Move the `if (count === 0) return null;` early return in BulkActionBar.tsx to AFTER both useCallback hooks (or hoist the hooks above any conditional return) so hook count is invariant across renders. — ✅ **FIXED** on `feature/audit-fixes-library` |
-| CRITICAL | 3 units: worker-scanjobs-isbn-enrich, infra-deploy-migrations-ci, worker-research-donor-peer | `apps/worker/wrangler.toml:203` | secrets | The live cross-instance peer shared secret is committed in plaintext, twice, in a tracked file on a PUBLIC GitHub repo — and it authenticates a route that wipes and rewrites `peer_holding` on both instances. | Rotate PEER_TOKEN via `wrangler secret put`, remove the plaintext value from both PEERS entries in wrangler.toml, and read it from a Worker secret at runtime instead of a tracked [vars] literal. — 🚩 **FLAGGED** for the owner |
+| CRITICAL | 3 units: worker-scanjobs-isbn-enrich, infra-deploy-migrations-ci, worker-research-donor-peer | `apps/worker/wrangler.toml:203` | secrets | The live cross-instance peer shared secret is committed in plaintext, twice, in a tracked file on a PUBLIC GitHub repo — and it authenticates a route that wipes and rewrites `peer_holding` on both instances. | Rotate PEER_TOKEN via `wrangler secret put`, remove the plaintext value from both PEERS entries in wrangler.toml, and read it from a Worker secret at runtime instead of a tracked [vars] literal. — 🟡 **FIXED-IN-CODE** on `feature/peer-token-secret` (plaintext removed from both PEERS entries; outbound token now reads the `PEER_TOKEN` secret). Owner still must rotate the secret to a fresh value on both workers + deploy both to close the leak. |
 | HIGH | library_catalog / scripts-backfills-a | `scripts/backfill-missing-isbns.mjs:431` | secrets | The paid `--llm` rung reads `ANTHROPIC_API_KEY` with no instance awareness, so a `--friend` sweep bills the OWNER's Anthropic account for padhard's books — the exact custody defect fixed in the sibling cover script on 2026-08-23 and left live here. | Read the instance-specific Anthropic key (ANTHROPIC_API_KEY_FRIEND_SAM-style) when flags.friend is set, matching the fix already applied to the sibling cover script. — ✅ **FIXED** on `feature/audit-fixes-library` |
 | HIGH | library_catalog / scripts-backfills-a | `scripts/backfill-missing-isbns.mjs:517` | correctness | The ISBN write also overwrites `edition.source`, so a hand-created (`manual`) edition that gains an ISBN from a free rung is silently demoted to `'openlibrary'` — destroying the "'manual' outranks everything and is never overwritten automatically" protection the column exists for. | Only overwrite edition.source when the incoming source outranks the existing one (respect the 'manual' precedence rule), not unconditionally alongside isbn13. — ✅ **FIXED** on `feature/audit-fixes-library` |
 | HIGH | library_catalog / scripts-backfills-a | `scripts/backfill-missing-isbns.mjs:246` | correctness | The LibraryThing rung applies NO author gate and NO title-similarity gate — the `author` argument is accepted and never used, and `similarity` is hardcoded to 1.0 — yet the file's own Safety section claims a ≥0.80 title gate protects every write. It then files the result under `source: 'openlibrary'`, a provenance that is not true. | Actually use the author argument as a gate and compute a real title-similarity score in the LibraryThing rung instead of hardcoding similarity to 1.0, or stop labeling its output source: 'openlibrary'. — 🚩 **FLAGGED** for the owner |
