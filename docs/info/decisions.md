@@ -4,10 +4,61 @@
 > Last verified: **2026-08-16** — extracted verbatim from `docs/TODO.md`
 > during the three-way split. The measurements inside carry their own dates
 > and were **not** re-taken on that date.
+> ⚠️ The duplicate-finder entry below was **added 2026-08-23** and its claims
+> were measured that day; nothing else in this file was re-checked then.
 
 Why things are the way they are — including things deliberately **not** built,
 which are the easiest to accidentally "fix" later. Also the honest list of
 what is imperfect and carried forward on purpose.
+
+### 🔁 Duplicate finder — the board-game filter mimicked, its PREDICATE not — 2026-08-23
+
+The owner asked for *"the ability to search a catalog for duplicates with a
+filter, we have this filter in boardgame catalog so lets mimic it from there
+instead of redesigning the wheel"*. Recorded here because the reuse is only
+partial, and the half that was **not** reused looks exactly like something a
+later session would helpfully "fix".
+
+**Mimicked, deliberately and to the letter:** `?duplicates=1` in the address
+bar, omitted when off, parsed by a copy of that repo's `flag()` helper; the
+control a checkbox in the filter bar, last before Clear; `read` capability, so a
+reader may see duplicates; and a group of one never becoming a match at all.
+Sources: `Board_Game_Catalog` `apps/web/src/router.tsx:100,118`,
+`apps/web/src/pages/CollectionPage.tsx:181,299`, `packages/core/src/schemas.ts:170`.
+
+**Not mimicked:** the predicate. There, `duplicates=1` is
+`HAVING SUM(quantity) > 1` over the copy table
+(`Board_Game_Catalog/packages/db/src/items.ts:379`) — *"we own 2+"*. The owner
+ruled that out for books in the same breath he asked for the feature:
+**duplicates are the same WORK recorded twice**, and two copies of one book is a
+legitimate holding. It is the right question for board games (a second copy of
+*Wingspan* is a shelf mistake, and near-unique names mean a second *row* cannot
+happen quietly) and the wrong one here — this catalog already answers the copy
+question via `ownedMoreThanOnce` and the `×2` card mark, and what books actually
+suffer is two rows for one book, because an ebook import, a spine photo and a
+manual add all create works.
+
+**The fold is looser than `work_key`, and stops there.** `duplicateKeyFor` is
+`cleanTitleWithSeries` followed by the existing `workKeyFor` — no new similarity
+function, which `packages/core/src/matching.ts`'s header forbids outright (the
+sibling shipped three wrong-game matches, every one from a second similarity
+function drifting from the first). The **author half is untouched**: loosening
+the title yields a review queue, loosening the author yields a wrong merge, and
+there are dozens of books called *Gold*. Groups merge on the loose key **and**
+the stored `work_key`, because `cleanTitleWithSeries` reads the `series` column
+and two rows for one book need not agree about it.
+
+⚠️ **There is deliberately NO merge or delete action, and adding one is not a
+small follow-up.** Merging moves `work_key` — the column the audiobook catalog's
+reviews join on — and `packages/db/src/works.ts` says that may only ever move as
+a migration carrying the §5 evidence ceremony. The screen therefore hands a
+person the rows and links to each work, and the deciding stays with the person.
+A "merge these two" button is the obvious next feature and is the one thing this
+design refuses; propose it as a migration or not at all.
+
+**Also deliberate:** the read takes no filter parameters. Narrowing duplicates
+to one series would hide the half of a pair filed under a different one, which
+is precisely how the pair came to exist.
 
 ### 💤 Gap info on the BOOK page — considered, recommended against, 2026-08-12
 
