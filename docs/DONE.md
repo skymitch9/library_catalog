@@ -17,6 +17,45 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ Book detail page — comprehensive fidelity pass (theme fonts, cyberpunk legibility, undefined-token fix, widen) — SHIPPED both instances — 2026-08-24
+
+**Why.** Owner review of the live redesigned page: *"just please match the mock
+up minus the things we've already talked about."* Specific reports: cyberpunk
+editor "almost unreadable", fonts should follow the theme, page too narrow.
+
+**What shipped (presentation only — `deriveShelfView`, guards, API contract,
+focused edit-mode + new-tab links all untouched).**
+
+- **Fonts follow the theme** — `--bd-font-body/display/mono` now alias
+  `--et-font/-display/-mono`, so cyberpunk reads Rajdhani, retro Bangers, apple
+  system (was a fixed Fraunces/Hanken/IBM-Plex). Removed the now-unused Google
+  Fonts `<link>` + its two preconnects from `apps/web/index.html`.
+- **🔴 Fixed three UNDEFINED-token aliases (latent bug, affected EVERY theme).**
+  `--bd-line` → `--et-border`, `--bd-teal-ink` → `--et-link`, `--bd-teal-wash` →
+  `--et-accent-wash` — none of which the estate contract defines (verified against
+  `estate-theme.css`), so those borders/inks/washes resolved to invalid/unset.
+  Remapped onto real tokens (`--et-hairline` / `--et-accent`) with color-mix
+  washes.
+- **Cyberpunk (and all-theme) button legibility** — `.primary` / `.btn-brass`
+  had a hardcoded near-white text, near-invisible on cyberpunk's bright cyan /
+  lemon accents (the "editor almost unreadable" report: Save, Write a review,
+  Edit all use `.primary`). Now `var(--et-accent-fg)`. Measured cyberpunk primary
+  10.9:1 (was failing).
+- **Signed-badge / peer-chip ink** — new `--bd-brass-ink` (accent-2 mixed 52%
+  toward theme ink); accent-2 on its own wash had measured 1.78:1 in retro light.
+  Every theme now ≥4:1.
+- **Widen** — `.book-detail max-width: 70rem` (= mockup's 1120px), overriding the
+  64rem `main` cap.
+
+**Verification.** typecheck clean; web build clean; **1684 tests pass / 0 fail**.
+Cross-theme contrast **measured** (a WCAG script over apple/cyberpunk/retro ×
+light/dark) — every book-detail text/bg pair legible; no same-on-same alias.
+Edit-affordance hunt: grepped the whole web tree — **zero** onDoubleClick /
+contentEditable / inline-edit remains; the only edit control is the identity
+card's one button, which flips to "✕ Close editor" while `editOpen` (everything
+else on the page is hidden then). The owner's "double click to edit author" was
+already gone from the code and is now live on both instances.
+
 ## ✅ Book detail page — faithful reskin to the approved mockup + author double-prompt fix — SHIPPED both instances — 2026-08-24
 
 **Why.** The redesigned detail page had been delivered on the generic estate
