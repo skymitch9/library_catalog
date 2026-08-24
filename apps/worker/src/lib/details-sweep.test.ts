@@ -174,8 +174,8 @@ test('the estimated tick stays inside a Worker invocation, worst case', () => {
 });
 
 test('a book with every field missing takes the tick to itself', () => {
-  // 12 + 4x4 = 28 each; two of them is 56, past the budget and past the
-  // ceiling. It is picked alone rather than fitted in beside another.
+  // 12 + 11 (free ladder) + 4x4 = 39 each; two of them is 78, past the budget
+  // and past the ceiling. It is picked alone rather than fitted in beside another.
   const greedy = (id: number) =>
     candidate({ workId: id, missing: ['firstPublished', 'series', 'seriesIndex', 'description'] });
   const plan = planSweep([greedy(1), greedy(2)]);
@@ -184,23 +184,54 @@ test('a book with every field missing takes the tick to itself', () => {
   assert.ok(plan.estimated <= SWEEP_BUDGET);
 });
 
-test('two ordinary books fit in one tick', () => {
+test('an ordinary AI book is picked and stays inside the budget', () => {
   // The common shape by a distance: every work in this catalog was missing its
-  // year and its description when the queue was measured (2026-08-10).
-  const plan = planSweep([candidate({ workId: 1 }), candidate({ workId: 2 })]);
-  assert.equal(plan.pick.length, 2);
-  assert.ok(plan.estimated <= SWEEP_BUDGET, `${plan.estimated} over budget`);
+  // year and its description when the queue was measured (2026-08-10). Since the
+  // free-details ladder is now counted (audit HIGH, details-sweep.ts:328), an
+  // AI-only two-gap book estimates at 12 + 11 + 8 = 31, so a single one fits
+  // comfortably under the 44 budget but TWO (62) no longer do — the ladder cost
+  // that was silently overrunning the 50-subrequest ceiling is now honest.
+  const one = planSweep([candidate({ workId: 1 })]);
+  assert.equal(one.pick.length, 1);
+  assert.ok(one.estimated <= SWEEP_BUDGET, `${one.estimated} over budget`);
+
+  const two = planSweep([candidate({ workId: 1 }), candidate({ workId: 2 })]);
+  assert.equal(two.pick.length, 1, 'two AI books really cost 62 > 44 — one is picked, honestly');
+  assert.equal(two.deferred, 1);
+  assert.ok(two.estimated <= SWEEP_BUDGET);
 });
 
 test('the item cap binds even when the budget would allow more', () => {
+  // A deliberately generous budget so the BUDGET is not what binds — this test
+  // isolates the item cap. (Under the real 44 budget, the free-ladder cost means
+  // even one-field AI books at 27 each let only one through, so the cap and the
+  // budget can no longer be exercised by the same fixture.)
   const cheap = (id: number) => candidate({ workId: id, missing: ['description'] });
-  const plan = planSweep([cheap(1), cheap(2), cheap(3), cheap(4)]);
+  const plan = planSweep([cheap(1), cheap(2), cheap(3), cheap(4)], SWEEP_LIMIT, 500);
   assert.equal(plan.pick.length, SWEEP_LIMIT);
 });
 
 test('the per-book estimate is per field, because auto-apply is per field', () => {
-  assert.equal(estimateSubrequests(0), 12);
-  assert.equal(estimateSubrequests(4), 28);
+  // AI_ONLY: 12 (claimRun+runDetailsResearch bookkeeping) + 11 (the free-details
+  // ladder runDetailsResearch now always runs first) + 4·fields.
+  assert.equal(estimateSubrequests(0), 23);
+  assert.equal(estimateSubrequests(4), 39);
+});
+
+test('the free-details ladder is COUNTED — an AI book estimate includes its 11 subrequests', () => {
+  // ⚠️ Regression guard (2026-08 audit HIGH, details-sweep.ts:328): the estimate
+  // once counted 0 for the free ladder that runDetailsResearch always runs, so a
+  // sweep could pick two books whose real cost is ~74 against the 50 ceiling and
+  // overrun the invocation silently. The ladder is AI-only (gated by
+  // `if (!mode.ai) continue;`), so it must move the AI estimate and NOT the
+  // donor-only one.
+  const aiOnly = estimateSubrequests(2, { ai: true, donor: false });
+  const donorOnly = estimateSubrequests(2, { ai: false, donor: true });
+  assert.equal(aiOnly, 31, 'AI two-gap book: 12 + 11 + 0 + 8');
+  assert.equal(donorOnly, 13, 'donor-only two-gap book is unchanged — no free ladder');
+  // Two AI-only two-gap books really cost 62 > 50, so the free ladder must be
+  // enough to push a two-book AI-only estimate past the ceiling.
+  assert.ok(2 * aiOnly > 50, 'two AI books must no longer fit one 50-subrequest tick');
 });
 
 // ---------------------------------------------------------------------------
@@ -225,8 +256,8 @@ test('the estimate is mode-aware — a donor-blind estimate silently kills the i
   // is a second fetch, and an exact MISS is the ordinary case); apply 4 per
   // field, spent once by whichever rung answered.
   assert.equal(estimateSubrequests(2, { ai: false, donor: true }), 13);
-  assert.equal(estimateSubrequests(2, { ai: true, donor: true }), 26);
-  assert.equal(estimateSubrequests(4, { ai: true, donor: true }), 34);
+  assert.equal(estimateSubrequests(2, { ai: true, donor: true }), 37);
+  assert.equal(estimateSubrequests(4, { ai: true, donor: true }), 45);
 });
 
 test('the judged rung is COUNTED, not assumed free — the estimate rose by exactly one fetch', () => {
@@ -240,9 +271,9 @@ test('the judged rung is COUNTED, not assumed free — the estimate rose by exac
 });
 
 test('with both paths live, two ordinary books no longer fit one tick — one is picked, honestly', () => {
-  // 2 × 26 = 52 is past the whole ceiling. Fitting both in on the AI-only
-  // estimate (2 × 20 = 40) is exactly the silent-termination bug the budget
-  // exists for.
+  // 2 × 37 = 74 is past the whole ceiling (the ~74 the audit measured). Fitting
+  // both in on an estimate blind to the free ladder is exactly the
+  // silent-termination bug the budget exists for.
   const plan = planSweep(
     [candidate({ workId: 1 }), candidate({ workId: 2 })],
     SWEEP_LIMIT,

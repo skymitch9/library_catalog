@@ -80,10 +80,11 @@
  * | donor bookkeeping when either donor rung answers — createRun, saveFindings, listFindings (inside auto-apply), finishRun | 4 |
  * | `claimRun` — closeStaleRuns, activeRun, getWork, gapsFor (getWork + verdicts), createRun | 6 |
  * | `runDetailsResearch` — getWork, the Claude call, saveFindings, finishRun | 5 |
+ * | **the FREE-DETAILS LADDER `runDetailsResearch` now always runs first** — listAliasesForWork, freeDetailsFor (getWork, listGapVerdicts, audiobook, Open Library ×3, Google Books, writeFreeValues ×2), re-read getWork; see `FREE_LADDER_SUBREQUESTS` | **11** |
  * | apply — 4 per field applied | 4·fields |
- * | **one book, AI only** | **12 + 4·fields** |
+ * | **one book, AI only** | **23 + 4·fields** |
  * | **one book, donor only** | **5 + 4·fields** |
- * | **one book, both paths live** | **18 + 4·fields** |
+ * | **one book, both paths live** | **29 + 4·fields** |
  *
  * ⚠️ The donor's two rungs are **exclusive**, so they do not add up: the judge
  * fires only when the exact match missed, and either way exactly one donor run
@@ -94,13 +95,15 @@
  *
  * Each field is APPLIED at most once — by whichever path answered it — so the
  * `4·fields` term is never doubled when both paths run; what doubles is the
- * run bookkeeping, hence 18 rather than 24. On an AI-only instance a two-gap
- * book is ~20 and a four-gap book ~28; donor-only, 13 and 21; both live, 26
- * and 34. ⚠️ That last column is why `planSweep` and `estimateSubrequests`
- * take the mode: with both paths live, two ordinary books estimate past 50 —
- * the whole ceiling — so the plan honestly picks ONE, rather than fitting two
- * in on an AI-only estimate and killing the invocation mid-book.
- * `SWEEP_BUDGET` spends against the estimate rather than counting books.
+ * run bookkeeping, hence 29 rather than 35. On an AI-only instance a two-gap
+ * book is ~31 and a four-gap book ~39; donor-only, 13 and 21; both live, 37
+ * and 45. ⚠️ Those AI columns are why `planSweep` and `estimateSubrequests`
+ * take the mode AND count the free ladder: even on an AI-only instance two
+ * ordinary books now estimate past 50 — the whole ceiling — so the plan
+ * honestly picks ONE, rather than fitting two in on an estimate blind to the
+ * free rungs `runDetailsResearch` runs first and killing the invocation
+ * mid-book. `SWEEP_BUDGET` spends against the estimate rather than counting
+ * books.
  *
  * ## ⚠️ 3. `scheduled()` returns the promise as well as registering it
  *
@@ -313,10 +316,38 @@ export const DONOR_RUN_MODEL = 'donor';
 export const DONOR_FUZZY_RUN_MODEL = `donor+${DONOR_JUDGE_MODEL}`;
 
 /**
+ * The free-details ladder's subrequest cost, spent by `runDetailsResearch` on
+ * every AI-mode book BEFORE the paid model is (maybe) asked. None of it is in
+ * the `12` term, whose `runDetailsResearch` slice counts only getWork + the
+ * Claude call + saveFindings + finishRun — not the ladder that now runs first.
+ *
+ * Enumerated (worst case, because an overrun does not throw, it silently kills
+ * the invocation):
+ *   listAliasesForWork            1
+ *   freeDetailsFor.getWork        1
+ *   freeDetailsFor.listGapVerdicts 1
+ *   rung 1 askAudiobook (D1)      1
+ *   rung 2 askIndex              0   (DARK — skipped on unset config; ⚠️ revisit
+ *                                     this number the day the estate index rung
+ *                                     goes live, it fans out over aliases)
+ *   rung 3 askOpenLibrary         3   (work-key resolve + editions + description)
+ *   rung 4 askGoogleBooks (keyed) 1
+ *   writeFreeValues (getWork+patch) 2
+ *   re-read getWork after ladder  1
+ *   ---------------------------------
+ *   total                        11
+ *
+ * Only in AI mode: `if (!mode.ai) continue;` gates runDetailsResearch, so a
+ * donor-only tick never walks this ladder.
+ */
+const FREE_LADDER_SUBREQUESTS = 11;
+
+/**
  * See the table in the header. Per field, because apply is per field; per
  * mode, because each live path carries its own run bookkeeping — an estimate
- * blind to the donor would under-count by 5 per book and the overrun does not
- * throw, it silently kills the invocation.
+ * blind to the donor would under-count by 5 per book, and one blind to the free
+ * ladder under-counts by 11 per AI book; the overrun does not throw, it silently
+ * kills the invocation.
  *
  * ⚠️ The donor term is 6 rather than 5 wherever a judge is possible: the two
  * donor rungs are exclusive (one fetch, one run either way) and the extra 1 is
@@ -325,7 +356,8 @@ export const DONOR_FUZZY_RUN_MODEL = `donor+${DONOR_JUDGE_MODEL}`;
  */
 export function estimateSubrequests(fields: number, mode: SweepMode = AI_ONLY): number {
   const donor = mode.donor ? (mode.ai ? 6 : 5) : 0;
-  return (mode.ai ? 12 : 0) + donor + 4 * fields;
+  const freeLadder = mode.ai ? FREE_LADDER_SUBREQUESTS : 0;
+  return (mode.ai ? 12 : 0) + freeLadder + donor + 4 * fields;
 }
 
 /**
