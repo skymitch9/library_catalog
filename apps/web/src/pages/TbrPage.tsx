@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { outstandingTbrEntries, spentTbrEntries, type TbrEntry } from '@lc/core';
 import { api, type Me, type TbrMatchView } from '../api.js';
 import { Cover } from '../components/Cover.js';
+import { TbrSpinner } from '../components/TbrSpinner.js';
 import { audiobookDetailUrl, resolveAudiobookCover } from '../lib/audiobook-site.js';
 import { describeError } from '../lib/errors.js';
 import { currentUid } from '../lib/firebase.js';
@@ -156,6 +157,10 @@ export function TbrPage({ me }: { me: Me }) {
             list as the audiobook site&rsquo;s, so a book you add there shows up here — and
             finishing it in any format takes it off both.
           </p>
+
+          {/* Can't decide? Let the wheel decide. Picks from this whole list;
+              its filters narrow to shelves or series position. */}
+          <TbrSpinner rows={rows} />
 
           {here.length > 0 && <TbrList rows={here} busy={busy} onRemove={remove} />}
 

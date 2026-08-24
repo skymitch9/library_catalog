@@ -2277,3 +2277,162 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
 .card:has(.card__check) .card__open::after {
   display: none;
 }
+
+/* ── Spin the TBR ───────────────────────────────────────────────────────────
+ *
+ * The picker on TbrPage. The choice is core's (pickRandom); this is only the
+ * theatre. The wheel spins via a transform on `.tbr-wheel__disc`; the whole
+ * animation is switched off under prefers-reduced-motion below, matching the
+ * estate rule that the motion vocabulary dies at once.
+ */
+.tbr-spinner {
+  border: var(--et-border-w) solid var(--et-panel-border);
+  border-radius: var(--et-radius-lg);
+  background: var(--lc-tint);
+  padding: 1rem 1.1rem 1.2rem;
+  margin: 0.5rem 0 1.5rem;
+}
+.tbr-spinner__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+}
+.tbr-spinner__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.tbr-spinner__field-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--et-muted);
+}
+.tbr-spinner__count {
+  margin: 0.7rem 0 0;
+}
+.tbr-spinner__stage {
+  display: flex;
+  justify-content: center;
+  padding: 0.5rem 0;
+}
+.tbr-spinner__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.9rem;
+}
+
+/* --- the wheel --- */
+.tbr-wheel {
+  position: relative;
+  width: 260px;
+  height: 260px;
+  max-width: 80vw;
+  max-height: 80vw;
+}
+.tbr-wheel__disc {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 4px solid var(--et-panel-border);
+  box-shadow: var(--et-glow), inset 0 0 0 1px var(--et-hairline);
+  /* transform + transition are set inline so the seed can drive the landing. */
+  will-change: transform;
+}
+.tbr-wheel__label {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  height: 46%;
+  transform-origin: bottom center;
+  /* rotate() set inline per segment; this positions the label along a radius. */
+  translate: -50% -100%;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+.tbr-wheel__label-text {
+  max-width: 5.5rem;
+  margin-top: 0.35rem;
+  font-size: 0.6rem;
+  line-height: 1.05;
+  color: var(--et-accent-fg);
+  text-align: center;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+.tbr-wheel__label.is-winner .tbr-wheel__label-text {
+  font-weight: 700;
+}
+.tbr-wheel__hub {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 34px;
+  height: 34px;
+  translate: -50% -50%;
+  border-radius: 50%;
+  background: var(--et-bg);
+  border: 3px solid var(--et-panel-border);
+  z-index: 2;
+}
+.tbr-wheel__pointer {
+  position: absolute;
+  left: 50%;
+  top: -6px;
+  translate: -50% 0;
+  width: 0;
+  height: 0;
+  border-left: 11px solid transparent;
+  border-right: 11px solid transparent;
+  border-top: 18px solid var(--et-accent);
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4));
+  z-index: 3;
+}
+
+.tbr-stub {
+  padding: 1.5rem 1rem;
+  text-align: center;
+}
+
+/* --- the revealed pick --- */
+.tbr-result {
+  margin-top: 0.6rem;
+  border: var(--et-border-w) solid var(--et-accent);
+  border-radius: var(--et-radius-lg);
+  padding: 0.85rem;
+  animation: tbr-result-in 0.35s ease-out;
+}
+@keyframes tbr-result-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.tbr-result__book {
+  display: flex;
+  gap: 0.9rem;
+  align-items: center;
+  text-decoration: none;
+  color: inherit;
+}
+.tbr-result__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.tbr-result__cta {
+  color: var(--et-accent);
+  font-size: 0.85rem;
+}
+
+/* The whole spinner animation dies under reduced motion — the pick is revealed
+   at once, no rotation, no entrance. The component also skips the timer, so
+   this is belt-and-braces for the transform already applied inline. */
+@media (prefers-reduced-motion: reduce) {
+  .tbr-wheel__disc { transition: none !important; }
+  .tbr-result { animation: none; }
+}
