@@ -12,13 +12,14 @@
  * ## The theme system is a data registry, not a fork
  *
  * {@link SPINNER_STAGES} is an array of themes. Each supplies only its animated
- * *stage* — the wheel, later the dice, later the cards — while this shell owns
- * everything shared: the filters, the pick, the seed, the reroll, the
- * reduced-motion decision, the result card and the worded empty states. Adding
- * "dice-roll" or "card-shuffle" is adding one entry with a `Stage` component;
- * nothing here forks. `dice` and `cards` ship as clearly-marked STUBS (they
- * reveal the result without their own animation yet) so the seam is real and
- * exercised rather than hypothetical.
+ * *stage* — the wheel, the dice, the cards — while this shell owns everything
+ * shared: the filters, the pick, the seed, the reroll, the reduced-motion
+ * decision, the result card and the worded empty states. Adding a theme is
+ * adding one entry with a `Stage` component; nothing here forks. All three
+ * animate: the wheel spins to the chosen wedge, the die tumbles to a
+ * seed-derived face, the deck shuffles and one card is drawn and flipped — and
+ * each lands on the book {@link pickRandom} already chose (see
+ * `lib/tbr-stage-anim.ts` for the pure landing maths every stage shares).
  *
  * ## Reduced motion is obeyed, not decorated
  *
@@ -41,7 +42,7 @@
  * are already in place for the day it does.
  */
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { eligibleItems, nextSeed, pickRandom, type PickableItem, type PickResult } from '@lc/core';
 import { Cover } from './Cover.js';
 import { audiobookDetailUrl, resolveAudiobookCover } from '../lib/audiobook-site.js';
@@ -53,6 +54,12 @@ import {
   type PickerPrefs,
   type SpinnerThemeId,
 } from '../lib/tbr-picker-prefs.js';
+import {
+  cardDrawSlot,
+  dieCubeRotation,
+  dieFaceForSeed,
+  dieTumbleTurns,
+} from '../lib/tbr-stage-anim.js';
 import { Link, workPath } from '../router.js';
 
 /** The only fields of a TBR row this component reads. `TbrPage`'s Row satisfies it. */
@@ -127,6 +134,10 @@ interface SpinnerTheme {
 
 const WHEEL_MS = 3200;
 const SEGMENT_CAP = 12;
+const DICE_MS = 2200;
+const CARDS_MS = 2400;
+/** How many face-down cards fan out while the deck shuffles. */
+const FAN_CARDS = 5;
 
 /** The built one: a wheel that spins to the chosen book. */
 function WheelStage({ pool, chosen, seed, phase, reduced }: StageProps) {
@@ -192,14 +203,104 @@ function WheelStage({ pool, chosen, seed, phase, reduced }: StageProps) {
   );
 }
 
-/** A stub stage: no themed animation yet, it simply presents the result. */
-function StubStage({ label }: { label: string }) {
+/**
+ * The dice stage: one 3D die tumbles and settles on a seed-derived face, then
+ * the shell reveals the result card. The landing is deterministic — the same
+ * seed always lands the same face — exactly as the wheel lands the same wedge;
+ * see `lib/tbr-stage-anim.ts`. The face is cosmetic (a d6 cannot enumerate a
+ * whole TBR), so it decides the theatre while `pickRandom` decides the book.
+ *
+ * Motion is driven like the wheel: a new seed sets the cube's resting rotation
+ * plus whole extra turns, and the inline CSS transition tumbles from the
+ * previous orientation to it over `DICE_MS`. Reduced motion contributes zero
+ * turns and no transition, so the die snaps to its face at once.
+ */
+function DiceStage({ chosen, seed, phase, reduced }: StageProps) {
+  const face = dieFaceForSeed(seed);
+  const rest = dieCubeRotation(face);
+
+  const [rot, setRot] = useState(rest);
+  const spins = useRef(0);
+  const lastSeed = useRef<number | null>(null);
+  useEffect(() => {
+    if (seed === lastSeed.current) return;
+    lastSeed.current = seed;
+    spins.current += 1;
+    const turns = dieTumbleTurns(seed, reduced);
+    // Add equal whole turns on both axes so the die tumbles rather than spins
+    // flat; a multiple of 360° leaves the resting face pointing at the viewer.
+    setRot({ x: rest.x + spins.current * turns * 360, y: rest.y + spins.current * turns * 360 });
+  }, [seed, rest.x, rest.y, reduced]);
+
+  const settled = phase === 'done';
+  const title = chosen.row.workTitle ?? chosen.row.title;
+
   return (
-    <div className="tbr-stub" aria-hidden="true">
-      <p className="muted small">
-        The {label.toLowerCase()} animation is coming soon — the pick below is real; only its
-        flourish is stubbed.
+    <div className={`tbr-dice${settled ? ' is-settled' : ''}`} aria-hidden="true">
+      <div className="tbr-dice__scene">
+        <div
+          className="tbr-dice__cube"
+          style={{
+            transform: `translateZ(-52px) rotateX(${rot.x}deg) rotateY(${rot.y}deg)`,
+            transition: reduced ? 'none' : `transform ${DICE_MS}ms cubic-bezier(0.18, 0.9, 0.3, 1)`,
+          }}
+        >
+          {([1, 2, 3, 4, 5, 6] as const).map((f) => (
+            <div key={f} className={`tbr-dice__face tbr-dice__face--${f}`}>
+              {Array.from({ length: f }, (_, i) => (
+                <span key={i} className="tbr-dice__pip" />
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+      <p className="tbr-dice__caption muted small" aria-hidden="true">
+        {settled ? `Rolled a ${face} — ${title}` : 'Rolling…'}
       </p>
+    </div>
+  );
+}
+
+/**
+ * The cards stage: a face-down deck fans and riffles (CSS keyframes while the
+ * shell is `spinning`), then one card — the seed's `cardDrawSlot` of the fan —
+ * lifts to the centre and flips to reveal the chosen book. The reveal is the
+ * pick; the deck is theatre. The flip is driven by `phase`: React re-renders
+ * `done` and the card's transform transitions from face-down to face-up. Reduced
+ * motion has the shell go straight to `done`, so the card shows face-up at once
+ * (the CSS transition is additionally killed under the media query).
+ */
+function CardsStage({ chosen, seed, phase, reduced }: StageProps) {
+  const drawn = cardDrawSlot(seed, FAN_CARDS);
+  const revealed = phase === 'done';
+  const title = chosen.row.workTitle ?? chosen.row.title;
+  const cover = chosen.row.workCoverUrl ?? resolveAudiobookCover(chosen.row.coverUrl);
+
+  return (
+    <div
+      className={`tbr-cards${revealed ? ' is-revealed' : ''}${reduced ? ' is-reduced' : ''}`}
+      aria-hidden="true"
+    >
+      {/* The shuffling deck — hidden once a card is drawn. */}
+      <div className="tbr-cards__deck">
+        {Array.from({ length: FAN_CARDS }, (_, i) => (
+          <span
+            key={i}
+            className={`tbr-cards__deck-card${i === drawn ? ' is-drawn' : ''}`}
+            style={{ '--i': i - (FAN_CARDS - 1) / 2 } as CSSProperties}
+          />
+        ))}
+      </div>
+
+      {/* The drawn card, flipping to reveal the pick. */}
+      <div className="tbr-cards__hero">
+        <div className="tbr-cards__flip">
+          <span className="tbr-cards__face tbr-cards__face--back" />
+          <span className="tbr-cards__face tbr-cards__face--front">
+            <Cover src={cover} title={title} size="row" />
+          </span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -220,18 +321,18 @@ export const SPINNER_STAGES: readonly SpinnerTheme[] = [
   {
     id: 'dice',
     label: 'Dice',
-    blurb: 'Roll for it. (Coming soon.)',
-    ready: false,
-    durationMs: 0,
-    Stage: () => <StubStage label="Dice" />,
+    blurb: 'Roll for your next read.',
+    ready: true,
+    durationMs: DICE_MS,
+    Stage: DiceStage,
   },
   {
     id: 'cards',
     label: 'Cards',
-    blurb: 'Shuffle and cut. (Coming soon.)',
-    ready: false,
-    durationMs: 0,
-    Stage: () => <StubStage label="Cards" />,
+    blurb: 'Shuffle the deck and cut to a book.',
+    ready: true,
+    durationMs: CARDS_MS,
+    Stage: CardsStage,
   },
 ];
 

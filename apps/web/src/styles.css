@@ -2395,9 +2395,182 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
   z-index: 3;
 }
 
-.tbr-stub {
-  padding: 1.5rem 1rem;
-  text-align: center;
+/* --- the dice ---
+ * One 3D die tumbling to a seed-derived face. The cube's transform is set
+ * inline (the seed drives the landing, like the wheel); this owns the 3D scene,
+ * the six pip faces and the resting-face lift once settled. */
+.tbr-dice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 1rem 0 0.5rem;
+}
+.tbr-dice__scene {
+  width: 104px;
+  height: 104px;
+  perspective: 520px;
+}
+.tbr-dice__cube {
+  position: relative;
+  width: 104px;
+  height: 104px;
+  transform-style: preserve-3d;
+  /* transform + transition are set inline so the seed can drive the tumble. */
+  will-change: transform;
+}
+.tbr-dice__face {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  gap: 4px;
+  padding: 12px;
+  box-sizing: border-box;
+  border-radius: 14px;
+  background: var(--et-surface);
+  border: 2px solid var(--et-panel-border);
+  box-shadow: inset 0 0 0 1px var(--et-hairline);
+}
+.tbr-dice__pip {
+  align-self: center;
+  justify-self: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--et-accent);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+/* Pip layouts — each face places its dots on the 3×3 grid; opposite faces sum
+ * to 7, matching the rotations in `dieCubeRotation`. */
+.tbr-dice__face--1 .tbr-dice__pip:nth-child(1) { grid-area: 2 / 2; }
+.tbr-dice__face--2 .tbr-dice__pip:nth-child(1) { grid-area: 1 / 1; }
+.tbr-dice__face--2 .tbr-dice__pip:nth-child(2) { grid-area: 3 / 3; }
+.tbr-dice__face--3 .tbr-dice__pip:nth-child(1) { grid-area: 1 / 1; }
+.tbr-dice__face--3 .tbr-dice__pip:nth-child(2) { grid-area: 2 / 2; }
+.tbr-dice__face--3 .tbr-dice__pip:nth-child(3) { grid-area: 3 / 3; }
+.tbr-dice__face--4 .tbr-dice__pip:nth-child(1) { grid-area: 1 / 1; }
+.tbr-dice__face--4 .tbr-dice__pip:nth-child(2) { grid-area: 1 / 3; }
+.tbr-dice__face--4 .tbr-dice__pip:nth-child(3) { grid-area: 3 / 1; }
+.tbr-dice__face--4 .tbr-dice__pip:nth-child(4) { grid-area: 3 / 3; }
+.tbr-dice__face--5 .tbr-dice__pip:nth-child(1) { grid-area: 1 / 1; }
+.tbr-dice__face--5 .tbr-dice__pip:nth-child(2) { grid-area: 1 / 3; }
+.tbr-dice__face--5 .tbr-dice__pip:nth-child(3) { grid-area: 2 / 2; }
+.tbr-dice__face--5 .tbr-dice__pip:nth-child(4) { grid-area: 3 / 1; }
+.tbr-dice__face--5 .tbr-dice__pip:nth-child(5) { grid-area: 3 / 3; }
+.tbr-dice__face--6 .tbr-dice__pip:nth-child(1) { grid-area: 1 / 1; }
+.tbr-dice__face--6 .tbr-dice__pip:nth-child(2) { grid-area: 1 / 3; }
+.tbr-dice__face--6 .tbr-dice__pip:nth-child(3) { grid-area: 2 / 1; }
+.tbr-dice__face--6 .tbr-dice__pip:nth-child(4) { grid-area: 2 / 3; }
+.tbr-dice__face--6 .tbr-dice__pip:nth-child(5) { grid-area: 3 / 1; }
+.tbr-dice__face--6 .tbr-dice__pip:nth-child(6) { grid-area: 3 / 3; }
+/* Place each face on the surface of the cube (half-edge = 52px). */
+.tbr-dice__face--1 { transform: translateZ(52px); }
+.tbr-dice__face--6 { transform: rotateY(180deg) translateZ(52px); }
+.tbr-dice__face--2 { transform: rotateY(90deg) translateZ(52px); }
+.tbr-dice__face--5 { transform: rotateY(-90deg) translateZ(52px); }
+.tbr-dice__face--3 { transform: rotateX(90deg) translateZ(52px); }
+.tbr-dice__face--4 { transform: rotateX(-90deg) translateZ(52px); }
+.tbr-dice.is-settled .tbr-dice__face { border-color: var(--et-accent); }
+.tbr-dice__caption { margin: 0; text-align: center; }
+
+/* --- the cards ---
+ * A face-down deck fans and riffles while the shell is spinning; on settle the
+ * drawn card flips to reveal the pick's cover. The flip is state-driven via
+ * `.is-revealed` so React's phase change animates it. */
+.tbr-cards {
+  position: relative;
+  width: 200px;
+  height: 180px;
+  perspective: 900px;
+  margin: 0.5rem 0;
+}
+.tbr-cards__deck {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  transition: opacity 0.3s ease;
+}
+.tbr-cards.is-revealed .tbr-cards__deck { opacity: 0; pointer-events: none; }
+.tbr-cards__deck-card {
+  grid-area: 1 / 1;
+  width: 84px;
+  height: 122px;
+  border-radius: 8px;
+  background:
+    repeating-linear-gradient(
+      45deg,
+      color-mix(in srgb, var(--et-accent) 22%, var(--et-surface)),
+      color-mix(in srgb, var(--et-accent) 22%, var(--et-surface)) 6px,
+      var(--et-surface) 6px,
+      var(--et-surface) 12px
+    );
+  border: 2px solid var(--et-panel-border);
+  box-shadow: var(--et-shadow-lift);
+  /* --i is the card's signed offset from centre; the fan reads it. */
+  transform: translateX(calc(var(--i) * 6px)) rotate(calc(var(--i) * 5deg));
+  transform-origin: bottom center;
+  animation: tbr-cards-shuffle 1.1s ease-in-out infinite;
+  animation-delay: calc(var(--i) * 0.08s);
+}
+.tbr-cards__deck-card.is-drawn {
+  border-color: var(--et-accent);
+  box-shadow: var(--et-shadow-lift), var(--et-glow);
+}
+@keyframes tbr-cards-shuffle {
+  0%, 100% { transform: translateX(calc(var(--i) * 6px)) translateY(0) rotate(calc(var(--i) * 5deg)); }
+  50% { transform: translateX(calc(var(--i) * 15px)) translateY(-8px) rotate(calc(var(--i) * 10deg)); }
+}
+.tbr-cards__hero {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transition: opacity 0.25s ease 0.15s;
+  pointer-events: none;
+}
+.tbr-cards.is-revealed .tbr-cards__hero { opacity: 1; }
+.tbr-cards__flip {
+  position: relative;
+  width: 108px;
+  height: 156px;
+  transform-style: preserve-3d;
+  transform: rotateY(180deg);
+  transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+.tbr-cards.is-revealed .tbr-cards__flip { transform: rotateY(0deg); }
+.tbr-cards.is-reduced .tbr-cards__flip { transition: none; }
+.tbr-cards__face {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  overflow: hidden;
+  backface-visibility: hidden;
+  border: 2px solid var(--et-accent);
+  box-shadow: var(--et-shadow-lift);
+  background: var(--et-surface);
+}
+.tbr-cards__face--back {
+  transform: rotateY(180deg);
+  background:
+    repeating-linear-gradient(
+      45deg,
+      color-mix(in srgb, var(--et-accent) 22%, var(--et-surface)),
+      color-mix(in srgb, var(--et-accent) 22%, var(--et-surface)) 6px,
+      var(--et-surface) 6px,
+      var(--et-surface) 12px
+    );
+}
+.tbr-cards__face--front img,
+.tbr-cards__face--front .cover {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 /* --- the revealed pick --- */
@@ -2434,5 +2607,10 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
    this is belt-and-braces for the transform already applied inline. */
 @media (prefers-reduced-motion: reduce) {
   .tbr-wheel__disc { transition: none !important; }
+  .tbr-dice__cube { transition: none !important; }
+  .tbr-cards__deck-card { animation: none !important; }
+  .tbr-cards__flip,
+  .tbr-cards__hero,
+  .tbr-cards__deck { transition: none !important; }
   .tbr-result { animation: none; }
 }

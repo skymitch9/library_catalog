@@ -17,7 +17,7 @@
 
 import type { PickFilters } from '@lc/core';
 
-/** The animation themes the picker knows. The first is the built one. */
+/** The animation themes the picker knows — all three are built and animate. */
 export const SPINNER_THEMES = ['wheel', 'dice', 'cards'] as const;
 export type SpinnerThemeId = (typeof SPINNER_THEMES)[number];
 
