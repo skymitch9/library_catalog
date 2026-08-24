@@ -17,6 +17,58 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ T-G · Random TBR picker with pizzazz — built (branch, not merged) — 2026-08-24
+
+The owner's ask (tracked as **T-G** in `catalog-platform/docs/TODO.md`): a
+"Spin the TBR" control that picks a book to read next, with a polished
+wheel-spin. Built on branch `feature/tbr-random-picker`, **not merged, not
+deployed** — the conductor merges and moves the T-G line in the off-limits
+main checkout.
+
+**Core — `packages/core/src/tbr-picker.ts` (pure, tested):**
+`pickRandom(items, filters, seed)` — deterministic given a seed, so a wheel can
+animate towards a result already chosen; reroll is a new seed via `nextSeed`,
+from the **one** seeded generator (mulberry32), never a second RNG.
+`eligibleItems` exports the gated+filtered+ordered pool so the wheel shows the
+exact set the pick draws from. Filters: format (audio/physical/ebook),
+hardcover ⟷ no-hardcover, first-in-series-only, series-continuation-only,
+owned/wishlist, exclude-last-rerolled; format-gating is a floor (an
+`openable:false` item never surfaces). 28 tests: determinism (order-independent,
+replayable), every filter, the gating floor, AND-composition, empty/worded
+states.
+
+**UI — `apps/web/src/components/TbrSpinner.tsx` on TbrPage:**
+Data-driven THEME registry (`SPINNER_STAGES`) — the shell owns filters/pick/
+seed/reroll/reduced-motion/result/empty-states; each theme supplies only its
+animated stage. `wheel` is built; `dice` and `cards` are drop-in stubs (reveal
+without motion, marked "soon"). Reduced motion (`prefers-reduced-motion`) skips
+the animation in both component and CSS. Theme + filter prefs persist per-
+browser (`lib/tbr-picker-prefs.ts`, try/catch, validated on read). Reroll never
+repeats the last book.
+
+⚠️ **Live filters are a subset of core's, on purpose.** The TBR `/resolve`
+response carries `workId`, `series`, `seriesIndexDisplay` — so the page ships
+**Where** (on these shelves vs. not) and **Series** (start vs. continue). It
+does NOT ship format (physical/ebook split) or hardcover toggles, because
+resolve returns no edition-medium and no hardcover flag; surfacing a dead
+control would break the estate's "never show a control someone can't use" rule.
+**Follow-on to fully wire those two axes: have `POST /api/tbr/resolve` (route
+`apps/worker/src/routes/tbr.ts` → `resolveTbrEntries` in `packages/db/src/tbr.ts`)
+return per-work edition data (medium, hardcover-exists).** Core support + tests
+already exist for the day it does.
+
+**🔜 Separate follow-on — the AUDIOBOOK-SITE TBR.** TBR here lives in
+`library_catalog` and serves both the library and padhard instances. The
+audiobook site (`audiobook_catalog`) has its **own** TBR surface writing the
+same shared `readingLists` collection; a spin-the-TBR there is a separate build
+(different app/stack) and is NOT part of this work.
+
+**Verify (this branch, `CATALOG_PLATFORM_DIR` set to the read-only sibling):**
+`npm run typecheck` exit 0 · `npm test` **1473 pass / 0 fail** (1445 + 28 new) ·
+`npm run build` succeeds. **NOT verified: no pixels seen** — the wheel animation,
+reduced-motion path, and localStorage persistence were not exercised in a real
+browser.
+
 ## ✅ main DEPLOYED — the blocked deploy pass finished — 2026-08-24 03:55Z
 
 The entry below is moved here **whole**, exactly as the blocked session wrote
