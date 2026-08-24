@@ -84,10 +84,11 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { fileURLToPath } from 'node:url';
 
 import { estimateCents } from '@lc/research';
 
@@ -97,8 +98,36 @@ import { execute, lit, parseFlags, query, ROOT } from './lib/d1.mjs';
 /** Recorded as the authority behind every value. See apply-pending-findings.mjs. */
 const OWNER_USER_ID = 1;
 
-/** Mirrored whole. All four are small, and three of them get written to. */
-const MIRRORED = ['work', 'research_run', 'research_finding', 'gap_verdict'];
+/**
+ * Mirrored whole. All small, and most get written to.
+ *
+ * ⚠️ **`work_alias` and `change_log` were added 2026-08-24 because the code the
+ * mirror stands in for grew to touch them, and their absence was not a missing
+ * feature but a crash and a half-write:**
+ *
+ *   - `claimRun` became alias-aware (migration 0410): it reads `work_alias` via
+ *     `listAliasesForWork` to send "Also known as" lines. A mirror without the
+ *     table threw `no such table: work_alias` before a single lookup ran.
+ *   - `updateWork` writes an audit row to `change_log` (migration 0120) in the
+ *     SAME `db.batch()` as the `work` UPDATE. A mirror without the table failed
+ *     that batch — and because the batch was non-atomic, it left `work.series`
+ *     written while the audit row it was supposed to travel with never landed.
+ *     That partial write is exactly what `makeShim.batch`'s transaction (below)
+ *     and the append-only guard in `diff` now prevent.
+ *
+ * `work_alias` is read-only on this path (claimRun reads it, nothing writes it),
+ * so it mirrors and diffs back to nothing; it is here so the read cannot crash.
+ * `change_log` is APPEND-only — `diff` may only INSERT new audit rows, never
+ * rewrite or delete an existing one, and it throws if a seeded row ever changes.
+ */
+const MIRRORED = [
+  'work',
+  'research_run',
+  'research_finding',
+  'gap_verdict',
+  'work_alias',
+  'change_log',
+];
 
 /**
  * The `work` columns this script will write.
@@ -303,9 +332,32 @@ function makeShim(db) {
 
   return {
     prepare: (sql) => statement(sql, []),
+    /**
+     * ⚠️ **Atomic: every statement in a batch commits together or none does.**
+     *
+     * D1's own `db.batch()` runs on one session and is all-or-nothing, and the
+     * code this mirror stands in for leans on that: `updateWork` batches the
+     * `work` UPDATE beside its `change_log` audit INSERT precisely so a change
+     * and its record cannot separate. The pre-fix shim ran each statement on
+     * its own, so a failing audit insert left the `work` row already written —
+     * the exact partial write a prior run produced (`work.series` on
+     * production, no audit row, the rest of the flush aborted).
+     *
+     * node:sqlite is synchronous, so wrapping the loop in a transaction on the
+     * in-memory db gives the same guarantee. `last_insert_rowid()` in a later
+     * statement still sees an earlier INSERT — it is the same connection, the
+     * same session — so `changeLogInsert`'s creation path is unaffected.
+     */
     async batch(statements) {
       const out = [];
-      for (const s of statements) out.push(await s.run());
+      db.exec('BEGIN');
+      try {
+        for (const s of statements) out.push(await s.run());
+        db.exec('COMMIT');
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
       return out;
     },
     async exec(sql) {
@@ -370,6 +422,17 @@ function diff(db, table, snapshot) {
     } else {
       const changed = columns.filter((c) => (row[c] ?? null) !== (before[c] ?? null));
       if (changed.length === 0) continue;
+      // ⚠️ `change_log` is APPEND-only (migration 0120): it exists to record
+      // what happened and an audit log something can rewrite is not one. New
+      // rows are INSERTed above; an existing row that appears to have CHANGED is
+      // never something to diff back — it is a bug, so stop rather than issue an
+      // UPDATE against production's audit trail.
+      if (table === 'change_log') {
+        throw new Error(
+          `change_log #${row.id}: an existing audit row changed (${changed.join(', ')}). ` +
+            'This table is append-only and must never be rewritten. Something is wrong.',
+        );
+      }
       if (table === 'work') {
         const stray = changed.filter((c) => !SAFE_COLUMNS.has(c));
         if (stray.length > 0) {
@@ -401,13 +464,34 @@ function flush(db, snapshots, { remote, friend, commit }) {
   // the catalog holding the answer rather than a run claiming to have written
   // one. That still holds between `work` and the findings; the run row simply
   // has to precede anything referencing it.
-  const order = ['research_run', 'work', 'gap_verdict', 'research_finding'];
+  //
+  // `work_alias` is read-only here and diffs to nothing; it is in the order so
+  // the set matches MIRRORED. `change_log` comes last: its audit rows are the
+  // record of the `work` write above them, and appending them in the same call
+  // is what makes the pair atomic on production too (see below).
+  const order = [
+    'research_run',
+    'work',
+    'gap_verdict',
+    'research_finding',
+    'work_alias',
+    'change_log',
+  ];
   const statements = order.flatMap((t) => diff(db, t, snapshots.get(t)));
   if (statements.length === 0 || !commit) return statements.length;
   try {
-    for (let i = 0; i < statements.length; i += 40) {
-      execute(statements.slice(i, i + 40), { remote, friend });
-    }
+    // ⚠️ **One `execute` call per book, NOT chunked.** A `wrangler d1 execute
+    // --file` runs its whole file as one all-or-nothing batch — the FK-ordering
+    // note above depends on exactly that ("writing the verdict first fails the
+    // whole batch"). The pre-fix code split the statements into blocks of 40,
+    // which made a book's `work` UPDATE and its `change_log` audit INSERT land
+    // in DIFFERENT batches, so a failure between them could leave `work.series`
+    // written with no audit row — the same split the in-memory `batch` now
+    // closes. A single book's diff is a handful of statements (one run, one
+    // work update, a few findings/verdicts/audit rows), comfortably one batch;
+    // the per-book flush (money-safety) is unchanged, atomicity is now WITHIN
+    // it. `execute` still fails loudly if any statement is rejected.
+    execute(statements, { remote, friend });
   } catch (err) {
     // ⚠️ wrangler reports a rejected batch as a bare non-zero exit with nothing
     // on stderr, so the statement that broke is otherwise unknowable — and this
@@ -566,4 +650,23 @@ async function main() {
   console.log(`${left.n} finding(s) left pending — a value that could not be used.`);
 }
 
-await main();
+/**
+ * ⚠️ Run `main()` ONLY when invoked as the entry point (`tsx
+ * scripts/research-queue.mjs`), never on import. The mirror shim and its
+ * atomicity are unit-tested (`scripts/test/research-queue.test.mjs`), and a
+ * test that imports `makeShim` must not kick off a real run that shells out to
+ * wrangler. `realpathSync` normalises Windows drive-letter casing and symlinks
+ * so the comparison holds from a worktree.
+ */
+function isEntryPoint() {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+export { makeShim, buildMirror, diff, flush, MIRRORED, SAFE_COLUMNS };
+
+if (isEntryPoint()) await main();
