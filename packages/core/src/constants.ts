@@ -483,6 +483,16 @@ export const EDITION_SOURCES = [
   'research',
   /** Ingested from the Calibre-Web Automated library. */
   'cwa',
+  /**
+   * An ISBN supplied by LibraryThing's `thingTitle` API (backfill rung 2.5).
+   * ⚠️ Lower trust than the other free rungs and stamped so it stays
+   * identifiable: LibraryThing returns no per-item title or author, so this
+   * rung cannot title-gate its match the way the Open Library / Google Books
+   * rungs do — measured live 2026-08-24, the response omits the title "per
+   * vendor terms". See `scripts/backfill-missing-isbns.mjs` and
+   * `migrations/0420_edition_source_librarything.sql`.
+   */
+  'librarything',
 ] as const;
 export type EditionSource = (typeof EDITION_SOURCES)[number];
 

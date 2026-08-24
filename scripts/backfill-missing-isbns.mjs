@@ -34,13 +34,26 @@
  * ## Safety
  *
  * - ISBN-13 check digits are validated before any write.
- * - Title similarity gate (>=0.80) prevents filing the wrong book's ISBN.
+ * - Title similarity gate (>=0.80) prevents filing the wrong book's ISBN —
+ *   ⚠️ on rungs 1 and 2 only. Rung 2.5 (LibraryThing) is the EXCEPTION and
+ *   cannot be gated: measured live 2026-08-24, its thingTitle response returns
+ *   no per-item title or author (the title is "omitted per vendor terms"), so
+ *   there is nothing to compare our query against. It is therefore the LOWEST
+ *   trust free rung, tried LAST (only when rungs 1 and 2 both missed), still
+ *   guarded by the ISBN-13 checksum and the UNIQUE-constraint check below, and
+ *   its writes are stamped source='librarything' so a wrong match is findable
+ *   and revertable. Whether to keep an ungated rung at all is an owner call;
+ *   this code makes its provenance honest rather than hiding it as 'openlibrary'.
  * - A UNIQUE constraint on edition.isbn13 means a duplicate is a hard failure
  *   caught here, never a silent corruption.
  * - Dry run by default. Nothing written without --commit.
  * - Every write targets the FIRST edition of the work (the one the owner
  *   interacts with). If it already carries an isbn13 somehow, the work is
  *   skipped rather than overwritten.
+ *
+ * ⚠️ ORDER: a --commit run that finds via LibraryThing writes source=
+ * 'librarything', which migration 0420 must have added to the edition.source
+ * CHECK first. Apply migrations before committing, or the write aborts.
  */
 
 import { readFileSync, existsSync } from 'node:fs';
@@ -48,6 +61,7 @@ import path from 'node:path';
 
 import { execute, lit, parseFlags, query, ROOT } from './lib/d1.mjs';
 import { editionSourceWriteExpr, llmKeyName, readLlmKeyFrom } from './lib/backfill-safety.mjs';
+import { parseThingTitleIsbns } from './lib/librarything.mjs';
 import { titleSimilarity } from '../packages/core/src/matching.ts';
 import { normaliseTitle, cleanAudiobookTitle } from '../packages/core/src/titles.ts';
 
@@ -234,8 +248,11 @@ async function searchLibraryThingForIsbn(title, author) {
   if (!res.ok) throw new Error(`librarything search ${res.status}`);
   const xml = await res.text();
 
-  // Parse all <isbn>...</isbn> elements via regex
-  const isbnMatches = [...xml.matchAll(/<isbn>([^<]+)<\/isbn>/g)].map((m) => m[1].trim());
+  // Parse against the REAL thingTitle shape (measured live 2026-08-24) — an
+  // <idlist> of <isbn> elements on a hit, <idlist><unknownID/></idlist> on a
+  // miss, and anything else (a Cloudflare challenge page, an empty body) reads
+  // as no answer. See scripts/lib/librarything.mjs for the shape.
+  const isbnMatches = parseThingTitleIsbns(xml);
   if (isbnMatches.length === 0) return null;
 
   // Find the first valid ISBN-13 (or convert ISBN-10)
@@ -245,8 +262,16 @@ async function searchLibraryThingForIsbn(title, author) {
   return {
     isbn13,
     matchedTitle: cleaned,
-    similarity: 1.0, // LT matched on our exact title query; no title returned to compare
-    source: 'openlibrary', // CHECK constraint only allows known sources; LT aggregates same data
+    // ⚠️ NOT a computed score. LibraryThing returns no per-item title or author
+    // (the <title> is "omitted per vendor terms"), so there is nothing to
+    // title-gate against — unlike the Open Library / Google Books rungs above.
+    // 1.0 records "LT's own server-side title match", not a similarity we
+    // measured. This is why the rung is LAST among the free rungs and why its
+    // writes are stamped with their own source below.
+    similarity: 1.0,
+    // Honest provenance now that migration 0420 adds 'librarything' to the
+    // edition.source CHECK. ⚠️ Requires 0420 applied before a --commit run.
+    source: 'librarything',
     sourceUrl: null,
     _rung: 'librarything', // internal tracking for summary counts
   };
