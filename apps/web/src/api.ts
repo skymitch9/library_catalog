@@ -276,6 +276,34 @@ export interface TbrMatchView {
   workCoverUrl: string | null;
 }
 
+/** One work in a duplicate group, as `/api/collection/duplicates` returns it. */
+export interface DuplicateWork {
+  id: number;
+  title: string;
+  subtitle: string | null;
+  /**
+   * ⚠️ The **raw stored** author string, so an authorless book arrives as the
+   * `?unknown` sentinel rather than as null. The list renders it through
+   * `duplicateAuthorLabel`, which is the one place that becomes words.
+   */
+  authors: string;
+  series: string | null;
+  /** Owned + lent. Shown so a pair can be told apart; never part of the fold. */
+  copyCount: number;
+}
+
+/** Works that folded onto one key — always two or more. */
+export interface DuplicateGroupView {
+  key: string;
+  works: DuplicateWork[];
+}
+
+export interface DuplicatesResponse {
+  groups: DuplicateGroupView[];
+  /** Every work the finder looked at. The empty state says this number. */
+  totalWorks: number;
+}
+
 /**
  * What the collection screen can ask for.
  *
@@ -979,6 +1007,20 @@ export const api = {
   /** Counted against the same filter the list uses, so the numbers agree. */
   facets: (params: CollectionParams) =>
     request<CollectionFacets>(`/api/collection/facets?${collectionQuery(params)}`),
+
+  /**
+   * The same book recorded twice, grouped so a person can compare the rows.
+   *
+   * ⚠️ **Takes no `CollectionParams`, and that is not an oversight.** The other
+   * filters narrow *which books you are looking at*; this one answers *which
+   * rows in the catalog are the same book*, and narrowing it to (say) one
+   * series would hide the half of a pair filed under a different one — which is
+   * precisely how the pair got there. The whole catalog, or nothing.
+   *
+   * `totalWorks` is what the empty state counts: "No duplicates found across
+   * 1,143 works" says the finder ran, which a bare "none" does not.
+   */
+  duplicates: () => request<DuplicatesResponse>('/api/collection/duplicates'),
 
   /** ⚠️ Always from the database. No count in this app is ever a literal. */
   stats: () => request<Stats>('/api/stats'),

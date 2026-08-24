@@ -144,6 +144,25 @@ export interface CollectionFilters {
    */
   needs: string;
   /**
+   * Show the books recorded twice, grouped, instead of the collection list.
+   *
+   * ⚠️ **Mimicked from the Board Game Catalog on purpose**, down to the
+   * spelling: `apps/web/src/router.tsx:100,118` there parses `duplicates` as a
+   * `1`/`0` flag and emits `duplicates=1` only when it is on. The owner asked
+   * for that filter and not a new one — *"we have this filter in boardgame
+   * catalog so lets mimic it from there instead of redesigning the wheel"* —
+   * so the address bar is the same address bar.
+   *
+   * ⚠️ What it MEANS differs, and that is his call too: there,
+   * `duplicates=1` is *"we own 2+ copies"*; here it is *"the same book is in
+   * the catalog twice"*. Two copies of one book is a legitimate holding and is
+   * never flagged. `packages/core/src/duplicates.ts` carries the argument.
+   *
+   * A boolean rather than a string, unlike every other filter here, because it
+   * is a checkbox in the games UI and a checkbox here.
+   */
+  duplicates: boolean;
+  /**
    * One shared fictional world — `The Cosmere`, `Runnerverse` — or empty.
    *
    * ⚠️ The tier **above** `series`, and it composes with it rather than
@@ -244,6 +263,21 @@ function positiveInt(search: string, key: string): number {
   return Number.isInteger(n) && n > 0 ? n : 1;
 }
 
+/**
+ * A checkbox in the query string. Only `1` and `0` speak; anything else defers.
+ *
+ * ⚠️ Copied from the Board Game Catalog's `flag()` (`apps/web/src/router.tsx`
+ * there) rather than reached for `=== '1'`, so the two catalogs read the same
+ * URL the same way. Every other filter on this page is a string picked from an
+ * allowlist; this is the first boolean, and it gets the sibling's reader.
+ */
+function flag(search: string, key: string, fallback: boolean): boolean {
+  const raw = new URLSearchParams(search).get(key);
+  if (raw === '1') return true;
+  if (raw === '0') return false;
+  return fallback;
+}
+
 function pageSizeOf(search: string): number | null {
   const n = Number(new URLSearchParams(search).get('size'));
   return COLLECTION_PAGE_SIZES.includes(n) ? n : null;
@@ -286,6 +320,8 @@ function parseCollection(search: string): CollectionFilters {
     editionKind: pick(search, 'kind', EDITION_KIND_FILTERS) ?? '',
     status: pick(search, 'status', COPY_STATUSES) ?? '',
     needs: pick(search, 'needs', NEEDS_FILTERS) ?? '',
+    // `?duplicates=1`, exactly as the board-game catalog spells it.
+    duplicates: flag(search, 'duplicates', false),
     readState: pick(search, 'read', READ_STATES) ?? '',
     sort: pick(search, 'sort', SORTS),
     dir: pick(search, 'dir', ['asc', 'desc'] as const),
@@ -319,6 +355,9 @@ export function collectionPath(f: CollectionFilters): string {
   if (f.editionKind) p.set('kind', f.editionKind);
   if (f.status) p.set('status', f.status);
   if (f.needs) p.set('needs', f.needs);
+  // Emitted only when on, so an ordinary browse stays `/` — the same rule the
+  // sibling follows (`if (f.duplicates) p.set('duplicates', '1')`).
+  if (f.duplicates) p.set('duplicates', '1');
   if (f.readState) p.set('read', f.readState);
   if (f.sort && f.sort !== DEFAULT_PREFS.sort) p.set('sort', f.sort);
   if (f.dir && f.dir !== DEFAULT_PREFS.dir) p.set('dir', f.dir);
@@ -348,6 +387,8 @@ export function collectionInUniversePath(universe: string): string {
     editionKind: '',
     status: '',
     needs: '',
+    // A link into a world is a link to its books, not to its filing mistakes.
+    duplicates: false,
     readState: '',
     sort: null,
     dir: null,
