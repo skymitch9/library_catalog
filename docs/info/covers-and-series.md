@@ -1,17 +1,26 @@
 # Covers, Series & Drive Links — Information Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
-> Last verified: **2026-08-10**. Every figure below is a **measured run** on that
-> date, against the 115 works in the local D1 (production held 117 at the same
-> moment; the two differ by two hand-added test rows). Nothing here is an
-> estimate.
+> Last verified: **2026-08-23** for §0 below; **everything from §1 onward still
+> carries its original 2026-08-10 measurement and was NOT re-checked.**
+>
+> 🔴 **Read §0 first. This document was written about 115 works in one
+> catalogue. There are now two catalogues and 1,025 works between them**, and
+> the ladder could not reach one of them at all until 2026-08-22. The rungs and
+> the reasoning below are still correct; the NUMBERS are historical.
+>
+> Every figure from §1 onward was a **measured run on 2026-08-10**, against the
+> 115 works in the local D1 (production held 117 at the same moment; the two
+> differ by two hand-added test rows). None of it was an estimate then and none
+> of it has been re-measured since.
 >
 > §3.1 (the series overrides) is a **second measured run** on the same date and
 > the same database, after `scripts/series-overrides.json` was researched and
 > filled. Its per-entry sources are in that file, one `source` array each.
 >
 > **Not verified:** none of these backfills has been run against production.
-> See `docs/HANDOFF.md` for the exact pending commands.
+> ⚠️ This line used to send you to `docs/HANDOFF.md` for "the exact pending
+> commands". Those were run long ago — see §0 and §5 for the current ones.
 
 The owner's verdict on 2026-08-10 was *"library looks awful, no covers load, no
 series, no sorting by author"*. All three had the same root cause and it was not
@@ -23,6 +32,69 @@ work.series             0 of 117 set
 edition.isbn13          0 of 117 set
 edition.source_url    116 of 117 set   ← the only thing these rows actually knew
 ```
+
+---
+
+## 0. ⚠️ TWO catalogues now, and one of them was unreachable — 2026-08-22/23
+
+Everything below §1 was measured against **115 works in `library-catalog`** on
+2026-08-10. Measured **2026-08-23 19:05 Phoenix**:
+
+| | works | no cover | stand-in | **cover needed** |
+|---|---|---|---|---|
+| `library-catalog` (library.heygabi.ai) | **493** | 5 | 0 | **5** |
+| `library-catalog-2nd` (padhard.heygabi.ai) | **532** | 15 | 17 | **32** |
+
+⚠️ **"No cover" and "cover needed" are different questions and differ by 17
+books.** §2.5 defines the real one — `coverNeeded` in `@lc/core`, and
+`NEEDS_CLAUSE` in `packages/db/src/works.ts`: a cover is needed when
+`cover_url IS NULL` **or** `cover_status = "standin"`. A report quoting blanks
+alone will read as a regression the day somebody uses the app's own number.
+
+### 🔴 No sweep in `scripts/` could reach the second instance at all
+
+`scripts/lib/d1.mjs` hardcoded `DB_NAME = 'library-catalog'`, and every backfill
+imports `query`/`execute` from there. So **covers, series, ISBNs and universes
+could only ever be filled on the main catalogue** — padhard had never met any of
+them. Fixed 2026-08-22 (commit `4a52589`): `dbName({remote, friend})`, plus a
+`--friend` flag on every script.
+
+```bash
+npm run backfill:missing-covers -- --friend --remote          # dry run
+npm run backfill:missing-covers -- --friend --remote --commit
+```
+
+⚠️ **The flag is `--friend`, NOT `--env friend`.** `--env` is wrangler's idiom
+and these scripts do not take it; a note telling somebody to use it cost real
+time already. ⚠️ `--friend` without `--remote` **throws** — there is no local
+copy of the second instance (both bind `DB`), so it would otherwise silently
+read MAIN and report about the wrong catalogue.
+
+### ⚠️ `check-cover-health.mjs --friend` had never audited a padhard row
+
+It switched the fetch base to `padhard.heygabi.ai` while still reading rows from
+the MAIN database — so a clean run of it was being read as evidence about a
+catalogue it had never looked at. Fixed in the same commit; both now come off
+one `flags.friend`.
+
+### ⚠️ A rung that could not be ASKED used to print as "no cover"
+
+`resolveIsbn` records a failed rung in its trace; `backfill-missing-covers.mjs`
+threw the trace away, so an exhausted or dead rung was indistinguishable from a
+book no database holds. It now tallies them and says which. The first run found
+the **Bookcover API answering HTTP 522 on every call** — still 522 twenty hours
+later, recorded as `KNOWN_ISSUES.md` **KI-5**.
+
+### The sweep that followed, and the honest limit
+
+Kiro swept both catalogues on 2026-08-22/23 — **52 covers, 100% of them from
+Google Books; Open Library returned 404 on every ISBN tried**, independently
+reaching §2's own 2026-08-10 verdict that the obvious Open Library rung is worth
+nothing here. ⚠️ **Whether any of the 52 are placeholders has NOT been checked**
+— that audit was started and stopped. `check-cover-health.mjs` is the instrument.
+
+⚠️ **Both catalogues are loaded live and these figures move by the hour** —
+padhard gained **163 works in 24 hours**. Re-measure before quoting any of them.
 
 ---
 
