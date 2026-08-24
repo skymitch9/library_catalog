@@ -2703,3 +2703,6 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
 }
 .more-cluster > summary:focus-visible { outline: 2px solid var(--et-accent); outline-offset: 2px; }
 .more-cluster[open] > summary { margin-bottom: 0.4rem; }
+/* The record-control drawer wears danger red, not the warm/warn yellow — it
+   holds the flag-this-record watch and the delete control (owner 2026-08-24). */
+.more-cluster--danger > summary { color: var(--et-danger); }

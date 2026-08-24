@@ -275,10 +275,6 @@ export function WorkPage({
         </div>
       </div>
 
-      {/* ⚠️ Kept high, above the record: a watch says "what you just read may be
-          wrong" and hiding it under the detail defeats it. */}
-      <Watches workId={workId} watches={watches} canEdit={canEdit} onChanged={load} />
-
       {/* 2 — RATINGS & REVIEWS, hoisted to right under the identity (it used to
           be #18 of 20). Reviews is still the only thing here that can see
           Firestore, so `onReadStateDerived` still reloads the reading panel when
@@ -355,10 +351,16 @@ export function WorkPage({
         </div>
       )}
 
-      {/* THE DEMOTED "MORE" CLUSTER — the detailed record, for when the summary
-          above is not enough. Collapsed by default so it does not crowd the page. */}
-      <details className="more-cluster">
-        <summary>More about this book</summary>
+      {/* WARNING: RECORD CONTROL — the record-management drawer, collapsed by
+          default. Renamed + recoloured danger-red (owner 2026-08-24): it holds the
+          "flag this record" watch and the delete control, so it reads as a warning,
+          not "more info". */}
+      <details className="more-cluster more-cluster--danger">
+        <summary>⚠️ Warning: Record Control</summary>
+
+        {/* A watch says "what you just read may be wrong" — moved in here from up
+            top (owner 2026-08-24) as a record-control action. */}
+        <Watches workId={workId} watches={watches} canEdit={canEdit} onChanged={load} />
 
         {/* The audiobook detail — narrator, provenance, staleness — the rows the
             "Also on audio" chip summarises. */}
@@ -374,12 +376,12 @@ export function WorkPage({
         {/* The record OF the page — who changed what, when, and what it said
             before. Loads on demand. */}
         <Changes workId={workId} />
-      </details>
 
-      {/* Below even the More cluster, because it is the one control whose
-          accidental press matters most. Refused by the server while any copy
-          records property; the panel's header comment carries the #139 story. */}
-      <DeleteWork workId={workId} canEdit={canEdit} onDeleted={onBack} />
+        {/* The one control whose accidental press matters most — moved in here
+            (owner 2026-08-24). Refused by the server while any copy records
+            property; the panel's header comment carries the #139 story. */}
+        <DeleteWork workId={workId} canEdit={canEdit} onDeleted={onBack} />
+      </details>
     </main>
   );
 }
