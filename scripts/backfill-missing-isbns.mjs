@@ -47,11 +47,13 @@ import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 
 import { execute, lit, parseFlags, query, ROOT } from './lib/d1.mjs';
+import { editionSourceWriteExpr, llmKeyName, readLlmKeyFrom } from './lib/backfill-safety.mjs';
 import { titleSimilarity } from '../packages/core/src/matching.ts';
 import { normaliseTitle, cleanAudiobookTitle } from '../packages/core/src/titles.ts';
 
 const flags = parseFlags();
 const useLlm = process.argv.includes('--llm');
+const llmKeyFrom = readLlmKeyFrom(process.argv);
 
 const UA = 'library_catalog (+https://github.com/private)';
 const PAUSE_MS = 1100; // Open Library asks for ~1 req/sec
@@ -428,15 +430,36 @@ console.log(`not found           ${notFound.length}`);
 
 const llmFound = [];
 if (useLlm && notFound.length > 0) {
-  const apiKey = readDevVar('ANTHROPIC_API_KEY');
+  // ⚠️ The key follows the INSTANCE — a --friend run bills padhard's books to
+  // padhard's own key, never silently to the owner's. --llm-key-from=main is the
+  // owner's explicit exception; absent it, a --friend run reads the friend key
+  // and refuses to fall back. See lib/backfill-safety.mjs and the sibling cover
+  // script.
+  const { keyName, overridden } = llmKeyName({ friend: flags.friend, keyFrom: llmKeyFrom });
+  const apiKey = readDevVar(keyName);
   const worst = ((notFound.length * 6) / 100).toFixed(2);
 
   console.log('');
   console.log(`--llm: ${notFound.length} book(s) the free rungs could not resolve.`);
   console.log(`  ⚠️ Costs ~6c/book worst case, so roughly $${worst} for this run.`);
+  console.log(
+    `  key in use: ${keyName}  (${
+      overridden
+        ? "the OWNER's key — billed to him, for padhard's books"
+        : flags.friend
+          ? "padhard — Samantha's own key"
+          : "main instance — the owner's key"
+    })`,
+  );
+  if (overridden) {
+    console.log(
+      `  ⚠️ OVERRIDE ACTIVE — --llm-key-from=main. This --friend run spends ${keyName}, ` +
+        `not ANTHROPIC_API_KEY_FRIEND_SAM. Without the flag the rung refuses to fall back.`,
+    );
+  }
 
   if (!apiKey) {
-    console.log('  ⚠️ No ANTHROPIC_API_KEY in apps/worker/.dev.vars — skipping.');
+    console.log(`  ⚠️ ${keyName} is empty or absent in apps/worker/.dev.vars — skipping.`);
   } else {
     for (const [i, r] of notFound.entries()) {
       const n = `${String(i + 1).padStart(3)}/${notFound.length}`;
@@ -514,7 +537,11 @@ if (allFound.length > 0) {
     .filter((f) => f.edition_id != null)
     .map(
       (f) =>
-        `UPDATE edition SET isbn13 = ${lit(f.isbn13)}, source = ${lit(f.source === 'llm' ? 'research' : f.source)}, updated_at = datetime('now')` +
+        // ⚠️ source is written through a CASE that preserves 'manual': a
+        // hand-created edition that gains an ISBN from a free rung keeps its
+        // 'manual' provenance rather than being silently demoted. See
+        // lib/backfill-safety.mjs (audit HIGH, :517).
+        `UPDATE edition SET isbn13 = ${lit(f.isbn13)}, source = ${editionSourceWriteExpr(lit, f.source)}, updated_at = datetime('now')` +
         ` WHERE id = ${lit(f.edition_id)} AND isbn13 IS NULL;`,
     );
 
