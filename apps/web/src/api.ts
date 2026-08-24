@@ -64,7 +64,10 @@ export interface DeletionCopy {
   status: string;
   isSigned: boolean;
   location: string | null;
+  /** ⚠️ Deprecated by migration 0400 — a new record lands in `personName`. */
   lentTo: string | null;
+  /** WHO has it, as typed. See `WorkDeletionCopy` in `@lc/db` for why both are here. */
+  personName: string | null;
   editionId: number | null;
   editionNotes: string | null;
 }
@@ -778,6 +781,35 @@ export interface Person {
   role: Role;
   firstSeenAt: string;
   approvedAt: string | null;
+}
+
+/**
+ * A member as the OR-1 name picker sees them — `id` + `displayName`, nothing
+ * else. Mirrors `MemberSummary` in `@lc/db` and the `GET /api/members` body.
+ *
+ * ⚠️ Deliberately NOT `Person`: the picker's roster (`editCatalog`) must never
+ * carry the email/photo/role that `Person` (the `manageUsers` People page) does.
+ */
+export interface Member {
+  id: number;
+  displayName: string;
+}
+
+/**
+ * One row of "Books with you" — a copy of this house's that is linked to the
+ * signed-in person. Mirrors `LinkedCopyRow` in `@lc/db`.
+ *
+ * ⚠️ It carries no `personName`: the only person it could name is the reader,
+ * and nothing about any other borrower reaches this response.
+ */
+export interface LinkedCopy {
+  copyId: number;
+  workId: number;
+  title: string;
+  authors: string | null;
+  coverUrl: string | null;
+  status: string;
+  acquiredOn: string | null;
 }
 
 export interface RelatedWork {
@@ -1585,6 +1617,13 @@ export const api = {
 
   deleteCopy: (id: number) => request<{ ok: true }>(`/api/copies/${id}`, { method: 'DELETE' }),
 
+  /**
+   * "Books with you" — the copies of this house's that are linked to the person
+   * asking. No parameter, deliberately: the server reads the id off the token,
+   * so this can only ever answer about whoever is signed in.
+   */
+  copiesWithMe: () => request<{ copies: LinkedCopy[] }>('/api/copies/with-me'),
+
   // -------------------------------------------------------------------------
   // Related books
   // -------------------------------------------------------------------------
@@ -1698,6 +1737,14 @@ export const api = {
   // -------------------------------------------------------------------------
 
   users: () => request<{ users: Person[] }>('/api/users'),
+
+  /**
+   * The name-picker roster — `{ id, displayName }` only, gated on `editCatalog`
+   * server-side (`GET /api/members`). This is what the OR-1 person field reads,
+   * NOT `users()`: that one is `manageUsers`-only and hands out email, photo and
+   * role. Any editor who may record who has a book may list this.
+   */
+  members: () => request<{ members: Member[] }>('/api/members'),
 
   /**
    * ⚠️ The server refuses the last owner demoting themselves, and refuses anyone

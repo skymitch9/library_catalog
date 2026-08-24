@@ -387,7 +387,30 @@ export const createCopySchema = z.object({
   condition: conditionSchema.nullable().optional(),
   isSigned: z.boolean().default(false),
   editionNotes: optionalText,
+  /**
+   * ⚠️ **Deprecated — write `personName` instead** (migration 0400, owner
+   * request OR-1). Still modeled because the column stands for one more
+   * release and `.strict()` would otherwise 400 a client that has not been
+   * redeployed yet. Nothing in this tree sends it any more.
+   */
   lentTo: optionalText,
+  /**
+   * WHO has the book, when it is `lent`, `borrowed` or `sold` — the estate
+   * identity when they are a member here, the typed name always.
+   *
+   * ⚠️ The two are NOT alternatives and are routinely both set: picking a
+   * member from the autocomplete writes both, typing a stranger's name writes
+   * only `personName`. Migration 0400 carries the full argument; the short
+   * version is that a linked card renders the member's *current* display name
+   * and the typed text is what remains when the link is not there.
+   *
+   * `personUserId` is a positive integer, or an explicit `null` to unlink.
+   * `undefined` — an absent key — leaves it alone, which is what makes a
+   * one-key PATCH safe. Whether the id names a real member is not knowable
+   * here; `@lc/db` checks it and refuses in words.
+   */
+  personUserId: z.number().int().positive().nullable().optional(),
+  personName: optionalText,
   notes: optionalText,
 });
 export type CreateCopy = z.infer<typeof createCopySchema>;
@@ -404,6 +427,10 @@ export type CreateCopy = z.infer<typeof createCopySchema>;
 // ⚠️ `.strict()` — see `updateWorkSchema`. Client sweep 2026-08-13: the copy
 // PATCH bodies are `arrivedPatch` (`status` + `acquiredOn`), the status
 // select (`status`), and the wishlist promotion (`status`) — all modeled.
+// Re-swept 2026-08-23 for OR-1: `Copies.tsx` adds `{ editionId }`,
+// `{ isSigned }` and the person save (`personUserId` + `personName`, always
+// sent as a PAIR so a member pick and a typed correction cannot half-land).
+// All modeled above.
 export const updateCopySchema = createCopySchema.omit({ workId: true }).partial().strict();
 export type UpdateCopy = z.infer<typeof updateCopySchema>;
 

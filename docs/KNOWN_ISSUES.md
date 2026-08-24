@@ -214,6 +214,57 @@ but spending it means accepting the invariant break, so it is a decision.
 
 ---
 
+## KI-10 · The CREATE schemas are not `.strict()` — a stray key is silently stripped — `WATCHING`
+
+> **Update 2026-08-24 — SHADOW SHIPPED, ENFORCE PENDING.** The strip still
+> happens (unchanged, deliberately), but it is no longer silent: all three
+> create routes now log a structured `would_reject` line when a body carries an
+> unmodelled key, then 201 exactly as before. `shadowStrictCreate`
+> (`apps/worker/src/lib/strict-shadow.ts`) is the one helper; branch
+> `feature/lent-to-person`. This is the shadow rung of off → shadow → enforce —
+> it MEASURES the false-positive count, it does not enforce. The `.strict()`
+> flip is still pending on that count reading **0** over real traffic (see *What
+> would change it*). Exercised live 2026-08-24: snake_case `person_name` on
+> `POST /api/copies` logged one would-reject and still 201'd; a clean body
+> logged nothing.
+
+**Symptom.** `POST /api/copies` with an unknown key answers **201** and drops
+it. Measured 2026-08-23 against a local `wrangler dev`:
+`{"workId":1,"status":"lent","person_name":"Samantha"}` — note the snake_case —
+created a copy with `person_name: null` and reported success. The same body
+sent to `PATCH /api/copies/:id` is correctly refused with a 400 naming the key.
+
+`createCopySchema`, `createWorkSchema` and `createEditionSchema` all lack
+`.strict()`; every `update*` counterpart has it. So the split is
+**updates strict, creates lenient**, consistently across all three — it is not
+a one-off omission.
+
+⚠️ **This contradicts the file's own claim.** Three schemas in
+`packages/core/src/schemas.ts` carry the comment *"`.strict()` like every
+schema here"*, which is not true of the creates, and `setReadStateSchema`'s
+comment records exactly this failure being fixed once already: *"a client that
+posts a rating here is wrong and needs to be told so — a 400 is a bug report, a
+silent strip is a rating that vanishes."* The argument applies unchanged to a
+create.
+
+**Why tolerated.** Flipping it is an **enforcement change on a live write
+path**, and the estate's own rule is that those roll out shadow-first, never as
+a side effect of an unrelated feature. `POST /copies` has more writers than the
+UI form — the wishlist ask, the scan-approve flow, the importers under
+`scripts/` — and any one of them sending a stray key would start answering 400
+the moment this flipped. Found while building OR-1, deliberately left alone: it
+predates that work and is not made worse by it.
+
+**What would change it.** The shadow rung above now produces the measurement
+this asked for — grep the Worker logs for `[strict-shadow] would-reject` and the
+count of unmodelled-key bodies over real traffic is readable rather than
+assumed. When that count is **0** (across the tree's callers **and** the
+importers under `scripts/`, which the shadow line names by route), flip
+`.strict()` on all three creates in one commit with the reading recorded. Until
+that number reads 0, the strip stays.
+
+---
+
 ## Resolved and removed — 2026-08-23
 
 ⚠️ **Kept as a pointer, not as content.** These were live entries in this file

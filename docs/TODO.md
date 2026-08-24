@@ -117,6 +117,21 @@ books that are assigned to you in your status page window."*
 2. Should the borrower see it, or only the owner?
 3. Sold — does the row stay in the catalogue at all, or leave a tombstone?
 
+### OR-2. Find duplicates — copy the board-game filter, don't redesign it
+
+> *"ability to search a catalog for duplicates with a filter, we have this
+> filter in boardgame catalog so lets mimic it from there instead of
+> redesigning the wheel"*
+
+⚠️ **This is an explicit reuse instruction, so the first step is to READ
+`Board_Game_Catalog`'s implementation, not to design one.** Match its grammar
+and its wording; a second, differently-shaped duplicate finder in the estate is
+exactly what he is saying not to build.
+
+**Ask him before building:** duplicates of a WORK (same book twice) or of a
+COPY (two physical copies, which is legitimate and common)? The two want
+different defaults.
+
 ### OR-3. A manual pipeline pause should ask what it means
 
 > *"when i manually pause the pipeline it says nothing can override it. I want

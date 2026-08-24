@@ -629,7 +629,22 @@ export interface WorkDeletionCopy {
   status: string;
   isSigned: boolean;
   location: string | null;
+  /** ⚠️ Deprecated by migration 0400 — `personName` is where a new record lands. */
   lentTo: string | null;
+  /**
+   * WHO has it, as typed.
+   *
+   * ⚠️ Added with migration 0400 because leaving it out would have quietly
+   * broken this dialog: from that migration on, "lent to Samantha" is written
+   * to `person_name` and `lent_to` stays whatever it was — usually NULL — so a
+   * preview reading only the old column would show a lent copy as an anonymous
+   * row, which is exactly the recognition this report exists to give.
+   *
+   * Not resolved to a member's display name: the deletion route is
+   * `editCatalog`-gated, and one extra `app_user` query on a confirmation
+   * dialog buys nothing the typed text does not already say.
+   */
+  personName: string | null;
   editionId: number | null;
   editionNotes: string | null;
 }
@@ -678,6 +693,7 @@ function toDeletionCopy(c: CopyRow): WorkDeletionCopy {
     isSigned: c.is_signed === 1,
     location: c.location,
     lentTo: c.lent_to,
+    personName: c.person_name,
     editionId: c.edition_id,
     editionNotes: c.edition_notes,
   };
@@ -1140,6 +1156,19 @@ export interface CollectionQuery {
   editionKind?: string | undefined;
   status?: string | undefined;
   /**
+   * Let a work whose copies are ALL sold back into the answer.
+   *
+   * ⚠️ **Internal, and not a query-string parameter.** The collection hides
+   * sold-out books by default (owner decision #3, `NOT_ONLY_SOLD`) and the way
+   * a person asks to see them is to pick "Sold" in the Copies filter that
+   * already exists — one control, not two. This flag exists so the *facet
+   * counts* can be taken with the hiding clause removed, exactly as `series`,
+   * `medium`, `needs` and `editionKind` each drop their own clause before
+   * counting. Without it "Sold (0)" would render disabled and there would be
+   * no way back to the books it counts.
+   */
+  includeSold?: boolean | undefined;
+  /**
    * "Show me what still wants attention" — `cover`, `watch` or `any`.
    *
    * ⚠️ The one filter here that is about **us**, not about the books. Every
@@ -1440,6 +1469,32 @@ const NEEDS_CLAUSE: Record<string, string> = {
 };
 
 /**
+ * A book that has LEFT — every copy of it sold — hidden from the collection.
+ *
+ * Owner decision #3 of 2026-08-23 (`docs/TODO.md` OR-1): *"Sold stays as a
+ * record … the collection view hides sold copies by default (a filter to show
+ * them). Nothing is deleted."*
+ *
+ * ⚠️ **It hides a work only when ALL of its copies are sold**, never when one
+ * of several is. A book sold in paperback and kept in hardcover is still on the
+ * shelf, and dropping it because one row says `sold` would be the same class of
+ * error as `HELD_STATUSES` counting `owned` alone.
+ *
+ * ⚠️ **A work with NO copies at all is untouched**, which is most of this
+ * catalog: 800-odd works arrived from the ebook import with no `copy` row, and
+ * a clause that read "has nothing unsold" would empty the collection.
+ *
+ * No binds — a literal, like `KIND_CLAUSE` and `NEEDS_CLAUSE` beside it.
+ *
+ * Exported only so `test/sold-clause.test.ts` can run the shipping SQL text
+ * against a real SQLite rather than restating it — `EBOOK_ONLY_CLAUSE` next
+ * door is exported for the same reason and says so at length.
+ */
+export const NOT_ONLY_SOLD =
+  `(NOT EXISTS (SELECT 1 FROM copy c WHERE c.work_id = w.id AND c.status = 'sold')
+    OR EXISTS (SELECT 1 FROM copy c WHERE c.work_id = w.id AND c.status <> 'sold'))`;
+
+/**
  * "Is one of these works", as SQL. See `CollectionQuery.universeIds`.
  *
  * ⚠️ **Inlined rather than bound, and that is not a shortcut.** D1 caps a
@@ -1523,6 +1578,13 @@ function collectionFilter(query: CollectionQuery): { sql: string; binds: unknown
     where.push('EXISTS (SELECT 1 FROM copy c WHERE c.work_id = w.id AND c.status = ?)');
     binds.push(query.status);
   }
+  // ⚠️ Sold-out books are hidden unless something ASKS for them, and the thing
+  // that asks is the Copies filter the page already has — picking "Sold" is the
+  // "show them" control, not a second checkbox beside it. `includeSold` is the
+  // internal escape used by the facet counts below (see `collectionFacets`);
+  // it is deliberately NOT read off the query string, because a second way to
+  // say the same thing is a second thing to keep in step with the select.
+  if (query.status !== 'sold' && !query.includeSold) where.push(NOT_ONLY_SOLD);
   // No binds: every clause is a literal written above, never caller text. An
   // unrecognised value adds no clause rather than erroring — the same rule the
   // sort allowlist and `MEDIUM_CLAUSE` follow.
@@ -1739,6 +1801,13 @@ export async function collectionFacets(
   // "Named, not sorted (2)" beside a selected "Collector's edition" would count
   // the books that are BOTH, which is not what picking it would give you.
   const withoutKind = collectionFilter({ ...query, editionKind: undefined });
+  // And, for the fifth time and the same reason, without the sold-hiding
+  // clause: "Sold (n)" beside the default view would count only the books that
+  // are sold AND still held some other way, which is a handful and usually
+  // zero — and a disabled option is a filter a person cannot reach. This is
+  // the ONE facet that drops it; every other count stays inside the default
+  // view, because those options really do describe what is on screen.
+  const withoutSoldHidden = collectionFilter({ ...query, includeSold: true });
   const all = collectionFilter(query);
 
   const [series, media, formats, statuses, needs, kinds] = await Promise.all([
@@ -1778,10 +1847,10 @@ export async function collectionFacets(
     db
       .prepare(
         `SELECT c.status AS status, COUNT(DISTINCT w.id) AS count
-           FROM work w JOIN copy c ON c.work_id = w.id ${all.sql}
+           FROM work w JOIN copy c ON c.work_id = w.id ${withoutSoldHidden.sql}
           GROUP BY c.status ORDER BY count DESC`,
       )
-      .bind(...all.binds)
+      .bind(...withoutSoldHidden.binds)
       .all<{ status: string; count: number }>(),
     // One row, two columns, for the same reason `media` is: the two sets
     // overlap (a book can want a cover *and* be on watch) and a GROUP BY would

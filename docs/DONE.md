@@ -700,6 +700,161 @@ exactly what he is saying not to build.
 COPY (two physical copies, which is legitimate and common)? The two want
 different defaults.
 
+## ✅ OR-1. Record WHO has the book — lent out, borrowed, sold — SHIPPED 2026-08-23
+
+Moved here **whole** from `TODO.md` — the ask exactly as it was written, then
+what shipped and the three answers that unblocked it. Branch
+`feature/lent-to-person`; migration `0400_copy_person.sql`.
+
+### The ask, as it stood
+
+### OR-1. Record WHO has the book — lent out, borrowed, sold
+
+> *"optional Ability to enter a user when a book is in lent out, borrowed, or
+> sold status. also the ability to assign the status to a different member of
+> the catalog for record keeping … if i loaned out a book to Samantha I should
+> be able to put her name in a text box that matches the theme and saves. if
+> Samantha is a user in the estate i should be able to autofill to her user
+> profile so its linked to her."*
+
+**Two levels, and the second is the interesting one.** A free-text name that
+saves and matches the theme is the floor; the ask above it is that an estate
+member **autofills and links to her profile**, so the record points at a person
+rather than at a string.
+
+⚠️ **`copy.lent_to` already exists** and is already rendered (`Copies.tsx`
+shows *"Lent to …"*). So the floor is partly built — check what it does today
+before designing. What is NOT there is the link to an estate identity.
+
+**Future half, stated by him and deliberately not scoped yet:** *"a way to view
+books that are assigned to you in your status page window."*
+
+**Ask him before building:**
+1. Does a linked person's name change on the card if they later change their display name — i.e. is it a live join or a snapshot?
+2. Should the borrower see it, or only the owner?
+3. Sold — does the row stay in the catalogue at all, or leave a tombstone?
+
+### The three questions, answered by him 2026-08-23
+
+They are the reason this could be built at all — each had a defensible answer
+in both directions, and guessing either way would have produced a design nobody
+asked for.
+
+| His question, above | His answer |
+|---|---|
+| 1. Live join or snapshot? | **Live.** *"If the id is set the card shows the member's CURRENT display name"* — somebody who renames themselves renames themselves everywhere. |
+| 2. Borrower, or owner only? | **Owner + the linked person.** Editors see the name; the linked member sees their own row on their own page; everybody else sees only the status word. |
+| 3. Sold — row or tombstone? | **The row stays**, with person and date. The collection hides sold-out books by default; nothing is deleted. |
+
+### What shipped
+
+**`copy.person_user_id` + `copy.person_name` — BOTH, and that is the design.**
+*"Both: id plus typed text."* A non-member is the ordinary lend and has to be
+recordable, so the typed text is the floor; the id is what makes a member's card
+follow their account. The text is kept even when the id is set, as the fallback
+that survives an unlink, a deleted account, or a member whose Google account
+never supplied a display name. Migration 0400 carries the full argument.
+
+**The redaction rule, in one sentence:** a copy's `person_user_id` and
+`person_name` reach a caller only if that caller holds `editCatalog` or IS the
+linked person; every other caller gets both as `null` while the status word is
+left untouched. One implementation — `apps/worker/src/lib/copy-person.ts` —
+because copy rows leave the Worker by three doors, and a per-route redaction is
+one that gets forgotten on the fourth.
+
+⚠️ **The status is deliberately NOT redacted.** Hiding it as well would make a
+lent book read as *missing from the shelf*, which is a worse lie than the one
+being avoided. And the self-exception is an id equality against the verified
+token, never a name comparison — two members called Sam do not read each
+other's rows.
+
+**`lent_to` is deprecated, not dropped.** Backfilled into `person_name` and left
+standing for one release, so a deploy landing before the migration — or a
+rollback past it — still reads what it wrote. Dropping it is a later migration.
+⚠️ The deletion-preview dialog was repaired in the same commit: it read
+`lent_to` alone and would have shown every newly-lent copy as an anonymous row,
+which is precisely the recognition that dialog exists to give.
+
+**The autocomplete reuses `GET /api/users` AS-IS and it was NOT widened.** That
+endpoint is gated on `manageUsers` (owner/admin) and answers with email, photo,
+role and timestamps — far more than a name picker needs. A `contributor` or
+`moderator` records a person in full and simply types the name; the field says
+so in a sentence rather than showing an empty roster. Widening it, or adding a
+second members endpoint beside it, would hand the estate's member roster to
+every contributor to save them some typing. ⚠️ **That call is still the
+owner's** — see `KNOWN_ISSUES.md`.
+
+**Sold-out books leave the collection view, and the way back is the filter that
+already existed.** `NOT_ONLY_SOLD` in `@lc/db` hides a work only when ALL of its
+copies are sold — never one of several, and never a work with no copies at all,
+which is most of this catalog and is the row the obvious spelling of that clause
+would have swept off the shelf. Picking **Sold** in the Copies filter is the
+show-them control; its facet count is taken with the hiding clause dropped, so
+the option is never disabled by the very rule it exists to lift.
+
+**"Books with you"** lives on the TBR page — the one screen that is about a
+person rather than about the shelf — and renders nothing at all when nothing is
+recorded against them, which is almost everybody. `lent` and `borrowed` are said
+as opposite sentences, because they are opposite claims about who owns the book.
+
+**His "future half" is built, not deferred.** He wrote *"a way to view books
+that are assigned to you in your status page window"* and marked it out of
+scope; the visibility decision made it the cheap half, so it shipped with the
+rest.
+
+### Verified
+
+`npm run typecheck` clean; **1,375 tests pass**, 1,342 before. Exercised against
+a local D1 through `wrangler dev`: both refusals answer in words, the live join
+overwrote a stale typed name, a one-key PATCH reset nothing, `lent → owned`
+kept the record, and a sold-only work vanished from the default collection while
+`?status=sold` brought it back — with `Half Sold Kept` and `No Copies At All`
+both correctly untouched.
+
+⚠️ **NOT verified:** anything on either live instance. No deploy, no migrate,
+no `--remote` call. The three-caller-class redaction is covered by unit tests
+only — `wrangler dev`'s bypass signs in as a single owner, so the member and
+stranger classes could not be exercised live.
+
+### Follow-ups — SHIPPED 2026-08-24 (same branch)
+
+Two owner-approved follow-ups to the two open decisions above.
+
+**1. The picker no longer needs `manageUsers` — `GET /api/members` added.** The
+owner said *"add it"* to the roster-endpoint question the entry left to him
+(*"That call is still the owner's"*). A new **`GET /api/members`**, gated on
+`editCatalog`, answers `{ id, displayName }` per approved member and nothing
+else — a second, NARROWER endpoint beside `/users`, which was NOT widened. So a
+`contributor`/`moderator` now gets the autocomplete instead of typing blind,
+without being handed the admin roster's email/photo/role. `listMembers`
+(`@lc/db`) owns the field list and the WHERE (past `pending`, has a display name,
+case-folded); `Copies.tsx` reads it via `api.members()` gated on `editCatalog`.
+Verified live 2026-08-24: `GET /api/members` → `{"members":[{"id":1,"displayName":"Skylar"}]}`.
+
+**2. KI-6 strict-create — SHADOW rung shipped.** The entry noted the creates are
+not `.strict()` and deliberately left it alone (KI-6). The owner chose
+shadow→enforce; the shadow half shipped: `shadowStrictCreate`
+(`apps/worker/src/lib/strict-shadow.ts`), one helper on all three POST routes,
+logs a structured `would_reject` line naming field+route+schema when a create
+body carries an unmodelled key, then 201s exactly as before. Measures the
+false-positive count before an enforce flip; enforce is still pending on that
+count reading 0. See `KNOWN_ISSUES.md` KI-6 (now *shadow shipped, enforce
+pending*).
+
+**Verified (follow-ups).** `npm run typecheck` clean; **1,386 tests pass** (was
+1,375) — `list-members.test.ts` (+3), `strict-shadow.test.ts` (+5),
+capability-wiring `GET /members` (+2 refuse/admit), less overlap. Exercised
+against local `wrangler dev` 2026-08-24: `/api/members` shape as above; a
+snake_case `person_name` on `POST /api/copies` logged
+`[strict-shadow] would-reject {...,"field":"person_name"}` and still 201'd with
+the field stripped; a clean `personName` body 201'd and logged nothing.
+⚠️ **NOT verified:** any live instance (no deploy/migrate/`--remote`); the
+below-`editCatalog` refusal of `/api/members` is unit-tested only —
+`wrangler dev`'s bypass is a single owner, so a contributor/guest could not be
+exercised live.
+
+---
+
 ## ✅ Cover sweep, both instances — DONE 2026-08-22/23
 
 Queued as *"40 books need covers"* on 2026-08-22 when Open Library was

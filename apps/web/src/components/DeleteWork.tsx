@@ -132,7 +132,14 @@ export function DeleteWork({
                         <b> — signed{c.editionNotes ? ` (${c.editionNotes})` : ''}</b>
                       )}
                       {c.location && <span className="muted"> · {c.location}</span>}
-                      {c.lentTo && <span className="muted"> · lent to {c.lentTo}</span>}
+                      {/* ⚠️ `personName` first, `lentTo` behind it. Migration
+                          0400 moved where this is written and left the old
+                          column standing for one release; reading only one of
+                          them would drop the name off half these rows, which is
+                          exactly the recognition this dialog exists to give. */}
+                      {(c.personName ?? c.lentTo) && (
+                        <span className="muted"> · with {c.personName ?? c.lentTo}</span>
+                      )}
                     </li>
                   ))}
                 </ul>

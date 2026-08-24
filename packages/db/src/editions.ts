@@ -383,12 +383,30 @@ export interface CopyRow {
   condition: string | null;
   is_signed: number;
   edition_notes: string | null;
+  /** ⚠️ Deprecated by migration 0400 — read `person_name`. Still selected for one release. */
   lent_to: string | null;
+  /** WHO has it, as an estate identity — null for a stranger, or nobody. */
+  person_user_id: number | null;
+  /** WHO has it, as typed. Kept even when the id is set — migration 0400 says why. */
+  person_name: string | null;
   notes: string | null;
 }
 
 const COPY_COLS = `id, work_id, edition_id, status, location, acquired_on, price_paid_cents,
-                   currency, vendor, condition, is_signed, edition_notes, lent_to, notes`;
+                   currency, vendor, condition, is_signed, edition_notes, lent_to,
+                   person_user_id, person_name, notes`;
+
+/**
+ * The statuses that can carry a person. `owned` cannot: a book on the shelf is
+ * in nobody else's hands, and letting a name sit on one would make "who has
+ * this?" answer for a copy that is right here.
+ *
+ * ⚠️ Local rather than imported from `@lc/core` on purpose — it is not a subset
+ * anybody else needs, and `HELD_STATUSES` / `WISHLIST_STATUSES` next door are
+ * about a different question (is it ours, do we want it). A third named subset
+ * exported beside those two would invite the wrong one being reached for.
+ */
+const PERSON_STATUSES: readonly string[] = ['lent', 'borrowed', 'sold'];
 
 /**
  * A copy write that states a falsehood, refused with a status the route can
@@ -430,17 +448,66 @@ async function assertEditionBelongs(
   }
 }
 
+/**
+ * The two checks a person write has to survive, both refused in words.
+ *
+ * ⚠️ **It is asked about the TRANSITION, not about the row**, which is why this
+ * is a function and not a CHECK constraint in migration 0400. Attaching a
+ * person to a copy that is merely `owned` is a false statement — the book is
+ * right here. But a copy that comes home from a lend goes `lent` → `owned`
+ * while KEEPING the record of who had it, and a row-level constraint cannot
+ * tell those two apart. So the rule is: a patch that *names* a person must
+ * leave the copy in a status that can carry one; a patch that touches neither
+ * person field is never refused for a person's sake.
+ *
+ * The second check is the `assertEditionBelongs` argument applied to people: an
+ * id naming nobody is a false statement, not an untidy one, and storing it
+ * would produce a card that resolves to a blank name forever.
+ *
+ * `nextStatus` is the status the copy will have AFTER the write, never the one
+ * it has now — a single PATCH routinely sets both at once ("lent, to Samantha").
+ */
+async function assertPersonAllowed(
+  db: D1Database,
+  patch: { personUserId?: number | null; personName?: string | null },
+  nextStatus: string,
+): Promise<void> {
+  const namesSomebody =
+    (patch.personUserId != null && patch.personUserId !== undefined) ||
+    (patch.personName != null && patch.personName !== '');
+
+  if (namesSomebody && !PERSON_STATUSES.includes(nextStatus)) {
+    throw new CopyLinkError(
+      `a copy can only record who has it when it is lent out, borrowed or sold — ` +
+        `this one is "${nextStatus}". Change the status first, then say who has it.`,
+      400,
+    );
+  }
+
+  if (patch.personUserId != null) {
+    const row = await db
+      .prepare('SELECT id FROM app_user WHERE id = ?')
+      .bind(patch.personUserId)
+      .first<{ id: number }>();
+    if (!row) {
+      throw new CopyLinkError('That person is not a member of this catalog', 404);
+    }
+  }
+}
+
 export async function createCopy(
   db: D1Database,
   input: CreateCopy,
   actor?: Actor,
 ): Promise<CopyRow> {
   await assertEditionBelongs(db, input.workId, input.editionId);
+  await assertPersonAllowed(db, input, input.status);
   const insert = db
     .prepare(
       `INSERT INTO copy (work_id, edition_id, status, location, acquired_on, price_paid_cents,
-                         currency, vendor, condition, is_signed, edition_notes, lent_to, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         currency, vendor, condition, is_signed, edition_notes, lent_to,
+                         person_user_id, person_name, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        RETURNING ${COPY_COLS}`,
     )
     .bind(
@@ -456,6 +523,8 @@ export async function createCopy(
       input.isSigned ? 1 : 0,
       input.editionNotes ?? null,
       input.lentTo ?? null,
+      input.personUserId ?? null,
+      input.personName ?? null,
       input.notes ?? null,
     );
 
@@ -478,6 +547,8 @@ export async function createCopy(
       isSigned: input.isSigned ?? false,
       editionNotes: input.editionNotes ?? null,
       lentTo: input.lentTo ?? null,
+      personUserId: input.personUserId ?? null,
+      personName: input.personName ?? null,
       notes: input.notes ?? null,
     }),
     actor,
@@ -499,6 +570,80 @@ export async function listCopiesForWork(db: D1Database, workId: number): Promise
 
 export async function getCopy(db: D1Database, id: number): Promise<CopyRow | null> {
   return db.prepare(`SELECT ${COPY_COLS} FROM copy WHERE id = ?`).bind(id).first<CopyRow>();
+}
+
+/**
+ * The CURRENT display name of every linked member in a batch of copies.
+ *
+ * ⚠️ **A live join, and that is the owner's answer to his own open question**
+ * ("is it a live join or a snapshot?" — `docs/TODO.md` OR-1, answered
+ * 2026-08-23: *"If the id is set the card shows the member's CURRENT display
+ * name"*). So a person who renames themselves renames themselves everywhere,
+ * and `copy.person_name` is not quietly the truth on a linked row.
+ *
+ * One query for the whole page rather than one per copy — a book with four
+ * lent copies is rare but a `for` loop of awaits over D1 is how a rare row
+ * becomes a slow page. A member whose `display_name` is NULL (it is nullable —
+ * the Google account may never have supplied one) resolves to nothing, and the
+ * caller falls back to `person_name`, which is what the fallback is for.
+ */
+export async function memberDisplayNames(
+  db: D1Database,
+  userIds: readonly number[],
+): Promise<Map<number, string>> {
+  const ids = [...new Set(userIds.filter((n): n is number => Number.isInteger(n)))];
+  if (ids.length === 0) return new Map();
+  const { results } = await db
+    .prepare(
+      `SELECT id, display_name FROM app_user WHERE id IN (${ids.map(() => '?').join(', ')})`,
+    )
+    .bind(...ids)
+    .all<{ id: number; display_name: string | null }>();
+  const byId = new Map<number, string>();
+  for (const r of results) if (r.display_name) byId.set(r.id, r.display_name);
+  return byId;
+}
+
+/** One row of "Books with you" — enough to recognise the book and say why it is listed. */
+export interface LinkedCopyRow {
+  copyId: number;
+  workId: number;
+  title: string;
+  authors: string | null;
+  coverUrl: string | null;
+  status: string;
+  /** When it left, when it arrived, or when it sold — whichever the status means. */
+  acquiredOn: string | null;
+}
+
+/**
+ * Every copy that points at one member — the whole of "Books with you".
+ *
+ * ⚠️ Keyed on `person_user_id` ALONE and never on a name match. A typed
+ * "Samantha" is not evidence that *this* Samantha is the one, and guessing here
+ * would show one member somebody else's borrowing. A stranger's row simply has
+ * no id and appears on nobody's page, which is correct: the section exists
+ * because a member was deliberately LINKED.
+ *
+ * Ordered newest-first on the copy id rather than on `acquired_on`, which is
+ * frequently NULL on a lend — a date nobody filled in must not sort a row to
+ * the bottom of a list of three.
+ */
+export async function listCopiesLinkedTo(
+  db: D1Database,
+  userId: number,
+): Promise<LinkedCopyRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT c.id AS copyId, c.work_id AS workId, w.title AS title, w.authors AS authors,
+              w.cover_url AS coverUrl, c.status AS status, c.acquired_on AS acquiredOn
+         FROM copy c JOIN work w ON w.id = c.work_id
+        WHERE c.person_user_id = ?
+        ORDER BY c.id DESC`,
+    )
+    .bind(userId)
+    .all<LinkedCopyRow>();
+  return results;
 }
 
 /**
@@ -528,6 +673,9 @@ export async function updateCopy(
 
   // The link write the picker makes — checked against THIS copy's work.
   await assertEditionBelongs(db, current.work_id, patch.editionId);
+  // ⚠️ Against the status the copy will HAVE, not the one it has: "lent, to
+  // Samantha" arrives as one patch and both halves have to be judged together.
+  await assertPersonAllowed(db, patch, patch.status ?? current.status);
 
   const pick = <T>(next: T | undefined, fallback: T): T => (next === undefined ? fallback : next);
 
@@ -543,6 +691,8 @@ export async function updateCopy(
     isSigned: patch.isSigned === undefined ? current.is_signed : patch.isSigned ? 1 : 0,
     editionNotes: pick(patch.editionNotes, current.edition_notes),
     lentTo: pick(patch.lentTo, current.lent_to),
+    personUserId: pick(patch.personUserId, current.person_user_id),
+    personName: pick(patch.personName, current.person_name),
     notes: pick(patch.notes, current.notes),
   };
 
@@ -565,6 +715,11 @@ export async function updateCopy(
   consider('isSigned', current.is_signed, next.isSigned);
   consider('editionNotes', current.edition_notes, next.editionNotes);
   consider('lentTo', current.lent_to, next.lentTo);
+  // ⚠️ Two rows, never one. "Samantha" being replaced by a LINK to Samantha is
+  // a real change to the record even though the card reads the same afterwards,
+  // and an audit that folded them would make an unlink invisible.
+  consider('personUserId', current.person_user_id, next.personUserId);
+  consider('personName', current.person_name, next.personName);
   consider('notes', current.notes, next.notes);
 
   const update = db
@@ -572,7 +727,8 @@ export async function updateCopy(
       `UPDATE copy SET
          edition_id = ?, status = ?, location = ?, acquired_on = ?, price_paid_cents = ?,
          currency = ?, vendor = ?, condition = ?, is_signed = ?, edition_notes = ?,
-         lent_to = ?, notes = ?, updated_at = datetime('now')
+         lent_to = ?, person_user_id = ?, person_name = ?, notes = ?,
+         updated_at = datetime('now')
        WHERE id = ?
        RETURNING ${COPY_COLS}`,
     )
@@ -588,6 +744,8 @@ export async function updateCopy(
       next.isSigned,
       next.editionNotes,
       next.lentTo,
+      next.personUserId,
+      next.personName,
       next.notes,
       id,
     );
