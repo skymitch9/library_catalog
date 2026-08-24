@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react';
-import { api, type Me, type Watch, type WorkAudiobookHolding, type WorkEbookHolding } from '../api.js';
+import {
+  api,
+  type Me,
+  type Watch,
+  type WorkAudioEdition,
+  type WorkAudiobookHolding,
+  type WorkEbookHolding,
+} from '../api.js';
 import { describeError } from '../lib/errors.js';
 import { Accessories } from '../components/Accessories.js';
 import { Aliases } from '../components/Aliases.js';
@@ -89,6 +96,13 @@ interface WorkDetail {
    * reason `watches` does: it is a fact about the book, not a second request.
    */
   audiobookHolding: WorkAudiobookHolding | null;
+  /**
+   * Every audiobook edition of this work — migration 0390, `listAudioEditions`
+   * in `@lc/db`. Beside `audiobookHolding`, not instead of it, and ordered the
+   * same way, so `[0]` is the edition that field describes. Empty on a book
+   * with no audio; length 2 is the case the migration exists for.
+   */
+  audioEditions: WorkAudioEdition[];
   /**
    * The shared pool's ebook holding cache — migration 0310, phase 4 of the
    * ebook split. Runs BESIDE the edition rows, never instead of them; see
@@ -449,7 +463,11 @@ export function WorkPage({
           was invisible here before this (only a series page's "N on audio"
           chip showed it, and a book with no series, or nobody happening to
           open that page, hid it completely). */}
-      <OtherVersions holding={detail.audiobookHolding} ourSeries={work.series} />
+      <OtherVersions
+        holding={detail.audiobookHolding}
+        editions={detail.audioEditions ?? []}
+        ourSeries={work.series}
+      />
 
       <PeerLibraries holdings={detail.peerHoldings} />
 
