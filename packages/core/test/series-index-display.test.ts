@@ -24,7 +24,12 @@
  */
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { detailGaps, seriesIndexDisplayFrom, seriesIndexIncomplete } from '../src/gaps.js';
+import {
+  detailGaps,
+  seriesIndexDisplayFrom,
+  seriesIndexIncomplete,
+  seriesIndexSortFrom,
+} from '../src/gaps.js';
 
 test('a series and a sort is COMPLETE, printed form or not', () => {
   // ⚠️ The whole rule, in one assertion. Re-tightening this to demand a printed
@@ -80,4 +85,45 @@ test('seriesIndexDisplayFrom is the INGEST route’s legacy default, kept byte-f
   assert.equal(seriesIndexDisplayFrom(1), 'Book 1');
   assert.equal(seriesIndexDisplayFrom(12), 'Book 12');
   assert.equal(seriesIndexDisplayFrom(2.5), 'Book 2.5', 'a novella files at 2.5 and prints it');
+});
+
+test('seriesIndexSortFrom — a clean number becomes its sort', () => {
+  // The common case: a bare volume label a person types into GABI's "volume".
+  assert.equal(seriesIndexSortFrom('5'), 5);
+  assert.equal(seriesIndexSortFrom('12'), 12);
+  assert.equal(seriesIndexSortFrom('0'), 0, 'volume zero is a volume');
+  assert.equal(seriesIndexSortFrom('07'), 7, 'a padded number is not octal here');
+  assert.equal(seriesIndexSortFrom('  3  '), 3, 'surrounding whitespace is ignored');
+});
+
+test('seriesIndexSortFrom — a decimal files where it sorts', () => {
+  assert.equal(seriesIndexSortFrom('2.5'), 2.5);
+  assert.equal(seriesIndexSortFrom('0.5'), 0.5);
+});
+
+test('seriesIndexSortFrom round-trips seriesIndexDisplayFrom and the shelf forms', () => {
+  // ⚠️ The invariant that justifies stripping a leading label: the inverse of
+  // the legacy default must recover the number, and the hand-quoted forms
+  // already on the shelf ("Volume 07", "#5") must too.
+  for (const n of [1, 12, 2.5]) {
+    assert.equal(seriesIndexSortFrom(seriesIndexDisplayFrom(n)), n, `Book ${n}`);
+  }
+  assert.equal(seriesIndexSortFrom('Book 5'), 5);
+  assert.equal(seriesIndexSortFrom('Volume 07'), 7);
+  assert.equal(seriesIndexSortFrom('Vol. 5'), 5);
+  assert.equal(seriesIndexSortFrom('#5'), 5);
+});
+
+test('seriesIndexSortFrom — an ambiguous display writes NO sort (null), never garbage', () => {
+  // ⚠️ The fail-safe. The caller reads null as "leave the sort alone", so a
+  // book's ordering key is never corrupted by a display it cannot parse.
+  assert.equal(seriesIndexSortFrom('Book Two'), null, 'a word is not a number');
+  assert.equal(seriesIndexSortFrom('1a'), null, 'a number with a tail is refused, not truncated');
+  assert.equal(seriesIndexSortFrom('Prequel'), null);
+  assert.equal(seriesIndexSortFrom(''), null);
+  assert.equal(seriesIndexSortFrom('   '), null);
+  assert.equal(seriesIndexSortFrom(null), null);
+  assert.equal(seriesIndexSortFrom(undefined), null);
+  assert.equal(seriesIndexSortFrom('-5'), null, 'a sign is not a plain volume position');
+  assert.equal(seriesIndexSortFrom('1e3'), null, 'scientific notation is not a volume');
 });

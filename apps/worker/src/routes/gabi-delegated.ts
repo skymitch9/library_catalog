@@ -117,6 +117,7 @@ import {
   createWorkSchema,
   preorderedCopies,
   rescanChoices,
+  seriesIndexSortFrom,
   workKeyFor,
   type AppUser,
   type Capability,
@@ -925,8 +926,25 @@ export const gabiDelegatedRoutes = new Hono<AppBindings>()
 
     // ⚠️ Exact-equality apply: precisely `changes`, no field outside the list is
     // touched (design §4.2 property 3). Stamped 'human', noted for the lane.
-    const patch: Record<string, string> = {};
+    const patch: Record<string, string | number> = {};
     for (const p of proposed) patch[p.field] = p.after;
+
+    // ⚠️ A book carries TWO series-index fields: `seriesIndexDisplay` is the
+    // printed volume label a person confirms here, and `seriesIndexSort` is the
+    // numeric ordering key that is NOT in the confirmable allowlist. A confirmed
+    // volume change that moved only the display would leave the two disagreeing
+    // — the book sorting at its old position while printing a new number. So
+    // when this confirm changed the display, derive the sort FROM it and move
+    // them together, in the same `updateWork` patch. This widens nothing a
+    // person may confirm: `seriesIndexSort` is a mechanical consequence of the
+    // display they already confirmed, not a separately-proposed field.
+    // ⚠️ `seriesIndexSortFrom` is fail-safe: a non-numeric display ("Prequel",
+    // "1a", "") yields null and the sort is left untouched rather than corrupted.
+    if (patch.seriesIndexDisplay !== undefined) {
+      const derivedSort = seriesIndexSortFrom(String(patch.seriesIndexDisplay));
+      if (derivedSort !== null) patch.seriesIndexSort = derivedSort;
+    }
+
     const actor: Actor = { userId: verdict.user.id, how: 'human', note: `${GABI_DISCORD_NOTE}-confirm` };
     const updated = await updateWork(
       c.env.DB,
