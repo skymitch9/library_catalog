@@ -223,6 +223,38 @@ export function leatherboundImpliesHardcover(copy: {
   return copy.leatherbound === true || copy.leatherbound === 1;
 }
 
+/** The three special-edition attributes that were ever carried as free text. */
+export interface SpecialEditionProse {
+  sprayedEdges: boolean;
+  leatherbound: boolean;
+  slipcase: boolean;
+}
+
+/**
+ * Detect special-edition attributes recorded ad-hoc in prose — an edition's
+ * `edition_name` / `edition_kind`, or a copy's notes.
+ *
+ * ⚠️ **ONE regex set, shared by two callers**, so what a badge lights and what
+ * the 0430 back-fill sweep migrates cannot disagree:
+ *   * `specialEditionBadges` (`apps/web/src/lib/shelf-view.ts`) — the back-compat
+ *     fallback for a row 0430 has not swept yet.
+ *   * `scripts/sweep-special-editions.mjs` — which reads exactly this to propose
+ *     the new columns' values.
+ *
+ * `is_signed` is deliberately absent: it has been a real boolean since migration
+ * 0001 and was never carried in prose, so there is nothing to detect.
+ */
+export function detectSpecialEditionProse(
+  text: string | null | undefined,
+): SpecialEditionProse {
+  const s = (text ?? '').toLowerCase();
+  return {
+    sprayedEdges: /spray|sprayed[- ]?edge|sprededge/.test(s),
+    leatherbound: /leather/.test(s),
+    slipcase: /slip[- ]?case|slipcased/.test(s),
+  };
+}
+
 /** Which side of the line a format falls on. Total over `EditionFormat`. */
 export function mediumOf(format: string): EditionMedium {
   return isPhysicalFormat(format) ? 'physical' : 'ebook';

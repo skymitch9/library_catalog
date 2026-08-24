@@ -23,7 +23,11 @@
  * OR-ed in, and nothing regresses until the sweep runs. Once a row is swept the
  * column wins and the prose is redundant.
  */
-import { LEATHER_IMPLIES_FORMAT, leatherboundImpliesHardcover } from '@lc/core';
+import {
+  LEATHER_IMPLIES_FORMAT,
+  detectSpecialEditionProse,
+  leatherboundImpliesHardcover,
+} from '@lc/core';
 import type { WorkAudioEdition, WorkAudiobookHolding, WorkEbookHolding } from '../api.js';
 import type { CopyView } from '../components/Copies.js';
 import type { EditionView } from '../components/Editions.js';
@@ -92,23 +96,23 @@ export function specialEditionBadges(
 ): SpecialEditionBadge[] {
   // The prose the shop used, plus the canonical kind — both scanned so a
   // "Collector's edition" whose name says "leatherbound" still lights the badge
-  // on an un-swept row.
-  const prose = [edition?.edition_name, edition?.edition_kind]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
+  // on an un-swept row. `detectSpecialEditionProse` is the SAME detector the
+  // 0430 sweep uses, so a badge and a migration cannot disagree.
+  const prose = detectSpecialEditionProse(
+    [edition?.edition_name, edition?.edition_kind].filter(Boolean).join(' '),
+  );
 
   const badges: SpecialEditionBadge[] = [];
   if (copy?.is_signed) {
     badges.push({ key: 'signed', label: 'Signed', title: 'A signed copy' });
   }
-  if (copy?.sprayed_edges || /spray|sprayed[- ]?edge|sprededge/.test(prose)) {
+  if (copy?.sprayed_edges || prose.sprayedEdges) {
     badges.push({ key: 'sprayed', label: 'Sprayed edges', title: 'Coloured/sprayed page edges' });
   }
-  if (copy?.leatherbound || /leather/.test(prose)) {
+  if (copy?.leatherbound || prose.leatherbound) {
     badges.push({ key: 'leather', label: 'Leatherbound', title: 'A leatherbound hardcover' });
   }
-  if (copy?.slipcase || /slip[- ]?case|slipcased/.test(prose)) {
+  if (copy?.slipcase || prose.slipcase) {
     badges.push({ key: 'slipcase', label: 'Slipcase', title: 'Comes in a slipcase' });
   }
   return badges;
