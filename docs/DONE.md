@@ -133,6 +133,43 @@ no `--remote` call. The three-caller-class redaction is covered by unit tests
 only — `wrangler dev`'s bypass signs in as a single owner, so the member and
 stranger classes could not be exercised live.
 
+### Follow-ups — SHIPPED 2026-08-24 (same branch)
+
+Two owner-approved follow-ups to the two open decisions above.
+
+**1. The picker no longer needs `manageUsers` — `GET /api/members` added.** The
+owner said *"add it"* to the roster-endpoint question the entry left to him
+(*"That call is still the owner's"*). A new **`GET /api/members`**, gated on
+`editCatalog`, answers `{ id, displayName }` per approved member and nothing
+else — a second, NARROWER endpoint beside `/users`, which was NOT widened. So a
+`contributor`/`moderator` now gets the autocomplete instead of typing blind,
+without being handed the admin roster's email/photo/role. `listMembers`
+(`@lc/db`) owns the field list and the WHERE (past `pending`, has a display name,
+case-folded); `Copies.tsx` reads it via `api.members()` gated on `editCatalog`.
+Verified live 2026-08-24: `GET /api/members` → `{"members":[{"id":1,"displayName":"Skylar"}]}`.
+
+**2. KI-6 strict-create — SHADOW rung shipped.** The entry noted the creates are
+not `.strict()` and deliberately left it alone (KI-6). The owner chose
+shadow→enforce; the shadow half shipped: `shadowStrictCreate`
+(`apps/worker/src/lib/strict-shadow.ts`), one helper on all three POST routes,
+logs a structured `would_reject` line naming field+route+schema when a create
+body carries an unmodelled key, then 201s exactly as before. Measures the
+false-positive count before an enforce flip; enforce is still pending on that
+count reading 0. See `KNOWN_ISSUES.md` KI-6 (now *shadow shipped, enforce
+pending*).
+
+**Verified (follow-ups).** `npm run typecheck` clean; **1,386 tests pass** (was
+1,375) — `list-members.test.ts` (+3), `strict-shadow.test.ts` (+5),
+capability-wiring `GET /members` (+2 refuse/admit), less overlap. Exercised
+against local `wrangler dev` 2026-08-24: `/api/members` shape as above; a
+snake_case `person_name` on `POST /api/copies` logged
+`[strict-shadow] would-reject {...,"field":"person_name"}` and still 201'd with
+the field stripped; a clean `personName` body 201'd and logged nothing.
+⚠️ **NOT verified:** any live instance (no deploy/migrate/`--remote`); the
+below-`editCatalog` refusal of `/api/members` is unit-tested only —
+`wrangler dev`'s bypass is a single owner, so a contributor/guest could not be
+exercised live.
+
 ---
 
 ## ✅ Cover sweep, both instances — DONE 2026-08-22/23

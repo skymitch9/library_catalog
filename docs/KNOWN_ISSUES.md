@@ -48,6 +48,18 @@ a ladder step that always fails is a step that always has to be explained.
 
 ## KI-6 · The CREATE schemas are not `.strict()` — a stray key is silently stripped — `WATCHING`
 
+> **Update 2026-08-24 — SHADOW SHIPPED, ENFORCE PENDING.** The strip still
+> happens (unchanged, deliberately), but it is no longer silent: all three
+> create routes now log a structured `would_reject` line when a body carries an
+> unmodelled key, then 201 exactly as before. `shadowStrictCreate`
+> (`apps/worker/src/lib/strict-shadow.ts`) is the one helper; branch
+> `feature/lent-to-person`. This is the shadow rung of off → shadow → enforce —
+> it MEASURES the false-positive count, it does not enforce. The `.strict()`
+> flip is still pending on that count reading **0** over real traffic (see *What
+> would change it*). Exercised live 2026-08-24: snake_case `person_name` on
+> `POST /api/copies` logged one would-reject and still 201'd; a clean body
+> logged nothing.
+
 **Symptom.** `POST /api/copies` with an unknown key answers **201** and drops
 it. Measured 2026-08-23 against a local `wrangler dev`:
 `{"workId":1,"status":"lent","person_name":"Samantha"}` — note the snake_case —
@@ -75,11 +87,13 @@ UI form — the wishlist ask, the scan-approve flow, the importers under
 the moment this flipped. Found while building OR-1, deliberately left alone: it
 predates that work and is not made worse by it.
 
-**What would change it.** A sweep of every `POST /api/copies`, `/api/works` and
-`/api/editions` caller in the tree **and** in `scripts/`, proving the count of
-bodies carrying an unmodelled key is **0**; then `.strict()` on all three
-creates in one commit with the sweep recorded. Until that number is measured
-rather than assumed, the strip stays.
+**What would change it.** The shadow rung above now produces the measurement
+this asked for — grep the Worker logs for `[strict-shadow] would-reject` and the
+count of unmodelled-key bodies over real traffic is readable rather than
+assumed. When that count is **0** (across the tree's callers **and** the
+importers under `scripts/`, which the shadow line names by route), flip
+`.strict()` on all three creates in one commit with the reading recorded. Until
+that number reads 0, the strip stays.
 
 ---
 
