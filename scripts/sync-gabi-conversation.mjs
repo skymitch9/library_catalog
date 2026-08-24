@@ -64,7 +64,10 @@ if (!existsSync(SRC_DIR)) {
 
 // The module's public surface. Named explicitly rather than globbed blind, so a
 // file appearing or vanishing upstream is a loud diff here, not a silent one.
-const EXPECTED = ['index.ts'];
+// confirm.ts joined 2026-08-24 with the T2 confirm lane (proposal shape,
+// compareAndSet, Restatement, MAC material). index.ts re-exports it; the panel
+// imports from here.
+const EXPECTED = ['index.ts', 'confirm.ts'];
 
 const present = readdirSync(SRC_DIR).filter((f) => f.endsWith('.ts'));
 const missing = EXPECTED.filter((f) => !present.includes(f));
@@ -86,13 +89,19 @@ if (unexpected.length > 0) {
 
 mkdirSync(OUT_DIR, { recursive: true });
 
+// ⚠️ A structural check per file, not a checksum: a truncated copy typechecks
+// for a surprisingly long time before anything notices. Each file names one
+// token it must carry — the window constants for index.ts, the confirm grammar
+// for confirm.ts — so a restructure that drops the substance fails loudly.
+const MARKERS = {
+  'index.ts': ['CONVERSATION_WINDOW_MS', 'CONVERSATION_MAX_TURNS', 'withRemembered', 'pruneConversation'],
+  'confirm.ts': ['ConfirmChangePending', 'compareAndSet', 'buildRestatement', 'T2_CONFIRMABLE_FIELDS'],
+};
+
 for (const name of EXPECTED) {
   const body = readFileSync(join(SRC_DIR, name), 'utf8');
   if (body.trim().length === 0) fail(`${name} is empty at the source — refusing to copy nothing.`);
-  // ⚠️ A structural check, not a checksum: the panel's memory is worthless if
-  // the window constants did not come across, and a truncated copy typechecks
-  // for a surprisingly long time before anything notices.
-  for (const token of ['CONVERSATION_WINDOW_MS', 'CONVERSATION_MAX_TURNS', 'withRemembered', 'pruneConversation']) {
+  for (const token of MARKERS[name] ?? []) {
     if (!body.includes(token)) {
       fail(`${name} arrived without \`${token}\` — the copy is truncated or the module was restructured.`);
     }

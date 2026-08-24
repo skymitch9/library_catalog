@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@lc/core": "*",
+    "@lc/gabi-conv": "*",
     "barcode-detector": "^3.2.1",
     "firebase": "^10.14.1",
     "react": "^19.0.0",

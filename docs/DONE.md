@@ -157,6 +157,38 @@ decision and not a code one:
 **~6–8 hours**, and it should not start until the middle row is answered.
 
 ---
+## ✅ GABI T2 catalog-fix confirm lane — library half BUILT DARK 2026-08-24
+
+The library_catalog half of GABI's Tier-2 confirm lane (design of record:
+`catalog-platform/docs/info/gabi-confirm-lanes-design.md` §10, phase 1). Owner
+scope: **T2 only (catalog-fix), Discord + library panel, audiobook surface
+EXCLUDED.** Ships **DARK** behind `GABI_CONFIRM_T2`. Branch
+`feature/gabi-t2-panel`; the shared core + Discord half is on `catalog-platform`
+branch `feature/gabi-t2-confirm`.
+
+What landed:
+- **Worker verb** `fix-field` (`apps/worker/src/routes/gabi-delegated.ts`) — a
+  SEPARATE Tier-2 allowlist (`CONFIRM_VERBS`) from the additive four. `dryRun`
+  reads the `before` values (capability check #1); apply runs a **compare-and-set**
+  on those before values (capability check #2 — the check runs at BOTH moments)
+  and refuses the whole write **409 `changed_underneath`** rather than clobbering.
+  Applies through `updateWork` stamped **`how: 'human'`** (design §7.2), note
+  `gabi-discord-confirm`, audit rows atomic with the write. Default-deny on the
+  field name via the shared `@lc/gabi-conv` allowlist — never `title`/`authors`.
+- **Panel** (`apps/web`) — `lib/gabi-confirm.ts` reuses the shared `Restatement` +
+  `compareAndSet` and applies through the existing authenticated
+  `PATCH /api/works/:id` (the signed-in person's own `editCatalog`, audited) with a
+  client-side compare-and-set (design §5.2); `components/GabiConfirmCard.tsx`
+  renders the same four mandatory elements + a mandatory Cancel. Flag off =
+  invisible. `GABI_CONFIRM_T2` declared on the worker Env.
+- **Sync**: `confirm.ts` added to `sync-gabi-conversation.mjs` EXPECTED + a
+  per-file marker check, so the panel imports the same confirm types the Discord
+  surface uses.
+
+Tests: 1497 pass (8 new `fix-field` worker tests; 7 panel-logic tests via `tsx`),
+full typecheck clean. No live panel exercise — nothing renders the card in the
+live GabiPanel flow yet; with the flag off the lane is invisible. Pending owner
+review.
 
 ## ✅ main DEPLOYED — the blocked deploy pass finished — 2026-08-24 03:55Z
 
