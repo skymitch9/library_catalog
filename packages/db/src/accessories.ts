@@ -245,7 +245,23 @@ export async function updateAccessory(
   return getAccessory(db, id);
 }
 
-export async function deleteAccessory(db: D1Database, id: number): Promise<boolean> {
-  const res = await db.prepare('DELETE FROM book_accessory WHERE id = ?').bind(id).run();
+/**
+ * Delete one accessory, scoped to BOTH the work and the accessory id.
+ *
+ * ⚠️ The `work_id` is part of the WHERE clause, not just the `id`: the route's
+ * `:id` work segment must actually constrain the delete, otherwise a request
+ * naming the wrong work destroys another book's accessory row and still answers
+ * 200. Scoping it in SQL makes the guard atomic (no read-then-delete race) and
+ * mirrors how `listAccessoriesForWork` and the PATCH guard key on `work_id`.
+ */
+export async function deleteAccessory(
+  db: D1Database,
+  workId: number,
+  id: number,
+): Promise<boolean> {
+  const res = await db
+    .prepare('DELETE FROM book_accessory WHERE id = ? AND work_id = ?')
+    .bind(id, workId)
+    .run();
   return (res.meta.changes ?? 0) > 0;
 }

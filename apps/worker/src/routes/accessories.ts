@@ -93,7 +93,9 @@ export const accessoryRoutes = new Hono<AppBindings>()
     if (!Number.isInteger(id) || id <= 0 || !Number.isInteger(accessoryId) || accessoryId <= 0) {
       return c.json({ error: 'bad_request' }, 400);
     }
-    const ok = await deleteAccessory(c.env.DB, accessoryId);
+    // Scoped by BOTH work id and accessory id, so a request naming the wrong
+    // work cannot delete another book's accessory row.
+    const ok = await deleteAccessory(c.env.DB, id, accessoryId);
     if (!ok) return c.json({ error: 'not_found' }, 404);
     return c.json({ accessories: await listAccessoriesForWork(c.env.DB, id) });
   });
