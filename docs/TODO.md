@@ -168,6 +168,57 @@ asked afresh every time he pauses?
 
 ---
 
+## ☐ Say the NUMBER of audiobooks, not a bare audio mark — owner decision 2026-08-23
+
+> Owner, 2026-08-23, verbatim: *"have it say 2 on the physical and ebook
+> libraries; on audiobook have them be different since they're different files
+> being served."*
+
+The follow-up to migration 0390 (see [`DONE.md`](DONE.md) "part B"). The schema
+can hold two recordings of one work; every surface that says *"also on audio"*
+still says it as a **bare mark**, so a household that owns two *Elantris*
+audiobooks reads exactly the same as one that owns one.
+
+**The three catalogues get three different answers, and that is the decision:**
+
+| Catalogue | What it must show |
+|---|---|
+| **Physical library** — `library.heygabi.ai` + `padhard` (this repo) | the **number** when it is more than one: "2 audiobooks", a `2` on the ladder chip |
+| **Ebook library** — `ebooks.heygabi.ai` (served from `audiobook_catalog`) | the same number — ⚠️ **not this repo's file**, see below |
+| **Audiobook site** — `audiobooks.heygabi.ai` | ⚠️ **unchanged.** Two rows stay two rows; they are two different files being served |
+
+⚠️ **Counting rungs and counting recordings are two different questions.** The
+series ladder's *"N of M on audio"* counts **rungs held**, and a volume owned in
+two recordings is still ONE rung. Do not let the edition count reach the
+coverage arithmetic.
+
+**Scope, measured 2026-08-23** — `git grep` over `apps/` + `packages/`:
+
+| Surface | File | Verdict |
+|---|---|---|
+| Work page "Other versions available" | `apps/web/src/components/OtherVersions.tsx` | already one row per edition (0390); wants the number said in words |
+| Series ladder chip | `apps/web/src/pages/SeriesDetailPage.tsx` `Media` | ⚠️ **the bare mark** — and it is SUPPRESSED when every rung agrees, so the count has to reach `signatureOf` or it can never render |
+| Series coverage counts | `packages/db/src/series.ts` · `@lc/core` `seriesCompleteness` | must NOT change — see the warning above |
+| Collection grid / work card | `apps/web/src/components/WorkList.tsx` | no audio mark exists there today; nothing to change |
+| CSV export | `packages/db/src/export.ts` | deliberately excluded (it holds decisions, not caches) — nothing to change |
+| GABI browse/suggest | `apps/worker/src/routes/gabi-delegated.ts` | sees the ~90-pair mapping table only; no audio mark |
+
+**⚠️ The ebook library is the OTHER repo, and it cannot count today.**
+`ebooks.heygabi.ai` is `audiobook_catalog`'s `site/ebooks.html`; its "Also on
+audio →" link is driven by `beside_audiobook`, written by
+`scripts/build_ebook_manifest.py`. That join (`sibling_catalog_match`) returns
+**one** row by design and `_agreed_row` **refuses** an ambiguous pair outright —
+so a second edition there removes the mark rather than doubling it. Dispatch
+that repo separately; do not reach into it from here.
+
+**⚠️ Work 514 will still read "1" after this lands, and that is `KI-6`, not a
+bug in this work.** The matcher finds one Elantris recording; `library_work_id`
+is stamped on exactly one `catalog.csv` row (measured 2026-08-23: **no** work id
+appears twice in 1,081 rows). The count plumbing is correct and the number will
+move the moment `KI-6`'s `work_alias` row exists.
+
+---
+
 ## 🔜 START HERE NEXT SESSION — the audiobook link build, designed but NOT started
 
 > Owner, 2026-08-22 ~23:40 Phoenix: *"we need to add audiobook sweep to the
