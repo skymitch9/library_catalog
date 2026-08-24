@@ -15,7 +15,11 @@ import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 
 import { cleanTitleWithSeries, parseVolumeNumber } from '../../packages/core/src/titles.ts';
-import { buildWorkIndex, matchIndexedWork } from '../../packages/core/src/matching.ts';
+import {
+  buildWorkIndex,
+  matchIndexedWork,
+  matchIndexedWorkAll,
+} from '../../packages/core/src/matching.ts';
 import { ROOT } from './d1.mjs';
 
 /**
@@ -93,6 +97,13 @@ export function loadAudiobooks() {
         // disambiguation (the Space Knight case).
         seriesIndex: parseVolumeNumber(r[at.series_index_sort] ?? ''),
         seriesIndexDisplay: (r[at.series_index_display] ?? '').trim() || null,
+        // Who read it. The one field that tells two recordings of the same book
+        // apart at a glance — a fourteen-name full cast against "Jack Garrett"
+        // — and the reason `audiobook_edition_holding` (migration 0390) can
+        // show WHICH edition each row is. Read verbatim; the CSV states it as
+        // one comma-joined string and splitting it here would invent a
+        // structure that catalog does not itself draw.
+        narrator: (r[at.narrator] ?? '').trim() || null,
         coverHref: (r[at.cover_href] ?? '').trim() || null,
         year: (r[at.year] ?? '').trim() || null,
         genre: (r[at.genre] ?? '').trim() || null,
@@ -126,6 +137,31 @@ export function audiobookIndex(rows) {
     lookup(title, authors, seriesIndex) {
       const m = matchIndexedWork(index, title, authors, seriesIndex);
       return m ? { row: m.work, via: m.via, similarity: m.titleSimilarity } : null;
+    },
+
+    /**
+     * Every audiobook row that passes, strongest rung first — for
+     * `audiobook_edition_holding` (migration 0390), which is keyed per edition
+     * and so can store the two Elantris recordings instead of losing one to a
+     * primary-key collision.
+     *
+     * ⚠️ `matchIndexedWorkAll`, and nothing else. It shares `matchIndexedWork`'s
+     * rungs, author gate and refusals exactly — the header above bans a second
+     * comparison here for the reason `packages/core/src/matching.ts` opens
+     * with, and that ban applies with more force to the multi-result form: a
+     * looser gate here would not produce one wrong match, it would produce a
+     * list of them under a work the owner already trusts.
+     *
+     * `[0]` is the row `lookup` would have returned, so a caller that wants one
+     * answer and a caller that wants the set never disagree about which is
+     * best. Returns `[]` for nothing, so it is always iterable.
+     */
+    lookupAll(title, authors, seriesIndex) {
+      return matchIndexedWorkAll(index, title, authors, seriesIndex).map((m) => ({
+        row: m.work,
+        via: m.via,
+        similarity: m.titleSimilarity,
+      }));
     },
   };
 }
