@@ -178,10 +178,12 @@ export function ContentNotes({ workId, me }: { workId: number; me: Me }) {
       <h3>Content notes</h3>
 
       {keys?.held ? (
-        <p className="muted small">
-          {keys.held} Add it from the <em>Title &amp; author</em> panel above — always safe on this
-          book.
-        </p>
+        // ⚠️ Held explanation ONLY — the "add the author" call-to-action lives in
+        // exactly one place (the Ratings & reviews panel above). This panel used
+        // to repeat it, so an authorless book showed the SAME "edit the author"
+        // prompt twice (owner: "on edit author it pops up a SECOND prompt to edit
+        // author"). One prompt now; this just says why the notes are empty.
+        <p className="muted small">{keys.held}</p>
       ) : notes === null ? (
         <p className="muted small">Loading…</p>
       ) : (

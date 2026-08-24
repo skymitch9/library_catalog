@@ -9,7 +9,26 @@ import type { EditionView } from './Editions.js';
 import type { PeerHoldingView } from './PeerLibraries.js';
 import { editionKindLabel } from '../lib/formats.js';
 import { STATUS_LABEL } from '../lib/statuses.js';
-import { deriveShelfView, type ShelfCopy } from '../lib/shelf-view.js';
+import { deriveShelfView, type ShelfCopy, type ShelfRow } from '../lib/shelf-view.js';
+
+/**
+ * The little emoji the mockup renders on each shelf thumbnail (owner: "the on
+ * your shelf with the rendering and little emojis"). Chosen by the row's coarse
+ * medium first, then the physical format word, so an Audiobook is 🎧, an ebook
+ * 📱, a hardcover 📗 and a paperback 📖 — a glance tells the medium apart before
+ * a word is read. Purely presentational: the derivation is untouched.
+ */
+function rowEmoji(row: ShelfRow): string {
+  if (row.medium === 'audio') return '🎧';
+  if (row.medium === 'ebook') return '📱';
+  if (row.medium === 'physical') {
+    const f = (row.format ?? '').toLowerCase();
+    if (f.includes('hard')) return '📗';
+    if (f.includes('paper') || f.includes('mass')) return '📖';
+    return '📚';
+  }
+  return '📚';
+}
 
 /**
  * "On your shelf" — the redesign's answer to the first question a book page is
@@ -72,77 +91,90 @@ export function OnYourShelf({
       <ul className="plain shelf-rows">
         {rows.map((row) => (
           <li key={row.key}>
-            <div className="shelf-row">
-              {/* The format, as a pill — the one-glance "what is this", never a
-                  generic "This book". Filled accent when you own it; a quiet
-                  outline when it is only wanted, so the eye lands on what is
-                  actually on the shelf. The neutral slot (nothing owned or
-                  wanted) reads plainly and carries no Owned/Wanted claim. */}
-              <span
-                className={`shelf-row__format shelf-row__format--${row.medium ?? 'unknown'}${
-                  row.neutral || row.owned ? '' : ' shelf-row__format--wanted'
-                }`}
-              >
-                {row.format ?? (row.neutral ? 'Not on your shelf' : 'Any format')}
-                {/* Recordings held, for an Audiobook row (e.g. two narrations). */}
-                {row.count != null && row.count > 1 && (
-                  <span className="shelf-row__count"> ×{row.count}</span>
-                )}
-              </span>
-              {row.neutral ? (
-                <span
-                  className="shelf-row__own shelf-row__own--neutral"
-                  title="You do not own or want this yet — nothing is recorded on your shelf"
-                >
-                  Not on your shelf
-                </span>
-              ) : (
-                <span
-                  className={`shelf-row__own shelf-row__own--${row.owned ? 'owned' : 'wanted'}`}
-                  title={
-                    row.owned
-                      ? 'A copy is on your shelf, or it is a file you hold'
-                      : 'A wishlist copy wants this; you have no copy of it yet'
-                  }
-                >
-                  {row.owned ? 'Owned' : 'Wanted'}
-                </span>
-              )}
-              {row.kind && <span className="shelf-row__kind">{editionKindLabel(row.kind)}</span>}
-              {row.badges.length > 0 && (
-                <span className="shelf-row__badges">
-                  {row.badges.map((b) => (
-                    <span key={b.key} className="special-badge" title={b.title}>
-                      {b.label}
+            {/* Each held/wanted format is a teal-wash holding card with its own
+                emoji thumb and the format word big in Fraunces — the mockup's
+                "On your shelf" rendering. The neutral "nothing yet" slot and a
+                wanted row wear quieter grounds so the eye lands on what is
+                actually owned. */}
+            <div
+              className={`bd-hold${
+                row.neutral ? ' bd-hold--neutral' : row.owned ? '' : ' bd-hold--wanted'
+              }`}
+            >
+              <div className="bd-hold__thumb" aria-hidden="true">
+                {rowEmoji(row)}
+              </div>
+              <div className="bd-hold__main">
+                <div className="bd-hold__fmt">
+                  {row.format ?? (row.neutral ? 'Not on your shelf' : 'Any format')}
+                  {/* Recordings held, for an Audiobook row (e.g. two narrations). */}
+                  {row.count != null && row.count > 1 && (
+                    <span className="shelf-row__count"> ×{row.count}</span>
+                  )}
+                  {row.neutral ? (
+                    <span
+                      className="bd-hold__own bd-own--neutral"
+                      title="You do not own or want this yet — nothing is recorded on your shelf"
+                    >
+                      Not on your shelf
                     </span>
-                  ))}
-                </span>
-              )}
+                  ) : (
+                    <span
+                      className={`bd-hold__own bd-own--${row.owned ? 'owned' : 'wanted'}`}
+                      title={
+                        row.owned
+                          ? 'A copy is on your shelf, or it is a file you hold'
+                          : 'A wishlist copy wants this; you have no copy of it yet'
+                      }
+                    >
+                      {row.owned ? 'Owned' : 'Wanted'}
+                    </span>
+                  )}
+                  {row.kind && (
+                    <span className="bd-hold__kind">{editionKindLabel(row.kind)}</span>
+                  )}
+                </div>
+
+                {row.badges.length > 0 && (
+                  <div className="bd-hold__badges">
+                    {row.badges.map((b) => (
+                      <span
+                        key={b.key}
+                        className={`special-badge special-badge--${b.key}`}
+                        title={b.title}
+                      >
+                        {b.key === 'signed' ? '✍ ' : ''}
+                        {b.label}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* The vendor's own name for the printing, and what it binds —
+                    the two things that tell one format's two printings apart. */}
+                {(row.editionName || row.collects) && (
+                  <p className="bd-hold__meta">
+                    {[row.editionName, row.collects ? `contains ${row.collects}` : null]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </p>
+                )}
+
+                {/* Copies nest UNDER the edition. One copy: its facts inline, no
+                    second bullet. More than one of the same printing: a short
+                    list, the only case where a copy earns its own line. */}
+                {row.copies.length === 1 && <CopyFacts copy={row.copies[0]!} />}
+                {row.copies.length > 1 && (
+                  <ul className="plain shelf-row__copies">
+                    {row.copies.map((c) => (
+                      <li key={c.id}>
+                        <CopyFacts copy={c} withStatus />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
-
-            {/* The vendor's own name for the printing, and what it binds — the
-                two things that tell one format's two printings apart. */}
-            {(row.editionName || row.collects) && (
-              <p className="muted small shelf-row__meta">
-                {[row.editionName, row.collects ? `contains ${row.collects}` : null]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </p>
-            )}
-
-            {/* Copies nest UNDER the edition. One copy: its facts inline, no
-                second bullet. More than one of the same printing: a short list,
-                which is the only case where a copy earns its own line. */}
-            {row.copies.length === 1 && <CopyFacts copy={row.copies[0]!} />}
-            {row.copies.length > 1 && (
-              <ul className="plain shelf-row__copies">
-                {row.copies.map((c) => (
-                  <li key={c.id}>
-                    <CopyFacts copy={c} withStatus />
-                  </li>
-                ))}
-              </ul>
-            )}
           </li>
         ))}
       </ul>
@@ -151,25 +183,28 @@ export function OnYourShelf({
           became Owned shelf rows above (owner model) — only OTHER people's
           libraries remain an "also available elsewhere" footnote. */}
       {hasAvailability && (
-        <div className="shelf-hero__avail">
-          <span className="muted small shelf-hero__avail-label">Also available:</span>
-          <span className="fmts">
-            {availability.peers.map((ph: PeerHoldingView) => (
-              <span
-                key={ph.peerId}
-                className="fmt fmt--peer"
-                title={ph.formats ? `${ph.peerLabel} holds it as ${ph.formats}` : ph.peerLabel}
-              >
-                {ph.detailUrl ? (
-                  <a href={ph.detailUrl} target="_blank" rel="noopener noreferrer">
-                    {ph.peerLabel}
-                  </a>
-                ) : (
-                  ph.peerLabel
-                )}
-              </span>
-            ))}
-          </span>
+        <div className="bd-avail-row">
+          <span className="bd-avail-label">Also available:</span>
+          {availability.peers.map((ph: PeerHoldingView) => (
+            <span
+              key={ph.peerId}
+              className="bd-avail"
+              title={ph.formats ? `${ph.peerLabel} holds it as ${ph.formats}` : ph.peerLabel}
+            >
+              🏠{' '}
+              {ph.detailUrl ? (
+                <a href={ph.detailUrl} target="_blank" rel="noopener noreferrer">
+                  {ph.peerLabel}
+                  {ph.formats ? ` · ${ph.formats}` : ''}
+                </a>
+              ) : (
+                <>
+                  {ph.peerLabel}
+                  {ph.formats ? ` · ${ph.formats}` : ''}
+                </>
+              )}
+            </span>
+          ))}
         </div>
       )}
     </section>

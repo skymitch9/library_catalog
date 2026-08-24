@@ -174,28 +174,58 @@ export function Reviews({
   // form beats offering one that refuses.
   const canRate = me.capabilities.includes('trackReading') && held === null;
 
+  // Dedup ONCE: one review per person — multiple audiobook editions (e.g.
+  // dramatized parts) can produce duplicate reviews for the same person on the
+  // same work. The score header and the list below both read this, so a review
+  // is never counted twice in the average.
+  const deduped = (reviews ?? [])
+    .slice()
+    .sort((a, b) => a.displayName.localeCompare(b.displayName))
+    .filter(
+      (r, i, arr) =>
+        arr.findIndex((x) => x.displayName.toLowerCase() === r.displayName.toLowerCase()) === i,
+    );
+  const ratingsCount = deduped.length;
+  const writtenCount = deduped.filter((r) => (r.text ?? '').trim().length > 0).length;
+  // ⚠️ Measured from the deduped reviews actually fetched — never asserted. One
+  // decimal, matching the half-star scale both catalogs share.
+  const average = ratingsCount
+    ? Math.round((deduped.reduce((s, r) => s + r.rating, 0) / ratingsCount) * 10) / 10
+    : 0;
+
   return (
     <section className="panel">
-      <h3>Reviews</h3>
+      <h3>Ratings &amp; reviews</h3>
 
       {held !== null ? (
         <p className="muted small">
-          {held} Add it from the <em>Title &amp; author</em> panel above — always safe on this
-          book.
+          {held} Add it from the <em>Title &amp; author</em> panel in the editor — always safe on
+          this book.
         </p>
       ) : reviews === null ? (
         <p className="muted small">Loading…</p>
       ) : reviews.length === 0 ? (
         <p className="muted small">No reviews yet — on either site.</p>
       ) : (
-        <ul className="reviews">
-          {reviews
-            .slice()
-            .sort((a, b) => a.displayName.localeCompare(b.displayName))
-            // Dedup: one review per person — keep the most recent (or first encountered).
-            // Multiple audiobook editions (e.g. dramatized parts) can produce duplicate
-            // reviews for the same person on the same work.
-            .filter((r, i, arr) => arr.findIndex((x) => x.displayName.toLowerCase() === r.displayName.toLowerCase()) === i)
+        <>
+          {/* The hoisted rating header — the big Fraunces average, brass stars,
+              and the counts a person comes to the page for (mockup `.rate-head`
+              / `.score`). Real data, deduped one-per-person. */}
+          <div className="bd-rate-head">
+            <div className="bd-score">
+              <span className="bd-score__num">{average.toFixed(1)}</span>
+              <div>
+                <Stars rating={average} />
+                <span className="bd-score__of">
+                  {ratingsCount} {ratingsCount === 1 ? 'rating' : 'ratings'}
+                  {writtenCount > 0 &&
+                    ` · ${writtenCount} written ${writtenCount === 1 ? 'review' : 'reviews'}`}
+                </span>
+              </div>
+            </div>
+          </div>
+          <ul className="reviews">
+          {deduped
             .map((r, i) => (
               <li key={`${r.displayName}-${i}`}>
                 <div className="row-tight">
@@ -217,7 +247,8 @@ export function Reviews({
                 {r.text && <p className="small">{r.text}</p>}
               </li>
             ))}
-        </ul>
+          </ul>
+        </>
       )}
 
       {canRate && (

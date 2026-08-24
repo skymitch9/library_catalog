@@ -2819,3 +2819,545 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
      the screen edge on the narrowest phones. */
   .shelf-row__copies { padding-left: 0.2rem; }
 }
+
+/* =========================================================================
+ * BOOK DETAIL PAGE — faithful reskin to the approved mockup (owner, 2026-08-24)
+ * ("where is the beautiful top bar, the nice rating and review section, the on
+ *  your shelf with the rendering and little emojis. I want that.")
+ *
+ * ## Why this is PAGE-SCOPED tokens, not `--et-*` mapping
+ *
+ * The first delivery restyled this page against `--et-*` only, so it read as the
+ * generic estate theme and looked nothing like the signed-off mockup. The owner
+ * asked for the mockup SPECIFICALLY — warm paper, teal + brass, Fraunces display
+ * serif, emoji shelf. So the detail page commits the mockup palette as its own
+ * `--bd-*` tokens under a single `.book-detail` wrapper, exactly as the hard
+ * constraint permits ("introduce it scoped to a wrapper class on the detail page
+ * only"). This changes NOTHING outside `.book-detail`: every other route keeps
+ * its estate theme and the global switcher is untouched. Light/dark still works
+ * here — the tokens are redefined under the resolved `[data-mode="dark"]`
+ * theme.js stamps (with a `prefers-color-scheme` fallback for a no-JS visitor),
+ * following the mockup's own light+dark discipline.
+ * ========================================================================= */
+.book-detail {
+  --bd-paper: #f4f2ec;
+  --bd-surface: #fcfbf7;
+  --bd-sunk: #eeebe2;
+  --bd-ink: #211c17;
+  --bd-ink-soft: #5c544a;
+  --bd-ink-faint: #8a8175;
+  --bd-line: #e3ded3;
+  --bd-line-soft: #ede9df;
+  --bd-teal: #2e5a4e;
+  --bd-teal-ink: #20443b;
+  --bd-teal-wash: #e4ede8;
+  --bd-brass: #9b6b25;
+  --bd-brass-wash: #f3e9d6;
+  --bd-good: #3f7a52;
+  --bd-good-wash: #e6f0e6;
+  --bd-warn: #b67c24;
+  --bd-warn-wash: #f7ecd5;
+  --bd-bad: #b04435;
+  --bd-bad-wash: #f6e3de;
+  --bd-shadow: 0 1px 2px rgba(33, 28, 23, 0.05), 0 8px 24px -12px rgba(33, 28, 23, 0.18);
+  --bd-radius: 14px;
+  --bd-font-body: 'Hanken Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --bd-font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --bd-font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
+
+  background: var(--bd-paper);
+  color: var(--bd-ink);
+  font-family: var(--bd-font-body);
+  line-height: 1.5;
+  border-radius: var(--bd-radius);
+  padding: 1.1rem 1.15rem 3rem;
+}
+
+/* Resolved dark (theme.js always stamps a data-mode). */
+:root[data-mode='dark'] .book-detail {
+  --bd-paper: #17140f;
+  --bd-surface: #201c16;
+  --bd-sunk: #100e0a;
+  --bd-ink: #ece6da;
+  --bd-ink-soft: #b4ac9c;
+  --bd-ink-faint: #7e7667;
+  --bd-line: #332c22;
+  --bd-line-soft: #2a241c;
+  --bd-teal: #68b29a;
+  --bd-teal-ink: #8fcbb6;
+  --bd-teal-wash: #1d2c27;
+  --bd-brass: #d2a25c;
+  --bd-brass-wash: #2c2416;
+  --bd-good: #6db27f;
+  --bd-good-wash: #1e2a20;
+  --bd-warn: #d6a24e;
+  --bd-warn-wash: #2c2413;
+  --bd-bad: #d8776a;
+  --bd-bad-wash: #2e1e1a;
+  --bd-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px -14px rgba(0, 0, 0, 0.6);
+}
+/* No-JS fallback: only when theme.js has NOT stamped a mode. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-mode]) .book-detail {
+    --bd-paper: #17140f;
+    --bd-surface: #201c16;
+    --bd-sunk: #100e0a;
+    --bd-ink: #ece6da;
+    --bd-ink-soft: #b4ac9c;
+    --bd-ink-faint: #7e7667;
+    --bd-line: #332c22;
+    --bd-line-soft: #2a241c;
+    --bd-teal: #68b29a;
+    --bd-teal-ink: #8fcbb6;
+    --bd-teal-wash: #1d2c27;
+    --bd-brass: #d2a25c;
+    --bd-brass-wash: #2c2416;
+    --bd-good: #6db27f;
+    --bd-good-wash: #1e2a20;
+    --bd-warn: #d6a24e;
+    --bd-warn-wash: #2c2413;
+    --bd-bad: #d8776a;
+    --bd-bad-wash: #2e1e1a;
+    --bd-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px -14px rgba(0, 0, 0, 0.6);
+  }
+}
+
+.book-detail a { color: var(--bd-teal); }
+.book-detail .muted { color: var(--bd-ink-soft); }
+
+/* Back link — quiet, above the identity. */
+.book-detail .back {
+  color: var(--bd-ink-faint);
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 0.9rem;
+}
+
+/* ---- cards (every child <section class="panel"> becomes a mockup card) ---- */
+.book-detail .panel {
+  background: var(--bd-surface);
+  border: 1px solid var(--bd-line);
+  border-radius: var(--bd-radius);
+  box-shadow: var(--bd-shadow);
+  padding: 1.25rem 1.35rem;
+  margin: 0 0 1.1rem;
+}
+.book-detail .panel h3 {
+  font-family: var(--bd-font-display);
+  font-weight: 600;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+  color: var(--bd-ink);
+  margin: 0 0 0.85rem;
+}
+
+/* ---- identity header (the "beautiful top bar") --------------------------- */
+.book-detail .bd-identity {
+  display: grid;
+  grid-template-columns: 190px 1fr;
+  gap: 1.6rem;
+  align-items: start;
+}
+.book-detail .bd-cover {
+  width: 190px;
+  max-width: 100%;
+}
+/* The hero cover: rounded, aspect 2/3, gradient placeholder when blank. Applies
+   to both the <img> and the .cover--blank fallback the Cover component renders. */
+.book-detail .bd-cover .cover {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  height: auto;
+  border-radius: 10px;
+  box-shadow: var(--bd-shadow);
+  object-fit: cover;
+}
+.book-detail .bd-cover .cover--blank {
+  background: linear-gradient(150deg, var(--bd-teal-ink), var(--bd-teal));
+  color: #f4efe4;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 1rem;
+  border: 0;
+}
+.book-detail .bd-cover .cover--blank .cover__title {
+  font-family: var(--bd-font-display);
+  font-weight: 600;
+  font-size: 1.25rem;
+  line-height: 1.05;
+  color: #f4efe4;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.4);
+}
+.book-detail .bd-cover .cover--blank .cover__author { color: rgba(244, 239, 228, 0.85); }
+
+.book-detail .bd-id-main { min-width: 0; }
+.book-detail .bd-eyebrow {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bd-ink-faint);
+}
+.book-detail .bd-title {
+  font-family: var(--bd-font-display);
+  font-weight: 600;
+  font-size: clamp(28px, 4.4vw, 40px);
+  letter-spacing: -0.015em;
+  line-height: 1.12;
+  margin: 0.35rem 0 0;
+  color: var(--bd-ink);
+}
+.book-detail .bd-subtitle {
+  font-family: var(--bd-font-display);
+  font-weight: 400;
+  font-style: italic;
+  font-size: 1.25rem;
+  color: var(--bd-ink-soft);
+  margin: 0.25rem 0 0;
+}
+.book-detail .bd-byline {
+  margin: 0.75rem 0 0;
+  font-size: 1rem;
+  color: var(--bd-ink-soft);
+}
+.book-detail .bd-byline b { color: var(--bd-ink); font-weight: 600; }
+.book-detail .bd-illustrator { margin: 0.3rem 0 0; font-size: 0.9rem; color: var(--bd-ink-soft); }
+.book-detail .work-id { font-family: var(--bd-font-mono); color: var(--bd-ink-faint); }
+
+/* metadata chips row (series / universe / first published / #id) */
+.book-detail .bd-metagrid {
+  margin: 1rem 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.book-detail .bd-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.32rem 0.7rem;
+  border-radius: 999px;
+  background: var(--bd-sunk);
+  color: var(--bd-ink-soft);
+  border: 1px solid var(--bd-line);
+  text-decoration: none;
+}
+.book-detail a.bd-chip:hover { border-color: var(--bd-ink-faint); }
+.book-detail .bd-chip--uni {
+  background: var(--bd-teal-wash);
+  color: var(--bd-teal-ink);
+  border-color: transparent;
+}
+.book-detail .bd-chip .mono { font-family: var(--bd-font-mono); font-weight: 500; }
+.book-detail .bd-desc { margin: 1rem 0 0; color: var(--bd-ink); max-width: 62ch; }
+.book-detail .bd-actions { margin: 1.25rem 0 0; }
+
+/* ---- buttons: the mockup .btn family, mapped onto the app's chip/primary --- */
+.book-detail button,
+.book-detail .chip,
+.book-detail a.chip {
+  font-family: var(--bd-font-body);
+}
+.book-detail .chip,
+.book-detail a.chip,
+.book-detail button.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  padding: 0.6rem 1rem;
+  border-radius: 10px;
+  border: 1px solid var(--bd-line);
+  background: var(--bd-surface);
+  color: var(--bd-ink);
+  transition: border-color 0.15s, background 0.15s;
+}
+.book-detail .chip:hover { border-color: var(--bd-ink-faint); }
+.book-detail .chip.primary,
+.book-detail button.primary,
+.book-detail .primary {
+  background: var(--bd-teal);
+  color: #f6fbf9;
+  border-color: transparent;
+}
+.book-detail .chip.primary:hover,
+.book-detail button.primary:hover { background: var(--bd-teal-ink); }
+.book-detail .btn-brass {
+  background: var(--bd-brass);
+  color: #fff;
+  border-color: transparent;
+}
+/* Bare (non-chip) buttons in the child panels and the scaffold rows — give them
+   the outline btn look. Scoped to `.panel`/`.request-scaffold` on purpose so it
+   never catches the quiet `.back` link-button at the top of the page. */
+.book-detail .panel button:not(.chip):not(.primary):not(.btn-brass),
+.book-detail .request-scaffold button:not(.chip):not(.primary):not(.btn-brass) {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  padding: 0.55rem 0.95rem;
+  border-radius: 10px;
+  border: 1px solid var(--bd-line);
+  background: var(--bd-surface);
+  color: var(--bd-ink);
+}
+.book-detail .panel button:not(.chip):not(.primary):not(.btn-brass):hover,
+.book-detail .request-scaffold button:not(.chip):not(.primary):not(.btn-brass):hover {
+  border-color: var(--bd-ink-faint);
+}
+
+/* ---- ratings + reviews (hoisted) ----------------------------------------- */
+.book-detail .bd-rate-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.book-detail .bd-score { display: flex; align-items: baseline; gap: 0.75rem; }
+.book-detail .bd-score__num {
+  font-family: var(--bd-font-display);
+  font-weight: 600;
+  font-size: 2.9rem;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--bd-ink);
+}
+.book-detail .bd-score__of { font-size: 0.8rem; color: var(--bd-ink-faint); }
+
+/* brass stars, big, in the score header and each review */
+.book-detail .stars { color: var(--bd-brass); letter-spacing: 2px; }
+.book-detail .bd-score .stars { font-size: 1.25rem; }
+.book-detail .star.full { color: var(--bd-brass); }
+.book-detail .star.empty,
+.book-detail .star.half { color: color-mix(in srgb, var(--bd-brass) 28%, transparent); }
+.book-detail .star.half::after { color: var(--bd-brass); }
+
+.book-detail .reviews { margin: 1rem 0 0; display: grid; gap: 0.75rem; list-style: none; padding: 0; }
+.book-detail .reviews > li {
+  padding: 0.85rem 1rem;
+  background: var(--bd-sunk);
+  border-radius: 10px;
+}
+.book-detail .reviews > li .row-tight { gap: 0.5rem; align-items: center; }
+.book-detail .reviews strong { color: var(--bd-ink); font-weight: 700; }
+.book-detail .reviews .row-tight > .muted {
+  margin-left: auto;
+  font-family: var(--bd-font-mono);
+  font-size: 0.68rem;
+  padding: 0.12rem 0.45rem;
+  border-radius: 6px;
+  background: var(--bd-surface);
+  border: 1px solid var(--bd-line);
+  color: var(--bd-ink-faint);
+}
+.book-detail .reviews p { margin: 0.4rem 0 0; font-size: 0.9rem; color: var(--bd-ink); }
+
+/* the rating textarea + rating chips keep working, just themed */
+.book-detail textarea,
+.book-detail input,
+.book-detail select {
+  font-family: var(--bd-font-body);
+  font-size: 0.92rem;
+  color: var(--bd-ink);
+  background: var(--bd-paper);
+  border: 1px solid var(--bd-line);
+  border-radius: 9px;
+  padding: 0.6rem 0.75rem;
+}
+.book-detail textarea { min-height: 4.5rem; resize: vertical; line-height: 1.5; }
+.book-detail :focus-visible { outline: 2.5px solid var(--bd-teal); outline-offset: 2px; }
+
+/* ---- On your shelf: teal-wash panel, emoji thumbs, big Fraunces format ---- */
+.book-detail .shelf.panel { background: var(--bd-surface); }
+.book-detail .shelf-rows { display: flex; flex-direction: column; gap: 0.75rem; }
+.book-detail .shelf-rows > li {
+  border: 0;
+  padding: 0;
+}
+/* Each owned/wanted row is a teal-wash holding card with an emoji cover thumb. */
+.book-detail .bd-hold {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  padding: 1rem;
+  background: var(--bd-teal-wash);
+  border-radius: 12px;
+}
+.book-detail .bd-hold--wanted { background: var(--bd-sunk); }
+.book-detail .bd-hold--neutral { background: var(--bd-sunk); }
+.book-detail .bd-hold__thumb {
+  width: 52px;
+  height: 70px;
+  border-radius: 7px;
+  background: linear-gradient(150deg, var(--bd-teal-ink), var(--bd-teal));
+  display: grid;
+  place-items: center;
+  font-size: 1.6rem;
+  flex-shrink: 0;
+}
+.book-detail .bd-hold--wanted .bd-hold__thumb,
+.book-detail .bd-hold--neutral .bd-hold__thumb {
+  background: linear-gradient(150deg, #6b6152, var(--bd-ink-faint));
+  opacity: 0.85;
+}
+.book-detail .bd-hold__main { flex: 1; min-width: 0; }
+.book-detail .bd-hold__fmt {
+  font-family: var(--bd-font-display);
+  font-weight: 600;
+  font-size: 1.4rem;
+  letter-spacing: -0.01em;
+  color: var(--bd-ink);
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.book-detail .bd-hold__own {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+}
+.book-detail .bd-own--owned { background: var(--bd-good-wash); color: var(--bd-good); }
+.book-detail .bd-own--wanted { background: var(--bd-warn-wash); color: var(--bd-warn); }
+.book-detail .bd-own--neutral { background: transparent; color: var(--bd-ink-faint); font-weight: 600; }
+.book-detail .bd-hold__badges { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.45rem 0 0; }
+.book-detail .special-badge {
+  display: inline-block;
+  padding: 0.18rem 0.55rem;
+  border-radius: 7px;
+  background: var(--bd-surface);
+  border: 1px solid var(--bd-line);
+  color: var(--bd-ink-soft);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.book-detail .special-badge.special-badge--signed {
+  background: var(--bd-brass-wash);
+  color: var(--bd-brass);
+  border-color: transparent;
+}
+.book-detail .bd-hold__meta { margin: 0.4rem 0 0; font-size: 0.8rem; color: var(--bd-ink-soft); }
+.book-detail .bd-hold__meta .mono { font-family: var(--bd-font-mono); }
+.book-detail .shelf-row__copy { margin: 0.35rem 0 0; font-size: 0.82rem; color: var(--bd-ink-soft); }
+.book-detail .shelf-row__copies { margin: 0.3rem 0 0; padding-left: 0.2rem; list-style: none; }
+.book-detail .bd-hold__kind {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--bd-teal-ink);
+  background: var(--bd-teal-wash);
+  padding: 0.15rem 0.45rem;
+  border-radius: 7px;
+}
+
+/* availability row: emoji chips */
+.book-detail .bd-avail-row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0 0; align-items: center; }
+.book-detail .bd-avail {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.45rem 0.75rem;
+  border-radius: 9px;
+  border: 1px solid var(--bd-line);
+  background: var(--bd-brass-wash);
+  color: var(--bd-brass);
+  border-color: transparent;
+  text-decoration: none;
+}
+.book-detail .bd-avail-label { font-size: 0.78rem; color: var(--bd-ink-faint); }
+
+/* ---- your reading + content warnings ------------------------------------- */
+.book-detail .bd-cw-list { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.book-detail .bd-cw {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.32rem 0.7rem;
+  border-radius: 8px;
+  background: var(--bd-bad-wash);
+  color: var(--bd-bad);
+}
+
+/* ---- the demoted "Warning: Record Control" cluster ----------------------- */
+.book-detail .more-cluster {
+  background: var(--bd-surface);
+  border: 1px solid var(--bd-line);
+  border-radius: var(--bd-radius);
+  box-shadow: var(--bd-shadow);
+  padding: 0.35rem 1.35rem;
+  margin: 1.1rem 0;
+}
+.book-detail .more-cluster > summary {
+  font-family: var(--bd-font-display);
+  font-weight: 600;
+  color: var(--bd-ink);
+  padding: 0.8rem 0;
+}
+.book-detail .more-cluster--danger { border-color: color-mix(in srgb, var(--bd-bad) 45%, var(--bd-line)); }
+.book-detail .more-cluster--danger > summary { color: var(--bd-bad); }
+
+/* ---- the one edit box: mockup tabs + fields ------------------------------ */
+.book-detail .edit-box.panel { padding-top: 1.1rem; }
+.book-detail .edit-box__tabs {
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--bd-line);
+  padding-bottom: 0;
+  margin-bottom: 1.1rem;
+}
+.book-detail .edit-box__tabs .chip {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 9px 9px 0 0;
+  background: transparent;
+  color: var(--bd-ink-soft);
+  padding: 0.55rem 0.8rem;
+  margin-bottom: -1px;
+}
+.book-detail .edit-box__tabs .chip.primary {
+  background: var(--bd-sunk);
+  color: var(--bd-ink);
+  border-bottom-color: var(--bd-teal);
+}
+.book-detail .edit-box__tabs .chip.primary:hover { background: var(--bd-sunk); }
+.book-detail .edit-box .panel {
+  box-shadow: none;
+  background: var(--bd-surface);
+  padding: 1rem 0 0;
+  border: 0;
+  border-top: 1px solid var(--bd-line-soft);
+  border-radius: 0;
+  margin: 0;
+}
+.book-detail .edit-box__section > .panel:first-child { border-top: 0; padding-top: 0; }
+.book-detail .field__label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--bd-ink-faint);
+}
+
+/* ---- mobile: honor the mockup's 720px collapse + the app's 26rem rules ---- */
+@media (max-width: 720px) {
+  .book-detail { padding: 0.85rem 0.85rem 2.5rem; }
+  .book-detail .bd-identity { grid-template-columns: 120px 1fr; gap: 1rem; }
+  .book-detail .bd-cover { width: 120px; }
+  .book-detail .bd-title { font-size: clamp(24px, 7vw, 32px); }
+  .book-detail .panel { padding: 1rem 1.05rem; }
+}
+@media (max-width: 26rem) {
+  .book-detail .bd-rate-head { align-items: flex-start; }
+  .book-detail .bd-hold { flex-wrap: wrap; }
+}

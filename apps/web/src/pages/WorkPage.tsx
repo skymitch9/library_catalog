@@ -199,78 +199,110 @@ export function WorkPage({
   }
 
   return (
-    <main>
+    <main className="book-detail">
       <button className="back" onClick={onBack}>
         ← {backLabel}
       </button>
 
-      {/* 1 — IDENTITY. The cover is now a real link to the work (the owner's ask
-          to make covers clickable everywhere they render); the head carries one
-          Edit button, not eleven. */}
-      <div className="work-head">
-        <Cover
-          src={work.coverUrl}
-          title={work.title}
-          authors={work.authors ?? undefined}
-          size="large"
-          to={workPath(work.id)}
-        />
-        <div className="work-head__text">
-          {/* Above the title rather than beside it: it must be near the title
-              (the owner's ask) without competing with it, and a corner
-              placement collides with the title's wrap on a phone. */}
-          <WorkIdTag id={work.id} />
-          <h2>{work.title}</h2>
-          {work.subtitle && <p className="muted">{work.subtitle}</p>}
-          {/* An authorless book says so in words, here where the byline would
-              be — the one place its absence would otherwise read as a broken
-              page rather than a recorded fact. */}
-          <p className="work-head__authors">
-            {work.authors ?? <span className="muted">Author not recorded yet</span>}
-          </p>
-          {work.illustrator && (
-            <p className="work-head__illustrator">Illustrated by {work.illustrator}</p>
-          )}
-          {work.series && (
-            <p className="series-tag">
-              <button className="link series-tag__link" onClick={() => onOpenSeries(work.series!)}>
-                {work.series}
-                {work.seriesIndexDisplay ? <b> {work.seriesIndexDisplay}</b> : null}
-              </button>
-            </p>
-          )}
-          {universe && (
-            <p className="universe-tag">
-              Part of{' '}
-              <Link
-                to={universePath(universe)}
-                className="universe-tag__link"
-                title={`Everything this catalog holds from ${universe}`}
-              >
-                {universe}
-              </Link>
-            </p>
-          )}
-          {work.firstPublished && <p className="muted small">First published {work.firstPublished}</p>}
-          {/* The description as read-only primary content, right in the head —
-              the reading-decision text a person opens the page for. Editing it
-              lives in the Edit box (WorkFields); this is its view. */}
-          {work.description && <p className="work-head__desc">{work.description}</p>}
-          {/* ⚠️ Not shown for a book that only exists on paper — it is on a
-              shelf, and there is no file to open. `shouldShowDriveLinks` carries
-              the rule and, more importantly, why an ISBN is not part of it. */}
-          {showDrive && (
-            <DriveLinks
+      {/* 1 — IDENTITY. The mockup's "beautiful top bar": a big 2/3 cover on the
+          left (gradient placeholder when there is no art), the title in the
+          Fraunces display serif with an italic subtitle and byline, a row of
+          metadata chips (series / universe / first published), and one Edit
+          button — not eleven. The cover is a real link to the work (the owner's
+          ask to make covers clickable everywhere they render). */}
+      <div className="panel">
+        <div className="bd-identity">
+          <div className="bd-cover">
+            <Cover
+              src={work.coverUrl}
               title={work.title}
-              authors={work.authors ?? ''}
-              sourceUrl={fileEdition?.source_url ?? null}
+              authors={work.authors ?? undefined}
+              size="large"
+              to={workPath(work.id)}
             />
-          )}
-          {/* THE one Edit button, replacing the eleven scattered edit panels. */}
-          <div className="row-tight work-head__actions">
-            <button className={editOpen ? 'chip' : 'chip primary'} onClick={editOpen ? () => setEditOpen(false) : openEdit}>
-              {editOpen ? 'Close editor' : canEdit ? 'Edit this book' : 'Book details'}
-            </button>
+          </div>
+          <div className="bd-id-main">
+            {/* Above the title rather than beside it: it must be near the title
+                (the owner's ask) without competing with it, and a corner
+                placement collides with the title's wrap on a phone. */}
+            <WorkIdTag id={work.id} />
+            <h1 className="bd-title">{work.title}</h1>
+            {work.subtitle && <p className="bd-subtitle">{work.subtitle}</p>}
+            {/* An authorless book says so in words, here where the byline would
+                be — the one place its absence would otherwise read as a broken
+                page rather than a recorded fact. */}
+            <p className="bd-byline">
+              {work.authors ? (
+                <>
+                  by <b>{work.authors}</b>
+                </>
+              ) : (
+                <span className="muted">Author not recorded yet</span>
+              )}
+            </p>
+            {work.illustrator && (
+              <p className="bd-illustrator">Illustrated by {work.illustrator}</p>
+            )}
+
+            {/* Metadata as chips — series (opens the ladder), universe (opens the
+                universe page), first published. The same data the old stacked
+                <p> tags carried, now the mockup's `.metagrid`. */}
+            {(work.series || universe || work.firstPublished) && (
+              <div className="bd-metagrid">
+                {universe && (
+                  <Link
+                    to={universePath(universe)}
+                    className="bd-chip bd-chip--uni"
+                    title={`Everything this catalog holds from ${universe}`}
+                  >
+                    ✦ {universe}
+                  </Link>
+                )}
+                {work.series && (
+                  <button
+                    type="button"
+                    className="bd-chip"
+                    onClick={() => onOpenSeries(work.series!)}
+                    title={`Open the ${work.series} series`}
+                  >
+                    {work.series}
+                    {work.seriesIndexDisplay ? (
+                      <b>&nbsp;{work.seriesIndexDisplay}</b>
+                    ) : null}
+                  </button>
+                )}
+                {work.firstPublished && (
+                  <span className="bd-chip">
+                    First published <span className="mono">{work.firstPublished}</span>
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* The description as read-only primary content, right in the head —
+                the reading-decision text a person opens the page for. Editing it
+                lives in the Edit box (WorkFields); this is its view. */}
+            {work.description && <p className="bd-desc">{work.description}</p>}
+            {/* ⚠️ Not shown for a book that only exists on paper — it is on a
+                shelf, and there is no file to open. `shouldShowDriveLinks`
+                carries the rule and, more importantly, why an ISBN is not part
+                of it. */}
+            {showDrive && (
+              <DriveLinks
+                title={work.title}
+                authors={work.authors ?? ''}
+                sourceUrl={fileEdition?.source_url ?? null}
+              />
+            )}
+            {/* THE one Edit button, replacing the eleven scattered edit panels. */}
+            <div className="row-tight bd-actions">
+              <button
+                className={editOpen ? 'chip' : 'chip primary'}
+                onClick={editOpen ? () => setEditOpen(false) : openEdit}
+              >
+                {editOpen ? '✕ Close editor' : canEdit ? '✎ Edit this book' : 'Book details'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
