@@ -24,7 +24,7 @@
 
 import { Hono } from 'hono';
 import type { ConversationTurn } from '@lc/gabi-conv';
-import { findUserByFirebaseUid, loadPanelConversation, savePanelConversation } from '@lc/db';
+import { findUserByFirebaseUid, loadPanelConversation, replacePanelConversation } from '@lc/db';
 import type { AppBindings } from '../env.js';
 import { secretEquals } from '../lib/secret-equals.js';
 import { sharedConversationKey } from '../lib/shared-conversation-key.js';
@@ -141,7 +141,10 @@ export const gabiMemoryRoutes = new Hono<AppBindings>()
     }
 
     const key = sharedConversationKey(c.env.ESTATE_APP, user.id);
-    await savePanelConversation(c.env.DB, key, turns as ConversationTurn[]);
+    // ⚠️ REPLACE, not append. The caller sends the authoritative FULL window;
+    // appending it (savePanelConversation) would stack the whole window on top
+    // of the already-stored window and duplicate every turn on every save.
+    await replacePanelConversation(c.env.DB, key, turns as ConversationTurn[]);
 
     return c.json({ ok: true });
   });

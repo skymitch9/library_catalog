@@ -159,6 +159,55 @@ export async function savePanelConversation(
 }
 
 /**
+ * Replace the stored window with exactly the given turns.
+ *
+ * ⚠️ Distinct from `savePanelConversation`, which APPENDS one just-said exchange
+ * onto whatever is stored. A caller that already holds the authoritative full
+ * window (the Discord side of `PUT /api/gabi/memory`) must REPLACE, not append —
+ * appending the whole window on top of the stored window duplicates every turn
+ * on every save. Building from `appendTurns(null, …)` starts from an empty base,
+ * so the persisted record becomes precisely the provided window (still pruned,
+ * clipped and windowed the same way a normal write is).
+ *
+ * Returns what was actually persisted, like `savePanelConversation`. An empty
+ * `turns` (or a window that prunes to nothing) deletes the key rather than
+ * leaving an empty-but-present row — the same privacy posture the load path has.
+ */
+export async function replacePanelConversation(
+  db: D1Database,
+  key: ConversationKey,
+  turns: readonly ConversationTurn[],
+  now: number = Date.now(),
+): Promise<{ saved: boolean; turns: number }> {
+  const sk = conversationStorageKey(key);
+  try {
+    // Start from an empty base: the result is exactly `turns`, not `turns`
+    // stacked on top of what was already stored.
+    const next = appendTurns(null, key, turns, now);
+    if (!next) {
+      await db.prepare('DELETE FROM gabi_conversation WHERE storage_key = ?').bind(sk).run();
+      return { saved: false, turns: 0 };
+    }
+
+    // Same INSERT … ON CONFLICT DO UPDATE as savePanelConversation — never a
+    // delete-then-insert, which has a window in which the memory does not exist.
+    await db
+      .prepare(
+        `INSERT INTO gabi_conversation (storage_key, surface, space, person, record, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(storage_key) DO UPDATE SET record = excluded.record,
+                                                updated_at = excluded.updated_at`,
+      )
+      .bind(sk, key.surface, key.space, key.person, JSON.stringify(next), now)
+      .run();
+    return { saved: true, turns: next.turns.length };
+  } catch (err) {
+    console.error('gabi_conversation: memory not replaced', err);
+    return { saved: false, turns: 0 };
+  }
+}
+
+/**
  * Delete every row whose window closed.
  *
  * ⚠️ **THE GARBAGE COLLECTION THAT `loadPanelConversation` CANNOT DO.** A
