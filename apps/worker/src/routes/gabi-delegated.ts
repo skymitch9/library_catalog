@@ -134,8 +134,16 @@ import {
   listCopiesForWork,
   listEditionsForWork,
   readEstateCache,
+  updateWork,
   type Actor,
+  type Work,
 } from '@lc/db';
+import {
+  compareAndSet,
+  fieldLabel,
+  isConfirmableField,
+  type FieldChange,
+} from '@lc/gabi-conv';
 import { resolveIsbn } from '@lc/isbn';
 import type { AppBindings, Env } from '../env.js';
 import { runDetailsSweep } from '../lib/details-sweep.js';
@@ -185,6 +193,28 @@ export const DELEGATED_VERB_CAPABILITY: Record<
  * dishonesty that teaches people to stop reading the sentence.
  */
 export const DELEGATED_READ_VERBS: readonly DelegatedVerb[] = ['whoami', 'browse-works'];
+
+/**
+ * ⚠️ **THE TIER-2 CONFIRM VERBS — a SEPARATE allowlist from the additive four.**
+ * `catalog-platform/docs/info/gabi-confirm-lanes-design.md`. Kept apart from
+ * `DELEGATED_VERBS` for the same reason the Discord Worker keeps
+ * `GABI_CONFIRM_VERB_NAMES` apart from its Tier-1 array: a verb that MUTATES an
+ * existing value behind a human confirm is not the additive door, and merging
+ * them would let a mutation ride the wall that guards the additive one.
+ *
+ * ⚠️ Every confirm verb borrows `editCatalog` — the same capability the edit
+ * form's Save is gated on — and it is checked HERE, on BOTH the dry-run and the
+ * apply (design §1.1: the check runs twice, because revocation beats
+ * everything). `fix-field` edits a book's OWN free-tier fields only; it can
+ * never touch `title`/`authors` (which move `work_key`, the review join — the
+ * edit-audit key-move ceremony's subject).
+ */
+export const CONFIRM_VERBS = ['fix-field'] as const;
+export type ConfirmVerb = (typeof CONFIRM_VERBS)[number];
+
+export const CONFIRM_VERB_CAPABILITY: Record<ConfirmVerb, Capability> = {
+  'fix-field': 'editCatalog',
+};
 
 /** The default and the ceiling for `browse-works`. ⚠️ The cap is a HARD one and
  *  is enforced on the way in, never trusted from the body: 341 works match the
@@ -280,7 +310,27 @@ export const DELEGATED_MSG = {
     `${site} has no way to look details up right now — neither an AI key nor a donor library is ` +
     'configured there. That is a configuration gap on our side, NOT a permissions problem, and ' +
     'nothing was changed.',
+
+  // ── the T2 confirm verb ──────────────────────────────────────────────────
+  workNotHere: (site: string) =>
+    `I couldn't find that book on ${site}, so there was nothing to change. It may have been removed, ` +
+    'or it lives on the other shelf. Nothing was changed.',
+  fieldNotConfirmable: (field: string, site: string) =>
+    `I can't change **${field}** from a chat on ${site} — I only do a book's own display fields ` +
+    'this way (subtitle, series, volume, description, cover, illustrator), never the title or ' +
+    "author, which move the review link and need the site's own careful edit. Nothing was changed.",
+  changedUnderneath: (label: string, nowIs: string, site: string) =>
+    `Someone changed the ${label} on ${site} while we were talking — it now says ` +
+    `«${nowIs || '(nothing)'}», not what I showed you. I haven't touched it. Ask me again and I'll ` +
+    'offer it fresh against what it says now.',
+  fixApplied: (label: string, subject: string, site: string) =>
+    `Done — I updated the ${label} on *${subject}* on ${site}, as you. It's stamped and undoable ` +
+    'from the book\'s own Changes panel.',
 } as const;
+
+/** How the destination reports a compare-and-set 409 — the shape the Discord
+ * Worker's `fixField` port and the panel both read. */
+export const FIELD_CHANGED_REASON = 'changed_underneath';
 
 /**
  * The role list a capability needs, for a refusal that says how to fix it.
@@ -770,7 +820,156 @@ export const gabiDelegatedRoutes = new Hono<AppBindings>()
       })),
       generatedAt: new Date().toISOString(),
     });
+  })
+
+  /**
+   * **Verb 4 — the T2 CONFIRM verb. Change a book's OWN field, on somebody's
+   * behalf, with a compare-and-set.** `docs/info/gabi-confirm-lanes-design.md`.
+   *
+   * Two modes on one route:
+   *
+   *  - `dryRun: true` (PROPOSE) — capability check #1, then read the current
+   *    `before` values. Nothing is written. This is what GABI restates to a
+   *    human before offering a confirm button.
+   *  - `dryRun: false` (PRESS) — capability check #2 (revocation beats
+   *    everything), then a compare-and-set: every proposed `before` must STILL
+   *    equal what the row holds, or the whole apply is refused **409
+   *    `changed_underneath`** — never a partial, never clobbering somebody
+   *    else's edit and writing an audit row whose `before` is a lie.
+   *
+   * ⚠️ **Default-deny on the field name, shared with both ends** — the allowlist
+   * is `@lc/gabi-conv`'s `T2_CONFIRMABLE_FIELDS`, so the site, the Discord Worker
+   * and the panel cannot disagree about what is confirmable. `title`/`authors`
+   * are absent and stay absent: they move `work_key`.
+   *
+   * ⚠️ **Stamped `how: 'human'`** (design §7.2) — a person read a before→after
+   * restatement and pressed a button, the most reviewed write in the estate. The
+   * `note` is `gabi-discord-confirm`, so `note LIKE 'gabi-discord%'` still answers
+   * "what has GABI changed" across T1 and T2, and the `-confirm` suffix separates
+   * the lanes without a new column. The audit rows land in `updateWork`'s own
+   * `db.batch()`, atomically with the write.
+   */
+  .post('/fix-field', async (c) => {
+    const body = (await c.req.json().catch(() => null)) as {
+      onBehalfOf?: unknown;
+      subject?: { entity?: unknown; id?: unknown; label?: unknown };
+      changes?: unknown;
+      dryRun?: unknown;
+    } | null;
+    const uid = onBehalfOf(body);
+    if (!uid) return c.json({ error: 'bad_request', detail: 'onBehalfOf is required' }, 400);
+
+    // Phase 1 edits a `work` and nothing else.
+    if (body?.subject?.entity !== 'work') {
+      return c.json({ error: 'bad_request', detail: 'subject.entity must be "work"' }, 400);
+    }
+    const workId = Number(body.subject.id);
+    if (!Number.isInteger(workId) || workId < 1) {
+      return c.json({ error: 'bad_request', detail: 'subject.id must be a work id' }, 400);
+    }
+    const changesRaw = Array.isArray(body.changes) ? body.changes : [];
+    if (changesRaw.length === 0) {
+      return c.json({ error: 'bad_request', detail: 'changes is required' }, 400);
+    }
+    const dryRun = body.dryRun === true;
+    const { site } = instanceLabel(c.env);
+
+    // ⚠️ CAPABILITY — checked on BOTH the dry-run and the apply (design §1.1).
+    const verdict = await authority(c.env, c.env.DB, uid, CONFIRM_VERB_CAPABILITY['fix-field']);
+    if (!verdict.ok) return c.json(verdict.body, verdict.status);
+
+    // ⚠️ Default-deny on every field name, before the row is even read.
+    for (const ch of changesRaw) {
+      const field = (ch as { field?: unknown })?.field;
+      if (!isConfirmableField(field)) {
+        return c.json(
+          { error: 'field_not_confirmable', message: DELEGATED_MSG.fieldNotConfirmable(String(field), site) },
+          400,
+        );
+      }
+    }
+
+    const work = await getWork(c.env.DB, workId);
+    if (!work) return c.json({ outcome: 'not_found', message: DELEGATED_MSG.workNotHere(site) }, 404);
+
+    const fields = changesRaw.map((ch) => String((ch as { field: string }).field));
+    const before: Record<string, string> = {};
+    for (const f of fields) before[f] = currentWorkField(work, f);
+
+    // PROPOSE — read-only, capability already checked. The before values.
+    if (dryRun) return c.json({ outcome: 'dryrun', before });
+
+    // PRESS — compare-and-set on the whole proposed state, then apply.
+    const proposed: FieldChange[] = changesRaw.map((ch) => {
+      const c2 = ch as { field: string; before?: unknown; after?: unknown };
+      return {
+        field: c2.field,
+        label: fieldLabel(c2.field) ?? c2.field,
+        before: typeof c2.before === 'string' ? c2.before : '',
+        after: typeof c2.after === 'string' ? c2.after : '',
+      };
+    });
+    const cmp = compareAndSet(proposed, before);
+    if (!cmp.ok) {
+      const label = proposed.find((p) => p.field === cmp.field)?.label ?? cmp.field;
+      return c.json(
+        {
+          reason: FIELD_CHANGED_REASON,
+          field: cmp.field,
+          nowIs: cmp.nowIs,
+          message: DELEGATED_MSG.changedUnderneath(label, cmp.nowIs, site),
+        },
+        409,
+      );
+    }
+
+    // ⚠️ Exact-equality apply: precisely `changes`, no field outside the list is
+    // touched (design §4.2 property 3). Stamped 'human', noted for the lane.
+    const patch: Record<string, string> = {};
+    for (const p of proposed) patch[p.field] = p.after;
+    const actor: Actor = { userId: verdict.user.id, how: 'human', note: `${GABI_DISCORD_NOTE}-confirm` };
+    const updated = await updateWork(
+      c.env.DB,
+      workId,
+      patch as Parameters<typeof updateWork>[2],
+      actor,
+    );
+    if (!updated) return c.json({ outcome: 'not_found', message: DELEGATED_MSG.workNotHere(site) }, 404);
+
+    const first = proposed[0]!;
+    const label = proposed.length === 1 ? first.label : `${proposed.length} fields`;
+    return c.json({
+      outcome: 'applied',
+      workId,
+      site,
+      message: DELEGATED_MSG.fixApplied(label, updated.title, site),
+    });
   });
+
+/**
+ * The current value of one confirmable `work` field, as a string ('' for null)
+ * — the compare-and-set material. ⚠️ An explicit switch, not dynamic indexing:
+ * the field set is the shared allowlist, and a switch cannot be walked into a
+ * column the allowlist does not name.
+ */
+function currentWorkField(work: Work, field: string): string {
+  switch (field) {
+    case 'subtitle':
+      return work.subtitle ?? '';
+    case 'series':
+      return work.series ?? '';
+    case 'seriesIndexDisplay':
+      return work.seriesIndexDisplay ?? '';
+    case 'description':
+      return work.description ?? '';
+    case 'coverUrl':
+      return work.coverUrl ?? '';
+    case 'illustrator':
+      return work.illustrator ?? '';
+    default:
+      return '';
+  }
+}
 
 /**
  * A whole number from an untrusted body, or the fallback. ⚠️ Rejects `NaN`,

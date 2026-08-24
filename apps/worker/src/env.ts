@@ -330,6 +330,26 @@ export interface Env {
   GABI_PANEL?: string;
 
   /**
+   * ⚠️ **TIER 2 — GABI's CATALOG-FIX CONFIRM LANE on the panel, and it ships
+   * OFF.** `catalog-platform/docs/info/gabi-confirm-lanes-design.md`.
+   *
+   * Affirmative-only `"on"`, the `GABI_PANEL` idiom — every typo is OFF. It is
+   * the SAME lever name the Discord Worker carries, so a single owner decision
+   * turns the lane on across both surfaces, or neither.
+   *
+   * ⚠️ **OFF means invisible on the panel**: no confirm card is rendered
+   * (`apps/web/src/components/GabiConfirmCard.tsx` returns null) and the apply
+   * logic refuses without touching the network. Reported on `/api/me` and
+   * `/api/health` beside `GABI_PANEL` so the browser and a curl both see it.
+   * Flipping it is the OWNER's evidence-gated step — never a deploy side effect.
+   *
+   * ⚠️ ON IS NOT A GRANT: the panel applies through the SAME authenticated
+   * `PATCH /api/works/:id` the edit form uses, which checks the signed-in
+   * person's own `editCatalog` capability and writes the audit trail.
+   */
+  GABI_CONFIRM_T2?: string;
+
+  /**
    * Local development only. Ignored unless ENVIRONMENT is not "production", so a
    * stray value in production vars can never bypass sign-in.
    */

@@ -30,10 +30,13 @@ import type { AppBindings, Env } from '../env.js';
 import {
   BROWSE_DEFAULT_LIMIT,
   BROWSE_MAX_LIMIT,
+  CONFIRM_VERBS,
+  CONFIRM_VERB_CAPABILITY,
   DELEGATED_MSG,
   DELEGATED_READ_VERBS,
   DELEGATED_VERBS,
   DELEGATED_VERB_CAPABILITY,
+  FIELD_CHANGED_REASON,
   gabiDelegatedRoutes,
   instanceLabel,
   sweepSentence,
@@ -618,5 +621,215 @@ describe('instanceLabel', () => {
       site: 'padhard.heygabi.ai',
     });
     assert.equal(instanceLabel({}).app, 'library', 'unset means the main instance, as the gate does');
+  });
+});
+
+// ── 5. the T2 confirm verb — fix-field, with a compare-and-set ──────────────
+
+/**
+ * A D1 stub for `fix-field`: it answers the user/estate lookups, returns one
+ * `work` row for `getWork`, and records every statement `updateWork` batches so
+ * a test can assert the audit stamp (`how: 'human'`, the confirm note). Any
+ * query it does not expect throws, so a route that grows a new read fails loudly.
+ */
+function fixFieldDb(
+  user: { id: number; role: string; firebase_uid: string } | null,
+  work: Record<string, unknown> | null,
+) {
+  const captured: { sql: string; binds: unknown[] }[] = [];
+  const db = {
+    prepare(sql: string) {
+      const st = {
+        sql,
+        binds: [] as unknown[],
+        bind(...args: unknown[]) {
+          this.binds = args;
+          return this;
+        },
+        async first() {
+          if (sql.includes('WHERE firebase_uid = ?')) {
+            return user
+              ? { id: user.id, firebase_uid: user.firebase_uid, role: user.role, display_name: 'Someone' }
+              : null;
+          }
+          if (sql.includes('estate_status')) {
+            return { estate_status: 'approved', estate_checked_at: 'x', estate_visibility: null };
+          }
+          if (sql.includes('FROM work WHERE id = ?')) return work;
+          throw new Error(`fixFieldDb: unexpected first() for: ${sql}`);
+        },
+      };
+      return st;
+    },
+    async batch(statements: { sql: string; binds: unknown[] }[]) {
+      for (const s of statements) captured.push({ sql: s.sql, binds: s.binds });
+      // updateWork reads the updated row from the FIRST statement's results.
+      return statements.map((_s, i) => ({ results: i === 0 ? [work] : [] }));
+    },
+  };
+  return { db: db as unknown as Env['DB'], captured };
+}
+
+/** A full-ish WorkRow — only the fields a fix-field test cares about vary. */
+function workRow(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: 4711,
+    title: 'The Way of Kings',
+    subtitle: null,
+    sort_title: 'way of kings',
+    authors: 'Brandon Sanderson',
+    primary_author: 'Brandon Sanderson',
+    work_key: 'the way of kings|brandon sanderson',
+    series: 'Stormlight',
+    series_index_sort: 1,
+    series_index_display: '1',
+    first_published: 2010,
+    openlibrary_work_id: null,
+    description: null,
+    cover_url: null,
+    cover_status: null,
+    illustrator: null,
+    multi_volume_printing: 0,
+    universe: null,
+    universe_how: null,
+    created_at: 'x',
+    updated_at: 'x',
+    ...over,
+  };
+}
+
+const fixEnv = (db: Env['DB']): Partial<Env> => ({
+  ESTATE_APP_TOKEN_DISCORD: TOKEN,
+  ESTATE_APP: 'library',
+  DB: db,
+});
+
+const fixSubject = { entity: 'work', id: 4711, label: 'The Way of Kings by Brandon Sanderson' };
+
+describe('the TIER 2 confirm verb — fix-field', () => {
+  it('the confirm allowlist is separate from the additive four, borrowing editCatalog', () => {
+    assert.deepEqual([...CONFIRM_VERBS], ['fix-field']);
+    assert.equal(CONFIRM_VERB_CAPABILITY['fix-field'], 'editCatalog');
+    // Pinned against the matrix itself, so widening editCatalog cannot silently
+    // widen who may run fix-field without this file noticing.
+    assert.equal(can('contributor', CONFIRM_VERB_CAPABILITY['fix-field']), true);
+    assert.equal(can('member', CONFIRM_VERB_CAPABILITY['fix-field']), false);
+  });
+
+  it('capability is refused at PROPOSE (dry-run) — a role that cannot edit sees no before', async () => {
+    const { db, captured } = fixFieldDb({ id: 4, role: 'member', firebase_uid: 'uid-123456' }, workRow());
+    const res = await post(
+      'fix-field',
+      { onBehalfOf: 'uid-123456', subject: fixSubject, changes: [{ field: 'series' }], dryRun: true },
+      fixEnv(db),
+    );
+    assert.equal(res.status, 403);
+    assert.equal(((await res.json()) as { error?: string }).error, 'forbidden');
+    assert.equal(captured.length, 0, 'nothing was written');
+  });
+
+  it('capability is refused again at PRESS (apply) — the check runs at BOTH moments', async () => {
+    const { db } = fixFieldDb({ id: 4, role: 'member', firebase_uid: 'uid-123456' }, workRow());
+    const res = await post(
+      'fix-field',
+      { onBehalfOf: 'uid-123456', subject: fixSubject, changes: [{ field: 'series', before: 'Stormlight', after: 'X' }], dryRun: false },
+      fixEnv(db),
+    );
+    assert.equal(res.status, 403);
+    assert.equal(((await res.json()) as { error?: string }).error, 'forbidden');
+  });
+
+  it('a non-confirmable field (a key-mover) is refused BEFORE the row is read', async () => {
+    // work is null: if the route read the row, the stub would throw. It must
+    // refuse on the field name first.
+    const { db } = fixFieldDb({ id: 4, role: 'contributor', firebase_uid: 'uid-123456' }, null);
+    for (const field of ['title', 'authors', '__proto__']) {
+      const res = await post(
+        'fix-field',
+        { onBehalfOf: 'uid-123456', subject: fixSubject, changes: [{ field }], dryRun: true },
+        fixEnv(db),
+      );
+      assert.equal(res.status, 400, field);
+      assert.equal(((await res.json()) as { error?: string }).error, 'field_not_confirmable');
+    }
+  });
+
+  it('a subject that is not a work is refused', async () => {
+    const { db } = fixFieldDb({ id: 4, role: 'contributor', firebase_uid: 'uid-123456' }, null);
+    const res = await post(
+      'fix-field',
+      { onBehalfOf: 'uid-123456', subject: { entity: 'club', id: 1 }, changes: [{ field: 'series' }], dryRun: true },
+      fixEnv(db),
+    );
+    assert.equal(res.status, 400);
+  });
+
+  it('PROPOSE returns the current before values, and writes nothing', async () => {
+    const { db, captured } = fixFieldDb(
+      { id: 4, role: 'contributor', firebase_uid: 'uid-123456' },
+      workRow({ series: 'Stormlight', description: 'A book.' }),
+    );
+    const res = await post(
+      'fix-field',
+      { onBehalfOf: 'uid-123456', subject: fixSubject, changes: [{ field: 'series' }, { field: 'description' }], dryRun: true },
+      fixEnv(db),
+    );
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { outcome?: string; before?: Record<string, string> };
+    assert.equal(body.outcome, 'dryrun');
+    assert.deepEqual(body.before, { series: 'Stormlight', description: 'A book.' });
+    assert.equal(captured.length, 0);
+  });
+
+  it('PRESS with a stale before is a 409 changed_underneath — nothing written', async () => {
+    const { db, captured } = fixFieldDb(
+      { id: 4, role: 'contributor', firebase_uid: 'uid-123456' },
+      workRow({ series: 'The Stormlight Archive' }), // someone already fixed it
+    );
+    const res = await post(
+      'fix-field',
+      {
+        onBehalfOf: 'uid-123456',
+        subject: fixSubject,
+        changes: [{ field: 'series', before: 'Stormlight', after: 'Stormlight Archive' }],
+        dryRun: false,
+      },
+      fixEnv(db),
+    );
+    assert.equal(res.status, 409);
+    const body = (await res.json()) as { reason?: string; field?: string; nowIs?: string; message?: string };
+    assert.equal(body.reason, FIELD_CHANGED_REASON);
+    assert.equal(body.field, 'series');
+    assert.equal(body.nowIs, 'The Stormlight Archive');
+    assert.match(String(body.message), /Someone changed the series/);
+    assert.equal(captured.length, 0, 'the compare-and-set refused before any write');
+  });
+
+  it('PRESS with a matching before APPLIES, stamped how:human and noted for the lane', async () => {
+    const { db, captured } = fixFieldDb(
+      { id: 4, role: 'contributor', firebase_uid: 'uid-123456' },
+      workRow({ series: 'Stormlight' }),
+    );
+    const res = await post(
+      'fix-field',
+      {
+        onBehalfOf: 'uid-123456',
+        subject: fixSubject,
+        changes: [{ field: 'series', before: 'Stormlight', after: 'The Stormlight Archive' }],
+        dryRun: false,
+      },
+      fixEnv(db),
+    );
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { outcome?: string; message?: string };
+    assert.equal(body.outcome, 'applied');
+    assert.match(String(body.message), /updated the series/i);
+    // The audit stamp: a change_log INSERT with changed_how = 'human' and the
+    // confirm note. changeLogInsert binds: batchId, entity, entityId, field,
+    // old, new, changed_by, changed_how, note.
+    const log = captured.find((s) => s.sql.includes('INSERT INTO change_log'));
+    assert.ok(log, 'an audit row was written in the same batch as the update');
+    assert.equal(log!.binds[7], 'human', 'design 7.2: a confirmed write is human, not auto');
+    assert.match(String(log!.binds[8]), /^gabi-discord.*confirm/);
   });
 });
