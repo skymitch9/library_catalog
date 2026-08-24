@@ -1,8 +1,10 @@
 # library_catalog — Known Issues, Waivers & Exceptions
 
 > **Audience:** Claude/Kiro sessions and the owner. **Status:** TRACKED.
-> Last verified: **2026-08-23** — every entry below was re-measured that day
-> against production and the repo; four were retired as no longer true.
+> Last verified: **2026-08-23** — KI-5 was re-measured that day against
+> production; four entries were retired as no longer true. KI-6 and KI-7 were
+> added the same day and measured against the repo and a LOCAL D1, not
+> production.
 >
 > **This file exists to stop the same non-bug being re-reported every month.**
 > It holds things that ARE wrong, or look wrong, and are deliberately tolerated.
@@ -43,6 +45,84 @@ asked and says so, so a run distinguishes *"asked, nothing there"* from *"never
 asked"* (commit `4a52589`). Removal condition: **the control ISBN returns 200**.
 If it is still 522 in a month, delete the rung rather than keep a dead one —
 a ladder step that always fails is a step that always has to be explained.
+
+---
+
+## KI-6 · Work 514 still shows one Elantris audiobook, not two — `ACCEPTED`
+
+**Symptom.** The household owns two *Elantris* recordings and
+<https://library.heygabi.ai/works/514> shows one, with no series. Migration 0390
+made the schema able to hold both; the MATCHER still finds only one, so the
+second row is never written.
+
+**Measured 2026-08-23**, against `audiobook_catalog/site/catalog.csv` lines 995
+and 996. `cleanTitleWithSeries` leaves row 996 untouched — the series-suffix
+strip only fires when the series name is a suffix, and here *Elantris* is the
+whole title of row 995 and the PREFIX of row 996. Folded:
+
+| | key | chars |
+|---|---|---|
+| ours | `elantris` | 8 |
+| row 996 | `elantris tenth anniversary special edition` | 42 |
+
+8/42 = **0.19** against the containment floor of **0.6** — the same floor that
+stops *Mistborn* reaching *Mistborn: The Final Empire*. `matchIndexedWorkAll`
+removes the early return and loosens nothing, so the refusal stands.
+
+⚠️ **The design note in `docs/TODO.md` part B said the early return was the
+cause. It was not** — that is why this entry exists rather than a fix.
+
+**Why tolerated.** Both routes out are decisions, not refactors, and each has a
+cost the schema change does not:
+
+- teach `cleanAudiobookTitle` that *"Tenth Anniversary Special Edition"* is
+  edition decoration — but that function produces STORED keys (`work_key`,
+  Firestore document ids), so changing it is a migration, not an edit; **or**
+- move the 0.6 containment floor — which `matching.ts`'s own header permits only
+  *with evidence*, and the evidence on file (Firefight, The Wandering Inn) argues
+  the floor is if anything too low for books.
+
+**What would change it.** An owner decision on which of the two, **or** a third
+route: a `work_alias` row on work 514 for the Tenth Anniversary title, which the
+sweep already asks under and which costs one INSERT and no code. That is the
+cheapest fix and needs no threshold moved.
+
+---
+
+## KI-7 · Containment can file two different VOLUMES as two editions — `WATCHING`
+
+**Symptom.** `matchIndexedWorkAll` returns every row that passes the unchanged
+gates, so where containment already matched the wrong volume it can now return
+two of them, and the work page would call them "editions".
+
+**Measured 2026-08-23** over the 1,026 distinct cleaned titles in
+`catalog.csv`. Titles reaching more than one row: **22** with a naive
+implementation, **8** after refusing to re-offer an adjudicated ambiguous fold,
+**6** after `collapseAmbiguousFolds`. Those 6 are three pairs seen from both
+sides:
+
+| Pair | Verdict |
+|---|---|
+| *The Fellowship of the Ring* — dramatized vs standard | ✅ a genuine second edition |
+| *Portal to Nova Roma* — `The Rhine, Book 3` vs `Venice` | ⚠️ two different volumes |
+| *Survival in Another World…* / *Reincarnated as a Sword* — `(Light Novel)` vs not | ⚠️ two different volumes |
+
+**Why tolerated.** ⚠️ **It is not a new defect.** `matchIndexedWork` matches one
+of the very same rows today and has since containment existed; the multi-result
+form turns one wrong claim into two, it does not invent the claim. And a tighter
+gate here would make `matchIndexedWorkAll` refuse what `matchIndexedWork`
+accepts, breaking the invariant the sweep relies on — that `lookupAll(...)[0]`
+is what `lookup` would have returned.
+
+**Affected works today: 0.** Measured against the local catalog (117 works):
+no work reaches more than one edition. All six hits are Light Novel / manga
+series this catalog does not hold as works.
+
+**What would change it.** Either number moving: works reaching >1 edition rising
+above 0 where the extra row is a different VOLUME, or the 6 becoming more than a
+handful. The discriminator, if it is ever needed, already exists as data — both
+sides state `series_index_sort` and they DISAGREE in every wrong pair above —
+but spending it means accepting the invariant break, so it is a decision.
 
 ---
 

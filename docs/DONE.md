@@ -17,6 +17,79 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ Two audio editions per work — the schema half — DONE 2026-08-23
+
+Branch `feature/audio-edition-holdings` (worktree `C:/lcw/holdings`), seven
+commits, **local only — nothing deployed and no remote write**. Moved here whole
+from `TODO.md`'s "START HERE NEXT SESSION" part B; the original text follows
+unedited, and what it got right and wrong is stated first.
+
+### What shipped
+
+| | |
+|---|---|
+| `migrations/0390_audiobook_edition_holding.sql` | New table keyed `(work_id, audio_key)` + `narrator`; rows copied across; `audiobook_holding` recreated as a VIEW picking one WHOLE row per work; `idx_audiobook_holding_series` recreated on the table |
+| `packages/core/src/matching.ts` | `matchIndexedWorkAll` — same rungs, same author gate, same `disambiguateByVolume` refusals, no early return. `matchIndexedWork` untouched |
+| `scripts/lib/audiobooks.mjs` | `lookupAll`; `narrator` exposed from the CSV; `lookup` unchanged |
+| `scripts/backfill-audiobook-holdings.mjs` | Writes every edition, upserts on `(work_id, audio_key)`, stale-marks per EDITION, reports editions written and works with >1 |
+| `packages/db` / API / UI | `listAudioEditions`, `audioEditions` on `GET /api/works/:id`, `OtherVersions` lists all editions when there is more than one |
+
+Verified LOCALLY: migration applies (window functions inside a view work on D1's
+SQLite); the view returns the copied row; a two-edition probe proved the view
+picks the series-bearing row. `npm run typecheck` exit 0; `npm test` 1356 pass,
+0 fail. Sweep against local: 117 works, 1,081 audiobook rows, 36 matched, 36
+editions, **0 works with more than one edition**.
+
+### ⚠️ What it did NOT close, and why
+
+**Work 514 still shows one Elantris audiobook.** The design below assumed the
+early return in `matchIndexedWork` was what lost the Tenth Anniversary edition.
+**Measured, it is not** — with the early return gone, row 996 is still refused by
+the 60% containment floor (8 chars against 42, a ratio of 0.19). The schema can
+now hold two; the matcher finds one. Recorded as `KI-6` in `KNOWN_ISSUES.md`
+with the three routes out, the cheapest of which is a `work_alias` row and no
+code at all.
+
+Two defects in the new function were found by MEASURING it against the real CSV
+rather than reasoning about it, and both were the flat-lie shape: an adjudicated
+ambiguous fold coming back through containment (*The Eminence in Shadow* vols
+1–5 handed to one work), and containment returning a whole fold the exact tier
+never adjudicated (*Reincarnated as a Sword*, ten volumes). 22 → 8 → 6 titles
+reaching more than one row. The residue is `KI-7`.
+
+**Not verified:** anything against production — 0390 is not applied remotely,
+nothing was deployed, and the rendered work page was never loaded in a browser.
+
+### The original item, moved whole
+
+### B. The schema change — two audio editions per work
+
+`audiobook_holding.work_id` is `PRIMARY KEY` (migration 0010), so one work holds
+one audio row. The household owns **two** Elantris audiobooks; the row that
+landed is the full-cast one, whose CSV entry has no series, while *Elantris –
+Tenth Anniversary Special Edition* carries `series=Elantris, volume 1`. **The
+edition that knew the series lost the tie**, which is exactly what the owner saw.
+
+**Design chosen — a table plus a VIEW, so no reader changes.** Only
+`backfill-audiobook-holdings.mjs` writes this table (verified by grep), so the
+view is safe:
+
+1. `CREATE TABLE audiobook_edition_holding` — same columns, PK `(work_id, audio_key)`, plus `narrator`.
+2. Copy the existing rows in.
+3. `DROP TABLE audiobook_holding`, then recreate it as a **VIEW** picking one WHOLE row per work:
+   `ROW_NUMBER() OVER (PARTITION BY work_id ORDER BY (series IS NULL), (index_display IS NULL), audio_key)`.
+
+⚠️ **Whole row, never merged fields.** Preferring the row that knows more is the
+right display call; stitching `title` from one edition onto `series` from
+another would be a Frankenstein row, and the `title` column exists precisely so a
+wrong match is noticeable.
+
+⚠️ **The script cannot yet produce more than one row.** It keeps a single `best`
+from `index.lookup(...)`. `scripts/lib/audiobooks.mjs` needs a `lookupAll` —
+**that is the real work in B, not the migration.**
+
+Migration number: next is **0390** (0380 is the latest).
+
 ## ✅ Cover sweep, both instances — DONE 2026-08-22/23
 
 Queued as *"40 books need covers"* on 2026-08-22 when Open Library was
