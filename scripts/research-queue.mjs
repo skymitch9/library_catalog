@@ -57,11 +57,30 @@
  * reason the queue page's counter comes from the run log. Prints an estimate
  * before it starts and the real figure when it stops.
  *
+ * ⚠️ **Whose key pays follows the INSTANCE, not the run** — the same custody rule
+ * `backfill-missing-covers.mjs` carries, and for the same reason. Until
+ * 2026-08-23 this script read `ANTHROPIC_API_KEY` with no idea which catalogue
+ * it was aimed at, so a padhard run would have been billed to the OWNER, and
+ * silently: nothing printed a key name. It now reads
+ * `ANTHROPIC_API_KEY_FRIEND_SAM` under `--friend`, prints which NAME it used,
+ * and **refuses to fall back** to the main key rather than quietly spending the
+ * wrong person's money. `--llm-key-from=main` is the one deliberate, explicit
+ * way out of that, and it says so loudly on every run.
+ *
+ * ⚠️ And the second half of the same defect: `--friend` was **parsed and then
+ * dropped**. `buildMirror`/`flush` passed only `{ remote }` to `query`/`execute`,
+ * so `dbName` fell to `library-catalog` whatever was asked for — a `--friend`
+ * run would have mirrored MAIN, spent money on MAIN's gaps and written the
+ * answers back to MAIN, while its own output said padhard. The key was never the
+ * only thing that was instance-blind here.
+ *
  * ## Usage
  *
  *     tsx scripts/research-queue.mjs --remote                  # estimate only
  *     tsx scripts/research-queue.mjs --remote --commit          # run the lot
  *     tsx scripts/research-queue.mjs --remote --commit --limit 5
+ *     tsx scripts/research-queue.mjs --friend --remote          # padhard, estimate only
+ *     tsx scripts/research-queue.mjs --friend --remote --commit --llm-key-from=main
  */
 
 import { execFileSync } from 'node:child_process';
@@ -127,12 +146,91 @@ const SAFE_COLUMNS = new Set([
 // ---------------------------------------------------------------------------
 
 /**
+ * A misconfiguration is not a crash, and must not read like one.
+ *
+ * ⚠️ Every refusal in this file is a person having typed the wrong thing, or a
+ * drop-box being blank — answers, not faults. Thrown, they arrive as a Node
+ * stack trace with the sentence that matters buried in it, which is the same
+ * mistake as showing somebody a bare HTTP status. So they print and exit,
+ * matching `backfill-missing-covers.mjs`. A genuine bug still throws and still
+ * gets its stack.
+ */
+function fatal(message) {
+  console.error(`⚠️ ${message}`);
+  process.exit(1);
+}
+
+/**
+ * ⚠️ **The escape hatch from the whose-key-pays rule, spelled the same way
+ * `backfill-missing-covers.mjs` spells it** — one name for one idea, so nobody
+ * has to remember two.
+ *
+ * `--llm-key-from=main` makes a `--friend` run spend `ANTHROPIC_API_KEY` instead
+ * of `ANTHROPIC_API_KEY_FRIEND_SAM`. Long and ugly on purpose: the default
+ * (refuse, never fall back) is a custody rule, and an exception you can take by
+ * accident is not an exception, it is a bug. Validated up front so a typo in the
+ * one flag that redirects a bill costs nothing.
+ */
+function keyOverride({ friend, commit }) {
+  const arg = process.argv.find((a) => a === '--llm-key-from' || a.startsWith('--llm-key-from='));
+  if (!arg) return false;
+  const value = arg.includes('=') ? arg.slice(arg.indexOf('=') + 1).trim() : '';
+  if (value !== 'main') {
+    fatal(
+      `--llm-key-from: the only accepted value is "main"` +
+        (value ? `, not "${value}".` : ' — it takes an "=", e.g. --llm-key-from=main.') +
+        '\n   It exists to bill a --friend run to the OWNER\'s ANTHROPIC_API_KEY. There is' +
+        '\n   nothing else to point it at: the default already reads the key belonging to' +
+        '\n   whichever instance the run is aimed at.',
+    );
+  }
+  if (!friend) {
+    fatal(
+      '--llm-key-from=main does nothing without --friend: a main-instance run already\n' +
+        '   reads ANTHROPIC_API_KEY. Stopping rather than pretending the flag changed something.',
+    );
+  }
+  if (!commit) {
+    fatal(
+      '--llm-key-from=main does nothing without --commit: an estimate asks nothing and\n' +
+        '   spends nothing. Stopping rather than pretending the flag changed something.',
+    );
+  }
+  return true;
+}
+
+/**
+ * The NAME of the key this run may spend — the instance's, or the owner's when
+ * the override was typed out in full.
+ *
+ * ⚠️ Padhard's spend goes on HER key. `apps/worker/.dev.vars` lines 79–85 settle
+ * that, and the line is a **drop-box that lives blank**: the runbook
+ * (`docs/access/second-instance.md`) pastes a key in, pipes it to
+ * `wrangler secret put ANTHROPIC_API_KEY --env friend`, then blanks it again.
+ * Her Worker holds the key; a secret store cannot be read back. So an empty line
+ * is the resting state and not a misconfiguration — see `KNOWN_ISSUES.md` KI-7.
+ */
+function keyNameFor({ friend, overridden }) {
+  if (overridden) return 'ANTHROPIC_API_KEY';
+  return friend ? 'ANTHROPIC_API_KEY_FRIEND_SAM' : 'ANTHROPIC_API_KEY';
+}
+
+/**
  * ⚠️ `.dev.vars` is gitignored, so a worktree does not have one — and this
  * script is most useful from a worktree. Falls back to the main checkout, found
  * through git rather than guessed, so nothing has to be copied around.
+ *
+ * ⚠️ **The env-var short-circuit is per-NAME too.** It used to read
+ * `process.env.ANTHROPIC_API_KEY` before anything else, which under `--friend`
+ * is precisely the silent fallback this function exists to refuse — an exported
+ * shell variable would have billed padhard to the owner with nothing printed.
+ *
+ * ⚠️ **Never falls back to another name.** If the name it was told to use is
+ * empty, it throws and says which name and why; it does not go looking for a key
+ * that would work.
  */
-function anthropicKey() {
-  if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY;
+function anthropicKey(keyName) {
+  if (process.env[keyName]) return process.env[keyName];
 
   const candidates = [path.join(ROOT, 'apps/worker/.dev.vars')];
   try {
@@ -148,16 +246,24 @@ function anthropicKey() {
   for (const file of candidates) {
     if (!existsSync(file)) continue;
     for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
-      const match = /^\s*ANTHROPIC_API_KEY\s*=\s*(.*)$/.exec(line);
+      const match = new RegExp(`^\\s*${keyName}\\s*=\\s*(.*)$`).exec(line);
       if (!match) continue;
       const value = match[1].trim().replace(/^["']|["']$/g, '');
       if (value) return value;
     }
   }
 
-  throw new Error(
-    'No ANTHROPIC_API_KEY. Set it in the environment, or put it in apps/worker/.dev.vars ' +
-      `(looked in: ${candidates.join(', ')}).`,
+  return fatal(
+    `No ${keyName}. Set it in the environment, or put it in apps/worker/.dev.vars ` +
+      `(looked in: ${candidates.join(', ')}).` +
+      (keyName === 'ANTHROPIC_API_KEY_FRIEND_SAM'
+        ? '\n\n   ⚠️ That line is a DROP-BOX and blank is its resting state, not a fault:' +
+          '\n   paste her key after the `=`, run, then blank it again. Runbook:' +
+          '\n   docs/access/second-instance.md. KNOWN_ISSUES.md KI-7.' +
+          '\n   ⚠️ Do NOT substitute ANTHROPIC_API_KEY here — that bills padhard to the' +
+          '\n   owner. If that IS the decision, it has a flag that says so out loud:' +
+          '\n   --llm-key-from=main. Never a quiet edit of this line.'
+        : ''),
   );
 }
 
@@ -213,11 +319,11 @@ function makeShim(db) {
 // Mirror, and diff it back
 // ---------------------------------------------------------------------------
 
-function buildMirror({ remote }) {
+function buildMirror({ remote, friend }) {
   const names = MIRRORED.map((t) => `'${t}'`).join(', ');
   const schema = query(
     `SELECT sql FROM sqlite_master WHERE tbl_name IN (${names}) AND sql IS NOT NULL ORDER BY type DESC`,
-    { remote },
+    { remote, friend },
   );
   if (schema.length === 0) throw new Error('no schema came back — is the database migrated?');
 
@@ -229,7 +335,7 @@ function buildMirror({ remote }) {
 
   const snapshots = new Map();
   for (const table of MIRRORED) {
-    const rows = query(`SELECT * FROM ${table}`, { remote });
+    const rows = query(`SELECT * FROM ${table}`, { remote, friend });
     if (rows.length > 0) {
       const columns = Object.keys(rows[0]);
       const stmt = db.prepare(
@@ -283,7 +389,7 @@ function diff(db, table, snapshot) {
   return statements;
 }
 
-function flush(db, snapshots, { remote, commit }) {
+function flush(db, snapshots, { remote, friend, commit }) {
   // ⚠️ `research_run` first, and this order is a constraint rather than a
   // preference. **D1 enforces foreign keys**, and both `gap_verdict.run_id` and
   // `research_finding.run_id` point at the run this book just produced. Writing
@@ -300,7 +406,7 @@ function flush(db, snapshots, { remote, commit }) {
   if (statements.length === 0 || !commit) return statements.length;
   try {
     for (let i = 0; i < statements.length; i += 40) {
-      execute(statements.slice(i, i + 40), { remote });
+      execute(statements.slice(i, i + 40), { remote, friend });
     }
   } catch (err) {
     // ⚠️ wrangler reports a rejected batch as a bare non-zero exit with nothing
@@ -318,13 +424,55 @@ function flush(db, snapshots, { remote, commit }) {
 const money = (cents) => `$${(cents / 100).toFixed(2)}`;
 
 async function main() {
-  const { commit, remote, limit } = parseFlags();
-  const where = remote ? 'PRODUCTION' : 'the LOCAL dev database';
-  console.log(`Mirroring ${where}…`);
+  const { commit, remote, friend, limit } = parseFlags();
 
-  const { db, snapshots } = buildMirror({ remote });
+  /*
+   * ⚠️ Named and printed BEFORE the mirror is built, and before a single call is
+   * made. The whole defect this replaces was that nothing said which key was
+   * being spent, so the wrong answer was indistinguishable from the right one
+   * until the invoice arrived. `dbName` in `lib/d1.mjs` refuses `--friend`
+   * without `--remote` for the mirror-image reason.
+   */
+  const overridden = keyOverride({ friend, commit });
+  const keyName = keyNameFor({ friend, overridden });
+  const whose = overridden
+    ? "the OWNER's key — billed to him, for padhard's books"
+    : friend
+      ? "padhard — Samantha's own key"
+      : "main instance — the owner's key";
+
+  const where = remote ? 'PRODUCTION' : 'the LOCAL dev database';
+  const which = friend ? 'library-catalog-2nd (padhard)' : 'library-catalog (main)';
+  console.log(`Target: ${where} ${which}`);
+  console.log(`key in use: ${keyName}  (${whose})${commit ? '' : '  — estimate only, nothing is spent'}`);
+  if (overridden) {
+    console.log(
+      `⚠️ OVERRIDE ACTIVE — --llm-key-from=main.\n` +
+        `   This is a --friend run (${which}) and it is NOT using\n` +
+        `   ANTHROPIC_API_KEY_FRIEND_SAM. Every cent below lands on ${keyName}.\n` +
+        `   Without this flag the run refuses to fall back; that default is unchanged.`,
+    );
+  }
+
+  /*
+   * ⚠️ Resolved BEFORE the mirror, not with the `env` object below it. Building
+   * the mirror is four full remote table reads; discovering after all of them
+   * that the drop-box is blank wastes the slow part of the run to reach an
+   * answer that was knowable in a file read. Fail fast, and fail before the
+   * expensive thing.
+   *
+   * ⚠️ Only called under `--commit`, so an estimate against padhard still works
+   * with her line blank — an estimate asks nothing and spends nothing. The env
+   * property keeps the Worker's own name whatever the source key was called:
+   * `runDetailsResearch` reads `env.ANTHROPIC_API_KEY` and knows nothing about
+   * instances.
+   */
+  const apiKey = commit ? anthropicKey(keyName) : 'estimate-only';
+
+  console.log(`Mirroring ${where} ${which}…`);
+  const { db, snapshots } = buildMirror({ remote, friend });
   const shim = makeShim(db);
-  const env = { DB: shim, ANTHROPIC_API_KEY: commit ? anthropicKey() : 'estimate-only' };
+  const env = { DB: shim, ANTHROPIC_API_KEY: apiKey };
 
   // Asked of the policy rather than of SQL, so the list can never disagree with
   // what `claimRun` will accept.
@@ -389,7 +537,7 @@ async function main() {
 
     // ⚠️ Per book. The call is already paid for; losing it to a later crash is
     // the failure this guards.
-    const written = flush(db, snapshots, { remote, commit });
+    const written = flush(db, snapshots, { remote, friend, commit });
     if (written > 0) console.log(`      flushed ${written} statement(s)`);
   }
 
@@ -397,21 +545,23 @@ async function main() {
   // queue page counts from `research_run`.
   const after = query(
     'SELECT COUNT(*) AS runs, COALESCE(SUM(input_tokens),0) AS tin, COALESCE(SUM(output_tokens),0) AS tout FROM research_run',
-    { remote },
+    { remote, friend },
   )[0];
   const centsAfter = estimateCents(after.tin, after.tout);
 
   console.log(
     `\nRan ${done} lookup(s), ${failed} failed.\n` +
       `This run cost ${money(centsAfter - centsBefore)} in tokens ` +
-      `(${after.tin - spentBefore.tin} in, ${after.tout - spentBefore.tout} out).\n` +
+      `(${after.tin - spentBefore.tin} in, ${after.tout - spentBefore.tout} out) on ${keyName}` +
+      (overridden ? ` (⚠️ --llm-key-from=main — padhard's books, the owner's key)` : '') +
+      `.\n` +
       `Research has now cost ${money(centsAfter)} in total over ${after.runs} run(s).\n` +
       '⚠️ Tokens only. Anthropic bills its server-side web searches separately.',
   );
 
   const left = query(
     `SELECT COUNT(*) AS n FROM research_finding WHERE review_state = 'pending'`,
-    { remote },
+    { remote, friend },
   )[0];
   console.log(`${left.n} finding(s) left pending — a value that could not be used.`);
 }
