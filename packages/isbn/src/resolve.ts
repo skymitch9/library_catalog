@@ -58,6 +58,20 @@ export interface BookCandidate {
   format: EditionFormat | null;
   source: 'openlibrary' | 'googlebooks' | 'bookcover-api';
   sourceUrl: string | null;
+  /**
+   * The blurb, when the rung that answered carries one. **Optional, and only
+   * Google Books fills it** — Open Library's `/api/books?jscmd=data` has no
+   * description field at all, and its work record does (see `workDescription`
+   * in `works.ts`), which is a different call at a different level.
+   *
+   * ⚠️ Optional rather than `string | null` deliberately: `BookCandidate` is
+   * constructed in four places across two packages, and a required field would
+   * make adding a blurb to one rung a compile error in the three that cannot
+   * supply one. `undefined` here means *this rung does not carry descriptions*;
+   * `null` means *it does, and this book has none*. The free details ladder
+   * reads it and needs to tell those apart.
+   */
+  description?: string | null;
 }
 
 export interface RungTrace {
@@ -257,6 +271,7 @@ interface GbVolume {
     imageLinks?: { thumbnail?: string; smallThumbnail?: string };
     infoLink?: string;
     industryIdentifiers?: { type?: string; identifier?: string }[];
+    description?: string;
   };
 }
 
@@ -309,6 +324,10 @@ export async function lookupGoogleBooksByIsbn(
       format: null,
       source: 'googlebooks',
       sourceUrl: vi.infoLink ?? null,
+      // `null`, never `undefined`: this rung DOES carry descriptions, so a book
+      // with none is an answer ("Google has no blurb for this") rather than the
+      // absence of the capability. See `description` on `BookCandidate`.
+      description: (vi.description ?? '').trim() || null,
     },
   ];
 }
