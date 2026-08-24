@@ -7,24 +7,31 @@ import type { WorkAudioEdition, WorkAudiobookHolding, WorkEbookHolding } from '.
 import type { CopyView } from './Copies.js';
 import type { EditionView } from './Editions.js';
 import type { PeerHoldingView } from './PeerLibraries.js';
+import { editionKindLabel } from '../lib/formats.js';
 import { STATUS_LABEL } from '../lib/statuses.js';
-import { deriveShelfView } from '../lib/shelf-view.js';
+import { deriveShelfView, type ShelfCopy } from '../lib/shelf-view.js';
 
 /**
  * "On your shelf" — the redesign's answer to the first question a book page is
- * asked: *what do I have, and where else can I get it?* Hoisted near the top,
- * above the demoted detail, it leads with ONE hero holding (the format, big,
- * with the special-edition badges that make one printing different from
- * another) and then an availability row saying whether the same book is also in
- * the audio library, the ebook pool, or a peer's library.
+ * asked: *what do I have, and where else can I get it?*
  *
- * ⚠️ **A SUMMARY, not a second source of truth.** The detailed rows still live
- * where they always did — `Copies`/`Editions` for what you hold, `OtherVersions`
- * for the audiobook, `EbookShadow` for the pool, `PeerLibraries` for peers. This
- * panel is the glance; those are the record. It is the same summary/detail split
- * the series page already makes (a "N on audio" chip there, the full row here).
- * All of it derives from `deriveShelfView`, so the chip and the panel below it
- * cannot come to disagree about what is held.
+ * ## The owner's model (2026-08-24): the EDITION LIST *is* the shelf
+ *
+ * There is no single "hero" any more. The shelf is a list of **editions** — the
+ * versions of the book that exist — one row each, and it is **never empty**.
+ * Every row is marked **Owned** (you hold a copy, or it is a file you have) or
+ * **Wanted** (it exists, you have no copy); a book you own nothing of still shows
+ * its primary version as Wanted. Copies **nest under** the edition they are a
+ * copy of, so the common one-book-one-printing case is exactly one clean row and
+ * a second physical copy of the same printing is a nested line, not a rival list.
+ *
+ * ⚠️ **A SUMMARY, not a second source of truth.** The full editable record still
+ * lives where it always did — `Editions` for the printings, `Copies` for what you
+ * hold, `OtherVersions` for the audiobook, `EbookShadow` for the pool,
+ * `PeerLibraries` for peers — now split across the edit box's **Editions** and
+ * **Copies** tabs. This panel is the glance; those are the record. All of it
+ * derives from `deriveShelfView`, so the shelf here and the tabs below it cannot
+ * come to disagree about what is held.
  */
 export function OnYourShelf({
   copies,
@@ -43,7 +50,7 @@ export function OnYourShelf({
   ebookHolding: WorkEbookHolding | null;
   peerHoldings: PeerHoldingView[];
 }) {
-  const { hero, availability, hasAnything } = deriveShelfView({
+  const { rows, availability } = deriveShelfView({
     copies,
     editions,
     audiobookHolding,
@@ -53,52 +60,75 @@ export function OnYourShelf({
     peerHoldings,
   });
 
-  // Nothing owned and nothing available anywhere — say nothing, the house rule.
-  if (!hasAnything) return null;
-
   const hasAvailability =
     availability.audio !== null || availability.ebook || availability.peers.length > 0;
 
   return (
-    <section className="panel shelf-hero">
+    <section className="panel shelf">
       <h3>On your shelf</h3>
 
-      {hero ? (
-        <div className="shelf-hero__lead">
-          <span className={`shelf-hero__format shelf-hero__format--${hero.medium ?? 'unknown'}`}>
-            {hero.format ?? 'Recorded'}
-          </span>
-          <div className="shelf-hero__facts">
-            {/* The status word, when a copy backs the hero — "On the shelf",
-                "Lent out". Absent when the hero is inferred from a printing with
-                no copy row, where a status would be an invention. */}
-            {hero.status && (
-              <span className="shelf-hero__status">{STATUS_LABEL[hero.status] ?? hero.status}</span>
+      <ul className="plain shelf-rows">
+        {rows.map((row) => (
+          <li key={row.key}>
+            <div className="shelf-row">
+              {/* The version, as a format pill — the one-glance "what is this".
+                  Filled accent when you own it; a quiet outline when it is only
+                  wanted, so the eye lands on what is actually on the shelf. */}
+              <span
+                className={`shelf-row__format shelf-row__format--${row.medium ?? 'unknown'}${
+                  row.owned ? '' : ' shelf-row__format--wanted'
+                }`}
+              >
+                {row.format ?? 'This book'}
+              </span>
+              <span
+                className={`shelf-row__own shelf-row__own--${row.owned ? 'owned' : 'wanted'}`}
+                title={
+                  row.owned
+                    ? 'A copy is on your shelf, or it is a file you hold'
+                    : 'This version exists; you have no copy of it yet'
+                }
+              >
+                {row.owned ? 'Owned' : 'Wanted'}
+              </span>
+              {row.kind && <span className="shelf-row__kind">{editionKindLabel(row.kind)}</span>}
+              {row.badges.length > 0 && (
+                <span className="shelf-row__badges">
+                  {row.badges.map((b) => (
+                    <span key={b.key} className="special-badge" title={b.title}>
+                      {b.label}
+                    </span>
+                  ))}
+                </span>
+              )}
+            </div>
+
+            {/* The vendor's own name for the printing, and what it binds — the
+                two things that tell one format's two printings apart. */}
+            {(row.editionName || row.collects) && (
+              <p className="muted small shelf-row__meta">
+                {[row.editionName, row.collects ? `contains ${row.collects}` : null]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </p>
             )}
-            {hero.badges.length > 0 && (
-              <span className="shelf-hero__badges">
-                {hero.badges.map((b) => (
-                  <span key={b.key} className="special-badge" title={b.title}>
-                    {b.label}
-                  </span>
+
+            {/* Copies nest UNDER the edition. One copy: its facts inline, no
+                second bullet. More than one of the same printing: a short list,
+                which is the only case where a copy earns its own line. */}
+            {row.copies.length === 1 && <CopyFacts copy={row.copies[0]!} />}
+            {row.copies.length > 1 && (
+              <ul className="plain shelf-row__copies">
+                {row.copies.map((c) => (
+                  <li key={c.id}>
+                    <CopyFacts copy={c} withStatus />
+                  </li>
                 ))}
-              </span>
+              </ul>
             )}
-            {(hero.location || hero.condition) && (
-              <span className="muted small">
-                {[hero.location, hero.condition].filter(Boolean).join(' · ')}
-              </span>
-            )}
-            {hero.otherHeldCount > 0 && (
-              <span className="muted small">
-                and {hero.otherHeldCount} more cop{hero.otherHeldCount === 1 ? 'y' : 'ies'} — see below
-              </span>
-            )}
-          </div>
-        </div>
-      ) : (
-        <p className="muted small">Not recorded on your shelf yet.</p>
-      )}
+          </li>
+        ))}
+      </ul>
 
       {hasAvailability && (
         <div className="shelf-hero__avail">
@@ -136,5 +166,56 @@ export function OnYourShelf({
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * The facts about one nested copy — status (when it is not a plain on-shelf
+ * copy), who has it, where it lives, its condition. Rendered as one muted line
+ * so a copy stays visually subordinate to the edition it hangs off.
+ *
+ * ⚠️ The person is shown only when the server sent a name (`personName`): a
+ * redacted or unrecorded person both arrive null, and the panel cannot tell them
+ * apart, so it says nothing rather than "nobody has it" — the same rule
+ * `Copies.tsx` documents at length.
+ */
+function CopyFacts({ copy, withStatus }: { copy: ShelfCopy; withStatus?: boolean }) {
+  const person =
+    copy.personName && copy.status === 'lent'
+      ? `Lent to ${copy.personName}`
+      : copy.personName && copy.status === 'borrowed'
+        ? `Borrowed from ${copy.personName}`
+        : copy.personName && copy.status === 'sold'
+          ? `Sold to ${copy.personName}`
+          : null;
+
+  const parts = [
+    // A single owned copy needs no "On the shelf" — the Owned pill already said
+    // it. A lent/borrowed one always names its state, because that is the point.
+    withStatus || copy.status !== 'owned' ? (STATUS_LABEL[copy.status] ?? copy.status) : null,
+    person,
+    copy.location,
+    copy.condition,
+  ].filter(Boolean);
+
+  // Per-copy badges appear only in the multi-copy list (`withStatus`), where they
+  // say WHICH copy is signed; the single-copy case already shows them on the row
+  // above, so repeating them here would be noise.
+  const showBadges = withStatus && copy.badges.length > 0;
+  if (parts.length === 0 && !showBadges) return null;
+
+  return (
+    <p className="muted small shelf-row__copy">
+      {parts.join(' · ')}
+      {showBadges && (
+        <span className="shelf-row__copy-badges">
+          {copy.badges.map((b) => (
+            <span key={b.key} className="special-badge" title={b.title}>
+              {b.label}
+            </span>
+          ))}
+        </span>
+      )}
+    </p>
   );
 }
