@@ -29,7 +29,8 @@ import { Reviews } from '../components/Reviews.js';
 import { Tbr } from '../components/Tbr.js';
 import { Watches } from '../components/Watches.js';
 import { WorkFields } from '../components/WorkFields.js';
-import { formatLabel, shouldShowDriveLinks } from '../lib/formats.js';
+import { formatLabel } from '../lib/formats.js';
+import { deriveWorkView, type WorkDetail } from '../lib/work-view.js';
 import { Link, universePath } from '../router.js';
 
 /**
@@ -46,104 +47,10 @@ import { Link, universePath } from '../router.js';
  * and what you almost always want from a book page is the book.
  */
 
-interface WorkDetail {
-  work: {
-    id: number;
-    title: string;
-    subtitle: string | null;
-    /** Null for a book added without an author — see EditTitleAuthor. */
-    authors: string | null;
-    series: string | null;
-    seriesIndexDisplay: string | null;
-    /**
-     * Where it sorts, and — by owner rule 2026-08-19 — the VOLUME itself.
-     * `seriesIndexDisplay` is the optional designation a printing physically
-     * carries; `docs/info/volume-numbers.md` is the canonical semantics.
-     */
-    seriesIndexSort: number | null;
-    /** One series slot, several physical volumes. Human-set only (0360). */
-    multiVolumePrinting: boolean;
-    firstPublished: number | null;
-    description: string | null;
-    coverUrl: string | null;
-    /** 'ok' | 'standin' | null. ⚠️ null is "nobody has looked", not "fine". */
-    coverStatus: 'ok' | 'standin' | null;
-    /**
-     * The illustrator credit, or null for *unrecorded*. Migration 0130.
-     * ⚠️ Null renders as NOTHING — not an empty label. Most novels have none,
-     * and absence already says it; same rule as `universe: null` below.
-     */
-    illustrator: string | null;
-    workKey: string;
-  };
-  /**
-   * The shared world this book belongs to, or null.
-   *
-   * ⚠️ **null is the ordinary answer.** Most of this catalog is children's
-   * picture books that belong to no universe and are correctly filed; the head
-   * renders nothing at all for them. Same reading as `coverStatus: null`
-   * ("nobody has looked") and a null `editionKind` ("ordinary") — an absence
-   * here is never a gap, a badge or a job.
-   */
-  universe: string | null;
-  editions: EditionView[];
-  copies: CopyView[];
-  /** Open and resolved both — see `listWatchesForWork`. Rides along with the work. */
-  watches: Watch[];
-  /**
-   * What the sibling audiobook catalog holds for this work, or null — see
-   * `getAudiobookHolding` in `@lc/db`. Rides along with the work for the same
-   * reason `watches` does: it is a fact about the book, not a second request.
-   */
-  audiobookHolding: WorkAudiobookHolding | null;
-  /**
-   * Every audiobook edition of this work — migration 0390, `listAudioEditions`
-   * in `@lc/db`. Beside `audiobookHolding`, not instead of it, and ordered the
-   * same way, so `[0]` is the edition that field describes. Empty on a book
-   * with no audio; length 2 is the case the migration exists for.
-   */
-  audioEditions: WorkAudioEdition[];
-  /**
-   * How many recordings of this book the household holds **now** —
-   * `countAudioEditions` in `@lc/db`, and the number the owner asked to see
-   * (2026-08-23: *"have it say 2 on the physical and ebook libraries"*).
-   *
-   * ⚠️ **Not `audioEditions.length`, and it must not be replaced by it.** That
-   * list carries STALE editions on purpose so each can be shown with a caveat;
-   * this counts only the ones the sibling catalog still confirms. One live and
-   * one stale edition is legitimately two rows and the number one.
-   *
-   * Optional: an API response cached from before this field existed must render
-   * exactly what it rendered before, never "0 audiobooks".
-   */
-  audioEditionCount?: number;
-  /**
-   * The shared pool's ebook holding cache — migration 0310, phase 4 of the
-   * ebook split. Runs BESIDE the edition rows, never instead of them; see
-   * `EbookShadow`. Null is the ordinary case (physical-only book).
-   */
-  ebookHolding: WorkEbookHolding | null;
-  peerHoldings: Array<{
-    peerId: string;
-    peerLabel: string;
-    detailUrl: string | null;
-    formats: string | null;
-  }>;
-  reading: {
-    read_state: string;
-    started_on: string | null;
-    finished_on: string | null;
-    read_format: string | null;
-    /**
-     * `'human' | 'rating' | null`. Migration 0070.
-     *
-     * ⚠️ NULL is "unrecorded", not "asserted" — the same reading as
-     * `cover_status`. Only a positive `'rating'` may be labelled as derived;
-     * captioning a NULL row would put a claim on screen that nothing observed.
-     */
-    read_state_how: string | null;
-  } | null;
-}
+// ⚠️ `WorkDetail` — the shape of the `/api/works/:id` response — now lives in
+// `../lib/work-view.ts`, beside `deriveWorkView`, so the worker's contract test
+// can read the exact fields this page consumes. Moved 2026-08-24 with the
+// outage guards; the render-critical `editions.find(...)` moved with it.
 
 /**
  * The book's number — `#269` — the identifier this household actually uses in
@@ -259,13 +166,27 @@ export function WorkPage({
   if (error) return <main>Could not load that book: {error}</main>;
   if (!detail) return <main className="muted">Loading…</main>;
 
-  const { work, editions, copies, reading } = detail;
-  const watches = detail.watches ?? [];
-  const canTrack = me.capabilities.includes('trackReading');
-  // The first edition that names a file. Whichever format it is, its name is the
-  // best search term Drive will ever get for this book.
-  const fileEdition = editions.find((e) => e.source_url) ?? null;
-  const showDrive = shouldShowDriveLinks(editions);
+  // ⚠️ Every field the page renders is read out of the response HERE, in one
+  // firebase-free helper, so it can be exercised without a DOM — see
+  // `../lib/work-view.ts`. `fileEdition` is the `editions.find(...)` the
+  // 2026-08-24 outage crashed on; it lives behind `deriveWorkView` and its
+  // render smoke-test now.
+  const {
+    work,
+    editions,
+    copies,
+    reading,
+    watches,
+    fileEdition,
+    showDrive,
+    canTrack,
+    audioEditions,
+    audioEditionCount,
+    peerHoldings,
+    audiobookHolding,
+    ebookHolding,
+    universe,
+  } = deriveWorkView(detail, me);
 
   return (
     <main>
@@ -325,15 +246,15 @@ export function WorkPage({
               places have addresses now, so the status bar shows where this
               goes and a long-press offers "open in new tab". The series link
               above is still a button only because it predates that. */}
-          {detail.universe && (
+          {universe && (
             <p className="universe-tag">
               Part of{' '}
               <Link
-                to={universePath(detail.universe)}
+                to={universePath(universe)}
                 className="universe-tag__link"
-                title={`Everything this catalog holds from ${detail.universe}`}
+                title={`Everything this catalog holds from ${universe}`}
               >
-                {detail.universe}
+                {universe}
               </Link>
             </p>
           )}
@@ -459,7 +380,7 @@ export function WorkPage({
           by side until phase 5 prunes the ebook editions, and this panel is
           the visible evidence that gate needs. Renders nothing on the
           ordinary physical-only book. */}
-      <EbookShadow editions={editions} holding={detail.ebookHolding} />
+      <EbookShadow editions={editions} holding={ebookHolding} />
 
       <Copies
         workId={workId}
@@ -484,13 +405,13 @@ export function WorkPage({
           chip showed it, and a book with no series, or nobody happening to
           open that page, hid it completely). */}
       <OtherVersions
-        holding={detail.audiobookHolding}
-        editions={detail.audioEditions ?? []}
-        audioEditionCount={detail.audioEditionCount}
+        holding={audiobookHolding}
+        editions={audioEditions}
+        audioEditionCount={audioEditionCount}
         ourSeries={work.series}
       />
 
-      <PeerLibraries holdings={detail.peerHoldings} />
+      <PeerLibraries holdings={peerHoldings} />
 
       {/* Under Copies (and OtherVersions, which renders nothing on most books)
           because an accessory belongs to a copy — a plushie arrived in a

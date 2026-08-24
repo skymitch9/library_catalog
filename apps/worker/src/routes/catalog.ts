@@ -60,6 +60,7 @@ import { universeFor, universeIndex } from '@lc/universes';
 import type { AppBindings } from '../env.js';
 import { withCopyPeople } from '../lib/copy-person.js';
 import { describeError } from '../lib/describe-error.js';
+import { buildWorkDetailResponse } from '../lib/work-detail-response.js';
 import { shadowStrictCreate } from '../lib/strict-shadow.js';
 import { universeFacet, universeIdsFor } from '../lib/universes.js';
 import { capabilityDenied, requireCapability } from '../middleware/auth.js';
@@ -428,47 +429,37 @@ export const catalogRoutes = new Hono<AppBindings>()
       }));
     }
 
-    return c.json({
-      work,
-      // The full edition list (physical + ebook printings) the work page renders
-      // and `.find()`s over. Computed above but dropped from this response in a
-      // refactor; WorkPage.tsx destructures it and crashes the whole page when it
-      // is undefined — every work went blank. Restored 2026-08-24.
-      editions,
-      // ⚠️ WHO has the book is redacted HERE, on the way out, and by the one
-      // rule (`lib/copy-person.ts`): an editor sees the name, the linked person
-      // sees their own row, everybody else gets nulls and keeps the status
-      // word. Never filtered in the query — a reader who may not see the name
-      // must still see that the copy exists and is lent, or the book reads as
-      // missing from the shelf instead of out of the house.
-      copies: await withCopyPeople(c.env.DB, copies, user),
-      reading,
-      watches,
-      audiobookHolding,
-      audioEditions,
-      /** How many recordings the household holds NOW — see `countAudioEditions`. */
-      audioEditionCount,
-      ebookHolding,
-      peerHoldings,
-      /**
-       * Which shared world this book belongs to — the tier above its series —
-       * or null.
-       *
-       * ⚠️ **null is the ordinary answer and the page must render nothing for
-       * it.** Most of this catalog is children's picture books that belong to
-       * no universe and are perfectly filed; a badge, a dash or an "unknown"
-       * here would turn 90% of the shelf into a worklist. Same reading as a
-       * NULL `cover_status` ("nobody looked") and a NULL `edition_kind`
-       * ("ordinary").
-       *
-       * Resolved in memory from the prebuilt index — no query, no I/O. It rides
-       * along with the work rather than being a second request because it is a
-       * line in the page header, and a header that grew an extra fact after
-       * paint is the one place a late arrival misleads. Same argument
-       * `watches` makes above.
-       */
-      universe: universeFor(universeIndex, { title: work.title, series: work.series }),
-    });
+    // ⚠️ Shaped through the ONE builder, never an inline literal here. The
+    // 2026-08-24 outage was a field silently dropped from this object; the
+    // builder plus `work-detail-contract.test.ts` make that a red test instead
+    // of a blank site. See `lib/work-detail-response.ts` for the whole story.
+    //
+    // Notes that used to live on the individual keys, kept because they are
+    // load-bearing:
+    //  · `copies` is redacted HERE, on the way out, by `lib/copy-person.ts` — an
+    //    editor sees the borrower's name, the linked person sees their own row,
+    //    everyone else gets nulls and keeps the status word. Never filtered in
+    //    the query: a reader who may not see the name must still see the copy is
+    //    lent, or the book reads as missing rather than out of the house.
+    //  · `universe` is null for most books and the page draws nothing for it —
+    //    same reading as a NULL `cover_status` ("nobody looked"). Resolved in
+    //    memory from the prebuilt index, no query, and rides along because a
+    //    header that grew a fact after paint is where a late arrival misleads.
+    return c.json(
+      buildWorkDetailResponse({
+        work,
+        editions,
+        copies: await withCopyPeople(c.env.DB, copies, user),
+        reading,
+        watches,
+        audiobookHolding,
+        audioEditions,
+        audioEditionCount,
+        ebookHolding,
+        peerHoldings,
+        universe: universeFor(universeIndex, { title: work.title, series: work.series }),
+      }),
+    );
   })
 
   /**
