@@ -69,6 +69,38 @@ same shared `readingLists` collection; a spin-the-TBR there is a separate build
 reduced-motion path, and localStorage persistence were not exercised in a real
 browser.
 
+### ➕ Addendum 2026-08-24 — DICE + CARDS themes shipped (branch `feature/tbr-dice-cards`)
+
+The two drop-in STUBS are now real animations; the wheel is unchanged and the
+shell was not forked (only the two `Stage` components + their CSS were supplied).
+
+- **Dice** — one 3D CSS die (`DiceStage`) tumbles and settles on a
+  **seed-derived face** (`dieFaceForSeed`, `1..6`), driven exactly like the wheel:
+  a new seed sets the cube's resting rotation plus whole extra tumbles and the
+  inline transition lands it over `DICE_MS`. The face is cosmetic (a d6 can't
+  enumerate a TBR); `pickRandom` still decides the book, the die decides the
+  theatre, both from the same seed so they can't disagree.
+- **Cards** — a face-down deck (`CardsStage`) fans and riffles while the shell is
+  `spinning`, then the seed's `cardDrawSlot` card lifts and **flips (rotateY) to
+  reveal the pick's cover**. Flip is phase-driven, so React's `spinning → done`
+  transition animates it.
+- **Reduced motion** — mirrors the wheel: the shell goes straight to `done`
+  (`dieTumbleTurns` returns 0, the card starts face-up), and the CSS
+  `prefers-reduced-motion` block kills the die transition and the deck/flip
+  animations belt-and-braces. No motion, result shown at once.
+- **The landing maths is a pure leaf** — `apps/web/src/lib/tbr-stage-anim.ts`
+  (no React/DOM/`import.meta.env`), pinned by
+  `apps/web/test/tbr-stage-anim.test.ts` (13 cases: determinism, `1..6` /
+  in-fan range incl. negative seeds, the opposite-faces-sum-to-7 cube invariant,
+  reduced-motion → 0 turns). The theme picker now offers wheel / dice / cards,
+  all three persisted per-browser as before.
+
+**Verify (this branch, `CATALOG_PLATFORM_DIR` = read-only sibling):**
+`npm run typecheck` exit 0 · `npm test` **1591 pass / 0 fail** (+13 new) ·
+`npm run build` succeeds. **NOT verified: no pixels seen** — neither the dice
+tumble, the card shuffle/flip, nor their reduced-motion paths were exercised in a
+real browser; the 3D-transform look is unwitnessed.
+
 ## ✅ Alias-aware research retry — BUILT 2026-08-24 (branch `feature/alias-aware-research`, NOT deployed)
 
 **BUILT — owner runs the paid re-ask when ready (it re-opens a paid question).**
