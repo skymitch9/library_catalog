@@ -168,54 +168,37 @@ asked afresh every time he pauses?
 
 ---
 
-## ☐ Say the NUMBER of audiobooks, not a bare audio mark — owner decision 2026-08-23
+## ☐ The EBOOK library's half of "say 2" — belongs to `audiobook_catalog`
 
-> Owner, 2026-08-23, verbatim: *"have it say 2 on the physical and ebook
-> libraries; on audiobook have them be different since they're different files
-> being served."*
+The physical library's half shipped on `feature/audio-edition-count` and is in
+[`DONE.md`](DONE.md) with the whole design; this is the piece that decision left
+open, filed here only because the ask was made here. ⚠️ **Move it to that repo's
+TODO when it is picked up, and do not reach into that repo from this one.**
 
-The follow-up to migration 0390 (see [`DONE.md`](DONE.md) "part B"). The schema
-can hold two recordings of one work; every surface that says *"also on audio"*
-still says it as a **bare mark**, so a household that owns two *Elantris*
-audiobooks reads exactly the same as one that owns one.
+> Owner, 2026-08-23: *"have it say 2 on the physical and ebook libraries."*
 
-**The three catalogues get three different answers, and that is the decision:**
+`ebooks.heygabi.ai` is `audiobook_catalog`'s `site/ebooks.html`, proxied by the
+`ebooks-door` Worker. Two files there, measured 2026-08-23:
 
-| Catalogue | What it must show |
-|---|---|
-| **Physical library** — `library.heygabi.ai` + `padhard` (this repo) | the **number** when it is more than one: "2 audiobooks", a `2` on the ladder chip |
-| **Ebook library** — `ebooks.heygabi.ai` (served from `audiobook_catalog`) | the same number — ⚠️ **not this repo's file**, see below |
-| **Audiobook site** — `audiobooks.heygabi.ai` | ⚠️ **unchanged.** Two rows stay two rows; they are two different files being served |
-
-⚠️ **Counting rungs and counting recordings are two different questions.** The
-series ladder's *"N of M on audio"* counts **rungs held**, and a volume owned in
-two recordings is still ONE rung. Do not let the edition count reach the
-coverage arithmetic.
-
-**Scope, measured 2026-08-23** — `git grep` over `apps/` + `packages/`:
-
-| Surface | File | Verdict |
+| File | What it does today | What it would need |
 |---|---|---|
-| Work page "Other versions available" | `apps/web/src/components/OtherVersions.tsx` | already one row per edition (0390); wants the number said in words |
-| Series ladder chip | `apps/web/src/pages/SeriesDetailPage.tsx` `Media` | ⚠️ **the bare mark** — and it is SUPPRESSED when every rung agrees, so the count has to reach `signatureOf` or it can never render |
-| Series coverage counts | `packages/db/src/series.ts` · `@lc/core` `seriesCompleteness` | must NOT change — see the warning above |
-| Collection grid / work card | `apps/web/src/components/WorkList.tsx` | no audio mark exists there today; nothing to change |
-| CSV export | `packages/db/src/export.ts` | deliberately excluded (it holds decisions, not caches) — nothing to change |
-| GABI browse/suggest | `apps/worker/src/routes/gabi-delegated.ts` | sees the ~90-pair mapping table only; no audio mark |
+| `scripts/build_ebook_manifest.py` (record built ~line 1097; join at `sibling_catalog_match`, ~line 403) | writes `beside_audiobook` and `audiobook_title` per ebook, from ONE matched `catalog.csv` row | a new manifest field — a COUNT of the sibling rows this ebook matches |
+| `site/ebooks.html` (~line 930, `.eb-audio-link` styled at ~line 386) | renders a bare *"Also on audio →"* link when `beside_audiobook` is set | say the number when it is more than one |
 
-**⚠️ The ebook library is the OTHER repo, and it cannot count today.**
-`ebooks.heygabi.ai` is `audiobook_catalog`'s `site/ebooks.html`; its "Also on
-audio →" link is driven by `beside_audiobook`, written by
-`scripts/build_ebook_manifest.py`. That join (`sibling_catalog_match`) returns
-**one** row by design and `_agreed_row` **refuses** an ambiguous pair outright —
-so a second edition there removes the mark rather than doubling it. Dispatch
-that repo separately; do not reach into it from here.
+⚠️ **It cannot count today, and the reason is not a missing field.** The join is
+deliberately conservative: `_agreed_row` (~line 389) **refuses** two rows that
+name different covers as *"genuinely ambiguous"*, so a second edition there
+removes the mark rather than doubling it.
 
-**⚠️ Work 514 will still read "1" after this lands, and that is `KI-6`, not a
-bug in this work.** The matcher finds one Elantris recording; `library_work_id`
-is stamped on exactly one `catalog.csv` row (measured 2026-08-23: **no** work id
-appears twice in 1,081 rows). The count plumbing is correct and the number will
-move the moment `KI-6`'s `work_alias` row exists.
+⚠️ **`library_work_id` is not the shortcut it looks like.** The CSV carries it,
+stamped by `app/library_link.py` — but measured 2026-08-23 across all **1,081**
+rows, **no work id appears twice**: row 995 (*Elantris*, full cast) is stamped
+514 and row 996 (*Tenth Anniversary*) is stamped nothing, because that side's
+matcher refuses it for the same reason `KI-6` does. Counting by
+`library_work_id` would report 1 for every book in the catalogue.
+
+**Ask before building:** does the ebook site count rows in `catalog.csv`, or
+wait for `KI-6` to be settled so both sides agree on what a second edition is?
 
 ---
 

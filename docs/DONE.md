@@ -17,6 +17,124 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ Say the NUMBER of audiobooks, not a bare mark — the LIBRARY half — DONE 2026-08-23
+
+Branch `feature/audio-edition-count` (worktree `C:/lcw/audiocount`), cut from
+`feature/audio-edition-holdings` at 9d4f121. Three commits, **local only —
+nothing deployed, no remote write, no migration**. Moved here whole from
+`TODO.md`; the original item follows unedited, and what it got right and wrong
+is stated first. The ebook-library half it did NOT close is back in
+[`TODO.md`](TODO.md) as its own item, because it is another repo's file.
+
+### What shipped
+
+| | |
+|---|---|
+| `packages/db/src/works.ts` | `audioEditionCountSql(workIdExpr)` — the ONE definition of the number, a scalar subquery over `audiobook_edition_holding` filtered `stale_at IS NULL`; `countAudioEditions(db, workId)` |
+| `packages/db/src/series.ts` | the ladder's audio query carries `edition_count` through the same fragment; `AudiobookRef.editionCount`, floored at 1 |
+| `apps/worker/src/routes/catalog.ts` | `audioEditionCount` on `GET /api/works/:id`, in the `Promise.all` that was already there |
+| `apps/web/src/components/OtherVersions.tsx` | `audioCountLine` — *"You own 2 audiobooks of this book."*, silent below two |
+| `apps/web/src/components/RungMedia.tsx` | **NEW.** The chip vocabulary lifted out of `SeriesDetailPage` unchanged, plus the count: `AUDIO 2`, and `audioToken` putting the count in the rung SIGNATURE |
+| `apps/web/src/styles.css` | `.fmt__count` — inside the chip, not a second chip beside it |
+| tests | `packages/db/test/audio-edition-count.test.ts` (10) · `apps/web/test/audio-edition-chip.test.ts` (13) · `other-versions.test.ts` (+7) |
+
+`npm run typecheck` exit 0. `npm test` **1,386 pass, 0 fail** (1,363 before the
+UI commit, 1,356 on the parent branch).
+
+### ⚠️ The two things that were nearly missed, and are worth keeping
+
+**1. A chip change alone would have rendered nothing.** The ladder suppresses
+every chip the moment all held rungs agree (`{!uniformMedia && <Media …>}`), and
+*Elantris* is ONE held volume in its series — so its signature is trivially
+"shared" and its chips vanish. The count had to go into `signatureOf`. This is
+the same failure the function's own comment already records about folding
+`matchedVia` away, met a second time; both are invisible except in a browser.
+
+**2. `listAudioEditions(...).length` is NOT the count.** That list deliberately
+carries STALE rows so each can be shown with a caveat; the count says the
+household *owns* them, so it filters `stale_at IS NULL`. One live and one
+withdrawn edition legitimately renders **two rows and no count line**. Deriving
+the badge from the array would have promoted a withdrawn match back into "you
+own this" — the flat-lie shape this project keeps finding.
+
+**Coverage did not move and structurally cannot.** A volume owned twice on audio
+is ONE rung held. `seriesCompleteness`, `onAudio`, `maybeOnAudio` and
+`gapsCountingAudio` are fed from the per-work map and the `audiobook_holding`
+view, both one row per work; the count rides along that row as a display fact.
+Pinned in SQL rather than asserted — the view is copied verbatim from migration
+0390 into the test fixture, and adding a second edition is shown not to add a
+row to it.
+
+### ⚠️ What it did NOT close
+
+**Work 514 still reads one recording in real data, and that is `KI-6`.** The
+count plumbing is right; the matcher never writes the second row. Verified by
+inserting the Tenth Anniversary row into a LOCAL D1 by hand: the work-page count
+then reads **2** and the ladder returns exactly **one** row for work 514 carrying
+`edition_count: 2`. The number moves the day `KI-6`'s `work_alias` row exists,
+with no further code.
+
+**Not verified:** anything against production — nothing deployed, no `--remote`,
+and the rendered page was never loaded in a browser. The 1-vs-2 rendering is
+pinned by tests calling the real components, not by pixels.
+
+**The ebook library was deliberately not touched.** It is `audiobook_catalog`'s
+`site/ebooks.html`; the exact two files and the reason it cannot count today are
+in [`TODO.md`](TODO.md).
+
+### The original item, moved whole
+
+### Say the NUMBER of audiobooks, not a bare audio mark — owner decision 2026-08-23
+
+> Owner, 2026-08-23, verbatim: *"have it say 2 on the physical and ebook
+> libraries; on audiobook have them be different since they're different files
+> being served."*
+
+The follow-up to migration 0390 (see [`DONE.md`](DONE.md) "part B"). The schema
+can hold two recordings of one work; every surface that says *"also on audio"*
+still says it as a **bare mark**, so a household that owns two *Elantris*
+audiobooks reads exactly the same as one that owns one.
+
+**The three catalogues get three different answers, and that is the decision:**
+
+| Catalogue | What it must show |
+|---|---|
+| **Physical library** — `library.heygabi.ai` + `padhard` (this repo) | the **number** when it is more than one: "2 audiobooks", a `2` on the ladder chip |
+| **Ebook library** — `ebooks.heygabi.ai` (served from `audiobook_catalog`) | the same number — ⚠️ **not this repo's file**, see below |
+| **Audiobook site** — `audiobooks.heygabi.ai` | ⚠️ **unchanged.** Two rows stay two rows; they are two different files being served |
+
+⚠️ **Counting rungs and counting recordings are two different questions.** The
+series ladder's *"N of M on audio"* counts **rungs held**, and a volume owned in
+two recordings is still ONE rung. Do not let the edition count reach the
+coverage arithmetic.
+
+**Scope, measured 2026-08-23** — `git grep` over `apps/` + `packages/`:
+
+| Surface | File | Verdict |
+|---|---|---|
+| Work page "Other versions available" | `apps/web/src/components/OtherVersions.tsx` | already one row per edition (0390); wants the number said in words |
+| Series ladder chip | `apps/web/src/pages/SeriesDetailPage.tsx` `Media` | ⚠️ **the bare mark** — and it is SUPPRESSED when every rung agrees, so the count has to reach `signatureOf` or it can never render |
+| Series coverage counts | `packages/db/src/series.ts` · `@lc/core` `seriesCompleteness` | must NOT change — see the warning above |
+| Collection grid / work card | `apps/web/src/components/WorkList.tsx` | no audio mark exists there today; nothing to change |
+| CSV export | `packages/db/src/export.ts` | deliberately excluded (it holds decisions, not caches) — nothing to change |
+| GABI browse/suggest | `apps/worker/src/routes/gabi-delegated.ts` | sees the ~90-pair mapping table only; no audio mark |
+
+**⚠️ The ebook library is the OTHER repo, and it cannot count today.**
+`ebooks.heygabi.ai` is `audiobook_catalog`'s `site/ebooks.html`; its "Also on
+audio →" link is driven by `beside_audiobook`, written by
+`scripts/build_ebook_manifest.py`. That join (`sibling_catalog_match`) returns
+**one** row by design and `_agreed_row` **refuses** an ambiguous pair outright —
+so a second edition there removes the mark rather than doubling it. Dispatch
+that repo separately; do not reach into it from here.
+
+**⚠️ Work 514 will still read "1" after this lands, and that is `KI-6`, not a
+bug in this work.** The matcher finds one Elantris recording; `library_work_id`
+is stamped on exactly one `catalog.csv` row (measured 2026-08-23: **no** work id
+appears twice in 1,081 rows). The count plumbing is correct and the number will
+move the moment `KI-6`'s `work_alias` row exists.
+
+---
+
 ## ✅ Two audio editions per work — the schema half — DONE 2026-08-23
 
 Branch `feature/audio-edition-holdings` (worktree `C:/lcw/holdings`), seven
