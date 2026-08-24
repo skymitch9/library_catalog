@@ -174,18 +174,34 @@ function matchesFilters(item: PickableItem, filters: PickFilters): boolean {
 }
 
 /**
+ * The candidates a spin may land on, in the canonical order the pick draws
+ * from: gated (anything explicitly `openable: false` removed first, the
+ * format-gating floor), then filtered by every active {@link PickFilters} axis,
+ * then sorted by `id` so the SET — never the array order it arrived in —
+ * decides the outcome.
+ *
+ * Exported because the wheel (and any future themed stage) must display the
+ * very pool {@link pickRandom} chooses from: one implementation of "eligible",
+ * so the animation can never disagree with the choice. Purely functional.
+ */
+export function eligibleItems<T extends PickableItem>(
+  items: readonly T[],
+  filters: PickFilters,
+): T[] {
+  return items
+    .filter((i) => i.openable !== false)
+    .filter((i) => matchesFilters(i, filters))
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
+/**
  * Pick one book to read next.
  *
- * 1. **Gate** — drop anything explicitly `openable: false` (the estate's
- *    format-gating floor), unconditionally.
- * 2. **Filter** — keep the items passing every active {@link PickFilters} axis.
- * 3. **Order** — sort the survivors by `id`, so the choice depends only on the
- *    SET of candidates and the seed, never on the order they arrived in.
- * 4. **Draw** — take the item at `floor(unitFloat(seed) * pool)`.
- *
- * Returns `item: null` when the pool is empty; the caller distinguishes "no TBR
- * at all" (`total === 0`) from "filters matched nothing" (`total > 0`) for its
- * worded empty state. Purely functional — no argument is mutated.
+ * Draws from {@link eligibleItems} — gated, filtered, id-ordered — taking the
+ * one at `floor(unitFloat(seed) * pool)`. Returns `item: null` when the pool is
+ * empty; the caller distinguishes "no TBR at all" (`total === 0`) from "filters
+ * matched nothing" (`total > 0`) for its worded empty state. No argument is
+ * mutated.
  */
 export function pickRandom<T extends PickableItem>(
   items: readonly T[],
@@ -193,15 +209,10 @@ export function pickRandom<T extends PickableItem>(
   seed: number,
 ): PickResult<T> {
   const total = items.length;
+  const ordered = eligibleItems(items, filters);
 
-  // Format-gating first, and on its own: a book the person cannot open is not a
-  // candidate for any filter combination.
-  const openable = items.filter((i) => i.openable !== false);
-  const pool = openable.filter((i) => matchesFilters(i, filters));
+  if (ordered.length === 0) return { item: null, seed, pool: 0, total };
 
-  if (pool.length === 0) return { item: null, seed, pool: 0, total };
-
-  const ordered = [...pool].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   // `index` is always in range — `ordered.length > 0` here and `unitFloat` is
   // in `[0, 1)` — but the checked-index compiler setting cannot prove it, so we
   // clamp to the last element rather than assert non-null.

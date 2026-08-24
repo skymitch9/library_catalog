@@ -13,7 +13,7 @@
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { nextSeed, pickRandom, type PickableItem } from '../src/tbr-picker.js';
+import { eligibleItems, nextSeed, pickRandom, type PickableItem } from '../src/tbr-picker.js';
 
 /** A tiny helper so each fixture only spells out the axis it is testing. */
 function item(id: string, extra: Partial<PickableItem> = {}): PickableItem {
@@ -247,6 +247,38 @@ describe('pickRandom — exclude-last-rerolled', () => {
     assert.equal(r.item, null);
     assert.equal(r.total, 1);
     assert.equal(r.pool, 0);
+  });
+});
+
+describe('eligibleItems — the pool the wheel must show is the pool the pick draws from', () => {
+  it('returns the survivors in id order, gating and filtering applied', () => {
+    const items = [
+      item('c', { format: 'physical' }),
+      item('a', { format: 'physical' }),
+      item('locked', { format: 'physical', openable: false }),
+      item('b', { format: 'audio' }),
+    ];
+    const pool = eligibleItems(items, { format: 'physical' });
+    assert.deepEqual(pool.map((i) => i.id), ['a', 'c']); // sorted, audio + locked gone
+  });
+
+  it('the pick is always a member of the eligible pool for the same filters', () => {
+    const items = [item('a'), item('b'), item('c'), item('d')];
+    const filters = {};
+    let s = SEED;
+    for (let n = 0; n < 30; n++) {
+      const pool = eligibleItems(items, filters);
+      const picked = pickRandom(items, filters, s).item!;
+      assert.ok(pool.some((i) => i.id === picked.id));
+      s = nextSeed(s);
+    }
+  });
+
+  it('does not mutate the input array', () => {
+    const items = [item('c'), item('a'), item('b')];
+    const before = items.map((i) => i.id);
+    eligibleItems(items, {});
+    assert.deepEqual(items.map((i) => i.id), before);
   });
 });
 
