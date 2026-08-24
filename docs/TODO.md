@@ -400,90 +400,44 @@ identify the book**, in its own words:
 Neither needs money and neither needs a deploy. Both need a signed-in human at
 <https://padhard.heygabi.ai/queue>.
 
-## ☐ "Look up" must do the FREE checks first, and the add path must fill more — owner ask, 2026-08-22
+## ☐ Audiobook links after a bulk import, and TWO audio editions — the residue of the free-checks ask
 
-> *"we have a problem with Elantris. item 514 in the library didnt pull from the
-> audiobook catalog even though we own 2 audio editions, and it didnt pull
-> information from the other catalog when i hit look up. so first link them all
-> together, then in missing details make sure when the look up button is hit, it
-> does the free checks first, we have a pipeline use it"*
+> The rest of that ask — the free ladder in front of "look up", and the add path
+> filling series/volume/description — **shipped 2026-08-23** and moved WHOLE to
+> [`DONE.md`](DONE.md) (branch `feature/free-details-ladder`, **not deployed**).
+> Design of record: [`info/free-details-ladder.md`](info/free-details-ladder.md).
+> ⚠️ Its NOT-verified list is real: rung 2 has never run, Google Books answered
+> **400** live, and nothing has been through the deployed route.
 
-### ✅ Half of it is already fixed — the link sweep was just stale
+Three things in that entry did NOT ship, and none of them is a coding oversight:
 
-`scripts/backfill-audiobook-holdings.mjs --remote --commit` run 2026-08-22.
-**121 live holdings of 493 works** (was 92), 296 statements, and **work 514
-Elantris now matches `exact`.** Nothing was broken — the sweep is a *manual
-script* and 401 of 493 works had arrived since it last ran. Same class of
-staleness as the padhard covers above: a hand-run sweep against a catalog being
-loaded live.
+**1. Re-run the link sweep after any bulk import.** `npm run backfill:audiobooks`
+is a *manual script* and always will be: its only source is
+`audiobook_catalog/site/catalog.csv`, a file on disk beside this repo that a
+Worker cannot read. 401 of 493 works had arrived since its last run, which is
+the whole reason work 514 looked broken.
+⚠️ The ladder now degrades instead of returning nothing when the sweep is stale
+— a missing or series-less holding falls through to Open Library — so this is no
+longer urgent. It is still the thing that makes rung 1 answer.
 
-⚠️ **Why it must stay a script, and what that costs.** Its only source is
-`audiobook_catalog/site/catalog.csv`, a file on disk beside this repo — a Worker
-cannot read it. So the link can never be made at scan time by the Worker as
-written, and the sweep has to be re-run after any bulk import. Its own header
-says so.
+**2. 🔴 The household owns TWO Elantris audiobooks and the schema holds ONE.**
+`audiobook_holding.work_id` is a `PRIMARY KEY` (migration 0010). The row that
+landed is the full-cast edition, whose `series` is NULL; the Tenth Anniversary
+Special Edition, which the CSV gives `series=Elantris` volume 1, has nowhere to
+go. **This is being done separately** — `audiobook_holding` becomes a VIEW over a
+new `audiobook_edition_holding` table. Until that lands, the work page names one
+of several audio editions without saying so.
 
-⚠️ **The holding can only ever record ONE audio edition.**
-`audiobook_holding.work_id` is `PRIMARY KEY` (migration 0010). The household
-holds **two** Elantris audiobooks — the full-cast *Elantris* and *Elantris –
-Tenth Anniversary Special Edition* (the CSV gives the second `series=Elantris`,
-volume 1) — and the row that landed is the first, so its `series` and
-`index_display` are NULL. The owner asked about two editions and the schema can
-hold one. **Decide before building:** widen to a per-edition table, or state in
-the UI that this names one of several.
+**3. 🔴 OWNER DECISION — `INDEX_READ_TOKEN`.** The estate index is the ladder's
+best rung, and it is built dark. Turning it on means minting a machine-read
+credential and mounting it in **another repo**
+(`catalog-platform/apps/index-worker/src/index.ts`), which is
+**access-increasing** and so cannot be done unasked. See
+[`info/free-details-ladder.md`](info/free-details-ladder.md) §4.
 
-### 🔴 The real defect: "look up" is paid-only, and skips the estate's own data
-
-`POST /api/research/works/:id/run` → `lib/research-run.ts` → `@lc/research`
-`details.ts`. **There is no free rung anywhere on that path** — no Open Library,
-no Google Books, no sibling catalog. The button spends money to ask the open web
-for facts the estate already holds, which is why Elantris came back with nothing
-from "the other catalog": it was never asked.
-
-**The pipeline the owner means already exists and is already wired one way.**
-`INDEX_URL = "https://index.heygabi.ai"` is set in `apps/worker/wrangler.toml`
-(line 184) and `INDEX_PUSH_TOKEN` is a live secret — confirmed with
-`wrangler secret list` 2026-08-22. But `lib/index-push.ts` is the *only* consumer:
-this Worker **pushes to the index and never reads from it.** The read direction
-(`/api/lookup` exact, `/api/search` ranked) is the missing half, and unlike the
-CSV it IS reachable from a Worker.
-
-### Build order (NOT started — weekly budget at 95%, see below)
-
-1. **A free ladder in front of the paid one**, in `lib/research-run.ts`, in this
-   order, stopping as soon as a field is filled:
-   1. `audiobook_holding` — already in our own D1, costs a JOIN.
-   2. `index.heygabi.ai/api/lookup` — the estate's own cross-catalog row.
-      ⚠️ It carries **series** (with the canonical registry) but is an identity
-      index, not a metadata store — do not expect `description` from it.
-   3. Open Library **`/works/<key>/editions.json`** — ⚠️ `search.json` returns
-      `series: null` for everything; the series lives on the EDITION. This is
-      written down in `info/covers-and-series.md` §3.1 and has been rediscovered
-      twice.
-   4. Google Books by ISBN (key healthy, measured 200 on 2026-08-22).
-   5. **Only then** the LLM. Report per field which rung answered.
-2. **The add path fills series + description** (`routes/scan-jobs.ts`,
-   `applyCandidate`). It already stores title, authors, publisher,
-   `publishedYear` and `coverUrl` from the ISBN ladder; series, volume and
-   description are simply never asked for, so every book added lands incomplete
-   and grows the queue. Same rungs as step 1.
-3. **Re-run the link sweep after any bulk import** — or, better, make step 1's
-   rung 1 tolerate a missing holding by falling through to rung 2, so a stale
-   sweep degrades instead of returning nothing.
-
-**Measured 2026-08-22, both catalogs, for sizing:**
-
-| | Works | No year | No series | No description | No cover |
-|---|---|---|---|---|---|
-| `library-catalog` | 493 | 30 | 138 | 51 | some (514 Elantris among them) |
-| `library-catalog-2nd` | 369 | 1 | 101 | 0 | 27 |
-
-⚠️ **The main catalog grew 452 → 493 during one session on 2026-08-22.** Any plan
-that assumes a fixed row count is wrong by the time it runs.
-
-**Verify:** work 514 shows its audiobook and its series on
-<https://library.heygabi.ai/works/514>, and a "look up" on a book the audiobook
-catalog holds reports a free rung as the source rather than an LLM run.
+**Verify, once the branch is deployed:** work 514 shows its audiobook and its
+series on <https://library.heygabi.ai/works/514>, and a "look up" on a book the
+audiobook catalog holds reports a free rung as the source rather than an LLM run.
 
 ## ✅ GABI unification — ALL PHASES DEPLOYED (2026-08-21)
 

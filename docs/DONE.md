@@ -54,6 +54,173 @@ Health checks were also run and are separately clean: `--remote` **0 broken of
 cover redirecting to an archive.org object answering 503 — left alone, see the
 residue table in the second-instance entry).
 
+## ✅ The free details ladder — BUILT 2026-08-23, on a branch, NOT deployed
+
+Moved here whole from [`TODO.md`](TODO.md) at completion, per the docs standard.
+The original entry follows verbatim below; this block is what actually shipped.
+
+**Branch `feature/free-details-ladder`** — five commits, `npm run typecheck`
+clean, **1,374 tests pass** (1,342 on `main` + 32 new). ⚠️ **Nothing is
+deployed.** Design of record, with the measurements and the NOT-verified list:
+[`info/free-details-ladder.md`](info/free-details-ladder.md).
+
+| Build-order item | Shipped? |
+|---|---|
+| 1. a free ladder in front of the paid one | **yes** — `apps/worker/src/lib/free-details.ts`, wired into `lib/research-run.ts` |
+| 1.1 `audiobook_holding` | **yes**, with the NULL-series fall-through |
+| 1.2 `index.heygabi.ai/api/lookup` | ⚠️ **built DARK** — see below |
+| 1.3 Open Library `editions.json` | **yes**, and it is the rung that answered Elantris |
+| 1.4 Google Books by ISBN | **yes**, but ⚠️ **unverified live** — see below |
+| 1.5 report per field which rung answered | **yes** — `result_json.sources`, `RunView.sources`, and an "answered by:" line on the queue |
+| 2. the add path fills series + description | **yes** — `routes/scan-jobs.ts`, on `waitUntil`, ⚠️ never the LLM |
+| 3. rung 1 tolerates a missing holding | **yes** — that is the fall-through in 1.1 |
+| 3b. re-run the link sweep after a bulk import | **no** — still a manual op, still open in `TODO.md` |
+| "Decide before building": two audio editions, one row | **no** — being done separately as `audiobook_edition_holding` |
+
+**And the paid call is now skipped entirely when the free rungs close every
+field.** The run finishes `done`, records no tokens, and says so in words:
+*"The free checks answered everything, so no paid lookup was made."* A test
+drives that through the real `runDetailsResearch` with a `fetch()` that throws,
+so a regression that reintroduced the model call fails there rather than on the
+invoice.
+
+### 🔴 The one thing that needs the owner, by name
+
+**Rung 2 is implemented and has never run.** `index.heygabi.ai/api/lookup` is
+behind a blanket human Firebase-token check and **no machine-read credential
+exists**. Minting one means mounting it in **another repo** —
+`catalog-platform/apps/index-worker/src/index.ts` — which is an
+**access-INCREASING** change and therefore a decision, not a build step. The
+Worker reads **`INDEX_READ_TOKEN`**; unset (everywhere, today) means the rung is
+skipped with a *named* reason that travels in the response, and nothing guesses
+a value. ⚠️ Its request shape is a guess modelled on the projection we push —
+whoever sets that token should expect to adjust the parse.
+
+### What the build MEASURED that nobody had written down
+
+⚠️ **Open Library numbers a series `"Elantris (1)"`** — a bare number in
+brackets, no marker word. `detectSeriesFromTitle` refuses that shape on purpose
+("Summoner 6" is a title, not a volume), so the whole string was landing in
+`work.series` and work 514 came out of the first exercise run as a series
+literally named **"Elantris (1)"**, volume NULL — a shelf of one beside the real
+one. Found by running the ladder against a real local D1 (Miniflare, all 35
+migrations) and the live API, **not** by reading the code. Fixed in `a128dfa`;
+`Name (N)` and `Name #N` are now read, and only when `parseVolumeNumber` gets a
+position out of the token, so *"Discworld (UK)"* keeps its name.
+
+### ⚠️ NOT verified — read this before quoting the work as finished
+
+- **Rung 2, at all.** No credential exists.
+- **Google Books live.** The exercise run got **`googlebooks 400`** from the real
+  API with the key in `.dev.vars`. Not diagnosed; `lookupGoogleBooksByIsbn` was
+  not touched. Its tests use a stubbed fetch and are **not** evidence the live
+  rung works.
+- **The deployed route, the queue page, and a real barcode through the scan
+  path.** Nothing was deployed; `POST /works/:id/run` needs an owner sign-in, so
+  the ladder was driven directly against D1 instead.
+- The original entry's own **Verify** line below — work 514 on
+  `library.heygabi.ai` — is therefore still owed, and needs a deploy first.
+
+**The verification that WAS done**, same work, real D1, live Open Library: the
+audiobook rung fell through (row present, series NULL) and said why; the index
+rung named its missing token; Open Library filled `series 'Elantris'`,
+`series_index_sort 1` and the description; `stillOpen: []`, meaning the research
+route would make **no paid call at all**. It took **17 s**, mostly Open Library
+latency plus the mandatory ~1/s pacing — comfortable inside the research route,
+less so inside the scan path's ~30 s `waitUntil`, which degrades to "the columns
+stay blank" if it is ever cut short.
+
+---
+
+*The original TODO entry, verbatim:*
+
+### ☐ "Look up" must do the FREE checks first, and the add path must fill more — owner ask, 2026-08-22
+
+> *"we have a problem with Elantris. item 514 in the library didnt pull from the
+> audiobook catalog even though we own 2 audio editions, and it didnt pull
+> information from the other catalog when i hit look up. so first link them all
+> together, then in missing details make sure when the look up button is hit, it
+> does the free checks first, we have a pipeline use it"*
+
+### ✅ Half of it is already fixed — the link sweep was just stale
+
+`scripts/backfill-audiobook-holdings.mjs --remote --commit` run 2026-08-22.
+**121 live holdings of 493 works** (was 92), 296 statements, and **work 514
+Elantris now matches `exact`.** Nothing was broken — the sweep is a *manual
+script* and 401 of 493 works had arrived since it last ran. Same class of
+staleness as the padhard covers above: a hand-run sweep against a catalog being
+loaded live.
+
+⚠️ **Why it must stay a script, and what that costs.** Its only source is
+`audiobook_catalog/site/catalog.csv`, a file on disk beside this repo — a Worker
+cannot read it. So the link can never be made at scan time by the Worker as
+written, and the sweep has to be re-run after any bulk import. Its own header
+says so.
+
+⚠️ **The holding can only ever record ONE audio edition.**
+`audiobook_holding.work_id` is `PRIMARY KEY` (migration 0010). The household
+holds **two** Elantris audiobooks — the full-cast *Elantris* and *Elantris –
+Tenth Anniversary Special Edition* (the CSV gives the second `series=Elantris`,
+volume 1) — and the row that landed is the first, so its `series` and
+`index_display` are NULL. The owner asked about two editions and the schema can
+hold one. **Decide before building:** widen to a per-edition table, or state in
+the UI that this names one of several.
+
+### 🔴 The real defect: "look up" is paid-only, and skips the estate's own data
+
+`POST /api/research/works/:id/run` → `lib/research-run.ts` → `@lc/research`
+`details.ts`. **There is no free rung anywhere on that path** — no Open Library,
+no Google Books, no sibling catalog. The button spends money to ask the open web
+for facts the estate already holds, which is why Elantris came back with nothing
+from "the other catalog": it was never asked.
+
+**The pipeline the owner means already exists and is already wired one way.**
+`INDEX_URL = "https://index.heygabi.ai"` is set in `apps/worker/wrangler.toml`
+(line 184) and `INDEX_PUSH_TOKEN` is a live secret — confirmed with
+`wrangler secret list` 2026-08-22. But `lib/index-push.ts` is the *only* consumer:
+this Worker **pushes to the index and never reads from it.** The read direction
+(`/api/lookup` exact, `/api/search` ranked) is the missing half, and unlike the
+CSV it IS reachable from a Worker.
+
+### Build order (NOT started — weekly budget at 95%, see below)
+
+1. **A free ladder in front of the paid one**, in `lib/research-run.ts`, in this
+   order, stopping as soon as a field is filled:
+   1. `audiobook_holding` — already in our own D1, costs a JOIN.
+   2. `index.heygabi.ai/api/lookup` — the estate's own cross-catalog row.
+      ⚠️ It carries **series** (with the canonical registry) but is an identity
+      index, not a metadata store — do not expect `description` from it.
+   3. Open Library **`/works/<key>/editions.json`** — ⚠️ `search.json` returns
+      `series: null` for everything; the series lives on the EDITION. This is
+      written down in `info/covers-and-series.md` §3.1 and has been rediscovered
+      twice.
+   4. Google Books by ISBN (key healthy, measured 200 on 2026-08-22).
+   5. **Only then** the LLM. Report per field which rung answered.
+2. **The add path fills series + description** (`routes/scan-jobs.ts`,
+   `applyCandidate`). It already stores title, authors, publisher,
+   `publishedYear` and `coverUrl` from the ISBN ladder; series, volume and
+   description are simply never asked for, so every book added lands incomplete
+   and grows the queue. Same rungs as step 1.
+3. **Re-run the link sweep after any bulk import** — or, better, make step 1's
+   rung 1 tolerate a missing holding by falling through to rung 2, so a stale
+   sweep degrades instead of returning nothing.
+
+**Measured 2026-08-22, both catalogs, for sizing:**
+
+| | Works | No year | No series | No description | No cover |
+|---|---|---|---|---|---|
+| `library-catalog` | 493 | 30 | 138 | 51 | some (514 Elantris among them) |
+| `library-catalog-2nd` | 369 | 1 | 101 | 0 | 27 |
+
+⚠️ **The main catalog grew 452 → 493 during one session on 2026-08-22.** Any plan
+that assumes a fixed row count is wrong by the time it runs.
+
+**Verify:** work 514 shows its audiobook and its series on
+<https://library.heygabi.ai/works/514>, and a "look up" on a book the audiobook
+catalog holds reports a free rung as the source rather than an LLM run.
+
+---
+
 ## ✅ Cover sweep, both instances — DONE 2026-08-22/23
 
 Queued as *"40 books need covers"* on 2026-08-22 when Open Library was

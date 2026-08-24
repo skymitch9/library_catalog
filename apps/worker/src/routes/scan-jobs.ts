@@ -39,6 +39,7 @@ import {
 import { coverFrom, resolveIsbn, searchOpenLibrary, wasRefused, type BookCandidate } from '@lc/isbn';
 import type { AppBindings, Env } from '../env.js';
 import { describeError } from '../lib/describe-error.js';
+import { freeDetailsFor, FREE_LADDER_FIELDS } from '../lib/free-details.js';
 import {
   isPhotoMediaType,
   readShelf,
@@ -65,13 +66,27 @@ import { requireCapability } from '../middleware/auth.js';
  * unacceptable for a photograph you have already paid to have read. Nothing in
  * the vision path was written until a job could survive a reload.
  *
- * ## ⚠️ Nothing here writes to the catalog
+ * ## ⚠️ Nothing here DECIDES what enters the catalog
  *
  * Every line is a proposal. `addedWorkId` is set by the client *after* the
  * ordinary `POST /api/works` + `/api/editions` + `/api/copies`, and this route
  * only records that it happened. Phase 0 measured a wrong ISBN resolving to a
  * confident, well-formed, wrong book; a spine read is weaker evidence than an
  * ISBN, so the review step is not ceremony here either.
+ *
+ * ⚠️ **This heading used to read "Nothing here writes to the catalog", and
+ * since 2026-08-23 that is no longer literally true** — recording an
+ * `addedWorkId` now kicks the free details ladder at the work the client just
+ * created (`lib/free-details.ts`, and see the PATCH route below). The rule that
+ * actually mattered is unchanged and is what the heading now says: nothing here
+ * decides that a book exists, or which book it is. The ladder only fills three
+ * columns on a row somebody has already confirmed, only where they are blank,
+ * and never touches title or authors.
+ *
+ * ⚠️ **And it is FREE-only. The paid lookup must never be reachable from a
+ * scan.** `runResearch` is owner-only and spends money; scanning is
+ * `editCatalog`. A sweep of thirty books that quietly bought thirty lookups
+ * would be a bill nobody chose, from a screen that never mentions cost.
  *
  * ## The first lookup pass is automatic
  *
@@ -175,6 +190,33 @@ const lineUpdateSchema = z
 
 function badRequest(detail: unknown) {
   return { error: 'bad_request' as const, detail };
+}
+
+/**
+ * Ask the free rungs to finish off a book that has just been added.
+ *
+ * Runs under `waitUntil` with nobody listening, so it can never throw: an
+ * exception here would be an unhandled rejection in a background task, and the
+ * person who scanned the book is already three books further down the pile.
+ * `freeDetailsFor` does not throw either — this is the belt to its braces — and
+ * what it reports goes to `wrangler tail`, where an operator can read it and a
+ * person is not shown a background job's plumbing.
+ */
+async function fillFreeDetails(env: Env, workId: number): Promise<void> {
+  try {
+    const outcome = await freeDetailsFor(env, workId, FREE_LADDER_FIELDS);
+    if (outcome.applied.length > 0) {
+      console.log('free details for work', workId, '—', outcome.applied.join(' '));
+    } else {
+      // ⚠️ Logged rather than dropped. A rung that could not be ASKED and one
+      // that was asked and knew nothing are different facts, and printing them
+      // the same way is the mistake the cover sweep already paid for
+      // (covers-and-series.md §0).
+      console.log('free details for work', workId, '— nothing filled:', outcome.skipped.join(' | '));
+    }
+  } catch (err) {
+    console.error('free details for work', workId, 'failed:', err);
+  }
 }
 
 /** Renumber after any change to the list, so positions are 1..n with no gaps. */
@@ -1011,6 +1053,47 @@ export const scanJobRoutes = new Hono<AppBindings>()
     lines[idx] = line;
 
     const updated = await updateScanJob(c.env.DB, id, { lines });
+
+    /*
+     * ⚠️ **THE ADD PATH FILLS MORE THAN IT USED TO — the second half of the
+     * owner's 2026-08-22 ask.**
+     *
+     * A book added off a barcode landed with title, authors, publisher, year
+     * and a cover, and with **series, volume and description simply never asked
+     * for**. So every scanned book arrived incomplete and grew the details
+     * queue by one, which is the queue somebody then has to work through.
+     *
+     * This is the moment the work exists: `addedWorkId` is the client saying
+     * *"I created work N from this line"*. The free ladder is asked for the
+     * three fields the ISBN rungs do not carry.
+     *
+     * Three rules, and each is load-bearing:
+     *
+     *  1. **`waitUntil`, never awaited.** A scan is a person standing at a
+     *     shelf with the next book in their hand; the ladder can take a couple
+     *     of seconds (Open Library is paced at ~1/s and that pacing is not
+     *     negotiable — see `packages/isbn/src/throttle.ts`). The response goes
+     *     back immediately and the columns fill behind it. Unlike the research
+     *     route this needs no `await` for a budget: `waitUntil` gets ~30s and
+     *     the whole ladder is well inside it.
+     *  2. ⚠️ **NEVER the LLM from here.** `freeDetailsFor` is the free ladder
+     *     and nothing else. `runResearch` is an owner-only, money-spending
+     *     capability; scanning is `editCatalog`. A scan sweep that quietly
+     *     bought a lookup per book would be a bill nobody chose, from a screen
+     *     that never mentions cost.
+     *  3. **Only when the id actually changes.** The client PATCHes this row
+     *     for `dismissed` too, and a re-send of the same `addedWorkId` must not
+     *     re-run the ladder.
+     */
+    const addedWorkId = patch.addedWorkId;
+    if (
+      typeof addedWorkId === 'number' &&
+      addedWorkId > 0 &&
+      addedWorkId !== current.addedWorkId
+    ) {
+      c.executionCtx.waitUntil(fillFreeDetails(c.env, addedWorkId));
+    }
+
     return c.json({ job: updated ?? job, index: idx, line });
   })
 

@@ -1,7 +1,10 @@
 # docs/info — index
 
 > **Audience:** Claude sessions. How and why things work.
-> Last verified: **2026-08-17** — the `ebook-viewer-design.md`,
+> Last verified: **2026-08-23** — the `free-details-ladder.md` row is new that
+> day and was checked against the file it points at; ⚠️ **no other row was
+> re-checked**, so everything below it still carries the ages stated next.
+> Previously **2026-08-17** — the `ebook-viewer-design.md`,
 > `epub-streaming-findings-2026-08-17.md` and
 > `gabi-fixer-design.md` rows are new that day (`ebook-viewer-design.md` is
 > design only; ⚠️ `gabi-fixer-design.md` is NO LONGER design-only — its phase 0
@@ -38,6 +41,7 @@
 | [`estate-auth-shadow.md`](estate-auth-shadow.md) | ⚠️ Estate auth (auth.heygabi.ai) adopted in **shadow mode**: the `ESTATE_CHECK` flag, the `estate_shadow` log line and its `would_deny` rollout gate, the 0140 cache columns, and the second sibling-checkout sync (`sync-estate-auth.mjs`). Enforcement is NOT built | touching `middleware/auth.ts`, `@lc/estate-auth`, migration 0140, or flipping `ESTATE_CHECK` |
 | [`estate-theme.md`](estate-theme.md) | ⚠️ The app styles against the estate's `--et-*` token contract (apple/cyberpunk/retro × light/dark, default apple), vendored by a **third** sibling-checkout sync (`sync-estate-theme.mjs` → gitignored `apps/web/public/estate/`); the pre-paint stamp in index.html, the topbar cog, and how the old palette's five hues mapped onto token roles | touching `styles.css`, `index.html`'s head, `ThemeCog.tsx`, or being tempted to hard-code a colour |
 | [`estate-search.md`](estate-search.md) | ⚠️ The **fourth** sibling-checkout sync (`sync-estate-search.mjs`): the shared `<estate-search>` element in the top bar — ADDITIVE, it does not replace CollectionPage’s own search. ⚠️ **It is dead until `library.heygabi.ai` is added to the index Worker’s `READ_ORIGINS`** (measured, §2). Why the element is built by hand, why Vite refuses a dynamic import of `public/`, the upstream scan-button bug, and the `navigate()` hook | touching `components/EstateSearch.tsx`, `lib/estate-search.ts`, `scripts/sync-estate-search.mjs`, or wondering why the estate box returns nothing |
+| [`free-details-ladder.md`](free-details-ladder.md) | ⚠️ **"Look up" no longer pays for what the estate already holds.** Four free rungs before the model, stopping **per FIELD**; the model is asked only what is left, and **not called at all** when nothing is. ⚠️ **A PRESENT ROW WITH A NULL COLUMN IS NOT AN ANSWER** — `audiobook_holding` keeps one edition per work, the household owns two *Elantris* audiobooks, and the row that landed has no series, so rung 1 must fall THROUGH and say why. 🔴 **Rung 2 is BUILT DARK**: `INDEX_READ_TOKEN` is unset everywhere, minting one needs a machine-read mount in `catalog-platform/apps/index-worker/src/index.ts` — access-increasing, and therefore the **owner's decision** — and its request shape is an unexercised guess. **Measured** against a real local D1 and the live API: Open Library answers `series: ["Elantris (1)"]`, a markerless shape that was landing in `work.series` as a name. §6 is the NOT-verified list (rung 2 at all; Google Books live, which answered **400**; the deployed route) | touching `lib/free-details.ts`, adding a rung, changing what a lookup costs, or setting `INDEX_READ_TOKEN` |
 | [`scan-jobs-and-vision.md`](scan-jobs-and-vision.md) | **Measured** shelf-photo reads on two real photographs and two synthetic ones, with costs; why persistence had to precede the camera; why lookups are one line at a time rather than chunked server-side | touching `scan-jobs.ts`, `lib/vision.ts`, `scanjobs.ts`, or anything that spends money |
 
 ## The seven findings worth knowing without opening a file

@@ -118,6 +118,41 @@ export async function editionsOfWork(
     .map(toEdition);
 }
 
+/**
+ * The work record's own description — the one field `editions.json` cannot give.
+ *
+ * ⚠️ **`description` is two shapes in one field**, and a reader that assumes
+ * either one is wrong about half of Open Library. Older records store a plain
+ * string; newer ones store `{ type: '/type/text', value: '…' }`. Both are
+ * ordinary, both are returned by the same endpoint, and the object form
+ * stringifies to `[object Object]` — which would land in a catalog column and
+ * look exactly like a description until somebody read it.
+ *
+ * Returns null for a 404 (a real answer — Open Library has no such work) and
+ * for a record that simply carries no description. Throws only on transport or
+ * an unexpected HTTP status, so a caller can trace a rung that could not be
+ * ASKED separately from one that answered nothing — the distinction
+ * `covers-and-series.md` §0 records costing real time on the cover sweep.
+ */
+export async function workDescription(
+  workKey: string,
+  opts: OlFetchOptions = {},
+): Promise<string | null> {
+  const doFetch = opts.fetchImpl ?? fetch;
+  const key = bareWorkKey(workKey);
+  const res = await doFetch(`https://openlibrary.org/works/${key}.json`, {
+    headers: { 'User-Agent': opts.userAgent ?? DEFAULT_UA },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`openlibrary work ${res.status}`);
+
+  const rec = (await res.json()) as { description?: string | { value?: string } };
+  const raw =
+    typeof rec.description === 'string' ? rec.description : (rec.description?.value ?? null);
+  const text = (raw ?? '').trim();
+  return text === '' ? null : text;
+}
+
 /** What an ISBN resolved to, at the work level. */
 export interface OlIsbnWork {
   /** Bare work key, e.g. `OL27448W`. Null when the edition names no work. */

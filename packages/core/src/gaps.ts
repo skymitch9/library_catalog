@@ -105,7 +105,12 @@ export const REFUSED_FIELDS: readonly { field: string; because: string }[] = [
   },
   {
     field: 'cover',
-    because: 'One work has none: a picture book whose file carries no cover image. Research cannot make a JPEG.',
+    because:
+      'A cover is fetched, never reasoned, and the free rungs get almost all of them: ' +
+      '`npm run backfill:missing-covers` asks Open Library and Google Books for nothing. ' +
+      'An LLM cover finder DOES exist — `findCover` in @lc/research, for the residue those ' +
+      'two cannot reach — but it is opt-in per run (`--llm`), never automatic, and putting it ' +
+      'on this queue is a separate cost decision nobody has taken.',
   },
   {
     field: 'subtitle',

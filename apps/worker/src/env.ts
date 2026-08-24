@@ -200,6 +200,38 @@ export interface Env {
   INDEX_PUSH_TOKEN?: string;
 
   /**
+   * ⚠️ **The READ half of the index — and it does not exist yet. Naming the
+   * gap is the whole point of this entry.**
+   *
+   * `INDEX_PUSH_TOKEN` above is the WRITE direction and is live. The free
+   * details ladder (`lib/free-details.ts`, rung 2) wants the other direction:
+   * `GET {INDEX_URL}/api/lookup`, the estate's own cross-catalog row, which
+   * carries a canonical **series** and volume for a book another catalogue in
+   * this household already knows. It is the one rung that can answer for a book
+   * no public database indexes — which, measured, is about half this library.
+   *
+   * **Why it is unset, and must stay unset until the owner decides.**
+   * `index.heygabi.ai/api/lookup` sits behind a blanket **human Firebase-token**
+   * check, and no machine-read credential exists anywhere in the estate. One
+   * would have to be minted, and the mount that would accept it lives in
+   * ANOTHER repo — `catalog-platform/apps/index-worker/src/index.ts`. That is an
+   * **access-INCREASING** change, which the estate's standing rule says must be
+   * confirmed rather than acted on: the value would open a read path to every
+   * catalogue's rows for whoever holds it.
+   *
+   * So the rung is built DARK. Unset — which is every environment today — means
+   * it is skipped with a **named** reason that travels in the response, not
+   * silently. ⚠️ Never guess a value, and never point it at `INDEX_PUSH_TOKEN`:
+   * that is the index's WRITE credential and the two sides are separate on
+   * purpose.
+   *
+   * ⚠️ **The request this rung would send has never been exercised against the
+   * real index.** `docs/info/free-details-ladder.md` records that plainly rather
+   * than letting an unrun code path read as a working one.
+   */
+  INDEX_READ_TOKEN?: string;
+
+  /**
    * Estate auth mode: `off` | `shadow` | `enforce` — the §14.5 rollout flag
    * (catalog-platform/docs/info/estate-auth-design.md §9 step 5).
    *
