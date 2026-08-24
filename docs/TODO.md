@@ -1524,3 +1524,166 @@ rung 2.5 (key valid, Cloudflare 403 — dead for now but plumbed). The remaining
 | **Total written** | **160** |
 
 **Script:** `scripts/backfill-missing-isbns.mjs`, `npm run backfill:missing-isbns`.
+
+---
+
+## 🔍 AUDIT 2026-08 — confirmed findings
+
+Ranked CRITICAL + HIGH items from the 2026-08 review/verify audit
+(`wf_69d2365f-d02`, 14 units, 97 candidate findings). Full severity-ranked
+list including MEDIUM/LOW: [`docs/info/audit-2026-08-findings.md`](info/audit-2026-08-findings.md).
+
+🔴 **The CRITICAL PEER_TOKEN item below is a live credential committed
+in plaintext to this PUBLIC repo** — see the findings doc's top section for
+the rotation steps (owner action required).
+
+## ☐ [CRITICAL] `if (count === 0) return null;` sits BEFORE two `useCallback` hooks, so the first time a book is sel…
+
+**Where:** `apps/web/src/components/BulkActionBar.tsx:26` (library_catalog / web-components)
+
+**Claim:** `if (count === 0) return null;` sits BEFORE two `useCallback` hooks, so the first time a book is selected the component renders more hooks than the previous render and React throws — with no error boundary anywhere in the app, the whole collection page white-screens.
+
+**Fix:** Move the `if (count === 0) return null;` early return in BulkActionBar.tsx to AFTER both useCallback hooks (or hoist the hooks above any conditional return) so hook count is invariant across renders.
+
+**Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
+
+## ☐ [CRITICAL] The live cross-instance peer shared secret is committed in plaintext, twice, in a tracked file on a …
+
+**Where:** `apps/worker/wrangler.toml:203` (3 units: worker-scanjobs-isbn-enrich, infra-deploy-migrations-ci, worker-research-donor-peer)
+
+**Claim:** The live cross-instance peer shared secret is committed in plaintext, twice, in a tracked file on a PUBLIC GitHub repo — and it authenticates a route that wipes and rewrites `peer_holding` on both instances.
+
+**Fix:** Rotate PEER_TOKEN via `wrangler secret put`, remove the plaintext value from both PEERS entries in wrangler.toml, and read it from a Worker secret at runtime instead of a tracked [vars] literal.
+
+**Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
+
+## ☐ [HIGH] The paid `--llm` rung reads `ANTHROPIC_API_KEY` with no instance awareness, so a `--friend` sweep bi…
+
+**Where:** `scripts/backfill-missing-isbns.mjs:431` (library_catalog / scripts-backfills-a)
+
+**Claim:** The paid `--llm` rung reads `ANTHROPIC_API_KEY` with no instance awareness, so a `--friend` sweep bills the OWNER's Anthropic account for padhard's books — the exact custody defect fixed in the sibling cover script on 2026-08-23 and left live here.
+
+**Fix:** Read the instance-specific Anthropic key (ANTHROPIC_API_KEY_FRIEND_SAM-style) when flags.friend is set, matching the fix already applied to the sibling cover script.
+
+**Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
+
+## ☐ [HIGH] The ISBN write also overwrites `edition.source`, so a hand-created (`manual`) edition that gains an …
+
+**Where:** `scripts/backfill-missing-isbns.mjs:517` (library_catalog / scripts-backfills-a)
+
+**Claim:** The ISBN write also overwrites `edition.source`, so a hand-created (`manual`) edition that gains an ISBN from a free rung is silently demoted to `'openlibrary'` — destroying the "'manual' outranks everything and is never overwritten automatically" protection the column exists for.
+
+**Fix:** Only overwrite edition.source when the incoming source outranks the existing one (respect the 'manual' precedence rule), not unconditionally alongside isbn13.
+
+**Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
+
+## ☐ [HIGH] The LibraryThing rung applies NO author gate and NO title-similarity gate — the `author` argument is…
+
+**Where:** `scripts/backfill-missing-isbns.mjs:246` (library_catalog / scripts-backfills-a)
+
+**Claim:** The LibraryThing rung applies NO author gate and NO title-similarity gate — the `author` argument is accepted and never used, and `similarity` is hardcoded to 1.0 — yet the file's own Safety section claims a ≥0.80 title gate protects every write. It then files the result under `source: 'openlibrary'`, a provenance that is not true.
+
+**Fix:** Actually use the author argument as a gate and compute a real title-similarity score in the LibraryThing rung instead of hardcoding similarity to 1.0, or stop labeling its output source: 'openlibrary'.
+
+**Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
+
+## ☐ [HIGH] Six writing backfills destructure only `{ commit, remote, limit }` from `parseFlags()` and drop `fri…
+
+**Where:** `scripts/backfill-work-covers.mjs:35` (library_catalog / scripts-backfills-a)
+
+**Claim:** Six writing backfills destructure only `{ commit, remote, limit }` from `parseFlags()` and drop `friend`, so `--friend --remote --commit` silently reads AND writes the MAIN production catalogue while reporting as if about padhard — defeating the guard `dbName()` was added to provide, and contradicting the docs' claim of "a `--friend` flag on every script".
+
+**Fix:** Add friend to the destructured parseFlags() result in all six backfill scripts and thread it into dbName().
+
+**Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
+
+## ☐ [HIGH] `research_book` returns only `{workId}` — none of RESEARCH_RESULT_FIELDS exists on the endpoint's re…
+
+**Where:** `apps/web/src/lib/gabi.ts:151` (library_catalog / web-lib-and-app-shell)
+
+**Claim:** `research_book` returns only `{workId}` — none of RESEARCH_RESULT_FIELDS exists on the endpoint's response, so a paid lookup that came back `error` is indistinguishable from one that filled every field.
+
+**Fix:** Have research_book's response actually include the RESEARCH_RESULT_FIELDS the caller expects, or have the caller check for an explicit error field.
+
+**Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
+
+## ☐ [HIGH] Neither role-write route inspects the TARGET's current role, and the last-owner guard only fires whe…
+
+**Where:** `apps/worker/src/routes/users.ts:90` (library_catalog / worker-auth-core)
+
+**Claim:** Neither role-write route inspects the TARGET's current role, and the last-owner guard only fires when the actor is editing themselves — so an `admin` can revoke or demote every `owner`, reaching countOwners()==0, after which no role in the app can ever mint an `owner` again.
+
+**Fix:** Check the target's current role before a role-write, and fire the last-owner guard whenever a write would bring countOwners() to 0, not only on self-edit.
+
+**Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
+
+## ☐ [HIGH] `OWNER_EMAILS` is documented in five places as a lock-out recovery hatch, but it is applied only whe…
+
+**Where:** `apps/worker/src/env.ts:57` (library_catalog / worker-auth-core)
+
+**Claim:** `OWNER_EMAILS` is documented in five places as a lock-out recovery hatch, but it is applied only when a NEW app_user row is INSERTed — an existing row's role is never re-forced on sign-in, so the mechanism cannot recover the one situation it is documented for (a row that exists with the wrong role).
+
+**Fix:** Re-apply OWNER_EMAILS on every sign-in for an existing app_user row, not only on INSERT of a new one.
+
+**Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
+
+## ☐ [HIGH] DELETE /works/:id/accessories/:accessoryId deletes by accessory id ALONE — the `:id` work segment is…
+
+**Where:** `apps/worker/src/routes/accessories.ts:96` (library_catalog / worker-catalog-covers-series)
+
+**Claim:** DELETE /works/:id/accessories/:accessoryId deletes by accessory id ALONE — the `:id` work segment is never used as a scope, so a request naming the wrong work destroys another book's accessory row and answers 200.
+
+**Fix:** Scope the DELETE by both :id (work) and :accessoryId, not accessoryId alone.
+
+**Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
+
+## ☐ [HIGH] GET /api/gabi/memory returns `{turns, updatedAt}` but its ONLY caller reads `{ok, record}`, so the D…
+
+**Where:** `apps/worker/src/routes/gabi-memory.ts:101` (library_catalog / worker-gabi-and-memory)
+
+**Claim:** GET /api/gabi/memory returns `{turns, updatedAt}` but its ONLY caller reads `{ok, record}`, so the Discord side never sees the shared memory — Phase 2's cross-surface continuity is silently dead in one direction.
+
+**Fix:** Change GET /api/gabi/memory to return {ok, record} (or update the caller to read {turns, updatedAt}) so the two sides agree.
+
+**Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
+
+## ☐ [HIGH] PUT /api/gabi/memory passes the caller's FULL conversation window to `savePanelConversation`, which …
+
+**Where:** `apps/worker/src/routes/gabi-memory.ts:139` (library_catalog / worker-gabi-and-memory)
+
+**Claim:** PUT /api/gabi/memory passes the caller's FULL conversation window to `savePanelConversation`, which APPENDS rather than replaces — so every Discord save re-appends the whole stored window and the shared record fills with duplicated turns.
+
+**Fix:** Make PUT /api/gabi/memory replace the stored window via savePanelConversation instead of appending the full window every time.
+
+**Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
+
+## ☐ [HIGH] `estimateSubrequests` never counted the free-details ladder that `runDetailsResearch` now always run…
+
+**Where:** `apps/worker/src/lib/details-sweep.ts:328` (library_catalog / worker-gabi-and-memory)
+
+**Claim:** `estimateSubrequests` never counted the free-details ladder that `runDetailsResearch` now always runs, so the sweep's budget can pick two books whose real cost is ~74 subrequests against a 50 ceiling — and overrunning it terminates the invocation silently.
+
+**Fix:** Add the free-details ladder's subrequest cost into estimateSubrequests so the sweep's budget reflects what runDetailsResearch actually spends.
+
+**Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
+
+## ☐ [HIGH] GET /api/peer/holdings performs no token check at all, yet it is mounted before the requireAuth blan…
+
+**Where:** `apps/worker/src/routes/peer.ts:120` (library_catalog / worker-research-donor-peer)
+
+**Claim:** GET /api/peer/holdings performs no token check at all, yet it is mounted before the requireAuth blanket and is classified everywhere in the repo as a token-gated machine route. It is an unauthenticated public read of another household's holdings, and the justification given for the pre-auth mount is factually wrong — the route has zero callers.
+
+**Fix:** Require the peer token on GET /api/peer/holdings like every other machine route, and correct/remove the pre-auth-mount justification since the route has no callers.
+
+**Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
+
+## ☐ [HIGH] The peer-holdings query uses a copy-status set that contradicts the canonical `HELD_STATUSES` in bot…
+
+**Where:** `apps/worker/src/lib/peer-push.ts:89` (library_catalog / worker-scanjobs-isbn-enrich)
+
+**Claim:** The peer-holdings query uses a copy-status set that contradicts the canonical `HELD_STATUSES` in both directions — it advertises borrowed and not-yet-delivered books to another household as things we hold, and hides books we own but have lent out.
+
+**Fix:** Use the canonical HELD_STATUSES set in the peer-holdings query instead of a contradictory copy-status list.
+
+**Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
+

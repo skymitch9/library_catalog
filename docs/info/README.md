@@ -94,3 +94,4 @@ nobody did. 0040's rule, applied to covers.
 
 - [`gotchas.md`](gotchas.md) — the traps that cost real time, findable by symptom. Extracted from the work log 2026-08-16.
 - [`decisions.md`](decisions.md) — why things are as they are, including what was deliberately NOT built, plus the honest known-imperfect list.
+- [`audit-2026-08-findings.md`](audit-2026-08-findings.md) — **2026-08 review/verify audit**, severity-ranked (4 critical / 13 high / 53 medium / 25 low confirmed). 🔴 Leads with a live PEER_TOKEN committed in plaintext to this public repo, rotation steps included. CRITICAL/HIGH items are also tracked in `../TODO.md`'s "AUDIT 2026-08" section.
