@@ -98,7 +98,12 @@ export const gabiMemoryRoutes = new Hono<AppBindings>()
     const key = sharedConversationKey(c.env.ESTATE_APP, user.id);
     const memory = await loadPanelConversation(c.env.DB, key);
 
-    return c.json({ turns: memory.turns, updatedAt: null });
+    // ⚠️ `{ ok, record }`, the shape the Discord caller reads. It previously
+    // returned `{ turns, updatedAt }`, which the caller never looked at, so the
+    // shared memory was silently invisible on the Discord side. `record` carries
+    // the window; an empty conversation is `record.turns === []`, not a null
+    // record, so the caller always has a shape to read.
+    return c.json({ ok: true, record: { turns: memory.turns, updatedAt: null } });
   })
 
   /**

@@ -219,9 +219,16 @@ describe('the route exists and returns data', () => {
       envWith({ DB: db }),
     );
     assert.equal(res.status, 200);
-    const body = (await res.json()) as { turns: unknown[]; updatedAt: unknown };
-    assert.deepEqual(body.turns, []);
-    assert.equal(body.updatedAt, null);
+    // ⚠️ The Discord caller reads `{ ok, record }` — the shape this must return.
+    // (It previously returned `{ turns, updatedAt }`, which the caller ignored,
+    // so the shared memory was silently invisible on the Discord side.)
+    const body = (await res.json()) as {
+      ok: boolean;
+      record: { turns: unknown[]; updatedAt: unknown };
+    };
+    assert.equal(body.ok, true);
+    assert.deepEqual(body.record.turns, []);
+    assert.equal(body.record.updatedAt, null);
   });
 
   it('PUT with auth + known user + valid body → 200 { ok: true }', async () => {
