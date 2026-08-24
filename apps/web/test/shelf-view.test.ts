@@ -25,6 +25,9 @@ function copy(over: Partial<CopyView> = {}): CopyView {
     person_user_id: null,
     person_name: null,
     is_signed: 0,
+    sprayed_edges: 0,
+    leatherbound: 0,
+    slipcase: 0,
     edition_id: null,
     notes: null,
     acquired_on: null,
@@ -111,13 +114,21 @@ describe('deriveShelfView — the hero', () => {
   });
 });
 
-describe('specialEditionBadges — read out of existing data', () => {
+describe('specialEditionBadges — first-class columns, prose as fallback', () => {
   it('signed comes from the copy boolean', () => {
     const b = specialEditionBadges(copy({ is_signed: 1 }), null);
     assert.deepEqual(b.map((x) => x.key), ['signed']);
   });
 
-  it('sprayed / leather / slipcase come from the edition prose', () => {
+  it('⚠️ all four now come from the copy COLUMNS — no edition prose needed (0430)', () => {
+    const b = specialEditionBadges(
+      copy({ is_signed: 1, sprayed_edges: 1, leatherbound: 1, slipcase: 1 }),
+      null,
+    );
+    assert.deepEqual(b.map((x) => x.key).sort(), ['leather', 'signed', 'slipcase', 'sprayed']);
+  });
+
+  it('⚠️ edition prose still lights the badges on an un-swept row (back-compat)', () => {
     const b = specialEditionBadges(
       copy({ is_signed: 1 }),
       edition({ edition_name: 'Deluxe — Signed, Leatherbound, Sprayed edges, Slipcased' }),
@@ -125,8 +136,34 @@ describe('specialEditionBadges — read out of existing data', () => {
     assert.deepEqual(b.map((x) => x.key).sort(), ['leather', 'signed', 'slipcase', 'sprayed']);
   });
 
+  it('a column and the prose agreeing lights each badge ONCE, not twice', () => {
+    const b = specialEditionBadges(
+      copy({ leatherbound: 1 }),
+      edition({ edition_name: 'Signed Leatherbound' }),
+    );
+    assert.deepEqual(b.map((x) => x.key), ['leather']);
+  });
+
   it('an ordinary printing lights no badge', () => {
     assert.deepEqual(specialEditionBadges(copy(), edition({ edition_name: 'Tor 2010' })), []);
+  });
+});
+
+describe('deriveShelfView — leather ⊂ hardcover in the hero', () => {
+  it('a leatherbound copy with NO edition still leads with Hardcover', () => {
+    const v = deriveShelfView({ ...NONE, copies: [copy({ leatherbound: 1 })] });
+    assert.equal(v.hero?.format, 'Hardcover');
+    assert.equal(v.hero?.medium, 'physical');
+    assert.ok(v.hero?.badges.some((b) => b.key === 'leather'));
+  });
+
+  it('a linked edition still names the format — leather does not override it', () => {
+    const v = deriveShelfView({
+      ...NONE,
+      copies: [copy({ leatherbound: 1, edition_id: 10 })],
+      editions: [edition({ id: 10, format: 'hardcover' })],
+    });
+    assert.equal(v.hero?.format, 'Hardcover');
   });
 });
 

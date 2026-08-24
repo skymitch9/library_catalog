@@ -196,6 +196,65 @@ export function isPhysicalFormat(format: string): boolean {
   return (PHYSICAL_FORMATS as readonly string[]).includes(format);
 }
 
+/**
+ * Leatherbound ⊂ hardcover — the owner's data-model rule, in the ONE place it
+ * is written.
+ *
+ * A leatherbound copy IS a hardcover by construction: there is no leatherbound
+ * paperback. `leatherbound` is a first-class boolean on a `copy` (migration
+ * 0430), orthogonal to the `edition.format` it is bound in, so the subset rule
+ * cannot be a schema CHECK — it lives here as code and is read by the two places
+ * that DERIVE a format from a copy rather than the UI:
+ *
+ *   * `apps/web/src/lib/shelf-view.ts` — a leatherbound hero with no linked
+ *     edition still shows "Hardcover".
+ *   * `HARDCOVER_CLAUSE` in `packages/db/src/works.ts` — the collection's
+ *     "hardcover vs not" filter counts a leatherbound copy as a hardcover.
+ *
+ * Encoding it once here is what keeps those two from hard-coding `'hardcover'`
+ * independently and drifting.
+ */
+export const LEATHER_IMPLIES_FORMAT: EditionFormat = 'hardcover';
+
+/** Does this copy count as a hardcover on the strength of being leatherbound? */
+export function leatherboundImpliesHardcover(copy: {
+  leatherbound?: boolean | number | null;
+}): boolean {
+  return copy.leatherbound === true || copy.leatherbound === 1;
+}
+
+/** The three special-edition attributes that were ever carried as free text. */
+export interface SpecialEditionProse {
+  sprayedEdges: boolean;
+  leatherbound: boolean;
+  slipcase: boolean;
+}
+
+/**
+ * Detect special-edition attributes recorded ad-hoc in prose — an edition's
+ * `edition_name` / `edition_kind`, or a copy's notes.
+ *
+ * ⚠️ **ONE regex set, shared by two callers**, so what a badge lights and what
+ * the 0430 back-fill sweep migrates cannot disagree:
+ *   * `specialEditionBadges` (`apps/web/src/lib/shelf-view.ts`) — the back-compat
+ *     fallback for a row 0430 has not swept yet.
+ *   * `scripts/sweep-special-editions.mjs` — which reads exactly this to propose
+ *     the new columns' values.
+ *
+ * `is_signed` is deliberately absent: it has been a real boolean since migration
+ * 0001 and was never carried in prose, so there is nothing to detect.
+ */
+export function detectSpecialEditionProse(
+  text: string | null | undefined,
+): SpecialEditionProse {
+  const s = (text ?? '').toLowerCase();
+  return {
+    sprayedEdges: /spray|sprayed[- ]?edge|sprededge/.test(s),
+    leatherbound: /leather/.test(s),
+    slipcase: /slip[- ]?case|slipcased/.test(s),
+  };
+}
+
 /** Which side of the line a format falls on. Total over `EditionFormat`. */
 export function mediumOf(format: string): EditionMedium {
   return isPhysicalFormat(format) ? 'physical' : 'ebook';

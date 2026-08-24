@@ -120,6 +120,16 @@ function collectionQueryFrom(c: {
     // which of three format-ish axes it is; the address bar can afford to be
     // terse because `apps/web/src/router.tsx` owns both ends of that name.
     editionKind: c.req.query('editionKind'),
+    // The multi-type format selector — a comma-separated list, split here. Not
+    // validated: `BINDING_CLAUSE` is a fixed map of literal SQL, so an unknown
+    // type contributes no clause. Owner ask 2026-08-24: any of hardcover,
+    // leatherbound, paperback, mass_market, ebook, audiobook, individually
+    // selectable (leather ⊂ hardcover stays true in the data, but leather is its
+    // own selectable type here).
+    bindings: (c.req.query('binding') ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
     status: c.req.query('status'),
     // Not validated here either, and for the same reason: `NEEDS_CLAUSE` is a
     // fixed map of literal SQL and an unknown key adds no clause. No caller text

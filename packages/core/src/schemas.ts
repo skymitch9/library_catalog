@@ -385,7 +385,28 @@ export const createCopySchema = z.object({
   currency: z.string().trim().length(3).default('USD'),
   vendor: optionalText,
   condition: conditionSchema.nullable().optional(),
+  /**
+   * The special-edition attributes, first-class since migration 0430 — facts
+   * about ONE physical copy, learned at any time (a book comes home from an
+   * event signed, or sprayed, months after it was recorded). `isSigned`
+   * predates the rest (migration 0001); the three below replace a read-only
+   * parse of `edition_name` prose (`specialEditionBadges`).
+   *
+   * ⚠️ Each `.default(false)`, exactly like `isSigned`, so an absent key on a
+   * create is a plain "no". Because `updateCopySchema` is this `.partial()`,
+   * Zod wraps each as `ZodOptional<ZodDefault<…>>` and an absent key
+   * short-circuits at the `ZodOptional` — a one-field PATCH like
+   * `{ leatherbound: true }` sets that flag and resets none of the others, the
+   * same behaviour `isSigned` and the wishlist `{ status: 'owned' }` rely on.
+   *
+   * ⚠️ `leatherbound` implies the hardcover format (owner rule,
+   * `LEATHER_IMPLIES_FORMAT`). That subset is derived in code, not enforced
+   * here: the schema shape of a copy cannot see its edition's format.
+   */
   isSigned: z.boolean().default(false),
+  sprayedEdges: z.boolean().default(false),
+  leatherbound: z.boolean().default(false),
+  slipcase: z.boolean().default(false),
   editionNotes: optionalText,
   /**
    * ⚠️ **Deprecated — write `personName` instead** (migration 0400, owner

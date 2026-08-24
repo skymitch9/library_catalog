@@ -57,6 +57,10 @@ export interface CopyView {
   /** Already resolved to the member's CURRENT display name when an id is linked. */
   person_name: string | null;
   is_signed: number;
+  /** Special-edition attributes, first-class since migration 0430. 0/1. */
+  sprayed_edges: number;
+  leatherbound: number;
+  slipcase: number;
   edition_id: number | null;
   notes: string | null;
   /** Null until it turns up. `arrivedPatch` fills it, and only when it is null. */
@@ -91,6 +95,48 @@ const PERSON_PHRASE: Record<string, { said: string; asks: string; hint: string }
     hint: 'The person it went to',
   },
 };
+
+/**
+ * The special-edition attributes, first-class since migration 0430 — each an
+ * independent boolean on ONE copy, editable at any time. A book comes home from
+ * an event signed, sprayed or slipcased months after it was recorded, so all
+ * four are toggles on an existing copy, not just checkboxes on the add form.
+ *
+ * ⚠️ **One list so the toggle chips and the summary line cannot drift**, and so
+ * a fifth attribute is one row here rather than a fourth place to edit. `field`
+ * is the `CopyView` column (snake_case, 0/1); `patch` is the write key the
+ * schema models (camelCase, boolean).
+ *
+ * ⚠️ **Both directions are spelled out** (`mark` / `unmark`), per CoverPanel's
+ * reason the signed button already followed: un-marking is the rarer press and
+ * the one nobody would guess exists, so neither is a checkbox whose meaning
+ * depends on which way it happens to be sitting.
+ *
+ * ⚠️ `leatherbound` implies the hardcover format (`LEATHER_IMPLIES_FORMAT`).
+ * That is derived where format is read (the shelf hero, the collection filter),
+ * not asserted here — the copy may have no edition linked to make hardcover.
+ */
+const SPECIAL_TOGGLES: {
+  field: 'is_signed' | 'sprayed_edges' | 'leatherbound' | 'slipcase';
+  patch: 'isSigned' | 'sprayedEdges' | 'leatherbound' | 'slipcase';
+  mark: string;
+  unmark: string;
+}[] = [
+  { field: 'is_signed', patch: 'isSigned', mark: 'Mark signed', unmark: 'Not signed' },
+  {
+    field: 'sprayed_edges',
+    patch: 'sprayedEdges',
+    mark: 'Mark sprayed edges',
+    unmark: 'Remove sprayed edges',
+  },
+  {
+    field: 'leatherbound',
+    patch: 'leatherbound',
+    mark: 'Mark leatherbound',
+    unmark: 'Remove leatherbound',
+  },
+  { field: 'slipcase', patch: 'slipcase', mark: 'Mark slipcase', unmark: 'Remove slipcase' },
+];
 
 export function Copies({
   workId,
@@ -258,6 +304,9 @@ export function Copies({
                       c.location,
                       c.condition,
                       c.is_signed ? 'signed' : null,
+                      c.sprayed_edges ? 'sprayed edges' : null,
+                      c.leatherbound ? 'leatherbound' : null,
+                      c.slipcase ? 'slipcase' : null,
                     ]
                       .filter(Boolean)
                       .join(' · ')}
@@ -313,14 +362,21 @@ export function Copies({
                         Both directions, spelled out, for CoverPanel’s reason:
                         un-marking is the rarer press and the one nobody would
                         guess exists, so neither is a checkbox whose meaning
-                        depends on which way it happens to be sitting. */}
-                    <button
-                      className="chip"
-                      disabled={busy === c.id}
-                      onClick={() => void change(c.id, { isSigned: !c.is_signed })}
-                    >
-                      {c.is_signed ? 'Not signed' : 'Mark signed'}
-                    </button>
+                        depends on which way it happens to be sitting.
+
+                        Since 0430 the same treatment covers sprayed edges,
+                        leatherbound and slipcase — driven off SPECIAL_TOGGLES so
+                        the four cannot drift from the summary line above. */}
+                    {SPECIAL_TOGGLES.map((t) => (
+                      <button
+                        key={t.field}
+                        className={`chip${c[t.field] ? ' primary' : ''}`}
+                        disabled={busy === c.id}
+                        onClick={() => void change(c.id, { [t.patch]: !c[t.field] })}
+                      >
+                        {c[t.field] ? t.unmark : t.mark}
+                      </button>
+                    ))}
                     <label className="field">
                       <span className="field__label">Status</span>
                       <select
@@ -637,6 +693,13 @@ function AddCopy({
   const [vendor, setVendor] = useState('');
   const [notes, setNotes] = useState('');
   const [signed, setSigned] = useState(false);
+  // The other three special-edition attributes (0430), keyed by their write key
+  // so the create body below is one spread rather than four fields to forget.
+  const [special, setSpecial] = useState({
+    sprayedEdges: false,
+    leatherbound: false,
+    slipcase: false,
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** "Record it" stopped and asked which printing — the rescan contract, no barcode. */
@@ -705,6 +768,7 @@ function AddCopy({
         condition: condition || null,
         vendor: vendor.trim() || null,
         isSigned: signed,
+        ...special,
         editionNotes: format && intent === 'wanted' ? `wanted as ${formatLabel(format)}` : null,
         notes: notes.trim() || null,
       });
@@ -774,6 +838,25 @@ function AddCopy({
             <input type="checkbox" checked={signed} onChange={(e) => setSigned(e.target.checked)} />
             <span>Signed</span>
           </label>
+          {/* The other three special-edition attributes (0430). Same checkbox
+              grammar as Signed; each is an independent fact about this copy, and
+              leatherbound implies hardcover where the format is later derived. */}
+          {(
+            [
+              ['sprayedEdges', 'Sprayed edges'],
+              ['leatherbound', 'Leatherbound'],
+              ['slipcase', 'Slipcase'],
+            ] as const
+          ).map(([key, label]) => (
+            <label className="row-tight" key={key}>
+              <input
+                type="checkbox"
+                checked={special[key]}
+                onChange={(e) => setSpecial((s) => ({ ...s, [key]: e.target.checked }))}
+              />
+              <span>{label}</span>
+            </label>
+          ))}
         </>
       )}
 

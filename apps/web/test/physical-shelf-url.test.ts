@@ -34,6 +34,7 @@ function filters(overrides: Partial<CollectionFilters> = {}): CollectionFilters 
     ebookOnly: '',
     format: '',
     editionKind: '',
+    bindings: [],
     status: '',
     needs: '',
     readState: '',

@@ -32,6 +32,53 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
+## ☐ Special editions first-class + multi-type format filter — LANDED FOR REVIEW (branch `feature/special-editions-firstclass`, 2026-08-24)
+
+Sprayed edges / leatherbound / slipcase are now first-class editable booleans on
+a **copy** (migration `0430`, mirroring `is_signed`), replacing the read-only
+parse of `edition_name` prose. `EditBox → What you have → Copies` gains per-copy
+toggles and add-form checkboxes; the shelf-view badges read the real columns
+first and fall back to the prose only for un-swept rows. The collection gains a
+**multi-type format filter** (owner ask, revised 2026-08-24 to multi-select):
+hardcover / leatherbound / paperback / mass_market / ebook / audiobook, each
+individually selectable, OR-ed — a fixed-map clause (`BINDING_CLAUSE`), unknown
+type adds no clause. Leather ⊂ hardcover stays true in the data (ticking
+Hardcover matches a leatherbound copy) but leather is its own box.
+
+**State:** branch pushed. Migration **0430 is UNAPPLIED**. Nothing deployed.
+1661 tests pass / 0 fail; typecheck clean.
+
+⚠️ **The sweep's dry-run count is NOT yet measured** — the sweep reads the new
+columns to avoid re-proposing set ones, so it cannot run until 0430 is applied;
+production reads are also blocked in the build environment. The owner gets the
+count from step 2 below.
+
+**🔴 OWNER GO-LIVE SEQUENCE (in order):**
+1. **Apply migration 0430** to each instance:
+   `npx wrangler d1 migrations apply library-catalog --remote` (main), then
+   `--env friend` for padhard. (Migrate-before-deploy: the new code reads the
+   new columns.)
+2. **Dry-run the sweep** and read the count:
+   `node scripts/sweep-special-editions.mjs --remote` (main),
+   `node scripts/sweep-special-editions.mjs --remote --friend` (padhard).
+   It maps rows whose prose says leather/sprayed/slipcase onto the columns, and
+   proposes edition `format → hardcover` for a leatherbound copy on a
+   non-hardcover edition. Review the printed plan.
+3. **Commit the sweep** once the plan looks right:
+   `node scripts/sweep-special-editions.mjs --remote --commit` (+ `--friend`).
+4. **Deploy** (`npm run deploy`, then the friend deploy) — see `access/deploy.md`.
+
+**Deferred / not done:** a facet count on the new Type filter (a GROUP BY per
+type per keystroke for boxes read off the list — deliberately omitted, matching
+the facets-cost note); consolidating the new multi-type **Type** selector with
+the pre-existing single-select **Edition** (exact format) and **Format** (medium)
+controls — the new one is a superset for the physical/leather/audio axes and the
+three now overlap, an owner call on whether to retire the older two (one
+fact/one surface). No D1 unit harness exists in this repo, so `createCopy` /
+`updateCopy`'s write path is covered by typecheck + the migration round-trip SQL
+test, not a live-D1 test.
+
+
 ## ☐ Retire `docs/HANDOFF.md` — a competing living doc the standard forbids
 
 The estate docs standard says nothing sits at the top of `docs/` but the seven

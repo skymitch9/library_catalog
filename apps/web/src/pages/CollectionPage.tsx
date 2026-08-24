@@ -24,6 +24,7 @@ import { loadPrefs, savePrefs } from '../lib/prefs.js';
 import { syncReadStatesFromRatings, type ReadSyncResult } from '../lib/read-sync.js';
 import { ON_THE_WAY, statusLabel } from '../lib/statuses.js';
 import {
+  BINDING_FILTERS,
   Link,
   collectionPath,
   replaceUrl,
@@ -31,6 +32,20 @@ import {
   workPath,
   type CollectionFilters,
 } from '../router.js';
+
+/**
+ * How each format/binding type is written in the multi-type selector. One label
+ * per `BINDING_FILTERS` key — the coarse `ebook` and the copy-flag `leatherbound`
+ * / cross-catalog `audiobook` have no `formatLabel` entry, so the map is here.
+ */
+const BINDING_LABEL: Record<string, string> = {
+  hardcover: 'Hardcover',
+  leatherbound: 'Leatherbound',
+  paperback: 'Paperback',
+  mass_market: 'Mass market',
+  ebook: 'Ebook',
+  audiobook: 'Audiobook',
+};
 
 /**
  * The collection.
@@ -91,6 +106,9 @@ export function CollectionPage({
   const [format, setFormat] = useState(filters.format);
   // The third format-ish axis — how fancy the printing is. Migration 0050.
   const [editionKind, setEditionKind] = useState(filters.editionKind);
+  // The multi-type format selector — hardcover / leatherbound / paperback /
+  // mass_market / ebook / audiobook, any number chosen (0430 + owner ask).
+  const [bindings, setBindings] = useState<string[]>(filters.bindings);
   const [status, setStatus] = useState(filters.status);
   // The one filter about us rather than about the books — see `NEEDS_FILTERS`.
   const [needs, setNeeds] = useState(filters.needs);
@@ -113,6 +131,7 @@ export function CollectionPage({
         filters.medium ||
         filters.format ||
         filters.editionKind ||
+        filters.bindings.length ||
         filters.status ||
         filters.needs ||
         filters.duplicates ||
@@ -181,6 +200,7 @@ export function CollectionPage({
       ebookOnly ||
       format ||
       editionKind ||
+      bindings.length ||
       status ||
       needs ||
       duplicates ||
@@ -202,10 +222,11 @@ export function CollectionPage({
 
   const params = useMemo(
     () => ({
-      q, series, universe, medium, ebookOnly: effectiveEbookOnly, format, editionKind, status, needs, readState,
+      q, series, universe, medium, ebookOnly: effectiveEbookOnly, format, editionKind,
+      binding: bindings.join(','), status, needs, readState,
       sort, dir, page, pageSize,
     }),
-    [q, series, universe, medium, effectiveEbookOnly, format, editionKind, status, needs, readState, sort, dir, page, pageSize],
+    [q, series, universe, medium, effectiveEbookOnly, format, editionKind, bindings, status, needs, readState, sort, dir, page, pageSize],
   );
 
   const reload = useCallback(() => {
@@ -244,6 +265,7 @@ export function CollectionPage({
     ebookOnly,
     format,
     editionKind,
+    bindings.join(','),
     status,
     needs,
     readState,
@@ -276,6 +298,7 @@ export function CollectionPage({
         ebookOnly,
         format,
         editionKind,
+        bindings,
         status,
         needs,
         duplicates,
@@ -286,7 +309,7 @@ export function CollectionPage({
         page: page + 1,
       }),
     );
-  }, [q, series, universe, medium, ebookOnly, format, editionKind, status, needs, duplicates, readState, sort, dir, pageSize, page]);
+  }, [q, series, universe, medium, ebookOnly, format, editionKind, bindings, status, needs, duplicates, readState, sort, dir, pageSize, page]);
 
   // ⚠️ Fetched only while the box is ticked, and re-fetched every time it is
   // ticked rather than cached: the whole point of the screen is to go and fix
@@ -315,14 +338,14 @@ export function CollectionPage({
 
   useEffect(() => {
     api
-      .facets({ q, universe, medium, ebookOnly: effectiveEbookOnly, format, editionKind, status, needs, readState })
+      .facets({ q, universe, medium, ebookOnly: effectiveEbookOnly, format, editionKind, binding: bindings.join(','), status, needs, readState })
       .then(setFacets)
       .catch(() => setFacets(null));
     // ⚠️ `ebookOnly` is in here and not only in the list's params, or the
     // counts stop describing the list they label — "Ebook (126)" over a
     // physical shelf holding 32 of them is the disagreement `collectionFilter`
     // exists as one builder to prevent.
-  }, [q, universe, medium, effectiveEbookOnly, format, editionKind, status, needs, readState]);
+  }, [q, universe, medium, effectiveEbookOnly, format, editionKind, bindings, status, needs, readState]);
 
   const loadHeader = useCallback(() => {
     api.stats().then(setStats).catch(() => setStats(null));
@@ -631,6 +654,47 @@ export function CollectionPage({
             </select>
           </label>
 
+          {/* The multi-type format selector — the owner's ask, 2026-08-24
+              (revised from a binary hardcover/not to individually-selectable
+              types). Checkboxes, not a select, because "each individually
+              selectable" is many-at-once: pick Hardcover AND Ebook and you get
+              the books held either way.
+
+              ⚠️ **Leather ⊂ hardcover stays true in the data, but leather is
+              its own box here.** Ticking Hardcover matches a hardcover edition OR
+              a leatherbound copy (a leatherbound copy IS a hardcover,
+              `LEATHER_IMPLIES_FORMAT`); ticking Leatherbound narrows to just the
+              leatherbound ones. `Edition` (the exact-format select above) cannot
+              express either, because leatherbound is a fact on the copy and
+              audiobook is a fact in the sibling catalog.
+
+              ⚠️ EXISTS, like every filter on this row — a type means the book
+              HAS one, not that all its printings are; the sentence under the
+              panel that explains Format/Edition covers this too. No facet counts:
+              a GROUP BY per type per keystroke to number boxes a person reads off
+              the list is the cost the facets note warns against.
+
+              `.check-grid` groups the checkboxes; the `.row-tight` + `<span>`
+              grammar is this app's checkbox idiom (Copies.tsx, the "Recorded
+              twice" box below). */}
+          <fieldset className="field check-grid">
+            <legend className="field__label">Type</legend>
+            {BINDING_FILTERS.map((t) => (
+              <label className="row-tight" key={t}>
+                <input
+                  type="checkbox"
+                  checked={bindings.includes(t)}
+                  onChange={(e) =>
+                    setBindings((cur) =>
+                      e.target.checked ? [...cur, t] : cur.filter((x) => x !== t),
+                    )
+                  }
+                />
+                <span>{BINDING_LABEL[t] ?? t}</span>
+              </label>
+            ))}
+          </fieldset>
+
           {/* The third format-ish axis, and the one the owner asked for:
               *"for our sanity all editions should be collectors"*. `Format` is
               paper-or-file and `Edition` is the binding; this is whether the
@@ -793,6 +857,7 @@ export function CollectionPage({
                 setEbookOnly('');
                 setFormat('');
                 setEditionKind('');
+                setBindings([]);
                 setStatus('');
                 setNeeds('');
                 setDuplicates(false);

@@ -1,5 +1,6 @@
 import {
   HELD_STATUSES,
+  LEATHER_IMPLIES_FORMAT,
   PHYSICAL_FORMATS,
   UNKNOWN_AUTHOR,
   deletionBlockers,
@@ -1154,6 +1155,17 @@ export interface CollectionQuery {
    * `edition_kind`'s NULL-means-ordinary rule honest. See `KIND_CLAUSE`.
    */
   editionKind?: string | undefined;
+  /**
+   * The multi-type format selector — any of `hardcover`, `leatherbound`,
+   * `paperback`, `mass_market`, `ebook`, `audiobook`. Owner ask, 2026-08-24.
+   *
+   * ⚠️ A LIST, individually selectable, and a book matching ANY chosen type
+   * shows (`collectionFilter` ORs their clauses). `leatherbound` is the subset of
+   * `hardcover` (leather ⊂ hardcover, `LEATHER_IMPLIES_FORMAT`) and both are
+   * offered. See `BINDING_CLAUSE` — a fixed map, so an unknown type adds no
+   * clause. `undefined` / empty means nobody chose one.
+   */
+  bindings?: readonly string[] | undefined;
   status?: string | undefined;
   /**
    * Let a work whose copies are ALL sold back into the answer.
@@ -1430,6 +1442,62 @@ const KIND_CLAUSE: Record<string, string> = {
 };
 
 /**
+ * "The book has an edition/copy of this binding or cover type", as SQL — the
+ * multi-type format selector. Owner ask, 2026-08-24 (revised from a binary
+ * hardcover/not to a multi-select over every type the catalog holds).
+ *
+ * Each key is one selectable TYPE; the caller may pick several and a book that
+ * matches ANY of them shows (`collectionFilter` ORs the chosen clauses). EXISTS,
+ * like every other filter on this page — a type means the book *has* one, not
+ * that all its printings are; a book on the shelf and on the Kindle is under
+ * both `hardcover` and `ebook`, the choice `MEDIUM_CLAUSE` makes and defends.
+ *
+ * ## Leather ⊂ hardcover, and leather ALSO its own type
+ *
+ * ⚠️ The subset rule stays TRUE in the data (a leatherbound copy IS a hardcover,
+ * `LEATHER_IMPLIES_FORMAT`), so selecting **hardcover** matches a hardcover
+ * edition OR a leatherbound copy. **leatherbound** is a separate, narrower type
+ * that matches only the leatherbound copies — so "hardcover" is the superset and
+ * "leatherbound" the subset, both individually selectable, exactly as asked.
+ *
+ * ## No binds — every clause is a literal
+ *
+ * The physical format values and `'hardcover'` are `@lc/core` constants written
+ * into the text (never caller input — the `NEEDS_AUTHOR` / `universeClause`
+ * pattern), and `1` is the boolean's stored form. So the whole map is bind-free
+ * and `collectionFilter` ORs the selected clauses with no binds. An unrecognised
+ * type contributes no clause — the fixed-map rule `KIND_CLAUSE` follows.
+ *
+ * ⚠️ Exported so `test/binding-clause.test.ts` can run this exact SQL against a
+ * real SQLite — the leather-under-hardcover nesting and the audiobook join are
+ * precisely the rows a reader nods past, as `EBOOK_ONLY_CLAUSE` / `NOT_ONLY_SOLD`
+ * are exported for their own.
+ */
+/** `'hardcover', 'paperback', 'mass_market'` — the physical formats as SQL literals. */
+const PHYSICAL_LITERALS = PHYSICAL_FORMATS.map((f) => `'${f}'`).join(', ');
+const HAS_LEATHER = `EXISTS (SELECT 1 FROM copy c WHERE c.work_id = w.id AND c.leatherbound = 1)`;
+const hasFormat = (fmt: string) =>
+  `EXISTS (SELECT 1 FROM edition e WHERE e.work_id = w.id AND e.format = '${fmt}')`;
+
+export const BINDING_CLAUSE: Record<string, string> = {
+  // Leather ⊂ hardcover: a hardcover edition OR a leatherbound copy.
+  hardcover: `(${hasFormat(LEATHER_IMPLIES_FORMAT)} OR ${HAS_LEATHER})`,
+  // The subset, individually selectable beside its superset.
+  leatherbound: HAS_LEATHER,
+  paperback: hasFormat('paperback'),
+  mass_market: hasFormat('mass_market'),
+  // Coarse, like `MEDIUM_CLAUSE.ebook` — any non-physical edition (file or
+  // licence). Inlined literals rather than bound `PHYSICAL_PLACEHOLDERS` so the
+  // whole map stays bind-free.
+  ebook: `EXISTS (SELECT 1 FROM edition e
+                    WHERE e.work_id = w.id AND e.format NOT IN (${PHYSICAL_LITERALS}))`,
+  // The sibling audiobook catalog's cached holding — a live (non-stale) row.
+  // `audiobook_holding` is a read-only cache in this D1 (migration 0010).
+  audiobook: `EXISTS (SELECT 1 FROM audiobook_holding a
+                        WHERE a.work_id = w.id AND a.stale_at IS NULL)`,
+};
+
+/**
  * "Still wants attention", as SQL. Migration 0040.
  *
  * ⚠️ **`cover` is not `cover_url IS NULL`, and that gap is the feature.** A
@@ -1574,6 +1642,17 @@ function collectionFilter(query: CollectionQuery): { sql: string; binds: unknown
   // collection instead of a 400.
   const kind = query.editionKind ? KIND_CLAUSE[query.editionKind] : undefined;
   if (kind) where.push(kind);
+  // The multi-type format selector: OR the chosen types' clauses, so a book of
+  // ANY selected type shows. No binds — `BINDING_CLAUSE` is a fixed map of
+  // literal SQL — and an unrecognised type contributes nothing, the same rule
+  // `KIND_CLAUSE` and the sort allowlist follow, so a stale bookmark shows the
+  // collection rather than a 400.
+  if (query.bindings && query.bindings.length > 0) {
+    const chosen = query.bindings
+      .map((b) => BINDING_CLAUSE[b])
+      .filter((clause): clause is string => Boolean(clause));
+    if (chosen.length > 0) where.push(`(${chosen.join(' OR ')})`);
+  }
   if (query.status) {
     where.push('EXISTS (SELECT 1 FROM copy c WHERE c.work_id = w.id AND c.status = ?)');
     binds.push(query.status);
