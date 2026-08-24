@@ -6,7 +6,7 @@
 // already use the automatic runtime (`jsx: react-jsx`), so this changes
 // nothing for the shipped bundle — it only makes the test runner agree.
 import type { ReactNode } from 'react';
-import type { WorkAudiobookHolding } from '../api.js';
+import type { WorkAudioEdition, WorkAudiobookHolding } from '../api.js';
 import { audiobookDetailUrl, resolveAudiobookCover } from '../lib/audiobook-site.js';
 import { Cover } from './Cover.js';
 
@@ -22,8 +22,10 @@ import { Cover } from './Cover.js';
  * what may become several entries, so it is built as a list from the start —
  * `buildVersionEntries` is where a second version type (a future sibling
  * catalog) gets appended, additively, without touching the render below.
- * Today there is exactly one possible entry: the `audiobook_holding` cache
- * (migration 0010).
+ * Today the entries are the audiobook ones: normally the single
+ * `audiobook_holding` row (migration 0010), and — since migration 0390 — one
+ * per audiobook EDITION when the household owns more than one recording of the
+ * same book.
  *
  * The gap this closes (unchanged from `OnAudio`): the table has held a fresh
  * row for both Harry Potters (works 347 and 334) since the backfill, and the
@@ -47,13 +49,20 @@ import { Cover } from './Cover.js';
  */
 export function OtherVersions({
   holding,
+  editions = [],
   ourSeries,
 }: {
   holding: WorkAudiobookHolding | null;
+  /**
+   * Every audiobook edition of this work — migration 0390. Optional and
+   * defaulting to empty, so a caller that has not been taught about it (or an
+   * API response predating the field) renders exactly what it rendered before.
+   */
+  editions?: WorkAudioEdition[];
   /** This work's OWN series spelling, to show only when the two disagree. */
   ourSeries: string | null;
 }) {
-  const entries = buildVersionEntries({ holding, ourSeries });
+  const entries = buildVersionEntries({ holding, editions, ourSeries });
   if (entries.length === 0) return null;
 
   return (
@@ -103,16 +112,75 @@ export interface VersionEntry {
  */
 export function buildVersionEntries({
   holding,
+  editions = [],
   ourSeries,
 }: {
   holding: WorkAudiobookHolding | null;
+  editions?: WorkAudioEdition[];
   ourSeries: string | null;
 }): VersionEntry[] {
   const entries: VersionEntry[] = [];
-  if (holding) entries.push(audiobookEntry(holding, ourSeries));
+
+  /**
+   * ⚠️ The list REPLACES the single row only when it genuinely says more.
+   *
+   * `holding` is the `audiobook_holding` view — one whole row, the same row
+   * `editions[0]` is (both are ordered series-first), and the field five other
+   * callers already trust. Rendering the list for a one-edition book would
+   * change nothing visible while making this component depend on a field an
+   * older cached API response may not carry. So the list is used exactly when
+   * it adds a fact: the household owns more than one recording.
+   */
+  if (editions.length > 1) {
+    for (const edition of editions) entries.push(audioEditionEntry(edition, ourSeries));
+  } else if (holding) {
+    entries.push(audiobookEntry(holding, ourSeries));
+  }
+
   // Future version types (a second sibling catalog) are appended here,
   // additively — see the component header.
   return entries;
+}
+
+/**
+ * One row per audiobook edition — migration 0390's visible half.
+ *
+ * The narrator is the point. Two recordings of one book differ by who read it
+ * far more legibly than by anything else the row carries: the household's two
+ * *Elantris* audiobooks are a fourteen-name full cast and Jack Garrett, and
+ * without that line the two entries read as a duplicate rather than a choice.
+ */
+function audioEditionEntry(edition: WorkAudioEdition, ourSeries: string | null): VersionEntry {
+  const seriesDiffers = edition.series && edition.series !== ourSeries;
+
+  return {
+    key: `audiobook:${edition.audioKey}`,
+    formatLabel: 'Audiobook',
+    href: audiobookDetailUrl(edition.title),
+    title: edition.title,
+    cover: resolveAudiobookCover(edition.coverHref),
+    indexDisplay: edition.indexDisplay,
+    extra: (
+      <>
+        {edition.narrator && <p className="muted small">Read by {edition.narrator}</p>}
+        {seriesDiffers && (
+          <p className="muted small">
+            Filed there under &ldquo;{edition.series}&rdquo;
+            {ourSeries ? `, not "${ourSeries}"` : ''} — the two catalogs spell this series
+            differently.
+          </p>
+        )}
+        {edition.authors && <p className="muted small">{edition.authors}</p>}
+        {/* ⚠️ Provenance, in words, never hidden — see the component header. */}
+        <p className="muted small">{matchProvenance(edition)}</p>
+        {edition.staleAt && (
+          <p className="muted small">
+            May be out of date — the audiobook catalog no longer confirms this match.
+          </p>
+        )}
+      </>
+    ),
+  };
 }
 
 function audiobookEntry(holding: WorkAudiobookHolding, ourSeries: string | null): VersionEntry {
@@ -156,7 +224,10 @@ function audiobookEntry(holding: WorkAudiobookHolding, ourSeries: string | null)
  * this page has room for a sentence and the owner is reading one book, not
  * scanning twenty rungs.
  */
-function matchProvenance(holding: WorkAudiobookHolding): string {
+function matchProvenance(holding: {
+  matchedVia: string;
+  titleSimilarity: number | null;
+}): string {
   const pct =
     holding.titleSimilarity != null ? ` (${Math.round(holding.titleSimilarity * 100)}% title match)` : '';
   if (holding.matchedVia === 'exact') return `Matched by exact title${pct}.`;

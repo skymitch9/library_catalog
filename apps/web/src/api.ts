@@ -546,6 +546,34 @@ export interface WorkAudiobookHolding {
 }
 
 /**
+ * One audiobook edition of a work — an entry of `GET /api/works/:id`'s
+ * `audioEditions`. Mirrors `AudiobookEdition` in `@lc/db` (migration 0390).
+ *
+ * ⚠️ This list runs BESIDE `audiobookHolding`, never instead of it, and the two
+ * are ordered identically, so `audioEditions[0]` is the row `audiobookHolding`
+ * describes. The ordinary length is 0 or 1; 2 is the case the migration exists
+ * for — the household's two Elantris recordings.
+ */
+export interface WorkAudioEdition {
+  /** The sibling catalog's verbatim title. The row's identity across runs. */
+  audioKey: string;
+  title: string;
+  authors: string | null;
+  series: string | null;
+  indexDisplay: string | null;
+  /** Verbatim from that catalog, one comma-joined string. The field that tells
+   *  a full-cast recording apart from a single-narrator one. */
+  narrator: string | null;
+  /** Relative to `audiobook_catalog/site/`. See `resolveAudiobookCover`. */
+  coverHref: string | null;
+  /** 'exact' | 'alias' | 'containment' — shown, never hidden. */
+  matchedVia: string;
+  titleSimilarity: number | null;
+  /** Non-null means the sibling catalog no longer confirms this edition. */
+  staleAt: string | null;
+}
+
+/**
  * What the shared household pool holds for THIS work as an ebook — `GET
  * /api/works/:id`'s `ebookHolding` field. Mirrors `EbookHolding` in `@lc/db`
  * (migration 0310, `audiobook_holding`'s ebook twin).

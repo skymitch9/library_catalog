@@ -869,6 +869,103 @@ export async function getAudiobookHolding(
   };
 }
 
+/**
+ * One audiobook edition of a work — a row of `audiobook_edition_holding`
+ * (migration 0390), which `getAudiobookHolding` above sees only one of.
+ *
+ * ⚠️ `AudiobookHolding` is not replaced by this and must not be. It reads the
+ * `audiobook_holding` VIEW, which answers the question six existing callers ask
+ * — *"is there an audiobook of this, and what is it called over there?"* — with
+ * one whole row. This answers a different question, asked by one caller: *"how
+ * many recordings of this does the household own, and which is which?"*
+ */
+export interface AudiobookEdition {
+  /** The sibling catalog's verbatim title — the row's identity, and the
+   *  content-warning key (migration 0340). Stable across runs. */
+  audioKey: string;
+  /** Their title, stripped of Audible's decoration. What a person is shown. */
+  title: string;
+  authors: string | null;
+  /** Their series spelling and volume, deliberately not folded to ours. */
+  series: string | null;
+  indexDisplay: string | null;
+  /**
+   * Who read it, verbatim from the CSV — one comma-joined string, unsplit.
+   *
+   * ⚠️ The field that makes two editions distinguishable to a person: a
+   * fourteen-name full cast against "Jack Garrett" is the whole difference
+   * between the two Elantris recordings. Null where that catalog states none,
+   * and null on any row not re-swept since migration 0390.
+   */
+  narrator: string | null;
+  /** Relative to `audiobook_catalog/site/`. See `resolveAudiobookCover`. */
+  coverHref: string | null;
+  /** 'exact' | 'alias' | 'containment' — shown, never hidden. */
+  matchedVia: string;
+  titleSimilarity: number | null;
+  /** Marked, never deleted. Non-null means the sibling catalog no longer agrees. */
+  staleAt: string | null;
+}
+
+interface AudiobookEditionRow {
+  audio_key: string;
+  title: string;
+  authors: string | null;
+  series: string | null;
+  index_display: string | null;
+  narrator: string | null;
+  cover_href: string | null;
+  matched_via: string;
+  title_similarity: number | null;
+  stale_at: string | null;
+}
+
+/**
+ * Every audiobook edition of one work — migration 0390.
+ *
+ * ⚠️ Ordered the SAME WAY the `audiobook_holding` view ranks rows: series-bearing
+ * first, then volume-bearing, then by key. So `[0]` is the row the view shows,
+ * and a page rendering this list beside anything fed by `getAudiobookHolding`
+ * cannot contradict it. Two orderings would be two answers to one question.
+ *
+ * Like `getAudiobookHolding` this deliberately does NOT filter `stale_at`: a
+ * stale edition is shown with a caveat, because hiding it looks identical to
+ * "never matched", which loses the fact that it was true once.
+ *
+ * The ordinary answer is zero or one row. Two is what the migration exists for,
+ * and it is rare — measured 2026-08-23, no work in the local catalog reaches
+ * two, and of the whole 1,081-row sibling catalog only one pair is a genuine
+ * second edition (*The Fellowship of the Ring*, dramatized against standard).
+ */
+export async function listAudioEditions(
+  db: D1Database,
+  workId: number,
+): Promise<AudiobookEdition[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT audio_key, title, authors, series, index_display, narrator, cover_href,
+              matched_via, title_similarity, stale_at
+         FROM audiobook_edition_holding
+        WHERE work_id = ?
+        ORDER BY (series IS NULL), (index_display IS NULL), audio_key`,
+    )
+    .bind(workId)
+    .all<AudiobookEditionRow>();
+
+  return (results ?? []).map((row) => ({
+    audioKey: row.audio_key,
+    title: row.title,
+    authors: row.authors,
+    series: row.series,
+    indexDisplay: row.index_display,
+    narrator: row.narrator,
+    coverHref: row.cover_href,
+    matchedVia: row.matched_via,
+    titleSimilarity: row.title_similarity,
+    staleAt: row.stale_at,
+  }));
+}
+
 interface EbookHoldingRow {
   formats: string;
   source_path: string | null;

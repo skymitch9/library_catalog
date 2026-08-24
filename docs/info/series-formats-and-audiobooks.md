@@ -1,10 +1,14 @@
 # Series pages — formats, alternate printings, audiobooks — Information Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
-> Last verified: **2026-08-11** for §3 (the duplicate rule), against a local D1
-> fixture through a running Worker. §2, §4 and below were last verified
-> **2026-08-10** against production D1 (read-only) and a browser, and their
-> counts have moved since — the catalog held 224 works on 2026-08-11.
+> Last verified: **2026-08-23** for §4.4 only (migration 0390 and the view),
+> against a LOCAL D1 after applying the migration and re-running the sweep.
+> §3 (the duplicate rule) was last verified **2026-08-11** against a local D1
+> fixture through a running Worker. §2, the rest of §4 and below were last
+> verified **2026-08-10** against production D1 (read-only) and a browser, and
+> their counts have moved since — the catalog held 224 works on 2026-08-11.
+> ⚠️ Nothing here was re-checked against PRODUCTION on 2026-08-23; migration
+> 0390 has not been applied remotely.
 
 What the series screens now answer, what was measured to get there, and the four
 decisions that will look arbitrary if you only read the code.
@@ -18,7 +22,7 @@ decisions that will look arbitrary if you only read the code.
 | **Series list** | Search, four sort orders, gaps-only, all three in the URL. A holdings line per row. |
 | **Series page** | Each held rung says what form we hold it in. A summary line above the ladder. |
 | **Owned more than once** | A second section: one volume, **two or more copies on the shelf**. ⚠️ Renamed and re-pointed 2026-08-11 — see §3, and do not restore the edition-based rule. |
-| **Audiobooks** | `audiobook_holding` (migration 0010) + `npm run backfill:audiobooks`. **40 of 157 works, 25%.** |
+| **Audiobooks** | `audiobook_holding` (migration 0010, a VIEW since 0390 — see §4.4) + `npm run backfill:audiobooks`. **40 of 157 works, 25%.** |
 
 ---
 
@@ -189,6 +193,51 @@ shape, a `- MM` suffix this catalog adds and the audiobook catalog does not:
 title. That is a real weakness of containment and it is visible rather than
 hidden: the chip renders `AUDIO?` with a tooltip saying the match was partial.
 Read the dry run's containment list before every `--commit`.
+
+---
+
+### 4.5 ⚠️ `audiobook_holding` is a VIEW now — migration 0390, 2026-08-23
+
+The table's rows moved to **`audiobook_edition_holding`**, keyed
+`(work_id, audio_key)` instead of `work_id` alone, and `audiobook_holding` was
+recreated as a **view** over it with the same name, the same columns and the
+same column order. Every existing reader — `packages/db/src/series.ts`,
+`works.ts`, `apps/worker/src/routes/audiobook-mapping.ts`, `reviews.ts`,
+`warnings.ts` — was untouched, and there is exactly one writer
+(`scripts/backfill-audiobook-holdings.mjs`), which is what made the swap safe.
+
+**Why.** `work_id` as a lone primary key means one work holds one audio row, and
+the household owns two *Elantris* recordings — `catalog.csv:995`, full cast, no
+series; `catalog.csv:996`, the Tenth Anniversary edition, series *Elantris*,
+volume 1, read by Jack Garrett. Last write won, and the edition that KNEW the
+series is the one that lost. Work 514 showed an audiobook with no series while
+the fact that would fill the column sat in a row that could not be stored.
+
+**The view picks a WHOLE row**, ranked `(series IS NULL)`, then
+`(index_display IS NULL)`, then `audio_key` — never merged fields. Stitching one
+edition's title onto another's series would describe no audiobook anybody owns,
+and `title` exists precisely so a wrong match is noticeable by eye.
+
+**`audio_key` is `raw_title`** — the sibling catalog's verbatim string, the same
+one migration 0340 added as the content-warning key. The edition identity here
+and the warning identity there are therefore one string and cannot drift.
+
+**What to write, and what to read.** Write `audiobook_edition_holding`; a view
+cannot be written. Read the view for the per-work question every existing caller
+asks, and `listAudioEditions` in `@lc/db` for the set. New columns `audio_key`
+and `narrator` are deliberately absent from the view.
+
+⚠️ **Measured, and the reason work 514 is not fixed by this alone:** the schema
+now stores two editions, but the MATCHER still finds only one. Folded, our side
+is `elantris` (8 chars) against `elantris tenth anniversary special edition`
+(42) — a ratio of 0.19 against the 0.6 containment floor, the same floor that
+stops *Mistborn* reaching *Mistborn: The Final Empire*. `matchIndexedWorkAll`
+removes the early return and changes no gate, so row 996 is still refused.
+Closing it needs a decision nobody has made — see `docs/KNOWN_ISSUES.md`.
+
+Across the whole 1,081-row sibling catalog, exactly one pair is a genuine second
+edition that the unchanged gates admit: *The Fellowship of the Ring*, dramatized
+against standard.
 
 ---
 

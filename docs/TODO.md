@@ -192,33 +192,11 @@ Files, all of them — the step list is mirrored in four places and they must ag
   constant with a named skip when it is unset — a machine that cannot reach the
   sibling must be distinguishable from one that reached it and found nothing.
 
-### B. The schema change — two audio editions per work
+### B. The schema change — two audio editions per work — ✅ MOVED
 
-`audiobook_holding.work_id` is `PRIMARY KEY` (migration 0010), so one work holds
-one audio row. The household owns **two** Elantris audiobooks; the row that
-landed is the full-cast one, whose CSV entry has no series, while *Elantris –
-Tenth Anniversary Special Edition* carries `series=Elantris, volume 1`. **The
-edition that knew the series lost the tie**, which is exactly what the owner saw.
-
-**Design chosen — a table plus a VIEW, so no reader changes.** Only
-`backfill-audiobook-holdings.mjs` writes this table (verified by grep), so the
-view is safe:
-
-1. `CREATE TABLE audiobook_edition_holding` — same columns, PK `(work_id, audio_key)`, plus `narrator`.
-2. Copy the existing rows in.
-3. `DROP TABLE audiobook_holding`, then recreate it as a **VIEW** picking one WHOLE row per work:
-   `ROW_NUMBER() OVER (PARTITION BY work_id ORDER BY (series IS NULL), (index_display IS NULL), audio_key)`.
-
-⚠️ **Whole row, never merged fields.** Preferring the row that knows more is the
-right display call; stitching `title` from one edition onto `series` from
-another would be a Frankenstein row, and the `title` column exists precisely so a
-wrong match is noticeable.
-
-⚠️ **The script cannot yet produce more than one row.** It keeps a single `best`
-from `index.lookup(...)`. `scripts/lib/audiobooks.mjs` needs a `lookupAll` —
-**that is the real work in B, not the migration.**
-
-Migration number: next is **0390** (0380 is the latest).
+Migration 0390 shipped 2026-08-23 on `feature/audio-edition-holdings`; the whole
+item is in [`DONE.md`](DONE.md), and what it did NOT close is `KI-8`/`KI-9` in
+[`KNOWN_ISSUES.md`](KNOWN_ISSUES.md).
 
 ### C. Also found, not yet raised as work — "mark this copy signed"
 

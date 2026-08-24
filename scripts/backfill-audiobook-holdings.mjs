@@ -71,8 +71,18 @@
  * matches is marked `stale_at` rather than deleted — migration 0003's rule,
  * because a row vanishing looks identical to the audiobook having gone away.
  *
- * ⚠️ Requires migrations 0010 **and 0090**. Against a database without either,
- * every statement for that table fails with `no such table: …`.
+ * ⚠️ Requires migrations 0010, **0090 and 0390**. Against a database without
+ * them, every statement for that table fails with `no such table: …`.
+ *
+ * ## ⚠️ Since 0390 this writes `audiobook_edition_holding`, not the view
+ *
+ * `audiobook_holding` is now a VIEW picking one whole row per work, and a view
+ * cannot be written. The rows live in `audiobook_edition_holding`, keyed
+ * `(work_id, audio_key)` where `audio_key` is the sibling catalog's verbatim
+ * title. That is what lets the household's TWO Elantris recordings both be
+ * stored instead of one silently overwriting the other — and it is why the
+ * lookup below is `lookupAll`, which shares every gate with `lookup` and only
+ * declines to stop at the first answer.
  */
 
 import { execute, lit, parseFlags, query } from './lib/d1.mjs';
@@ -99,11 +109,20 @@ const works = query(
 console.log(`${works.length} work(s) in the ${flags.remote ? 'REMOTE' : 'local'} database`);
 if (works.length === 0) process.exit(0);
 
+// ⚠️ The TABLE, not the view. Since migration 0390 `audiobook_holding` is a
+// read-only VIEW showing one whole row per work; the rows live in
+// `audiobook_edition_holding`, keyed `(work_id, audio_key)`, and this script is
+// its only writer. Reading the view here would hide every second edition from
+// the stale sweep below, which could then never mark one.
 const existing = query(
-  'SELECT work_id, title, stale_at FROM audiobook_holding',
+  'SELECT work_id, audio_key, title, stale_at FROM audiobook_edition_holding',
   flags,
 );
-const held = new Map(existing.map((r) => [Number(r.work_id), r]));
+// A NUL joins the two halves so no work id + audio title can ever collide
+// with another pair. Written as an escape, never a literal byte: a stray NUL
+// in a source file makes git treat it as binary and every future diff of this
+// script unreadable.
+const editionKey = (workId, audioKey) => `${workId}\u0000${audioKey}`;
 
 // The other names our books answer to. Scoped per work and kept apart by kind —
 // see the header, and `WORK_ALIAS_KINDS` in packages/core/src/constants.ts.
@@ -147,6 +166,10 @@ const index = audiobookIndex(audiobooks);
 const statements = [];
 const matched = [];
 const missed = [];
+/** `${work_id} ${audio_key}` for every edition this run stands behind. */
+const liveEditions = new Set();
+/** Works reaching more than one audiobook edition — migration 0390's whole point. */
+const multiEdition = [];
 
 /** Strongest first. A rung that claims less never displaces one that claims more. */
 const VIA_RANK = { exact: 0, alias: 1, containment: 2 };
@@ -184,56 +207,95 @@ for (const w of works) {
   // attempt. Only ever consulted by an ambiguous-fold match (Space Knight);
   // every other match is unaffected. See matching.ts `disambiguateByVolume`.
   const seriesIndex = w.series_index_sort == null ? null : Number(w.series_index_sort);
+
+  /**
+   * Every audiobook edition this work reaches, keyed by `audio_key` — the
+   * sibling catalog's verbatim title, which is `audiobook_edition_holding`'s
+   * other primary-key half (migration 0390).
+   *
+   * ⚠️ One entry per key with the STRONGEST rung kept, exactly as `best` is
+   * chosen below. Two attempts (the printed pair, then an alias pair) can reach
+   * the same edition by different rungs, and the row must record the better of
+   * them — an alias-route containment claim must not overwrite an exact one.
+   */
+  const editions = new Map();
+
   for (const attempt of attempts(w)) {
-    const hit = index.lookup(attempt.title, attempt.authors, seriesIndex);
-    if (!hit) continue;
+    // ⚠️ `lookupAll`, not `lookup`: the table is keyed per edition now, and a
+    // work with two recordings must produce two rows. `hits[0]` is what
+    // `lookup` would have returned, so `best` below is unchanged — see
+    // `lookupAll` in scripts/lib/audiobooks.mjs.
+    const hits = index.lookupAll(attempt.title, attempt.authors, seriesIndex);
+    for (const hit of hits) {
+      const prev = editions.get(hit.row.rawTitle);
+      const stronger =
+        !prev ||
+        VIA_RANK[hit.via] < VIA_RANK[prev.via] ||
+        (VIA_RANK[hit.via] === VIA_RANK[prev.via] && hit.similarity > prev.similarity);
+      if (stronger) editions.set(hit.row.rawTitle, { ...hit, alias: attempt.alias });
+    }
+
+    const top = hits[0];
+    if (!top) continue;
     const better =
       !best ||
-      VIA_RANK[hit.via] < VIA_RANK[best.via] ||
-      (VIA_RANK[hit.via] === VIA_RANK[best.via] && hit.similarity > best.similarity);
-    if (better) best = { ...hit, alias: attempt.alias };
-    // Nothing beats an exact match on the printed name; stop asking.
-    if (best.via === 'exact' && best.alias === null) break;
+      VIA_RANK[top.via] < VIA_RANK[best.via] ||
+      (VIA_RANK[top.via] === VIA_RANK[best.via] && top.similarity > best.similarity);
+    if (better) best = { ...top, alias: attempt.alias };
   }
 
   if (!best) {
     missed.push(w);
     continue;
   }
-  matched.push({ work: w, ...best });
+  // ⚠️ Still ONE entry per work. Phase 2 and the report below both read this,
+  // and both ask a per-work question ("did a work corroborate this series
+  // mapping?"). The edition set is a separate structure on purpose.
+  matched.push({ work: w, ...best, editionCount: editions.size });
+  if (editions.size > 1) multiEdition.push({ work: w, editions: [...editions.values()] });
 
-  statements.push(
-    // ⚠️ `raw_title` is `best.row.rawTitle`, NOT `best.row.title` — migration
-    // 0340. `title` is stripped by `cleanTitleWithSeries` and is what a person
-    // is shown; `raw_title` is the sibling catalog's verbatim string and is the
-    // one the content-warning key is derived from, because that is what the
-    // audiobook site and `content_warnings.json` are both keyed by. This value
-    // was already computed in `scripts/lib/audiobooks.mjs` and thrown away here.
-    `INSERT INTO audiobook_holding (work_id, title, raw_title, authors, series, index_display,` +
-      ` index_sort, cover_href, matched_via, title_similarity, via_alias)` +
-      ` VALUES (${lit(w.id)}, ${lit(best.row.title)}, ${lit(best.row.rawTitle)}, ${lit(best.row.authors)},` +
-      ` ${lit(best.row.series)}, ${lit(best.row.seriesIndexDisplay)},` +
-      ` ${lit(best.row.seriesIndexSort)}, ${lit(best.row.coverHref)},` +
-      ` ${lit(best.via)}, ${lit(Number(best.similarity.toFixed(4)))}, ${lit(best.alias)})` +
-      ` ON CONFLICT(work_id) DO UPDATE SET` +
-      ` title = excluded.title, raw_title = excluded.raw_title,` +
-      ` authors = excluded.authors, series = excluded.series,` +
-      ` index_display = excluded.index_display, index_sort = excluded.index_sort,` +
-      ` cover_href = excluded.cover_href, matched_via = excluded.matched_via,` +
-      ` title_similarity = excluded.title_similarity, via_alias = excluded.via_alias,` +
-      ` last_seen_at = datetime('now'), stale_at = NULL;`,
-  );
+  for (const [audioKey, e] of editions) {
+    liveEditions.add(editionKey(w.id, audioKey));
+    statements.push(
+      // ⚠️ `raw_title` is `e.row.rawTitle`, NOT `e.row.title` — migration 0340.
+      // `title` is stripped by `cleanTitleWithSeries` and is what a person is
+      // shown; `raw_title` is the sibling catalog's verbatim string and is the
+      // one the content-warning key is derived from, because that is what the
+      // audiobook site and `content_warnings.json` are both keyed by. Migration
+      // 0390 reuses that same string as `audio_key`, so the edition identity
+      // here and the warning identity there cannot drift apart.
+      `INSERT INTO audiobook_edition_holding (work_id, audio_key, title, raw_title, authors,` +
+        ` series, index_display, index_sort, cover_href, narrator, matched_via,` +
+        ` title_similarity, via_alias)` +
+        ` VALUES (${lit(w.id)}, ${lit(audioKey)}, ${lit(e.row.title)}, ${lit(e.row.rawTitle)},` +
+        ` ${lit(e.row.authors)}, ${lit(e.row.series)}, ${lit(e.row.seriesIndexDisplay)},` +
+        ` ${lit(e.row.seriesIndexSort)}, ${lit(e.row.coverHref)}, ${lit(e.row.narrator)},` +
+        ` ${lit(e.via)}, ${lit(Number(e.similarity.toFixed(4)))}, ${lit(e.alias)})` +
+        ` ON CONFLICT(work_id, audio_key) DO UPDATE SET` +
+        ` title = excluded.title, raw_title = excluded.raw_title,` +
+        ` authors = excluded.authors, series = excluded.series,` +
+        ` index_display = excluded.index_display, index_sort = excluded.index_sort,` +
+        ` cover_href = excluded.cover_href, narrator = excluded.narrator,` +
+        ` matched_via = excluded.matched_via,` +
+        ` title_similarity = excluded.title_similarity, via_alias = excluded.via_alias,` +
+        ` last_seen_at = datetime('now'), stale_at = NULL;`,
+    );
+  }
 }
 
-// A holding whose work no longer matches anything. Marked, never deleted.
-const matchedIds = new Set(matched.map((m) => Number(m.work.id)));
-const goneStale = [...held.values()].filter(
-  (r) => !matchedIds.has(Number(r.work_id)) && !r.stale_at,
+// An EDITION that no longer matches. Marked, never deleted — migration 0010's
+// rule, now applied one row finer: a work can keep one recording and lose
+// another (the other catalog re-titled it, or it was returned), and only the
+// row that went away may be marked. Marking by `work_id` alone would stale a
+// live edition every time its sibling changed.
+const goneStale = existing.filter(
+  (r) => !liveEditions.has(editionKey(Number(r.work_id), r.audio_key)) && !r.stale_at,
 );
 for (const r of goneStale) {
   statements.push(
-    `UPDATE audiobook_holding SET stale_at = datetime('now')` +
-      ` WHERE work_id = ${lit(r.work_id)} AND stale_at IS NULL;`,
+    `UPDATE audiobook_edition_holding SET stale_at = datetime('now')` +
+      ` WHERE work_id = ${lit(r.work_id)} AND audio_key = ${lit(r.audio_key)}` +
+      ` AND stale_at IS NULL;`,
   );
 }
 
@@ -399,6 +461,25 @@ console.log(`  containment          ${byVia('containment')}`);
 console.log(`  (of those, reached only through one of our aliases: ${matched.filter((m) => m.alias).length})`);
 console.log(`no audiobook found     ${missed.length}  (${pct(missed.length)})`);
 console.log('');
+// ⚠️ Migration 0390's number, and the one to watch. Before it, a work with two
+// recordings kept whichever the upsert wrote last — and for work 514 that was
+// the edition with NO series, while the one that knew "Elantris, volume 1" was
+// silently discarded. A count of 0 here does not mean the household owns no
+// second editions; it means none of them cleared the matcher's unchanged gates.
+console.log(`audio editions written ${liveEditions.size}`);
+console.log(`works with >1 edition  ${multiEdition.length}`);
+for (const m of multiEdition.sort((a, b) => a.work.title.localeCompare(b.work.title))) {
+  console.log(`  ${m.work.title}  (work ${m.work.id})`);
+  for (const e of m.editions) {
+    const bits = [
+      e.row.series ? `series "${e.row.series}"${e.row.seriesIndexDisplay ? ` ${e.row.seriesIndexDisplay}` : ''}` : 'no series',
+      e.row.narrator ? `read by ${e.row.narrator}` : 'no narrator stated',
+      `${e.via} ${e.similarity.toFixed(2)}`,
+    ];
+    console.log(`    "${e.row.rawTitle}"  —  ${bits.join(' · ')}`);
+  }
+}
+console.log('');
 
 for (const m of [...matched].sort((a, b) => a.work.title.localeCompare(b.work.title))) {
   const same = m.work.title === m.row.title;
@@ -428,7 +509,7 @@ if (missed.length) {
 
 if (goneStale.length) {
   console.log('');
-  console.log(`${goneStale.length} existing holding(s) no longer match and will be marked stale.`);
+  console.log(`${goneStale.length} existing edition(s) no longer match and will be marked stale.`);
 }
 
 // ---------------------------------------------------------------------------
@@ -481,15 +562,17 @@ const sent = execute(statements, flags);
 // Confirm by re-reading. `execute` cannot report rows changed — see its comment
 // in scripts/lib/d1.mjs; miniflare omits `meta.changes` entirely.
 const after = query(
-  `SELECT (SELECT COUNT(*) FROM audiobook_holding) AS all_rows,
-          (SELECT COUNT(*) FROM audiobook_holding WHERE stale_at IS NULL) AS live_rows,
+  `SELECT (SELECT COUNT(*) FROM audiobook_edition_holding) AS all_rows,
+          (SELECT COUNT(*) FROM audiobook_edition_holding WHERE stale_at IS NULL) AS live_rows,
+          (SELECT COUNT(*) FROM audiobook_holding) AS view_rows,
           (SELECT COUNT(*) FROM audiobook_series_holding) AS all_rungs,
           (SELECT COUNT(*) FROM audiobook_series_holding WHERE stale_at IS NULL) AS live_rungs`,
   flags,
 )[0];
 
 console.log(
-  `\n${sent} statement(s) run. ${after.live_rows ?? 0} live holding(s) of ${after.all_rows} row(s),` +
+  `\n${sent} statement(s) run. ${after.live_rows ?? 0} live edition(s) of ${after.all_rows} row(s)` +
+    ` across ${after.view_rows} work(s) in the audiobook_holding view,` +
     ` and ${after.live_rungs ?? 0} live audio rung(s) of ${after.all_rungs}, in the` +
     ` ${flags.remote ? 'REMOTE' : 'local'} database.`,
 );

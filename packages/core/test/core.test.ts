@@ -31,6 +31,7 @@ import {
   foldVolumeMarker,
   isBareSeriesTitle,
   matchIndexedWork,
+  matchIndexedWorkAll,
   titleSimilarity,
 } from '../src/matching.ts';
 import {
@@ -2487,6 +2488,203 @@ describe('matching — ambiguous-fold disambiguation by series volume (Space Kni
       matchIndexedWork(index, 'Space Knight Book 1', 'A Completely Different Author', 1),
       null,
     );
+  });
+
+  it('matchIndexedWorkAll keeps every one of these refusals', () => {
+    // The multi-result entry point shares the rungs, so an ambiguous fold is
+    // still a positive refusal — an EMPTY set, never both rows. Handing volume
+    // 1 both Space Knight recordings is the flat-lie shape `numbersAgree`
+    // exists to stop, one table down.
+    assert.deepEqual(matchIndexedWorkAll(index, 'Space Knight Book 1', 'Michael-scott Earle'), []);
+    assert.deepEqual(matchIndexedWorkAll(index, 'Space Knight Book 3', 'Michael-scott Earle', 3), []);
+    assert.deepEqual(
+      matchIndexedWorkAll(index, 'Space Knight Book 1', 'A Completely Different Author', 1),
+      [],
+    );
+    // And it still resolves the one it can.
+    const one = matchIndexedWorkAll(index, 'Space Knight Book 2', 'Michael-scott Earle', 2);
+    assert.deepEqual(one.map((m) => m.work.id), [2]);
+
+    // ⚠️ The bare title hits the EXACT tier, where the volume DOES settle it —
+    // and the row it settled against must not come back through containment.
+    const bare = matchIndexedWorkAll(index, 'Space Knight', 'Michael-scott Earle', 1);
+    assert.deepEqual(bare.map((m) => [m.work.id, m.via]), [[1, 'exact']]);
+  });
+});
+
+/**
+ * `matchIndexedWorkAll` — the same rungs, without the early return.
+ *
+ * The caller is `audiobook_edition_holding` (migration 0390), which is keyed
+ * per edition and can store more than one audiobook per work. Everything here
+ * is about proving the extra answers are the ones the single-result function
+ * *would have found and stopped short of*, and that not one gate is looser.
+ */
+describe('matching — matchIndexedWorkAll, every row that passes', () => {
+  it('returns the exact row AND the contained one, strongest first', () => {
+    // The shape that actually produces two editions: one row whose title is
+    // ours exactly, and a second that differs only by decoration and clears
+    // the 60% containment floor (16/19 characters here).
+    const audio = [
+      { id: 1, title: 'Oathbound Healer MM', authors: 'Actus' },
+      { id: 2, title: 'Oathbound Healer', authors: 'Actus' },
+    ];
+    const index = buildWorkIndex(audio);
+
+    const all = matchIndexedWorkAll(index, 'Oathbound Healer - MM', 'Actus');
+    assert.deepEqual(all.map((m) => [m.work.id, m.via]), [[1, 'exact'], [2, 'containment']]);
+
+    // `matchIndexedWork` is untouched: it still answers with the strongest
+    // rung and stops, and that answer is `all[0]`.
+    const one = matchIndexedWork(index, 'Oathbound Healer - MM', 'Actus');
+    assert.equal(one?.work.id, all[0]?.work.id);
+    assert.equal(one?.via, all[0]?.via);
+  });
+
+  it('emits a row once even when it satisfies two rungs', () => {
+    // An exact title is trivially contained in itself. The single-result
+    // function never noticed because it returned at the exact rung.
+    const index = buildWorkIndex([{ id: 1, title: 'Gold', authors: 'Raven Kennedy' }]);
+    assert.deepEqual(
+      matchIndexedWorkAll(index, 'Gold', 'Raven Kennedy').map((m) => [m.work.id, m.via]),
+      [[1, 'exact']],
+    );
+  });
+
+  it('REJECTS an exact title with a different author, and offers nothing weaker', () => {
+    // The single most important assertion in the single-result tests, restated
+    // here because a multi-result function that fell through to containment
+    // would find the very same wrong row again and return it.
+    const index = buildWorkIndex([{ id: 1, title: 'Gold', authors: 'Raven Kennedy' }]);
+    assert.deepEqual(matchIndexedWorkAll(index, 'Gold', 'Chris Cleave'), []);
+  });
+
+  it('keeps the number gate — no volume that is not held is claimed', () => {
+    const index = buildWorkIndex([
+      { id: 1, title: 'Tamer: King of Dinosaurs', authors: 'Michael-scott Earle' },
+      { id: 2, title: 'Tamer: King of Dinosaurs 7', authors: 'Michael-scott Earle' },
+    ]);
+    assert.deepEqual(
+      matchIndexedWorkAll(index, 'Tamer: King of Dinosaurs Book 11', 'Michael-scott Earle'),
+      [],
+    );
+    // And volume 7 reaches its own row and NOT the series-level one beside it.
+    assert.deepEqual(
+      matchIndexedWorkAll(index, 'Tamer: King of Dinosaurs Book 7', 'Michael-scott Earle').map(
+        (m) => m.work.id,
+      ),
+      [2],
+    );
+  });
+
+  it('⚠️ never hands back the rest of an ambiguous fold through containment', () => {
+    // The regression this file exists for. Five DIFFERENT books whose volume
+    // decoration the title cleaner strips — the real shape, measured
+    // 2026-08-23: `The Eminence in Shadow, Vol. 1` … `Vol. 5` all clean to the
+    // identical string. `disambiguateByVolume` picks vol 3 for our vol 3, and
+    // the other four are REJECTED, not merely unexamined. Every one of them
+    // has `titleKey === target`, and containment is a substring test a string
+    // trivially satisfies against itself, so an unguarded pass sweeps all five
+    // back in and the work page claims the household owns five recordings of
+    // one book. That is the flat "All 5 held on audio" lie in a new place.
+    const eminence = [1, 2, 3, 4, 5].map((v) => ({
+      id: v,
+      title: 'The Eminence in Shadow',
+      authors: 'Daisuke Aizawa',
+      seriesIndex: v,
+    }));
+    const index = buildWorkIndex(eminence);
+
+    assert.deepEqual(
+      matchIndexedWorkAll(index, 'The Eminence in Shadow', 'Daisuke Aizawa', 3).map((m) => [
+        m.work.id,
+        m.via,
+      ]),
+      [[3, 'exact']],
+    );
+    // No volume on our side: still the whole-fold refusal, not five answers.
+    assert.deepEqual(matchIndexedWorkAll(index, 'The Eminence in Shadow', 'Daisuke Aizawa'), []);
+  });
+
+  it('keeps the 60% containment floor', () => {
+    const index = buildWorkIndex([
+      { id: 1, title: 'Mistborn: The Final Empire', authors: 'Brandon Sanderson' },
+    ]);
+    assert.deepEqual(matchIndexedWorkAll(index, 'Mistborn', 'Brandon Sanderson'), []);
+  });
+
+  it('returns [] for a title too short to match, same floor as the single-result form', () => {
+    const index = buildWorkIndex([{ id: 1, title: 'Gold', authors: 'Raven Kennedy' }]);
+    assert.deepEqual(matchIndexedWorkAll(index, 'A', 'Raven Kennedy'), []);
+  });
+});
+
+/**
+ * ⚠️ Elantris — the case migration 0390 was built for, and the MEASUREMENT that
+ * says the schema alone does not close it.
+ *
+ * The household owns two Elantris recordings (`audiobook_catalog/site/catalog.csv`
+ * lines 995 and 996). These are their titles as `loadAudiobooks()` produces
+ * them — verified against the real file on 2026-08-23, `cleanTitleWithSeries`
+ * leaves both untouched, because the series suffix strip only fires when the
+ * series name is a SUFFIX and here it is the whole title of row 995 and the
+ * PREFIX of row 996.
+ */
+describe('matching — the two Elantris audiobooks (measured 2026-08-23)', () => {
+  const elantris = [
+    // catalog.csv:995 — the full-cast recording. No series stated.
+    { id: 1, title: 'Elantris', authors: 'Brandon Sanderson', seriesIndex: null },
+    // catalog.csv:996 — series "Elantris", volume 1, narrated by Jack Garrett.
+    {
+      id: 2,
+      title: 'Elantris - Tenth Anniversary Special Edition',
+      authors: 'Brandon Sanderson',
+      seriesIndex: 1,
+    },
+  ];
+  const index = buildWorkIndex(elantris);
+
+  it('⚠️ still finds only ONE — the containment floor, not the early return, is what loses row 996', () => {
+    // The design note in docs/TODO.md part B assumed the early return in
+    // `matchIndexedWork` was what dropped the Tenth Anniversary edition.
+    // Measured, it is not: with the early return gone, row 996 is still
+    // refused, by the 60% length floor. Folded, our side is "elantris" (8
+    // chars) and row 996 is "elantris tenth anniversary special edition" (42),
+    // a ratio of 0.19 against a floor of 0.6 — the same floor that stops
+    // "Mistborn" reaching "Mistborn: The Final Empire".
+    //
+    // This assertion pins the measurement rather than the wish. Reaching row
+    // 996 needs a decision nobody has made: either teach the title cleaner
+    // that "Tenth Anniversary Special Edition" is edition decoration (a change
+    // to `cleanAudiobookTitle`, which produces stored keys), or move the
+    // containment floor (which this file's header says may only move WITH
+    // evidence). Both are owner-facing calls, not a refactor.
+    const all = matchIndexedWorkAll(index, 'Elantris', 'Brandon Sanderson');
+    assert.deepEqual(all.map((m) => [m.work.id, m.via]), [[1, 'exact']]);
+
+    // And the single-result function is unchanged — same row, same rung.
+    assert.equal(matchIndexedWork(index, 'Elantris', 'Brandon Sanderson')?.work.id, 1);
+  });
+
+  it('stores BOTH the moment the second edition clears the same gates', () => {
+    // The half that migration 0390 does close, proved on the same pair: if the
+    // sibling catalog spelled row 996 in a way that passes the unchanged
+    // rungs, the multi-result function hands back both editions — the full-cast
+    // row with no series, and the one that knows series "Elantris" volume 1.
+    // `audiobook_holding`'s view then shows the series-bearing row, because it
+    // orders `(series IS NULL)` first.
+    //
+    // ⚠️ "Elantris Live" and not "Elantris 10th" on purpose: a digit in the
+    // second title would make `numbersAgree` refuse (one number against none),
+    // which is the Tamer protection doing its job. The window where a second
+    // edition is reachable is genuinely narrow — 8 chars of title admit at most
+    // 13, so only a short, numberless suffix survives both gates.
+    const reachable = buildWorkIndex([
+      { id: 1, title: 'Elantris', authors: 'Brandon Sanderson', seriesIndex: null },
+      { id: 2, title: 'Elantris Live', authors: 'Brandon Sanderson', seriesIndex: 1 },
+    ]);
+    const all = matchIndexedWorkAll(reachable, 'Elantris', 'Brandon Sanderson');
+    assert.deepEqual(all.map((m) => [m.work.id, m.via]), [[1, 'exact'], [2, 'containment']]);
   });
 });
 

@@ -438,6 +438,61 @@ export interface WorkMatch<T> {
 }
 
 /**
+ * An author that contradicts is a rejection, not a lower score.
+ *
+ * Scored against every name the work is known by, best wins — so a pen name
+ * recorded as an `author` alias passes the gate while an unrelated author still
+ * fails it. A work with no aliases has exactly one key and behaves as before.
+ *
+ * Returns `null` when no author was supplied (the gate does not apply),
+ * a score when it passes, and **NaN when it contradicts** — a sentinel rather
+ * than a boolean because callers store the passing score. `authorPasses` below
+ * is the only correct way to read it; `=== NaN` is always false.
+ *
+ * ⚠️ Module-level, and shared by both entry points on purpose. This gate is the
+ * thing that stops *Firefight* reaching a different book called Firefight, and
+ * a second copy of it inside `matchIndexedWorkAll` is exactly the drift this
+ * file's header bans.
+ */
+function authorScoreFor(
+  authorKey: string | null,
+  candidateAuthorKeys: readonly string[],
+): number | null {
+  if (!authorKey) return null;
+  const score = bestSimilarity(authorKey, candidateAuthorKeys);
+  return score >= MIN_AUTHOR_SIMILARITY ? score : Number.NaN;
+}
+
+/** True unless `authorScoreFor` said the author contradicts. */
+function authorPasses(score: number | null): boolean {
+  return !Number.isNaN(score as number);
+}
+
+/**
+ * Everything containment requires EXCEPT the number check, which the two
+ * passes apply differently. Kept as one predicate so every pass — in both
+ * entry points — agrees on containment, length ratio and the author gate, the
+ * three things that must never loosen.
+ */
+function isBaseContained(
+  entry: { titleKey: string; authorKeys: string[] },
+  target: string,
+  authorKey: string | null,
+): boolean {
+  if (entry.titleKey.length < 3) return false;
+  const contains = entry.titleKey.includes(target) || target.includes(entry.titleKey);
+  if (!contains) return false;
+  // The shorter string must be at least 60% of the longer. This is what
+  // stops "Mistborn" matching "Mistborn: The Final Empire" — which for books
+  // is not a near miss but a genuinely different row, since the series name
+  // and the volume title are routinely both printed on the spine.
+  const shorter = Math.min(entry.titleKey.length, target.length);
+  const longer = Math.max(entry.titleKey.length, target.length);
+  if (shorter / longer < 0.6) return false;
+  return authorPasses(authorScoreFor(authorKey, entry.authorKeys));
+}
+
+/**
  * Match a title (and author, when known) against the catalog.
  *
  * Three comparisons, in falling order of how much they claim:
@@ -475,19 +530,8 @@ export function matchIndexedWork<T extends MatchableWork>(
   if (target.length < 2) return null;
 
   const authorKey = author ? normaliseTitle(primaryAuthor(author)) : null;
-
-  /**
-   * An author that contradicts is a rejection, not a lower score.
-   *
-   * Scored against every name the work is known by, best wins — so a pen name
-   * recorded as an `author` alias passes the gate while an unrelated author still
-   * fails it. A work with no aliases has exactly one key and behaves as before.
-   */
-  const authorOk = (candidateAuthorKeys: readonly string[]): number | null => {
-    if (!authorKey) return null;
-    const score = bestSimilarity(authorKey, candidateAuthorKeys);
-    return score >= MIN_AUTHOR_SIMILARITY ? score : Number.NaN;
-  };
+  const authorOk = (candidateAuthorKeys: readonly string[]): number | null =>
+    authorScoreFor(authorKey, candidateAuthorKeys);
 
   // Usually one row; more than one is an ambiguous fold (rare — two rows
   // printed identically once folded) and `disambiguateByVolume` is what
@@ -555,25 +599,8 @@ export function matchIndexedWork<T extends MatchableWork>(
     return null;
   }
 
-  /**
-   * Everything containment requires EXCEPT the number check, which the two
-   * passes below apply differently. Kept as one predicate so both passes
-   * agree on containment, length ratio and the author gate — the three
-   * things that must never loosen.
-   */
-  const baseContained = (e: (typeof index.entries)[number]): boolean => {
-    if (e.titleKey.length < 3) return false;
-    const contains = e.titleKey.includes(target) || target.includes(e.titleKey);
-    if (!contains) return false;
-    // The shorter string must be at least 60% of the longer. This is what
-    // stops "Mistborn" matching "Mistborn: The Final Empire" — which for books
-    // is not a near miss but a genuinely different row, since the series name
-    // and the volume title are routinely both printed on the spine.
-    const shorter = Math.min(e.titleKey.length, target.length);
-    const longer = Math.max(e.titleKey.length, target.length);
-    if (shorter / longer < 0.6) return false;
-    return !Number.isNaN(authorOk(e.authorKeys) as number);
-  };
+  const baseContained = (e: (typeof index.entries)[number]): boolean =>
+    isBaseContained(e, target, authorKey);
 
   // Pass 1, unchanged from before this parameter existed: a containment match
   // may differ in words, never in numbers. Without this every numbered volume
@@ -610,6 +637,221 @@ export function matchIndexedWork<T extends MatchableWork>(
     titleSimilarity: titleSimilarity(contained.titleKey, target),
     authorSimilarity: authorOk(contained.authorKeys),
   };
+}
+
+/**
+ * ⚠️ At most ONE row per folded title, chosen the only sanctioned way.
+ *
+ * Rows sharing a `titleKey` are, by that key's own definition, rows the matcher
+ * cannot tell apart — and `disambiguateByVolume` is the single place allowed to
+ * choose between them, on a volume number that survived outside the title text.
+ * A group it cannot settle contributes NOTHING, which is the same posture the
+ * exact tier takes.
+ *
+ * Only `matchIndexedWorkAll` needs this, and only because returning every
+ * passing row is what exposes the case: `matchIndexedWork` takes the single
+ * longest containment candidate, so an eleven-member fold could never surface
+ * as eleven answers. Measured 2026-08-23 against `catalog.csv`, the worst real
+ * one is *Reincarnated as a Sword*, where ten "(Light Novel)" volumes clean to
+ * one identical string and would otherwise all be filed as editions of book 5.
+ */
+function collapseAmbiguousFolds<E extends { titleKey: string; seriesIndex: number | null }>(
+  candidates: readonly E[],
+  seriesIndex: number | null | undefined,
+): E[] {
+  const byKey = new Map<string, E[]>();
+  for (const e of candidates) {
+    const group = byKey.get(e.titleKey);
+    if (group) group.push(e);
+    else byKey.set(e.titleKey, [e]);
+  }
+  const out: E[] = [];
+  for (const group of byKey.values()) {
+    // Handles the one-member case itself — see `disambiguateByVolume`.
+    const one = disambiguateByVolume(group, seriesIndex);
+    if (one) out.push(one);
+  }
+  return out;
+}
+
+/**
+ * The same question as `matchIndexedWork`, asked of a catalog that can honestly
+ * answer more than once.
+ *
+ * ## Why this exists — the two Elantris audiobooks, measured 2026-08-23
+ *
+ * `audiobookIndex` builds a `WorkIndex` over the SIBLING catalog's rows, so a
+ * lookup is "which audiobook rows are this book of ours?". The household owns
+ * two recordings of *Elantris* — a full-cast one filed with no series, and the
+ * Tenth Anniversary edition filed as series *Elantris*, volume 1, narrated by
+ * Jack Garrett. `matchIndexedWork` returns the FIRST rung that answers and
+ * stops, which is exactly right when the caller can store one answer, and
+ * exactly wrong for `audiobook_edition_holding` (migration 0390), which is
+ * keyed per edition and wants the set.
+ *
+ * ## ⚠️ What this does NOT do: it never loosens a single gate
+ *
+ * Same rungs, same order, same author gate, same `numbersAgree` check, same
+ * `disambiguateByVolume` refusals. This function only removes the *early
+ * return* — nothing that was rejected before is accepted now. A row absent
+ * from `matchIndexedWork`'s answer for any reason other than "something
+ * stronger was found first" is absent here too. That is the whole design: a
+ * second matcher with its own thresholds is the mistake this file's header
+ * opens with, and there is not one comparison written below that is not
+ * already written above.
+ *
+ * ## The refusals, restated because they are the safety
+ *
+ * - **Exact title, wrong author** → `[]`. A different book with the same name,
+ *   and every weaker rung would only find the same row again.
+ * - **Ambiguous fold that a volume number cannot settle** → refuse. Two
+ *   audiobook rows both cleaning down to bare "Space Knight" must not BOTH be
+ *   handed to volume 1; that is the flat-lie shape `numbersAgree` documents.
+ *   When the refusal happens at a rung below one that already answered, the
+ *   answers already proved stand and nothing weaker is tried — a positive
+ *   refusal stops the search, it does not retract what a stronger rung
+ *   established independently.
+ * - **Containment pass 2** (the bare-ambiguous Space Knight shape) still runs
+ *   only when pass 1 found nothing, and still resolves to at most one row.
+ *
+ * ## Ordering and duplicates
+ *
+ * Strongest rung first (exact, volume-marker fold, alias, then containment
+ * longest-key first), so `[0]` is the same row `matchIndexedWork` would have
+ * returned in every case where it returns one. One row can satisfy several
+ * rungs — an exact title is trivially contained in itself — so results are
+ * deduplicated by `work.id`, first (strongest) claim winning.
+ *
+ * Returns `[]` rather than null for "nothing", so a caller can always iterate.
+ */
+export function matchIndexedWorkAll<T extends MatchableWork>(
+  index: WorkIndex<T>,
+  title: string,
+  author?: string | null,
+  seriesIndex?: number | null,
+): WorkMatch<T>[] {
+  const target = normaliseTitle(title);
+  if (target.length < 2) return [];
+
+  const authorKey = author ? normaliseTitle(primaryAuthor(author)) : null;
+  const authorOk = (candidateAuthorKeys: readonly string[]): number | null =>
+    authorScoreFor(authorKey, candidateAuthorKeys);
+
+  const out: WorkMatch<T>[] = [];
+  const claimed = new Set<number>();
+  const add = (match: WorkMatch<T>): void => {
+    if (claimed.has(match.work.id)) return;
+    claimed.add(match.work.id);
+    out.push(match);
+  };
+
+  /**
+   * ⚠️ Rows an earlier rung positively DECLINED, which containment must not
+   * hand back. This set is the whole difference between a multi-result matcher
+   * and a flat lie.
+   *
+   * When `disambiguateByVolume` settles an ambiguous fold, the other members
+   * of that fold were REJECTED — they are different volumes that clean down to
+   * the same string. Every one of them has `titleKey === target`, and
+   * containment is a substring test that any string trivially satisfies
+   * against itself, so without this the rung sweeps the entire fold back in.
+   *
+   * Measured 2026-08-23 against `audiobook_catalog/site/catalog.csv`: 22 of
+   * 1,026 distinct cleaned titles reach more than one row, and the bulk of
+   * them are exactly this shape — *The Eminence in Shadow* vols 1–5, *The
+   * Dragon Girl's Ascension* vols 1–6, *Hell Mode* vols 2–3, *Beyond Respawn*
+   * vols 1–3 — each a set of DIFFERENT BOOKS whose volume decoration the
+   * title cleaner strips. Handing volume 1 all six recordings is the flat
+   * "All 5 held on audio" claim `numbersAgree` documents, arriving through the
+   * one door `matchIndexedWork` never had to guard: it returned at the exact
+   * rung and never reached containment with these rows in play.
+   */
+  const declined = new Set<number>();
+
+  // Rung 1 — the literal title. See `matchIndexedWork` for why an ambiguous
+  // fold refuses rather than falling through.
+  const exactCandidates = index.entries.filter((e) => e.titleKey === target);
+  if (exactCandidates.length > 1) for (const e of exactCandidates) declined.add(e.work.id);
+  const exact = disambiguateByVolume(exactCandidates, seriesIndex);
+  if (exact) {
+    const a = authorOk(exact.authorKeys);
+    // A different book with the same name. Nothing weaker can help, and this
+    // is the one refusal that discards rather than stops: nothing has been
+    // proved yet at this point.
+    if (!authorPasses(a)) return [];
+    add({ work: exact.work, via: 'exact', titleSimilarity: 1, authorSimilarity: a });
+  } else if (exactCandidates.length > 1) {
+    return [];
+  }
+
+  // Rung 2 — the same title with "Book 7" written as "7" on one side. Still
+  // `exact`; see the corresponding block in `matchIndexedWork`.
+  const targetFolded = foldVolumeMarker(target);
+  if (targetFolded !== target || index.entries.some((e) => e.matchKey !== e.titleKey)) {
+    const foldedCandidates = index.entries.filter((e) => e.matchKey === targetFolded);
+    if (foldedCandidates.length > 1) for (const e of foldedCandidates) declined.add(e.work.id);
+    const folded = disambiguateByVolume(foldedCandidates, seriesIndex);
+    if (folded) {
+      const a = authorOk(folded.authorKeys);
+      if (!authorPasses(a)) return out;
+      add({
+        work: folded.work,
+        via: 'exact',
+        titleSimilarity: titleSimilarity(folded.titleKey, target),
+        authorSimilarity: a,
+      });
+    } else if (foldedCandidates.length > 1) {
+      return out;
+    }
+  }
+
+  // Rung 3 — an alternate title the index asserts, exact only.
+  const aliased = index.aliasKeys.get(target);
+  if (aliased) {
+    const entry = index.entries.find((e) => e.work.id === aliased.id);
+    const a = entry ? authorOk(entry.authorKeys) : null;
+    if (!authorPasses(a)) return out;
+    add({ work: aliased, via: 'alias', titleSimilarity: 1, authorSimilarity: a });
+  }
+
+  // Rung 4 — containment, every row that passes rather than only the longest.
+  // `numbersAgree` still gates pass 1, so a numbered volume can no more be
+  // captured by its series-level row here than it can in `matchIndexedWork`.
+  const contained = collapseAmbiguousFolds(
+    index.entries.filter(
+      (e) =>
+        !declined.has(e.work.id) &&
+        isBaseContained(e, target, authorKey) &&
+        numbersAgree(e.titleKey, target),
+    ),
+    seriesIndex,
+  ).sort((a, b) => b.titleKey.length - a.titleKey.length);
+
+  if (contained.length === 0) {
+    // Pass 2 — the Space Knight shape, and still at most one row: an ambiguous
+    // fold that only `seriesIndex` can settle must not resolve to the whole
+    // group. Unchanged from `matchIndexedWork`.
+    const bareAmbiguous = index.entries.filter(
+      (e) =>
+        !declined.has(e.work.id) &&
+        isBaseContained(e, target, authorKey) &&
+        numbersIn(e.titleKey).size === 0 &&
+        (index.titleKeyCounts.get(e.titleKey) ?? 0) > 1,
+    );
+    const one = disambiguateByVolume(bareAmbiguous, seriesIndex);
+    if (one) contained.push(one);
+  }
+
+  for (const e of contained) {
+    add({
+      work: e.work,
+      via: 'containment',
+      titleSimilarity: titleSimilarity(e.titleKey, target),
+      authorSimilarity: authorOk(e.authorKeys),
+    });
+  }
+
+  return out;
 }
 
 /**

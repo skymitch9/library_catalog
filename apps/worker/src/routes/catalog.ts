@@ -30,6 +30,7 @@ import {
   findEditionByIsbn13,
   findWorkByKey,
   getAudiobookHolding,
+  listAudioEditions,
   getEbookHolding,
   getCopy,
   getReadState,
@@ -329,14 +330,21 @@ export const catalogRoutes = new Hono<AppBindings>()
     // panel is above the fold on a book that has one, and a book page that
     // rendered and *then* grew a "check this" note is the one place a late
     // arrival actually misleads. Resolved ones come too — see `listWatchesForWork`.
-    const [editions, copies, reading, watches, audiobookHolding, ebookHolding] = await Promise.all([
-      listEditionsForWork(c.env.DB, id),
-      listCopiesForWork(c.env.DB, id),
-      getReadState(c.env.DB, id, user.id),
-      listWatchesForWork(c.env.DB, id),
-      getAudiobookHolding(c.env.DB, id),
-      getEbookHolding(c.env.DB, id),
-    ]);
+    const [editions, copies, reading, watches, audiobookHolding, audioEditions, ebookHolding] =
+      await Promise.all([
+        listEditionsForWork(c.env.DB, id),
+        listCopiesForWork(c.env.DB, id),
+        getReadState(c.env.DB, id, user.id),
+        listWatchesForWork(c.env.DB, id),
+        getAudiobookHolding(c.env.DB, id),
+        // ⚠️ Beside `audiobookHolding`, never instead of it. That field reads the
+        // `audiobook_holding` VIEW (one whole row per work) and five other
+        // callers depend on it; this is the full set behind that view, migration
+        // 0390, and the two are ordered identically so they cannot disagree
+        // about which edition is the primary one.
+        listAudioEditions(c.env.DB, id),
+        getEbookHolding(c.env.DB, id),
+      ]);
 
     // Peer holdings: does any connected library hold this same work?
     let peerHoldings: Array<{
@@ -365,6 +373,7 @@ export const catalogRoutes = new Hono<AppBindings>()
       reading,
       watches,
       audiobookHolding,
+      audioEditions,
       ebookHolding,
       peerHoldings,
       /**
