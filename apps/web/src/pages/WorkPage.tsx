@@ -1,50 +1,49 @@
-import { useEffect, useState } from 'react';
-import {
-  api,
-  type Me,
-  type Watch,
-  type WorkAudioEdition,
-  type WorkAudiobookHolding,
-  type WorkEbookHolding,
-} from '../api.js';
+import { useEffect, useRef, useState } from 'react';
+import { api, type Me } from '../api.js';
 import { describeError } from '../lib/errors.js';
-import { Accessories } from '../components/Accessories.js';
-import { Aliases } from '../components/Aliases.js';
 import { Changes } from '../components/Changes.js';
 import { ContentNotes } from '../components/ContentNotes.js';
-import { Copies, type CopyView } from '../components/Copies.js';
 import { Cover } from '../components/Cover.js';
 import { DeleteWork } from '../components/DeleteWork.js';
-import { EditTitleAuthor } from '../components/EditTitleAuthor.js';
-import { CoverPanel } from '../components/CoverPanel.js';
 import { DriveLinks } from '../components/DriveLinks.js';
-import { EbookShadow } from '../components/EbookShadow.js';
-import { Editions, type EditionView } from '../components/Editions.js';
-import { Enrich } from '../components/Enrich.js';
+import { EditBox } from '../components/EditBox.js';
+import { OnYourShelf } from '../components/OnYourShelf.js';
 import { OtherVersions } from '../components/OtherVersions.js';
 import { PeerLibraries } from '../components/PeerLibraries.js';
-import { Provenance } from '../components/Provenance.js';
-import { Related } from '../components/Related.js';
 import { Reviews } from '../components/Reviews.js';
 import { Tbr } from '../components/Tbr.js';
 import { Watches } from '../components/Watches.js';
-import { WorkFields } from '../components/WorkFields.js';
-import { formatLabel } from '../lib/formats.js';
 import { deriveWorkView, type WorkDetail } from '../lib/work-view.js';
-import { Link, universePath } from '../router.js';
+import { Link, universePath, workPath } from '../router.js';
 
 /**
- * One book: what it is, where the file is, which printings we hold, and what we
- * thought.
+ * One book: what it is, what we thought of it, what we have, and where else to
+ * get it.
  *
- * The three catalog sections mirror the schema's three layers deliberately —
- * work / edition / copy — because that split is the thing a person has to
- * understand to use this app correctly. "I own the paperback but not the ebook"
- * is only answerable if the page shows editions and copies as different things.
+ * ## The redesigned order (2026-08-24)
  *
- * The Drive links sit directly under the title, above all of that, because for
- * this collection they are the *action*: 118 of 118 editions are ebook files,
- * and what you almost always want from a book page is the book.
+ * The page used to be twenty stacked panels in schema order (work → edition →
+ * copy → …), with eleven separate edit surfaces and the ratings buried at #18.
+ * It is now built around the questions a person actually opens a book page to
+ * ask, in that order:
+ *
+ *   1. **Identity** — the cover (clickable), title, author, series, universe,
+ *      and one **Edit** button, not eleven.
+ *   2. **Ratings & reviews** — hoisted to right under the identity.
+ *   3. **On your shelf** — one hero holding (the format, big, with the
+ *      special-edition badges) and an availability row: also on audio? as an
+ *      ebook? at a peer library? (`OnYourShelf` / `deriveShelfView`).
+ *   4. **Your reading**, then **content warnings**, then a demoted **More**
+ *      cluster for the detailed record.
+ *
+ * The eleven edit panels are consolidated into one `EditBox` (Overview + tabs)
+ * behind the single Edit button. Each panel keeps its own data guard — the split
+ * is one of surface, not of logic; see `EditBox`'s header.
+ *
+ * ⚠️ **The `/api/works/:id` response contract is unchanged.** `deriveWorkView`
+ * reads exactly the same `detail.<field>` set it did before, so the worker
+ * contract test (`work-detail-contract.test.ts`) and the render smoke test
+ * (`work-page-render.test.ts`) are untouched by this reorg.
  */
 
 // ⚠️ `WorkDetail` — the shape of the `/api/works/:id` response — now lives in
@@ -132,6 +131,9 @@ export function WorkPage({
 }) {
   const [detail, setDetail] = useState<WorkDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** The one edit box, opened by the one Edit button. */
+  const [editOpen, setEditOpen] = useState(false);
+  const editRef = useRef<HTMLDivElement>(null);
 
   function load() {
     api
@@ -188,14 +190,31 @@ export function WorkPage({
     universe,
   } = deriveWorkView(detail, me);
 
+  const canEdit = me.capabilities.includes('editCatalog');
+
+  function openEdit() {
+    setEditOpen(true);
+    // Let the box mount, then bring it into view.
+    setTimeout(() => editRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+  }
+
   return (
     <main>
       <button className="back" onClick={onBack}>
         ← {backLabel}
       </button>
 
+      {/* 1 — IDENTITY. The cover is now a real link to the work (the owner's ask
+          to make covers clickable everywhere they render); the head carries one
+          Edit button, not eleven. */}
       <div className="work-head">
-        <Cover src={work.coverUrl} title={work.title} authors={work.authors ?? undefined} size="large" />
+        <Cover
+          src={work.coverUrl}
+          title={work.title}
+          authors={work.authors ?? undefined}
+          size="large"
+          to={workPath(work.id)}
+        />
         <div className="work-head__text">
           {/* Above the title rather than beside it: it must be near the title
               (the owner's ask) without competing with it, and a corner
@@ -209,43 +228,17 @@ export function WorkPage({
           <p className="work-head__authors">
             {work.authors ?? <span className="muted">Author not recorded yet</span>}
           </p>
-          {/* The illustrator, where a cover would print it — directly under the
-              byline. #269 is the shape this exists for: author Christie
-              Hainsby, illustrator Shannon Hays, publisher on the edition —
-              three credits, three homes. ⚠️ Null renders NOTHING: most novels
-              have none, absence already says it, and there is no
-              not-applicable sentinel to draw. */}
           {work.illustrator && (
             <p className="work-head__illustrator">Illustrated by {work.illustrator}</p>
           )}
           {work.series && (
             <p className="series-tag">
-              {/* A way into "what am I missing" from the book that prompted the
-                  question, which is where it is actually asked. */}
               <button className="link series-tag__link" onClick={() => onOpenSeries(work.series!)}>
                 {work.series}
                 {work.seriesIndexDisplay ? <b> {work.seriesIndexDisplay}</b> : null}
               </button>
             </p>
           )}
-          {/* ⚠️ The tier ABOVE the series, and shown only when it says
-              something the series does not. Directly under the series line
-              because that is the ladder of scope a reader is already reading
-              down — book, series, world — and because "Part of The Cosmere"
-              beside a *Secret Projects* volume is exactly the fact neither the
-              title nor the series carries.
-
-              ⚠️ Nothing is rendered when there is none, and that is the whole
-              rule. Most books here are in no universe and are correctly filed;
-              a dash, an "unknown" or a quiet badge would turn the majority of
-              the shelf into a worklist. Settled precedent: a NULL
-              `cover_status` means nobody looked, a NULL `edition_kind` means
-              ordinary, and neither is drawn.
-
-              A real anchor rather than the `onOpenSeries` callback beside it —
-              places have addresses now, so the status bar shows where this
-              goes and a long-press offers "open in new tab". The series link
-              above is still a button only because it predates that. */}
           {universe && (
             <p className="universe-tag">
               Part of{' '}
@@ -259,6 +252,10 @@ export function WorkPage({
             </p>
           )}
           {work.firstPublished && <p className="muted small">First published {work.firstPublished}</p>}
+          {/* The description as read-only primary content, right in the head —
+              the reading-decision text a person opens the page for. Editing it
+              lives in the Edit box (WorkFields); this is its view. */}
+          {work.description && <p className="work-head__desc">{work.description}</p>}
           {/* ⚠️ Not shown for a book that only exists on paper — it is on a
               shelf, and there is no file to open. `shouldShowDriveLinks` carries
               the rule and, more importantly, why an ISBN is not part of it. */}
@@ -269,55 +266,40 @@ export function WorkPage({
               sourceUrl={fileEdition?.source_url ?? null}
             />
           )}
+          {/* THE one Edit button, replacing the eleven scattered edit panels. */}
+          <div className="row-tight work-head__actions">
+            <button className={editOpen ? 'chip' : 'chip primary'} onClick={editOpen ? () => setEditOpen(false) : openEdit}>
+              {editOpen ? 'Close editor' : canEdit ? 'Edit this book' : 'Book details'}
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* ⚠️ Editable in place, and that is load-bearing rather than a nicety.
-          The details queue now writes these four fields without asking — see
-          `components/WorkFields.tsx` and `lib/research-run.ts`. The owner traded
-          confirming each value for correcting a wrong one when they meet it, so
-          meeting it has to lead somewhere. Until this, it did not: the page
-          printed the description and the app had no way to change it. */}
-      {/* ⚠️ Directly under the head, above every other panel, and that
-          placement is the point of both of them. They are the two things that
-          say "what you just read may be wrong" — a cover that is a stand-in,
-          and a note somebody left about the record. Put below the editions and
-          the copies they would be found by somebody who had already believed
-          the page. */}
-      <Watches
-        workId={workId}
-        watches={watches}
-        canEdit={me.capabilities.includes('editCatalog')}
-        onChanged={load}
+      {/* ⚠️ Kept high, above the record: a watch says "what you just read may be
+          wrong" and hiding it under the detail defeats it. */}
+      <Watches workId={workId} watches={watches} canEdit={canEdit} onChanged={load} />
+
+      {/* 2 — RATINGS & REVIEWS, hoisted to right under the identity (it used to
+          be #18 of 20). Reviews is still the only thing here that can see
+          Firestore, so `onReadStateDerived` still reloads the reading panel when
+          a rating implies a read state. Its browser-side write path is unchanged. */}
+      <Reviews workId={workId} me={me} onReadStateDerived={load} />
+
+      {/* 3 — ON YOUR SHELF: one hero holding (format big + special-edition
+          badges) and the availability row (also on audio? as an ebook? at a
+          peer?). A summary of the detailed panels in the More cluster below;
+          `deriveShelfView` feeds both so they cannot disagree. */}
+      <OnYourShelf
+        copies={copies}
+        editions={editions}
+        audiobookHolding={audiobookHolding}
+        audioEditions={audioEditions}
+        audioEditionCount={audioEditionCount}
+        ebookHolding={ebookHolding}
+        peerHoldings={peerHoldings}
       />
 
-      <CoverPanel
-        workId={workId}
-        work={work}
-        canEdit={me.capabilities.includes('editCatalog')}
-        onChanged={load}
-      />
-
-      <WorkFields
-        workId={workId}
-        work={work}
-        canEdit={me.capabilities.includes('editCatalog')}
-        onSaved={load}
-      />
-
-      {/* ⚠️ The gated surface for the two fields WorkFields deliberately
-          cannot reach. Directly under it so "why can't I edit the title
-          there" has its answer one panel down — the heavier ceremony, with
-          the review-carry rules attached. On an authorless book it is the
-          remediation ask ("Add the author") and sits here, above the fold-ish,
-          because finishing the record is the page's one outstanding job. */}
-      <EditTitleAuthor
-        workId={workId}
-        work={work}
-        canEdit={me.capabilities.includes('editCatalog')}
-        onSaved={load}
-      />
-
+      {/* 4 — YOUR READING. */}
       {canTrack && (
         <section className="panel">
           <h3>Your reading</h3>
@@ -339,12 +321,6 @@ export function WorkPage({
               {reading.read_format ? ` (${reading.read_format})` : ''}
             </p>
           )}
-          {/* ⚠️ Says where the answer came from, and says it plainly, because
-              nobody set this state by hand and a page that implies they did is
-              lying to them. Pressing any chip above replaces it with 'human'
-              and this line disappears — which is also the undo: a rating never
-              overrules a person. Only a positive 'rating' is captioned; NULL
-              means unrecorded and must stay silent. */}
           {reading?.read_state_how === 'rating' && (
             <p className="muted small">
               Marked read from your{' '}
@@ -352,137 +328,83 @@ export function WorkPage({
               above and it stays changed.
             </p>
           )}
-          {/* ⚠️ Inside "Your reading" and directly under the chips, because it
-              is the same fact one step earlier: what you mean to read, then
-              what you are reading, then what you read. It is also what makes
-              the chips clear it — `Tbr` takes the read state as a prop, so
-              pressing Read above (or a rating deriving it below) removes the
-              entry with no second implementation of the rule here.
-
-              The list itself lives in the audiobook site's `readingLists`
-              collection, so this button and its `✓ To Be Read` button are one
-              intention. See components/Tbr.tsx. */}
           <Tbr workId={workId} readState={reading?.read_state ?? null} />
         </section>
       )}
 
-      <Editions
-        workId={workId}
-        editions={editions}
-        canEdit={me.capabilities.includes('editCatalog')}
-        onChanged={load}
-      />
+      {/* CONTENT WARNINGS — read BEFORE the book, so above the demoted detail.
+          The "Request content warnings" button is a Stage-3 scaffold: the
+          propagate-to-matching-titles + dedup backend is follow-on. */}
+      <ContentNotes workId={workId} me={me} />
+      <RequestContentWarnings canEdit={canEdit} />
 
-      {/* Directly under Editions, because it is Editions' shadow: the ebook
-          fact the panel above states from edition rows, restated from the
-          `ebook_holding` cache (migration 0310), with the agreement said in
-          words. Phase 4 of the ebook split — both representations live side
-          by side until phase 5 prunes the ebook editions, and this panel is
-          the visible evidence that gate needs. Renders nothing on the
-          ordinary physical-only book. */}
-      <EbookShadow editions={editions} holding={ebookHolding} />
-
-      <Copies
-        workId={workId}
-        copies={copies}
-        editions={editions}
-        canEdit={me.capabilities.includes('editCatalog')}
-        canSuggest={me.capabilities.includes('suggestWishlist')}
-        // ⚠️ `editCatalog`, the same capability the person field itself needs —
-        // so every editor who can record who has a book gets the autocomplete.
-        // It reads the NARROW `GET /api/members` (id + displayName only), added
-        // for OR-1's follow-up so the picker no longer needed the admin-only
-        // `GET /api/users`. See the prop's own comment.
-        canListMembers={me.capabilities.includes('editCatalog')}
-        onChanged={load}
-      />
-
-      {/* Directly under Copies, and above Accessories: this is the other place
-          the household holds the book, so it reads as a continuation of "what
-          we have" rather than a footnote. Renders nothing when there are no
-          other versions — see `OtherVersions`'s own header for why the fact
-          was invisible here before this (only a series page's "N on audio"
-          chip showed it, and a book with no series, or nobody happening to
-          open that page, hid it completely). */}
-      <OtherVersions
-        holding={audiobookHolding}
-        editions={audioEditions}
-        audioEditionCount={audioEditionCount}
-        ourSeries={work.series}
-      />
-
-      <PeerLibraries holdings={peerHoldings} />
-
-      {/* Under Copies (and OtherVersions, which renders nothing on most books)
-          because an accessory belongs to a copy — a plushie arrived in a
-          specific box, not with the novel as an idea. See migration 0011 and
-          the panel's own header.
-
-          ⚠️ This is the ONLY place accessories are shown. The owner asked for the
-          count to stay off the collection page, and nothing on that page (or in
-          `/api/collection`, or `collectionStats`) knows the table exists. */}
-      <Accessories
-        workId={workId}
-        copies={copies}
-        canEdit={me.capabilities.includes('editCatalog')}
-      />
-
-      {/* Where it came from, when it did not come from a shop. Below the copies
-          and the extras because it explains both of them — and it renders one
-          line per reward, so a campaign that delivered a hardcover AND an EPUB of
-          this novel shows two. That pair is the thing the owner asked to be able
-          to check; a panel that summarised it away would defeat the feature. */}
-      <Provenance workId={workId} canEdit={me.capabilities.includes('editCatalog')} />
-
-      {/* Above Related and below Copies deliberately: an alias is a fact about
-          THIS book's identity, like its editions, whereas a relation points at a
-          different row. It also sits directly above Enrich, which is the panel
-          an alias exists to unblock — add the pen name, then ask Open Library
-          again. */}
-      <Aliases workId={workId} canEdit={me.capabilities.includes('editCatalog')} />
-
-      <Related
-        workId={workId}
-        workTitle={work.title}
-        canEdit={me.capabilities.includes('editCatalog')}
-        onOpen={onOpen}
-      />
-
-      {me.capabilities.includes('editCatalog') && (
-        <Enrich workId={workId} hasCover={!!work.coverUrl} onApplied={load} />
+      {/* THE ONE EDIT BOX — Overview + tabs, all eleven former panels inside,
+          each with its guard intact. Opened by the single Edit button above. */}
+      {editOpen && (
+        <div ref={editRef}>
+          <EditBox
+            workId={workId}
+            work={work}
+            me={me}
+            editions={editions}
+            copies={copies}
+            ebookHolding={ebookHolding}
+            onChanged={load}
+            onOpen={onOpen}
+          />
+        </div>
       )}
 
-      {/* ⚠️ ABOVE Reviews, deliberately, and it is the one placement decision
-          in this panel that is about the reader rather than the schema: a
-          content note is read BEFORE the book, a review after it. Below the
-          shelf sections because it is not a fact about what the household owns
-          — it is a fact about the text, which is also why it sits beside
-          Reviews rather than beside Editions. Both read the same shared
-          Firestore project; see components/ContentNotes.tsx. */}
-      <ContentNotes workId={workId} me={me} />
+      {/* THE DEMOTED "MORE" CLUSTER — the detailed record, for when the summary
+          above is not enough. Collapsed by default so it does not crowd the page. */}
+      <details className="more-cluster">
+        <summary>More about this book</summary>
 
-      {/* ⚠️ `onReadStateDerived` is not optional wiring. Reviews is the only
-          thing here that can see Firestore, so it is where "you rated this, so
-          you read it" is discovered — and when it fires, the "Your reading"
-          panel above is already on screen showing the stale answer. Reloading
-          is what stops the page contradicting itself. It fires only when
-          something actually changed, so there is no loop. */}
-      <Reviews workId={workId} me={me} onReadStateDerived={load} />
+        {/* The audiobook detail — narrator, provenance, staleness — the rows the
+            "Also on audio" chip summarises. */}
+        <OtherVersions
+          holding={audiobookHolding}
+          editions={audioEditions}
+          audioEditionCount={audioEditionCount}
+          ourSeries={work.series}
+        />
 
-      {/* Last, because it is the record OF the page rather than part of it:
-          who changed what, when, and what it said before. Loads on demand. */}
-      <Changes workId={workId} />
+        <PeerLibraries holdings={peerHoldings} />
 
-      {/* Below even the Changes log, because it is the one control on this
-          page whose accidental press matters most — and because reading the
-          record of the page is a reasonable last thing to do before ending
-          it. Refused by the server while any copy records property; the
-          panel's header comment carries the #139 story. */}
-      <DeleteWork
-        workId={workId}
-        canEdit={me.capabilities.includes('editCatalog')}
-        onDeleted={onBack}
-      />
+        {/* The record OF the page — who changed what, when, and what it said
+            before. Loads on demand. */}
+        <Changes workId={workId} />
+      </details>
+
+      {/* Below even the More cluster, because it is the one control whose
+          accidental press matters most. Refused by the server while any copy
+          records property; the panel's header comment carries the #139 story. */}
+      <DeleteWork workId={workId} canEdit={canEdit} onDeleted={onBack} />
     </main>
+  );
+}
+
+/**
+ * "Request content warnings" — Stage-3 scaffold. The button is real; the backend
+ * that would propagate a request to every matching title and dedup it is a
+ * deliberate follow-on (see `docs/info/content-warnings.md` and the redesign
+ * brief). It says so rather than pretending to queue work that nothing consumes.
+ */
+function RequestContentWarnings({ canEdit }: { canEdit: boolean }) {
+  const [asked, setAsked] = useState(false);
+  if (!canEdit) return null;
+  return (
+    <div className="stack request-scaffold">
+      <div className="row-tight">
+        <button onClick={() => setAsked(true)}>Request content warnings</button>
+      </div>
+      {asked && (
+        <p className="muted small">
+          Noted. Automatically gathering content warnings and propagating them to matching titles is
+          designed but not yet built — for now, add them by hand above. See
+          <code> docs/info/content-warnings.md</code>.
+        </p>
+      )}
+    </div>
   );
 }

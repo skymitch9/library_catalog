@@ -2614,3 +2614,92 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
   .tbr-cards__deck { transition: none !important; }
   .tbr-result { animation: none; }
 }
+
+/* =========================================================================
+ * Work-page redesign (2026-08-24) — identity + "On your shelf" hero + the one
+ * edit box + the demoted "More" cluster. Everything here draws on the estate
+ * `--et-*` token contract only, so all themes (apple/cyberpunk/retro ×
+ * light/dark) keep working with no new colours invented.
+ * ========================================================================= */
+
+/* The work-page hero cover is a real link now (covers clickable). Block, so the
+   image keeps its own box; no underline, and the focus ring the app uses. */
+.cover-link { display: inline-block; text-decoration: none; border-radius: var(--et-radius); }
+.cover-link:focus-visible { outline: 2px solid var(--et-accent); outline-offset: 2px; }
+.cover-link:hover .cover { box-shadow: var(--et-shadow-lift); }
+
+/* The description as read-only primary content in the head. */
+.work-head__desc { margin-top: 0.5rem; color: var(--et-fg); max-width: 60ch; }
+.work-head__actions { margin-top: 0.7rem; }
+
+/* --- "On your shelf" hero ------------------------------------------------- */
+.shelf-hero__lead { display: flex; gap: 0.9rem; align-items: center; flex-wrap: wrap; }
+
+/* The format, big — the one-glance answer to "what do I have". Filled accent for
+   a physical object; outlined for a file; muted outline for audio (someone
+   else's catalog), matching the `.fmt--*` grammar one size up. */
+.shelf-hero__format {
+  font-size: 1.15rem;
+  font-weight: 800;
+  padding: 0.35rem 0.8rem;
+  border-radius: var(--et-radius);
+  border: 2px solid var(--et-accent);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+.shelf-hero__format--physical { background: var(--et-accent); color: var(--et-accent-fg); border-color: var(--et-accent); }
+.shelf-hero__format--ebook { color: var(--et-accent); border-color: var(--et-accent); background: transparent; }
+.shelf-hero__format--audio { color: var(--et-muted); border-color: var(--et-muted); background: transparent; }
+.shelf-hero__format--unknown { color: var(--et-muted); border-color: var(--et-border); background: transparent; }
+
+.shelf-hero__facts { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
+.shelf-hero__status { font-weight: 600; }
+.shelf-hero__badges { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+
+/* Special-edition badges — Signed / Sprayed edges / Leatherbound / Slipcase.
+   A filled accent pill: these are facts about the premium object you hold, the
+   strongest claim, so they carry the strongest fill. Inline from birth — not a
+   `.mark`, which is absolute-positioned for a cover corner. */
+.special-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: var(--et-radius-pill, 999px);
+  background: var(--et-accent);
+  color: var(--et-accent-fg);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.shelf-hero__avail { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-top: 0.8rem; }
+.shelf-hero__avail-label { flex: none; }
+
+/* --- The one edit box: Overview + tabs ------------------------------------ */
+.edit-box__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.9rem;
+  padding-bottom: 0.7rem;
+  border-bottom: var(--et-hairline, 1px solid var(--et-border));
+}
+/* Each former panel keeps its own `.panel` chrome; give a little air between
+   them inside a tab so Overview reads as sections rather than one wall. */
+.edit-box__body { display: flex; flex-direction: column; gap: 0.6rem; }
+.edit-box__section { display: flex; flex-direction: column; gap: 0.6rem; }
+
+.request-scaffold { margin-top: 0.4rem; }
+
+/* --- The demoted "More" cluster ------------------------------------------- */
+.more-cluster { margin: 1.2rem 0; }
+.more-cluster > summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--et-heading-color, var(--et-fg));
+  padding: 0.5rem 0;
+  list-style: revert;
+}
+.more-cluster > summary:focus-visible { outline: 2px solid var(--et-accent); outline-offset: 2px; }
+.more-cluster[open] > summary { margin-bottom: 0.4rem; }
