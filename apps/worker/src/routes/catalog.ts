@@ -430,6 +430,11 @@ export const catalogRoutes = new Hono<AppBindings>()
 
     return c.json({
       work,
+      // The full edition list (physical + ebook printings) the work page renders
+      // and `.find()`s over. Computed above but dropped from this response in a
+      // refactor; WorkPage.tsx destructures it and crashes the whole page when it
+      // is undefined — every work went blank. Restored 2026-08-24.
+      editions,
       // ⚠️ WHO has the book is redacted HERE, on the way out, and by the one
       // rule (`lib/copy-person.ts`): an editor sees the name, the linked person
       // sees their own row, everybody else gets nulls and keeps the status
