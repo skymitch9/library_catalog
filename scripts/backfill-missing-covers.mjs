@@ -60,6 +60,12 @@
  * image link is well-formed, plausible and 404, and this is the only thing
  * standing between that and the database.
  *
+ * ⚠️ **Whose key pays follows the INSTANCE, not the run.** `--llm` reads
+ * `ANTHROPIC_API_KEY` on the main catalogue and `ANTHROPIC_API_KEY_FRIEND_SAM`
+ * on `--friend`, and prints which NAME it used. Padhard's spend goes on
+ * Samantha's own key — `apps/worker/.dev.vars` lines 79–85 say so. Her line is
+ * a drop-box that lives BLANK; see the comment at the rung itself.
+ *
  * Reads `GOOGLE_BOOKS_API_KEY` from `apps/worker/.dev.vars`. ⚠️ Without it rung 2
  * is skipped and this script is worth 0 new covers — anonymous Google Books
  * returned 429 on 40 of 40 calls (2026-08-09).
@@ -351,9 +357,41 @@ if (useLlm) {
       `\n     That is an estimate from list prices, not a measurement — see COVER_CENTS_EACH.`,
   );
 
-  const apiKey = readDevVar('ANTHROPIC_API_KEY');
+  /*
+   * ⚠️ **The key follows the INSTANCE, and that is a custody rule, not a
+   * convenience.** This rung is the only thing in `scripts/` that spends money,
+   * and until 2026-08-23 it read `ANTHROPIC_API_KEY` whichever database it was
+   * pointed at — so a `--friend --llm` sweep of padhard's 32 cover-needed rows
+   * would have been billed to the OWNER's Anthropic account for books in
+   * Samantha's catalogue.
+   *
+   * `apps/worker/.dev.vars` lines 79–85 settle whose key pays: padhard's spend
+   * goes on HER key, dropped into `ANTHROPIC_API_KEY_FRIEND_SAM`. The name is
+   * printed on every run so the bill is never a surprise — the NAME only, never
+   * the value.
+   *
+   * ⚠️ That drop-box line is deliberately BLANK most of the time: the runbook
+   * (`docs/access/second-instance.md`) pastes a key in, pipes it to
+   * `wrangler secret put ANTHROPIC_API_KEY --env friend`, then blanks the line
+   * again. Her live Worker holds the key; a secret store cannot be read back.
+   * So a `--friend --llm` run needs the owner to re-paste it first, and this
+   * rung says exactly that rather than falling back to the main key.
+   */
+  const keyName = flags.friend ? 'ANTHROPIC_API_KEY_FRIEND_SAM' : 'ANTHROPIC_API_KEY';
+  const whose = flags.friend ? "padhard — Samantha's own key" : "main instance — the owner's key";
+  console.log(`  key in use: ${keyName}  (${whose})`);
+
+  const apiKey = readDevVar(keyName);
   if (!apiKey) {
-    console.log('  ⚠️ No ANTHROPIC_API_KEY in apps/worker/.dev.vars — skipping this rung.');
+    console.log(`  ⚠️ ${keyName} is empty or absent in apps/worker/.dev.vars — skipping this rung.`);
+    if (flags.friend) {
+      console.log(
+        '     That is the drop-box being blank, which is its resting state — not a\n' +
+          '     misconfiguration. Paste her key after the `=` on that line, re-run, then\n' +
+          '     blank it again. Runbook: docs/access/second-instance.md.\n' +
+          '     ⚠️ Do NOT substitute ANTHROPIC_API_KEY here: that bills padhard to the owner.',
+      );
+    }
   } else {
     for (const [i, r] of remaining.entries()) {
       const isbn = r.isbns ? String(r.isbns).split(' ')[0] : null;
