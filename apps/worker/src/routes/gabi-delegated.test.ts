@@ -832,4 +832,114 @@ describe('the TIER 2 confirm verb — fix-field', () => {
     assert.equal(log!.binds[7], 'human', 'design 7.2: a confirmed write is human, not auto');
     assert.match(String(log!.binds[8]), /^gabi-discord.*confirm/);
   });
+
+  // ── the two series-index fields must move together ────────────────────────
+  //
+  // ⚠️ The bug this guards: a book has `series_index_sort` (numeric ordering)
+  // AND `series_index_display` (the printed volume label). GABI's `fix-field`
+  // confirms only the display, so a volume change used to move the display while
+  // the sort stayed put — the book sorted at its old position while printing a
+  // new number. The UPDATE binds `series_index_sort` at index 7 and
+  // `series_index_display` at index 8 (works.ts).
+  const updateOf = (captured: { sql: string; binds: unknown[] }[]) =>
+    captured.find((s) => s.sql.includes('UPDATE work SET'));
+
+  it('a confirmed VOLUME change moves the numeric sort with the printed display', async () => {
+    // Row starts sort=1 / display='1'; the confirm changes the display to '5'.
+    const { db, captured } = fixFieldDb(
+      { id: 4, role: 'contributor', firebase_uid: 'uid-123456' },
+      workRow({ series_index_sort: 1, series_index_display: '1' }),
+    );
+    const res = await post(
+      'fix-field',
+      {
+        onBehalfOf: 'uid-123456',
+        subject: fixSubject,
+        changes: [{ field: 'seriesIndexDisplay', before: '1', after: '5' }],
+        dryRun: false,
+      },
+      fixEnv(db),
+    );
+    assert.equal(res.status, 200);
+    const upd = updateOf(captured);
+    assert.ok(upd, 'the work row was updated');
+    assert.equal(upd!.binds[8], '5', 'the printed display is the confirmed value');
+    assert.equal(upd!.binds[7], 5, 'the numeric sort was derived from it and moved too');
+    // And the derived sort is itself an audited change (1 → 5).
+    const sortLog = captured.find(
+      (s) => s.sql.includes('INSERT INTO change_log') && s.binds[3] === 'seriesIndexSort',
+    );
+    assert.ok(sortLog, 'the sort move is logged, not silent');
+  });
+
+  it('a decimal volume derives a decimal sort', async () => {
+    const { db, captured } = fixFieldDb(
+      { id: 4, role: 'contributor', firebase_uid: 'uid-123456' },
+      workRow({ series_index_sort: 1, series_index_display: '1' }),
+    );
+    const res = await post(
+      'fix-field',
+      {
+        onBehalfOf: 'uid-123456',
+        subject: fixSubject,
+        changes: [{ field: 'seriesIndexDisplay', before: '1', after: '2.5' }],
+        dryRun: false,
+      },
+      fixEnv(db),
+    );
+    assert.equal(res.status, 200);
+    const upd = updateOf(captured);
+    assert.equal(upd!.binds[8], '2.5');
+    assert.equal(upd!.binds[7], 2.5, 'a novella files at 2.5 in the sort too');
+  });
+
+  it('a NON-NUMERIC volume label leaves the sort untouched — no garbage', async () => {
+    // "Prequel" carries no number; the sort must stay at its existing value
+    // rather than become NaN/0. Row starts sort=1.
+    const { db, captured } = fixFieldDb(
+      { id: 4, role: 'contributor', firebase_uid: 'uid-123456' },
+      workRow({ series_index_sort: 1, series_index_display: '1' }),
+    );
+    const res = await post(
+      'fix-field',
+      {
+        onBehalfOf: 'uid-123456',
+        subject: fixSubject,
+        changes: [{ field: 'seriesIndexDisplay', before: '1', after: 'Prequel' }],
+        dryRun: false,
+      },
+      fixEnv(db),
+    );
+    assert.equal(res.status, 200);
+    const upd = updateOf(captured);
+    assert.equal(upd!.binds[8], 'Prequel', 'the printed form is what the person confirmed');
+    assert.equal(upd!.binds[7], 1, 'the sort is left at its existing value, not corrupted');
+    // The sort did not change, so there is no audit row for it.
+    const sortLog = captured.find(
+      (s) => s.sql.includes('INSERT INTO change_log') && s.binds[3] === 'seriesIndexSort',
+    );
+    assert.equal(sortLog, undefined, 'an unchanged sort is not logged');
+  });
+
+  it('a non-volume field (series) does not touch the sort', async () => {
+    // Regression guard: the derivation keys off seriesIndexDisplay only.
+    const { db, captured } = fixFieldDb(
+      { id: 4, role: 'contributor', firebase_uid: 'uid-123456' },
+      workRow({ series: 'Stormlight', series_index_sort: 1, series_index_display: '1' }),
+    );
+    const res = await post(
+      'fix-field',
+      {
+        onBehalfOf: 'uid-123456',
+        subject: fixSubject,
+        changes: [{ field: 'series', before: 'Stormlight', after: 'The Stormlight Archive' }],
+        dryRun: false,
+      },
+      fixEnv(db),
+    );
+    assert.equal(res.status, 200);
+    const upd = updateOf(captured);
+    assert.equal(upd!.binds[7], 1, 'sort unchanged');
+    assert.equal(upd!.binds[8], '1', 'display unchanged');
+  });
 });

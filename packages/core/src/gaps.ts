@@ -207,6 +207,46 @@ export function seriesIndexDisplayFrom(sort: number): string {
 }
 
 /**
+ * ⚠️ **Display → sort — the inverse of {@link seriesIndexDisplayFrom}, so the
+ * ordering key can be kept consistent when a printed volume designation is
+ * changed on its own** (e.g. through GABI's `fix-field`, which confirms only
+ * `seriesIndexDisplay`). Returns the numeric sort a display implies, or `null`
+ * when the display carries no unambiguous number, meaning **leave the existing
+ * sort alone**.
+ *
+ * ⚠️ **Fail-SAFE, not best-effort — this refuses rather than guesses.** A
+ * display becomes a sort only when it is *unambiguously* a number:
+ *
+ *  - a bare number — `"5" → 5`, `"2.5" → 2.5`, `"07" → 7`;
+ *  - the legacy `Book N` form this function's own inverse produces, plus the
+ *    hand-quoted `Volume 07` / `Vol 5` / `#5` forms already on the shelf — the
+ *    leading label word is stripped, then the remainder must be a clean number.
+ *
+ * Everything else returns `null`: words (`"Book Two"`, `"Prequel"`), a number
+ * with a tail (`"1a"`), the empty string. The caller then leaves the sort
+ * untouched — a **stale-but-correct** sort is merely un-updated, whereas a sort
+ * read out of an ambiguous string reorders the shelf silently.
+ *
+ * This mirrors the one place a human edits the sort directly: `WorkFields`
+ * rejects `"Book 2"` outright (*"the position, not 'Book 2'"*) rather than
+ * reading a `2` out of it, and `sort` is a numeric column by owner rule of
+ * 2026-08-19 while `display` is the optional printed form. So the two never
+ * silently disagree, and neither is filled with a guess.
+ */
+export function seriesIndexSortFrom(display: string | null | undefined): number | null {
+  if (display == null) return null;
+  // Strip an optional leading label a printed form may carry, so "Book 5",
+  // "Volume 07", "Vol. 5" and "#5" round-trip to their number. Case-insensitive.
+  const bare = display.trim().replace(/^(?:book|volume|vol\.?|#)\s*/i, '').trim();
+  // Only a CLEAN number survives — no trailing letters ("1a"), no words
+  // ("Two"), no sign, no scientific notation. This is the fail-safe: an
+  // ambiguous display writes no sort at all.
+  if (!/^\d+(?:\.\d+)?$/.test(bare)) return null;
+  const n = Number(bare);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
  * The fields this work can meaningfully be asked about at all.
  *
  * One conditional, and it is not cosmetic: **"which volume is this?" is not a
