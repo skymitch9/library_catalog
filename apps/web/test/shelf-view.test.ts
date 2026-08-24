@@ -350,6 +350,17 @@ describe('deriveShelfView — availability (peers only) and audio count', () => 
     assert.equal(live.rows.some((r) => r.medium === 'ebook' && r.owned), true);
   });
 
+  it('a stale audiobook holding is NOT an Owned row; a live one is', () => {
+    // The sibling catalog no longer confirms the match — a top-line "Owned on
+    // audio" glance would be a dead claim. The OtherVersions drawer still shows
+    // it with a "may be out of date" note; the shelf glance must not.
+    const stale = deriveShelfView({ ...NONE, audiobookHolding: { title: 'X', staleAt: '2026-01-01' } as never });
+    assert.equal(stale.rows.some((r) => r.medium === 'audio'), false);
+    assert.equal(stale.rows[0]!.neutral, true);
+    const live = deriveShelfView({ ...NONE, audiobookHolding: { title: 'X', staleAt: null } as never });
+    assert.equal(live.rows.some((r) => r.medium === 'audio' && r.owned), true);
+  });
+
   it('peers pass through as availability, not as shelf rows', () => {
     const peers = [
       { peerId: 'padhard', peerLabel: 'Padhard', detailUrl: null, formats: 'hardcover' },

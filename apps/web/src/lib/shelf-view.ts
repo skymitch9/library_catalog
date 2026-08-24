@@ -413,7 +413,13 @@ function buildRows(
   // 4) Audiobook: a held recording (sibling library) is an Owned "Audiobook" row,
   //    carrying the recording count. No edition table backs it — audio is not an
   //    edition of anything in this database.
-  if (audiobookHolding != null) {
+  //    ⚠️ LIVE holdings only. `audiobookHolding` arrives UNfiltered on `staleAt`
+  //    (the OtherVersions drawer wants stale rows so it can say "may be out of
+  //    date") — but a stale match means the sibling catalog no longer confirms
+  //    the audiobook, so a top-line "Owned on audio" glance would be a dead
+  //    claim linking to a search that finds nothing. Match the series ladder,
+  //    which is already live-only.
+  if (audiobookHolding != null && audiobookHolding.staleAt == null) {
     rows.push({
       key: 'own-audio',
       format: 'Audiobook',
