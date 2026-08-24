@@ -38,6 +38,7 @@ import {
   type GapVerdict,
   type RunTier,
 } from '@lc/core';
+import { listWorkAliases } from './aliases.js';
 
 // ---------------------------------------------------------------------------
 // Runs
@@ -57,6 +58,8 @@ export interface ResearchRunRow {
   input_title: string | null;
   input_year: number | null;
   unfilled: string | null;
+  /** JSON array of the alias titles the run asked under, or NULL. Migration 0410. */
+  input_aliases: string | null;
   triggered_by: number | null;
   started_at: string | null;
   finished_at: string | null;
@@ -94,6 +97,15 @@ export interface ResearchRun {
     sources?: Record<string, string>;
   } | null;
   inputTitle: string | null;
+  /**
+   * The alias titles the run additionally asked under — `work_alias` rows of
+   * kind `title` at the moment the run started. Empty for a run that asked
+   * under the primary title alone, which is every run written before migration
+   * 0410. Together with `inputTitle` this is the run's full identity set, and
+   * `askedForWork` compares it against the work's CURRENT identities to decide
+   * whether a new alias has re-opened a field.
+   */
+  inputAliases: string[];
   inputYear: number | null;
   /** The fields the run was sent to find, comma-delimited with edge commas. */
   unfilled: string[];
@@ -104,7 +116,46 @@ export interface ResearchRun {
 
 const RUN_COLS = `id, work_id, tier, model, effort, status, error_message,
                   input_tokens, output_tokens, result_json, input_title, input_year,
-                  unfilled, triggered_by, started_at, finished_at, created_at`;
+                  unfilled, input_aliases, triggered_by, started_at, finished_at, created_at`;
+
+/**
+ * The most alias titles a run carries into one ask, mirroring `enrich.ts`'s
+ * `MAX_QUERIES`. Aliases are entered by hand and there will never be many; the
+ * cap is a guard against one bad paste turning a single lookup into a wall of
+ * "also known as" lines. Deliberately shared by the WRITE side (`research-run.ts`
+ * builds the ask and stamps `input_aliases` from this) and the READ side
+ * (`askedForWork` builds the current identity set from it), so the two can never
+ * cap differently and leave a field re-opening for ever.
+ */
+export const MAX_ALIAS_IDENTITIES = 4;
+
+/**
+ * The alias titles to actually carry into an ask, from all of a work's
+ * title-kind aliases — deduplicated, blanks and the primary title dropped,
+ * ordered stably, and capped at `MAX_ALIAS_IDENTITIES`.
+ *
+ * ⚠️ ONE definition, used by both the ask and the accounting. The stable sort
+ * matters: if a work somehow had more than the cap of aliases, the WRITE side
+ * and the READ side must pick the SAME subset or the read would see a current
+ * identity the run never covered and re-open the field on every sweep. Sorting
+ * `localeCompare` and slicing identically on both sides closes that loop.
+ */
+export function selectTitleAliases(
+  primaryTitle: string,
+  aliases: readonly string[],
+): string[] {
+  const primary = primaryTitle.trim();
+  const seen = new Set<string>();
+  const kept: string[] = [];
+  for (const raw of aliases) {
+    const a = (raw ?? '').trim();
+    if (a === '' || a === primary || seen.has(a)) continue;
+    seen.add(a);
+    kept.push(a);
+  }
+  kept.sort((x, y) => x.localeCompare(y));
+  return kept.slice(0, MAX_ALIAS_IDENTITIES);
+}
 
 /**
  * `,a,b,` — leading and trailing commas, exactly as migration 0001 specifies.
@@ -119,6 +170,26 @@ function packFields(fields: readonly string[]): string | null {
 
 function unpackFields(raw: string | null): string[] {
   return (raw ?? '').split(',').filter(Boolean);
+}
+
+/**
+ * `input_aliases` is a JSON array of strings, NOT the comma-packed form
+ * `unfilled` uses — alias titles are free text and may contain commas (migration
+ * 0410 says why). NULL, '' and anything unparseable all read back as "no
+ * aliases", which is the truth about a run that asked under the title alone.
+ */
+function packAliases(aliases: readonly string[]): string | null {
+  return aliases.length ? JSON.stringify([...aliases]) : null;
+}
+
+function unpackAliases(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
 }
 
 export function toRun(row: ResearchRunRow): ResearchRun {
@@ -145,6 +216,7 @@ export function toRun(row: ResearchRunRow): ResearchRun {
     outputTokens: row.output_tokens,
     result,
     inputTitle: row.input_title,
+    inputAliases: unpackAliases(row.input_aliases),
     inputYear: row.input_year,
     unfilled: unpackFields(row.unfilled),
     startedAt: row.started_at,
@@ -167,6 +239,14 @@ export interface CreateRunInput {
    * new value and never re-asked about the old one.
    */
   inputTitle: string;
+  /**
+   * The alias titles the run additionally asked under, already capped and
+   * de-duplicated by `selectTitleAliases`. Stamped alongside `inputTitle` and
+   * for the same reason — the record is of what the lookup had in hand, not what
+   * the work looks like now. Omit or pass `[]` for a run that asks under the
+   * primary title alone.
+   */
+  inputAliases?: readonly string[];
   inputYear: number | null;
   /** The gaps it was sent to fill. */
   unfilled: readonly DetailField[];
@@ -177,8 +257,8 @@ export async function createRun(db: D1Database, input: CreateRunInput): Promise<
     .prepare(
       `INSERT INTO research_run
          (work_id, tier, model, effort, status, input_title, input_year, unfilled,
-          triggered_by, started_at)
-       VALUES (?, ?, ?, ?, 'running', ?, ?, ?, ?, datetime('now'))
+          input_aliases, triggered_by, started_at)
+       VALUES (?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, datetime('now'))
        RETURNING ${RUN_COLS}`,
     )
     .bind(
@@ -189,6 +269,7 @@ export async function createRun(db: D1Database, input: CreateRunInput): Promise<
       input.inputTitle,
       input.inputYear,
       packFields(input.unfilled),
+      packAliases(input.inputAliases ?? []),
       input.triggeredBy,
     )
     .first<ResearchRunRow>();
@@ -316,11 +397,25 @@ export async function listRunsForWork(db: D1Database, workId: number): Promise<R
  *
  * Two columns, two different jobs:
  *
- * - `asked` — fields carried by a **finished (`done`)** run whose `input_title`
- *   still matches the work's title. `error` runs are excluded on purpose: they
- *   never got an answer, so the question has not really been put. The title
- *   match is the "unless an input changed" escape hatch — retitle a book and it
- *   becomes askable again, because identification may now succeed.
+ * - `asked` — fields carried by a **finished (`done`)** run that asked under
+ *   every NAME the work currently answers to. `error` runs are excluded on
+ *   purpose: they never got an answer, so the question has not really been put.
+ *
+ *   ⚠️ **Identity, not just title (2026-08-24).** A run records the names it
+ *   asked under: `input_title` and, since migration 0410, `input_aliases` — the
+ *   `work_alias` rows of kind `title` it was handed. A field counts as asked
+ *   only while some done run's recorded name-set COVERS the work's current
+ *   name-set. This subsumes the old `input_title = w.title` rule and adds one
+ *   case to it:
+ *     - retitle a book → no run's `input_title` matches → askable again (as
+ *       before: "unless an input changed", identification may now succeed);
+ *     - add a NEW alias → no past run asked under it → every still-empty field
+ *       that alias could newly answer re-opens, and NOTHING already answered
+ *       under the main title does (an answered field is filled, so it is not a
+ *       gap and `unaskedGaps` never re-asks it — the re-open is "exactly the
+ *       newly-answerable fields, and no more").
+ *   The accounting itself is the pure, exported `askedForWork`, so the rule is
+ *   pinned by a test directly rather than through a copy of the SQL.
  * - `lastAttemptAt` — when this book last genuinely had its turn. The sweep
  *   rotates on it, which is what stops one permanently-erroring book at the top
  *   of the alphabet starving every book below it.
@@ -355,12 +450,19 @@ export async function listRunsForWork(db: D1Database, workId: number): Promise<R
  * timing out is still eligible AND still goes to the back, which is precisely
  * the starvation guard the original line was written for.
  *
- * One query for the whole catalog. `research_run` is one row per lookup ever
- * made — tens, not thousands — so grouping it in SQL costs nothing.
+ * A few queries for the whole catalog, not one: the timestamp rotation is a
+ * per-work SQL aggregate, but `asked` now needs each done run's recorded
+ * name-set weighed against the work's current aliases, which is per-run data and
+ * a `work_alias` read. `research_run` is one row per lookup ever made — tens, not
+ * thousands — and `work_alias` is smaller still, so the extra reads cost nothing.
  */
 export interface WorkRunHistory {
   workId: number;
-  /** Fields a finished run already asked about, with the same title in hand. */
+  /**
+   * Fields a finished run already asked about while covering every name the work
+   * currently answers to. See the header: adding a new alias re-opens exactly
+   * the still-empty fields it could newly answer.
+   */
   asked: DetailField[];
   /**
    * The newest attempt that was really this book's turn: `finished_at`, or
@@ -370,23 +472,58 @@ export interface WorkRunHistory {
   lastAttemptAt: string | null;
 }
 
+/**
+ * The fields a work has already been asked about, given every done run's
+ * recorded name-set and the names the work answers to NOW.
+ *
+ * Pure and exported so the delicate accounting — "adding an alias re-opens
+ * exactly the newly-answerable fields, and no more" — is pinned by a test
+ * directly, the same way `lastRealAttempt` is.
+ *
+ * A field is asked iff SOME done run both asked it (`unfilled`) and asked under
+ * a name-set that COVERS the work's current one: the run's `input_title` equals
+ * the current title AND every current alias was among the run's `input_aliases`.
+ * Coverage must be satisfied by a SINGLE run — in normal operation the paid ask
+ * always carries the title plus ALL current aliases at once, so the latest run
+ * after the latest alias change covers everything, and before that run happens
+ * the field is correctly re-opened.
+ *
+ * ⚠️ The alias cap is applied to the CURRENT set through `selectTitleAliases`,
+ * the identical function the ask uses to choose what to send. If a work ever had
+ * more than the cap of aliases, both sides drop the same overflow, so coverage
+ * is decidable and no field re-opens for ever.
+ */
+export function askedForWork(
+  currentTitle: string,
+  currentTitleAliases: readonly string[],
+  runs: readonly {
+    inputTitle: string | null;
+    inputAliases: readonly string[];
+    unfilled: readonly string[];
+  }[],
+): DetailField[] {
+  const currentNames = [currentTitle, ...selectTitleAliases(currentTitle, currentTitleAliases)];
+  const asked = new Set<string>();
+  for (const run of runs) {
+    const covered = new Set<string>([run.inputTitle ?? '', ...run.inputAliases]);
+    if (currentNames.every((name) => covered.has(name))) {
+      for (const field of run.unfilled) asked.add(field);
+    }
+  }
+  return [...asked] as DetailField[];
+}
+
 export async function detailsRunHistory(db: D1Database): Promise<WorkRunHistory[]> {
-  const { results } = await db
+  // The rotation half: per-work timestamp aggregates, unchanged.
+  //
+  // ⚠️ Three aggregates rather than one MAX, because SQLite cannot read an
+  // Anthropic error body and decide whether it was about the key. The split is:
+  // the newest NON-error attempt, then the newest error and its message, and the
+  // classification happens in TypeScript against the one implementation that
+  // already words these failures for the screen.
+  const times = await db
     .prepare(
-      // group_concat with '' as the separator: each unfilled is packed as
-      // ",a,b," (see packFields), so concatenating two of them gives ",a,b,,c,"
-      // and splitting on the comma with empties dropped reads back correctly.
-      // group_concat skips NULLs, which is what makes the CASE the filter.
-      //
-      // ⚠️ Three aggregates rather than one MAX, because SQLite cannot read an
-      // Anthropic error body and decide whether it was about the key. The split
-      // is: the newest NON-error attempt, then the newest error and its message,
-      // and the classification happens in TypeScript against the one
-      // implementation that already words these failures for the screen.
       `SELECT r.work_id AS work_id,
-              group_concat(
-                CASE WHEN r.status = 'done' AND r.input_title = w.title THEN r.unfilled END, ''
-              ) AS asked,
               MAX(CASE WHEN r.status <> 'error'
                        THEN COALESCE(r.finished_at, r.started_at) END) AS last_ok_at,
               MAX(CASE WHEN r.status = 'error'
@@ -397,25 +534,71 @@ export async function detailsRunHistory(db: D1Database): Promise<WorkRunHistory[
                 ORDER BY COALESCE(e.finished_at, e.started_at) DESC, e.id DESC
                 LIMIT 1) AS last_error_message
          FROM research_run r
-         JOIN work w ON w.id = r.work_id
         WHERE r.tier = 'details'
         GROUP BY r.work_id`,
     )
     .all<{
       work_id: number;
-      asked: string | null;
       last_ok_at: string | null;
       last_error_at: string | null;
       last_error_message: string | null;
     }>();
 
-  return results.map((row) => ({
-    workId: row.work_id,
-    // Deduplicated: two runs that both asked about `description` concatenate to
-    // two entries, and every consumer wants the SET of questions already put.
-    asked: [...new Set(unpackFields(row.asked))] as DetailField[],
-    lastAttemptAt: lastRealAttempt(row.last_ok_at, row.last_error_at, row.last_error_message),
-  }));
+  // The asked half: every done run's recorded name-set, plus the work's title
+  // and current title-aliases, so `askedForWork` can decide coverage. Per-run,
+  // not aggregated, because coverage is a per-run question.
+  const doneRuns = await db
+    .prepare(
+      `SELECT r.work_id AS work_id, w.title AS work_title,
+              r.input_title AS input_title, r.input_aliases AS input_aliases,
+              r.unfilled AS unfilled
+         FROM research_run r
+         JOIN work w ON w.id = r.work_id
+        WHERE r.tier = 'details' AND r.status = 'done'`,
+    )
+    .all<{
+      work_id: number;
+      work_title: string;
+      input_title: string | null;
+      input_aliases: string | null;
+      unfilled: string | null;
+    }>();
+
+  // Current title-aliases per work, grouped once.
+  const aliasesByWork = new Map<number, string[]>();
+  for (const a of await listWorkAliases(db)) {
+    if (a.kind !== 'title') continue;
+    const list = aliasesByWork.get(a.workId) ?? [];
+    list.push(a.alias);
+    aliasesByWork.set(a.workId, list);
+  }
+
+  // Group done runs by work, carrying the current title from the join.
+  const runsByWork = new Map<
+    number,
+    { title: string; runs: { inputTitle: string | null; inputAliases: string[]; unfilled: string[] }[] }
+  >();
+  for (const row of doneRuns.results) {
+    const entry = runsByWork.get(row.work_id) ?? { title: row.work_title, runs: [] };
+    entry.runs.push({
+      inputTitle: row.input_title,
+      inputAliases: unpackAliases(row.input_aliases),
+      unfilled: unpackFields(row.unfilled),
+    });
+    runsByWork.set(row.work_id, entry);
+  }
+
+  return times.results.map((row) => {
+    const grouped = runsByWork.get(row.work_id);
+    const asked = grouped
+      ? askedForWork(grouped.title, aliasesByWork.get(row.work_id) ?? [], grouped.runs)
+      : [];
+    return {
+      workId: row.work_id,
+      asked,
+      lastAttemptAt: lastRealAttempt(row.last_ok_at, row.last_error_at, row.last_error_message),
+    };
+  });
 }
 
 /**

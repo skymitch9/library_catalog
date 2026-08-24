@@ -1,0 +1,44 @@
+-- What NAMES a paid research run asked under, beyond the primary title.
+--
+-- ## Why this column exists
+--
+-- Owner ask (docs/TODO.md, 2026-08-23): a book like work 490 *"The Ex Hex
+-- Duo"* was given a `work_alias` of *"The Ex Hex"* — the bind-up title the
+-- model can actually find — and NOTHING on the details path read it. Two
+-- separate things were broken, and this column fixes the second:
+--
+--   1. The ask never SAW the alias. Fixed in code: `research-run.ts` now sends
+--      the work's title-kind aliases as "Also known as" lines, and
+--      `free-details.ts`'s title-keyed rung fans out over them.
+--   2. The book was not even ASKABLE again. `detailsRunHistory` counts a field
+--      as asked while a done run's `input_title` still equals the work's title
+--      (migration 0001's "unless an input changed" escape hatch). An alias is
+--      NOT a retitle, so adding one changed nothing and the field stayed shut.
+--
+-- The fix for (2) needs to know, for each past run, WHICH identities it asked
+-- under — the primary title (already in `input_title`) AND the aliases it was
+-- given. Then a field is "asked" only while a done run covered EVERY identity
+-- the work currently has; adding a brand-new alias means no past run covered
+-- it, so exactly the still-empty fields that alias could newly answer re-open,
+-- and nothing already answered under the main title does (an answered field is
+-- filled, so it is not a gap and is never re-asked regardless).
+--
+-- ## Shape: a JSON array of strings, NOT the comma-packed form `unfilled` uses
+--
+-- ⚠️ `unfilled` is packed as `,a,b,` because its members are fixed field
+-- identifiers with no commas in them. Alias TITLES are free text — "The Ex Hex,
+-- Book 1" is a legal alias — so the same packing would corrupt on the first
+-- comma. This column is therefore a JSON array (`["The Ex Hex"]`), read back
+-- with `JSON.parse`. NULL and '[]' both mean "asked under the primary title
+-- only", which is every run written before this migration.
+--
+-- Stamped at run CREATION next to `input_title`, never at finish, for the same
+-- reason migration 0001 stamps `input_title` early: a work whose aliases change
+-- while a run is in flight must be recorded with what the lookup actually had.
+--
+-- ⚠️ `IF NOT EXISTS` is not available for ADD COLUMN in SQLite, so this
+-- migration is not re-runnable by itself; `d1 migrations apply` records it in
+-- `d1_migrations` and it must not be applied out of band (the guard migration
+-- 0400's note describes).
+
+ALTER TABLE research_run ADD COLUMN input_aliases TEXT;

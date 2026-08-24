@@ -457,51 +457,11 @@ identify the book**, in its own words:
 
 | Work | Settles it |
 |---|---|
-| **490** *The Ex Hex Duo* | 🎯 **Retitle it.** `detailsRunHistory` counts a field asked only while `input_title = w.title`, so correcting the title to **"The Ex Hex"** — which the model *did* find, as McRae's complete-series bind-up — makes it askable again and it will almost certainly close on the next tick. The cheapest fix on this page |
+| **490** *The Ex Hex Duo* | 🎯 **Retitle it** — still the cheapest fix that needs no deploy: correcting the title to **"The Ex Hex"** (which the model *did* find, as McRae's complete-series bind-up) makes it askable again and it will almost certainly close on the next tick. ⚠️ **As of 2026-08-24 there is now a second path:** the alias-aware retry is BUILT (branch `feature/alias-aware-research`, see [`DONE.md`](DONE.md)) — once that deploys, the existing `work_alias` "The Ex Hex" itself re-opens the question, no retitle needed. It re-opens a *paid* question, so the owner runs it |
 | **468** *Veil of Darkness* | A person supplies the series/description by hand, or records a `gap_verdict` of `unknown`. The title is too common for research to disambiguate, which is exactly what the run reported |
 
 Neither needs money and neither needs a deploy. Both need a signed-in human at
 <https://padhard.heygabi.ai/queue>.
-
-### ⚠️ 490 now has a `work_alias` "The Ex Hex", and NOTHING on the details path reads it
-
-**Measured 2026-08-23 21:15 Phoenix** against production and the repo. The alias
-is there — `work_alias` id 1, `work_id 490`, `alias "The Ex Hex"`, `kind
-'title'`, `source 'manual'` — and it changes nothing, for two independent
-reasons:
-
-1. **The ask never sees it.** `apps/worker/src/lib/research-run.ts`,
-   `apps/worker/src/lib/free-details.ts` and `packages/research/src/details.ts`
-   contain **zero** occurrences of "alias", case-insensitive. `getWork` selects
-   `WORK_COLS` and no more. The paid ask is built from `work.title` /
-   `work.authors` (`research-run.ts:431–436`); the free rungs key off
-   `ctx.work.title` (`askIndex` :434, `askOpenLibrary` :491, `askAudiobook`
-   :354 — `askGoogleBooks` goes by ISBN and is unaffected).
-2. **The book is not even askable again.** `packages/db/src/research.ts:388`
-   counts a field as asked while `r.status = 'done' AND r.input_title = w.title`.
-   An alias is not a retitle, so run #645 still stands, `unaskedGaps` is still
-   empty, and the cron and the queue button both correctly skip it.
-
-⚠️ So the row above still says the right thing: **retitling is the fix, adding
-the alias is not.** The alias is not wasted — `GET /works/:id/candidates` does
-read it (`routes/enrich.ts:63–68`, the precedent for all of this) — it simply
-does not reach the details path.
-
-⚠️ **Corroborating evidence from the same evening:** the paid *cover* rung, which
-is also title-only, returned `not found` for "The Ex Hex Duo" at 1.85c. Two
-different paid lookups have now failed on that title string.
-
-**NOT BUILT, on purpose.** Sized rather than started, because point 2 is a money
-decision and not a code one:
-
-| Where | What | ~Hours |
-|---|---|---|
-| `research-run.ts` after the re-read (~:428) + `details.ts` prompt (:233) and identification gate (:140–153) | load `listAliasesForWork`, send an "also known as" line, let an alias match count as identified | 1.5 |
-| `research.ts:388` + `claimRun`'s `inputTitle` (`research-run.ts:340`) | decide what "already asked" means once a book has aliases, and record which name a run asked under | 2 — ⚠️ **the owner's call, like piece 3 of the covers entry: it decides whether adding an alias re-opens a paid question** |
-| `free-details.ts` — `askIndex`, `askOpenLibrary`, `askAudiobook` | fan out per alias, capped the way `enrich.ts` caps it (`MAX_QUERIES = 4`, :51), with the misses landing in `skipped` | 2 |
-| `free-details.test.ts`, `details-sweep.test.ts` | tests | 1.5 |
-
-**~6–8 hours**, and it should not start until the middle row is answered.
 
 ## ☐ Audiobook links after a bulk import, and TWO audio editions — the residue of the free-checks ask
 
