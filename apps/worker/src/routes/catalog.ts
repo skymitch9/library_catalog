@@ -39,6 +39,7 @@ import {
   listChangesForEntity,
   listCollection,
   listCopiesForWork,
+  listCopiesLinkedTo,
   listEditionsForWork,
   listWatchesForWork,
   listWishlist,
@@ -53,6 +54,7 @@ import {
 } from '@lc/db';
 import { universeFor, universeIndex } from '@lc/universes';
 import type { AppBindings } from '../env.js';
+import { withCopyPeople } from '../lib/copy-person.js';
 import { describeError } from '../lib/describe-error.js';
 import { universeFacet, universeIdsFor } from '../lib/universes.js';
 import { capabilityDenied, requireCapability } from '../middleware/auth.js';
@@ -360,8 +362,13 @@ export const catalogRoutes = new Hono<AppBindings>()
 
     return c.json({
       work,
-      editions,
-      copies,
+      // ⚠️ WHO has the book is redacted HERE, on the way out, and by the one
+      // rule (`lib/copy-person.ts`): an editor sees the name, the linked person
+      // sees their own row, everybody else gets nulls and keeps the status
+      // word. Never filtered in the query — a reader who may not see the name
+      // must still see that the copy exists and is lent, or the book reads as
+      // missing from the shelf instead of out of the house.
+      copies: await withCopyPeople(c.env.DB, copies, user),
       reading,
       watches,
       audiobookHolding,
@@ -831,7 +838,13 @@ export const catalogRoutes = new Hono<AppBindings>()
     // statement refused in `@lc/db`, not stored — the accessories rule, one
     // table over. Mapped here exactly as `AccessoryError` is in its routes.
     try {
-      return c.json({ copy: await createCopy(c.env.DB, parsed.data, actor) }, 201);
+      const created = await createCopy(c.env.DB, parsed.data, actor);
+      // Through the same rule as every other read, even though this caller just
+      // wrote the row: one door, one redaction. `CopyLinkError` also covers the
+      // two person refusals (a name on an `owned` copy, an id naming nobody) —
+      // both already worded by `@lc/db` and relayed below.
+      const [copy] = await withCopyPeople(c.env.DB, [created], user);
+      return c.json({ copy }, 201);
     } catch (err) {
       if (err instanceof CopyLinkError) {
         return c.json({ error: 'bad_request', detail: err.message }, err.status);
@@ -885,8 +898,26 @@ export const catalogRoutes = new Hono<AppBindings>()
       throw err;
     }
     if (!copy) return c.json({ error: 'not_found' }, 404);
-    return c.json({ copy });
+    const [visible] = await withCopyPeople(c.env.DB, [copy], user);
+    return c.json({ copy: visible });
   })
+
+  /**
+   * "Books with you" — every copy of this house's that is linked to the person
+   * asking, from their own page.
+   *
+   * ⚠️ **The id comes from the verified token and there is no parameter**, so
+   * this route cannot be pointed at anybody else. That is what makes it safe at
+   * `read` rather than at `editCatalog`: it is not a lending register, it is a
+   * person's own row, and decision #2 says the linked member sees it.
+   *
+   * ⚠️ It deliberately does NOT resolve or return `person_name` — the reader
+   * already knows who they are, and the only person named in the answer would
+   * be themselves. Nothing about any OTHER borrower can reach this response.
+   */
+  .get('/copies/with-me', requireCapability('read'), async (c) =>
+    c.json({ copies: await listCopiesLinkedTo(c.env.DB, c.get('user').id) }),
+  )
 
   /** Wishlist split #1, the curate side again — see PATCH /copies/:id above. */
   .delete('/copies/:id', async (c) => {

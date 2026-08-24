@@ -231,6 +231,12 @@ const WIRED: Wired[] = [
   // the bare `work` row behind an ask. See the route's comment.
   { routes: catalogRoutes, method: 'POST', path: '/works', capability: 'suggestWishlist' },
   { routes: catalogRoutes, method: 'POST', path: '/copies', capability: 'suggestWishlist' },
+  // ⚠️ `read`, and it is the loosest gate in this file on a route that answers
+  // with rows about a person. It is safe at `read` for exactly one reason: the
+  // id comes from the verified token and the route takes NO parameter, so it
+  // can only ever answer about the caller. If it ever grows a `?userId=`, this
+  // row is wrong and the gate has to move with it.
+  { routes: catalogRoutes, method: 'GET', path: '/copies/with-me', capability: 'read' },
   { routes: catalogRoutes, method: 'PATCH', path: '/works/1', capability: 'editCatalog' },
   { routes: catalogRoutes, method: 'GET', path: '/works/1/deletion', capability: 'editCatalog' },
   { routes: catalogRoutes, method: 'DELETE', path: '/works/1', capability: 'editCatalog' },
@@ -447,6 +453,8 @@ describe('catalog.ts copies — the gates decided inside the handler', () => {
       is_signed: 0,
       edition_notes: null,
       lent_to: null,
+      person_user_id: null,
+      person_name: null,
       notes: null,
     };
     return {
