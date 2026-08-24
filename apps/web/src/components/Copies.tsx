@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   CONDITIONS,
   COPY_STATUSES,
@@ -6,7 +6,7 @@ import {
   PHYSICAL_FORMATS,
   printingCandidates,
 } from '@lc/core';
-import { api } from '../api.js';
+import { api, type Person } from '../api.js';
 import { describeError } from '../lib/errors.js';
 import { formatLabel } from '../lib/formats.js';
 import { printingLabel } from '../lib/rescans.js';
@@ -44,7 +44,18 @@ export interface CopyView {
   status: string;
   location: string | null;
   condition: string | null;
+  /** ⚠️ Deprecated by migration 0400 — read `person_name`. Never written from here any more. */
   lent_to: string | null;
+  /**
+   * WHO has it. ⚠️ **Both may be null because the server REDACTED them**, not
+   * only because nobody was recorded — the two are indistinguishable here on
+   * purpose (`apps/worker/src/lib/copy-person.ts`). A reader who may not see
+   * the name sees the status word and nothing else, which is why this panel
+   * never renders "nobody recorded" against a lent copy: it does not know.
+   */
+  person_user_id: number | null;
+  /** Already resolved to the member's CURRENT display name when an id is linked. */
+  person_name: string | null;
   is_signed: number;
   edition_id: number | null;
   notes: string | null;
@@ -52,12 +63,42 @@ export interface CopyView {
   acquired_on: string | null;
 }
 
+/**
+ * The three statuses that can carry a person, and how each one reads.
+ *
+ * ⚠️ **Three sentences, not one with the name swapped in.** "Lent to Samantha"
+ * and "Borrowed from Samantha" are opposite claims about who owns the book, and
+ * a single "Person: Samantha" row would leave the reader to guess which. The
+ * direction is the fact; the name is the detail.
+ *
+ * Mirrors `PERSON_STATUSES` in `packages/db/src/editions.ts`, which is the
+ * enforcing copy — this one only decides wording.
+ */
+const PERSON_PHRASE: Record<string, { said: string; asks: string; hint: string }> = {
+  lent: {
+    said: 'Lent to',
+    asks: 'Who has it?',
+    hint: 'The person it went to',
+  },
+  borrowed: {
+    said: 'Borrowed from',
+    asks: 'Whose is it?',
+    hint: 'The person it belongs to',
+  },
+  sold: {
+    said: 'Sold to',
+    asks: 'Who bought it?',
+    hint: 'The person it went to',
+  },
+};
+
 export function Copies({
   workId,
   copies,
   editions,
   canEdit,
   canSuggest,
+  canListMembers,
   onChanged,
 }: {
   workId: number;
@@ -75,6 +116,20 @@ export function Copies({
    * narrow it further than `canEdit` already does.
    */
   canSuggest: boolean;
+  /**
+   * `manageUsers` — whether this person may LIST the estate's members, and so
+   * whether the name box can autocomplete.
+   *
+   * ⚠️ **This is not a second permission on the feature.** Recording who has a
+   * book is `editCatalog`; a `contributor` or `moderator` can do all of it and
+   * types the name themselves. The only members list this Worker has is
+   * `GET /api/users`, which is gated on `manageUsers` and answers with email,
+   * photo, role and timestamps — far more than a name picker needs. Widening
+   * it, or adding a second endpoint beside it, would hand the estate's member
+   * roster to every contributor to save them some typing, so neither was done.
+   * The field says so in words instead of silently offering nothing.
+   */
+  canListMembers: boolean;
   onChanged: () => void;
 }) {
   const [adding, setAdding] = useState<null | 'owned' | 'wanted'>(null);
@@ -82,16 +137,53 @@ export function Copies({
   const [error, setError] = useState<string | null>(null);
   /** The copy whose "which printing is this?" question is open, if any. */
   const [linking, setLinking] = useState<number | null>(null);
+  /** The copy whose "who has it?" box is open, if any. */
+  const [naming, setNaming] = useState<number | null>(null);
+  /**
+   * The estate's members, fetched ONCE and only when a name box is actually
+   * opened — the ordinary book page has no lent copy and must not spend a
+   * request on this. `null` means not asked yet; `[]` means asked and there is
+   * nothing to offer, which is a different thing and is said differently.
+   */
+  const [members, setMembers] = useState<Person[] | null>(null);
+  const [membersFailed, setMembersFailed] = useState(false);
 
-  async function change(copyId: number, body: Record<string, unknown>) {
+  useEffect(() => {
+    if (naming === null || !canListMembers || members !== null || membersFailed) return;
+    let live = true;
+    void api
+      .users()
+      .then((r) => {
+        if (live) setMembers(r.users);
+      })
+      .catch(() => {
+        // ⚠️ Not surfaced as an error banner: the box still works, it just
+        // cannot suggest. `membersFailed` makes the field say that in words
+        // rather than sitting there looking like an empty roster.
+        if (live) setMembersFailed(true);
+      });
+    return () => {
+      live = false;
+    };
+  }, [naming, canListMembers, members, membersFailed]);
+
+  /**
+   * ⚠️ Answers whether the write LANDED, and the refusal is shown either way.
+   * A form that closes itself on a 400 has thrown away what the person typed
+   * and told them it was refused in the same motion — the person field stays
+   * open on a refusal so the wording is beside the box it is about.
+   */
+  async function change(copyId: number, body: Record<string, unknown>): Promise<boolean> {
     setBusy(copyId);
     setError(null);
     try {
       await api.updateCopy(copyId, body);
       setLinking(null);
       onChanged();
+      return true;
     } catch (err) {
       setError(describeError(err));
+      return false;
     } finally {
       setBusy(null);
     }
@@ -169,7 +261,25 @@ export function Copies({
                       .filter(Boolean)
                       .join(' · ')}
                   </span>
-                  {c.lent_to && <span className="muted small">Lent to {c.lent_to}</span>}
+                  {/* ⚠️ Rendered only when the server actually sent a name.
+                      Both person fields arrive null both when nobody was
+                      recorded AND when the reader may not see who it is
+                      (`lib/copy-person.ts`), and this panel cannot tell those
+                      apart — so it says nothing rather than "nobody has it",
+                      which would be a claim it has no evidence for. The status
+                      word above is what such a reader gets, and it is enough:
+                      "Lent out" is true whether or not you may know to whom. */}
+                  {PERSON_PHRASE[c.status] && c.person_name && (
+                    <span className="muted small">
+                      {PERSON_PHRASE[c.status]?.said} {c.person_name}
+                      {c.person_user_id !== null && (
+                        // The one visible difference between a linked person
+                        // and a typed one. It matters because a linked name
+                        // follows their account and a typed one does not.
+                        <span title="Linked to their account here"> · linked</span>
+                      )}
+                    </span>
+                  )}
                   {c.notes && <span className="muted small">{c.notes}</span>}
                 </div>
                 {canEdit && (
@@ -243,12 +353,47 @@ export function Copies({
                           ? 'Change printing'
                           : 'Which printing?'}
                     </button>
+                    {/* ⚠️ Offered only on the three statuses that can carry a
+                        person. The server refuses the rest in words, and a
+                        control that exists only to be refused is worse than no
+                        control — so the order is: set the status, then say who
+                        has it, which is also the order the events happen in. */}
+                    {PERSON_PHRASE[c.status] && (
+                      <button
+                        className="chip"
+                        disabled={busy === c.id}
+                        onClick={() => setNaming(naming === c.id ? null : c.id)}
+                      >
+                        {naming === c.id
+                          ? 'Cancel'
+                          : c.person_name
+                            ? 'Change person'
+                            : (PERSON_PHRASE[c.status]?.asks ?? 'Who has it?')}
+                      </button>
+                    )}
                     <button className="chip" disabled={busy === c.id} onClick={() => void remove(c.id)}>
                       Remove
                     </button>
                   </div>
                 )}
               </div>
+              {naming === c.id && (
+                <PersonField
+                  copyId={c.id}
+                  status={c.status}
+                  personName={c.person_name}
+                  personUserId={c.person_user_id}
+                  members={canListMembers ? members : null}
+                  membersUnavailable={!canListMembers || membersFailed}
+                  busy={busy === c.id}
+                  onSave={(patch) => {
+                    void change(c.id, patch).then((ok) => {
+                      if (ok) setNaming(null);
+                    });
+                  }}
+                  onCancel={() => setNaming(null)}
+                />
+              )}
               {linking === c.id && (
                 <EditionPickerPrompt
                   candidates={printingCandidates(editions, null).map((e) => ({
@@ -307,6 +452,157 @@ export function Copies({
         </>
       )}
     </section>
+  );
+}
+
+/**
+ * WHO has the book — a themed text box that saves, with autocomplete over the
+ * estate's members when the person filling it in may see the roster.
+ *
+ * Owner request OR-1, verbatim: *"if i loaned out a book to Samantha I should
+ * be able to put her name in a text box that matches the theme and saves. if
+ * Samantha is a user in the estate i should be able to autofill to her user
+ * profile so its linked to her."* Both halves, and the free-text half is the
+ * floor: most people you lend a book to have never signed into this catalog.
+ *
+ * ## Why a `<datalist>` and not a picker of its own
+ *
+ * It is one control that is both halves at once — type any name, or take one
+ * that is offered — which is exactly the ask. A select plus a text box would
+ * make the person choose *which kind of person* Samantha is before typing her
+ * name. It is also native, so it behaves on a 360px phone, the argument the
+ * collection's filter row already makes for using selects there.
+ *
+ * ## ⚠️ How a typed name becomes a LINK
+ *
+ * On save, the typed text is matched against the offered display names, folded
+ * for case. **Exactly one match links; zero or several do not**, and the
+ * several-case says so rather than picking. Two members called Sam are
+ * indistinguishable by the only thing this box holds, and guessing would file
+ * a book against the wrong person's page — the failure the whole
+ * `person_user_id` column exists to prevent.
+ *
+ * The pair is always sent TOGETHER (`personUserId` + `personName`), so a
+ * correction cannot half-land: editing "Sam" to "Samantha Ellis" clears the old
+ * link in the same request that writes the new name.
+ */
+function PersonField({
+  copyId,
+  status,
+  personName,
+  personUserId,
+  members,
+  membersUnavailable,
+  busy,
+  onSave,
+  onCancel,
+}: {
+  copyId: number;
+  status: string;
+  personName: string | null;
+  personUserId: number | null;
+  /** Null when they have not loaded, or when this person may not list them. */
+  members: Person[] | null;
+  /** True when no autocomplete is coming — say so, do not show an empty list. */
+  membersUnavailable: boolean;
+  busy: boolean;
+  onSave: (patch: Record<string, unknown>) => void;
+  onCancel: () => void;
+}) {
+  const [typed, setTyped] = useState(personName ?? '');
+  const phrase = PERSON_PHRASE[status];
+  const listId = `members-${copyId}`;
+
+  /** Members with a usable name, and only their name — nothing else is read here. */
+  const named = (members ?? []).filter(
+    (m): m is Person & { displayName: string } => Boolean(m.displayName),
+  );
+  const fold = (s: string) => s.trim().toLowerCase();
+  const matches = named.filter((m) => fold(m.displayName) === fold(typed));
+  const willLink = typed.trim() !== '' && matches.length === 1 ? matches[0] : null;
+  const ambiguous = matches.length > 1;
+
+  function save() {
+    const name = typed.trim();
+    if (name === '') {
+      // Clearing the box clears the record — both halves, so an emptied name
+      // cannot leave a link behind pointing at somebody the card no longer says.
+      onSave({ personUserId: null, personName: null });
+      return;
+    }
+    onSave({ personUserId: willLink?.id ?? null, personName: name });
+  }
+
+  return (
+    <div className="stack">
+      <label className="field">
+        <span className="field__label">{phrase?.asks ?? 'Who has it?'}</span>
+        <input
+          value={typed}
+          list={named.length > 0 ? listId : undefined}
+          onChange={(e) => setTyped(e.target.value)}
+          placeholder={phrase?.hint ?? 'Their name'}
+          aria-label={phrase?.asks ?? 'Who has it?'}
+          disabled={busy}
+        />
+      </label>
+      {named.length > 0 && (
+        <datalist id={listId}>
+          {named.map((m) => (
+            <option key={m.id} value={m.displayName} />
+          ))}
+        </datalist>
+      )}
+
+      {/* ⚠️ Every one of these is a SENTENCE, not a badge. What a person needs
+          to know here is whether the record will follow an account or sit as
+          text, and those have different consequences a year from now. */}
+      {willLink && (
+        <p className="muted small">
+          Linked to {willLink.displayName}’s account — the card will follow their
+          name if they change it.
+        </p>
+      )}
+      {ambiguous && (
+        <p className="notice notice--bad small">
+          More than one member here is called “{typed.trim()}”, so this cannot be
+          linked to an account without guessing which. The name will be saved as
+          typed — which is a complete record, just not a linked one.
+        </p>
+      )}
+      {!willLink && !ambiguous && typed.trim() !== '' && (
+        <p className="muted small">
+          Saved as typed. {named.length > 0 ? 'No member here goes by that name' : 'Not linked to an account'} — which is
+          the ordinary case for somebody outside the estate.
+        </p>
+      )}
+      {membersUnavailable && (
+        <p className="muted small">
+          {/* ⚠️ A capability said in words, never a silently missing feature.
+              The name box works for everyone who may edit the catalog; only
+              the suggestions need the Members permission. */}
+          Names of estate members are not suggested here — that needs the Members
+          permission. Typing the name still records it in full.
+        </p>
+      )}
+
+      <div className="row-tight">
+        <button className="primary" onClick={save} disabled={busy}>
+          {busy ? 'Saving…' : 'Save'}
+        </button>
+        <button onClick={onCancel} disabled={busy}>
+          Never mind
+        </button>
+        {(personName !== null || personUserId !== null) && (
+          <button
+            onClick={() => onSave({ personUserId: null, personName: null })}
+            disabled={busy}
+          >
+            Clear
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 

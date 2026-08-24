@@ -628,7 +628,22 @@ export interface WorkDeletionCopy {
   status: string;
   isSigned: boolean;
   location: string | null;
+  /** ⚠️ Deprecated by migration 0400 — `personName` is where a new record lands. */
   lentTo: string | null;
+  /**
+   * WHO has it, as typed.
+   *
+   * ⚠️ Added with migration 0400 because leaving it out would have quietly
+   * broken this dialog: from that migration on, "lent to Samantha" is written
+   * to `person_name` and `lent_to` stays whatever it was — usually NULL — so a
+   * preview reading only the old column would show a lent copy as an anonymous
+   * row, which is exactly the recognition this report exists to give.
+   *
+   * Not resolved to a member's display name: the deletion route is
+   * `editCatalog`-gated, and one extra `app_user` query on a confirmation
+   * dialog buys nothing the typed text does not already say.
+   */
+  personName: string | null;
   editionId: number | null;
   editionNotes: string | null;
 }
@@ -677,6 +692,7 @@ function toDeletionCopy(c: CopyRow): WorkDeletionCopy {
     isSigned: c.is_signed === 1,
     location: c.location,
     lentTo: c.lent_to,
+    personName: c.person_name,
     editionId: c.edition_id,
     editionNotes: c.edition_notes,
   };

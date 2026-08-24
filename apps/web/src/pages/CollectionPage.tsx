@@ -623,11 +623,22 @@ export function CollectionPage({
               why the wishlist is its own screen and not this control. A wanted
               hardcover of a book already held as an EPUB is invisible here; the
               work is in the collection either way. Kept because "show me the
-              books with something lent out" is a real question this answers. */}
+              books with something lent out" is a real question this answers.
+
+              ⚠️ **It is also the "show sold" control**, and deliberately not a
+              second widget beside it. Since 2026-08-23 (owner decision #3) the
+              collection hides a work whose copies are ALL sold — the book has
+              left the house and nothing was deleted, `NOT_ONLY_SOLD` in
+              `@lc/db` — and picking "Sold" here is how you get them back. A
+              separate "show sold" checkbox would be a second way to say one
+              thing, and the two would disagree the first time either moved.
+
+              ⚠️ Its count is taken with the hiding clause dropped, so the
+              option is never disabled by the very rule it exists to lift. */}
           <label className="field">
             <span className="field__label">Copies</span>
             <select value={status} onChange={(e) => setStatus(e.target.value)}>
-              <option value="">Any status</option>
+              <option value="">Any status — sold hidden</option>
               {/* ⚠️ Every status, straight off `COPY_STATUSES` — which is what
                   makes "show me what is on the way" a filter that already works
                   rather than a feature. `statusLabel` and not a title-case of

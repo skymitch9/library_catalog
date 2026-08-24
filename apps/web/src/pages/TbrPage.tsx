@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { outstandingTbrEntries, spentTbrEntries, type TbrEntry } from '@lc/core';
 import { api, type Me, type TbrMatchView } from '../api.js';
+import { BooksWithYou } from '../components/BooksWithYou.js';
 import { Cover } from '../components/Cover.js';
 import { audiobookDetailUrl, resolveAudiobookCover } from '../lib/audiobook-site.js';
 import { describeError } from '../lib/errors.js';
@@ -178,6 +179,13 @@ export function TbrPage({ me }: { me: Me }) {
           )}
         </>
       )}
+
+      {/* ⚠️ OUTSIDE the `rows.length === 0` branch, deliberately: a person can
+          be holding three of this house's books and have an empty TBR, and
+          hiding what they have behind a list they have not written would make
+          it unfindable. It renders nothing at all when nothing is recorded
+          against them, which is the ordinary case — see the component. */}
+      <BooksWithYou />
     </main>
   );
 }

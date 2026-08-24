@@ -64,7 +64,10 @@ export interface DeletionCopy {
   status: string;
   isSigned: boolean;
   location: string | null;
+  /** ⚠️ Deprecated by migration 0400 — a new record lands in `personName`. */
   lentTo: string | null;
+  /** WHO has it, as typed. See `WorkDeletionCopy` in `@lc/db` for why both are here. */
+  personName: string | null;
   editionId: number | null;
   editionNotes: string | null;
 }
@@ -709,6 +712,23 @@ export interface Person {
   role: Role;
   firstSeenAt: string;
   approvedAt: string | null;
+}
+
+/**
+ * One row of "Books with you" — a copy of this house's that is linked to the
+ * signed-in person. Mirrors `LinkedCopyRow` in `@lc/db`.
+ *
+ * ⚠️ It carries no `personName`: the only person it could name is the reader,
+ * and nothing about any other borrower reaches this response.
+ */
+export interface LinkedCopy {
+  copyId: number;
+  workId: number;
+  title: string;
+  authors: string | null;
+  coverUrl: string | null;
+  status: string;
+  acquiredOn: string | null;
 }
 
 export interface RelatedWork {
@@ -1490,6 +1510,13 @@ export const api = {
     }),
 
   deleteCopy: (id: number) => request<{ ok: true }>(`/api/copies/${id}`, { method: 'DELETE' }),
+
+  /**
+   * "Books with you" — the copies of this house's that are linked to the person
+   * asking. No parameter, deliberately: the server reads the id off the token,
+   * so this can only ever answer about whoever is signed in.
+   */
+  copiesWithMe: () => request<{ copies: LinkedCopy[] }>('/api/copies/with-me'),
 
   // -------------------------------------------------------------------------
   // Related books

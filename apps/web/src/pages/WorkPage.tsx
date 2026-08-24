@@ -439,6 +439,12 @@ export function WorkPage({
         editions={editions}
         canEdit={me.capabilities.includes('editCatalog')}
         canSuggest={me.capabilities.includes('suggestWishlist')}
+        // ⚠️ `manageUsers` gates only the AUTOCOMPLETE, never the feature. The
+        // one members list this app has (`GET /api/users`) is admin-only and
+        // hands out email, photo and role — so it is reused as-is rather than
+        // widened for a name picker, and `Copies` says so in words to everyone
+        // else. See the prop's own comment.
+        canListMembers={me.capabilities.includes('manageUsers')}
         onChanged={load}
       />
 
