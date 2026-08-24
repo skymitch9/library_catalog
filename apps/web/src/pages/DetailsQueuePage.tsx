@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { wordLookupError } from '@lc/core';
+import { DETAIL_FIELD_LABEL, wordLookupError } from '@lc/core';
 import {
   api,
   type AutoApplied,
@@ -898,6 +898,8 @@ function QueueRow({
           </div>
         )}
 
+        {run && !active && <RunSources sources={run.sources} />}
+
         <div className="controls">
           <button onClick={onToggle}>
             {expanded ? 'Hide' : stuck > 0 ? `Sort out ${stuck}` : 'Say what you know'}
@@ -936,6 +938,46 @@ const KIND_LABEL: Record<string, string> = {
   none: 'there is none',
   unknown: 'nobody knows',
 };
+
+/**
+ * The rungs, in words. Kept here rather than shared with the Worker's own
+ * `RUNG_LABEL`: these five strings are what a person reads on this page, and
+ * the Worker's copy is what goes into a run's stored sentence. They are allowed
+ * to be worded differently for their two audiences; what must not drift is the
+ * KEY, and an unrecognised key falls through to itself rather than vanishing.
+ */
+const SOURCE_LABEL: Record<string, string> = {
+  audiobook: 'the audiobook catalogue',
+  index: 'the estate index',
+  openlibrary: 'Open Library',
+  googlebooks: 'Google Books',
+  llm: 'a paid lookup',
+};
+
+/**
+ * Who answered what — the line that makes "the free checks ran first" visible.
+ *
+ * ⚠️ **Rendered only when there is something to render, and never defaulted.**
+ * A run recorded before 2026-08-23 carries no `sources` at all, and showing
+ * that as "a paid lookup" would attribute a cost to work nobody measured. An
+ * empty map means *nobody wrote it down*, which is a different sentence from
+ * *the model found it*, so this component says nothing at all instead.
+ */
+function RunSources({ sources }: { sources: Record<string, string> }) {
+  const entries = Object.entries(sources);
+  if (entries.length === 0) return null;
+  return (
+    <div className="muted small">
+      answered by:{' '}
+      {entries
+        .map(
+          ([field, rung]) =>
+            `${DETAIL_FIELD_LABEL[field as DetailField] ?? field} — ${SOURCE_LABEL[rung] ?? rung}`,
+        )
+        .join(' · ')}
+    </div>
+  );
+}
 
 /**
  * One proposal, and the two buttons that decide it.

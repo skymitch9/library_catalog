@@ -916,6 +916,17 @@ export interface RunView {
    */
   applied: number;
   detail: string | null;
+  /**
+   * Which rung answered each field — `{ series: 'audiobook', description:
+   * 'llm' }`. Keys are `DetailField` names; values are
+   * `audiobook | index | openlibrary | googlebooks | llm`.
+   *
+   * ⚠️ **`{}` means "nobody wrote it down", NOT "the model found everything".**
+   * Every run made before 2026-08-23 is in that state, and rendering an empty
+   * map as a paid lookup would attribute a cost to work that may well have been
+   * free. The page shows the line only when there is something in it.
+   */
+  sources: Record<string, string>;
   model: string | null;
   effort: string | null;
   startedAt: string | null;
