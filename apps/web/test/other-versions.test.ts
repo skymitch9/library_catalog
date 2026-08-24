@@ -19,7 +19,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import type { WorkAudioEdition, WorkAudiobookHolding } from '../src/api.ts';
-import { OtherVersions, buildVersionEntries } from '../src/components/OtherVersions.tsx';
+import { OtherVersions, audioCountLine, buildVersionEntries } from '../src/components/OtherVersions.tsx';
 import { audiobookDetailUrl, resolveAudiobookCover } from '../src/lib/audiobook-site.ts';
 
 /** A realistic row — Harry Potter 2 is one of the two the backfill matched first. */
@@ -180,5 +180,88 @@ describe('buildVersionEntries — more than one audiobook edition (migration 039
     });
     assert.ok(el, 'two editions must render');
     assert.equal((el as { type?: unknown }).type, 'section');
+  });
+});
+
+/**
+ * "Say the NUMBER" — the owner's decision, 2026-08-23, verbatim: *"have it say
+ * 2 on the physical and ebook libraries; on audiobook have them be different
+ * since they're different files being served."*
+ *
+ * ⚠️ The case that earns most of this block is **1 vs 2**, because the count is
+ * SILENT at one. A book with a single recording must read exactly as it did
+ * before this change — a "1" on every audiobook in the catalog is the label
+ * nobody reads, and today every book in this catalog has exactly one.
+ */
+describe('audioCountLine — the number, said in words', () => {
+  it('says nothing at one — the ordinary case, and every book here today', () => {
+    assert.equal(audioCountLine(1), null);
+  });
+
+  it('says nothing at zero, and nothing when the field is absent', () => {
+    assert.equal(audioCountLine(0), null);
+    // An API response cached from before the field existed. It must render what
+    // it rendered before, never "0 audiobooks".
+    assert.equal(audioCountLine(undefined), null);
+  });
+
+  it('says TWO at two — the case migration 0390 exists for', () => {
+    assert.equal(audioCountLine(2), 'You own 2 audiobooks of this book.');
+  });
+
+  it('says three at three, without a special case', () => {
+    assert.equal(audioCountLine(3), 'You own 3 audiobooks of this book.');
+  });
+});
+
+describe('OtherVersions — the count line beside the rows', () => {
+  /** The children of the rendered <section>, flattened enough to search. */
+  function texts(el: unknown): string[] {
+    const out: string[] = [];
+    const walk = (node: any): void => {
+      if (node == null || typeof node === 'boolean') return;
+      if (Array.isArray(node)) return node.forEach(walk);
+      if (typeof node === 'string' || typeof node === 'number') {
+        out.push(String(node));
+        return;
+      }
+      if (typeof node === 'object' && node.props) walk(node.props.children);
+    };
+    walk((el as any)?.props?.children);
+    return out;
+  }
+
+  it('a two-edition work says "You own 2 audiobooks of this book."', () => {
+    const el = OtherVersions({
+      holding: holding(),
+      editions: [tenthAnniversary, edition()],
+      audioEditionCount: 2,
+      ourSeries: null,
+    });
+    assert.ok(texts(el).includes('You own 2 audiobooks of this book.'));
+  });
+
+  it('a ONE-edition work says no such line', () => {
+    const el = OtherVersions({
+      holding: holding(),
+      editions: [edition()],
+      audioEditionCount: 1,
+      ourSeries: null,
+    });
+    assert.ok(!texts(el).some((t) => t.startsWith('You own')));
+  });
+
+  it('⚠️ two rows and NO count line when one of them is stale', () => {
+    // The pair that proves the number is not `editions.length`. The list shows
+    // a withdrawn match with its caveat; the count refuses to call it a book
+    // the household owns. Two rows, and no sentence claiming two.
+    const el = OtherVersions({
+      holding: holding(),
+      editions: [tenthAnniversary, edition({ staleAt: '2026-08-23 04:00:00' })],
+      audioEditionCount: 1,
+      ourSeries: null,
+    });
+    assert.ok(el, 'the section still renders both rows');
+    assert.ok(!texts(el).some((t) => t.startsWith('You own')));
   });
 });

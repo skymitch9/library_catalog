@@ -104,6 +104,20 @@ interface WorkDetail {
    */
   audioEditions: WorkAudioEdition[];
   /**
+   * How many recordings of this book the household holds **now** —
+   * `countAudioEditions` in `@lc/db`, and the number the owner asked to see
+   * (2026-08-23: *"have it say 2 on the physical and ebook libraries"*).
+   *
+   * ⚠️ **Not `audioEditions.length`, and it must not be replaced by it.** That
+   * list carries STALE editions on purpose so each can be shown with a caveat;
+   * this counts only the ones the sibling catalog still confirms. One live and
+   * one stale edition is legitimately two rows and the number one.
+   *
+   * Optional: an API response cached from before this field existed must render
+   * exactly what it rendered before, never "0 audiobooks".
+   */
+  audioEditionCount?: number;
+  /**
    * The shared pool's ebook holding cache — migration 0310, phase 4 of the
    * ebook split. Runs BESIDE the edition rows, never instead of them; see
    * `EbookShadow`. Null is the ordinary case (physical-only book).
@@ -466,6 +480,7 @@ export function WorkPage({
       <OtherVersions
         holding={detail.audiobookHolding}
         editions={detail.audioEditions ?? []}
+        audioEditionCount={detail.audioEditionCount}
         ourSeries={work.series}
       />
 

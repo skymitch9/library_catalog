@@ -1487,6 +1487,18 @@ ol.ladder > li::before {
 .fmt--peer a { color: inherit; text-decoration: none; }
 .fmt--peer a:hover { text-decoration: underline; }
 
+/* "AUDIO 2" — how many recordings of this one volume the household holds
+   (owner, 2026-08-23: "have it say 2"). Migration 0390; rendered only at two or
+   more, so it never appears on a book with one.
+
+   ⚠️ INSIDE the chip, not a second chip beside it. A separate badge would read
+   as another format the volume is held in, which is exactly the wrong sentence
+   — the count qualifies AUDIO and belongs within its border. Slightly heavier
+   than the word so the digit is findable at a glance, and it inherits the
+   chip's colour rather than picking its own, because a number that outshouts
+   its own label is the `.mark--needs` mistake in miniature. */
+.fmt__count { font-weight: 800; }
+
 /* The count beside a section heading, ported from the sibling Board Game
    Catalog's `.count` — the same muted, unbolded weight, so the number reads as
    an annotation of the heading and not as part of it. */

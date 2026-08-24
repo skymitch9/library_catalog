@@ -14,6 +14,11 @@ import {
   type SeriesVolumeInput,
 } from '@lc/core';
 
+// ⚠️ The count of audiobook recordings has ONE definition and it lives there.
+// See `audioEditionCountSql`'s header for why it is a fragment, and why it is
+// not the same number as `listAudioEditions(...).length`.
+import { audioEditionCountSql } from './works.js';
+
 /**
  * Series, and what is missing from them.
  *
@@ -64,6 +69,18 @@ export interface AudiobookRef {
   matchedVia: string;
   /** The `work_alias` that unlocked the match, when one did. */
   viaAlias: string | null;
+  /**
+   * How many recordings of this volume the household holds — migration 0390,
+   * counted by `audioEditionCountSql` in `works.ts` and by nothing else.
+   *
+   * ⚠️ **A count of RECORDINGS, never of rungs.** A volume owned twice on audio
+   * is still ONE rung held, and the coverage arithmetic must keep seeing it that
+   * way — see the note over the query that fills this in.
+   *
+   * Always ≥ 1 wherever this ref exists, because the ladder's own read is
+   * already filtered to live rows. The interesting value is 2.
+   */
+  editionCount: number;
 }
 
 export interface SeriesLadderEntry {
@@ -264,6 +281,8 @@ interface AudioRow {
   index_display: string | null;
   matched_via: string;
   via_alias: string | null;
+  /** `audioEditionCountSql` — recordings held, not rungs. See `AudiobookRef`. */
+  edition_count: number;
 }
 
 /**
@@ -434,9 +453,25 @@ async function loadAll(
       //
       // `stale_at IS NULL` because a holding is marked and never deleted; a stale
       // row is history, not a book we have.
+      //
+      // ⚠️ **`edition_count` MUST NOT reach the coverage arithmetic.** It rides
+      // on the row so the ladder's chip can say "Audio 2" (owner, 2026-08-23),
+      // and it is a count of RECORDINGS. Everything below that measures the
+      // series — `seriesCompleteness`, `onAudio`, `maybeOnAudio`,
+      // `gapsCountingAudio` — counts RUNGS, and a volume owned in two recordings
+      // is still one rung held. That separation is why the number is attached to
+      // `AudiobookRef` (a per-rung display fact) and never fed into the arrays
+      // `seriesCompleteness` is handed: the map below stays one entry per work,
+      // exactly as it was, so no total can move by adding this column.
+      //
+      // ⚠️ Counted with `audioEditionCountSql` rather than a COUNT written out
+      // here, so the ladder chip and the work page cannot come to disagree about
+      // one number. The view above already picks one whole row per work; this
+      // asks the TABLE underneath it how many there were.
       db
         .prepare(
-          `SELECT a.work_id, a.title, a.series, a.index_display, a.matched_via, a.via_alias
+          `SELECT a.work_id, a.title, a.series, a.index_display, a.matched_via, a.via_alias,
+                  ${audioEditionCountSql('a.work_id')} AS edition_count
              FROM audiobook_holding a
              JOIN work w ON w.id = a.work_id
             WHERE w.series IS NOT NULL AND a.stale_at IS NULL ${joinScope}`,
@@ -561,6 +596,11 @@ function toAudiobookRef(a: AudioRow): AudiobookRef {
     indexDisplay: a.index_display,
     matchedVia: a.matched_via,
     viaAlias: a.via_alias,
+    // ⚠️ Floored at 1, not defaulted to 0. This ref only exists for a work the
+    // view already answered for, so "no recordings" is not a state it can be
+    // in; a 0 here could only mean the column went missing, and rendering
+    // "0 audiobooks" beside an audiobook chip would be worse than saying one.
+    editionCount: Math.max(1, a.edition_count ?? 1),
   };
 }
 

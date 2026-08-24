@@ -1,8 +1,9 @@
 # Series pages — formats, alternate printings, audiobooks — Information Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
-> Last verified: **2026-08-23** for §4.4 only (migration 0390 and the view),
-> against a LOCAL D1 after applying the migration and re-running the sweep.
+> Last verified: **2026-08-23** for §4.4 and §4.6 (migration 0390, the view, and
+> the recording count), against a LOCAL D1 — §4.6 with the second *Elantris*
+> edition inserted BY HAND, because `KI-6` stops the sweep writing it.
 > §3 (the duplicate rule) was last verified **2026-08-11** against a local D1
 > fixture through a running Worker. §2, the rest of §4 and below were last
 > verified **2026-08-10** against production D1 (read-only) and a browser, and
@@ -238,6 +239,31 @@ Closing it needs a decision nobody has made — see `docs/KNOWN_ISSUES.md`.
 Across the whole 1,081-row sibling catalog, exactly one pair is a genuine second
 edition that the unchanged gates admit: *The Fellowship of the Ring*, dramatized
 against standard.
+
+### 4.6 The count is SAID, not implied — 2026-08-23
+
+Owner: *“have it say 2 on the physical and ebook libraries; on audiobook have
+them be different since they're different files being served.”* So the work page
+says *“You own 2 audiobooks of this book”* and the ladder chip reads **AUDIO 2**,
+both from `audioEditionCountSql` in `packages/db/src/works.ts` — the one
+definition, reused, never a second COUNT at a second call site.
+
+⚠️ **It counts RECORDINGS; the ladder's *“N of M on audio”* counts RUNGS**, and a
+volume owned twice is still one rung — the view above guarantees it, and
+`packages/db/test/audio-edition-count.test.ts` pins it.
+
+⚠️ **It is not `listAudioEditions(…).length`.** That list carries stale rows on
+purpose; the count filters `stale_at IS NULL`, so one live and one withdrawn
+edition is legitimately two rows and the number one.
+
+⚠️ **And the count had to reach `signatureOf`, not just the chip** — chips are
+suppressed when every held rung agrees, and *Elantris* is one held volume, so a
+chip-only change would have rendered nothing at all. Same shape as the
+`matched_via` trap in §5.1's neighbourhood; see `components/RungMedia.tsx`.
+
+The ebook library (`ebooks.heygabi.ai`) is `audiobook_catalog`'s
+`site/ebooks.html` and was deliberately left alone — `docs/TODO.md` names the
+two files and why its join cannot count yet.
 
 ---
 

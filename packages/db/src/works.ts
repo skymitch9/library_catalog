@@ -967,6 +967,70 @@ export async function listAudioEditions(
   }));
 }
 
+/**
+ * **How many audiobook recordings of one work the household holds right now**,
+ * as a scalar subquery — the ONE definition of that number in this codebase.
+ *
+ * Owner, 2026-08-23: *"have it say 2 on the physical and ebook libraries; on
+ * audiobook have them be different since they're different files being
+ * served."* So the physical library must say **2**, and every surface saying it
+ * has to be saying the same 2.
+ *
+ * ⚠️ **A fragment and not a query, on purpose.** Two callers need this number in
+ * two different shapes — one per work on a work page, and one per rung across a
+ * whole series ladder in a single round trip — and a second COUNT written out at
+ * the second call site is exactly how two surfaces come to disagree about one
+ * fact. Reuse this; never re-type it, and never count a list in the UI instead
+ * (see below for why that list is a different number).
+ *
+ * ⚠️ **`stale_at IS NULL`, which `listAudioEditions` deliberately does NOT
+ * apply.** They answer different questions and the difference is the point:
+ *
+ * | | question | stale rows |
+ * |---|---|---|
+ * | this count | *how many do we hold?* | excluded — a stale row is history, not a book we have |
+ * | `listAudioEditions` | *what is on record, and how sure are we?* | included, each rendered with a caveat |
+ *
+ * So a work with one live and one stale edition legitimately shows **two rows
+ * and the number one**. That is not a bug to reconcile; hiding the stale row
+ * would look identical to "never matched", which is the mistake migration 0010's
+ * header already warns about.
+ *
+ * @param workIdExpr a **SQL expression naming the work** — a bound placeholder
+ *   (`'?1'`) or a column reference (`'a.work_id'`). ⚠️ Interpolated verbatim
+ *   into the statement, so it must come from this codebase and never from a
+ *   request. Every value the row itself carries stays bound.
+ */
+export function audioEditionCountSql(workIdExpr: string): string {
+  // `aeh` rather than the callers' habitual `a`: this is pasted INSIDE their
+  // statements, and `audiobook_holding a` is already taken in `series.ts`.
+  return (
+    `(SELECT COUNT(*) FROM audiobook_edition_holding aeh` +
+    ` WHERE aeh.work_id = ${workIdExpr} AND aeh.stale_at IS NULL)`
+  );
+}
+
+/**
+ * The count above, for one work — `GET /api/works/:id`'s `audioEditionCount`.
+ *
+ * ⚠️ Asked of the database even though the same request already loads
+ * `listAudioEditions`, whose length looks like a free answer. It is not the same
+ * number: that list carries stale rows on purpose. Deriving the badge from
+ * `editions.length` would quietly promote a holding the sibling catalog has
+ * withdrawn back into "you own this", which is the flat-lie shape this project
+ * keeps finding. One extra scalar in a `Promise.all` that already runs seven
+ * queries costs nothing measurable and cannot drift.
+ *
+ * Returns 0 for a work with no audiobook at all, which is the ordinary case.
+ */
+export async function countAudioEditions(db: D1Database, workId: number): Promise<number> {
+  const row = await db
+    .prepare(`SELECT ${audioEditionCountSql('?1')} AS n`)
+    .bind(workId)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
 interface EbookHoldingRow {
   formats: string;
   source_path: string | null;
