@@ -197,11 +197,11 @@ function insertRows(db, table, rows) {
   }
 }
 
-function buildMirror({ remote }) {
+function buildMirror({ remote, friend }) {
   const names = MIRRORED.map((t) => `'${t}'`).join(', ');
   const schema = query(
     `SELECT sql FROM sqlite_master WHERE tbl_name IN (${names}) AND sql IS NOT NULL ORDER BY type DESC`,
-    { remote },
+    { remote, friend },
   );
   if (schema.length === 0) throw new Error('no schema came back — is the database migrated?');
 
@@ -218,15 +218,15 @@ function buildMirror({ remote }) {
   // `applyFinding` is by primary key, so the rest cannot be reached.
   const works = query(
     `SELECT * FROM work WHERE id IN (SELECT DISTINCT work_id FROM research_finding WHERE review_state = 'pending')`,
-    { remote },
+    { remote, friend },
   );
   const findings = query(
     `SELECT * FROM research_finding WHERE work_id IN (SELECT DISTINCT work_id FROM research_finding WHERE review_state = 'pending')`,
-    { remote },
+    { remote, friend },
   );
   const verdicts = query(
     `SELECT * FROM gap_verdict WHERE work_id IN (SELECT DISTINCT work_id FROM research_finding WHERE review_state = 'pending')`,
-    { remote },
+    { remote, friend },
   );
 
   insertRows(db, 'work', works);
@@ -273,11 +273,11 @@ function workUpdates(db, before) {
 // ---------------------------------------------------------------------------
 
 async function main() {
-  const { commit, remote, limit } = parseFlags();
+  const { commit, remote, limit, friend } = parseFlags();
   const where = remote ? 'PRODUCTION' : 'the LOCAL dev database';
   console.log(`Reading ${where}…`);
 
-  const { db, works, findings } = buildMirror({ remote });
+  const { db, works, findings } = buildMirror({ remote, friend });
   const pending = findings.filter((f) => f.review_state === 'pending');
   console.log(
     `${pending.length} pending finding(s) across ${works.length} work(s), ` +
@@ -295,7 +295,7 @@ async function main() {
   // day it is not zero is the day it matters.
   const humanVerdicts = query(
     `SELECT work_id, field FROM gap_verdict WHERE decided_how IS NULL OR decided_how <> 'auto'`,
-    { remote },
+    { remote, friend },
   );
   const settled = new Set(humanVerdicts.map((v) => `${v.work_id}:${v.field}`));
   const clashes = pending.filter((f) => settled.has(`${f.work_id}:${f.field}`));
@@ -362,7 +362,7 @@ async function main() {
   console.log(`\nWriting to ${where}…`);
   const batches = [...valueWrites, ...verdictWrites, ...findingWrites];
   for (let i = 0; i < batches.length; i += 40) {
-    execute(batches.slice(i, i + 40), { remote });
+    execute(batches.slice(i, i + 40), { remote, friend });
     console.log(`  ${Math.min(i + 40, batches.length)}/${batches.length}`);
   }
 
@@ -371,7 +371,7 @@ async function main() {
   const after = query(
     `SELECT review_state, COALESCE(decided_how, 'null') AS decided_how, COUNT(*) AS n
        FROM research_finding GROUP BY 1, 2 ORDER BY 1, 2`,
-    { remote },
+    { remote, friend },
   );
   console.log('\nFindings now:');
   for (const row of after) console.log(`  ${row.review_state} / ${row.decided_how}: ${row.n}`);

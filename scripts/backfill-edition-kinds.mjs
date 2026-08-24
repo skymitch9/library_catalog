@@ -67,7 +67,7 @@
 import { classifyEdition } from '../packages/core/src/crowdfunding.ts';
 import { execute, parseFlags, query } from './lib/d1.mjs';
 
-const { commit, remote, limit } = parseFlags();
+const { commit, remote, limit, friend } = parseFlags();
 
 /** A SQL string literal. Doubling the quote is the whole of SQLite's escaping. */
 const sql = (v) => (v == null ? 'NULL' : `'${String(v).replace(/'/g, "''")}'`);
@@ -114,7 +114,7 @@ const NAMED = `
    ORDER BY e.id
 `;
 
-const rows = query(NAMED, { remote });
+const rows = query(NAMED, { remote, friend });
 
 const classify = [];
 const clear = [];
@@ -134,7 +134,7 @@ for (const r of rows) {
 const targets = Number.isFinite(limit) ? classify.slice(0, limit) : classify;
 
 console.log(`\n${remote ? 'production' : 'local'}: ${rows.length} named edition(s) of ${
-  query('SELECT COUNT(*) AS n FROM edition', { remote })[0]?.n ?? '?'
+  query('SELECT COUNT(*) AS n FROM edition', { remote, friend })[0]?.n ?? '?'
 } total`);
 
 console.log(`\nwill file as a kind (${targets.length}):`);
@@ -191,7 +191,7 @@ const statements = [
   ),
 ];
 
-execute(statements, { remote });
+execute(statements, { remote, friend });
 
 /*
  * ⚠️ Confirm by RE-READING the database, never by trusting the statement count.
@@ -210,7 +210,7 @@ const after = query(
          AND edition_name <> '' AND edition_kind IS NULL)                        AS unsorted,
      (SELECT COUNT(*) FROM edition WHERE edition_kind IS NULL)                   AS ordinary,
      (SELECT COUNT(*) FROM edition)                                              AS total`,
-  { remote },
+  { remote, friend },
 )[0];
 
 if (!after) {

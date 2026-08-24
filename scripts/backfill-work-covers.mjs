@@ -32,7 +32,7 @@
 
 import { execute, parseFlags, query } from './lib/d1.mjs';
 
-const { commit, remote, limit } = parseFlags();
+const { commit, remote, limit, friend } = parseFlags();
 
 /** D1 takes no bind parameters through `--file`, so the value goes in escaped. */
 function sqlText(value) {
@@ -59,7 +59,7 @@ const CANDIDATES = `
    ORDER BY w.id
 `;
 
-const rows = query(CANDIDATES, { remote }).filter((r) => r.cover);
+const rows = query(CANDIDATES, { remote, friend }).filter((r) => r.cover);
 const targets = Number.isFinite(limit) ? rows.slice(0, limit) : rows;
 
 console.log(`${remote ? 'production' : 'local'}: ${targets.length} work(s) with a stranded cover`);
@@ -83,7 +83,7 @@ execute(
     (r) =>
       `UPDATE work SET cover_url = ${sqlText(r.cover)}, updated_at = datetime('now') WHERE id = ${r.id} AND (cover_url IS NULL OR cover_url = '');`,
   ),
-  { remote },
+  { remote, friend },
 );
 
 /*
@@ -94,10 +94,10 @@ execute(
  * "0 rows updated" over a run that had just written 114. A counter that lies
  * about a no-op looks exactly like the bug it was meant to disprove.
  */
-const left = query(CANDIDATES, { remote }).filter((r) => r.cover).length;
+const left = query(CANDIDATES, { remote, friend }).filter((r) => r.cover).length;
 const covered = query(
   `SELECT COUNT(*) AS n FROM work WHERE cover_url IS NOT NULL AND cover_url <> ''`,
-  { remote },
+  { remote, friend },
 );
 
 console.log(`\nwrote ${targets.length}; ${left} still stranded; ${covered[0]?.n} work(s) now have a cover`);
