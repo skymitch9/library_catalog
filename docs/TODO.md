@@ -1537,9 +1537,11 @@ list including MEDIUM/LOW: [`docs/info/audit-2026-08-findings.md`](info/audit-20
 in plaintext to this PUBLIC repo** — see the findings doc's top section for
 the rotation steps (owner action required).
 
-## ☐ [CRITICAL] `if (count === 0) return null;` sits BEFORE two `useCallback` hooks, so the first time a book is sel…
+## ✅ [CRITICAL] `if (count === 0) return null;` sits BEFORE two `useCallback` hooks, so the first time a book is sel…
 
 **Where:** `apps/web/src/components/BulkActionBar.tsx:26` (library_catalog / web-components)
+
+**Status:** ✅ FIXED on `feature/audit-fixes-library` (each fix has a failing-before/passing-after test).
 
 **Claim:** `if (count === 0) return null;` sits BEFORE two `useCallback` hooks, so the first time a book is selected the component renders more hooks than the previous render and React throws — with no error boundary anywhere in the app, the whole collection page white-screens.
 
@@ -1547,9 +1549,11 @@ the rotation steps (owner action required).
 
 **Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
 
-## ☐ [CRITICAL] The live cross-instance peer shared secret is committed in plaintext, twice, in a tracked file on a …
+## 🚩 [CRITICAL] The live cross-instance peer shared secret is committed in plaintext, twice, in a tracked file on a …
 
 **Where:** `apps/worker/wrangler.toml:203` (3 units: worker-scanjobs-isbn-enrich, infra-deploy-migrations-ci, worker-research-donor-peer)
+
+**Status:** 🚩 FLAGGED — left for the owner (not a clear code fix). See report.
 
 **Claim:** The live cross-instance peer shared secret is committed in plaintext, twice, in a tracked file on a PUBLIC GitHub repo — and it authenticates a route that wipes and rewrites `peer_holding` on both instances.
 
@@ -1557,9 +1561,11 @@ the rotation steps (owner action required).
 
 **Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
 
-## ☐ [HIGH] The paid `--llm` rung reads `ANTHROPIC_API_KEY` with no instance awareness, so a `--friend` sweep bi…
+## ✅ [HIGH] The paid `--llm` rung reads `ANTHROPIC_API_KEY` with no instance awareness, so a `--friend` sweep bi…
 
 **Where:** `scripts/backfill-missing-isbns.mjs:431` (library_catalog / scripts-backfills-a)
+
+**Status:** ✅ FIXED on `feature/audit-fixes-library` (each fix has a failing-before/passing-after test).
 
 **Claim:** The paid `--llm` rung reads `ANTHROPIC_API_KEY` with no instance awareness, so a `--friend` sweep bills the OWNER's Anthropic account for padhard's books — the exact custody defect fixed in the sibling cover script on 2026-08-23 and left live here.
 
@@ -1567,9 +1573,11 @@ the rotation steps (owner action required).
 
 **Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
 
-## ☐ [HIGH] The ISBN write also overwrites `edition.source`, so a hand-created (`manual`) edition that gains an …
+## ✅ [HIGH] The ISBN write also overwrites `edition.source`, so a hand-created (`manual`) edition that gains an …
 
 **Where:** `scripts/backfill-missing-isbns.mjs:517` (library_catalog / scripts-backfills-a)
+
+**Status:** ✅ FIXED on `feature/audit-fixes-library` (each fix has a failing-before/passing-after test).
 
 **Claim:** The ISBN write also overwrites `edition.source`, so a hand-created (`manual`) edition that gains an ISBN from a free rung is silently demoted to `'openlibrary'` — destroying the "'manual' outranks everything and is never overwritten automatically" protection the column exists for.
 
@@ -1577,9 +1585,11 @@ the rotation steps (owner action required).
 
 **Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
 
-## ☐ [HIGH] The LibraryThing rung applies NO author gate and NO title-similarity gate — the `author` argument is…
+## 🚩 [HIGH] The LibraryThing rung applies NO author gate and NO title-similarity gate — the `author` argument is…
 
 **Where:** `scripts/backfill-missing-isbns.mjs:246` (library_catalog / scripts-backfills-a)
+
+**Status:** 🚩 FLAGGED — left for the owner (not a clear code fix). See report.
 
 **Claim:** The LibraryThing rung applies NO author gate and NO title-similarity gate — the `author` argument is accepted and never used, and `similarity` is hardcoded to 1.0 — yet the file's own Safety section claims a ≥0.80 title gate protects every write. It then files the result under `source: 'openlibrary'`, a provenance that is not true.
 
@@ -1587,9 +1597,11 @@ the rotation steps (owner action required).
 
 **Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
 
-## ☐ [HIGH] Six writing backfills destructure only `{ commit, remote, limit }` from `parseFlags()` and drop `fri…
+## ✅ [HIGH] Six writing backfills destructure only `{ commit, remote, limit }` from `parseFlags()` and drop `fri…
 
 **Where:** `scripts/backfill-work-covers.mjs:35` (library_catalog / scripts-backfills-a)
+
+**Status:** ✅ FIXED on `feature/audit-fixes-library` (each fix has a failing-before/passing-after test).
 
 **Claim:** Six writing backfills destructure only `{ commit, remote, limit }` from `parseFlags()` and drop `friend`, so `--friend --remote --commit` silently reads AND writes the MAIN production catalogue while reporting as if about padhard — defeating the guard `dbName()` was added to provide, and contradicting the docs' claim of "a `--friend` flag on every script".
 
@@ -1597,9 +1609,11 @@ the rotation steps (owner action required).
 
 **Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
 
-## ☐ [HIGH] `research_book` returns only `{workId}` — none of RESEARCH_RESULT_FIELDS exists on the endpoint's re…
+## ✅ [HIGH] `research_book` returns only `{workId}` — none of RESEARCH_RESULT_FIELDS exists on the endpoint's re…
 
 **Where:** `apps/web/src/lib/gabi.ts:151` (library_catalog / web-lib-and-app-shell)
+
+**Status:** ✅ FIXED on `feature/audit-fixes-library` (each fix has a failing-before/passing-after test).
 
 **Claim:** `research_book` returns only `{workId}` — none of RESEARCH_RESULT_FIELDS exists on the endpoint's response, so a paid lookup that came back `error` is indistinguishable from one that filled every field.
 
@@ -1607,9 +1621,11 @@ the rotation steps (owner action required).
 
 **Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
 
-## ☐ [HIGH] Neither role-write route inspects the TARGET's current role, and the last-owner guard only fires whe…
+## ✅ [HIGH] Neither role-write route inspects the TARGET's current role, and the last-owner guard only fires whe…
 
 **Where:** `apps/worker/src/routes/users.ts:90` (library_catalog / worker-auth-core)
+
+**Status:** ✅ FIXED on `feature/audit-fixes-library` (each fix has a failing-before/passing-after test).
 
 **Claim:** Neither role-write route inspects the TARGET's current role, and the last-owner guard only fires when the actor is editing themselves — so an `admin` can revoke or demote every `owner`, reaching countOwners()==0, after which no role in the app can ever mint an `owner` again.
 
@@ -1617,9 +1633,11 @@ the rotation steps (owner action required).
 
 **Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
 
-## ☐ [HIGH] `OWNER_EMAILS` is documented in five places as a lock-out recovery hatch, but it is applied only whe…
+## ✅ [HIGH] `OWNER_EMAILS` is documented in five places as a lock-out recovery hatch, but it is applied only whe…
 
 **Where:** `apps/worker/src/env.ts:57` (library_catalog / worker-auth-core)
+
+**Status:** ✅ FIXED on `feature/audit-fixes-library` (each fix has a failing-before/passing-after test).
 
 **Claim:** `OWNER_EMAILS` is documented in five places as a lock-out recovery hatch, but it is applied only when a NEW app_user row is INSERTed — an existing row's role is never re-forced on sign-in, so the mechanism cannot recover the one situation it is documented for (a row that exists with the wrong role).
 
@@ -1627,9 +1645,11 @@ the rotation steps (owner action required).
 
 **Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
 
-## ☐ [HIGH] DELETE /works/:id/accessories/:accessoryId deletes by accessory id ALONE — the `:id` work segment is…
+## ✅ [HIGH] DELETE /works/:id/accessories/:accessoryId deletes by accessory id ALONE — the `:id` work segment is…
 
 **Where:** `apps/worker/src/routes/accessories.ts:96` (library_catalog / worker-catalog-covers-series)
+
+**Status:** ✅ FIXED on `feature/audit-fixes-library` (each fix has a failing-before/passing-after test).
 
 **Claim:** DELETE /works/:id/accessories/:accessoryId deletes by accessory id ALONE — the `:id` work segment is never used as a scope, so a request naming the wrong work destroys another book's accessory row and answers 200.
 
@@ -1637,9 +1657,11 @@ the rotation steps (owner action required).
 
 **Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
 
-## ☐ [HIGH] GET /api/gabi/memory returns `{turns, updatedAt}` but its ONLY caller reads `{ok, record}`, so the D…
+## ✅ [HIGH] GET /api/gabi/memory returns `{turns, updatedAt}` but its ONLY caller reads `{ok, record}`, so the D…
 
 **Where:** `apps/worker/src/routes/gabi-memory.ts:101` (library_catalog / worker-gabi-and-memory)
+
+**Status:** ✅ FIXED on `feature/audit-fixes-library` (each fix has a failing-before/passing-after test).
 
 **Claim:** GET /api/gabi/memory returns `{turns, updatedAt}` but its ONLY caller reads `{ok, record}`, so the Discord side never sees the shared memory — Phase 2's cross-surface continuity is silently dead in one direction.
 
@@ -1647,9 +1669,11 @@ the rotation steps (owner action required).
 
 **Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
 
-## ☐ [HIGH] PUT /api/gabi/memory passes the caller's FULL conversation window to `savePanelConversation`, which …
+## ✅ [HIGH] PUT /api/gabi/memory passes the caller's FULL conversation window to `savePanelConversation`, which …
 
 **Where:** `apps/worker/src/routes/gabi-memory.ts:139` (library_catalog / worker-gabi-and-memory)
+
+**Status:** ✅ FIXED on `feature/audit-fixes-library` (each fix has a failing-before/passing-after test).
 
 **Claim:** PUT /api/gabi/memory passes the caller's FULL conversation window to `savePanelConversation`, which APPENDS rather than replaces — so every Discord save re-appends the whole stored window and the shared record fills with duplicated turns.
 
@@ -1657,9 +1681,11 @@ the rotation steps (owner action required).
 
 **Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
 
-## ☐ [HIGH] `estimateSubrequests` never counted the free-details ladder that `runDetailsResearch` now always run…
+## ✅ [HIGH] `estimateSubrequests` never counted the free-details ladder that `runDetailsResearch` now always run…
 
 **Where:** `apps/worker/src/lib/details-sweep.ts:328` (library_catalog / worker-gabi-and-memory)
+
+**Status:** ✅ FIXED on `feature/audit-fixes-library` (each fix has a failing-before/passing-after test).
 
 **Claim:** `estimateSubrequests` never counted the free-details ladder that `runDetailsResearch` now always runs, so the sweep's budget can pick two books whose real cost is ~74 subrequests against a 50 ceiling — and overrunning it terminates the invocation silently.
 
@@ -1667,9 +1693,11 @@ the rotation steps (owner action required).
 
 **Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
 
-## ☐ [HIGH] GET /api/peer/holdings performs no token check at all, yet it is mounted before the requireAuth blan…
+## ✅ [HIGH] GET /api/peer/holdings performs no token check at all, yet it is mounted before the requireAuth blan…
 
 **Where:** `apps/worker/src/routes/peer.ts:120` (library_catalog / worker-research-donor-peer)
+
+**Status:** ✅ FIXED on `feature/audit-fixes-library` (each fix has a failing-before/passing-after test).
 
 **Claim:** GET /api/peer/holdings performs no token check at all, yet it is mounted before the requireAuth blanket and is classified everywhere in the repo as a token-gated machine route. It is an unauthenticated public read of another household's holdings, and the justification given for the pre-auth mount is factually wrong — the route has zero callers.
 
@@ -1677,9 +1705,11 @@ the rotation steps (owner action required).
 
 **Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
 
-## ☐ [HIGH] The peer-holdings query uses a copy-status set that contradicts the canonical `HELD_STATUSES` in bot…
+## ✅ [HIGH] The peer-holdings query uses a copy-status set that contradicts the canonical `HELD_STATUSES` in bot…
 
 **Where:** `apps/worker/src/lib/peer-push.ts:89` (library_catalog / worker-scanjobs-isbn-enrich)
+
+**Status:** ✅ FIXED on `feature/audit-fixes-library` (each fix has a failing-before/passing-after test).
 
 **Claim:** The peer-holdings query uses a copy-status set that contradicts the canonical `HELD_STATUSES` in both directions — it advertises borrowed and not-yet-delivered books to another household as things we hold, and hides books we own but have lent out.
 
