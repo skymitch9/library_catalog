@@ -17,6 +17,55 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ Fix `scripts/research-queue.mjs` — mirror schema drift + non-atomic batch — branch, not merged — 2026-08-24
+
+The offline details runner replays the queue against an in-memory `node:sqlite`
+**mirror** of the tables the Worker functions touch, diffing each book's writes
+back to production. It broke on schema drift: the mirror listed only the
+original four tables, but the current code now touches two more, and its shim
+`batch` was non-atomic — so a real run wrote `work.series` to production while
+the `change_log` insert failed and aborted the rest, a partial write.
+
+**Branch:** `feature/fix-research-queue` (worktree `C:/lcw/researchfix`). **Not
+merged, not deployed** — conductor merges. **No paid run executed** (no
+`--commit`, no `--remote`, no Anthropic call).
+
+**The two tables added to `MIRRORED`:**
+- **`work_alias`** (migration 0410) — `claimRun` became alias-aware and reads it
+  via `listAliasesForWork`; a mirror without it threw `no such table: work_alias`
+  before a single lookup. Read-only on this path, so it diffs back to nothing.
+- **`change_log`** (migration 0120) — `updateWork` writes an audit row in the
+  SAME `db.batch()` as the `work` UPDATE. **APPEND-only:** `diff` may only INSERT
+  new audit rows and now throws if a seeded row ever appears changed.
+
+**Atomicity — enforced in two places, so a failed audit insert can never leave
+`work.series` written:**
+1. `makeShim.batch` wraps its statements in a `BEGIN…COMMIT` on the in-memory
+   db, rolling back on any failure (D1's own `batch` is all-or-nothing;
+   `last_insert_rowid()` across statements is unaffected — same connection).
+2. `flush` sends each book's diff as ONE `execute` call instead of the old
+   40-statement chunks, so the `work` UPDATE and its `change_log` INSERT land in
+   one all-or-nothing `wrangler d1 execute --file` batch. The per-book flush
+   (money-safety) is unchanged; atomicity is now WITHIN a book.
+
+Every existing guard preserved: the four-detail-column `SAFE_COLUMNS`
+restriction on the `work` diff, `decided_how='auto'`, per-instance key custody,
+the buy-once guard.
+
+**Test — `scripts/test/research-queue.test.mjs` (wired into `npm test`).** Builds
+the mirror exactly as `buildMirror` does (schema for only the `MIRRORED` tables,
+pulled from a real `sqlite_master` over the full migration chain — zero drift),
+then runs the REAL `claimRun` + `updateWork` through the fixed shim: asserts
+`work_alias` is readable, `change_log` gets the `auto` audit row, and a forced
+audit-insert failure rolls the `work` write back with it. Verified the guards
+bite: the pre-fix `MIRRORED` yields a mirror with no `work_alias` (the exact
+crash), and a non-atomic batch leaks `series='LEAK'`. `npm run typecheck` clean
+(all workspaces); `npm test` 1596/1596 pass.
+
+`scripts/research-queue.mjs` is now import-safe (`main()` runs only as the entry
+point) so the shim can be unit-tested; it exports `makeShim`, `buildMirror`,
+`diff`, `flush`, `MIRRORED`, `SAFE_COLUMNS`.
+
 ## ✅ T-G · Random TBR picker with pizzazz — built (branch, not merged) — 2026-08-24
 
 The owner's ask (tracked as **T-G** in `catalog-platform/docs/TODO.md`): a
