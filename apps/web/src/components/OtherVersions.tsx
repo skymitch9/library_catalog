@@ -50,6 +50,7 @@ import { Cover } from './Cover.js';
 export function OtherVersions({
   holding,
   editions = [],
+  audioEditionCount,
   ourSeries,
 }: {
   holding: WorkAudiobookHolding | null;
@@ -59,15 +60,25 @@ export function OtherVersions({
    * API response predating the field) renders exactly what it rendered before.
    */
   editions?: WorkAudioEdition[];
+  /**
+   * How many recordings the household holds now — `countAudioEditions` in
+   * `@lc/db`. See `audioCountLine` for why this is not `editions.length`.
+   */
+  audioEditionCount?: number;
   /** This work's OWN series spelling, to show only when the two disagree. */
   ourSeries: string | null;
 }) {
   const entries = buildVersionEntries({ holding, editions, ourSeries });
   if (entries.length === 0) return null;
+  const countLine = audioCountLine(audioEditionCount);
 
   return (
     <section className="panel">
       <h3>Other versions available</h3>
+      {/* The owner's ask, 2026-08-23: SAY THE NUMBER. The rows already show it
+          to anybody who counts them, and counting is exactly what he should not
+          have to do — "2 audiobooks" is the fact, in words, above the list. */}
+      {countLine && <p className="muted small">{countLine}</p>}
       {entries.map((entry, i) => (
         <div className="row-tight" style={i === 0 ? undefined : { marginTop: 10 }} key={entry.key}>
           {entry.cover && <Cover src={entry.cover} title={entry.title} size="row" />}
@@ -86,6 +97,42 @@ export function OtherVersions({
       ))}
     </section>
   );
+}
+
+/**
+ * *"You own 2 audiobooks of this book."* — or nothing at all.
+ *
+ * Owner's decision, 2026-08-23: *"have it say 2 on the physical and ebook
+ * libraries; on audiobook have them be different since they're different files
+ * being served."* This is the physical library's half of it.
+ *
+ * ⚠️ **Silent below two, on purpose.** "You own 1 audiobook of this book" is a
+ * sentence that adds nothing to a list already showing exactly that one
+ * audiobook, and this app's standing habit is to say more as the shelf gets
+ * more interesting, not to narrate the ordinary case (see `signatureShared` on
+ * the series page, and every other zero-omission on the work page).
+ *
+ * ⚠️ **The number comes from the SERVER's count, never from `editions.length`.**
+ * They are different questions and can legitimately differ:
+ *
+ *   - `editions` carries **stale** rows so each can be shown with a caveat — a
+ *     match the sibling catalog has withdrawn is still worth seeing, because
+ *     hiding it looks identical to "never matched";
+ *   - this line claims the household **owns** them, so it counts only what that
+ *     catalog still confirms (`stale_at IS NULL`, in `audioEditionCountSql`).
+ *
+ * So one live edition and one withdrawn one renders **two rows and no count
+ * line**, which is the honest pair of answers rather than a contradiction.
+ *
+ * `undefined` — an API response predating the field — renders nothing, the same
+ * rule `editions` itself follows.
+ *
+ * Exported for the same two callers `buildVersionEntries` is: the render above,
+ * and `apps/web/test/other-versions.test.ts`, which pins 1-vs-2 without a DOM.
+ */
+export function audioCountLine(count: number | undefined): string | null {
+  if (count == null || count < 2) return null;
+  return `You own ${count} audiobooks of this book.`;
 }
 
 /**

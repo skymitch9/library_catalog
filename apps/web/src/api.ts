@@ -519,6 +519,19 @@ export interface AudiobookRef {
   indexDisplay: string | null;
   matchedVia: string;
   viaAlias: string | null;
+  /**
+   * How many recordings of this volume the household holds — migration 0390,
+   * counted by `audioEditionCountSql` in `@lc/db` and by nothing else.
+   *
+   * ⚠️ **RECORDINGS, never rungs.** A volume owned twice on audio is still one
+   * rung held, and `SeriesHoldings.audio` / `SeriesCompleteness.onAudio` keep
+   * saying so. This number is for the chip and the rung signature — see
+   * `audioToken` in `SeriesDetailPage`.
+   *
+   * Always ≥ 1 wherever this ref exists (the ladder's read is already filtered
+   * to live holdings). The interesting value is 2.
+   */
+  editionCount: number;
 }
 
 /**

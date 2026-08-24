@@ -26,20 +26,38 @@ import { describe, it } from 'node:test';
 
 import { audioEditionCountSql } from '../src/works.ts';
 
-/** Just enough of migrations 0001 and 0390 for the fragment to run. */
+/**
+ * Just enough of migrations 0001 and 0390 for the fragment to run — the table,
+ * and the VIEW over it copied verbatim from
+ * `migrations/0390_audiobook_edition_holding.sql` (columns trimmed to the ones
+ * present here; the `ROW_NUMBER()` window, its PARTITION and its ORDER BY are
+ * byte-for-byte the shipped ones, because they are what the last test asserts).
+ */
 function fixture(): DatabaseSync {
   const db = new DatabaseSync(':memory:');
   db.exec(`
     CREATE TABLE work (id INTEGER PRIMARY KEY, title TEXT NOT NULL);
     CREATE TABLE audiobook_edition_holding (
-      work_id   INTEGER NOT NULL REFERENCES work(id),
-      audio_key TEXT    NOT NULL,
-      title     TEXT    NOT NULL,
-      narrator  TEXT,
-      series    TEXT,
-      stale_at  TEXT,
+      work_id       INTEGER NOT NULL REFERENCES work(id),
+      audio_key     TEXT    NOT NULL,
+      title         TEXT    NOT NULL,
+      narrator      TEXT,
+      series        TEXT,
+      index_display TEXT,
+      stale_at      TEXT,
       PRIMARY KEY (work_id, audio_key)
     );
+    CREATE VIEW audiobook_holding AS
+    SELECT work_id, title, series, index_display, stale_at
+      FROM (
+        SELECT *,
+               ROW_NUMBER() OVER (
+                 PARTITION BY work_id
+                 ORDER BY (series IS NULL), (index_display IS NULL), audio_key
+               ) AS edition_rank
+          FROM audiobook_edition_holding
+      )
+     WHERE edition_rank = 1;
   `);
   return db;
 }
@@ -171,5 +189,72 @@ describe('audioEditionCountSql', () => {
     // make it look like both are held.
     assert.equal(countForWork(db, 20), 0);
     assert.equal(countForWork(db, 21), 1);
+  });
+});
+
+/**
+ * ⚠️ **Two recordings are ONE rung held.** The count exists so a chip can say
+ * "2"; the series page's coverage arithmetic — `SeriesHoldings.audio`,
+ * `completeness.onAudio`, `gapsCountingAudio` — counts rungs, and a volume the
+ * household owns twice on audio must not make a 5-book series look 6/5 covered.
+ *
+ * The separation is structural rather than careful: the ladder reads the
+ * `audiobook_holding` VIEW, which is one whole row per work by construction, and
+ * `edition_count` rides along that row as a display fact. This pins the
+ * construction, so a future change to the view (or to the count) that broke it
+ * fails here rather than on a series page nobody happened to open.
+ */
+describe('two recordings, one rung — the coverage arithmetic must not move', () => {
+  it('the view yields ONE row for a work with two live editions', () => {
+    const db = fixture();
+    addWork(db, 514, 'Elantris');
+    addEdition(db, 514, 'Elantris');
+    addEdition(db, 514, 'Elantris - Tenth Anniversary Special Edition');
+
+    const rows = db.prepare('SELECT work_id FROM audiobook_holding').all();
+    assert.equal(rows.length, 1, 'one rung held on audio, whatever the count says');
+    assert.equal(countForWork(db, 514), 2, 'and the count still says two recordings');
+  });
+
+  it('adding a second edition does not add a work to the ladder', () => {
+    const db = fixture();
+    addWork(db, 100, 'One recording');
+    addWork(db, 101, 'Two recordings');
+    addEdition(db, 100, 'One recording');
+    addEdition(db, 101, 'Two recordings — full cast');
+
+    const before = db.prepare('SELECT COUNT(*) AS n FROM audiobook_holding').get() as { n: number };
+    addEdition(db, 101, 'Two recordings — solo');
+    const after = db.prepare('SELECT COUNT(*) AS n FROM audiobook_holding').get() as { n: number };
+
+    assert.equal(before.n, 2);
+    assert.equal(after.n, 2, 'the number of works held on audio is unchanged — 0390 all over');
+    assert.deepEqual(
+      [...countsAcrossWorks(db)],
+      [
+        [100, 1],
+        [101, 2],
+      ],
+      'only the per-rung recording count moved',
+    );
+  });
+
+  it('the view still prefers the series-bearing row, count or no count', () => {
+    const db = fixture();
+    addWork(db, 514, 'Elantris');
+    addEdition(db, 514, 'Elantris');
+    // The Tenth Anniversary edition is the one that KNOWS the series — the whole
+    // reason migration 0390 exists. Adding a count must not disturb the rank.
+    db.prepare(
+      'UPDATE audiobook_edition_holding SET series = ?, index_display = ?' +
+        ' WHERE work_id = ? AND audio_key = ?',
+    ).run('Elantris', '1', 514, 'Elantris');
+    addEdition(db, 514, 'Elantris - Tenth Anniversary Special Edition');
+
+    const row = db.prepare('SELECT title, series FROM audiobook_holding').get() as {
+      title: string;
+      series: string | null;
+    };
+    assert.equal(row.series, 'Elantris');
   });
 });
