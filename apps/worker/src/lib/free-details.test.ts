@@ -171,6 +171,36 @@ describe('readSeriesLabel', () => {
     });
   });
 
+  it('⚠️ reads the markerless "Name (N)" Open Library really answers with', () => {
+    // MEASURED 2026-08-23 against the live API: editions.json for Elantris
+    // answers `series: ["Elantris (1)"]`. Before this was handled, the whole
+    // string landed in work.series and the catalogue grew a series named
+    // "Elantris (1)" — a shelf of one, beside the real one.
+    assert.deepEqual(readSeriesLabel('Elantris (1)', true), {
+      series: 'Elantris',
+      sort: 1,
+      display: null,
+    });
+  });
+
+  it('reads the "Name #N" spelling of the same field', () => {
+    assert.deepEqual(readSeriesLabel('Mistborn #2', true), {
+      series: 'Mistborn',
+      sort: 2,
+      display: null,
+    });
+  });
+
+  it('⚠️ leaves a name that merely ENDS in a parenthetical alone', () => {
+    // The guard that makes the branch above safe: it fires only when
+    // `parseVolumeNumber` gets a position out of the bracketed token.
+    assert.deepEqual(readSeriesLabel('Discworld (UK)', true), {
+      series: 'Discworld (UK)',
+      sort: null,
+      display: null,
+    });
+  });
+
   it('takes a DECLARED series field whole when it names no volume', () => {
     assert.deepEqual(readSeriesLabel('The Stormlight Archive', true), {
       series: 'The Stormlight Archive',

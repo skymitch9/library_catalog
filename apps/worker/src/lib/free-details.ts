@@ -217,7 +217,40 @@ export function readSeriesLabel(
       display: parsed.index === null ? null : quotedDesignation(parsed.display),
     };
   }
-  return declared ? { series: text, sort: null, display: null } : null;
+  if (!declared) return null;
+
+  /*
+   * ⚠️ **The markerless numbering Open Library actually uses.** Measured
+   * 2026-08-23 against the live API: `/works/OL…W/editions.json` answered
+   * `series: ["Elantris (1)"]` — a bare number in brackets, with no *Book* or
+   * *Volume* in sight. `detectSeriesFromTitle` refuses that shape by design
+   * (rule: a bare trailing number is never a volume, or *Summoner 6* becomes
+   * six copies of one book), so before this branch existed the whole string
+   * landed in `work.series` and the catalogue grew a series literally named
+   * **"Elantris (1)"** — a shelf of one, next to the real one.
+   *
+   * `Name (N)` and `Name #N` are the two spellings this field carries. The
+   * NUMBER still goes through `parseVolumeNumber` and nothing else; the name is
+   * whatever is in front of it, which is a split rather than a parse — the same
+   * distinction `splitSeriesPrefix` draws in `@lc/core`.
+   *
+   * ⚠️ It only fires when `parseVolumeNumber` returns a position, so a series
+   * whose name genuinely ends in a parenthetical — *"Discworld (UK)"* — keeps
+   * its name whole. That guard is the whole reason this is safe.
+   */
+  const numbered = /^(.+?)\s*(?:\(\s*([^()]+?)\s*\)|#\s*([^\s#]+))\s*$/.exec(text);
+  if (numbered) {
+    const name = (numbered[1] ?? '').trim();
+    const token = (numbered[2] ?? numbered[3] ?? '').trim();
+    const sort = parseVolumeNumber(token);
+    if (name && sort !== null) {
+      // The token is a bare position, not a designation anybody printed, so
+      // `quotedDesignation` refuses it and the display column stays empty.
+      return { series: name, sort, display: quotedDesignation(token) };
+    }
+  }
+
+  return { series: text, sort: null, display: null };
 }
 
 /**
