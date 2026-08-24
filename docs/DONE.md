@@ -17,6 +17,63 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ Book detail page — faithful reskin to the approved mockup + author double-prompt fix — SHIPPED both instances — 2026-08-24
+
+**Why.** The redesigned detail page had been delivered on the generic estate
+theme and looked nothing like the signed-off mockup. Owner: *"the mock up you
+made doesnt look the same at all. where is the beautiful top bar, the nice
+rating and review section, the on your shelf with the rendering and little
+emojis. I want that."*
+
+**What shipped (presentation only — no data-model, API, or guard changes).**
+
+- **Identity header** — `.bd-identity` grid: 2/3 cover left (gradient placeholder
+  when blank), title in the **Fraunces** display serif, italic subtitle, byline,
+  metadata **chips** (universe / series / first-published), one Edit button.
+- **Ratings & reviews** hoisted — big Fraunces average (**measured** from the
+  deduped reviews, not asserted), brass stars, counts; review cards with mono
+  source tags. `Reviews.tsx`.
+- **On your shelf** — teal-wash holding cards, emoji thumb per medium
+  (📗/📖/🎧/📱), the format big in Fraunces, Owned/Wanted badge, special-edition
+  badges (✍ Signed etc.), emoji availability row (🏠 peers). ⚠️ **`deriveShelfView`
+  UNCHANGED** — the copy-driven shelf and the stale-audio gate do not regress.
+- **Fonts** — Fraunces / Hanken Grotesk / IBM Plex Mono via a Google Fonts
+  `<link>` (no CSP on this app blocks it), referenced **only** under
+  `.book-detail`, so no other route's typography changes.
+- **Colour** — committed as page-scoped `--bd-*` tokens under one `.book-detail`
+  wrapper (the mockup palette the owner asked for), light + dark keyed on the
+  resolved `[data-mode]` that theme.js stamps (+ a `prefers-color-scheme`
+  no-JS fallback). Nothing outside `.book-detail` changes; the global theme
+  switcher and every other route are untouched.
+
+**Author double-prompt fix.** On an authorless book the "add the author"
+call-to-action was rendered by BOTH the Reviews panel and the Content-notes
+panel — two prompts to edit the author (owner: *"on edit author it pops up a
+SECOND prompt to edit author"*). Content notes now shows only its held
+explanation; exactly one author prompt remains (in Ratings & reviews). ⚠️ The
+codebase renders `<EditTitleAuthor>` exactly once, so the actual EDITOR was never
+doubled — the duplication was these two page-level call-to-actions.
+
+**Deviations from the mockup (deliberate).** (1) Colour committed page-scoped
+rather than fully mapped to `--et-*`, because the owner asked specifically for
+the mockup look, not the active theme's — the theme switcher still governs every
+other route and both modes still work here. (2) The current copy-driven shelf
+model treats ebook/audio as **Owned rows** (the 2026-08-24 owner correction), so
+they appear as rows with 🎧/📱 thumbs rather than as the mockup's availability
+chips; availability is peers-only. (3) The mockup's static "Write a review"
+button is the existing inline rating form.
+
+**Files.** `apps/web/index.html`, `apps/web/src/pages/WorkPage.tsx`,
+`apps/web/src/components/{OnYourShelf,Reviews,ContentNotes}.tsx`,
+`apps/web/src/styles.css`. Commit `1143383`.
+
+**Verified.** typecheck clean · vite build clean · **1673/1673** tests pass ·
+light + dark eyeballed in a browser against the **compiled** CSS + fonts (static
+preview of the exact emitted classes — the live authed React page needs SSO and
+was not rendered). Deployed **main** (library.heygabi.ai, version
+`5e02aaec-…`) and **friend** (padhard.heygabi.ai, version `807386fc-…`).
+Review link: **https://library.heygabi.ai/work/509**.
+
 ## 🟡 Move the leaked PEER_TOKEN out of public `PEERS` config into the `PEER_TOKEN` secret (audit CRITICAL) — FIXED-IN-CODE, owner rotation pending — 2026-08-24
 
 The 2026-08 audit's CRITICAL finding: `apps/worker/wrangler.toml` (lines ~203 &
