@@ -15,23 +15,26 @@ import { deriveShelfView, type ShelfCopy } from '../lib/shelf-view.js';
  * "On your shelf" — the redesign's answer to the first question a book page is
  * asked: *what do I have, and where else can I get it?*
  *
- * ## The owner's model (2026-08-24): the EDITION LIST *is* the shelf
+ * ## The owner's model (2026-08-24, corrected): the shelf is WHAT YOU HAVE
  *
- * There is no single "hero" any more. The shelf is a list of **editions** — the
- * versions of the book that exist — one row each, and it is **never empty**.
- * Every row is marked **Owned** (you hold a copy, or it is a file you have) or
- * **Wanted** (it exists, you have no copy); a book you own nothing of still shows
- * its primary version as Wanted. Copies **nest under** the edition they are a
- * copy of, so the common one-book-one-printing case is exactly one clean row and
- * a second physical copy of the same printing is a nested line, not a rival list.
+ * There is no single "hero". The shelf is a **copy-driven** list — the formats
+ * you own (from your held copies), plus the ebooks/audiobooks you hold — one row
+ * each, and it is **never empty**. Every row is marked **Owned** (you hold a
+ * copy, or it is a file you have) or **Wanted** (a wishlist copy wants it);
+ * ⚠️ **an owned book is never Wanted** — the previous link-driven derivation made
+ * exactly that mistake (work 493). Copies **nest under** the format they are a
+ * copy of, so the common one-book-one-copy case is one clean row and a second
+ * copy of the same format is a nested line, not a rival list. A book with
+ * genuinely nothing shows one neutral "not on your shelf" slot — never a
+ * fabricated Wanted. See `deriveShelfView` for the whole model.
  *
  * ⚠️ **A SUMMARY, not a second source of truth.** The full editable record still
- * lives where it always did — `Editions` for the printings, `Copies` for what you
- * hold, `OtherVersions` for the audiobook, `EbookShadow` for the pool,
- * `PeerLibraries` for peers — now split across the edit box's **Editions** and
- * **Copies** tabs. This panel is the glance; those are the record. All of it
- * derives from `deriveShelfView`, so the shelf here and the tabs below it cannot
- * come to disagree about what is held.
+ * lives where it always did — `Editions` for the printings and `Copies` for what
+ * you hold, now under the edit box's ONE merged **Editions & copies** tab, plus
+ * `OtherVersions` for the audiobook, `EbookShadow` for the pool, `PeerLibraries`
+ * for peers. This panel is the glance; those are the record. All of it derives
+ * from `deriveShelfView`, so the shelf here and the tabs below it cannot come to
+ * disagree about what is held.
  */
 export function OnYourShelf({
   copies,
@@ -60,8 +63,7 @@ export function OnYourShelf({
     peerHoldings,
   });
 
-  const hasAvailability =
-    availability.audio !== null || availability.ebook || availability.peers.length > 0;
+  const hasAvailability = availability.peers.length > 0;
 
   return (
     <section className="panel shelf">
@@ -71,26 +73,41 @@ export function OnYourShelf({
         {rows.map((row) => (
           <li key={row.key}>
             <div className="shelf-row">
-              {/* The version, as a format pill — the one-glance "what is this".
-                  Filled accent when you own it; a quiet outline when it is only
-                  wanted, so the eye lands on what is actually on the shelf. */}
+              {/* The format, as a pill — the one-glance "what is this", never a
+                  generic "This book". Filled accent when you own it; a quiet
+                  outline when it is only wanted, so the eye lands on what is
+                  actually on the shelf. The neutral slot (nothing owned or
+                  wanted) reads plainly and carries no Owned/Wanted claim. */}
               <span
                 className={`shelf-row__format shelf-row__format--${row.medium ?? 'unknown'}${
-                  row.owned ? '' : ' shelf-row__format--wanted'
+                  row.neutral || row.owned ? '' : ' shelf-row__format--wanted'
                 }`}
               >
-                {row.format ?? 'This book'}
+                {row.format ?? (row.neutral ? 'Not on your shelf' : 'Any format')}
+                {/* Recordings held, for an Audiobook row (e.g. two narrations). */}
+                {row.count != null && row.count > 1 && (
+                  <span className="shelf-row__count"> ×{row.count}</span>
+                )}
               </span>
-              <span
-                className={`shelf-row__own shelf-row__own--${row.owned ? 'owned' : 'wanted'}`}
-                title={
-                  row.owned
-                    ? 'A copy is on your shelf, or it is a file you hold'
-                    : 'This version exists; you have no copy of it yet'
-                }
-              >
-                {row.owned ? 'Owned' : 'Wanted'}
-              </span>
+              {row.neutral ? (
+                <span
+                  className="shelf-row__own shelf-row__own--neutral"
+                  title="You do not own or want this yet — nothing is recorded on your shelf"
+                >
+                  Not on your shelf
+                </span>
+              ) : (
+                <span
+                  className={`shelf-row__own shelf-row__own--${row.owned ? 'owned' : 'wanted'}`}
+                  title={
+                    row.owned
+                      ? 'A copy is on your shelf, or it is a file you hold'
+                      : 'A wishlist copy wants this; you have no copy of it yet'
+                  }
+                >
+                  {row.owned ? 'Owned' : 'Wanted'}
+                </span>
+              )}
               {row.kind && <span className="shelf-row__kind">{editionKindLabel(row.kind)}</span>}
               {row.badges.length > 0 && (
                 <span className="shelf-row__badges">
@@ -130,23 +147,13 @@ export function OnYourShelf({
         ))}
       </ul>
 
+      {/* ⚠️ "Also available" is now PEERS ONLY. Your own audiobook/ebook holdings
+          became Owned shelf rows above (owner model) — only OTHER people's
+          libraries remain an "also available elsewhere" footnote. */}
       {hasAvailability && (
         <div className="shelf-hero__avail">
           <span className="muted small shelf-hero__avail-label">Also available:</span>
           <span className="fmts">
-            {availability.audio && (
-              <span className="fmt fmt--audio" title="Held in the sibling audiobook library">
-                Audio
-                {availability.audio.count > 1 && (
-                  <span className="fmt__count"> {availability.audio.count}</span>
-                )}
-              </span>
-            )}
-            {availability.ebook && (
-              <span className="fmt fmt--ebook" title="Held in the shared ebook pool">
-                Ebook
-              </span>
-            )}
             {availability.peers.map((ph: PeerHoldingView) => (
               <span
                 key={ph.peerId}

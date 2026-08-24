@@ -32,6 +32,41 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
+## ☐ Shelf is COPY-DRIVEN + EditBox tab merge — LANDED FOR REVIEW (branch `feature/shelf-copy-driven`, 2026-08-24)
+
+Fixes the ownership bug where an OWNED book read as **Wanted**. `deriveShelfView`
+(`apps/web/src/lib/shelf-view.ts`) was **link-driven** — it marked an edition
+Owned only when a copy's `edition_id` linked to it. But `copy.edition_id` is
+**null across essentially the whole catalog** (no barcode to link on), so an
+owned copy floated free while its unlinked edition showed Wanted. Work **493**
+(".hack//Another Birth Vol 2") was the live proof: 1 owned copy, 1 paperback
+edition, no link → "Paperback — Wanted".
+
+**Now copy-driven:** the shelf = what you HOLD. Owned copies group by their
+*effective* format (linked edition's format → leather⇒hardcover → the work's sole
+physical-edition format → unspecified physical); each format = one Owned row with
+its copies nested as instances. Ebook editions/holding and audiobook holding
+become Owned rows. **Wanted rows are wishlist copies ONLY** — an edition you
+neither own nor want is not a row. Never empty → one neutral "not on your shelf"
+slot (never a fabricated Wanted). `availability` is now **peers only** (your own
+ebook/audio moved onto the shelf as Owned rows).
+
+**EditBox:** the separate **Editions** and **Copies** tabs are merged into one
+**Editions & copies** tab (editions is the unit; copies nest inside).
+
+**State:** branch pushed. **Nothing deployed** — client-side derivation change,
+no migration, no API shape change. `work-detail-contract` + `work-page-render`
+kept green. Tests **1672 pass / 0 fail**; typecheck clean; web build clean.
+`shelf-view.test.ts` rewritten (26 cases) incl. the explicit 493 case.
+
+**Owner review:** `/work/493` (now reads **Owned — Paperback**) and `/work/269`.
+
+**Not done / deferred:** the `WorkPage.tsx` section comment still says "one hero
+holding" (cosmetic, left untouched to keep the diff to the derivation + tabs). No
+D1 unit harness exists, so the derivation is covered by the pure-function tests,
+not a live-D1 read.
+
+
 ## ☐ Special editions first-class + multi-type format filter — LANDED FOR REVIEW (branch `feature/special-editions-firstclass`, 2026-08-24)
 
 Sprayed edges / leatherbound / slipcase are now first-class editable booleans on

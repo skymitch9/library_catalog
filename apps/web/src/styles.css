@@ -2688,6 +2688,16 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
 }
 .shelf-row__own--owned { border: 1px solid var(--et-accent); color: var(--et-accent); }
 .shelf-row__own--wanted { border: 1px dashed var(--et-border); color: var(--et-muted); }
+/* The never-empty "not on your shelf" slot — no ownership claim, quietest of all. */
+.shelf-row__own--neutral {
+  border: 1px dashed var(--et-border);
+  color: var(--et-muted);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+}
+/* Recordings held on an Audiobook row (e.g. two narrations). */
+.shelf-row__count { font-weight: 700; opacity: 0.8; }
 
 .shelf-row__kind {
   font-size: 0.72rem;
