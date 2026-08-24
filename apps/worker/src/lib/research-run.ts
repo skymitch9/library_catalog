@@ -105,10 +105,12 @@ import {
   deleteAutoVerdict,
   finishRun,
   getWork,
+  listAliasesForWork,
   listFindings,
   listGapVerdicts,
   markFinding,
   saveFindings,
+  selectTitleAliases,
   setGapVerdict,
   updateWork,
   type ResearchFinding,
@@ -225,6 +227,26 @@ function joinSentences(applied: readonly string[], tail: string): string {
   return applied.length > 0 ? `${applied.join(' ')} ${tail}` : tail;
 }
 
+/**
+ * A sentence naming which alias the paid lookup recognised the book by, or null
+ * when it matched on the catalogued title (or did not say). Attribution only —
+ * the value is a label the model returned, never written to `work`. This is what
+ * makes an alias-sourced answer legible on the run: *"Identified as 'The Ex
+ * Hex'."* rather than a silent match on a title the paid rung had already failed
+ * on.
+ */
+function aliasAttribution(matchedTitle: string | null, primaryTitle: string): string | null {
+  const matched = (matchedTitle ?? '').trim();
+  if (!matched || matched === primaryTitle.trim()) return null;
+  return `Identified as “${matched}”.`;
+}
+
+/** Fold an alias attribution in front of whatever else the run had to say. */
+function withAttribution(note: string | null | undefined, attribution: string | null): string | null {
+  if (!attribution) return note ?? null;
+  return note ? `${attribution} ${note}` : attribution;
+}
+
 function describeRun(
   proposed: number,
   report: AutoApplyReport,
@@ -327,10 +349,23 @@ export async function claimRun(
   if (gaps.missing.length === 0) return { kind: 'nothing_to_ask' };
   const fields = gaps.asks;
 
+  // The other names this book answers to, capped and de-duplicated by the SAME
+  // function the accounting reads with, so what a run RECORDS asking under and
+  // what a later `askedForWork` treats as covered can never disagree.
+  const titleAliases = selectTitleAliases(
+    work.title,
+    (await listAliasesForWork(db, workId))
+      .filter((a) => a.kind === 'title')
+      .map((a) => a.alias),
+  );
+
   // Stamped before the call, not after: the record is of what the lookup had to
   // work from. A work edited while a run was in flight would otherwise be
   // stamped with the new value and never re-asked about the old one — migration
-  // 0001's reasoning for these columns, unchanged.
+  // 0001's reasoning for these columns, unchanged. `input_aliases` (migration
+  // 0410) joins `input_title` in that guarantee: adding an alias AFTER this run
+  // re-opens the fields it could newly answer, precisely because this run did
+  // not record asking under it.
   const run = await createRun(db, {
     workId,
     tier: 'details',
@@ -338,6 +373,7 @@ export async function claimRun(
     effort: RESEARCH_EFFORT,
     triggeredBy,
     inputTitle: work.title,
+    inputAliases: titleAliases,
     inputYear: work.firstPublished,
     unfilled: fields,
   });
@@ -397,7 +433,19 @@ export async function runDetailsResearch(
      * back which rung answered which field, which is what makes the run record
      * able to say "this was free" instead of implying everything was bought.
      */
-    const free = await freeDetailsFor(env, workId, fields, {});
+    // The other names this book answers to, read once and handed to both halves
+    // of the ladder. Capped and de-duplicated by the same function that stamped
+    // the run at claim time, so the free rungs, the paid ask and the accounting
+    // all reason about the same identity set. A work with no aliases yields [],
+    // and every path below behaves exactly as it did before aliases existed.
+    const titleAliases = selectTitleAliases(
+      first.title,
+      (await listAliasesForWork(env.DB, workId))
+        .filter((a) => a.kind === 'title')
+        .map((a) => a.alias),
+    );
+
+    const free = await freeDetailsFor(env, workId, fields, { titleAliases });
     const stillOpen = free.stillOpen;
 
     /*
@@ -435,6 +483,11 @@ export async function runDetailsResearch(
       // alone is ambiguous, which is the right outcome for exactly that book.
       authors: work.authors ?? '',
       series: work.series,
+      // The alias titles as "Also known as" lines. A book catalogued as "The Ex
+      // Hex Duo" can now be found under the bind-up title "The Ex Hex" the alias
+      // records — the ask that was previously title-only and failed twice on
+      // that very string (docs/TODO.md, 2026-08-23).
+      titleAliases,
       // ⚠️ `stillOpen`, not `fields`. Sending a field a free rung has already
       // filled buys an answer `applyFinding` would refuse to write anyway
       // ("Already in the series X") — the same page fetched, the same invoice,
@@ -513,7 +566,14 @@ export async function runDetailsResearch(
         proposed: saved,
         applied: report.applied.length + free.applied.length,
         sources,
-        detail: joinSentences(free.applied, describeRun(saved, report, answer.note)),
+        detail: joinSentences(
+          free.applied,
+          describeRun(
+            saved,
+            report,
+            withAttribution(answer.note, aliasAttribution(answer.matchedTitle, work.title)),
+          ),
+        ),
       },
     });
   } catch (err) {

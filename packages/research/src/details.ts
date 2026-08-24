@@ -92,6 +92,19 @@ export interface RawFinding {
 export interface RawAnswer {
   /** False when the model could not tell which book this is. Then `findings` is empty. */
   identified: boolean;
+  /**
+   * Which name the model actually recognised the book by — the primary title,
+   * or one of the `Also known as` lines it was given. Null when it did not say,
+   * or when there were no aliases to choose between.
+   *
+   * ⚠️ A LABEL, never a value. Nothing is written to `work` from it; the caller
+   * uses it only to attribute an alias-sourced answer in the run record, so a
+   * book found under a pen name or a bind-up title reads as *"identified as
+   * 'The Ex Hex'"* rather than silently as its catalogued title. It cannot move
+   * `work.title` — that would re-derive `work_key` and orphan the shared reviews,
+   * the rule the whole alias feature exists to respect (`aliases.ts` header).
+   */
+  matchedTitle: string | null;
   note: string | null;
   findings: RawFinding[];
 }
@@ -100,6 +113,7 @@ const ANSWER_SCHEMA = {
   type: 'object',
   properties: {
     identified: { type: 'boolean' },
+    matchedTitle: { type: ['string', 'null'] },
     note: { type: ['string', 'null'] },
     findings: {
       type: 'array',
@@ -122,7 +136,7 @@ const ANSWER_SCHEMA = {
       },
     },
   },
-  required: ['identified', 'note', 'findings'],
+  required: ['identified', 'matchedTitle', 'note', 'findings'],
   additionalProperties: false,
 } as const;
 
@@ -152,6 +166,26 @@ Two real failures from this catalog, both worth having in mind:
 
 So when a title is generic or a name is shared, say which publisher and which year
 you are looking at in the basis, and if two candidates fit, choose neither.
+
+## Other names this book is known by
+
+The identity block may carry one or more "Also known as" lines. These are extra,
+equally valid names the SAME book answers to — a pen name, a bind-up or omnibus
+title, a title from another market, a series the household files it under. A match
+on any one of them is a real identification, not a near miss: "The Ex Hex Duo" and
+"The Ex Hex" are the same McRae bind-up, and finding the facts under the alias is
+exactly why the alias was recorded.
+
+So treat every "Also known as" line as a name to search under, and if the book you
+settle on is the one an alias names, set identified to true. Set matchedTitle to
+the exact name — primary title or an "Also known as" line — you actually
+recognised it by, so the record can say which one paid off. If no alias was given,
+or you matched on the primary title, set matchedTitle to the primary title. Set it
+to null only when identified is false.
+
+The identification bar is unchanged: right book, right author, right series where
+given. An alias widens the names you may match on; it never lowers the certainty
+required.
 
 ## Three answers per field, and the third one matters
 
@@ -207,6 +241,15 @@ export interface ResearchInput {
   authors: string;
   /** Passed when known, so the model does not propose a different series. */
   series: string | null;
+  /**
+   * Other title names this same book answers to — `work_alias` rows of kind
+   * `title`. Each becomes an "Also known as" line the model may match on, so a
+   * book catalogued as "The Ex Hex Duo" can be found under the bind-up title
+   * "The Ex Hex" the alias records. The caller caps and de-duplicates this; the
+   * prompt sends them verbatim. Empty (the default) reproduces the exact
+   * pre-alias prompt, so a work with no aliases is unaffected.
+   */
+  titleAliases?: readonly string[];
   /** Only the fields still missing. Anything recorded is never re-asked. */
   fields: readonly DetailField[];
 }
@@ -229,9 +272,18 @@ export async function researchDetails(
   }
   const client = createClient(apiKey);
 
+  // "Also known as" lines, one per alias, verbatim. Deduped and stripped of any
+  // alias that merely repeats the primary title so the model is never handed the
+  // same name twice. The caller already caps the count.
+  const aliasLines = [...new Set(input.titleAliases ?? [])]
+    .map((a) => a.trim())
+    .filter((a) => a !== '' && a !== input.title.trim())
+    .map((a) => `Also known as: ${a}`);
+
   const identity = [
     `Title: ${input.title}`,
     `Author: ${input.authors}`,
+    ...aliasLines,
     input.series ? `Series (already recorded, treat as given): ${input.series}` : null,
   ]
     .filter(Boolean)

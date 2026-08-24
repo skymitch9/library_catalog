@@ -70,6 +70,8 @@ interface StubOptions {
   /** `null` = no row at all. An object with `series: null` is the Elantris case. */
   holding?: Record<string, unknown> | null;
   editions?: Record<string, unknown>[];
+  /** `work_alias` rows this work carries. Empty by default. */
+  aliases?: { alias: string; kind: string }[];
 }
 
 /**
@@ -103,6 +105,17 @@ function stubDb(options: StubOptions = {}) {
         async all() {
           if (sql.includes('FROM gap_verdict')) return { results: options.verdicts ?? [] };
           if (sql.includes('FROM edition WHERE work_id')) return { results: options.editions ?? [] };
+          if (sql.includes('FROM work_alias')) {
+            const rows = (options.aliases ?? []).map((a, i) => ({
+              id: i + 1,
+              work_id: (work as { id: number }).id,
+              alias: a.alias,
+              kind: a.kind,
+              source: 'manual',
+              created_at: '2026-01-01 00:00:00',
+            }));
+            return { results: rows };
+          }
           throw new Error(`stubDb: unexpected all() for: ${sql}`);
         },
         async run() {

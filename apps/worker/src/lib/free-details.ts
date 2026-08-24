@@ -172,6 +172,17 @@ export interface FreeDetailsOptions {
    * Leaving it on in tests would add 1.1 s of real sleeping per assertion.
    */
   throttle?: boolean;
+  /**
+   * Other title names this book answers to — `work_alias` rows of kind `title`,
+   * already capped and de-duplicated by `selectTitleAliases`. Only the rungs
+   * that key off a TITLE STRING can use them, and today only `askIndex` does:
+   * `askAudiobook` joins on `work_id`, and `askOpenLibrary`/`askGoogleBooks`
+   * resolve by the recorded Open Library key or an ISBN, so an alias cannot
+   * change what they ask. The caller passes them anyway, and the rung that CAN
+   * use them fans out; the others ignore them, which is the honest shape rather
+   * than pretending an ISBN lookup has a title to vary.
+   */
+  titleAliases?: readonly string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -299,7 +310,17 @@ class LadderContext {
     readonly env: Env,
     readonly work: Work,
     readonly doFetch: typeof fetch,
+    /** Extra title names a title-keyed rung may search under. See `askIndex`. */
+    readonly titleAliases: readonly string[] = [],
   ) {}
+
+  /**
+   * Every title name this book answers to, most-canonical first: the catalogued
+   * title, then its aliases. What a title-keyed rung fans out over.
+   */
+  titleIdentities(): string[] {
+    return [this.work.title, ...this.titleAliases];
+  }
 
   /** The first ISBN-13 on any edition of this work, or null. One D1 read. */
   async isbn13(): Promise<string | null> {
@@ -412,6 +433,16 @@ function pickIndexRow(body: unknown): Record<string, unknown> | null {
  * the response contract is genuinely unknown rather than merely unread. It
  * cannot answer `description` — the index is an identity index, not a metadata
  * store, and the projection carries no such column.
+ *
+ * ## Aliases: this is the one free rung that fans out over them
+ *
+ * The index is keyed by TITLE STRING, so an alias is a different question to ask
+ * it — exactly like the enrich route (`routes/enrich.ts`) searching Open Library
+ * under a pen name. It tries the catalogued title first, then each alias, and
+ * stops at the first identity that names a series. A miss on one identity is
+ * recorded and the next is tried; only when EVERY identity comes back empty is
+ * the rung's silence reported. `askAudiobook` (work_id) and the two ISBN/key
+ * rungs have no title to vary, so they do not fan out — see the options doc.
  */
 async function askIndex(
   ctx: LadderContext,
@@ -430,44 +461,48 @@ async function askIndex(
     return [];
   }
 
-  const url = new URL('/api/lookup', ctx.env.INDEX_URL);
-  url.searchParams.set('title', ctx.work.title);
-  if (ctx.work.authors) url.searchParams.set('creator', ctx.work.authors);
+  for (const title of ctx.titleIdentities()) {
+    const under = title === ctx.work.title ? '' : ` (as “${title}”)`;
+    const url = new URL('/api/lookup', ctx.env.INDEX_URL);
+    url.searchParams.set('title', title);
+    if (ctx.work.authors) url.searchParams.set('creator', ctx.work.authors);
 
-  try {
-    const res = await ctx.doFetch(url.toString(), {
-      headers: { authorization: `Bearer ${ctx.env.INDEX_READ_TOKEN}` },
-    });
-    if (!res.ok) {
-      skipped.push(`the estate index: answered HTTP ${res.status}`);
-      return [];
+    try {
+      const res = await ctx.doFetch(url.toString(), {
+        headers: { authorization: `Bearer ${ctx.env.INDEX_READ_TOKEN}` },
+      });
+      if (!res.ok) {
+        skipped.push(`the estate index${under}: answered HTTP ${res.status}`);
+        continue;
+      }
+      // ⚠️ Read as `unknown` and narrowed by hand, not cast to a shape. Every
+      // other rung in this file is typed against a response somebody has actually
+      // seen; this one is a guess, and a cast would let the guess masquerade as
+      // knowledge the first time the index answers something else. A row may
+      // arrive bare or wrapped in `item`, so both are tried.
+      const body: unknown = await res.json();
+      const row = pickIndexRow(body);
+      const label = readSeriesLabel(stringOrNull(row?.series), true);
+      if (!label) {
+        skipped.push(`the estate index${under}: no series recorded for this book`);
+        continue;
+      }
+      const answer: FieldAnswer = { rung: 'index', series: label.series };
+      const raw = row?.series_index;
+      const sort = typeof raw === 'number' && Number.isFinite(raw) ? raw : label.sort;
+      if (sort !== null) {
+        answer.seriesIndexSort = sort;
+        answer.seriesIndexDisplay = label.display;
+      }
+      return [answer];
+    } catch (err) {
+      skipped.push(
+        `the estate index${under}: could not be reached (${err instanceof Error ? err.message : String(err)})`,
+      );
+      continue;
     }
-    // ⚠️ Read as `unknown` and narrowed by hand, not cast to a shape. Every
-    // other rung in this file is typed against a response somebody has actually
-    // seen; this one is a guess, and a cast would let the guess masquerade as
-    // knowledge the first time the index answers something else. A row may
-    // arrive bare or wrapped in `item`, so both are tried.
-    const body: unknown = await res.json();
-    const row = pickIndexRow(body);
-    const label = readSeriesLabel(stringOrNull(row?.series), true);
-    if (!label) {
-      skipped.push('the estate index: no series recorded for this book');
-      return [];
-    }
-    const answer: FieldAnswer = { rung: 'index', series: label.series };
-    const raw = row?.series_index;
-    const sort = typeof raw === 'number' && Number.isFinite(raw) ? raw : label.sort;
-    if (sort !== null) {
-      answer.seriesIndexSort = sort;
-      answer.seriesIndexDisplay = label.display;
-    }
-    return [answer];
-  } catch (err) {
-    skipped.push(
-      `the estate index: could not be reached (${err instanceof Error ? err.message : String(err)})`,
-    );
-    return [];
   }
+  return [];
 }
 
 /**
@@ -714,7 +749,7 @@ export async function freeDetailsFor(
     return outcome;
   }
 
-  const ctx = new LadderContext(env, work, doFetch);
+  const ctx = new LadderContext(env, work, doFetch, options.titleAliases ?? []);
   const held: FieldAnswer[] = [];
   let seriesInHand = (work.series ?? '').trim() !== '';
 
