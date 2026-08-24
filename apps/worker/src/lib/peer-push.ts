@@ -21,7 +21,16 @@
  */
 
 import type { MiddlewareHandler } from 'hono';
+import { HELD_STATUSES } from '@lc/core';
 import type { AppBindings, Env } from '../env.js';
+
+/**
+ * The held-copy set as a SQL literal list, e.g. `'owned','lent'`. Built from the
+ * canonical `HELD_STATUSES` constant (fixed, code-defined values — no user
+ * input, so interpolation is safe) so the peer push advertises exactly the
+ * books we actually hold.
+ */
+const HELD_STATUSES_SQL = HELD_STATUSES.map((s) => `'${s}'`).join(', ');
 
 export interface PeerConfig {
   id: string;
@@ -73,7 +82,11 @@ export async function buildPeerPayload(
     series_index: number | null;
   }>;
 }> {
-  // Query all works that have at least one held copy (owned, preordered, borrowed)
+  // Query all works that have at least one HELD copy — the canonical
+  // HELD_STATUSES set ('owned','lent'). ⚠️ The old list ('owned','preordered',
+  // 'borrowed') was wrong in both directions: it advertised preordered (not yet
+  // delivered) and borrowed (someone else's book we hold) to peers as things we
+  // own, and it HID 'lent' — a book we own that is just in someone else's hands.
   const { results } = await db.prepare(`
     SELECT DISTINCT
       w.work_key,
@@ -86,7 +99,7 @@ export async function buildPeerPayload(
     FROM work w
     JOIN copy c ON c.work_id = w.id
     LEFT JOIN edition e ON e.id = c.edition_id
-    WHERE c.status IN ('owned', 'preordered', 'borrowed')
+    WHERE c.status IN (${HELD_STATUSES_SQL})
       AND w.work_key IS NOT NULL
       AND w.work_key != ''
     GROUP BY w.id
