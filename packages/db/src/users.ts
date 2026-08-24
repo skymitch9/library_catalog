@@ -311,6 +311,44 @@ export async function listUsers(db: D1Database): Promise<AppUser[]> {
   return results.map(toUser);
 }
 
+/** The autocomplete roster — a member's id and the name to show, nothing else. */
+export interface MemberSummary {
+  id: number;
+  displayName: string;
+}
+
+/**
+ * The estate's members as a NAME PICKER sees them — `{ id, displayName }` and
+ * not one field more.
+ *
+ * ⚠️ **This is deliberately NOT `listUsers`.** `listUsers` is the People page's
+ * admin roster and hands out email, photo, role and timestamps behind
+ * `manageUsers` (owner/admin only). This is the OR-1 person picker's source: any
+ * `editCatalog` editor recording who has a book needs a member's display name to
+ * link the row to their account, and needs *nothing else about them*. Two
+ * queries, so the wide one can never leak through the narrow door — the export
+ * rule that a projection lists its allowed fields explicitly rather than
+ * subtracting from `SELECT *`.
+ *
+ * **Who is a member here:** anyone past the `pending` gate — an approved estate
+ * identity — who has a display name to show. A `pending` row is an account
+ * nobody has approved yet and is never offered; a row with no display name
+ * cannot be picked (the field matches on the shown name) and is left out rather
+ * than offered blank. Ordered by name, case-folded, so the datalist reads.
+ */
+export async function listMembers(db: D1Database): Promise<MemberSummary[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT id, display_name FROM app_user
+        WHERE role != 'pending'
+          AND display_name IS NOT NULL
+          AND trim(display_name) != ''
+        ORDER BY display_name COLLATE NOCASE`,
+    )
+    .all<{ id: number; display_name: string }>();
+  return results.map((r) => ({ id: r.id, displayName: r.display_name }));
+}
+
 /**
  * Change a person's role — the ONE role-write path (the People page and the
  * federated /api/admin surface both land here, so both audit identically).

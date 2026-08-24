@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { canGrantRole, capabilitiesFor, gabiPanelEnabled, updateRoleSchema } from '@lc/core';
-import { countOwners, gapSummary, listUsers, setUserRole } from '@lc/db';
+import { countOwners, gapSummary, listMembers, listUsers, setUserRole } from '@lc/db';
 import type { AppBindings } from '../env.js';
 import { requireCapability } from '../middleware/auth.js';
 
@@ -58,6 +58,24 @@ export const userRoutes = new Hono<AppBindings>()
 
   .get('/users', requireCapability('manageUsers'), async (c) =>
     c.json({ users: await listUsers(c.env.DB) }),
+  )
+
+  /**
+   * The name-picker roster — `{ id, displayName }` per approved member, and
+   * NOTHING else. Gated on `editCatalog`, the capability the OR-1 person field
+   * already requires: any editor recording who has a book (`contributor`+) gets
+   * the autocomplete, without being handed the admin `GET /users` roster of
+   * email, photo and role.
+   *
+   * ⚠️ **A second, NARROWER endpoint beside `/users` on purpose — `/users` was
+   * NOT widened.** OR-1 shipped with the picker admin-only precisely because the
+   * only roster then was `manageUsers`-gated; the owner then asked for this. It
+   * answers only what a datalist needs, so widening its audience to every editor
+   * cannot leak a member's contact detail. `listMembers` in `@lc/db` owns the
+   * field list; see its comment for who counts as a member.
+   */
+  .get('/members', requireCapability('editCatalog'), async (c) =>
+    c.json({ members: await listMembers(c.env.DB) }),
   )
 
   .patch('/users/:id/role', requireCapability('manageUsers'), async (c) => {

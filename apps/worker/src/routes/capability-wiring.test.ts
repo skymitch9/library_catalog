@@ -376,6 +376,12 @@ const WIRED: Wired[] = [
 
   // ── users.ts (/api) ──
   { routes: userRoutes, method: 'GET', path: '/users', capability: 'manageUsers' },
+  // ⚠️ The narrow name-picker roster — `editCatalog`, NOT `manageUsers`. A
+  // contributor may list `{id, displayName}` here to autocomplete who has a
+  // book; the same contributor is refused the admin `/users` above. Two rows,
+  // two capabilities, because mixing them up is exactly the leak OR-1's
+  // follow-up existed to prevent.
+  { routes: userRoutes, method: 'GET', path: '/members', capability: 'editCatalog' },
   { routes: userRoutes, method: 'PATCH', path: '/users/2/role', capability: 'manageUsers' },
 
   // ── watches.ts (/api) ──

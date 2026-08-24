@@ -715,6 +715,18 @@ export interface Person {
 }
 
 /**
+ * A member as the OR-1 name picker sees them — `id` + `displayName`, nothing
+ * else. Mirrors `MemberSummary` in `@lc/db` and the `GET /api/members` body.
+ *
+ * ⚠️ Deliberately NOT `Person`: the picker's roster (`editCatalog`) must never
+ * carry the email/photo/role that `Person` (the `manageUsers` People page) does.
+ */
+export interface Member {
+  id: number;
+  displayName: string;
+}
+
+/**
  * One row of "Books with you" — a copy of this house's that is linked to the
  * signed-in person. Mirrors `LinkedCopyRow` in `@lc/db`.
  *
@@ -1631,6 +1643,14 @@ export const api = {
   // -------------------------------------------------------------------------
 
   users: () => request<{ users: Person[] }>('/api/users'),
+
+  /**
+   * The name-picker roster — `{ id, displayName }` only, gated on `editCatalog`
+   * server-side (`GET /api/members`). This is what the OR-1 person field reads,
+   * NOT `users()`: that one is `manageUsers`-only and hands out email, photo and
+   * role. Any editor who may record who has a book may list this.
+   */
+  members: () => request<{ members: Member[] }>('/api/members'),
 
   /**
    * ⚠️ The server refuses the last owner demoting themselves, and refuses anyone

@@ -6,7 +6,7 @@ import {
   PHYSICAL_FORMATS,
   printingCandidates,
 } from '@lc/core';
-import { api, type Person } from '../api.js';
+import { api, type Member } from '../api.js';
 import { describeError } from '../lib/errors.js';
 import { formatLabel } from '../lib/formats.js';
 import { printingLabel } from '../lib/rescans.js';
@@ -117,17 +117,18 @@ export function Copies({
    */
   canSuggest: boolean;
   /**
-   * `manageUsers` — whether this person may LIST the estate's members, and so
-   * whether the name box can autocomplete.
+   * Whether this person may LIST the estate's members, and so whether the name
+   * box can autocomplete. Now `editCatalog` — the same capability the person
+   * field itself requires — so every editor who can record who has a book also
+   * gets the picker.
    *
-   * ⚠️ **This is not a second permission on the feature.** Recording who has a
-   * book is `editCatalog`; a `contributor` or `moderator` can do all of it and
-   * types the name themselves. The only members list this Worker has is
-   * `GET /api/users`, which is gated on `manageUsers` and answers with email,
-   * photo, role and timestamps — far more than a name picker needs. Widening
-   * it, or adding a second endpoint beside it, would hand the estate's member
-   * roster to every contributor to save them some typing, so neither was done.
-   * The field says so in words instead of silently offering nothing.
+   * ⚠️ **It reads the NARROW `GET /api/members` (id + displayName only), never
+   * the admin `GET /api/users`.** OR-1 first shipped this admin-only because the
+   * only roster then was `manageUsers`-gated and handed out email, photo and
+   * role; the owner then asked for the picker to work for every editor, so a
+   * second endpoint answering only what a datalist needs was added beside
+   * `/users` rather than widening it. The prop stays because the picker still
+   * degrades to a plain typed box if the roster ever fails to load.
    */
   canListMembers: boolean;
   onChanged: () => void;
@@ -145,16 +146,16 @@ export function Copies({
    * request on this. `null` means not asked yet; `[]` means asked and there is
    * nothing to offer, which is a different thing and is said differently.
    */
-  const [members, setMembers] = useState<Person[] | null>(null);
+  const [members, setMembers] = useState<Member[] | null>(null);
   const [membersFailed, setMembersFailed] = useState(false);
 
   useEffect(() => {
     if (naming === null || !canListMembers || members !== null || membersFailed) return;
     let live = true;
     void api
-      .users()
+      .members()
       .then((r) => {
-        if (live) setMembers(r.users);
+        if (live) setMembers(r.members);
       })
       .catch(() => {
         // ⚠️ Not surfaced as an error banner: the box still works, it just
@@ -502,7 +503,7 @@ function PersonField({
   personName: string | null;
   personUserId: number | null;
   /** Null when they have not loaded, or when this person may not list them. */
-  members: Person[] | null;
+  members: Member[] | null;
   /** True when no autocomplete is coming — say so, do not show an empty list. */
   membersUnavailable: boolean;
   busy: boolean;
@@ -515,7 +516,7 @@ function PersonField({
 
   /** Members with a usable name, and only their name — nothing else is read here. */
   const named = (members ?? []).filter(
-    (m): m is Person & { displayName: string } => Boolean(m.displayName),
+    (m): m is Member & { displayName: string } => Boolean(m.displayName),
   );
   const fold = (s: string) => s.trim().toLowerCase();
   const matches = named.filter((m) => fold(m.displayName) === fold(typed));
