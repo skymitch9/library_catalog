@@ -1,7 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { COLLECTION_PAGE_SIZES, COPY_STATUSES, EDITION_MEDIA, READ_STATES } from '@lc/core';
-import { api, type CollectionFacets, type Me, type Stats, type WorkSummary } from '../api.js';
+import {
+  api,
+  type CollectionFacets,
+  type DuplicatesResponse,
+  type Me,
+  type Stats,
+  type WorkSummary,
+} from '../api.js';
 import { describeError } from '../lib/errors.js';
+import {
+  duplicateAuthorLabel,
+  duplicateRowDetail,
+  duplicatesEmptyMessage,
+  duplicatesSummary,
+} from '../lib/duplicates-view.js';
 import { BulkActionBar } from '../components/BulkActionBar.js';
 import { Pager } from '../components/Pager.js';
 import { Shelf } from '../components/Shelf.js';
@@ -15,6 +28,7 @@ import {
   collectionPath,
   replaceUrl,
   universePath,
+  workPath,
   type CollectionFilters,
 } from '../router.js';
 
@@ -80,6 +94,10 @@ export function CollectionPage({
   const [status, setStatus] = useState(filters.status);
   // The one filter about us rather than about the books — see `NEEDS_FILTERS`.
   const [needs, setNeeds] = useState(filters.needs);
+  // ⚠️ Not a narrowing of the list — it REPLACES it. See the render below and
+  // `CollectionFilters.duplicates`; the board-game filter this copies is a
+  // WHERE clause because its answer is a list, and this answer is groups.
+  const [duplicates, setDuplicates] = useState(filters.duplicates);
   const [readState, setReadState] = useState(filters.readState);
   const [sort, setSort] = useState(filters.sort ?? prefs.sort);
   const [dir, setDir] = useState<'asc' | 'desc'>(filters.dir ?? prefs.dir);
@@ -97,6 +115,7 @@ export function CollectionPage({
         filters.editionKind ||
         filters.status ||
         filters.needs ||
+        filters.duplicates ||
         filters.readState,
     ),
   );
@@ -112,6 +131,12 @@ export function CollectionPage({
   const [stats, setStats] = useState<Stats | null>(null);
   const [recent, setRecent] = useState<WorkSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  // The duplicates read, fetched only when the checkbox is on. `null` is "not
+  // asked yet", which the render tells apart from "asked, nothing there" — the
+  // distinction the empty state's count exists to make.
+  const [dupes, setDupes] = useState<DuplicatesResponse | null>(null);
+  const [dupesError, setDupesError] = useState<string | null>(null);
 
   // -- Multi-select mode --
   const [selectMode, setSelectMode] = useState(false);
@@ -158,6 +183,7 @@ export function CollectionPage({
       editionKind ||
       status ||
       needs ||
+      duplicates ||
       readState,
   );
 
@@ -252,6 +278,7 @@ export function CollectionPage({
         editionKind,
         status,
         needs,
+        duplicates,
         readState,
         sort,
         dir,
@@ -259,7 +286,32 @@ export function CollectionPage({
         page: page + 1,
       }),
     );
-  }, [q, series, universe, medium, ebookOnly, format, editionKind, status, needs, readState, sort, dir, pageSize, page]);
+  }, [q, series, universe, medium, ebookOnly, format, editionKind, status, needs, duplicates, readState, sort, dir, pageSize, page]);
+
+  // ⚠️ Fetched only while the box is ticked, and re-fetched every time it is
+  // ticked rather than cached: the whole point of the screen is to go and fix
+  // what it found, so a stale list would still be showing a pair the person
+  // just merged. It is one request over five columns, not a keystroke loop.
+  useEffect(() => {
+    if (!duplicates) {
+      setDupes(null);
+      setDupesError(null);
+      return;
+    }
+    let live = true;
+    setDupesError(null);
+    api
+      .duplicates()
+      .then((r) => {
+        if (live) setDupes(r);
+      })
+      .catch((err: unknown) => {
+        if (live) setDupesError(describeError(err));
+      });
+    return () => {
+      live = false;
+    };
+  }, [duplicates]);
 
   useEffect(() => {
     api
@@ -694,6 +746,29 @@ export function CollectionPage({
             </select>
           </label>
 
+          {/* ⚠️ Placed here, last before Clear, because that is where the
+              Board Game Catalog puts it — `apps/web/src/pages/CollectionPage.tsx:299`
+              there, a `.check-inline` checkbox reading "We own 2+", after the
+              other filters and before the Clear button. The owner asked to
+              mimic that filter rather than design one, so the position and the
+              shape of the control are the sibling's; only the words differ,
+              because it answers a different question here (see
+              `packages/core/src/duplicates.ts`).
+
+              `.row-tight` and not `.check-inline`: this app's checkbox grammar
+              is `.row-tight` + a `<span>` (Copies.tsx, WorkFields.tsx), and
+              importing the sibling's class name to hold the sibling's layout
+              would be a second idiom for one job. Same placement, this app's
+              chrome. */}
+          <label className="row-tight" title="Books that look like the same work recorded twice">
+            <input
+              type="checkbox"
+              checked={duplicates}
+              onChange={(e) => setDuplicates(e.target.checked)}
+            />
+            <span>Recorded twice</span>
+          </label>
+
           {filtered && (
             <button
               onClick={() => {
@@ -709,6 +784,7 @@ export function CollectionPage({
                 setEditionKind('');
                 setStatus('');
                 setNeeds('');
+                setDuplicates(false);
                 setReadState('');
               }}
             >
@@ -740,6 +816,21 @@ export function CollectionPage({
               are not. A picture book belongs to no shared world, that is the
               correct answer, and nothing in this app will ever ask anybody to
               fix it. */}
+          {/* ⚠️ Written down for the reason the three notes below it are: the
+              wrong guess is silent, and this is the guess the sibling catalog
+              would lead a person to make. There, "duplicates" means TWO COPIES;
+              here two copies is an ordinary holding and is never flagged. Said
+              in words, on the screen, rather than left to be discovered from an
+              empty result. */}
+          {duplicates && (
+            <p className="controls__note muted">
+              <b>Recorded twice</b> means the same book is in the catalog as two separate
+              records — usually one typed with its series in the title and one without.
+              Owning two copies of a book is <b>not</b> a duplicate and is never listed
+              here. Nothing is merged for you: open each record and decide.
+            </p>
+          )}
+
           <p className="controls__note muted">
             A <b>universe</b> is the tier above a series — one world shared across several
             of them, like Elantris and Mistborn both being the Cosmere. Most books belong to
@@ -836,7 +927,43 @@ export function CollectionPage({
         </p>
       )}
 
-      {error ? (
+      {/* ⚠️ The duplicates view REPLACES the grid rather than narrowing it, and
+          the pager goes with it. A person merging by hand has to see the two
+          records side by side; a flat page ordered by series would put them
+          wherever their series happened to fall, which is how the pair came to
+          exist. The sibling's filter can stay a WHERE clause because its answer
+          is still a list — see the route's comment. */}
+      {duplicates ? (
+        dupesError ? (
+          <p className="notice notice--bad">Could not look for duplicates: {dupesError}</p>
+        ) : !dupes ? (
+          <p className="muted">Looking for duplicates…</p>
+        ) : dupes.groups.length === 0 ? (
+          <p className="muted">{duplicatesEmptyMessage(dupes.totalWorks)}</p>
+        ) : (
+          <div className="results" aria-label="Duplicate records">
+            <p className="muted">{duplicatesSummary(dupes.groups)}</p>
+            {dupes.groups.map((group) => (
+              <div key={group.key} className="panel">
+                <ul className="plain">
+                  {group.works.map((w) => (
+                    <li key={w.id} className="row-tight">
+                      {/* A real link, like the cards in `WorkList` — the whole
+                          deliverable is being able to open both records and
+                          decide. There is deliberately no merge button: merging
+                          moves `work_key`, which the audiobook catalog's reviews
+                          join on, and that is a migration rather than a click. */}
+                      <Link to={workPath(w.id)}>{w.title}</Link>
+                      <span className="muted small">{duplicateAuthorLabel(w.authors)}</span>
+                      <span className="muted small">{duplicateRowDetail(w)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        )
+      ) : error ? (
         <p className="notice notice--bad">Could not load the collection: {error}</p>
       ) : loading && rows.length === 0 ? (
         <p className="muted">Loading…</p>

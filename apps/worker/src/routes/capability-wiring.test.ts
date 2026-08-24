@@ -216,6 +216,7 @@ const WIRED: Wired[] = [
   // ── catalog.ts (/api) — the big one ──
   { routes: catalogRoutes, method: 'GET', path: '/collection', capability: 'read' },
   { routes: catalogRoutes, method: 'GET', path: '/collection/facets', capability: 'read' },
+  { routes: catalogRoutes, method: 'GET', path: '/collection/duplicates', capability: 'read' },
   { routes: catalogRoutes, method: 'GET', path: '/stats', capability: 'read' },
   { routes: catalogRoutes, method: 'GET', path: '/wishlist', capability: 'read' },
   { routes: catalogRoutes, method: 'GET', path: '/works/match?title=x', capability: 'read' },

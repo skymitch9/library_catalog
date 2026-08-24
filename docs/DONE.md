@@ -293,6 +293,52 @@ from `index.lookup(...)`. `scripts/lib/audiobooks.mjs` needs a `lookupAll` —
 **that is the real work in B, not the migration.**
 
 Migration number: next is **0390** (0380 is the latest).
+## ✅ OR-2 · Find duplicates — the board-game filter, mimicked — DONE 2026-08-23
+
+Built on `feature/duplicate-finder` (worktree `C:/lcw/dupes`, cut from `6e1a4d8`).
+**Not merged, not deployed** — the branch is committed and waiting.
+
+The ask below is moved here **whole**, exactly as he wrote it and exactly as it
+was formatted in `TODO.md`. What answered it:
+
+| His question | His answer, and what shipped |
+|---|---|
+| WORK or COPY duplicates? | ⚠️ **WORK.** *"the same WORK recorded twice"*. Two copies of one book is legitimate and is **never** flagged — the opposite of what the board-game filter means. |
+| Mimic, don't redesign | `?duplicates=1` in the address bar, a checkbox last in the filter bar before Clear, `read` capability — all the sibling's. Only the predicate and the words differ, because the question differs. |
+
+**What it does.** `GET /api/collection/duplicates` folds every work through
+`duplicateKeyFor` — `cleanTitleWithSeries` then the existing `workKeyFor` — and
+returns groups of two or more, with ids, titles, authors and copy counts. The
+fold is deliberately **looser** than the stored `work_key` (which is persisted,
+joined on by the audiobook catalog's reviews, and can only move in a migration),
+and the author half is untouched, because there are dozens of books called *Gold*.
+
+⚠️ **No merge action, and that is a decision rather than an omission** — merging
+moves `work_key`. See [`info/decisions.md`](info/decisions.md) for the full
+rationale and the games-parity table.
+
+**Verified:** `npm run typecheck` clean; `npm test` 1,369 pass / 0 fail (1,342
+baseline + 27 new). Exercised against a seeded local D1 under `wrangler dev` —
+the *Firefight* pair folded, the two *Mistborn* volumes did not, and *The Hobbit*
+held in two copies was not flagged. ⚠️ **Not verified live**, because it is not
+deployed.
+
+---
+
+### OR-2. Find duplicates — copy the board-game filter, don't redesign it
+
+> *"ability to search a catalog for duplicates with a filter, we have this
+> filter in boardgame catalog so lets mimic it from there instead of
+> redesigning the wheel"*
+
+⚠️ **This is an explicit reuse instruction, so the first step is to READ
+`Board_Game_Catalog`'s implementation, not to design one.** Match its grammar
+and its wording; a second, differently-shaped duplicate finder in the estate is
+exactly what he is saying not to build.
+
+**Ask him before building:** duplicates of a WORK (same book twice) or of a
+COPY (two physical copies, which is legitimate and common)? The two want
+different defaults.
 
 ## ✅ Cover sweep, both instances — DONE 2026-08-22/23
 

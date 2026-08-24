@@ -6,6 +6,8 @@
 > the two live D1 rows it describes. The **other** findings still carry their
 > own dates and were **not** re-checked; they were extracted verbatim from
 > `docs/TODO.md` on 2026-08-16 during the three-way split.
+> ⚠️ The worktree/sync-script entry below was **added 2026-08-23** and was
+> measured that day; nothing else here was re-checked then.
 
 The traps that cost real time, kept **findable by symptom** rather than by the
 day they happened — which is the whole reason they left the work log. Each is
@@ -14,6 +16,34 @@ reproduced whole, with its original reasoning intact.
 ⚠️ Some of these also appear in the repo's `CLAUDE.md` (the first-ten-minutes
 sheet). That is deliberate duplication of the *headline* only; the full
 reasoning lives here.
+
+### ⚠️ A GIT WORKTREE CANNOT TYPECHECK OR TEST — five sync scripts fail first — found 2026-08-23
+
+**Symptom.** In a fresh `git worktree` of this repo, `npm run typecheck` and
+`npm test` both die before doing anything, on:
+
+```
+sync-universes: Cannot find the catalog-platform checkout.
+Tried:  C:\lcw\catalog-platform  ·  C:\catalog-platform
+```
+
+**Cause.** `pretypecheck` and `pretest` run five `scripts/sync-*.mjs`, and they
+look for `catalog-platform` **next to the checkout**. A worktree under
+`C:/lcw/<name>` has no sibling repo, so every one of them fails. It looks like
+a broken worktree and is not.
+
+**Fix — name the checkout, do not clone a second one:**
+
+```bash
+CATALOG_PLATFORM_DIR="C:/Users/nbasl/OneDrive/Documents/vs-code-repos/catalog-platform" npm run typecheck
+```
+
+**Two more that bite in the same session:**
+
+| | |
+|---|---|
+| `npm ci` | fails on a stale lockfile — use `npm install`, then `git checkout package-lock.json` so the churn is not committed |
+| `wrangler dev` | refuses to start with *"assets.directory … does not exist"* until `npm run build` has made `apps/web/dist` — which itself needs `CATALOG_PLATFORM_DIR` |
 
 ### ⚠️ A DOC CAME BACK RE-SAVED IN CP1252 AND HALF ITS MEANING WAS GONE — found 2026-08-23
 

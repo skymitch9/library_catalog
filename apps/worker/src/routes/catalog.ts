@@ -10,6 +10,7 @@ import {
   createCopySchema,
   createEditionSchema,
   createWorkSchema,
+  groupDuplicates,
   reviewsSeenSchema,
   setReadStateSchema,
   updateCopySchema,
@@ -40,6 +41,7 @@ import {
   listChangesForEntity,
   listCollection,
   listCopiesForWork,
+  listDuplicateCandidates,
   listEditionsForWork,
   listWatchesForWork,
   listWishlist,
@@ -230,6 +232,47 @@ export const catalogRoutes = new Hono<AppBindings>()
       universeFacet(c.env.DB, base),
     ]);
     return c.json({ ...facets, universes });
+  })
+
+  /**
+   * The same WORK recorded twice — books to merge or delete by hand.
+   *
+   * ## The board-game filter this mirrors, and the one place it could not
+   *
+   * The owner asked for *"the ability to search a catalog for duplicates with a
+   * filter, we have this filter in boardgame catalog so lets mimic it from
+   * there instead of redesigning the wheel"*. What was mimicked, exactly:
+   *
+   * | | Board_Game_Catalog | here |
+   * |---|---|---|
+   * | address bar | `?duplicates=1`, omitted when off (`apps/web/src/router.tsx:100,118`) | identical (`apps/web/src/router.tsx`) |
+   * | control | a checkbox in the filter bar, last before Clear (`CollectionPage.tsx:299`) | identical |
+   * | capability | the whole catalog router is `requireCapability('read')` (`routes/catalog.ts:84`) | identical — a reader may see duplicates |
+   * | "only one" | never becomes a match at all | identical (`groupDuplicates`) |
+   * | predicate | `HAVING SUM(quantity) > 1` — **copies** | **works** — see `@lc/core/duplicates.ts` |
+   *
+   * ⚠️ The predicate is the deliberate divergence and the owner settled it:
+   * *"duplicates = the same WORK recorded twice"*, and two copies of one book
+   * is legitimate. `duplicates.ts` carries the full argument.
+   *
+   * ## Why a route of its own rather than `?duplicates=1` on `/collection`
+   *
+   * The games filter can be a WHERE clause because its answer is a **list** —
+   * the same tree rows, fewer of them. This answer is a list of **groups**: a
+   * person merging by hand has to see the two rows *side by side*, and a flat
+   * page of works sorted by series would put them anywhere. So the grammar the
+   * person types is the games grammar, and the read behind it has the shape of
+   * its own answer. Same seam, same reason, as `/collection/facets` above.
+   *
+   * ⚠️ **There is deliberately no merge action here, and adding one is not a
+   * small follow-up.** Merging moves `work_key` — the column the audiobook
+   * catalog's reviews join on — which `packages/db/src/works.ts` says may only
+   * ever move as a migration with the §5 evidence ceremony. This route hands a
+   * person the rows and links to them; the deciding stays with the person.
+   */
+  .get('/collection/duplicates', requireCapability('read'), async (c) => {
+    const { candidates, totalWorks } = await listDuplicateCandidates(c.env.DB);
+    return c.json({ groups: groupDuplicates(candidates), totalWorks });
   })
 
   /**
