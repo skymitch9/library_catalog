@@ -118,6 +118,17 @@ peer.post('/push', async (c) => {
  * Used by series/work routes to annotate gaps without cross-instance latency.
  */
 peer.get('/holdings', async (c) => {
+  // Machine route: require the peer token exactly like POST /push. It was
+  // previously unauthenticated — an open cross-household read of another
+  // instance's holdings — justified by a claim that the series route calls it
+  // internally. That claim is false: the enrichment joins peer_holding in SQL
+  // directly (see lib/peer-push.ts and routes/series.ts) and this HTTP route
+  // has no callers, so gating it breaks nothing.
+  const token = c.env.PEER_TOKEN;
+  if (!token) return c.notFound();
+  const header = c.req.header('X-Peer-Token') ?? '';
+  if (!secretEquals(header, token)) return c.notFound();
+
   const keysParam = c.req.query('keys');
   if (!keysParam) return c.json({ holdings: [] });
 

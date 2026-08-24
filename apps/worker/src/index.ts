@@ -90,9 +90,10 @@ app.route('/api/machine/audiobook-mapping', audiobookMappingRoutes);
 app.route('/api/donor', donorRoutes);
 
 // ⚠️ Mounted BEFORE requireAuth, FIFTH of the machine routes: peer instances
-// push their holdings here on catalog mutations. X-Peer-Token gated; unset or
-// wrong token = 404. The GET /holdings sub-route is also pre-auth so the series
-// route can call it internally without a user session.
+// push their holdings here on catalog mutations. Both sub-routes are X-Peer-Token
+// gated; unset or wrong token = 404. (GET /holdings is token-gated too — it has
+// no in-repo callers, and the series/work enrichment reads peer_holding via SQL,
+// not through this route, so gating it costs nothing.)
 app.route('/api/peer', peerRoutes);
 
 // ⚠️ Mounted BEFORE requireAuth, FOURTH of the machine routes and the only one
