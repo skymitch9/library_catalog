@@ -45,11 +45,30 @@
  *     npm run backfill:missing-covers -- --remote          # dry run, production
  *     npm run backfill:missing-covers -- --remote --commit # apply
  *     npm run backfill:missing-covers -- --remote --repair # ALSO check stored covers still load
+ *     npm run backfill:missing-covers -- --remote --standins  # ALSO re-try known stand-ins
  *     npm run backfill:missing-covers -- --remote --llm    # ⚠️ COSTS MONEY, see below
  *
  * `--repair` widens the question from "which works have no cover" to "which works
  * have no *working* cover". It fetches every stored URL, which is slow and mostly
  * confirms nothing is wrong — so it is a flag, not the default.
+ *
+ * ⚠️ **`--standins` widens it the other way, to the app's OWN question.** The
+ * paragraph above this one used to say this script "only targets works with no
+ * cover", and that was true and quietly wrong: `coverNeeded` in `@lc/core` and
+ * `NEEDS_CLAUSE.cover` in `@lc/db` both define it as
+ * `cover_url IS NULL OR cover_status = 'standin'`, so the sweep could never
+ * reach a book the app itself was marking as still wanting one. Measured
+ * 2026-08-23: padhard held 15 blanks and 17 stand-ins, so the script reported
+ * 15 where the site reported 32.
+ *
+ * `NEEDS_COVER` below is a deliberate mirror of that fragment, not a third
+ * definition of the question. Two rules go with it:
+ *
+ *  - a stand-in beaten by a **verified** real cover is written with
+ *    `cover_status = 'ok'` in the SAME statement (migration 0040 pairs the
+ *    columns — see the comment above `statements`);
+ *  - a stand-in nothing could beat **stays a stand-in**. It is never blanked.
+ *    A stand-in is a recorded judgement; a blank is the absence of one.
  *
  * ⚠️ `--llm` adds a **paid** rung for the books the free ones could not reach: it
  * asks Claude, with web search, and costs roughly **6c per book** (Claude Opus 5
@@ -85,6 +104,32 @@ const flags = parseFlags();
 const repair = process.argv.includes('--repair');
 /** ⚠️ Costs money per book. Opt-in per run, never automatic. See --llm below. */
 const useLlm = process.argv.includes('--llm');
+/** Also go after works wearing a known stand-in. See `NEEDS_COVER` below. */
+const includeStandins = process.argv.includes('--standins');
+
+/**
+ * "Cover needed", as SQL — ⚠️ **a MIRROR of `NEEDS_COVER` in
+ * `packages/db/src/works.ts`, character for character.**
+ *
+ * The app has exactly one definition of this question and it is not
+ * `cover_url IS NULL`: `coverNeeded` in `@lc/core` for the card mark,
+ * `NEEDS_CLAUSE.cover` in `@lc/db` for the server's filter. Migration 0040 is
+ * the reason — a stand-in HAS a url, so every "has a cover" test says yes about
+ * a cover we already know is wrong.
+ *
+ * ⚠️ This script quoted the blank-only form and its header said so out loud, so
+ * a run of it reported 15 where padhard's own `/works?needs=cover` reported 32.
+ * A third definition living here is how those two numbers drift apart for good,
+ * so this is a copy under instruction and not a new rule. If `works.ts` changes,
+ * this line changes with it.
+ */
+const NEEDS_COVER = "(w.cover_url IS NULL OR w.cover_status = 'standin')";
+
+/** The narrower, original question: no cover at all. */
+const BLANK_ONLY = "(w.cover_url IS NULL OR w.cover_url = '')";
+
+/** Which question THIS run is asking. `--standins` widens it to the app's own. */
+const TARGET_CLAUSE = includeStandins ? NEEDS_COVER : BLANK_ONLY;
 
 const UA = 'library_catalog (+https://github.com/private)';
 /** Open Library asks for roughly one call a second and means it. */
@@ -117,17 +162,29 @@ console.log(
 // Who needs one
 // ---------------------------------------------------------------------------
 
+/*
+ * ⚠️ The stranded-on-an-edition skip must NOT swallow a stand-in.
+ *
+ * That skip means "this catalogue already holds a cover for the book, one row
+ * down; `backfill-work-covers.mjs` copies it up for free, so a network call
+ * here is waste". A stand-in is the opposite case: a cover we hold and have
+ * already REJECTED. And `backfill-work-covers.mjs` only fills works with no
+ * cover, so it will never reach a stand-in either — leave the skip unqualified
+ * and the 17 padhard stand-ins are stranded between the two scripts forever.
+ */
 const CANDIDATES = `
   SELECT w.id AS id, w.title AS title, w.authors AS authors,
+         w.cover_status AS cover_status,
          (SELECT group_concat(COALESCE(e.isbn13, e.isbn10), ' ')
             FROM edition e
            WHERE e.work_id = w.id
              AND (e.isbn13 IS NOT NULL OR e.isbn10 IS NOT NULL)) AS isbns
     FROM work w
-   WHERE (w.cover_url IS NULL OR w.cover_url = '')
-     AND NOT EXISTS (SELECT 1 FROM edition e2
-                      WHERE e2.work_id = w.id
-                        AND e2.cover_url IS NOT NULL AND e2.cover_url <> '')
+   WHERE ${TARGET_CLAUSE}
+     AND (w.cover_status = 'standin'
+          OR NOT EXISTS (SELECT 1 FROM edition e2
+                          WHERE e2.work_id = w.id
+                            AND e2.cover_url IS NOT NULL AND e2.cover_url <> ''))
    ORDER BY w.id
 `;
 
@@ -140,15 +197,29 @@ const stranded = query(
   flags,
 )[0];
 
-const total = query(
-  `SELECT COUNT(*) AS works,
-          SUM(CASE WHEN cover_url IS NULL OR cover_url = '' THEN 1 ELSE 0 END) AS blank
-     FROM work`,
-  flags,
-)[0];
+/**
+ * ⚠️ Three numbers, because two of them are routinely mistaken for each other.
+ * `blank` is what this script used to report; `needed` is what the app reports.
+ * They differed by 17 on padhard on 2026-08-23, which reads as a regression the
+ * first time somebody puts the two reports side by side.
+ */
+const COUNTS = `SELECT COUNT(*) AS works,
+       SUM(CASE WHEN ${BLANK_ONLY} THEN 1 ELSE 0 END) AS blank,
+       SUM(CASE WHEN w.cover_status = 'standin' THEN 1 ELSE 0 END) AS standin,
+       SUM(CASE WHEN ${NEEDS_COVER} THEN 1 ELSE 0 END) AS needed
+  FROM work w`;
+
+const total = query(COUNTS, flags)[0];
 
 console.log(
-  `\n${flags.remote ? 'production' : 'local'} ${flags.friend ? 'library-catalog-2nd (padhard)' : 'library-catalog'}: ${total.works} work(s), ${total.blank} with no cover`,
+  `\n${flags.remote ? 'production' : 'local'} ${flags.friend ? 'library-catalog-2nd (padhard)' : 'library-catalog'}: ` +
+    `${total.works} work(s) — ${total.blank} with no cover, ${total.standin} wearing a stand-in, ` +
+    `${total.needed} cover-needed (the app's own number).`,
+);
+console.log(
+  includeStandins
+    ? "  --standins: targeting the app's own question, cover_url IS NULL OR cover_status = 'standin'."
+    : '  targeting blanks only. Add --standins to also re-try the stand-ins.',
 );
 if (Number(stranded?.n ?? 0) > 0) {
   console.log(
@@ -465,13 +536,51 @@ if (repair) {
 
 // ---------------------------------------------------------------------------
 
-const statements = [...found, ...titleFound, ...llmFound].map(
-  (f) =>
-    `UPDATE work SET cover_url = ${lit(f.url)}, updated_at = datetime('now')` +
-    ` WHERE id = ${lit(f.id)} AND (cover_url IS NULL OR cover_url = '');`,
+/*
+ * ⚠️ **A stand-in's two columns move in ONE statement, or the warning outlives
+ * the cover it was about.**
+ *
+ * Migration 0040 pairs `cover_url` with `cover_status`, and `updateWork` in
+ * `@lc/db` already enforces the pairing from the API side: a patch that moves
+ * the url without naming a status sets the status to NULL, precisely so a
+ * `'standin'` can never survive onto the image that replaced it. This script
+ * writes SQL directly and so has to keep that promise itself.
+ *
+ * Two shapes, and the difference is what somebody has actually observed:
+ *
+ * - **Was a stand-in** → we knew the old image was wrong, we fetched and
+ *   verified a replacement, so `cover_status = 'ok'` goes in the SAME UPDATE.
+ *   Two statements would leave a window where the row wears a real cover and a
+ *   stale warning, and a run killed between them makes that permanent.
+ * - **Was blank** → status is left exactly as it was, i.e. NULL. §2.5 of
+ *   `covers-and-series.md` is explicit: nothing is backfilled to `'ok'`, because
+ *   'ok' means a PERSON looked, and nobody has. A machine-verified URL proves
+ *   the bytes are an image, not that they are this book.
+ *
+ * ⚠️ The WHERE guard matches whichever set the row came from, so a row that
+ * changed under us is skipped rather than overwritten — and a stand-in the
+ * rungs could not beat is simply never named here. **It stays a stand-in. It is
+ * never blanked**: a stand-in is information, and a blank is the absence of it.
+ */
+const statements = [...found, ...titleFound, ...llmFound].map((f) =>
+  f.cover_status === 'standin'
+    ? `UPDATE work SET cover_url = ${lit(f.url)}, cover_status = 'ok',` +
+      ` updated_at = datetime('now')` +
+      ` WHERE id = ${lit(f.id)} AND cover_status = 'standin';`
+    : `UPDATE work SET cover_url = ${lit(f.url)}, updated_at = datetime('now')` +
+      ` WHERE id = ${lit(f.id)} AND (cover_url IS NULL OR cover_url = '');`,
 );
 
+const replacedStandins = [...found, ...titleFound, ...llmFound].filter(
+  (f) => f.cover_status === 'standin',
+).length;
+
 console.log(`\n${statements.length} statement(s) to run.`);
+if (replacedStandins) {
+  console.log(
+    `  ${replacedStandins} of them replace a stand-in and pair cover_status = 'ok' in the same statement.`,
+  );
+}
 if (!flags.commit) {
   console.log('\nDRY RUN. Nothing written. Re-run with --commit.');
   process.exit(0);
@@ -484,16 +593,24 @@ execute(statements, flags);
  * ⚠️ Confirm by re-reading. `execute` returns statements run, not rows changed,
  * and one backfill today reported "nothing to do" over 99 live rows.
  */
-const after = query(
-  `SELECT COUNT(*) AS works,
-          SUM(CASE WHEN cover_url IS NULL OR cover_url = '' THEN 1 ELSE 0 END) AS blank
-     FROM work`,
-  flags,
-)[0];
+const after = query(COUNTS, flags)[0];
 console.log(
-  `\nwrote ${statements.length}. ${after.works} work(s), ${after.blank} still with no cover` +
-    ` (was ${total.blank}).`,
+  `\nwrote ${statements.length}. ${after.works} work(s) — ${after.blank} with no cover` +
+    ` (was ${total.blank}), ${after.standin} stand-in (was ${total.standin}),` +
+    ` ${after.needed} cover-needed (was ${total.needed}).`,
 );
-if (Number(after.blank) !== Number(total.blank) - statements.length) {
-  console.log('⚠️ That is not the arithmetic expected. Investigate before re-running.');
+/*
+ * ⚠️ Check the number the RUN was about. With `--standins` the blank count and
+ * the needed count move by different amounts — a replaced stand-in drops
+ * `needed` and leaves `blank` alone — so asserting on blanks alone would print
+ * a false alarm on exactly the runs this flag exists for.
+ */
+const movedBy = includeStandins
+  ? Number(total.needed) - Number(after.needed)
+  : Number(total.blank) - Number(after.blank);
+if (movedBy !== statements.length) {
+  console.log(
+    `⚠️ ${statements.length} statement(s) ran but the count moved by ${movedBy}.` +
+      ' That is not the arithmetic expected. Investigate before re-running.',
+  );
 }
