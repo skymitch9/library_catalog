@@ -42,8 +42,7 @@ const TABS = [
   'Cover',
   'Details',
   'Title & author',
-  'Editions',
-  'Copies',
+  'Editions & copies',
   'Extras',
   'Related & aliases',
   'Look it up',
@@ -114,27 +113,19 @@ export function EditBox({
           </div>
         )}
 
-        {/* ⚠️ EDITIONS and COPIES are now SEPARATE tabs (owner model, 2026-08-24):
-            editions are the primary shelf unit — the versions that exist, always
-            ≥ 1 — and copies are the nested detail of what you physically hold of
-            a printing. Splitting them makes "the shelf is a list of editions"
-            true in the editor too, instead of burying the versions inside a
-            "what you have" tab shared with copies. Under Overview both render
-            (editions first, the versions, then the copies you hold of them). The
-            ebook-pool shadow reads against the editions, so it sits with them. */}
-        {show('Editions') && (
+        {/* ⚠️ EDITIONS and COPIES are ONE tab (owner model, 2026-08-24, corrected):
+            "Edition is all-encompassing of copies." The edition is the unit; the
+            copies you hold are the nested instances INSIDE it, so editing them
+            side by side in one place matches the shelf's copy-driven model rather
+            than pretending they are two separate lists. Editions render first
+            (the printings, plus the ebook-pool shadow that reads against them),
+            then the copies you hold of them — the same order Overview shows. The
+            wish guard is untouched: recording a want still mints NO edition
+            (`Copies` `reportFor`, `copy.edition_id` nullable). */}
+        {show('Editions & copies') && (
           <div className="edit-box__section">
             <Editions workId={workId} editions={editions} canEdit={canEdit} onChanged={onChanged} />
             <EbookShadow editions={editions} holding={ebookHolding} />
-          </div>
-        )}
-
-        {show('Copies') && (
-          <div className="edit-box__section">
-            {/* The physical facts — status, location, condition, signed, who has
-                it — of the copies you hold. Each hangs off the printing it is a
-                copy of; recording a wish still mints NO edition (`reportFor`,
-                `copy.edition_id` nullable), the guard this split leaves intact. */}
             <Copies
               workId={workId}
               copies={copies}
