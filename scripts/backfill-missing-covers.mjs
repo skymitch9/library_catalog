@@ -79,6 +79,14 @@
  * image link is well-formed, plausible and 404, and this is the only thing
  * standing between that and the database.
  *
+ * ⚠️ **A `confidence: 'low'` proposal is never written, however well it
+ * verifies.** `verifyCoverUrl` proves the bytes are an image; it cannot prove
+ * they are an image of THIS book, and low confidence is the model saying it
+ * cannot either. Those are printed for the owner with the URL and the model's
+ * note, and the book stays counted as wanting a cover until a person decides.
+ * The run also prints its MEASURED spend — calls and cents summed from `usage`
+ * — rather than only the list-price guess in `COVER_CENTS_EACH`.
+ *
  * ⚠️ **Whose key pays follows the INSTANCE, not the run.** `--llm` reads
  * `ANTHROPIC_API_KEY` on the main catalogue and `ANTHROPIC_API_KEY_FRIEND_SAM`
  * on `--friend`, and prints which NAME it used. Padhard's spend goes on
@@ -412,6 +420,13 @@ const titleFoundIds = new Set(titleFound.map((f) => f.id));
 // ---------------------------------------------------------------------------
 
 const llmFound = [];
+/**
+ * ⚠️ Verified, on the right shelf, and STILL NOT WRITTEN — the model said it was
+ * unsure this is the same book. Held for the owner instead. See below.
+ */
+const llmLowConfidence = [];
+/** What this run actually cost, summed from `usage`, not from the list-price guess. */
+const spend = { calls: 0, cents: 0, errors: 0 };
 if (useLlm) {
   // Everything the ladder missed, including works with no ISBN — this rung
   // searches by title and author, so a missing ISBN is not disqualifying.
@@ -471,11 +486,19 @@ if (useLlm) {
       try {
         const out = await findCover(apiKey, { title: r.title, authors: r.authors, isbn });
         proposal = out.proposal;
+        // ⚠️ Counted BEFORE anything is judged. A call that came back "not
+        // found", or whose URL is about to be rejected, was still paid for —
+        // a spend total that only counts successes understates the bill.
+        spend.calls += 1;
+        spend.cents += out.usage.estimatedCents;
         console.log(
           `${n} ${out.usage.estimatedCents.toFixed(2)}c tokens  ${r.title.slice(0, 40)}` +
             `  -> ${proposal.found ? `${proposal.confidence} conf` : 'not found'}`,
         );
       } catch (err) {
+        // A throw may still have burned tokens (a timeout mid-stream does), but
+        // `usage` never arrived — so it is counted as an error and NOT as 0c.
+        spend.errors += 1;
         console.log(`${n} ERROR  ${r.title.slice(0, 40)} — ${err?.message ?? err}`);
         continue;
       }
@@ -495,14 +518,78 @@ if (useLlm) {
         continue;
       }
       console.log(`       ✓ verified ${check.bytes}B from ${proposal.source ?? 'unknown'}`);
+
+      /*
+       * ⚠️ **A low-confidence proposal is NOT written, however well it verifies.**
+       *
+       * `verifyCoverUrl` answers one question — "are these bytes an image, and
+       * bigger than Open Library's 43-byte placeholder". It cannot answer the
+       * one that matters here, which is whether they are an image of THIS book.
+       * `confidence: 'low'` is the model saying it could not answer that either,
+       * and the system prompt asks it to say so precisely because "the caller
+       * shows low-confidence proposals to a person".
+       *
+       * Writing one anyway would be the worst shape available: a wrong cover
+       * that passed every automated check, in a column nothing in this system
+       * ever revisits. So it is held and printed with its URL and the model's
+       * own note, and a person decides. The cover-needed count stays honest in
+       * the meantime — the book is still counted as wanting one.
+       */
       if (proposal.confidence === 'low') {
-        console.log(`       ⚠️ low confidence: ${proposal.note}`);
+        llmLowConfidence.push({
+          ...r,
+          url: proposal.url,
+          bytes: check.bytes,
+          source: proposal.source ?? 'unknown',
+          note: proposal.note,
+        });
+        console.log(`       ⚠️ LOW CONFIDENCE — held for the owner, not written: ${proposal.note}`);
+        continue;
       }
+
       llmFound.push({ ...r, url: proposal.url, bytes: check.bytes, rung: 'llm' });
     }
 
     console.log('');
-    console.log(`--llm verified ${llmFound.length} of ${remaining.length}.`);
+    console.log(
+      `--llm: ${llmFound.length} written of ${remaining.length},` +
+        ` ${llmLowConfidence.length} held for the owner (low confidence).`,
+    );
+
+    /*
+     * ⚠️ The number on the owner's bill, summed from `usage` rather than from
+     * COVER_CENTS_EACH. That constant is a list-price guess with no measured
+     * sweep behind it; this is the measurement it asked for.
+     * ⚠️ It counts TOKENS only. Server-side web search is billed separately at
+     * $10/1,000 searches (up to 4 per call at the tool's max_uses), and does not
+     * appear in `usage` — so the true figure is this plus up to 4c a call.
+     */
+    console.log(
+      `--llm spend: ${spend.calls} call(s), ${spend.cents.toFixed(2)}c in tokens` +
+        ` ($${(spend.cents / 100).toFixed(2)}) on ${keyName}` +
+        (spend.errors ? `, plus ${spend.errors} errored call(s) whose usage never arrived` : '') +
+        `.\n   ⚠️ Tokens only. Add up to 4c per call for server-side web search,` +
+        ` which is billed separately and is not in usage — so at most` +
+        ` $${((spend.cents + spend.calls * 4) / 100).toFixed(2)} all in.`,
+    );
+
+    if (llmLowConfidence.length) {
+      console.log('');
+      console.log('⚠️ FOR THE OWNER — verified images the model would not vouch for.');
+      console.log('   Nothing below was written. Each is a real, fetchable image of the');
+      console.log('   right size; what is in doubt is whether it is the right BOOK.');
+      for (const r of llmLowConfidence) {
+        console.log('');
+        console.log(`   ${r.id}  ${r.title}`);
+        console.log(`     author  ${r.authors}`);
+        console.log(`     url     ${r.url}`);
+        console.log(`     source  ${r.source}  (${r.bytes}B)`);
+        console.log(`     note    ${r.note}`);
+      }
+      console.log('');
+      console.log('   To accept one: PUT /api/works/:id/cover (it re-verifies), or the');
+      console.log('   cover control on the work page. To reject: do nothing.');
+    }
   }
 }
 
