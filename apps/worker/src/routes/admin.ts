@@ -35,7 +35,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { ROLES, canGrantRole, updateRoleSchema } from '@lc/core';
-import { countOwners, listUsers, setUserRole } from '@lc/db';
+import { listUsers, setUserRole } from '@lc/db';
 import type { AppBindings } from '../env.js';
 import { pushIndexSnapshot } from '../lib/index-push.js';
 import { requireCapability } from '../middleware/auth.js';
@@ -114,22 +114,27 @@ export const adminRoutes = new Hono<AppBindings>()
       );
     }
 
-    // Don't let the last owner demote themselves and lock everyone out.
-    if (userId === actor.id && parsed.data.role !== 'owner') {
-      if ((await countOwners(c.env.DB)) <= 1) {
-        return c.json(
-          { error: 'bad_request', detail: 'you are the only owner — promote someone else first' },
-          400,
-        );
-      }
-    }
-
-    const updated = await setUserRole(c.env.DB, {
+    // The last-owner guard lives in setUserRole (the one role-write path): it
+    // refuses any write that would demote the FINAL owner, whether the actor is
+    // editing themselves or another owner. See @lc/db setUserRole.
+    const result = await setUserRole(c.env.DB, {
       userId,
       role: parsed.data.role,
       approvedBy: actor.id,
     });
-    if (!updated) return c.json({ error: 'not_found' }, 404);
+    if (!result.ok) {
+      if (result.reason === 'last_owner') {
+        return c.json(
+          {
+            error: 'bad_request',
+            detail: 'cannot remove the last owner — promote someone else to owner first',
+          },
+          400,
+        );
+      }
+      return c.json({ error: 'not_found' }, 404);
+    }
+    const updated = result.user;
     return c.json({
       user: {
         id: updated.id,

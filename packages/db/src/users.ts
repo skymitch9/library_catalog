@@ -359,15 +359,32 @@ export async function listMembers(db: D1Database): Promise<MemberSummary[]> {
  * restamps approved_at/approved_by but logs nothing — an audit row whose
  * old and new values are equal records no change.
  */
+export type SetUserRoleResult =
+  | { ok: true; user: AppUser }
+  | { ok: false; reason: 'not_found' | 'last_owner' };
+
 export async function setUserRole(
   db: D1Database,
   params: { userId: number; role: Role; approvedBy: number },
-): Promise<AppUser | null> {
+): Promise<SetUserRoleResult> {
   const before = await db
     .prepare(`SELECT ${COLS} FROM app_user WHERE id = ?`)
     .bind(params.userId)
     .first<UserRow>();
-  if (!before) return null;
+  if (!before) return { ok: false, reason: 'not_found' };
+
+  // ⚠️ Last-owner guard, enforced HERE because this is the one role-write path
+  // (the People page and the /api/admin surface both land here). Any write that
+  // would demote the FINAL owner is refused — not only a self-demotion. The old
+  // route-level guard fired only when the actor edited themselves, so an admin
+  // could demote every *other* owner down to countOwners()==0, after which no
+  // role in the app can mint an owner again. Firing on the target's current
+  // role closes that: if the target is an owner and the new role is not, and
+  // there is only one owner left, the target IS that last owner.
+  if (before.role === 'owner' && params.role !== 'owner') {
+    const owners = await countOwners(db);
+    if (owners <= 1) return { ok: false, reason: 'last_owner' };
+  }
 
   const update = db
     .prepare('UPDATE app_user SET role = ?, approved_at = ?, approved_by = ? WHERE id = ?')
@@ -394,7 +411,9 @@ export async function setUserRole(
     .prepare(`SELECT ${COLS} FROM app_user WHERE id = ?`)
     .bind(params.userId)
     .first<UserRow>();
-  return row ? toUser(row) : null;
+  // The row was present as `before` and the UPDATE cannot delete it, so this
+  // re-read always finds it; treat an impossible miss as not_found.
+  return row ? { ok: true, user: toUser(row) } : { ok: false, reason: 'not_found' };
 }
 
 export async function countOwners(db: D1Database): Promise<number> {
