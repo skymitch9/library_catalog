@@ -17,6 +17,10 @@
  * 4. **⚠️ Nothing is written that was not blank, and nothing settled is
  *    re-asked.** The free rungs write straight into `work`, so they inherit
  *    `applyFinding`'s two refusals or they are a second, unguarded way in.
+ * 5. **⚠️ Nothing is bought when nothing is left to buy.** A run whose free
+ *    rungs closed every field must make no paid call at all. Driven through the
+ *    real `runDetailsResearch` with a `fetch` that throws, so a regression that
+ *    reintroduced the model call fails here rather than on the invoice.
  *
  * The D1 stub answers only the queries these paths make and throws on anything
  * else, so a new query in the ladder fails this file loudly rather than
@@ -27,6 +31,7 @@ import { describe, it } from 'node:test';
 import type { DetailField } from '@lc/core';
 import type { Env } from '../env.js';
 import { freeDetailsFor, readSeriesLabel, readVolumeDisplay } from './free-details.js';
+import { runDetailsResearch } from './research-run.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -554,3 +559,100 @@ describe('the ladder', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// ⚠️ The property the owner asked for: nothing is bought when nothing is left
+// ---------------------------------------------------------------------------
+
+describe('runDetailsResearch — the paid call is skipped when the free rungs close everything', () => {
+  it('makes NO network call at all, and says so in the run record', async () => {
+    const finished: Record<string, unknown>[] = [];
+
+    // Extends the stub with the two research_run queries this path makes. A
+    // `fetch` that throws is the assertion: if the model is ever called again
+    // for a fully-answered book, this test fails loudly instead of quietly
+    // costing money.
+    const base = stubDb({
+      holding: { title: 'Blackflame', series: 'Cradle', index_display: '3' },
+    });
+    const db = {
+      prepare(sql: string) {
+        const inner = (base.db as unknown as { prepare: (s: string) => Record<string, unknown> })
+          .prepare(sql);
+        if (sql.includes('UPDATE research_run')) {
+          let bound: unknown[] = [];
+          const stmt = {
+            sql,
+            boundArgs: () => bound,
+            bind(...args: unknown[]) {
+              bound = args;
+              return stmt;
+            },
+            async first() {
+              finished.push({ status: bound[0], resultJson: bound[4] });
+              return {
+                id: 1,
+                work_id: 514,
+                tier: 'details',
+                model: 'test',
+                effort: 'low',
+                status: bound[0],
+                error_message: bound[1],
+                input_tokens: bound[2],
+                output_tokens: bound[3],
+                result_json: bound[4],
+                input_title: 'Blackflame',
+                input_year: null,
+                unfilled: ',series,seriesIndex,',
+                triggered_by: null,
+                started_at: null,
+                finished_at: null,
+                created_at: '2026-01-01 00:00:00',
+              };
+            },
+          };
+          return stmt;
+        }
+        return inner;
+      },
+      batch: (base.db as unknown as { batch: (s: unknown[]) => Promise<unknown> }).batch,
+    } as unknown as D1Database;
+
+    const realFetch = globalThis.fetch;
+    let dialled = 0;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      dialled += 1;
+      throw new Error(`nothing should be fetched, but something dialled ${String(input)}`);
+    }) as unknown as typeof fetch;
+
+    try {
+      const run = await runDetailsResearch(
+        env(db, { ANTHROPIC_API_KEY: 'sk-test-never-used' }),
+        1,
+        514,
+        ['series', 'seriesIndex'],
+        null,
+      );
+
+      assert.equal(dialled, 0, 'the paid lookup must not have been attempted');
+      assert.equal(run?.status, 'done', 'a fully-answered book is a finished run, not an error');
+      assert.equal(finished.length, 1, 'the run must be closed exactly once');
+      assert.match(
+        String(finished[0]?.resultJson),
+        /no paid lookup was made/,
+        'and it has to SAY so — the queue prints this line beside a cost',
+      );
+      assert.match(
+        String(finished[0]?.resultJson),
+        /"sources":\{"series":"audiobook","seriesIndex":"audiobook"\}/,
+        'the per-field attribution is persisted, so a reload still knows it was free',
+      );
+      assert.equal(
+        run?.inputTokens,
+        null,
+        'no tokens were spent, so none are recorded — the spend total must not move',
+      );
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+});

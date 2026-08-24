@@ -73,8 +73,26 @@ export interface ResearchRun {
   errorMessage: string | null;
   inputTokens: number | null;
   outputTokens: number | null;
-  /** Whatever the run wanted to say for itself. Free-form by design. */
-  result: { detail?: string | null; proposed?: number; applied?: number } | null;
+  /**
+   * Whatever the run wanted to say for itself. Free-form by design.
+   *
+   * `sources` maps a `DetailField` name to the rung that answered it —
+   * `audiobook` | `index` | `openlibrary` | `googlebooks` | `llm`. Added
+   * 2026-08-23 with the free ladder, and it needs **no migration**: the whole
+   * object is `result_json`, a TEXT column whose reader already tolerates
+   * anything. ⚠️ A run recorded before the ladder existed simply has no
+   * `sources` key, which is the truth about it — nobody wrote down where its
+   * values came from — where a default of `llm` would be a claim nobody made.
+   *
+   * Typed as plain strings deliberately: this is JSON read back off disk, and
+   * `@lc/db` cannot enforce a union it did not write.
+   */
+  result: {
+    detail?: string | null;
+    proposed?: number;
+    applied?: number;
+    sources?: Record<string, string>;
+  } | null;
   inputTitle: string | null;
   inputYear: number | null;
   /** The fields the run was sent to find, comma-delimited with edge commas. */
@@ -183,7 +201,8 @@ export interface FinishRunInput {
   errorMessage?: string | null;
   inputTokens?: number | null;
   outputTokens?: number | null;
-  result?: { detail?: string | null; proposed?: number; applied?: number } | null;
+  /** Same shape `toRun` reads back — see `ResearchRun['result']` for `sources`. */
+  result?: ResearchRun['result'];
 }
 
 export async function finishRun(

@@ -75,6 +75,15 @@
  * ever be asked, so the worst case is 1 + 16 = 17 on top of ~7, or **~24 of 50**.
  * Still one book per invocation, and the headroom is now half what it was — a
  * fifth `DETAIL_FIELDS` entry costs 4 more and is fine; a loop over books is not.
+ *
+ * ⚠️ **The free ladder spends out of the same 50** (added 2026-08-23). Worst
+ * case it is ~12: two D1 reads to decide what to ask, one per rung that runs,
+ * up to four Open Library / Google Books fetches, and a read plus an update to
+ * write. That takes the ceiling case to **~36 of 50** — still one book per
+ * invocation, and the reason every rung in `free-details.ts` is lazy rather
+ * than eager. ⚠️ The ordinary case is far smaller, because a rung is not asked
+ * about a field that is already answered; but the ordinary case is not what
+ * blows a subrequest budget.
  */
 
 import {
@@ -115,6 +124,11 @@ import {
 } from '@lc/research';
 import type { Env } from '../env.js';
 import { describeError } from './describe-error.js';
+// ⚠️ Moved out of this file 2026-08-23 rather than copied: `free-details.ts`
+// needs the same rule, and it cannot import from here (this file imports IT).
+// See the header of `detail-values.ts`.
+import { printedFormIn } from './detail-values.js';
+import { freeDetailsFor, type FreeDetailsOutcome } from './free-details.js';
 
 /**
  * The run as the browser sees it: outcome and money, no plumbing.
@@ -139,6 +153,17 @@ export interface RunView {
   /** How many of them were written into the catalog. Not the same number. */
   applied: number;
   detail: string | null;
+  /**
+   * Which rung answered each field, e.g. `{ series: 'audiobook', description:
+   * 'openlibrary' }`.
+   *
+   * ⚠️ Empty for every run recorded before 2026-08-23, and that is the honest
+   * reading — those runs did not write down where their values came from. It
+   * must never be defaulted to `llm`: "we did not record it" and "the model
+   * said it" are different claims, and the whole point of this field is that
+   * the queue can now tell a free answer from a bought one.
+   */
+  sources: Record<string, string>;
   model: string | null;
   effort: string | null;
   startedAt: string | null;
@@ -158,6 +183,7 @@ export function toRunView(run: ResearchRun): RunView {
     proposed: run.result?.proposed ?? 0,
     applied: run.result?.applied ?? 0,
     detail: run.result?.detail ?? null,
+    sources: run.result?.sources ?? {},
     model: run.model,
     effort: run.effort,
     startedAt: run.startedAt,
@@ -177,6 +203,28 @@ export function toRunView(run: ResearchRun): RunView {
  * Skips are named rather than counted, per the no-silent-drops rule at the head
  * of this file.
  */
+/**
+ * The sentence a run shows when the FREE rungs answered everything.
+ *
+ * ⚠️ It has to say that no money was spent, in words. The queue prints a run's
+ * `detail` beside a cost, and a run that quietly said "Filled in 2" would read
+ * exactly like a paid one that happened to be cheap. The owner's whole ask was
+ * that the button stop buying what the estate already holds; a person has to be
+ * able to SEE that it stopped.
+ */
+function describeFreeOnlyRun(free: FreeDetailsOutcome): string {
+  const parts: string[] = [];
+  if (free.applied.length > 0) parts.push(free.applied.join(' '));
+  else parts.push('Nothing needed filling in.');
+  parts.push('The free checks answered everything, so no paid lookup was made.');
+  return parts.join(' ');
+}
+
+/** Join the free rungs' sentences to whatever the paid half had to say. */
+function joinSentences(applied: readonly string[], tail: string): string {
+  return applied.length > 0 ? `${applied.join(' ')} ${tail}` : tail;
+}
+
 function describeRun(
   proposed: number,
   report: AutoApplyReport,
@@ -326,13 +374,58 @@ export async function runDetailsResearch(
   triggeredBy: number | null,
 ): Promise<ResearchRun | null> {
   try {
-    const work = await getWork(env.DB, workId);
-    if (!work) {
+    const first = await getWork(env.DB, workId);
+    if (!first) {
       return await finishRun(env.DB, runId, {
         status: 'error',
         errorMessage: 'That book was deleted while the lookup was running.',
       });
     }
+
+    /*
+     * ⚠️ **THE FREE RUNGS COME FIRST, AND THIS IS THE OWNER'S ASK OF
+     * 2026-08-22** — *"make sure when the look up button is hit, it does the
+     * free checks first, we have a pipeline use it"*.
+     *
+     * Before this, `POST /works/:id/run` went straight to the model: the button
+     * spent money asking the open web for facts the estate already held. Work
+     * 514 (*Elantris*) is the standing example — the household owns two audio
+     * editions of it and the lookup never once asked the audiobook catalogue.
+     *
+     * `lib/free-details.ts` is the ladder. It never throws, so the paid rung
+     * behind it always still runs; it writes only into blanks; and it hands
+     * back which rung answered which field, which is what makes the run record
+     * able to say "this was free" instead of implying everything was bought.
+     */
+    const free = await freeDetailsFor(env, workId, fields, {});
+    const stillOpen = free.stillOpen;
+
+    /*
+     * ⚠️ **Nothing is bought when nothing is left to buy.** Not an
+     * optimisation — it is the feature. A run that closed every field from the
+     * audiobook catalogue and Open Library must not then hand the same
+     * questions to a paid model, and must SAY so, or the queue's running total
+     * quietly attributes free work to the invoice.
+     *
+     * `inputTokens`/`outputTokens` stay null, so `estimateCents` reports 0 and
+     * the spend total is untouched.
+     */
+    if (stillOpen.length === 0) {
+      return await finishRun(env.DB, runId, {
+        status: 'done',
+        result: {
+          proposed: free.applied.length,
+          applied: free.applied.length,
+          sources: free.sources as Record<string, string>,
+          detail: describeFreeOnlyRun(free),
+        },
+      });
+    }
+
+    // Re-read: the ladder may have just written the series, and the model is
+    // told what the catalog knows NOW. A prompt built from the pre-ladder row
+    // would ask about a series that is already recorded.
+    const work = (await getWork(env.DB, workId)) ?? first;
 
     const { answer, usage } = await researchDetails(env.ANTHROPIC_API_KEY, {
       title: work.title,
@@ -342,7 +435,11 @@ export async function runDetailsResearch(
       // alone is ambiguous, which is the right outcome for exactly that book.
       authors: work.authors ?? '',
       series: work.series,
-      fields,
+      // ⚠️ `stillOpen`, not `fields`. Sending a field a free rung has already
+      // filled buys an answer `applyFinding` would refuse to write anyway
+      // ("Already in the series X") — the same page fetched, the same invoice,
+      // for a value the catalog holds. This is the whole point of the ladder.
+      fields: stillOpen,
     });
 
     if (!answer.identified) {
@@ -352,9 +449,15 @@ export async function runDetailsResearch(
         outputTokens: usage.outputTokens,
         result: {
           proposed: 0,
-          detail:
+          applied: free.applied.length,
+          sources: free.sources as Record<string, string>,
+          // The free rungs still did their work, and saying only "could not be
+          // identified" would hide a series that was just written in.
+          detail: joinSentences(
+            free.applied,
             answer.note ??
-            'The book could not be identified confidently, so nothing was proposed.',
+              'The book could not be identified confidently, so nothing more was proposed.',
+          ),
         },
       });
     }
@@ -362,7 +465,10 @@ export async function runDetailsResearch(
     // Only what was asked for. A model that volunteers a field the queue did not
     // ask about is a model proposing a value for something already recorded, and
     // a catalog that quietly rewrites your entries is one you stop trusting.
-    const asked = new Set<string>(fields);
+    //
+    // ⚠️ `stillOpen`, matching what was actually sent — gating on `fields` would
+    // re-admit a proposal about a field a free rung has already answered.
+    const asked = new Set<string>(stillOpen);
     const proposals: SaveFindingInput[] = [];
     for (const raw of answer.findings) {
       if (!asked.has(raw.field)) continue;
@@ -392,14 +498,22 @@ export async function runDetailsResearch(
     // Doing it here means a run either lands or does not.
     const report = await autoApplyFindings(env.DB, workId, triggeredBy);
 
+    // ⚠️ Free first, paid second, and never the other way round. A field a free
+    // rung closed cannot also have been bought — it was not on the ask list —
+    // so the merge cannot lose an attribution; writing `sources` in this order
+    // just makes that impossible to get wrong by accident later.
+    const sources: Record<string, string> = { ...free.sources };
+    for (const field of report.appliedFields) sources[field] = 'llm';
+
     return await finishRun(env.DB, runId, {
       status: 'done',
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
       result: {
         proposed: saved,
-        applied: report.applied.length,
-        detail: describeRun(saved, report, answer.note),
+        applied: report.applied.length + free.applied.length,
+        sources,
+        detail: joinSentences(free.applied, describeRun(saved, report, answer.note)),
       },
     });
   } catch (err) {
@@ -484,27 +598,6 @@ function asIndex(raw: string | number | null | undefined): number | null {
   if (!found) return null;
   const n = Number(found[0]);
   return Number.isFinite(n) ? n : null;
-}
-
-/**
- * The printed designation a finding QUOTED, or null if it just gave a number.
- *
- * ⚠️ The distinction the owner's 2026-08-19 rule turns on. `2` is a position in
- * a ladder; `Volume 07` is a claim about what is printed on a physical
- * printing. Only the second is worth recording in `series_index_display`, and
- * only because somebody found it written somewhere — this catalog never makes
- * one up (see `seriesIndexDisplayFrom`, which is the ingest route's legacy
- * default and explicitly not the semantics).
- */
-function printedFormIn(raw: string | number | null | undefined): string | null {
-  if (typeof raw !== 'string') return null;
-  const text = raw.trim();
-  if (!text) return null;
-  // A bare number, however written, is not a printed form.
-  if (Number.isFinite(Number(text))) return null;
-  // It has to actually carry a number, or it is not a volume designation at
-  // all and `asIndex` will have refused it anyway.
-  return /\d/.test(text) ? text : null;
 }
 
 /**
@@ -685,6 +778,20 @@ export interface AutoApplyReport {
   /** One sentence per value written, ready to show. */
   applied: string[];
   /**
+   * The same events as `applied`, as FIELD NAMES.
+   *
+   * ⚠️ Added 2026-08-23 for per-field source attribution, and kept beside the
+   * sentences rather than parsed back out of them. `applied` is prose written
+   * for a person — *"Volume number set to 3, printed as \"Book 3\""* — and a
+   * regex over it would be a second, silent parser of this file's own output,
+   * breaking the day somebody improves a sentence.
+   *
+   * A `none`/`unknown` finding that became a verdict counts here too: the
+   * question was answered by the model, and that is what the attribution
+   * records.
+   */
+  appliedFields: DetailField[];
+  /**
    * ⚠️ Reported by name, never swallowed. Constraint of the design: auto-apply
    * may not quietly discard a finding. Anything here either needed no action or
    * could not be written, and the second kind is still pending.
@@ -778,7 +885,13 @@ export async function autoApplyFindings(
   };
   const ordered = [...pending].sort((a, b) => order(a) - order(b) || a.id - b.id);
 
-  const report: AutoApplyReport = { applied: [], skipped: [], unusable: 0, held: 0 };
+  const report: AutoApplyReport = {
+    applied: [],
+    appliedFields: [],
+    skipped: [],
+    unusable: 0,
+    held: 0,
+  };
 
   for (const finding of ordered) {
     // ⚠️ Before anything is written: a match only a model believes in waits for
@@ -796,6 +909,7 @@ export async function autoApplyFindings(
 
     if (outcome.applied) {
       report.applied.push(outcome.applied);
+      report.appliedFields.push(finding.field as DetailField);
       await markFinding(db, finding.id, 'accepted', userId, 'auto');
       continue;
     }
