@@ -56,6 +56,7 @@ import { universeFor, universeIndex } from '@lc/universes';
 import type { AppBindings } from '../env.js';
 import { withCopyPeople } from '../lib/copy-person.js';
 import { describeError } from '../lib/describe-error.js';
+import { shadowStrictCreate } from '../lib/strict-shadow.js';
 import { universeFacet, universeIdsFor } from '../lib/universes.js';
 import { capabilityDenied, requireCapability } from '../middleware/auth.js';
 
@@ -411,8 +412,12 @@ export const catalogRoutes = new Hono<AppBindings>()
    * capability it checks.
    */
   .post('/works', requireCapability('suggestWishlist'), async (c) => {
-    const parsed = createWorkSchema.safeParse(await c.req.json().catch(() => null));
+    const body = await c.req.json().catch(() => null);
+    const parsed = createWorkSchema.safeParse(body);
     if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues }, 400);
+    // KI-6 shadow: name any unmodelled key a `.strict()` flip would reject, then
+    // proceed and 201 exactly as today. Measures, does not enforce.
+    shadowStrictCreate(createWorkSchema, body, 'POST /api/works', 'createWorkSchema');
     // Who added it — the `__row__` creation row in change_log. 'human' because
     // this route is only ever a person's form or a person's scan-review tap;
     // importers go through /api/ingest and scripts write SQL, both 'auto'.
@@ -687,8 +692,11 @@ export const catalogRoutes = new Hono<AppBindings>()
   })
 
   .post('/editions', requireCapability('editCatalog'), async (c) => {
-    const parsed = createEditionSchema.safeParse(await c.req.json().catch(() => null));
+    const body = await c.req.json().catch(() => null);
+    const parsed = createEditionSchema.safeParse(body);
     if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues }, 400);
+    // KI-6 shadow — see POST /works. Measures a strict flip's would-rejects.
+    shadowStrictCreate(createEditionSchema, body, 'POST /api/editions', 'createEditionSchema');
 
     // ⚠️ Asked BEFORE the insert, so the answer can NAME the holder. The
     // UNIQUE index (`idx_edition_isbn13`, catalog-wide) would refuse this
@@ -826,8 +834,12 @@ export const catalogRoutes = new Hono<AppBindings>()
    * ever narrow access for a non-wishlist create, never widen it.
    */
   .post('/copies', requireCapability('suggestWishlist'), async (c) => {
-    const parsed = createCopySchema.safeParse(await c.req.json().catch(() => null));
+    const body = await c.req.json().catch(() => null);
+    const parsed = createCopySchema.safeParse(body);
     if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues }, 400);
+    // KI-6 shadow — see POST /works. The person fields (person_name snake_case)
+    // are the measured KI-6 case; this is what would count them.
+    shadowStrictCreate(createCopySchema, body, 'POST /api/copies', 'createCopySchema');
 
     const user = c.get('user');
     const required = isWishlistStatus(parsed.data.status) ? 'suggestWishlist' : 'editCatalog';
