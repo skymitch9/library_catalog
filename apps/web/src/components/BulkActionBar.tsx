@@ -23,7 +23,6 @@ export function BulkActionBar({ selected, onClear, onDone }: BulkActionBarProps)
   const [progress, setProgress] = useState<string | null>(null);
 
   const count = selected.size;
-  if (count === 0) return null;
 
   const markAsRead = useCallback(async () => {
     setBusy(true);
@@ -87,6 +86,12 @@ export function BulkActionBar({ selected, onClear, onDone }: BulkActionBarProps)
     onClear();
     onDone();
   }, [selected, onClear, onDone]);
+
+  // Early return AFTER all hooks so the hook count is invariant across renders
+  // (React requires hooks to run in the same order every render; an early
+  // return before a useCallback made the first selection throw and, with no
+  // error boundary in the app, white-screened the whole collection page).
+  if (count === 0) return null;
 
   return (
     <div className="bulk-bar" role="toolbar" aria-label="Bulk actions">
