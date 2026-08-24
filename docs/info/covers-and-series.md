@@ -1,8 +1,10 @@
 # Covers, Series & Drive Links — Information Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
-> Last verified: **2026-08-23** for §0 below; **everything from §1 onward still
-> carries its original 2026-08-10 measurement and was NOT re-checked.**
+> Last verified: **2026-08-23 20:30 Phoenix** for §0 and §0.1 — both measured
+> against production that evening, including a full re-fetch of every Google
+> Books cover on both instances. **Everything from §1 onward still carries its
+> original 2026-08-10 measurement and was NOT re-checked.**
 >
 > 🔴 **Read §0 first. This document was written about 115 works in one
 > catalogue. There are now two catalogues and 1,025 works between them**, and
@@ -38,18 +40,38 @@ edition.source_url    116 of 117 set   ← the only thing these rows actually kn
 ## 0. ⚠️ TWO catalogues now, and one of them was unreachable — 2026-08-22/23
 
 Everything below §1 was measured against **115 works in `library-catalog`** on
-2026-08-10. Measured **2026-08-23 19:05 Phoenix**:
+2026-08-10. Measured **2026-08-23 20:30 Phoenix**, after the sweep in §0.1:
 
 | | works | no cover | stand-in | **cover needed** |
 |---|---|---|---|---|
-| `library-catalog` (library.heygabi.ai) | **493** | 5 | 0 | **5** |
-| `library-catalog-2nd` (padhard.heygabi.ai) | **532** | 15 | 17 | **32** |
+| `library-catalog` (library.heygabi.ai) | **493** | 3 | 1 | **4** |
+| `library-catalog-2nd` (padhard.heygabi.ai) | **532** | 15 | 2 | **17** |
 
-⚠️ **"No cover" and "cover needed" are different questions and differ by 17
-books.** §2.5 defines the real one — `coverNeeded` in `@lc/core`, and
-`NEEDS_CLAUSE` in `packages/db/src/works.ts`: a cover is needed when
-`cover_url IS NULL` **or** `cover_status = "standin"`. A report quoting blanks
-alone will read as a regression the day somebody uses the app's own number.
+Before that sweep, 90 minutes earlier: main **5** (5 blank, 0 stand-in);
+padhard **32** (15 blank, 17 stand-in). The SQL both rows come from:
+
+```sql
+SELECT COUNT(*) AS works,
+       SUM(CASE WHEN cover_url IS NULL THEN 1 ELSE 0 END) AS blank,
+       SUM(CASE WHEN cover_status = 'standin' THEN 1 ELSE 0 END) AS standin,
+       SUM(CASE WHEN (cover_url IS NULL OR cover_status = 'standin')
+                THEN 1 ELSE 0 END) AS needed
+  FROM work;
+```
+
+**Cover health, same evening:** `check-cover-health.mjs --remote` **0 broken of
+490**; `--friend --remote` **1 broken of 517** — work 356 *Evocation*, whose
+Open Library cover redirects to an archive.org object answering **HTTP 503** on
+three consecutive probes. Not cleared: the script's own rule is that a dead URL
+may be an outage and blanking it loses the only record of where the cover came
+from.
+
+⚠️ **"No cover" and "cover needed" are different questions.** §2.5 defines the
+real one — `coverNeeded` in `@lc/core`, and `NEEDS_CLAUSE` in
+`packages/db/src/works.ts`: a cover is needed when `cover_url IS NULL` **or**
+`cover_status = "standin"`. A report quoting blanks alone will read as a
+regression the day somebody uses the app's own number. They differed by 17 on
+padhard until the evening of 2026-08-23; see the flag below.
 
 ### 🔴 No sweep in `scripts/` could reach the second instance at all
 
@@ -90,13 +112,102 @@ later, recorded as `KNOWN_ISSUES.md` **KI-5**.
 Kiro swept both catalogues on 2026-08-22/23 — **52 covers, 100% of them from
 Google Books; Open Library returned 404 on every ISBN tried**, independently
 reaching §2's own 2026-08-10 verdict that the obvious Open Library rung is worth
-nothing here. ⚠️ **Whether any of the 52 are placeholders has NOT been checked**
-— that audit was started and stopped. `check-cover-health.mjs` is the instrument.
+nothing here. ⚠️ That line used to end *"whether any of the 52 are placeholders has NOT been
+checked"*. **It has been now** — every Google Books cover on both instances was
+fetched and hashed on 2026-08-23 and Kiro's sweep brought in **none**. See §0.1,
+which also records why `check-cover-health.mjs` is the WRONG instrument for
+that question.
 
 ⚠️ **Both catalogues are loaded live and these figures move by the hour** —
 padhard gained **163 works in 24 hours**. Re-measure before quoting any of them.
 
 ---
+
+## 0.1 ⚠️ `--standins`, and the placeholder a byte count cannot catch — 2026-08-23
+
+### The flag
+
+`backfill-missing-covers.mjs` targeted `cover_url IS NULL` and **said so in its
+own header**, so the one sweep that exists to close covers could never reach a
+book the app itself was marking as still wanting one. Every stand-in was
+stranded: `backfill-work-covers.mjs` cannot reach them either — it only fills
+works with no cover at all.
+
+```bash
+npx tsx scripts/backfill-missing-covers.mjs --friend --remote --llm --standins
+#   ... then --commit
+```
+
+`--standins` widens the target set to `NEEDS_COVER`, a **mirror** of the
+`works.ts` fragment rather than a third definition of the question. Two rules
+travel with it:
+
+- a stand-in beaten by a **verified** cover is written with `cover_status='ok'`
+  **in the same statement** (0040 pairs the columns; two statements leave a
+  window where the row wears a real cover and a stale warning);
+- a stand-in nothing could beat **stays a stand-in**. Never blanked. A stand-in
+  is a recorded judgement; a blank is the absence of one.
+
+**Measured, first run:** all 17 padhard stand-ins were closed by the **free**
+rungs — 3 Open Library by ISBN, 3 Google Books, 11 Open Library by title —
+for **$0.00**. None of them had ever been asked, because nothing could ask them.
+
+### 🔴 The Google Books placeholder — 4,013 bytes, and every guard passes it
+
+⚠️ **Two of the 19 covers written that evening were wrong, and NO automated
+check could have told you.** Both were caught by *looking at the image*.
+
+| Work | What was stored | Why it is wrong |
+|---|---|---|
+| padhard 113 *Summer in the City* (Alex Aster) | Google Books `zoom=1` thumbnail | It is Google's branded **"COVER COMING SOON"** card |
+| main 516 *Sanctuary: The Art Book of Yuumei* | Goodreads image, LLM rung, **high** confidence | Right book — but a **3D product photo** annotated *11.5 in / 9 in / 124 Pages*, not the jacket |
+
+⚠️ **The placeholder is a real 4,013-byte JPEG.** It clears `verifyCoverUrl`'s
+`MIN_COVER_BYTES`, it clears `check-cover-health.mjs`'s 1,000-byte floor, and it
+returns `200 image/jpeg`. §2's 43-byte Open Library pixel was catchable by size;
+**this one is not**, and that is the whole lesson. The signature that *does*
+work is that it is **byte-identical for every book**:
+
+```
+sha1  df2f2659f5047344388a855a041b671651a45d68   4013 B
+```
+
+**The audit that closes the standing question.** `docs/TODO.md` had carried
+*"Padhard cover audit — did placeholders creep back in?"* open since 2026-08-22,
+because Kiro's sweep took 100% of its 52 finds from Google Books. Every
+`books.google.com` cover on both instances was fetched and hashed:
+
+| | Google Books covers | exact placeholders |
+|---|---|---|
+| `library-catalog` | 25 | **0** |
+| `library-catalog-2nd` | 222 | **1** — work 113, written that same evening |
+
+So **Kiro's sweep brought none in**; the one hit was ours, and it is now a
+stand-in. Six other padhard covers under 6 KB were checked and are genuine —
+they have **distinct** hashes, which is the cheap test: the placeholder repeats,
+a real thumbnail does not.
+
+⚠️ **`cover_status = 'ok'` means a PERSON looked.** All three corrections below
+were set by a look, and each kept its URL:
+
+| | Work | Now | Because |
+|---|---|---|---|
+| main | 516 *Sanctuary* | `standin` | 3D product photo, not the jacket |
+| padhard | 113 *Summer in the City* | `standin` | the Google placeholder |
+| padhard | 268 *The Villa* (Nora Roberts) | `standin` | right book, **German** edition jacket *Im Sturm des Lebens* — the *Project Hail Mary* precedent in §2.5 |
+
+### 🔴 Padhard's paid rung is BLOCKED, and blank is the drop-box's normal state
+
+`--llm` now reads **`ANTHROPIC_API_KEY_FRIEND_SAM`** under `--friend` and
+`ANTHROPIC_API_KEY` otherwise, printing which NAME it used. Padhard's spend goes
+on Samantha's key — `apps/worker/.dev.vars` lines 79–85.
+
+⚠️ That drop-box line lives **blank** (`= ""`): the runbook pastes a key, pipes
+it to `wrangler secret put ANTHROPIC_API_KEY --env friend`, then blanks it. Her
+Worker holds it and **a secret store cannot be read back**. So padhard's
+remaining 15 blanks cannot be put through the paid rung until the owner pastes
+it in again. The rung says exactly this and refuses to fall back to the main
+key, which would bill her catalogue to him.
 
 ## 1. ⚠️ The strongest rung in the project cannot fire here
 

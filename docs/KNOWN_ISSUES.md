@@ -46,6 +46,69 @@ a ladder step that always fails is a step that always has to be explained.
 
 ---
 
+## KI-6 · A Google Books cover can be a 4KB "COVER COMING SOON" card, and no size check catches it — `ACCEPTED`
+
+**Symptom.** `books.google.com/books/content?...&zoom=1` answers, for a book it
+has no jacket for, with **HTTP 200, `image/jpeg`, and a branded *"COVER COMING
+SOON"* card**. It is a genuine 4,013-byte JPEG. It clears `verifyCoverUrl`'s
+`MIN_COVER_BYTES`, it clears `check-cover-health.mjs`'s 1,000-byte floor, and it
+renders on the shelf as a book whose cover is fine.
+
+**Measured** 2026-08-23: written onto padhard work 113 *Summer in the City* by a
+`--standins` sweep, and found only by **looking at the image**. Every
+`books.google.com` cover on both instances was then fetched and hashed —
+**25 on main, 222 on padhard, exactly 1 hit** (that one). Kiro's 2026-08-22
+sweep, which took 100% of its 52 finds from Google Books, brought in **none**.
+
+⚠️ **This is §2's 43-byte Open Library pixel with the one defence removed.** That
+one was catchable by size; this one is not. The signature that works is that the
+card is **byte-identical for every book**:
+
+```
+sha1  df2f2659f5047344388a855a041b671651a45d68   4013 B
+```
+
+Six other padhard Google Books covers under 6 KB were checked and are real —
+**distinct hashes**. That is the cheap test: the placeholder repeats, a real
+thumbnail does not.
+
+**Why tolerated.** One hit in 247 covers, and Google Books is the rung
+`resolve.ts` measures as the only one that moves the number here — dropping it
+would cost far more than the defect. The hit is now `cover_status='standin'`, so
+it is counted as still wanting a cover rather than silently wrong.
+
+**What would change it.** Add the hash to `verifyCoverUrl` as a deny-list beside
+`MIN_COVER_BYTES` — one constant, one comparison, and it would have refused this
+write. Do it if a **second** hit ever appears; one in 247 does not yet justify
+putting a magic hash in a leaf package. ⚠️ Re-run the audit after **any** bulk
+Google Books write; `check-cover-health.mjs` is the WRONG instrument and will
+report it clean. Full record: `info/covers-and-series.md` §0.1.
+
+---
+
+## KI-7 · Padhard's paid cover rung cannot run — her key is not readable from here — `BLOCKED`
+
+**Symptom.** `backfill-missing-covers.mjs --friend --remote --llm` prints
+*"ANTHROPIC_API_KEY_FRIEND_SAM is empty or absent"* and skips the paid rung, so
+padhard's remaining **15 blank covers** cannot be put through it.
+
+**Measured** 2026-08-23: `apps/worker/.dev.vars` line 85 is
+`ANTHROPIC_API_KEY_FRIEND_SAM = ""`.
+
+**Why tolerated — it is not a fault, it is the design.** That line is a
+**drop-box**: the runbook pastes a key, pipes it to
+`wrangler secret put ANTHROPIC_API_KEY --env friend`, then blanks the line, so
+her key can never reach an allowlist by accident. Her Worker holds it and **a
+secret store cannot be read back**. ⚠️ The rung deliberately refuses to fall
+back to `ANTHROPIC_API_KEY`: padhard's spend goes on HER key, and a silent
+fallback would bill her catalogue to the owner.
+
+**What would change it.** The owner pastes her key after the `=` on that line,
+the run happens, the line is blanked again — `docs/access/second-instance.md`.
+Worst case for the 15: **15 × 6c ≈ $0.90**, on her account.
+
+---
+
 ## Resolved and removed — 2026-08-23
 
 ⚠️ **Kept as a pointer, not as content.** These were live entries in this file

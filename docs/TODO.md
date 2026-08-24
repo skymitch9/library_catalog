@@ -82,23 +82,6 @@ re-opens where it was left. ⚠️ Recorded here verbatim because the detail is
 Kiro's, not mine — **confirm the intent with Kiro or the owner before
 building**, particularly what "auto-open persistence" should persist across.
 
-## ☐ Padhard cover audit — did placeholders creep back in? (Kiro, queued 2026-08-22)
-
-Kiro's own open question after its sweep: *"verify no Google Books placeholders
-crept back in"*. ⚠️ **It is the right question and it matters more than it
-looks**, because that sweep took **100% of its finds from Google Books** and
-this repo has already been bitten once by a provider answering a cover request
-with HTTP 200 and a placeholder image rather than a 404
-(`backfill-missing-covers.mjs`, the 43-byte Open Library pixel).
-
-⚠️ **STILL OPEN — the audit was started on 2026-08-23 and stopped before it
-finished, so nothing here is evidence either way.** The check is
-`node scripts/check-cover-health.mjs --remote`, and again with `--friend`; it
-fetches every stored cover (~1,000 across both instances) and reports any that
-404, are not an image, or are under the 1,000-byte placeholder floor. Run it
-after any future bulk cover write, not only this one.
-
-
 ## ☐ OWNER FEATURE REQUESTS — written by him directly into this file, 2026-08-23
 
 > He added these himself, with the note *"This was added by the user not the Ai.
@@ -258,12 +241,32 @@ pipeline step by name; an existing copy can be marked signed without deleting it
 > *"we need a way to get covers, can we have missing details fill in covers or
 > have a button on each book page to find covers with llm or something"*
 
-**Measured 2026-08-22 against production, both instances:**
+⚠️ **Piece 1 of the three below is DONE (2026-08-22 and 2026-08-23). Pieces 2
+and 3 are not started, which is why this entry is still here.** The numbers in
+this section were re-measured **2026-08-23 20:30 Phoenix**; the durable record
+lives in [`info/covers-and-series.md`](info/covers-and-series.md) §0/§0.1 and
+that file, not this one, owns the figures.
 
 | Instance | Works | Cover needed | Broken stored covers |
 |---|---|---|---|
-| `library-catalog` (library.heygabi.ai) | 452 | **0** | **0 of 452** (`check-cover-health.mjs --remote`) |
-| `library-catalog-2nd` (padhard.heygabi.ai) | 369 | **47** — 40 blank + 7 `standin` | not measurable, see below |
+| `library-catalog` (library.heygabi.ai) | 493 | **4** — 3 blank + 1 `standin` (was 5) | **0 of 490** |
+| `library-catalog-2nd` (padhard.heygabi.ai) | 532 | **17** — 15 blank + 2 `standin` (was 32) | **1 of 517** (work 356, a 503) |
+
+**What the 2026-08-23 sweep did.** `--standins` was added so the sweep asks the
+app's own `coverNeeded` question instead of `cover_url IS NULL`; all **17**
+padhard stand-ins closed on the **free** rungs for **$0.00**, and the paid rung
+wrote **2** on main for **12.43c of tokens** (4 calls, one aborted). Three
+writes were then reverted to `standin` after *looking at the images* — see
+§0.1 and **KI-6**.
+
+<details><summary>The 2026-08-22 figures this replaced</summary>
+
+| Instance | Works | Cover needed | Broken stored covers |
+|---|---|---|---|
+| `library-catalog` | 452 | **0** | **0 of 452** |
+| `library-catalog-2nd` | 369 | **47** — 40 blank + 7 `standin` | not measurable |
+
+</details>
 
 ⚠️ **The main library is fine. The gap is entirely padhard, and it is NEW
 DATA, not a regression.** Grouped by `created_at`: every row created on or
@@ -301,14 +304,12 @@ of it as evidence about the second instance.
 
 ### The three pieces of work, cheapest first
 
-1. **~30 min — teach `scripts/lib/d1.mjs` a `--friend` target** (`DB_NAME` from
-   the flag, matching `wrangler.toml`'s `env.friend`), then run
-   `npm run backfill:missing-covers -- --friend --remote --commit`. These are
-   Eragon, *A River Enchanted*, *The Housemaid is Watching* — mainstream
-   in-print titles the free rungs will mostly hit. Fix `check-cover-health.mjs`
-   in the same commit so `--friend` switches the DB as well as the base URL.
-   ⚠️ Needs `GOOGLE_BOOKS_API_KEY` in `apps/worker/.dev.vars` or the run is
-   worth ~0 covers.
+1. ~~**~30 min — teach `scripts/lib/d1.mjs` a `--friend` target**~~ — **DONE.**
+   `dbName({remote, friend})` landed 2026-08-22 (`4a52589`), and
+   `check-cover-health.mjs` was fixed in the same commit. 2026-08-23 added the
+   `--standins` target set, made `--llm` read the key of the **instance** it is
+   pointed at, and stopped it auto-writing low-confidence proposals. Both
+   instances have been swept with `--commit`.
 2. **~1–2 h — the button on the book page.** `POST /api/works/:id/cover/find`
    in `routes/covers.ts` → `findCover` → `verifyCoverUrl` → propose, and
    `CoverPanel` grows a **"Find a cover"** button beside "Choose from known
@@ -326,9 +327,78 @@ of it as evidence about the second instance.
    able to spend the 6c rung. ⚠️ That is a **cost** decision for the owner, not
    a code decision.
 
-**Verify:** `npx wrangler d1 execute library-catalog-2nd --remote --command
-"SELECT COUNT(*) FROM work WHERE cover_url IS NULL OR cover_url=''"` → 0, then
-`check-cover-health.mjs --friend --remote` clean once it reads the right DB.
+**Verify:** the SQL in [`info/covers-and-series.md`](info/covers-and-series.md)
+§0 — the four-column one, **not** `COUNT(*) WHERE cover_url IS NULL`, which is
+not the question the app asks. Then `check-cover-health.mjs --friend --remote`.
+⚠️ Neither is evidence about placeholders; **KI-6** says why and what is.
+
+### 🧾 Named residue — what is left and what would settle it
+
+| | Work | State | What would settle it |
+|---|---|---|---|
+| main | 511 *Beauty X Beast*, 512 *Rob X Punzel* | blank; free rungs and the LLM both found nothing | Mountaindale Press's own store has these — the publisher-page rung sketched in KI-6's neighbour, or a hand-linked URL |
+| main | 513 *Snow X Dwight* | blank; LLM proposed the publisher's `og:image` at **low confidence** and it was correctly NOT written | Owner opens `https://www.mountaindalepress.store/cdn/shop/files/00_600x.png?v=1767642347` and presses Use, or rejects it. The model's doubt is only whether that file is the flat jacket or a 3D mockup |
+| main | 516 *Sanctuary (Yuumei)* | `standin` — right book, 3D product photo | A flat jacket scan. The art book may not have one online |
+| padhard | 113 *Summer in the City* | `standin` — the Google placeholder, **KI-6** | Any real cover; the ISBN rungs had nothing |
+| padhard | 268 *The Villa* | `standin` — right book, **German** edition jacket | The English Berkley jacket, or the owner deciding the German one is fine |
+| padhard | 15 blank works | free rungs exhausted; paid rung **BLOCKED** | Owner pastes her key into the drop-box — **KI-7**. ~$0.90 worst case, on her account |
+| padhard | 356 *Evocation* | stored Open Library cover redirects to an archive.org object answering **503** on 3 probes | Wait and re-run `check-cover-health.mjs --friend --remote`. Not cleared: a dead URL may be an outage, and blanking it loses where the cover came from |
+
+## ☐ Padhard's details queue is 2, and BOTH are named residue no lookup will close
+
+> Owner, 2026-08-23: *"padhard shows 4 missing details"*.
+
+**Measured 2026-08-23 20:15 Phoenix** by reproducing `listWorksNeedingDetails`
+against `library-catalog-2nd --remote` — the DECISION imported from
+`@lc/core` (`detailGaps` / `detailAsks` / `unaskedGaps`), never re-expressed as
+SQL, for the reason that function's own header gives.
+
+⚠️ **It is 2, not 4, and the difference is not a disagreement.** A person
+(user 2) pressed the bulk runner at **02:00 UTC**, firing 12 lookups over four
+minutes across works 513–531; those closed. The queue is loaded live and moves
+by the hour.
+
+| Work | Title / author | Open fields | Already ASKED? | Fate |
+|---|---|---|---|---|
+| **490** | *The Ex Hex Duo* — Killian McRae | `series`, `description` | ✅ all three asks, run **#645**, `done` 17:17 UTC | 🔴 residue |
+| **468** | *Veil of Darkness* — Rachael Reese | `series`, `description` | ✅ all three asks, run **#685**, `done` 17:33 UTC | 🔴 residue |
+
+Both runs finished cleanly with `proposed: 0` — the model looked and **could not
+identify the book**, in its own words:
+
+> *"Killian McRae wrote the 'All My Exes Die From Hexes' series and a
+> complete-series bind-up titled **'The Ex Hex'**, but I could not find any
+> listing for a title 'The Ex Hex Duo'."*
+
+> *"Searches for 'Veil of Darkness' by Rachael Reese returned only unrelated
+> books of the same title by other authors… 'Veil of Darkness' is a very common
+> title, [so] matching any of these would risk attaching another book's details."*
+
+### ⚠️ Nothing automatic will touch these again, and that is CORRECT
+
+- **The `7 * * * *` cron will not.** `planSweep` filters on
+  `unaskedGaps(missing, asked).length > 0`; both are empty. Verified the cron is
+  otherwise alive: 61 CRON-triggered details runs, most recently work 512 at
+  **01:08 UTC**, one book an hour.
+- **"Look up all" on `/queue` will not.** `outstandingWorks` applies the same
+  `unaskedGaps` rule, so the button will offer **0 books** and each row will
+  carry its *"research looked and could not identify this"* sentence.
+- **`scripts/research-queue.mjs` WOULD** — it selects on `gapsFor`, which is
+  `missing`, not unasked — and it should not be pointed at these. It would buy
+  the same nothing twice. ⚠️ It also reads `ANTHROPIC_API_KEY` with no
+  instance awareness, so aimed at padhard it bills **the owner** for **her**
+  catalogue — the same defect just fixed in `backfill-missing-covers.mjs`, still
+  live here. Worth fixing before anyone runs it with `--friend`.
+
+### 🧾 What would settle each
+
+| Work | Settles it |
+|---|---|
+| **490** *The Ex Hex Duo* | 🎯 **Retitle it.** `detailsRunHistory` counts a field asked only while `input_title = w.title`, so correcting the title to **"The Ex Hex"** — which the model *did* find, as McRae's complete-series bind-up — makes it askable again and it will almost certainly close on the next tick. The cheapest fix on this page |
+| **468** *Veil of Darkness* | A person supplies the series/description by hand, or records a `gap_verdict` of `unknown`. The title is too common for research to disambiguate, which is exactly what the run reported |
+
+Neither needs money and neither needs a deploy. Both need a signed-in human at
+<https://padhard.heygabi.ai/queue>.
 
 ## ☐ "Look up" must do the FREE checks first, and the add path must fill more — owner ask, 2026-08-22
 

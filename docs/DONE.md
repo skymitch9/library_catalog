@@ -17,6 +17,43 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ Padhard cover audit — ANSWERED 2026-08-23: Kiro brought in ZERO placeholders
+
+Kiro's own open question after its sweep: *"verify no Google Books placeholders
+crept back in"*. ⚠️ **It is the right question and it matters more than it
+looks**, because that sweep took **100% of its finds from Google Books** and
+this repo has already been bitten once by a provider answering a cover request
+with HTTP 200 and a placeholder image rather than a 404
+(`backfill-missing-covers.mjs`, the 43-byte Open Library pixel).
+
+**ANSWERED 2026-08-23 20:30 Phoenix, and the answer is clean — but the
+instrument this entry named was the WRONG one, which is the finding.**
+
+Every `books.google.com` cover on both instances was fetched and hashed:
+
+| | Google Books covers | exact placeholders |
+|---|---|---|
+| `library-catalog` | 25 | **0** |
+| `library-catalog-2nd` | 222 | **1** |
+
+The single hit was **not** Kiro's. It was written the same evening by the
+`--standins` sweep onto padhard work 113 *Summer in the City*, and is now
+`cover_status='standin'`. **Kiro's 52 brought in none.**
+
+🔴 **`check-cover-health.mjs` could never have answered this question.** Google's
+placeholder is a branded *"COVER COMING SOON"* card of **4,013 bytes** — a real
+JPEG, `200 image/jpeg`, sailing past that script's 1,000-byte floor AND past
+`verifyCoverUrl`'s `MIN_COVER_BYTES`. A clean run of it is not evidence. What
+works is that the card is **byte-identical for every book**
+(`sha1 df2f2659…`, and six other sub-6KB covers have distinct hashes and are
+real). Recorded as **KI-6**; the audit method is in
+[`info/covers-and-series.md`](info/covers-and-series.md) §0.1.
+
+Health checks were also run and are separately clean: `--remote` **0 broken of
+490**, `--friend --remote` **1 of 517** (work 356 *Evocation*, an Open Library
+cover redirecting to an archive.org object answering 503 — left alone, see the
+residue table in the second-instance entry).
+
 ## ✅ Cover sweep, both instances — DONE 2026-08-22/23
 
 Queued as *"40 books need covers"* on 2026-08-22 when Open Library was
