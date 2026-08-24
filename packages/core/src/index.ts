@@ -31,6 +31,7 @@ export * from './isbn.js';
 export * from './lookup-errors.js';
 export * from './titles.js';
 export * from './matching.js';
+export * from './duplicates.js';
 export * from './corroboration.js';
 export * from './crowdfunding.js';
 export * from './reviews.js';

@@ -9,6 +9,7 @@ import {
   workKeyFor,
   type CoverStatus,
   type CreateWork,
+  type DuplicateCandidate,
   type UniverseSource,
   type UpdateWork,
 } from '@lc/core';
@@ -1772,5 +1773,68 @@ export async function collectionStats(
     preordered: totals?.preordered ?? 0,
     formats: formats.results,
     readStates: readStates.results,
+  };
+}
+
+/**
+ * Every work, reduced to what the duplicate finder compares and shows.
+ *
+ * ## Why this is a plain read and not a `GROUP BY`
+ *
+ * The fold that decides a duplicate is `duplicateKeyFor` in `@lc/core`, which
+ * runs `cleanTitleWithSeries` — a stack of regexes measured against the real
+ * catalog — over the title. There is no SQL expression for it, and writing one
+ * would put the same decision in a second language, which is the class of bug
+ * this estate has already shipped once (`packages/core/src/matching.ts`'s
+ * header, and `listUniverseKeys` two functions up, which resolves in JavaScript
+ * for exactly the same reason).
+ *
+ * ⚠️ **The board-game catalog CAN express its version in SQL, and that is not
+ * an argument that this one should.** Its `duplicates` filter asks "does this
+ * tree hold more than one of something" — `HAVING SUM(quantity) > 1` over the
+ * copy table (`packages/db/src/items.ts:379` there). A count of rows is SQL's
+ * natural shape; a folded string comparison is not.
+ *
+ * So the whole table comes back and JavaScript groups it. That is affordable
+ * and stays affordable: five columns over ~1,100 works, against the megabyte a
+ * page of whole works costs. If this catalog ever reaches a size where it is
+ * not, the fold moves into a stored, migrated column — never into a second
+ * implementation of the regexes.
+ *
+ * ⚠️ `authors` is handed over **raw, sentinel included** — not through
+ * `toWork`, which turns `UNKNOWN_AUTHOR` into an honest `null`. `workKeyFor`
+ * needs the sentinel: it is the entire collision proof that keeps authorless
+ * books from folding onto each other and onto real "Unknown"-credited ones.
+ */
+export async function listDuplicateCandidates(
+  db: D1Database,
+): Promise<{ candidates: DuplicateCandidate[]; totalWorks: number }> {
+  const { results } = await db
+    .prepare(
+      `SELECT w.id, w.title, w.subtitle, w.authors, w.series,
+              (SELECT COUNT(*) FROM copy c
+                WHERE c.work_id = w.id
+                  AND c.status IN (${HELD_STATUSES.map((s) => `'${s}'`).join(', ')})) AS copy_count
+         FROM work w`,
+    )
+    .all<{
+      id: number;
+      title: string;
+      subtitle: string | null;
+      authors: string;
+      series: string | null;
+      copy_count: number;
+    }>();
+
+  return {
+    totalWorks: results.length,
+    candidates: results.map((r) => ({
+      id: r.id,
+      title: r.title,
+      subtitle: r.subtitle,
+      authors: r.authors,
+      series: r.series,
+      copyCount: r.copy_count,
+    })),
   };
 }
