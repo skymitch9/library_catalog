@@ -355,6 +355,63 @@ describe('rung 2 — the estate index', () => {
     assert.equal(out.sources.series, 'index');
     assert.equal(out.sources.seriesIndex, 'index');
   });
+
+  it('⚠️ fans out over title aliases and answers off the one that names a series', async () => {
+    // The catalogued title finds nothing; the alias does — exactly the shape the
+    // whole build exists for. A fetch that answers by the `title` query param.
+    const calls: string[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      calls.push(url);
+      const title = new URL(url).searchParams.get('title');
+      const body = title === 'The Selish Cycle' ? { series: 'Elantris', series_index: 1 } : {};
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+
+    const { db } = stubDb({ holding: null });
+    const out = await freeDetailsFor(
+      env(db, { INDEX_URL: 'https://index.heygabi.ai', INDEX_READ_TOKEN: 'test-only' }),
+      514,
+      ['series', 'seriesIndex'],
+      { throttle: false, fetchImpl, titleAliases: ['The Selish Cycle'] },
+    );
+
+    // Both identities were tried, the catalogued title first.
+    assert.equal(calls.length, 2, 'the title and then the alias should each be asked');
+    assert.match(calls[0] ?? '', /title=Elantris/);
+    assert.match(calls[1] ?? '', /title=The\+Selish\+Cycle/);
+    // The answer came from the alias and was written.
+    assert.equal(out.sources.series, 'index');
+    assert.equal(out.sources.seriesIndex, 'index');
+    // The title miss is named, not swallowed.
+    assert.ok(
+      out.skipped.some((s) => s.includes('the estate index') && s.includes('no series')),
+      'the identity that came back empty should be recorded',
+    );
+  });
+
+  it('stops at the first identity that answers — no needless second call', async () => {
+    const calls: string[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL) => {
+      calls.push(String(input));
+      return new Response(JSON.stringify({ series: 'Elantris', series_index: 1 }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+
+    const { db } = stubDb({ holding: null });
+    await freeDetailsFor(
+      env(db, { INDEX_URL: 'https://index.heygabi.ai', INDEX_READ_TOKEN: 'test-only' }),
+      514,
+      ['series', 'seriesIndex'],
+      { throttle: false, fetchImpl, titleAliases: ['The Selish Cycle'] },
+    );
+    assert.equal(calls.length, 1, 'the catalogued title answered, so the alias is not asked');
+  });
 });
 
 // ---------------------------------------------------------------------------

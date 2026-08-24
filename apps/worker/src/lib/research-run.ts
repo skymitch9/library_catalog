@@ -235,14 +235,17 @@ function joinSentences(applied: readonly string[], tail: string): string {
  * Hex'."* rather than a silent match on a title the paid rung had already failed
  * on.
  */
-function aliasAttribution(matchedTitle: string | null, primaryTitle: string): string | null {
+export function aliasAttribution(matchedTitle: string | null, primaryTitle: string): string | null {
   const matched = (matchedTitle ?? '').trim();
   if (!matched || matched === primaryTitle.trim()) return null;
   return `Identified as “${matched}”.`;
 }
 
 /** Fold an alias attribution in front of whatever else the run had to say. */
-function withAttribution(note: string | null | undefined, attribution: string | null): string | null {
+export function withAttribution(
+  note: string | null | undefined,
+  attribution: string | null,
+): string | null {
   if (!attribution) return note ?? null;
   return note ? `${attribution} ${note}` : attribution;
 }

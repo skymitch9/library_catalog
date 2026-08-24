@@ -260,6 +260,33 @@ export interface ResearchResult {
 }
 
 /**
+ * The identity block that goes at the top of the user turn — the title, the
+ * author, one "Also known as" line per alias, and the recorded series when there
+ * is one.
+ *
+ * Pure and exported so the alias wiring is pinned by a test directly rather than
+ * behind the model call (the same reason `lastRealAttempt` is exported in
+ * `@lc/db`). The "Also known as" lines are verbatim but de-duplicated and
+ * stripped of any alias that merely repeats the primary title, so the model is
+ * never handed the same name twice. The caller caps how many aliases arrive.
+ */
+export function buildResearchIdentity(input: ResearchInput): string {
+  const aliasLines = [...new Set(input.titleAliases ?? [])]
+    .map((a) => a.trim())
+    .filter((a) => a !== '' && a !== input.title.trim())
+    .map((a) => `Also known as: ${a}`);
+
+  return [
+    `Title: ${input.title}`,
+    `Author: ${input.authors}`,
+    ...aliasLines,
+    input.series ? `Series (already recorded, treat as given): ${input.series}` : null,
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+/**
  * Ask about one book. Throws `ResearchError` on anything the caller should say
  * out loud; the caller writes every outcome, thrown or not, into `research_run`.
  */
@@ -272,22 +299,7 @@ export async function researchDetails(
   }
   const client = createClient(apiKey);
 
-  // "Also known as" lines, one per alias, verbatim. Deduped and stripped of any
-  // alias that merely repeats the primary title so the model is never handed the
-  // same name twice. The caller already caps the count.
-  const aliasLines = [...new Set(input.titleAliases ?? [])]
-    .map((a) => a.trim())
-    .filter((a) => a !== '' && a !== input.title.trim())
-    .map((a) => `Also known as: ${a}`);
-
-  const identity = [
-    `Title: ${input.title}`,
-    `Author: ${input.authors}`,
-    ...aliasLines,
-    input.series ? `Series (already recorded, treat as given): ${input.series}` : null,
-  ]
-    .filter(Boolean)
-    .join('\n');
+  const identity = buildResearchIdentity(input);
 
   const asked = input.fields.join(', ');
 
