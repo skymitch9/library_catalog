@@ -147,8 +147,18 @@ const CHANGE_FIELDS = ['field', 'oldValue', 'newValue', 'changedByName', 'change
 
 // ── Phase 1 write-tool projections ──────────────────────────────────────────
 
-/** Fields to forward from a `POST /api/research/works/:id/run` response. */
-const RESEARCH_RESULT_FIELDS = ['status', 'runId', 'filled', 'skipped', 'message'] as const;
+/**
+ * Fields to forward from the `run` object a `POST /api/research/works/:id/run`
+ * response carries (a `RunView`). ⚠️ These are read from `answer.run`, NOT the
+ * top-level body: the endpoint returns `{ run, alreadyRunning, findings,
+ * missing }`, and the old list (`status`/`runId`/`filled`/`skipped`/`message`)
+ * named nothing that exists anywhere on the response — so `research_book`
+ * forwarded only `{ workId }` and a lookup that came back an error was
+ * indistinguishable from one that filled every field. `detail` is the run's own
+ * human sentence ("Wrote 2 of 3…"); `applied` vs `proposed` is what was written
+ * vs found.
+ */
+const RESEARCH_RESULT_FIELDS = ['status', 'applied', 'proposed', 'detail'] as const;
 /** Fields to forward from a `PATCH /api/works/:id` response. */
 const PATCH_RESULT_FIELDS = ['updated', 'message', 'work'] as const;
 /** Fields to forward from a `POST /api/research/undo` response. */
@@ -322,9 +332,18 @@ async function run(
         return { error: 'That is not a work id. Use find_book first.' };
       }
       const answer = await api.researchBook(workId);
+      // The outcome lives on `answer.run` (a RunView); an error response never
+      // reaches here — `request()` throws ApiError on non-2xx and the executor's
+      // catch turns it into an explicit `{ error }`.
+      const run = field(answer, 'run');
       return {
         workId,
-        ...pick(answer, RESEARCH_RESULT_FIELDS),
+        runId: field(run, 'id'),
+        alreadyRunning: field(answer, 'alreadyRunning') ?? false,
+        // How many findings are still pending for a person (a value that could
+        // not be applied). Normally 0.
+        pending: rowsOf(answer, 'findings').length,
+        ...pick(run, RESEARCH_RESULT_FIELDS),
       };
     }
 

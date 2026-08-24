@@ -466,3 +466,46 @@ describe('⚠️ the executor cannot reach the network on its own', () => {
     assert.doesNotMatch(SOURCE, /firebase/);
   });
 });
+
+// ── research_book forwards the run outcome, not just {workId} (audit HIGH) ────
+
+describe('research_book — the run outcome reaches the model (audit HIGH)', () => {
+  it('projects status/applied/proposed/detail/runId from answer.run', async () => {
+    // The endpoint returns { run: RunView, alreadyRunning, findings, missing } —
+    // NOT top-level status/runId/filled/skipped. The old projection read those
+    // non-existent keys, so research_book forwarded only { workId } and a lookup
+    // that errored looked identical to one that filled every field.
+    const { api } = fakeApi({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      researchBook: async (id: number) => ({
+        run: {
+          id: 77,
+          workId: id,
+          status: 'done',
+          applied: 2,
+          proposed: 3,
+          detail: 'Wrote 2 of 3 fields.',
+          // ⚠️ must NOT be forwarded — not in RESEARCH_RESULT_FIELDS.
+          workKey: 'unsouled|will wight',
+        },
+        alreadyRunning: false,
+        findings: [{ findingId: 1 }],
+        missing: [],
+      }),
+    } as unknown as Partial<GabiReadApi>);
+
+    const out = await call(api, 'research_book', { workId: 42 });
+    assert.equal(out.isError, false);
+    const r = out.result as Record<string, unknown>;
+    assert.equal(r.workId, 42);
+    assert.equal(r.runId, 77);
+    assert.equal(r.status, 'done');
+    assert.equal(r.applied, 2);
+    assert.equal(r.proposed, 3);
+    assert.equal(r.detail, 'Wrote 2 of 3 fields.');
+    assert.equal(r.pending, 1);
+    assert.equal(r.alreadyRunning, false);
+    // The workKey join must never leave via the projection.
+    assert.ok(!('workKey' in r), 'research_book must not forward the run workKey');
+  });
+});
