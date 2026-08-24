@@ -107,32 +107,6 @@ after any future bulk cover write, not only this one.
 > questions named rather than guessed. ⚠️ **His original text was lost once
 > already** — see the encoding incident in [`info/gotchas.md`](info/gotchas.md).
 
-### OR-1. Record WHO has the book — lent out, borrowed, sold
-
-> *"optional Ability to enter a user when a book is in lent out, borrowed, or
-> sold status. also the ability to assign the status to a different member of
-> the catalog for record keeping … if i loaned out a book to Samantha I should
-> be able to put her name in a text box that matches the theme and saves. if
-> Samantha is a user in the estate i should be able to autofill to her user
-> profile so its linked to her."*
-
-**Two levels, and the second is the interesting one.** A free-text name that
-saves and matches the theme is the floor; the ask above it is that an estate
-member **autofills and links to her profile**, so the record points at a person
-rather than at a string.
-
-⚠️ **`copy.lent_to` already exists** and is already rendered (`Copies.tsx`
-shows *"Lent to …"*). So the floor is partly built — check what it does today
-before designing. What is NOT there is the link to an estate identity.
-
-**Future half, stated by him and deliberately not scoped yet:** *"a way to view
-books that are assigned to you in your status page window."*
-
-**Ask him before building:**
-1. Does a linked person's name change on the card if they later change their display name — i.e. is it a live join or a snapshot?
-2. Should the borrower see it, or only the owner?
-3. Sold — does the row stay in the catalogue at all, or leave a tombstone?
-
 ### OR-2. Find duplicates — copy the board-game filter, don't redesign it
 
 > *"ability to search a catalog for duplicates with a filter, we have this

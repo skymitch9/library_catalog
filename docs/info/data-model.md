@@ -1,18 +1,26 @@
 # Data Model — Information Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
-> Last verified: **2026-08-09**. `migrations/0001_init.sql` applied cleanly to a
-> local D1 (39 statements) and every table below was exercised through the API.
-> The migration's own comments carry the full reasoning; this is the map.
+> Last verified: **2026-08-23** — the `copy` section was re-measured that day
+> against a local D1 with every migration through 0400 applied. ⚠️ **The rest
+> of this page still carries its 2026-08-09 verification** (`0001_init.sql`
+> applied cleanly, 39 statements, every table exercised through the API) and
+> was NOT re-checked; the counts in it predate `edition.collects` and have
+> moved. The migrations' own comments carry the full reasoning; this is the map.
 >
 > `edition.collects` added **2026-08-11** (migration 0060, applied to a local D1
 > and read back through the API). Counts elsewhere on this page predate that and
 > have moved.
+>
+> `copy.person_user_id` / `copy.person_name` added **2026-08-23** (migration
+> 0400, applied to a local D1 and exercised through the API — writes, both
+> refusals, and the live display-name join). ⚠️ Nothing on either live instance
+> was measured that day; the migration has NOT been applied to production.
 
 ```
 work        title · authors · series · series_index · work_key
   └─ edition    isbn13? · asin? · format · publisher · year · pages
-       └─ copy      condition · location · acquired · lent_to · signed
+       └─ copy      condition · location · acquired · person · signed
 
 work_alias  the other titles one book answers to
 user_book   read_state · dates · notes · rating_cached (a mirror)
@@ -144,6 +152,44 @@ Nothing outside this house knows any of it, so nothing outside overwrites any of
 it. `location` is free text on purpose: the space of shelves is open and an enum
 would be rewritten every time furniture moved. `is_signed` and `edition_notes`
 exist for the limited-edition minority the research pipeline is for.
+
+#### WHO has it — `person_user_id` + `person_name` (migration 0400)
+
+| Column | Note |
+|---|---|
+| `person_user_id` | Nullable FK to `app_user(id)`, `ON DELETE SET NULL`. NULL is the ordinary case: most people you lend a book to have never signed in here |
+| `person_name` | The name **as typed**, always. ⚠️ **Kept even when the id is set** |
+| `lent_to` | ⚠️ **DEPRECATED** (0400). Backfilled into `person_name`, left standing one release, dropped by a later migration. Nothing writes it |
+
+**Why two columns and not a nullable FK.** They answer different questions: the
+id is *which account*, the text is *what was written down*. A design that could
+only record a member would refuse the ordinary lend; a design that only stored
+text could never follow somebody's account. Same shape of argument as
+`edition_name` / `edition_kind` above — and, as there, the pair is the design
+rather than a duplicate fact wearing two hats.
+
+**A linked card is a LIVE JOIN, not a snapshot** (the owner's decision,
+2026-08-23). When `person_user_id` is set the API resolves it to that member's
+*current* `display_name` on every read, so a rename propagates everywhere.
+`person_name` is then the fallback that survives an unlink, a deleted account,
+or a member whose Google account never supplied a display name.
+
+**Only `lent`, `borrowed` and `sold` may carry a person**, and that is enforced
+in `packages/db/src/editions.ts`, not by a CHECK. ⚠️ The rule is about a
+**transition** — you may not newly attach a person to a copy that is merely
+`owned` — and a row-level constraint cannot tell that apart from a copy coming
+home from a lend and *keeping* the record of who had it. Both refusals (a person
+on the wrong status; an id naming nobody) answer in words, never a bare status.
+
+**Visibility is redacted server-side, in one place**
+(`apps/worker/src/lib/copy-person.ts`): both fields reach a caller only if that
+caller holds `editCatalog` or IS the linked person. ⚠️ The **status word is not
+redacted** — hiding it would make a lent book read as missing from the shelf.
+
+⚠️ **`sold` keeps its row forever.** Person and date stay; the collection view
+hides a work whose copies are *all* sold, and the Copies filter's **Sold**
+option is the way back. Nothing is deleted — see `NOT_ONLY_SOLD` in
+`packages/db/src/works.ts` for what it does and does not hide.
 
 ### `user_book` — read-state, and a mirror
 

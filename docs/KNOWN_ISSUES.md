@@ -46,6 +46,43 @@ a ladder step that always fails is a step that always has to be explained.
 
 ---
 
+## KI-6 · The CREATE schemas are not `.strict()` — a stray key is silently stripped — `WATCHING`
+
+**Symptom.** `POST /api/copies` with an unknown key answers **201** and drops
+it. Measured 2026-08-23 against a local `wrangler dev`:
+`{"workId":1,"status":"lent","person_name":"Samantha"}` — note the snake_case —
+created a copy with `person_name: null` and reported success. The same body
+sent to `PATCH /api/copies/:id` is correctly refused with a 400 naming the key.
+
+`createCopySchema`, `createWorkSchema` and `createEditionSchema` all lack
+`.strict()`; every `update*` counterpart has it. So the split is
+**updates strict, creates lenient**, consistently across all three — it is not
+a one-off omission.
+
+⚠️ **This contradicts the file's own claim.** Three schemas in
+`packages/core/src/schemas.ts` carry the comment *"`.strict()` like every
+schema here"*, which is not true of the creates, and `setReadStateSchema`'s
+comment records exactly this failure being fixed once already: *"a client that
+posts a rating here is wrong and needs to be told so — a 400 is a bug report, a
+silent strip is a rating that vanishes."* The argument applies unchanged to a
+create.
+
+**Why tolerated.** Flipping it is an **enforcement change on a live write
+path**, and the estate's own rule is that those roll out shadow-first, never as
+a side effect of an unrelated feature. `POST /copies` has more writers than the
+UI form — the wishlist ask, the scan-approve flow, the importers under
+`scripts/` — and any one of them sending a stray key would start answering 400
+the moment this flipped. Found while building OR-1, deliberately left alone: it
+predates that work and is not made worse by it.
+
+**What would change it.** A sweep of every `POST /api/copies`, `/api/works` and
+`/api/editions` caller in the tree **and** in `scripts/`, proving the count of
+bodies carrying an unmodelled key is **0**; then `.strict()` on all three
+creates in one commit with the sweep recorded. Until that number is measured
+rather than assumed, the strip stays.
+
+---
+
 ## Resolved and removed — 2026-08-23
 
 ⚠️ **Kept as a pointer, not as content.** These were live entries in this file
