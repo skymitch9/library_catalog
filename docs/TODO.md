@@ -81,49 +81,6 @@ known universe (`universeIndex` canonical names + aliases from `@lc/universes`),
 and prefer the entry with the smallest `series.books_count` when several remain
 (a universe is always the bigger set). Test with the Way of Kings shape.
 
-## ☐ One command for BOTH instances — stop doing different things for main vs padhard (owner ask, 2026-08-25)
-
-Owner: *"we should do something so we dont need to always do different things
-for these 2 libraries."* Today every ops action has a `:friend` twin and secrets
-are the worst case: `secrets:push` serves main from `.dev.vars`, and the friend
-path is a deliberate stub (no `.dev.vars.friend`, so a bulk push can never
-overwrite her OWN `ANTHROPIC_API_KEY` / estate identity). The Hardcover key had to
-be piped by hand: `grep … .dev.vars | wrangler secret put … --env friend`.
-
-**Design (settled, build delegated to an Opus subagent once the Hardcover rung
-lands — same tree):**
-- `scripts/push-secrets.mjs` gains two explicit lists: **`SHARED_SECRETS`** (same
-  value on both instances *by design*: `GOOGLE_BOOKS_API_KEY`,
-  `HARDCOVER_API_TOKEN`, `EBOOK_INGEST_TOKEN`, `DONOR_TOKEN`, `PEER_TOKEN`,
-  `AUDIOBOOK_MAPPING_TOKEN`, `INDEX_*`) and **`PER_INSTANCE_SECRETS`** (refused for
-  friend, always: `ANTHROPIC_API_KEY`, `ESTATE_APP_TOKEN_*`). Unknown → refused
-  with a sentence.
-- `npm run secrets:push -- --both` pushes the SHARED set to main AND friend from
-  the one `.dev.vars`, prints per key what it pushed and what it refused and
-  why. `--friend` alone = shared set to friend only. The stub refusal for
-  per-instance keys stays.
-- Same "both" switch for the rest of the twins where safe: `deploy:both`,
-  `db:migrate:both`, `backfill:* -- --both` (runs main then friend, stops on the
-  first failure). The `:friend` twins remain for one-off use.
-- Docs: `access/secrets.md` + `access/second-instance.md` updated; a
-  `deploys.log` line per instance as today.
-
-**Identity VERIFIED 2026-08-25 (owner asked):** padhard IS on her own estate
-identity — `[env.friend.vars] ESTATE_APP = "library2"`, live
-`padhard.heygabi.ai/api/health` reports `app: library2, tokenVar:
-ESTATE_APP_TOKEN_LIBRARY2, configured: true, mode: enforce`; the auth-worker
-holds `…LIBRARY2` and `CONSUMER_APPS` includes `library2` (the `vis_library2`
-Members checkbox). ⚠️ Her Worker ALSO still carries a stale
-`ESTATE_APP_TOKEN_LIBRARY` (pre-2026-08-17 leftover, unread by her code — but it
-is the MAIN library's bearer on her instance). ✅ **DELETED 2026-08-25 on the
-owner's go** (`echo y | wrangler secret delete ESTATE_APP_TOKEN_LIBRARY --env
-friend` — wrangler 4.120 has no `--force`, it wants a piped confirm); her list is
-now `…LIBRARY2` + `…DISCORD` only and live health still `configured: true`.
-Main + the auth-worker keep the value. (The earlier
-"one is stale" note came from a listing filter that dropped digits, so
-`…LIBRARY2` was hidden — a measurement error, now corrected.)
-Per-instance for the build above: `ANTHROPIC_API_KEY`, `ESTATE_APP_TOKEN_*`.
-
 ## ☐ Shelf is COPY-DRIVEN + EditBox tab merge — LANDED FOR REVIEW (branch `feature/shelf-copy-driven`, 2026-08-24)
 
 Fixes the ownership bug where an OWNED book read as **Wanted**. `deriveShelfView`

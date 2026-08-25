@@ -17,6 +17,80 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ One command for BOTH instances — stop doing different things for main vs padhard — SHIPPED 2026-08-25
+
+**✅ BUILT 2026-08-25.** What landed, line by line against the design below.
+
+| Design line | What shipped |
+|---|---|
+| two explicit lists in `scripts/push-secrets.mjs` | `SHARED_SECRETS` (6 keys) and `PER_INSTANCE_SECRETS` (+ an `ESTATE_APP_TOKEN_` **prefix** rule, so a consumer nobody has thought of yet is refused by default). ⚠️ A key on both lists is a **startup error** — `assertListsDisjoint()` runs at module load, so the lists are right or nothing runs at all |
+| `SHARED_SECRETS` = …`INDEX_*` | ⚠️ **DEVIATION.** `INDEX_PUSH_TOKEN` went to **PER_INSTANCE**, not shared. The index Worker holds it as `INDEX_PUSH_TOKEN_LIBRARY` and derives the pushing **source** from which suffixed secret matched (`catalog-platform/apps/index-worker/src/env.ts`), so main's value on her Worker would file her rows as `library` — the identical mistake to her stale `ESTATE_APP_TOKEN_LIBRARY`, deleted the same day. `search-route.ts` states hers is unset on purpose until federation mints a `library2` token. `INDEX_READ_TOKEN` was left **unclassified** (live on main, but in neither `PRODUCTION_SECRETS` nor her list, and the read half of the index does not exist yet) — unclassified means refused with a sentence, which is the right answer for a credential whose custody nobody has decided |
+| `--both` / `--friend` | Both, plus `--dry-run` (alias of the existing `--dry`). Per key exactly one of `push main` / `push friend` / `refuse (per-instance)` / `refuse (not a shared secret)` / `skip (not set locally)` / `skip (local only)`, and every refusal carries a sentence naming the command to run instead. ⚠️ **Names only — no value and no last-4 fingerprint leaves the new paths.** `--both` sends `PRODUCTION_SECRETS ∪ SHARED_SECRETS` to main (a superset, so the convenient command can never be the lossy one) and `SHARED_SECRETS` to friend, main first, stopping before the second instance on any failure |
+| the stub refusal for per-instance keys stays | The refusal stays; **the stub is gone.** The old `--env friend` "no source file, by design" wall was right about the *risk* and wrong about the *remedy* — the risk was never the file, it was pushing the keys that are HERS. The safety is now the LIST. `.dev.vars.friend` still does not exist, is still never read on any flag, and creating one is still a custody change. `--env friend` survives as an alias for `--friend` |
+| no-flag `secrets:push` unchanged | Verified with `--dry`: same keys, same order, same last-4 fingerprints, same wording, down to the two-space indent. It is a separate function (`pushMainOnly`) precisely so it cannot drift |
+| `deploy:both`, `db:migrate:both` | Added, plus a general `npm run for-both -- <script>`, all three on a new `scripts/for-both.mjs` |
+| `backfill:* -- --both` | ⚠️ **DEVIATION, of the kind the brief allowed.** `--both` was NOT added to `parseFlags()` in `scripts/lib/d1.mjs`: every backfill reads one flags object and makes ONE pass, so a `--both` there would need the same loop copied into ~15 scripts — exactly the near-duplicate this project bans. The loop lives once, above the scripts: `npm run for-both -- backfill:covers -- --remote --commit`. It runs the `:friend` npm twin where one exists (`deploy`, `db:migrate`) and otherwise appends `--friend`; `d1.mjs`'s worded "`--friend` needs `--remote`" refusal is left to fire rather than second-guessed |
+| tests | `scripts/test/push-secrets.test.mjs` — 15 `node:test` cases against the **pure** `planFor`. Importing the module is safe because its imperative half sits behind an `isEntrypoint` guard; if that guard ever regresses, these tests are what will try to push secrets and fail loudly, which is the right way round. No wrangler call, no `.dev.vars` read |
+| docs | [`access/secrets.md`](access/secrets.md) and [`access/second-instance.md`](access/second-instance.md), both re-dated, with the live secret NAMES re-measured that day (main 11, friend 7) |
+
+⚠️ **`secrets:push --both` was NOT run for real** — it would re-push every shared
+key to no purpose. Verified with `--dry-run` only, so **the wrangler call on the
+friend path has never been exercised**; it is the same `secret bulk` + stdin
+spawn the main path uses, with `--env friend` added, and that is inference, not
+a measurement.
+
+⚠️ Two shared-by-design keys are **unset on her instance today** —
+`EBOOK_INGEST_TOKEN` and `AUDIOBOOK_MAPPING_TOKEN`. Unset means those routes are
+*disabled*, not open, so pushing them to her is what would turn her machine
+routes on: a deliberate act, not a tidy-up. Both also read `skip (not set
+locally)` in the dry run, because neither is in the main `.dev.vars` either.
+
+---
+
+**The design as it was written, kept whole:**
+
+Owner: *"we should do something so we dont need to always do different things
+for these 2 libraries."* Today every ops action has a `:friend` twin and secrets
+are the worst case: `secrets:push` serves main from `.dev.vars`, and the friend
+path is a deliberate stub (no `.dev.vars.friend`, so a bulk push can never
+overwrite her OWN `ANTHROPIC_API_KEY` / estate identity). The Hardcover key had to
+be piped by hand: `grep … .dev.vars | wrangler secret put … --env friend`.
+
+**Design (settled, build delegated to an Opus subagent once the Hardcover rung
+lands — same tree):**
+- `scripts/push-secrets.mjs` gains two explicit lists: **`SHARED_SECRETS`** (same
+  value on both instances *by design*: `GOOGLE_BOOKS_API_KEY`,
+  `HARDCOVER_API_TOKEN`, `EBOOK_INGEST_TOKEN`, `DONOR_TOKEN`, `PEER_TOKEN`,
+  `AUDIOBOOK_MAPPING_TOKEN`, `INDEX_*`) and **`PER_INSTANCE_SECRETS`** (refused for
+  friend, always: `ANTHROPIC_API_KEY`, `ESTATE_APP_TOKEN_*`). Unknown → refused
+  with a sentence.
+- `npm run secrets:push -- --both` pushes the SHARED set to main AND friend from
+  the one `.dev.vars`, prints per key what it pushed and what it refused and
+  why. `--friend` alone = shared set to friend only. The stub refusal for
+  per-instance keys stays.
+- Same "both" switch for the rest of the twins where safe: `deploy:both`,
+  `db:migrate:both`, `backfill:* -- --both` (runs main then friend, stops on the
+  first failure). The `:friend` twins remain for one-off use.
+- Docs: `access/secrets.md` + `access/second-instance.md` updated; a
+  `deploys.log` line per instance as today.
+
+**Identity VERIFIED 2026-08-25 (owner asked):** padhard IS on her own estate
+identity — `[env.friend.vars] ESTATE_APP = "library2"`, live
+`padhard.heygabi.ai/api/health` reports `app: library2, tokenVar:
+ESTATE_APP_TOKEN_LIBRARY2, configured: true, mode: enforce`; the auth-worker
+holds `…LIBRARY2` and `CONSUMER_APPS` includes `library2` (the `vis_library2`
+Members checkbox). ⚠️ Her Worker ALSO still carries a stale
+`ESTATE_APP_TOKEN_LIBRARY` (pre-2026-08-17 leftover, unread by her code — but it
+is the MAIN library's bearer on her instance). ✅ **DELETED 2026-08-25 on the
+owner's go** (`echo y | wrangler secret delete ESTATE_APP_TOKEN_LIBRARY --env
+friend` — wrangler 4.120 has no `--force`, it wants a piped confirm); her list is
+now `…LIBRARY2` + `…DISCORD` only and live health still `configured: true`.
+Main + the auth-worker keep the value. (The earlier
+"one is stale" note came from a listing filter that dropped digits, so
+`…LIBRARY2` was hidden — a measurement error, now corrected.)
+Per-instance for the build above: `ANTHROPIC_API_KEY`, `ESTATE_APP_TOKEN_*`.
+
+
 ## ✅ Hardcover rung in the free-details ladder — SHIPPED both instances — 2026-08-25
 
 **Why.** The gap the previous two entries kept naming is **structured SERIES for

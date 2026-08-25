@@ -1,11 +1,15 @@
 # Second Library Instance (friend) — Access Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED — no secret values here.
-> Last verified: **2026-08-17** (estate credentials catalog findings F-5, F-6
-> and F-8 applied: her estate identity is now `library2`, the friend env is
-> documented as never push-synced, and the "no Anthropic key / donor-only"
-> claims are corrected). Built and deployed 2026-08-16, when the hostname
-> settled to `padhard.heygabi.ai` and the donor-first sweep landed.
+> Last verified: **2026-08-25** — her secret NAMES were re-read that day
+> (`npm run secret:list:friend`, seven of them) and the "one command for BOTH
+> instances" work landed. ⚠️ NOT re-verified that day: the D1 id, the R2 bucket
+> URL, her `app_user` role, and everything in the estate-identity section below
+> — those still carry their 2026-08-17 measurement.
+> The 2026-08-17 revision applied estate credentials catalog findings F-5, F-6
+> and F-8: her estate identity is `library2`, and the "no Anthropic key /
+> donor-only" claims were corrected. Built and deployed 2026-08-16, when the
+> hostname settled to `padhard.heygabi.ai` and the donor-first sweep landed.
 > Design: `catalog-platform/docs/info/friend-ingest-design.md` (read-only).
 
 The friend's catalog: **the same Worker code, its own data**. One repo, one
@@ -27,6 +31,34 @@ build, two wrangler targets. Everything instance-specific lives in
 | 🤖 GABI (conversational fixer) | `GABI_PANEL = "on"` in `[env.friend.vars]` — **HER INSTANCE ONLY**; the main one is `"off"` | ⚠️ **PHASE 0 IS READ-ONLY.** GABI can look things up (find a book, read one, list gaps, list recent changes) and can change NOTHING; the allowlist is `@lc/core`'s `GABI_TOOL_NAMES` and a test fails the build if a write tool is added. ⚠️ The var gates the ROUTE as well as the panel — `POST /api/gabi/turn` answers a worded **404** where it is off (disabled-not-open, the `EBOOK_INGEST_TOKEN` idiom), never 403. Unset = off. Spends HER `ANTHROPIC_API_KEY`, ~1.4–1.8¢ per short conversation (measured 2026-08-17). Design: [`../info/gabi-fixer-design.md`](../info/gabi-fixer-design.md) |
 | Her role, for GABI | **`admin`** — MEASURED 2026-08-17 (`SELECT role FROM app_user` on `library-catalog-2nd`, id 3, approved) | `admin` holds `runResearch`, which is what the turn route gates on, so the panel is visible to her. ⚠️ It is a grant to HER ACCOUNT, not a property of the instance — `ESTATE_DEFAULT_ROLE` is still unset, so anyone else signing in there lands `member` and sees no panel at all |
 
+## 🆕 ONE command for BOTH instances (2026-08-25)
+
+Owner ask: *"we should do something so we dont need to always do different
+things for these 2 libraries."* The `:friend` twins all remain for one-off use;
+these run **main first, then her, stopping on the first failure**.
+
+| Do | Both instances |
+|---|---|
+| Deploy | `npm run deploy:both` |
+| Migrate D1 | `npm run db:migrate:both` |
+| Push the SHARED secrets | `npm run secrets:push:both` (add `-- --dry-run` first) |
+| Any backfill | `npm run for-both -- backfill:covers -- --remote --commit` |
+
+- `deploy:both` and `db:migrate:both` are `scripts/for-both.mjs`, which runs the
+  npm script and then its `:friend` twin. Each half keeps its own
+  check-clean / deploy-guard / deploy-done, and the **shared `.deploy.lock`** is
+  taken and released once per half — sequential, so it never self-blocks.
+- ⚠️ **It does not roll back.** If the friend half fails after main succeeded,
+  the instances are out of step and the runner says so in those words. Fix and
+  re-run; a runner that un-deploys a good deploy would be worse.
+- For backfills there is no `:friend` twin, so `for-both` runs the same script
+  twice and appends `--friend` the second time. `scripts/lib/d1.mjs` still
+  refuses `--friend` without `--remote`, and that refusal is left to fire.
+- ⚠️ **`--both` was NOT added to `parseFlags()` in `scripts/lib/d1.mjs`** —
+  every backfill reads one flags object and makes one pass, so a `--both` there
+  would need the same loop copied into ~15 scripts. The loop lives in one place
+  instead. `scripts/for-both.mjs` carries the full argument.
+
 ## Commands (each is the main instance's command + `:friend`)
 
 | Do | Command |
@@ -36,7 +68,7 @@ build, two wrangler targets. Everything instance-specific lives in
 | List her migrations | `npx wrangler d1 migrations list library-catalog-2nd --remote --env friend --config apps/worker/wrangler.toml` |
 | One secret | `npm run secret:friend -- NAME` |
 | List her secrets | `npm run secret:list:friend` |
-| Bulk secrets | ⚠️ **There is no bulk path for her, on purpose.** `npm run secrets:push:friend` looks for `apps/worker/.dev.vars.friend`, which **does not exist and is not meant to** (credentials catalog F-6). Since 2026-08-17 the command fails with a worded explanation and the one-at-a-time commands instead of "file not found" — read it, do not create the file |
+| Bulk secrets | `npm run secrets:push:friend` — **since 2026-08-25 this WORKS**, and pushes only `SHARED_SECRETS` from the MAIN `.dev.vars`. ⚠️ There is still **no `.dev.vars.friend`** and there must not be one (credentials catalog F-6); the safety now comes from the list, not from the missing file. Per-instance keys (`ANTHROPIC_API_KEY`, every `ESTATE_APP_TOKEN_*`, `INDEX_PUSH_TOKEN`) are **refused** with a sentence saying what to run instead |
 | Tail her logs | `npm run tail:friend --workspace @lc/worker` (or `npx wrangler tail --env friend --config apps/worker/wrangler.toml`) |
 | Query her D1 | `npx wrangler d1 execute library-catalog-2nd --remote --env friend --config apps/worker/wrangler.toml --command "..."` |
 
@@ -66,24 +98,50 @@ vice versa.
 
 ## Secrets — names only, and who can set them
 
-Her env holds **four secrets** (names read from `npm run secret:list:friend`,
-2026-08-17): `DONOR_TOKEN` (set 2026-08-16 — see the donor section below; the
-main instance holds the same value under the same name), `ANTHROPIC_API_KEY` —
-**HER OWN key** (see below), `GOOGLE_BOOKS_API_KEY`, and
-`ESTATE_APP_TOKEN_LIBRARY` — ⚠️ **the last of which is the WRONG NAME as of
-2026-08-17 and is now dead weight**; see the estate-identity section below.
-Deliberately never set: `INDEX_PUSH_TOKEN` (federation is phase 2 — push code
-logs one line, inert), `EBOOK_INGEST_TOKEN` (her ebook surface is a 404 and
-stays one), `AUDIOBOOK_MAPPING_TOKEN` (no audiobook pipeline).
+Her env holds **seven secrets** — names read from `npm run secret:list:friend`,
+**re-measured 2026-08-25**: `ANTHROPIC_API_KEY` (**HER OWN key**, see below),
+`DONOR_TOKEN`, `ESTATE_APP_TOKEN_DISCORD`, `ESTATE_APP_TOKEN_LIBRARY2`,
+`GOOGLE_BOOKS_API_KEY`, `HARDCOVER_API_TOKEN`, `PEER_TOKEN`.
 
-⚠️ **Her secrets are NOT push-synced and never have been** (credentials catalog
-F-6). There is no `.dev.vars.friend`; every value on her env was piped
-individually with `npm run secret:friend -- NAME`, or through a **drop-box
-line** in the MAIN `apps/worker/.dev.vars` (paste → pipe → blank the line), a
-pattern used for values that must never sit in a push allowlist. Creating
-`.dev.vars.friend` would be a deliberate custody change — a second home for her
-key material, and a rotation path whose default is pushing the OWNER'S keys
-onto HER Worker — not a missing file to fill in.
+⚠️ The 2026-08-17 revision of this section said "four secrets" and named
+`ESTATE_APP_TOKEN_LIBRARY` as dead weight. **That stale one was deleted
+2026-08-25** on the owner's go (`echo y | wrangler secret delete
+ESTATE_APP_TOKEN_LIBRARY --env friend`; wrangler 4.120 has no `--force`, it
+wants a piped confirm), and live health still reports `configured: true`.
+
+Deliberately never set: `INDEX_PUSH_TOKEN` (federation is phase 2 — and it is a
+**per-SOURCE** bearer, so hers would be a `library2` token, never main's),
+`EBOOK_INGEST_TOKEN` (her ebook surface is a 404 and stays one),
+`AUDIOBOOK_MAPPING_TOKEN` (no audiobook pipeline), `INDEX_READ_TOKEN` (the read
+half of the index does not exist on either instance).
+
+### How a bulk push is safe now (changed 2026-08-25)
+
+⚠️ Until 2026-08-25 the answer was **"there is no bulk path"**: `.dev.vars.friend`
+does not exist, so `secrets:push:friend` refused. That was right about the
+*risk* and wrong about the *remedy* — the risk was never the file, it was
+pushing the keys that are HERS. `scripts/push-secrets.mjs` now classifies every
+key instead:
+
+| List | Meaning | Friend |
+|---|---|---|
+| `SHARED_SECRETS` | one value, two holders, by design | pushed |
+| `PER_INSTANCE_SECRETS` (+ the `ESTATE_APP_TOKEN_` prefix) | each instance holds its own | **refused, always** |
+| anything else | custody not decided | refused, with a sentence |
+
+A key on both lists is a **startup error**, asserted at module load and covered
+by `scripts/test/push-secrets.test.mjs`.
+
+⚠️ **There is still no `.dev.vars.friend` and there must not be one** (credentials
+catalog F-6). The friend push reads the MAIN `.dev.vars` and sends only the
+shared subset. Creating a second file would be a deliberate custody change — a
+second home for her key material, and a rotation path whose default is pushing
+the OWNER'S keys onto HER Worker.
+
+Values that must never sit in an allowlist still use the **drop-box line** in
+the MAIN `apps/worker/.dev.vars` (paste → `npm run secret:friend -- NAME` →
+blank the line). `ANTHROPIC_API_KEY_FRIEND_SAM` is the one in use; do not
+rename it.
 
 ## ⚠️ Her estate identity: `library2`, not `library` (fixed 2026-08-17)
 
