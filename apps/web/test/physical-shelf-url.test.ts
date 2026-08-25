@@ -32,9 +32,8 @@ function filters(overrides: Partial<CollectionFilters> = {}): CollectionFilters 
     universe: '',
     medium: '',
     ebookOnly: '',
-    format: '',
-    editionKind: '',
     bindings: [],
+    editionKinds: [],
     status: '',
     needs: '',
     readState: '',
@@ -77,6 +76,30 @@ describe('the physical shelf in the address bar', () => {
 
   it('leaves a universe link unnarrowed — a world is bigger than one shelf', () => {
     assert.equal(collectionInUniversePath('The Cosmere'), '/?universe=The+Cosmere');
+  });
+
+  it('serialises the consolidated Type control as ?binding= and ?kind=', () => {
+    // The one dropdown drives two lists (owner ask, 2026-08-24): the binding
+    // types ride `?binding=`, the printing kinds ride `?kind=`, each comma-joined.
+    const path = collectionPath(
+      filters({ bindings: ['hardcover', 'ebook'], editionKinds: ['collectors'] }),
+    );
+    const params = new URLSearchParams(path.slice(path.indexOf('?')));
+    assert.equal(params.get('binding'), 'hardcover,ebook');
+    assert.equal(params.get('kind'), 'collectors');
+    // ⚠️ The removed single-format select's param is never emitted any more.
+    assert.equal(params.get('format'), null);
+  });
+
+  it('emits ?kind= as a comma-joined list now that printing is multi-select', () => {
+    const path = collectionPath(filters({ editionKinds: ['collectors', 'unsorted'] }));
+    const params = new URLSearchParams(path.slice(path.indexOf('?')));
+    assert.equal(params.get('kind'), 'collectors,unsorted');
+  });
+
+  it('says nothing about Type when nothing is ticked', () => {
+    const path = collectionPath(filters({ bindings: [], editionKinds: [] }));
+    assert.equal(path, '/');
   });
 
   it('offers two words, and neither of them means "ebooks only"', () => {

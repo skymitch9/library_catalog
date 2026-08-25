@@ -111,16 +111,19 @@ function collectionQueryFrom(c: {
     // wants that says so. `packages/db/src/works.ts`'s `EBOOK_ONLY_CLAUSE`
     // carries the census and why this is not `medium=physical`.
     ebookOnly: c.req.query('ebookOnly'),
-    // Not validated here either. `KIND_CLAUSE` is a fixed map of literal SQL —
-    // `'collectors'` is compared against text written in that file, never
-    // against this string — so an unknown value adds no clause and shows the
-    // collection. Migration 0050.
+    // The printing half of the consolidated Type control — a comma-separated
+    // list since 2026-08-24, split here like `binding` below. Not validated:
+    // `KIND_CLAUSE` is a fixed map of literal SQL (`'collectors'` is compared
+    // against text written in that file, never against this string), so an
+    // unknown value adds no clause and shows the collection. Migration 0050.
     //
     // ⚠️ Named in full here and shortened to `?kind=` in the *address bar*,
-    // exactly as `readState` is shortened to `?read=`. The API parameter says
-    // which of three format-ish axes it is; the address bar can afford to be
-    // terse because `apps/web/src/router.tsx` owns both ends of that name.
-    editionKind: c.req.query('editionKind'),
+    // exactly as `readState` is shortened to `?read=`. `apps/web/src/router.tsx`
+    // owns both ends of that name.
+    editionKinds: (c.req.query('editionKind') ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
     // The multi-type format selector — a comma-separated list, split here. Not
     // validated: `BINDING_CLAUSE` is a fixed map of literal SQL, so an unknown
     // type contributes no clause. Owner ask 2026-08-24: any of hardcover,

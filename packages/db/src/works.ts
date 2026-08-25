@@ -1235,8 +1235,14 @@ export interface CollectionQuery {
    * `unsorted` is the odd one out and is not a stored value: it is "named, but
    * nothing has said what kind", which is the review queue that keeps
    * `edition_kind`'s NULL-means-ordinary rule honest. See `KIND_CLAUSE`.
+   *
+   * ⚠️ A LIST since 2026-08-24, and it shares ONE OR group with `bindings`: the
+   * web merged the printing filter into the multi-type "Type" control, so a book
+   * matching ANY checked box — a binding type OR a printing kind — shows.
+   * `collectionFilter` ORs the chosen `KIND_CLAUSE` and `BINDING_CLAUSE` entries
+   * together into a single predicate. An unrecognised kind adds no clause.
    */
-  editionKind?: string | undefined;
+  editionKinds?: readonly string[] | undefined;
   /**
    * The multi-type format selector — any of `hardcover`, `leatherbound`,
    * `paperback`, `mass_market`, `ebook`, `audiobook`. Owner ask, 2026-08-24.
@@ -1257,7 +1263,7 @@ export interface CollectionQuery {
    * a person asks to see them is to pick "Sold" in the Copies filter that
    * already exists — one control, not two. This flag exists so the *facet
    * counts* can be taken with the hiding clause removed, exactly as `series`,
-   * `medium`, `needs` and `editionKind` each drop their own clause before
+   * `medium`, `needs` and `editionKinds` each drop their own clause before
    * counting. Without it "Sold (0)" would render disabled and there would be
    * no way back to the books it counts.
    */
@@ -1718,22 +1724,31 @@ function collectionFilter(query: CollectionQuery): { sql: string; binds: unknown
     where.push('EXISTS (SELECT 1 FROM edition e WHERE e.work_id = w.id AND e.format = ?)');
     binds.push(query.format);
   }
-  // No binds: `KIND_CLAUSE` is a fixed map of literal SQL, and an unrecognised
-  // key adds no clause rather than erroring — the rule `MEDIUM_CLAUSE`, the sort
-  // allowlist and `NEEDS_CLAUSE` all follow, so a stale bookmark shows the
-  // collection instead of a 400.
-  const kind = query.editionKind ? KIND_CLAUSE[query.editionKind] : undefined;
-  if (kind) where.push(kind);
-  // The multi-type format selector: OR the chosen types' clauses, so a book of
-  // ANY selected type shows. No binds — `BINDING_CLAUSE` is a fixed map of
-  // literal SQL — and an unrecognised type contributes nothing, the same rule
-  // `KIND_CLAUSE` and the sort allowlist follow, so a stale bookmark shows the
-  // collection rather than a 400.
-  if (query.bindings && query.bindings.length > 0) {
-    const chosen = query.bindings
-      .map((b) => BINDING_CLAUSE[b])
-      .filter((clause): clause is string => Boolean(clause));
-    if (chosen.length > 0) where.push(`(${chosen.join(' OR ')})`);
+  // The consolidated "Type" control: the chosen binding/format types
+  // (`BINDING_CLAUSE`) and printing kinds (`KIND_CLAUSE`) OR into ONE predicate,
+  // so a book matching ANY checked box shows — the owner's ask, 2026-08-24, when
+  // the printing filter was folded into the multi-type dropdown. Before that the
+  // kind clause was its own AND; now `hardcover` + `collectors` means "a
+  // hardcover OR a collector's edition", not the intersection.
+  //
+  // No binds — both maps are fixed literal SQL — and an unrecognised token in
+  // either contributes nothing, the rule `MEDIUM_CLAUSE`, the sort allowlist and
+  // `NEEDS_CLAUSE` all follow, so a stale bookmark shows the collection, not a 400.
+  {
+    const typeClauses: string[] = [];
+    if (query.bindings) {
+      for (const b of query.bindings) {
+        const clause = BINDING_CLAUSE[b];
+        if (clause) typeClauses.push(clause);
+      }
+    }
+    if (query.editionKinds) {
+      for (const k of query.editionKinds) {
+        const clause = KIND_CLAUSE[k];
+        if (clause) typeClauses.push(clause);
+      }
+    }
+    if (typeClauses.length > 0) where.push(`(${typeClauses.join(' OR ')})`);
   }
   if (query.status) {
     where.push('EXISTS (SELECT 1 FROM copy c WHERE c.work_id = w.id AND c.status = ?)');
@@ -1961,7 +1976,7 @@ export async function collectionFacets(
   // And without its own kind clause, for the third time and the same reason:
   // "Named, not sorted (2)" beside a selected "Collector's edition" would count
   // the books that are BOTH, which is not what picking it would give you.
-  const withoutKind = collectionFilter({ ...query, editionKind: undefined });
+  const withoutKind = collectionFilter({ ...query, editionKinds: undefined });
   // And, for the fifth time and the same reason, without the sold-hiding
   // clause: "Sold (n)" beside the default view would count only the books that
   // are sold AND still held some other way, which is a handful and usually

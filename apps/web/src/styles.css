@@ -431,6 +431,62 @@ a.topbar__brand { text-decoration: none; }
   color: var(--et-muted);
 }
 .field select { max-width: 14rem; }
+
+/* --- the consolidated Type filter (a dropdown of checkboxes) --------------- */
+
+/*
+ * The owner's "Type" control (CollectionPage's `TypeFilter`, 2026-08-24): a
+ * disclosure that LOOKS like the `<select>`s beside it but opens a panel of
+ * checkboxes, because a native multi-select is a poor phone control and cannot
+ * say "3 selected". Everything is drawn from the same `--et-*` tokens the
+ * fields and the settings-cog popover use, so it re-skins with every theme for
+ * free and the app keeps one dropdown idiom, not two.
+ */
+.type-filter { position: relative; }
+/* Read as a FIELD, not an action: the global button grammar (pill radius, btn
+   shadow, btn border) is deliberately undone so this matches `.field select` —
+   the field border, surface ground, summary on the left, caret on the right. */
+.type-filter__button {
+  width: 14rem;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  text-align: left;
+  border: var(--et-border-w) solid var(--et-field-border);
+  border-radius: var(--et-radius);
+  background: var(--et-surface);
+  color: var(--et-fg);
+  box-shadow: none;
+}
+.type-filter__button:hover:not(:disabled) { box-shadow: none; filter: brightness(1.03); }
+.type-filter--active .type-filter__button { border-color: var(--et-accent); }
+.type-filter__summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.type-filter__caret { flex: none; color: var(--et-muted); }
+.type-filter__button[aria-expanded='true'] .type-filter__caret { color: var(--et-fg); }
+
+/* The panel mirrors the settings cog's popover — same absolute placement, lift
+   shadow and z-index — so there is one dropdown idiom in the app, not two. */
+.type-filter__panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  width: min(15rem, calc(100vw - 2rem));
+  max-height: min(60vh, 22rem);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.6rem 0.7rem;
+  border: var(--et-border-w) solid var(--et-hairline);
+  border-radius: var(--et-radius-lg);
+  background: var(--et-surface);
+  box-shadow: var(--et-shadow-lift);
+}
+.type-filter__panel .row-tight { gap: 0.5rem; }
+.type-filter__clear { align-self: flex-start; margin-top: 0.15rem; }
 /* A line of explanation under the filter row rather than beside the last
    control. `.controls--filters` wraps, so `flex-basis: 100%` is what puts this
    on its own line at every width instead of only on a phone. */

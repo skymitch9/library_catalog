@@ -19,12 +19,13 @@ import { BulkActionBar } from '../components/BulkActionBar.js';
 import { Pager } from '../components/Pager.js';
 import { Shelf } from '../components/Shelf.js';
 import { WorkList } from '../components/WorkList.js';
-import { editionKindLabel, formatLabel, mediumLabel } from '../lib/formats.js';
+import { mediumLabel } from '../lib/formats.js';
 import { loadPrefs, savePrefs } from '../lib/prefs.js';
 import { syncReadStatesFromRatings, type ReadSyncResult } from '../lib/read-sync.js';
 import { ON_THE_WAY, statusLabel } from '../lib/statuses.js';
 import {
   BINDING_FILTERS,
+  EDITION_KIND_FILTERS,
   Link,
   collectionPath,
   replaceUrl,
@@ -46,6 +47,32 @@ const BINDING_LABEL: Record<string, string> = {
   ebook: 'Ebook',
   audiobook: 'Audiobook',
 };
+
+/**
+ * How each printing kind is written in the same Type control. Two entries, the
+ * same words the retired "Printing" select used — `collectors` is the one bucket
+ * for every special printing, `unsorted` is the "named, nothing sorted it yet"
+ * review list. `editionKindLabel` lived in `lib/formats`; inlined here because
+ * `unsorted` was never one of its keys (it is a canned query, not a stored kind).
+ */
+const KIND_LABEL: Record<string, string> = {
+  collectors: "Collector's edition",
+  unsorted: 'Named, not sorted',
+};
+
+/**
+ * The one Type dropdown's checkboxes, the owner's ask of 2026-08-24: the
+ * binding/cover types and the printing kinds, in one list, **deduped**. There is
+ * nothing to actually dedupe today — `BINDING_FILTERS` and `EDITION_KIND_FILTERS`
+ * share no value — but the removed `format` (Edition) select's physical values
+ * WERE duplicates of the binding types, and folding it into `bindings` (rather
+ * than adding a second `hardcover` row) is where the dedup happens. `group` says
+ * which state array a box drives: a binding token or a printing kind.
+ */
+const TYPE_OPTIONS: { value: string; label: string; group: 'binding' | 'kind' }[] = [
+  ...BINDING_FILTERS.map((v) => ({ value: v, label: BINDING_LABEL[v] ?? v, group: 'binding' as const })),
+  ...EDITION_KIND_FILTERS.map((v) => ({ value: v, label: KIND_LABEL[v] ?? v, group: 'kind' as const })),
+];
 
 /**
  * The collection.
@@ -103,12 +130,13 @@ export function CollectionPage({
   // The physical shelf. No control of its own — "See all" under the strip is
   // what sets it, and Clear is what turns it off. See `CollectionFilters`.
   const [ebookOnly, setEbookOnly] = useState(filters.ebookOnly);
-  const [format, setFormat] = useState(filters.format);
-  // The third format-ish axis — how fancy the printing is. Migration 0050.
-  const [editionKind, setEditionKind] = useState(filters.editionKind);
-  // The multi-type format selector — hardcover / leatherbound / paperback /
-  // mass_market / ebook / audiobook, any number chosen (0430 + owner ask).
+  // The two halves of the one "Type" dropdown (owner ask 2026-08-24): the
+  // binding/cover types and the printing kinds. Kept as two arrays because they
+  // are two orthogonal axes in the data and two query params on the wire; the
+  // Type control below drives both, and `collectionFilter` ORs them into one
+  // group. Replaces the old `format`, `editionKind` and `bindings` states.
   const [bindings, setBindings] = useState<string[]>(filters.bindings);
+  const [editionKinds, setEditionKinds] = useState<string[]>(filters.editionKinds);
   const [status, setStatus] = useState(filters.status);
   // The one filter about us rather than about the books — see `NEEDS_FILTERS`.
   const [needs, setNeeds] = useState(filters.needs);
@@ -129,9 +157,8 @@ export function CollectionPage({
       filters.series ||
         filters.universe ||
         filters.medium ||
-        filters.format ||
-        filters.editionKind ||
         filters.bindings.length ||
+        filters.editionKinds.length ||
         filters.status ||
         filters.needs ||
         filters.duplicates ||
@@ -198,9 +225,8 @@ export function CollectionPage({
       universe ||
       medium ||
       ebookOnly ||
-      format ||
-      editionKind ||
       bindings.length ||
+      editionKinds.length ||
       status ||
       needs ||
       duplicates ||
@@ -222,11 +248,12 @@ export function CollectionPage({
 
   const params = useMemo(
     () => ({
-      q, series, universe, medium, ebookOnly: effectiveEbookOnly, format, editionKind,
-      binding: bindings.join(','), status, needs, readState,
+      q, series, universe, medium, ebookOnly: effectiveEbookOnly,
+      binding: bindings.join(','), editionKind: editionKinds.join(','),
+      status, needs, readState,
       sort, dir, page, pageSize,
     }),
-    [q, series, universe, medium, effectiveEbookOnly, format, editionKind, bindings, status, needs, readState, sort, dir, page, pageSize],
+    [q, series, universe, medium, effectiveEbookOnly, bindings, editionKinds, status, needs, readState, sort, dir, page, pageSize],
   );
 
   const reload = useCallback(() => {
@@ -263,9 +290,8 @@ export function CollectionPage({
     universe,
     medium,
     ebookOnly,
-    format,
-    editionKind,
     bindings.join(','),
+    editionKinds.join(','),
     status,
     needs,
     readState,
@@ -296,9 +322,8 @@ export function CollectionPage({
         universe,
         medium,
         ebookOnly,
-        format,
-        editionKind,
         bindings,
+        editionKinds,
         status,
         needs,
         duplicates,
@@ -309,7 +334,7 @@ export function CollectionPage({
         page: page + 1,
       }),
     );
-  }, [q, series, universe, medium, ebookOnly, format, editionKind, bindings, status, needs, duplicates, readState, sort, dir, pageSize, page]);
+  }, [q, series, universe, medium, ebookOnly, bindings, editionKinds, status, needs, duplicates, readState, sort, dir, pageSize, page]);
 
   // ⚠️ Fetched only while the box is ticked, and re-fetched every time it is
   // ticked rather than cached: the whole point of the screen is to go and fix
@@ -338,14 +363,14 @@ export function CollectionPage({
 
   useEffect(() => {
     api
-      .facets({ q, universe, medium, ebookOnly: effectiveEbookOnly, format, editionKind, binding: bindings.join(','), status, needs, readState })
+      .facets({ q, universe, medium, ebookOnly: effectiveEbookOnly, binding: bindings.join(','), editionKind: editionKinds.join(','), status, needs, readState })
       .then(setFacets)
       .catch(() => setFacets(null));
     // ⚠️ `ebookOnly` is in here and not only in the list's params, or the
     // counts stop describing the list they label — "Ebook (126)" over a
     // physical shelf holding 32 of them is the disagreement `collectionFilter`
     // exists as one builder to prevent.
-  }, [q, universe, medium, effectiveEbookOnly, format, editionKind, bindings, status, needs, readState]);
+  }, [q, universe, medium, effectiveEbookOnly, bindings, editionKinds, status, needs, readState]);
 
   const loadHeader = useCallback(() => {
     api.stats().then(setStats).catch(() => setStats(null));
@@ -637,103 +662,45 @@ export function CollectionPage({
             </select>
           </label>
 
-          {/* The fine axis, kept beside the coarse one rather than replaced by
-              it. Called "Edition" because that is the row it filters on, and
-              because two controls both labelled "Format" is how a filter panel
-              starts lying about itself. The two compose: Physical + EPUB is
-              "on the shelf and also as a file", which is a real question. */}
-          <label className="field">
-            <span className="field__label">Edition</span>
-            <select value={format} onChange={(e) => setFormat(e.target.value)}>
-              <option value="">Any edition</option>
-              {facets?.formats.map((f) => (
-                <option key={f.format} value={f.format}>
-                  {formatLabel(f.format)} ({f.count})
-                </option>
-              ))}
-            </select>
-          </label>
+          {/* ⚠️ ONE consolidated "Type" control — a dropdown of checkboxes, the
+              owner's ask of 2026-08-24: *"the type filter needs to be a dropdown
+              with checkboxes in it … Remove the printing filter, and move the
+              printing options into the same checkbox dropdown."* It replaces
+              THREE controls that used to sit here — the "Edition" (exact
+              `format`) select, the old "Type" binding checkboxes, and the
+              "Printing" (`editionKind`) select — folding all of them into one
+              list. The coarse "Format" (medium) select above stays; it answers a
+              different question (paper-or-file), and the panel note says which
+              way each cuts.
 
-          {/* The multi-type format selector — the owner's ask, 2026-08-24
-              (revised from a binary hardcover/not to individually-selectable
-              types). Checkboxes, not a select, because "each individually
-              selectable" is many-at-once: pick Hardcover AND Ebook and you get
-              the books held either way.
+              ⚠️ The options are the DEDUPED union of the binding/cover types and
+              the printing kinds (`TYPE_OPTIONS`). "Deduped" is why the removed
+              Edition select's physical values do not reappear as second
+              `hardcover`/`paperback` rows: those fold into the binding tokens on
+              parse (`legacyFormatBinding`), so each value shows once.
 
-              ⚠️ **Leather ⊂ hardcover stays true in the data, but leather is
-              its own box here.** Ticking Hardcover matches a hardcover edition OR
-              a leatherbound copy (a leatherbound copy IS a hardcover,
-              `LEATHER_IMPLIES_FORMAT`); ticking Leatherbound narrows to just the
-              leatherbound ones. `Edition` (the exact-format select above) cannot
-              express either, because leatherbound is a fact on the copy and
-              audiobook is a fact in the sibling catalog.
+              ⚠️ EXISTS and OR, like the filters around it — a checked box means
+              the book HAS an edition/copy of that type or kind, and any one box
+              matching is enough (`collectionFilter` ORs them). No facet counts:
+              a GROUP BY per box per keystroke is the cost the facets note warns
+              against, and the old binding checkboxes carried none either.
 
-              ⚠️ EXISTS, like every filter on this row — a type means the book
-              HAS one, not that all its printings are; the sentence under the
-              panel that explains Format/Edition covers this too. No facet counts:
-              a GROUP BY per type per keystroke to number boxes a person reads off
-              the list is the cost the facets note warns against.
-
-              `.check-grid` groups the checkboxes; the `.row-tight` + `<span>`
-              grammar is this app's checkbox idiom (Copies.tsx, the "Recorded
-              twice" box below). */}
-          <fieldset className="field check-grid">
-            <legend className="field__label">Type</legend>
-            {BINDING_FILTERS.map((t) => (
-              <label className="row-tight" key={t}>
-                <input
-                  type="checkbox"
-                  checked={bindings.includes(t)}
-                  onChange={(e) =>
-                    setBindings((cur) =>
-                      e.target.checked ? [...cur, t] : cur.filter((x) => x !== t),
-                    )
-                  }
-                />
-                <span>{BINDING_LABEL[t] ?? t}</span>
-              </label>
-            ))}
-          </fieldset>
-
-          {/* The third format-ish axis, and the one the owner asked for:
-              *"for our sanity all editions should be collectors"*. `Format` is
-              paper-or-file and `Edition` is the binding; this is whether the
-              printing was sold as better than the standard one, which neither of
-              the other two can express. A slipcased signed hardcover is all
-              three at once.
-
-              Called "Printing" and not "Edition" — that word is already two
-              controls up, and two selects labelled the same thing is how a
-              filter panel starts lying about itself. Same `<select>` in a
-              `.field` as everything else on this row, for the reason `Format`
-              gives: five dropdowns and one segmented button group would be two
-              idioms for one job, and a native select is the best thing a 360px
-              phone can be handed.
-
-              ⚠️ **"Named, not sorted" is not a spare option — it is what keeps
-              this column honest.** A NULL `edition_kind` means an *ordinary*
-              printing, not an unexamined one (`EDITION_KINDS` in `@lc/core`
-              argues it out), and the price of that rule is that an unrecognised
-              special edition is filed as ordinary in silence. The rows where
-              that could be wrong are the ones carrying a name with no kind, and
-              this is that list. It is normally two long. */}
-          <label className="field">
-            <span className="field__label">Printing</span>
-            <select
-              value={editionKind}
-              onChange={(e) => setEditionKind(e.target.value)}
-              title="How fancy the printing is, rather than what it is made of"
-            >
-              <option value="">Any printing</option>
-              <option value="collectors">
-                {editionKindLabel('collectors')}
-                {facets ? ` (${facets.kinds.collectors})` : ''}
-              </option>
-              <option value="unsorted">
-                Named, not sorted{facets ? ` (${facets.kinds.unsorted})` : ''}
-              </option>
-            </select>
-          </label>
+              A dropdown rather than a loose row of checkboxes because the owner
+              asked for a dropdown, and because eight boxes inline crowd the phone
+              panel the other filters share. `TypeFilter` is the disclosure; its
+              chrome is drawn from the same `--et-*` tokens as the selects beside
+              it, and it is keyboard-reachable (Escape closes, outside-click
+              closes). */}
+          <TypeFilter
+            options={TYPE_OPTIONS}
+            selected={[...bindings, ...editionKinds]}
+            onChange={(next) => {
+              setBindings(next.filter((v) => (BINDING_FILTERS as readonly string[]).includes(v)));
+              setEditionKinds(
+                next.filter((v) => (EDITION_KIND_FILTERS as readonly string[]).includes(v)),
+              );
+            }}
+          />
 
           {/* ⚠️ Filters WORKS by whether any copy has this status — which is
               why the wishlist is its own screen and not this control. A wanted
@@ -855,9 +822,8 @@ export function CollectionPage({
                 // this narrowing has no control of its own, so Clear is its
                 // escape hatch and must not forget it.
                 setEbookOnly('');
-                setFormat('');
-                setEditionKind('');
                 setBindings([]);
+                setEditionKinds([]);
                 setStatus('');
                 setNeeds('');
                 setDuplicates(false);
@@ -913,15 +879,18 @@ export function CollectionPage({
             none, which is the ordinary answer and not a gap.
           </p>
 
-          {/* ⚠️ The one sentence that says which way the format filter cuts.
-              It is written down because the answer is not guessable and the
-              wrong guess is silent: "Physical" here is *has a physical edition*,
-              so the same book on the shelf and on the Kindle is under both, and
-              the two counts add up to more than the collection. Kept visible
-              rather than hidden in a tooltip — a phone has no hover. */}
+          {/* ⚠️ The one sentence that says which way Format and Type cut. It is
+              written down because the answer is not guessable and the wrong guess
+              is silent: "Physical" here is *has a physical edition*, so the same
+              book on the shelf and on the Kindle is under both, and the two counts
+              add up to more than the collection. The Type boxes are OR-ed — any
+              one ticked box matching is enough — so ticking several widens rather
+              than narrows. Kept visible rather than hidden in a tooltip — a phone
+              has no hover. */}
           <p className="controls__note muted">
-            Format and Edition match a book that <b>has</b> one, not one that has only that.
-            A book held on the shelf and on a screen is under both.
+            <b>Format</b> and <b>Type</b> match a book that <b>has</b> one, not one that has
+            only that — a book held on the shelf and on a screen is under both. Tick more than
+            one Type box and you get the books matching <b>any</b> of them.
           </p>
           {/* ⚠️ Written down for the same reason the sentence above it is: the
               answer is not guessable and the wrong guess is silent. Somebody
@@ -933,15 +902,18 @@ export function CollectionPage({
             that book's own cover. <b>To check</b> is anything somebody left a note about.
           </p>
           {/* ⚠️ Same reason as the two notes above: the wrong guess is silent.
-              Somebody will read "Collector's edition" and expect only the books
-              whose printing was literally sold under that name, when it is the
-              one bucket every exclusive, deluxe, premium, signed and
-              leatherbound printing was normalised into — and the shop's own
-              wording is still printed on the book page, unchanged. */}
+              "Collector's edition" and "Named, not sorted" are the two printing
+              boxes now living inside the Type dropdown. Somebody will read
+              "Collector's edition" and expect only the books whose printing was
+              literally sold under that name, when it is the one bucket every
+              exclusive, deluxe, premium, signed and leatherbound printing was
+              normalised into — and the shop's own wording is still printed on the
+              book page, unchanged. */}
           <p className="controls__note muted">
-            <b>Collector's edition</b> is one bucket for every special printing — exclusive,
-            deluxe, premium, signed, leatherbound. Each book page still shows the name the
-            shop gave it. <b>Named, not sorted</b> is the short list to look at by hand.
+            In <b>Type</b>, <b>Collector's edition</b> is one bucket for every special
+            printing — exclusive, deluxe, premium, signed, leatherbound. Each book page still
+            shows the name the shop gave it. <b>Named, not sorted</b> is the short list to look
+            at by hand.
           </p>
         </div>
       )}
@@ -1078,6 +1050,113 @@ function Stat({ n, label }: { n: number; label: string }) {
     <div className="stat">
       <b>{n.toLocaleString()}</b>
       <span>{label}</span>
+    </div>
+  );
+}
+
+/**
+ * The consolidated "Type" filter — a disclosure button that opens a panel of
+ * checkboxes (owner ask, 2026-08-24). It sits in the filter row looking like the
+ * `<select>`s beside it, but a native `<select multiple>` is a poor phone control
+ * and cannot show "3 selected", so this is a button + `--et-*`-themed panel.
+ *
+ * ⚠️ It works a FLAT token list — the caller merges its two state arrays
+ * (bindings + editionKinds) into `selected` and splits `onChange`'s result back.
+ * The component neither knows nor cares which axis a token belongs to; the label
+ * comes from `options`.
+ *
+ * Keyboard + dismissal: the button toggles, Escape closes and returns focus to
+ * it, a click or focus outside the control closes it. The checkboxes are native,
+ * so Tab and Space already work inside the panel.
+ */
+function TypeFilter({
+  options,
+  selected,
+  onChange,
+}: {
+  options: { value: string; label: string }[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  // Close on a click or focus that lands outside the control, and on Escape.
+  // Both listeners are attached only while open, so a filter panel full of
+  // controls is not paying for a document-level handler it does not need.
+  useEffect(() => {
+    if (!open) return;
+    const onDocPointer = (e: Event) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpen(false);
+        buttonRef.current?.focus();
+      }
+    };
+    document.addEventListener('pointerdown', onDocPointer);
+    document.addEventListener('focusin', onDocPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDocPointer);
+      document.removeEventListener('focusin', onDocPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  // "Any type" when nothing is ticked; the labels themselves while they still
+  // fit; a count once there are too many to read at a glance in the button.
+  const chosen = options.filter((o) => selected.includes(o.value));
+  const summary =
+    chosen.length === 0
+      ? 'Any type'
+      : chosen.length <= 2
+        ? chosen.map((o) => o.label).join(', ')
+        : `${chosen.length} selected`;
+
+  const toggle = (value: string, checked: boolean) =>
+    onChange(checked ? [...selected, value] : selected.filter((v) => v !== value));
+
+  return (
+    <div className={`field type-filter${chosen.length ? ' type-filter--active' : ''}`} ref={rootRef}>
+      <span className="field__label" id="type-filter-label">
+        Type
+      </span>
+      <button
+        ref={buttonRef}
+        type="button"
+        className="type-filter__button"
+        aria-haspopup="true"
+        aria-expanded={open}
+        aria-labelledby="type-filter-label"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="type-filter__summary">{summary}</span>
+        <span aria-hidden="true" className="type-filter__caret">
+          ▾
+        </span>
+      </button>
+      {open && (
+        <div className="type-filter__panel" role="group" aria-labelledby="type-filter-label">
+          {options.map((o) => (
+            <label className="row-tight" key={o.value}>
+              <input
+                type="checkbox"
+                checked={selected.includes(o.value)}
+                onChange={(e) => toggle(o.value, e.target.checked)}
+              />
+              <span>{o.label}</span>
+            </label>
+          ))}
+          {chosen.length > 0 && (
+            <button type="button" className="link type-filter__clear" onClick={() => onChange([])}>
+              Clear types
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -35,6 +35,7 @@ import {
   EDITION_FORMATS,
   EDITION_KINDS,
   EDITION_MEDIA,
+  PHYSICAL_FORMATS,
   READ_STATES,
 } from '@lc/core';
 import { DEFAULT_PREFS, SORTS } from './lib/prefs.js';
@@ -147,25 +148,29 @@ export interface CollectionFilters {
    * is the explicit opt-in to see everything, used by "Show them here too".
    */
   ebookOnly: string;
-  format: string;
   /**
-   * How fancy the printing is — `collectors`, `unsorted`, or empty.
+   * The consolidated **Type** control — the binding/cover types, individually
+   * chosen. Owner ask, 2026-08-24: one dropdown of checkboxes replacing the old
+   * `format` (Edition), `bindings` (Type) and `editionKind` (Printing) selects.
    *
-   * A third axis beside `medium` and `format`, and orthogonal to both: a
-   * slipcased signed hardcover is physical, a hardcover, and a collector's
-   * edition, and none of the three implies another.
-   */
-  editionKind: string;
-  /**
-   * The multi-type format selector — any of `BINDING_FILTERS`, individually
-   * chosen. Owner ask, 2026-08-24. A book matching ANY chosen type shows.
-   *
-   * A LIST (unlike the single-value filters here), serialised as a
-   * comma-separated `?binding=` and OR-ed by `BINDING_CLAUSE` in `@lc/db`.
-   * `leatherbound` is the subset of `hardcover` (leather ⊂ hardcover in the
-   * data) and both are offered. An unrecognised token adds no clause.
+   * A LIST, serialised as a comma-separated `?binding=` and OR-ed by
+   * `BINDING_CLAUSE` in `@lc/db`. `leatherbound` is the subset of `hardcover`
+   * (leather ⊂ hardcover in the data) and both are offered. An unrecognised
+   * token adds no clause. The removed `format` select's value is folded in here
+   * on parse — see `legacyFormatBinding`.
    */
   bindings: string[];
+  /**
+   * The printing half of the same Type control — `collectors` / `unsorted`,
+   * any number chosen. Migration 0050; merged into the Type dropdown 2026-08-24.
+   *
+   * A LIST now (it was a single value while it had its own "Printing" select),
+   * serialised as `?kind=` and OR-ed by `KIND_CLAUSE` in `@lc/db`. It shares one
+   * OR group with `bindings`: a book matching ANY checked box — type OR printing
+   * — shows. Orthogonal axes in the data (a slipcased signed hardcover is a
+   * hardcover AND a collector's edition), unified in one control by owner ask.
+   */
+  editionKinds: string[];
   status: string;
   /**
    * What is still outstanding — `cover`, `watch`, `any`, or empty.
@@ -330,6 +335,17 @@ function decodeSegment(raw: string): string {
   }
 }
 
+/**
+ * The removed `?format=` select's value as a Type token, for the migration in
+ * `parseCollection`. A physical format IS a binding token
+ * (`hardcover`/`paperback`/`mass_market`); any ebook format folds to the coarse
+ * `ebook`, the one the Type control offers. `null`/unknown in → `[]` out.
+ */
+function legacyFormatBinding(format: string | null): string[] {
+  if (!format) return [];
+  return [(PHYSICAL_FORMATS as readonly string[]).includes(format) ? format : 'ebook'];
+}
+
 function parseCollection(search: string): CollectionFilters {
   const p = new URLSearchParams(search);
   return {
@@ -348,17 +364,33 @@ function parseCollection(search: string): CollectionFilters {
     // Closed vocabulary, checked here, so `?ebooks=maybe` is simply the whole
     // collection rather than a state the page has no rendering for.
     ebookOnly: pick(search, 'ebooks', EBOOK_ONLY_FILTERS) ?? '',
-    format: pick(search, 'format', EDITION_FORMATS) ?? '',
-    editionKind: pick(search, 'kind', EDITION_KIND_FILTERS) ?? '',
     // A comma-separated list, each token kept only if it is a known type — so
     // `?binding=hardcover,junk` filters to hardcover and ignores the rest, the
     // page having no rendering for an unknown type. De-duplicated, order kept.
+    //
+    // ⚠️ The removed `?format=` select folds in here, so an old shared link
+    // still narrows to the same shelf: a physical format is its own binding
+    // token, any ebook_* format becomes the coarse `ebook`. See
+    // `legacyFormatBinding`.
     bindings: [
       ...new Set(
-        (p.get('binding') ?? '')
+        [
+          ...(p.get('binding') ?? '').split(',').map((s) => s.trim()),
+          ...legacyFormatBinding(pick(search, 'format', EDITION_FORMATS)),
+        ].filter((v): v is BindingFilter => (BINDING_FILTERS as readonly string[]).includes(v)),
+      ),
+    ],
+    // `?kind=collectors,unsorted` — a comma-separated list now that the printing
+    // options live in the one Type control. Each token kept only if known; an
+    // old single-value `?kind=collectors` still parses as a one-element list.
+    editionKinds: [
+      ...new Set(
+        (p.get('kind') ?? '')
           .split(',')
           .map((s) => s.trim())
-          .filter((v): v is BindingFilter => (BINDING_FILTERS as readonly string[]).includes(v)),
+          .filter((v): v is EditionKindFilter =>
+            (EDITION_KIND_FILTERS as readonly string[]).includes(v),
+          ),
       ),
     ],
     status: pick(search, 'status', COPY_STATUSES) ?? '',
@@ -394,13 +426,13 @@ export function collectionPath(f: CollectionFilters): string {
   // and safe for the same reason: this function and `parseCollection` are the
   // only two places that spell either name.
   if (f.ebookOnly) p.set('ebooks', f.ebookOnly);
-  if (f.format) p.set('format', f.format);
-  if (f.editionKind) p.set('kind', f.editionKind);
-  // `?binding=hardcover,ebook` — the list joined; API and address bar spell it
-  // the same, so this and `parseCollection` are the only two places that name it.
-  // `?.` for the same tolerance every field above has (`if (f.x)`): a partial
-  // filter object omitting the list is treated as "none chosen", not a crash.
+  // `?binding=hardcover,ebook` and `?kind=collectors,unsorted` — the two halves
+  // of the one Type control, each a comma-joined list. `?format=` is gone;
+  // `parseCollection` still reads an old one and folds it into `binding`. `?.`
+  // for the same tolerance every field above has (`if (f.x)`): a partial filter
+  // object omitting a list is treated as "none chosen", not a crash.
   if (f.bindings?.length) p.set('binding', f.bindings.join(','));
+  if (f.editionKinds?.length) p.set('kind', f.editionKinds.join(','));
   if (f.status) p.set('status', f.status);
   if (f.needs) p.set('needs', f.needs);
   // Emitted only when on, so an ordinary browse stays `/` — the same rule the
@@ -431,9 +463,8 @@ export function collectionInUniversePath(universe: string): string {
     // A universe spans catalogs and a link into it is a link to the whole world
     // this shelf holds, so it carries no shelf narrowing of its own.
     ebookOnly: '',
-    format: '',
-    editionKind: '',
     bindings: [],
+    editionKinds: [],
     status: '',
     needs: '',
     // A link into a world is a link to its books, not to its filing mistakes.
