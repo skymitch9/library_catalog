@@ -15,6 +15,7 @@
  *   npm run secrets:push -- --both     # MAIN and FRIEND in one command
  *   npm run secrets:push -- --friend   # FRIEND only (shared keys)
  *   npm run secrets:push -- --both --dry-run   # print the plan, push nothing
+ *   npm run secrets:push -- --both --enable EBOOK_INGEST_TOKEN   # opt-in key
  *
  * ⚠️ This only ever *sets* secrets. Removing one from `.dev.vars` does not
  * delete it in production — use `wrangler secret delete` for that, so a typo
@@ -38,9 +39,13 @@
  *
  * | List | Meaning | Friend |
  * |---|---|---|
- * | `SHARED_SECRETS` | one value, two holders, **by design** | pushed |
+ * | `SHARED_ALWAYS` | one value, two holders, **by design** | pushed |
+ * | `SHARED_OPT_IN` | shared, but route-ENABLING on the receiver | only with `--enable NAME` |
  * | `PER_INSTANCE_SECRETS` | each instance has its OWN value | **refused, always** |
  * | anything else | not classified | refused with a sentence |
+ *
+ * (`SHARED_SECRETS` is still exported — it is the union of the first two, and
+ * remains the answer to "may this key ever travel between instances at all?".)
  *
  * Friend pushes read the ONE main `.dev.vars` and send only the SHARED set, so
  * her `ANTHROPIC_API_KEY` and her estate identity can never be overwritten by a
@@ -49,6 +54,18 @@
  * ⚠️ **`.dev.vars.friend` still does not exist and must not be created.** It is
  * not read here for any flag. Creating one would be a custody change (§2 of the
  * estate credentials catalog), not a missing file to fill in.
+ *
+ * ## The two guards added after the 2026-08-25 rotation
+ *
+ * Both come from things that actually went wrong that day, not from imagination.
+ *
+ * 1. **A glued value refuses the WHOLE run.** A `>>` append onto a `.dev.vars`
+ *    with no trailing newline welded `PEER_TOKEN=…` onto the END of
+ *    `HARDCOVER_API_TOKEN`'s value, and `secrets:push:both` shipped the corrupt
+ *    string to both instances. The parser cannot tell that from a legitimate
+ *    value, so nothing downstream can either — `assertNoGluedValues` refuses
+ *    before a single key is sent, naming the KEY and never the value.
+ * 2. **Route-ENABLING shared keys are opt-in per instance.** See `SHARED_OPT_IN`.
  */
 
 import { readFileSync } from 'node:fs';
@@ -93,7 +110,15 @@ export const PRODUCTION_SECRETS = [
 ];
 
 /**
- * **The same value on BOTH instances, by design.** Every entry here is the
+ * **The same value on BOTH instances, by design — and sent unconditionally.**
+ *
+ * ⚠️ Split out of `SHARED_SECRETS` on 2026-08-25: the two route-ENABLING keys
+ * that used to sit in this list now live in `SHARED_OPT_IN` below, because
+ * pushing one of THOSE to an instance opens a machine-writable route rather than
+ * re-sending a value the receiver already holds. Everything left here is safe to
+ * send to any instance any number of times.
+ *
+ * Every entry here is the
  * estate's *one value, two holders, the same NAME on both sides* idiom: the
  * value identifies a CALLER (a pipeline, a peer, a keyed vendor account), not
  * an instance, so both Workers holding it is the intended state and a bulk push
@@ -106,8 +131,6 @@ export const PRODUCTION_SECRETS = [
  * |---|---|
  * | `GOOGLE_BOOKS_API_KEY` | one keyed vendor account for the household |
  * | `HARDCOVER_API_TOKEN` | ditto — free tier, 5,000 req/day, one account |
- * | `EBOOK_INGEST_TOKEN` | ⚠️ authenticates the ebook IMPORTER (one pipeline, not a person) to a shelf. Unset = the route is disabled, so pushing it to friend is what turns her ingest route on — a deliberate act, not a tidy-up |
- * | `AUDIOBOOK_MAPPING_TOKEN` | ⚠️ same shape: the audiobook pipeline's read bearer; `audiobook_catalog` holds the value as `LIBRARY_MAPPING_TOKEN`. Unset = route disabled |
  * | `DONOR_TOKEN` | the cross-instance donor call — the two instances ask EACH OTHER with it, so a differing value is the bug |
  * | `PEER_TOKEN` | the cross-instance peer-holdings bearer, same argument |
  *
@@ -128,14 +151,57 @@ export const PRODUCTION_SECRETS = [
  * sentence, which is the correct answer for a credential nobody has decided the
  * custody of.
  */
-export const SHARED_SECRETS = [
+export const SHARED_ALWAYS = [
   'GOOGLE_BOOKS_API_KEY',
   'HARDCOVER_API_TOKEN',
-  'EBOOK_INGEST_TOKEN',
-  'AUDIOBOOK_MAPPING_TOKEN',
   'DONOR_TOKEN',
   'PEER_TOKEN',
 ];
+
+/**
+ * **Shared by design, but pushing one to an instance TURNS A ROUTE ON there.**
+ *
+ * `EBOOK_INGEST_TOKEN` and `AUDIOBOOK_MAPPING_TOKEN` authenticate a PIPELINE to
+ * a shelf, and the receiving Worker treats *unset* as *route disabled*. So for
+ * these two — and only these two — a bulk push is not a rotation, it is a
+ * **capability grant**: the difference between re-sending a value someone
+ * already holds and opening a machine-writable door on a catalog that did not
+ * have one.
+ *
+ * ⚠️ **This list exists because that happened by accident.** Measured
+ * 2026-08-25: the `PEER_TOKEN` rotation ran `secrets:push:both`, which created
+ * `EBOOK_INGEST_TOKEN` on padhard as a side effect and enabled her ingest route.
+ * It was reverted the same minute (`wrangler secret delete … --env friend`).
+ * Nothing was lost; the lesson is that a *convenience* command silently widened
+ * a *permission*, and no output said so.
+ *
+ * So on a NON-MAIN instance these are pushed only with an explicit
+ * `--enable NAME` (repeatable), and skipped with a named line otherwise. Main is
+ * unaffected: it is the source of truth and already holds both.
+ *
+ * ### 📌 Owner decision, 2026-08-25 — padhard is ON, future instances are not
+ *
+ * > *"her and I share audio and ebooks … they're already pre-mixed with mine;
+ * > they should count as she owns them too"*
+ *
+ * padhard (`env.friend`) is the owner's partner and they **share one audio and
+ * ebook pool**, so she counts as owning it. Both keys were therefore set on her
+ * instance **by hand on 2026-08-25** and her routes are live — this flag is not
+ * what turned them on and does not turn them off.
+ *
+ * ⚠️ **Any FUTURE library instance is opt-in by the OWNER**, one key at a time,
+ * which is exactly what `--enable` makes someone type. A third instance
+ * inheriting a machine-write route because a rotation ran is the thing this
+ * refuses to do.
+ */
+export const SHARED_OPT_IN = ['EBOOK_INGEST_TOKEN', 'AUDIOBOOK_MAPPING_TOKEN'];
+
+/**
+ * Every key that may travel between instances at all — the union of the two
+ * lists above, and still the answer to "is this key's value shared by design?".
+ * `SHARED_OPT_IN` narrows *when* it is sent, never *whether* it is shared.
+ */
+export const SHARED_SECRETS = [...SHARED_ALWAYS, ...SHARED_OPT_IN];
 
 /**
  * **Each instance holds its OWN value. Refused for friend, always.**
@@ -220,8 +286,27 @@ export function assertListsDisjoint(
   if (dupes.length) throw new Error(`SHARED_SECRETS lists ${dupes.join(', ')} twice.`);
 }
 
+/**
+ * ⚠️ **The same argument one level down: `SHARED_ALWAYS ∩ SHARED_OPT_IN = ∅`.**
+ *
+ * These two answer opposite halves of *when* a shared key is sent, so a key on
+ * both means whichever list is consulted first decides whether a route gets
+ * enabled — silently. Fails at module load, before anything can be pushed.
+ */
+export function assertSharedListsDisjoint(always = SHARED_ALWAYS, optIn = SHARED_OPT_IN) {
+  const clash = always.filter((name) => optIn.includes(name));
+  if (clash.length) {
+    throw new Error(
+      `SHARED_ALWAYS and SHARED_OPT_IN overlap: ${clash.join(', ')}. ` +
+        'A shared key is either sent unconditionally or only with `--enable NAME` — ' +
+        'decide, and put it on exactly one list. See the header of scripts/push-secrets.mjs.',
+    );
+  }
+}
+
 // Runs at module load: the lists are wrong or nothing runs at all.
 assertListsDisjoint();
+assertSharedListsDisjoint();
 
 export function parseDevVars(text) {
   const out = {};
@@ -243,13 +328,88 @@ export function parseDevVars(text) {
   return out;
 }
 
-/** The four things that can happen to one key on one instance. */
+/**
+ * ⚠️ **Does this value look like TWO lines welded into one?**
+ *
+ * The incident (`info/gotchas.md`, 2026-08-25): `apps/worker/.dev.vars` had no
+ * trailing newline, a `>>` append landed `PEER_TOKEN=<value>` on the END of the
+ * `HARDCOVER_API_TOKEN` line, and `secrets:push:both` shipped the welded string
+ * to BOTH instances as Hardcover's token — while `PEER_TOKEN` itself never
+ * appeared as a key at all. Nothing downstream can catch this: a secret is an
+ * opaque string, so "corrupt" and "rotated" look identical from here on.
+ *
+ * The signature is a KEY-shaped run followed by `=` *inside* a value. Two
+ * deliberate narrowings, both to avoid refusing a run over a good file:
+ *
+ * - **base64 padding is not a glue.** A value ending `…ABQ0Q=` or `…ABQ0Q==`
+ *   matches the raw pattern and is perfectly legitimate, so a match whose
+ *   remainder is empty or all `=` does not count. A real weld always has the
+ *   second key's VALUE after the `=`, which is what is required here.
+ * - **the check names the KEY and never the value**, in the message and in the
+ *   return type, because this file's whole contract is that key material never
+ *   reaches a console, a log or a plan row.
+ *
+ * The CR/LF arm is belt-and-braces: `parseDevVars` splits on newlines and trims,
+ * so it cannot itself produce one today. It is here so a future parser that
+ * learns about quoted multi-line values cannot quietly re-open the hole.
+ */
+export const GLUED_VALUE_RE = /[A-Z][A-Z0-9_]{2,}=/g;
+
+/** True if this ONE value looks glued. Takes a value, returns a boolean — never echoes it. */
+export function looksGlued(value) {
+  if (typeof value !== 'string') return false;
+  if (/[\r\n]/.test(value)) return true;
+  for (const m of value.matchAll(GLUED_VALUE_RE)) {
+    const after = value.slice(m.index + m[0].length);
+    if (after !== '' && !/^=+$/.test(after)) return true;
+  }
+  return false;
+}
+
+/** The NAMES of every key whose value looks glued, sorted. Names only. */
+export function findGluedValues(vars) {
+  return Object.keys(vars)
+    .filter((name) => looksGlued(vars[name]))
+    .sort();
+}
+
+/** One sentence per offending key. The value is never interpolated. */
+export function gluedRefusalMessage(names, file = DEV_VARS) {
+  return names
+    .map(
+      (name) =>
+        `${name} in ${file} looks like two lines glued together ` +
+        '(a missing trailing newline?) — fix the file, nothing was pushed.',
+    )
+    .join('\n');
+}
+
+/**
+ * ⚠️ Refuses the WHOLE run, not the offending key: if one line is welded, the
+ * file was appended to badly, and the NEXT key in that file is exactly as
+ * suspect. Pushing "the good ones" would ship a partial rotation across two
+ * instances — the failure `pushBoth` already stops on, arrived at from the
+ * other direction.
+ */
+export function assertNoGluedValues(vars, file = DEV_VARS) {
+  const bad = findGluedValues(vars);
+  if (bad.length) throw new Error(gluedRefusalMessage(bad, file));
+}
+
+/** The things that can happen to one key on one instance. */
 export const PUSH_MAIN = 'push main';
 export const PUSH_FRIEND = 'push friend';
 export const REFUSE_PER_INSTANCE = 'refuse (per-instance)';
 export const SKIP_UNSET = 'skip (not set locally)';
 export const SKIP_LOCAL_ONLY = 'skip (local only)';
 export const REFUSE_UNCLASSIFIED = 'refuse (not a shared secret)';
+/**
+ * Shared, present locally, and deliberately NOT sent: it would enable a route on
+ * the receiver. `NAME` is left as a placeholder on purpose — the concrete key is
+ * the very next column of the same line, and the `why` beneath it spells the
+ * whole command out.
+ */
+export const SKIP_OPT_IN = 'skip (opt-in; --enable NAME)';
 
 /**
  * What a `--friend` / `--both` run WOULD do, as data — names only, no values.
@@ -262,13 +422,15 @@ export const REFUSE_UNCLASSIFIED = 'refuse (not a shared secret)';
  */
 export function planFor(
   varNames,
-  { both = false, friend = false } = {},
+  { both = false, friend = false, enable = [] } = {},
   lists = {},
 ) {
   const shared = lists.shared ?? SHARED_SECRETS;
+  const optIn = lists.sharedOptIn ?? SHARED_OPT_IN;
   const production = lists.production ?? PRODUCTION_SECRETS;
   const localOnly = lists.localOnly ?? LOCAL_ONLY;
   const present = new Set(varNames);
+  const enabled = new Set(enable);
   const plan = { main: [], friend: [] };
 
   if (both) {
@@ -285,7 +447,15 @@ export function planFor(
 
   if (both || friend) {
     for (const name of shared) {
-      plan.friend.push({ name, action: present.has(name) ? PUSH_FRIEND : SKIP_UNSET });
+      // "not set locally" first: a key nobody has written down is a GAP, and
+      // saying "opt-in" about it would offer a flag that could not work anyway.
+      if (!present.has(name)) {
+        plan.friend.push({ name, action: SKIP_UNSET });
+      } else if (optIn.includes(name) && !enabled.has(name)) {
+        plan.friend.push({ name, action: SKIP_OPT_IN, why: optInReason(name) });
+      } else {
+        plan.friend.push({ name, action: PUSH_FRIEND });
+      }
     }
     // Everything else anyone might expect to travel: named, with the reason.
     // Per-instance first, because that is the refusal that matters.
@@ -309,6 +479,21 @@ export function planFor(
   }
 
   return plan;
+}
+
+/** One sentence, printed beside an opt-in skip, saying what enabling it MEANS. */
+export function optInReason(name) {
+  const what =
+    name === 'EBOOK_INGEST_TOKEN'
+      ? 'the ebook importer’s write bearer'
+      : name === 'AUDIOBOOK_MAPPING_TOKEN'
+        ? 'the audiobook pipeline’s mapping bearer'
+        : 'a machine route’s bearer';
+  return (
+    `route-ENABLING: ${what}. Unset on the receiving instance means that route is ` +
+    `DISABLED, so sending it is a capability grant, not a rotation. Push it with ` +
+    `\`--enable ${name}\` once the owner has said that instance should have it.`
+  );
 }
 
 /** One sentence, printed beside the refusal, saying what to do instead. */
@@ -397,6 +582,35 @@ async function main() {
   }
   const friend = argv.includes('--friend') || envValue === FRIEND_ENV;
 
+  // `--enable NAME`, repeatable, `--enable=NAME` too. A capability grant should
+  // be typed once per key, deliberately — not implied by a batch flag.
+  const enable = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a !== '--enable' && !a.startsWith('--enable=')) continue;
+    const value = a.includes('=') ? a.slice('--enable='.length) : (argv[i + 1] ?? null);
+    if (!value || value.startsWith('--')) {
+      console.error('--enable needs a key NAME, e.g. --enable EBOOK_INGEST_TOKEN');
+      console.error(`Opt-in keys: ${SHARED_OPT_IN.join(', ')}`);
+      process.exit(1);
+    }
+    if (!SHARED_OPT_IN.includes(value)) {
+      // Loud, because a typo'd --enable would otherwise look like it worked and
+      // silently skip the key the operator meant to turn on.
+      console.error(`--enable ${value}: not an opt-in key, so this flag would do nothing.`);
+      console.error(`Opt-in keys: ${SHARED_OPT_IN.join(', ')}`);
+      console.error('Everything on SHARED_ALWAYS is pushed without a flag; per-instance');
+      console.error('keys are refused with a sentence and cannot be enabled from here.');
+      process.exit(1);
+    }
+    enable.push(value);
+  }
+  if (enable.length && !both && !friend) {
+    console.error('--enable only applies to a non-main instance — add --friend or --both.');
+    console.error('MAIN is the source of truth and already holds these keys.');
+    process.exit(1);
+  }
+
   let raw;
   try {
     raw = readFileSync(DEV_VARS, 'utf8');
@@ -412,8 +626,22 @@ async function main() {
   }
   const vars = parseDevVars(raw);
 
+  // ⚠️ Before ANY path, including the no-flag one and including --dry-run: a
+  // welded value is a broken FILE, and the plan printed from a broken file is
+  // itself wrong. Names only — the value never reaches this console.
+  try {
+    assertNoGluedValues(vars);
+  } catch (err) {
+    console.error(err.message);
+    console.error('');
+    console.error('Check the trailing newline before appending:');
+    console.error('  tail -c1 apps/worker/.dev.vars | od -c     # want \\n');
+    console.error("  printf '\\nKEY=%s\\n' \"$VALUE\" >> apps/worker/.dev.vars");
+    process.exit(1);
+  }
+
   if (!both && !friend) return await pushMainOnly(vars, dry);
-  return await pushBoth(vars, { both, friend, dry });
+  return await pushBoth(vars, { both, friend, dry, enable });
 }
 
 /**
@@ -468,8 +696,8 @@ async function pushMainOnly(vars, dry) {
 }
 
 /** The `--both` / `--friend` path: one command, both instances, names only. */
-async function pushBoth(vars, { both, friend, dry }) {
-  const plan = planFor(Object.keys(vars), { both, friend });
+async function pushBoth(vars, { both, friend, dry, enable = [] }) {
+  const plan = planFor(Object.keys(vars), { both, friend, enable });
 
   const say = (rows, heading) => {
     if (!rows.length) return;
@@ -482,6 +710,14 @@ async function pushBoth(vars, { both, friend, dry }) {
 
   say(plan.main, `MAIN — library.heygabi.ai`);
   say(plan.friend, `FRIEND — padhard.heygabi.ai (env ${FRIEND_ENV})`);
+
+  // A capability grant says so out loud, even on a dry run.
+  if (enable.length) {
+    console.log(
+      `\n⚠️ --enable ${enable.join(', ')} — this ENABLES the matching machine ` +
+        'route on the receiving instance, not just the key.',
+    );
+  }
 
   const mainNames = plan.main.filter((r) => r.action === PUSH_MAIN).map((r) => r.name);
   const friendNames = plan.friend.filter((r) => r.action === PUSH_FRIEND).map((r) => r.name);

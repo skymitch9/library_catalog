@@ -25,10 +25,19 @@ import {
   PUSH_MAIN,
   REFUSE_PER_INSTANCE,
   REFUSE_UNCLASSIFIED,
+  SHARED_ALWAYS,
+  SHARED_OPT_IN,
   SHARED_SECRETS,
+  SKIP_OPT_IN,
   SKIP_UNSET,
   assertListsDisjoint,
+  assertNoGluedValues,
+  assertSharedListsDisjoint,
+  findGluedValues,
+  gluedRefusalMessage,
   isPerInstance,
+  looksGlued,
+  optInReason,
   parseDevVars,
   planFor,
 } from '../push-secrets.mjs';
@@ -97,14 +106,20 @@ describe('the two lists', () => {
 describe('planFor — the friend path', () => {
   const everything = [...PRODUCTION_SECRETS, 'DONOR_TOKEN', 'PEER_TOKEN', 'INDEX_READ_TOKEN'];
 
-  it('pushes the SHARED set and nothing else', () => {
+  it('pushes the SHARED_ALWAYS set and nothing else', () => {
     const plan = planFor(everything, { friend: true });
-    for (const name of SHARED_SECRETS) {
+    for (const name of SHARED_ALWAYS) {
       assert.equal(
         actionFor(plan.friend, name),
         PUSH_FRIEND,
-        `${name} is shared and should be pushed to friend`,
+        `${name} is shared-always and should be pushed to friend`,
       );
+    }
+    // ⚠️ The opt-in half is NOT pushed without --enable. Changed 2026-08-25:
+    // before the split this loop ran over all of SHARED_SECRETS and expected
+    // PUSH_FRIEND for these two, which is exactly the accident it now prevents.
+    for (const name of SHARED_OPT_IN) {
+      assert.equal(actionFor(plan.friend, name), SKIP_OPT_IN, `${name} must be opt-in`);
     }
     assert.deepEqual(plan.main, [], 'a --friend run must not touch main');
   });
@@ -193,5 +208,203 @@ describe('parseDevVars — unchanged behaviour the no-flag path depends on', () 
   it('still knows the LOCAL_ONLY keys by name', () => {
     assert.ok('DEV_EMAIL' in LOCAL_ONLY);
     assert.ok('ESTATE_APP_TOKEN_LIBRARY2' in LOCAL_ONLY);
+  });
+
+  it('⚠️ keeps `KEY = value` with spaces around the `=` — .dev.vars really has those lines', () => {
+    // Not cosmetic: `ANTHROPIC_API_KEY_FRIEND_SAM = ""` is written that way, and
+    // a parser that lost the spaced form would silently stop seeing real keys.
+    const got = parseDevVars(['A = 1', '  B  =  "two"  ', "C\t=\t'three'"].join('\n'));
+    assert.deepEqual(got, { A: '1', B: 'two', C: 'three' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GUARD 1 — a glued value refuses the whole run (incident 2026-08-25)
+// ---------------------------------------------------------------------------
+
+describe('the glued-value guard', () => {
+  it('⚠️ catches the real incident: PEER_TOKEN welded onto the END of another value', () => {
+    // The shape a `>>` append onto a file with no trailing newline produces.
+    const vars = parseDevVars(
+      ['GOOGLE_BOOKS_API_KEY=aaa', 'HARDCOVER_API_TOKEN=hc-real-valuePEER_TOKEN=pt-real-value'].join(
+        '\n',
+      ),
+    );
+    // The welded key never appears as a key at all — that is why nothing
+    // downstream could notice.
+    assert.equal('PEER_TOKEN' in vars, false);
+    assert.deepEqual(findGluedValues(vars), ['HARDCOVER_API_TOKEN']);
+  });
+
+  it('refuses the WHOLE run, not just the offending key', () => {
+    const vars = { A: 'fineA', HARDCOVER_API_TOKEN: 'hcPEER_TOKEN=pt', B: 'fineB' };
+    assert.throws(() => assertNoGluedValues(vars, '.dev.vars'), /nothing was pushed/);
+  });
+
+  it('names the KEY and NEVER the value', () => {
+    const msg = gluedRefusalMessage(['HARDCOVER_API_TOKEN'], '.dev.vars');
+    assert.match(msg, /HARDCOVER_API_TOKEN/);
+    assert.match(msg, /looks like two lines glued together \(a missing trailing newline\?\)/);
+    assert.match(msg, /fix the file, nothing was pushed/);
+    // The value must not be reachable from the message — the guard is only ever
+    // given names to print.
+    assert.equal(msg.includes('hc-real-value'), false);
+    assert.equal(msg.includes('pt-real-value'), false);
+  });
+
+  it('catches a CR or an LF inside a value', () => {
+    // Belt-and-braces: parseDevVars cannot produce one today, so this guards a
+    // FUTURE parser that learns about quoted multi-line values.
+    assert.ok(looksGlued('abc\ndef'));
+    assert.ok(looksGlued('abc\rdef'));
+    assert.deepEqual(findGluedValues({ K: 'a\nb' }), ['K']);
+  });
+
+  it('passes a clean file untouched', () => {
+    const vars = parseDevVars(
+      [
+        '# comment',
+        'GOOGLE_BOOKS_API_KEY=AIzaSyAbcdef-123456',
+        'HARDCOVER_API_TOKEN="Bearer eyJhbGciOiJIUzI1NiJ9.abc.def"',
+        'PEER_TOKEN=6f1e2d3c4b5a',
+        'DEV_EMAIL = someone@example.test',
+      ].join('\n'),
+    );
+    assert.deepEqual(findGluedValues(vars), []);
+    assert.doesNotThrow(() => assertNoGluedValues(vars, '.dev.vars'));
+  });
+
+  it('⚠️ does NOT refuse base64 padding — the false positive that would block a good rotation', () => {
+    // `[A-Z][A-Z0-9_]{2,}=` matches the tail of plenty of legitimate base64.
+    // A real weld always has the SECOND key's value after the `=`; padding does
+    // not, so the remainder is what tells them apart.
+    assert.equal(looksGlued('c29tZSBzZWNyZXQgQUJDRA='), false);
+    assert.equal(looksGlued('c29tZSBzZWNyZXQgQUJDRA=='), false);
+    assert.equal(looksGlued('lots+of/base64+ABC123=='), false);
+    // …but padding-looking text followed by a value is still a weld.
+    assert.ok(looksGlued('c29tZSBzZWNyZXQgQUJDRA==PEER_TOKEN=abc'));
+  });
+
+  it('does not fire on ordinary values that merely contain an `=`', () => {
+    assert.equal(looksGlued('https://example.test/x?a=1&b=2'), false);
+    assert.equal(looksGlued('key=value'), false, 'lowercase is not a KEY shape');
+    assert.equal(looksGlued('AB=cd'), false, 'two chars is under the {2,} floor');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GUARD 2 — route-ENABLING shared keys are opt-in per instance
+// ---------------------------------------------------------------------------
+
+describe('SHARED_ALWAYS / SHARED_OPT_IN', () => {
+  it('splits the shared list into unconditional and route-enabling halves', () => {
+    assert.deepEqual(SHARED_ALWAYS, [
+      'GOOGLE_BOOKS_API_KEY',
+      'HARDCOVER_API_TOKEN',
+      'DONOR_TOKEN',
+      'PEER_TOKEN',
+    ]);
+    assert.deepEqual(SHARED_OPT_IN, ['EBOOK_INGEST_TOKEN', 'AUDIOBOOK_MAPPING_TOKEN']);
+    // The union is still SHARED_SECRETS — "is this shared at all?" is unchanged.
+    assert.deepEqual(SHARED_SECRETS, [...SHARED_ALWAYS, ...SHARED_OPT_IN]);
+  });
+
+  it('⚠️ a key on BOTH shared lists is a startup error, not a warning', () => {
+    assert.doesNotThrow(() => assertSharedListsDisjoint());
+    assert.throws(
+      () => assertSharedListsDisjoint(['A', 'EBOOK_INGEST_TOKEN'], ['EBOOK_INGEST_TOKEN']),
+      /overlap: EBOOK_INGEST_TOKEN/,
+    );
+  });
+
+  it('keeps the SHARED ∩ PER_INSTANCE = ∅ invariant across the split', () => {
+    for (const name of [...SHARED_ALWAYS, ...SHARED_OPT_IN]) {
+      assert.equal(isPerInstance(name), false, `${name} must not also be per-instance`);
+    }
+    assert.doesNotThrow(() => assertListsDisjoint());
+  });
+});
+
+describe('planFor — the opt-in rule', () => {
+  const present = [...PRODUCTION_SECRETS, 'DONOR_TOKEN', 'PEER_TOKEN'];
+
+  it('⚠️ --friend alone SKIPS the opt-in keys, naming the flag that would send them', () => {
+    const plan = planFor(present, { friend: true });
+    for (const name of SHARED_OPT_IN) {
+      const row = plan.friend.find((r) => r.name === name);
+      assert.equal(row?.action, SKIP_OPT_IN);
+      assert.match(row.why, /route-ENABLING/);
+      assert.match(row.why, new RegExp(`--enable ${name}`));
+    }
+  });
+
+  it('⚠️ --both SKIPS them too — the exact 2026-08-25 side effect', () => {
+    // `secrets:push:both` created EBOOK_INGEST_TOKEN on padhard as a side effect
+    // of the PEER_TOKEN rotation. This assertion is that incident, frozen.
+    const plan = planFor(present, { both: true });
+    assert.equal(actionFor(plan.friend, 'EBOOK_INGEST_TOKEN'), SKIP_OPT_IN);
+    assert.equal(actionFor(plan.friend, 'AUDIOBOOK_MAPPING_TOKEN'), SKIP_OPT_IN);
+    // …and MAIN still gets both, because main is the source of truth.
+    assert.equal(actionFor(plan.main, 'EBOOK_INGEST_TOKEN'), PUSH_MAIN);
+    assert.equal(actionFor(plan.main, 'AUDIOBOOK_MAPPING_TOKEN'), PUSH_MAIN);
+  });
+
+  it('--enable NAME sends that ONE key and no other opt-in key', () => {
+    const plan = planFor(present, { both: true, enable: ['EBOOK_INGEST_TOKEN'] });
+    assert.equal(actionFor(plan.friend, 'EBOOK_INGEST_TOKEN'), PUSH_FRIEND);
+    assert.equal(
+      actionFor(plan.friend, 'AUDIOBOOK_MAPPING_TOKEN'),
+      SKIP_OPT_IN,
+      'enabling one opt-in key must not enable the other',
+    );
+  });
+
+  it('--enable is repeatable', () => {
+    const plan = planFor(present, { friend: true, enable: [...SHARED_OPT_IN] });
+    for (const name of SHARED_OPT_IN) {
+      assert.equal(actionFor(plan.friend, name), PUSH_FRIEND);
+    }
+  });
+
+  it('says "not set locally", not "opt-in", for an opt-in key missing from .dev.vars', () => {
+    // A key nobody has written down is a GAP; offering --enable for it would be
+    // offering a flag that could not work.
+    const plan = planFor(['GOOGLE_BOOKS_API_KEY'], { friend: true });
+    assert.equal(actionFor(plan.friend, 'EBOOK_INGEST_TOKEN'), SKIP_UNSET);
+  });
+
+  it('--enable changes nothing about the per-instance refusals', () => {
+    const plan = planFor([...present, 'ESTATE_APP_TOKEN_LIBRARY2'], {
+      both: true,
+      enable: [...SHARED_OPT_IN],
+    });
+    for (const name of ['ANTHROPIC_API_KEY', 'ESTATE_APP_TOKEN_LIBRARY', 'INDEX_PUSH_TOKEN']) {
+      assert.equal(actionFor(plan.friend, name), REFUSE_PER_INSTANCE, `${name} stays refused`);
+    }
+  });
+
+  it('leaves the MAIN half of --both byte-identical to before the split', () => {
+    // The split reordered SHARED_SECRETS; main's list is
+    // PRODUCTION ∪ (SHARED \ PRODUCTION) and must be unchanged by that.
+    const plan = planFor(present, { both: true });
+    assert.deepEqual(
+      plan.main.map((r) => r.name),
+      [...PRODUCTION_SECRETS, 'DONOR_TOKEN', 'PEER_TOKEN'],
+    );
+  });
+
+  it('never puts a VALUE in an opt-in skip row either', () => {
+    const plan = planFor(present, { both: true });
+    for (const row of [...plan.main, ...plan.friend]) {
+      assert.deepEqual(
+        Object.keys(row).filter((k) => !['name', 'action', 'why'].includes(k)),
+        [],
+      );
+    }
+  });
+
+  it('the printed action carries the flag a reader needs to type', () => {
+    assert.equal(SKIP_OPT_IN, 'skip (opt-in; --enable NAME)');
+    assert.match(optInReason('EBOOK_INGEST_TOKEN'), /capability grant, not a rotation/);
   });
 });

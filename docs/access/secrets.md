@@ -1,11 +1,16 @@
 # Secrets & ops commands — how to set/push keys and run the npx tooling
 
 > **Audience:** the owner + Claude sessions. **Status:** TRACKED.
-> **Last verified: 2026-08-25** — the Hardcover section below was re-checked
-> against the code and the push allowlist that day and CORRECTED (it described
-> work that was already done). ⚠️ **Not re-checked in the same pass:** whether
+> **Last verified: 2026-08-25** — the two `push-secrets.mjs` guards LANDED that
+> day, and the "Both instances" section below was rewritten against the shipped
+> code (`SHARED_ALWAYS` / `SHARED_OPT_IN` / `--enable`, and the glued-value
+> refusal). The `--both --dry-run` plan quoted there was **run**, names only.
+> Earlier that day the Hardcover section was re-checked against the code and
+> CORRECTED (it described work that was already done).
+> ⚠️ **Not re-checked in the same pass:** whether
 > each named secret is actually set on each instance — a secret store cannot be
-> read back (KI-7), and `npm run secret:list` names only what exists.
+> read back (KI-7), and `npm run secret:list` names only what exists. The
+> 2026-08-25 `secret:list` snapshots further down were NOT re-taken.
 > Complements [`RECOVERY.md`](RECOVERY.md), which
 > is the disaster *inventory* (what every secret is + where a copy lives); this is
 > the *operational* how-to (how to set, push, and rotate them, and the ops
@@ -56,14 +61,85 @@ a key on both is a startup error:
 
 | List | Members (2026-08-25) | Friend |
 |---|---|---|
-| **`SHARED_SECRETS`** — one value, two holders, by design | `GOOGLE_BOOKS_API_KEY`, `HARDCOVER_API_TOKEN`, `EBOOK_INGEST_TOKEN`, `AUDIOBOOK_MAPPING_TOKEN`, `DONOR_TOKEN`, `PEER_TOKEN` | **pushed** |
+| **`SHARED_ALWAYS`** — one value, two holders, by design | `GOOGLE_BOOKS_API_KEY`, `HARDCOVER_API_TOKEN`, `DONOR_TOKEN`, `PEER_TOKEN` | **pushed** |
+| **`SHARED_OPT_IN`** — shared, but **route-ENABLING** on the receiver | `EBOOK_INGEST_TOKEN`, `AUDIOBOOK_MAPPING_TOKEN` | **only with `--enable NAME`** |
 | **`PER_INSTANCE_SECRETS`** — each instance holds its own | `ANTHROPIC_API_KEY`, `INDEX_PUSH_TOKEN`, and **every `ESTATE_APP_TOKEN_*`** (prefix rule) | **refused, always** |
 | anything else in `.dev.vars` | e.g. `INDEX_READ_TOKEN`, `LIBRARYTHING_API_KEY`, `GABI_PANEL` | refused with a sentence |
 
+`SHARED_SECRETS` still exists and is the **union of the first two** — it answers
+"may this key's value travel between instances at all?", which is unchanged. A
+key on both shared lists, like a key on both shared and per-instance, is a
+**startup error** asserted at module load.
+
 Per key the run prints exactly one of `push main` / `push friend` /
 `refuse (per-instance)` / `refuse (not a shared secret)` / `skip (not set
-locally)` / `skip (local only)`. **Names only — no value, and no fingerprint,
-ever leaves the `--both`/`--friend` path.**
+locally)` / `skip (local only)` / `skip (opt-in; --enable NAME)`. **Names only —
+no value, and no fingerprint, ever leaves the `--both`/`--friend` path.**
+
+### 🆕 The opt-in rule for route-ENABLING keys (2026-08-25)
+
+⚠️ **`EBOOK_INGEST_TOKEN` and `AUDIOBOOK_MAPPING_TOKEN` are shared by design,
+but sending one to an instance is a CAPABILITY GRANT, not a rotation.** The
+receiving Worker treats *unset* as *that machine route is disabled*, so a bulk
+push that includes them opens a machine-writable door on a catalog that did not
+have one. That is a different kind of act from re-sending a value the receiver
+already holds, and it now needs a different keystroke:
+
+```
+npm run secrets:push:both                                  # opt-in keys SKIPPED
+npm run secrets:push:both -- --enable EBOOK_INGEST_TOKEN   # …and this ONE sent
+npm run secrets:push:friend -- --enable EBOOK_INGEST_TOKEN --enable AUDIOBOOK_MAPPING_TOKEN
+```
+
+- `--enable` is **repeatable** and takes **one key name at a time** — enabling
+  one opt-in key never enables the other.
+- `--enable` naming anything that is not on `SHARED_OPT_IN` **exits non-zero**
+  rather than doing nothing, so a typo cannot look like it worked.
+- `--enable` without `--friend`/`--both` exits non-zero: MAIN is the source of
+  truth and already holds both.
+- MAIN's half of `--both` is **unaffected** — it still gets everything the
+  no-flag run sends, and never less.
+- A run that does enable one prints a ⚠️ line saying so, **including on a dry
+  run**.
+
+📌 **Owner decision, 2026-08-25 — padhard is ON; future instances are not.**
+*"her and I share audio and ebooks … they're already pre-mixed with mine; they
+should count as she owns them too."* padhard is the owner's partner and they
+share ONE audio and ebook pool, so both keys were set on her instance **by hand
+that day** and her routes are live. The flag did not turn them on and does not
+turn them off. **Any FUTURE library instance is opt-in by the owner**, one key
+at a time — which is exactly what `--enable` makes someone type.
+
+⚠️ Because they are now set on padhard, the pipelines had to learn to TARGET her:
+`audiobook_catalog`'s STEP 11 sibling-link runs main **then** friend, and
+`scripts/import-ebooks.mjs` accepts `--friend`. See
+[`second-instance.md`](second-instance.md) → "Running the PIPELINES against her".
+
+### 🆕 A glued value refuses the whole run (2026-08-25)
+
+⚠️ **`.dev.vars` is parsed defensively now.** If any VALUE looks like two lines
+welded into one — a `KEY=`-shaped run inside the value, or a stray CR/LF — the
+run **refuses entirely** and pushes nothing, naming the KEY and never the value:
+
+```
+HARDCOVER_API_TOKEN in …/apps/worker/.dev.vars looks like two lines glued
+together (a missing trailing newline?) — fix the file, nothing was pushed.
+```
+
+This is the 2026-08-25 incident, mechanised: a `>>` append onto a file with no
+trailing newline welded `PEER_TOKEN=…` onto the end of `HARDCOVER_API_TOKEN`'s
+value, `secrets:push:both` shipped the corrupt string to **both** instances, and
+`PEER_TOKEN` never appeared as a key at all. Nothing downstream could catch it —
+a secret is an opaque string, so "corrupt" and "rotated" look identical.
+
+- It refuses the **whole run**, not the one key: a badly-appended file makes the
+  next key just as suspect, and a partial rotation across two instances is worse
+  than a failed one.
+- It fires on **every** path, `--dry-run` included — a plan printed from a broken
+  file is itself wrong.
+- ⚠️ **base64 padding is deliberately NOT a glue** (`…QUJDRA==` is fine). A real
+  weld always has the second key's VALUE after the `=`; that remainder is what
+  tells them apart. Covered both ways in `scripts/test/push-secrets.test.mjs`.
 
 ⚠️ **`INDEX_PUSH_TOKEN` is per-instance, not shared**, even though it has the
 same *name* on both sides. The index Worker holds it as
@@ -71,15 +147,26 @@ same *name* on both sides. The index Worker holds it as
 suffixed secret matched, so main's value on her Worker would file her rows as
 `library`. Hers is unset until federation mints a `library2` token.
 
-⚠️ **`EBOOK_INGEST_TOKEN` and `AUDIOBOOK_MAPPING_TOKEN` are shared by design but
-UNSET on her instance today** — unset means those routes are *disabled*, not
-open. Pushing them to her is what turns her machine routes on: a deliberate act,
-not a tidy-up. 🔴 **And `--both` WILL push them whenever they are present in
-`.dev.vars`** — measured 2026-08-25: the PEER_TOKEN rotation's `secrets:push:both`
-created `EBOOK_INGEST_TOKEN` on padhard as a side effect (reverted the same
-minute with `echo y | wrangler secret delete EBOOK_INGEST_TOKEN --env friend`).
-Until the opt-in split in `TODO.md` lands, run `--both --dry-run` first and
-check for those two names under FRIEND.
+✅ **The 🔴 warning that stood here is retired — the opt-in split landed
+2026-08-25.** It read: *"`--both` WILL push `EBOOK_INGEST_TOKEN` and
+`AUDIOBOOK_MAPPING_TOKEN` whenever they are present in `.dev.vars`"*, measured
+that day when the `PEER_TOKEN` rotation's `secrets:push:both` created
+`EBOOK_INGEST_TOKEN` on padhard as a side effect (reverted the same minute with
+`echo y | wrangler secret delete EBOOK_INGEST_TOKEN --env friend`). **A bulk run
+no longer does that**: those two are `SHARED_OPT_IN` and are skipped with a named
+line unless `--enable NAME` is typed. See the opt-in section above.
+
+Running `--both --dry-run` first is still good practice, and is now what the
+plan looks like when it is working:
+
+```
+FRIEND — padhard.heygabi.ai (env friend)
+  push friend              GOOGLE_BOOKS_API_KEY
+  push friend              HARDCOVER_API_TOKEN
+  push friend              PEER_TOKEN
+  skip (opt-in; --enable NAME) EBOOK_INGEST_TOKEN
+                             ↳ route-ENABLING: … a capability grant, not a rotation
+```
 
 ✅ **The friend push path was exercised for real on 2026-08-25** (the rotation):
 `push friend HARDCOVER_API_TOKEN` / `PEER_TOKEN` → "Successfully created" on
@@ -87,8 +174,10 @@ check for those two names under FRIEND.
 
 ⚠️ **Appending to `.dev.vars`:** check for a trailing newline first
 (`tail -c1 apps/worker/.dev.vars | od -c`) or write `printf '\nKEY=%s\n'` — a
-`>>` onto a file without one glues the new key onto the last value, and the
-push ships it. Full incident in `info/gotchas.md`.
+`>>` onto a file without one glues the new key onto the last value. ✅ Since
+2026-08-25 the push **refuses the whole run** if it sees one (see the
+glued-value section above), but the guard is a net, not a licence: it names the
+key, and you still have to fix the file. Full incident in `info/gotchas.md`.
 
 ⚠️ `secrets:push` **with no flags is unchanged** — same list, same output, same
 last-4 fingerprints. The both-instances work is additive.
@@ -154,7 +243,7 @@ for a day after it was done):
 | **`npm run for-both -- <script> -- <args>`** | Run any npm script against main then friend, stopping on the first failure | Claude |
 | `npx wrangler d1 execute library-catalog[-2nd] --remote --command "..."` | Direct prod D1 read/write | Claude (writes with care) |
 | `npm run secrets:push` | Push `.dev.vars` secrets to MAIN | Claude (never reads the file) |
-| **`npm run secrets:push:both` / `:friend`** | Push the SHARED set to both / to friend; per-instance keys refused | Claude (never reads the file) |
+| **`npm run secrets:push:both` / `:friend`** | Push `SHARED_ALWAYS` to both / to friend; per-instance keys refused; `SHARED_OPT_IN` skipped unless `-- --enable NAME` | Claude (never reads the file) |
 | `npx wrangler secret put ... [--env friend]` | Set one secret interactively | **Owner** (hidden prompt) |
 | `npm run secret:list[:friend]` | List secret NAMES | Either |
 
@@ -167,4 +256,7 @@ There is still **no central vault**: secrets are spread across Cloudflare,
 ONLY on a Worker with no readable master (KI-7). **Owner decision 2026-08-25:
 defer the vault (option C).** He has **1Password**, so when it happens the
 target is 1Password's `op` CLI with `.dev.vars` GENERATED from it — not
-Bitwarden. Until then: the two `push-secrets.mjs` guards in `TODO.md`.
+Bitwarden. ✅ **The two `push-secrets.mjs` guards that were queued in `TODO.md`
+landed 2026-08-25** (the glued-value refusal and the opt-in split, both above);
+they narrow the blast radius of a hand-edited `.dev.vars` but do not replace a
+vault.

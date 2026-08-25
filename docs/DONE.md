@@ -17,6 +17,63 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ `push-secrets.mjs` — two mechanical guards from the 2026-08-25 rotation — 2026-08-25
+
+Items **1 and 2** of that TODO section, moved whole at completion. **Item 3 (the
+pipelines must TARGET her) is still open** and stays in [`TODO.md`](TODO.md).
+
+**Shipped.** `scripts/push-secrets.mjs` + `scripts/test/push-secrets.test.mjs`
+(dependency-injected, nothing calls wrangler, nothing reads `.dev.vars`) and
+[`access/secrets.md`](access/secrets.md) rewritten against the shipped code.
+**No deploy** — scripts and docs only, no worker code touched.
+
+- **Guard 1** is `assertNoGluedValues` / `looksGlued` / `findGluedValues`, run in
+  `main()` before every path including `--dry-run`. ⚠️ **One deliberate
+  narrowing of the regex the item specified:** `/[A-Z][A-Z0-9_]{2,}=/` also
+  matches legitimate **base64 padding** (`…QUJDRA==`), and a guard that refuses a
+  good rotation is a guard that gets disabled. A real weld always has the second
+  key's VALUE after the `=`, so a match whose remainder is empty or all `=` does
+  not count. Both directions are tested, including `…QUJDRA==PEER_TOKEN=abc`.
+- **Guard 2** is `SHARED_ALWAYS` / `SHARED_OPT_IN` with a repeatable
+  `--enable NAME`; `SHARED_SECRETS` survives as the union, so "is this shared at
+  all?" is unchanged and the MAIN half of `--both` is byte-identical (asserted).
+  A key on both shared lists is a startup error (`assertSharedListsDisjoint`),
+  matching the existing shared/per-instance rule. `--enable` naming a non-opt-in
+  key exits non-zero rather than doing nothing; `--enable` without
+  `--friend`/`--both` likewise. A run that enables one prints a ⚠️ line, dry run
+  included.
+- **Measured, not asserted:** `--both --dry-run` was run and shows
+  `skip (opt-in; --enable NAME)` for `EBOOK_INGEST_TOKEN` under FRIEND, where it
+  previously said `push friend`. Suite **1809 → 1829 pass / 0 fail**; typecheck
+  clean.
+- ⚠️ **Incidental finding, not acted on:** `DONOR_TOKEN` and
+  `AUDIOBOOK_MAPPING_TOKEN` read `skip (not set locally)` — they are live on the
+  instances but absent from `.dev.vars`, so a bulk run cannot rotate them. That
+  is a custody gap for `RECOVERY.md`, not a defect in this work.
+
+The two items exactly as they were written:
+
+> 1. **Refuse a glued value.** Incident in [`info/gotchas.md`](info/gotchas.md) ("I
+>    appended a key to `.dev.vars` and the push shipped a corrupted secret"): a
+>    `>>` onto a file with no trailing newline glued `PEER_TOKEN=…` onto
+>    `HARDCOVER_API_TOKEN`'s value and `secrets:push:both` shipped it to both
+>    instances. When parsing `.dev.vars`, if any value matches
+>    `/[A-Z][A-Z0-9_]{2,}=/` or contains CR/LF, refuse the WHOLE run with a
+>    sentence naming the key (never the value). Test with a fixture.
+> 2. **Route-enabling tokens must be opt-in for friend.** `EBOOK_INGEST_TOKEN` and
+>    `AUDIOBOOK_MAPPING_TOKEN` are "shared by design" but UNSET on padhard on
+>    purpose (unset = route disabled). `--both` pushed `EBOOK_INGEST_TOKEN` to her
+>    as a side effect of the PEER_TOKEN rotation (2026-08-25) — reverted the same
+>    minute with `wrangler secret delete … --env friend`. Split `SHARED_SECRETS`
+>    into `SHARED_ALWAYS` and `SHARED_OPT_IN` (pushed to a non-main instance only
+>    with an explicit `--enable NAME`), print `skip (opt-in; --enable NAME)`
+>    otherwise. Update `access/secrets.md`.
+>    **Owner decision 2026-08-25:** padhard gets BOTH turned ON — *"her and I
+>    share audio and ebooks … they're already pre-mixed with mine; they should
+>    count as she owns them too"* — done that day (`EBOOK_INGEST_TOKEN` +
+>    `AUDIOBOOK_MAPPING_TOKEN` set on friend). **Any FUTURE library is opt-in by
+>    the owner**, which is exactly what the `--enable` flag enforces.
+
 ## ✅ PEER_TOKEN rotated — the leaked cross-instance bearer is dead — 2026-08-25
 
 **Why.** 2026-08 audit CRITICAL: the live `PEER_TOKEN` sat in plaintext in

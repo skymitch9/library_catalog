@@ -32,28 +32,12 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
-## ☐ `push-secrets.mjs` — two mechanical guards from the 2026-08-25 rotation (small; batch with deferred F9/F21)
+## ☐ `push-secrets.mjs` — the pipelines must TARGET padhard (guards 1–2 DONE 2026-08-25)
 
-1. **Refuse a glued value.** Incident in [`info/gotchas.md`](info/gotchas.md) ("I
-   appended a key to `.dev.vars` and the push shipped a corrupted secret"): a
-   `>>` onto a file with no trailing newline glued `PEER_TOKEN=…` onto
-   `HARDCOVER_API_TOKEN`'s value and `secrets:push:both` shipped it to both
-   instances. When parsing `.dev.vars`, if any value matches
-   `/[A-Z][A-Z0-9_]{2,}=/` or contains CR/LF, refuse the WHOLE run with a
-   sentence naming the key (never the value). Test with a fixture.
-2. **Route-enabling tokens must be opt-in for friend.** `EBOOK_INGEST_TOKEN` and
-   `AUDIOBOOK_MAPPING_TOKEN` are "shared by design" but UNSET on padhard on
-   purpose (unset = route disabled). `--both` pushed `EBOOK_INGEST_TOKEN` to her
-   as a side effect of the PEER_TOKEN rotation (2026-08-25) — reverted the same
-   minute with `wrangler secret delete … --env friend`. Split `SHARED_SECRETS`
-   into `SHARED_ALWAYS` and `SHARED_OPT_IN` (pushed to a non-main instance only
-   with an explicit `--enable NAME`), print `skip (opt-in; --enable NAME)`
-   otherwise. Update `access/secrets.md`.
-   **Owner decision 2026-08-25:** padhard gets BOTH turned ON — *"her and I
-   share audio and ebooks … they're already pre-mixed with mine; they should
-   count as she owns them too"* — done that day (`EBOOK_INGEST_TOKEN` +
-   `AUDIOBOOK_MAPPING_TOKEN` set on friend). **Any FUTURE library is opt-in by
-   the owner**, which is exactly what the `--enable` flag enforces.
+> ✅ Items **1 (glued-value refusal)** and **2 (`SHARED_ALWAYS`/`SHARED_OPT_IN`
+> + `--enable`)** shipped 2026-08-25 and moved whole to
+> [`DONE.md`](DONE.md). Item 3, unchanged and still open, is below.
+
 3. **The pipelines must TARGET her too, or the unlocked routes do nothing.**
    `audiobook_catalog/scripts/sync_to_drive.py` `_run_sibling_link` (STEP 11)
    runs `backfill-audiobook-holdings.mjs` for MAIN only — padhard's 101 audio
