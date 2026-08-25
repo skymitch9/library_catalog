@@ -17,6 +17,38 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ Scan lookup — `bestCandidate` borrows Google's description across rungs (was discarded) — both instances — 2026-08-25
+
+**Why.** Owner: scanning misses description/series; *"we should have google books, its turned on in our gcp."*
+
+**Findings.** `GOOGLE_BOOKS_API_KEY` **is set on both instances** (verified) — Google
+Books rung was live. The bug: `resolveIsbn` collects candidates from OL (rung 1,
+no description) + Google Books (rung 2, has one), but every consumer took
+`candidates[0]` and borrowed **only the cover** (`coverFrom`) — discarding Google's
+blurb. Exactly `coverFrom`'s board-book bug, one field over.
+
+**What shipped** (commits `636c32a` + test; deployed main `ee983e8c` / friend `5d47ae55`).
+- `@lc/isbn`: new **`bestCandidate()`** keeps rung-1 identity (title/authors/source)
+  and **coalesces supplementary fields** (description, cover, year, pages, publisher,
+  language) across rungs; + `descriptionFrom()`. Test `best-candidate.test.ts` (6).
+- Applied in `scan-jobs.ts` + `gabi-delegated.ts` (the two paths that store a
+  resolved candidate). `isbn.ts` returns raw candidates (client merges);
+  `AddWork.tsx` only prefills title/author so was left (no `@lc/isbn` client dep).
+
+**⚠️ The system was more built than expected — read before the next lookup work.**
+There is already a per-field FREE ladder `freeDetailsFor` (`lib/free-details.ts`,
+`FREE_LADDER_FIELDS = series/seriesIndex/description`) run on scan-add via
+`waitUntil` and in the details sweep before the LLM — it consults
+`audiobook_holding`, the estate index (dark), OL `/works/<key>/editions.json`, and
+Google Books, **stops per FIELD not per rung**, and **never** calls the LLM
+(`editCatalog` scan must not spend money). So Google *is* asked for descriptions
+on add. The genuine remaining gap is **structured SERIES for indie/genre books** —
+nothing free carries it cleanly. The plan for it (Wikidata P179/P1545 via the P629
+edition→work hop, + Hardcover GraphQL) is in
+[`info/scan-metadata-fill-strategy.md`](info/scan-metadata-fill-strategy.md).
+Also flagged there: OL's `jscmd=data` (rung 1 of `resolveIsbn`) returns no
+description — the WORK record does; a free future fix.
+
 ## ✅ Audiobook near-miss audit + linking (109 confirmed + the 12) — both instances — 2026-08-25
 
 **Why.** Owner: *"find books that look like they match an audiobook but didn't
