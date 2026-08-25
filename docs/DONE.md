@@ -17,6 +17,92 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ Hardcover rung in the free-details ladder — SHIPPED both instances — 2026-08-25
+
+**Why.** The gap the previous two entries kept naming is **structured SERIES for
+indie/genre books**. Open Library files series as an unstructured string and
+Google Books' "series" is only ever a hint parsed out of a title; Wikidata
+(shipped the same morning) has the cleanest structured ordinal but a notability
+bar that the LitRPG / webnovel / self-published end of this catalogue does not
+clear — which is precisely the end with the gaps. Hardcover.app's contributors
+are largely ex-Goodreads genre readers, and it is **the only free source that
+answers a description AND a structured series + volume in one request**. The
+strategy doc called it *"the best single addition if we only add one vendor"*
+([`info/scan-metadata-fill-strategy.md`](info/scan-metadata-fill-strategy.md)).
+
+**What shipped** — code in commit **`893dd37`**, docs in the commit that carries
+this entry. Deployed to **both** instances the same day; ⚠️ the deployed
+**version ids are in [`deploys.log`](deploys.log)**, which is written by the
+deploy tooling and is the one place that owns them — they are deliberately not
+copied here, because a hand-copied id is the kind of fact that goes wrong.
+
+| File | What |
+|---|---|
+| `packages/isbn/src/hardcover.ts` | **new** — `lookupHardcover(isbn13, {token, fetchImpl?, userAgent?})` → `{description, series, position} \| null`. POST to `https://api.hardcover.app/v1/graphql`, `Authorization: Bearer`, `AbortSignal.timeout(10_000)` |
+| `packages/isbn/src/index.ts` | exports it |
+| `packages/isbn/test/hardcover.test.ts` | **new** — 10 mocked-fetch cases |
+| `apps/worker/src/lib/free-details.ts` | `'hardcover'` on `FreeRung` + `RUNG_LABEL`; `askHardcover`; inserted in `rungs` **after** Google Books and **before** Wikidata; header rung table updated |
+| `apps/worker/src/lib/free-details.test.ts` | 4 ladder cases |
+| `apps/web/src/pages/DetailsQueuePage.tsx` | `SOURCE_LABEL` gains `hardcover` **and `wikidata`** — the latter was missing since that morning's rung and would have rendered as the bare key |
+| `apps/web/src/api.ts`, `packages/db/src/research.ts` | the two doc comments that enumerate the rung union, brought back in step |
+
+**The rung order now** (`freeDetailsFor`, per-field stop unchanged):
+
+1. `audiobook_holding` → 2. the estate index (**still dark**) → 3. Open Library
+editions/work → 4. Google Books → **5. Hardcover** → 6. Wikidata → then the paid
+model.
+
+Hardcover sits in front of Wikidata deliberately: both give a structured series,
+but Hardcover's coverage skews the way this catalogue does and it returns the
+blurb in the same call, so it gets first crack and Wikidata is the fallback.
+
+**Two rules it obeys rather than re-implements.**
+- ⚠️ **`readSeriesLabel` is NOT applied.** Hardcover's series arrives as a
+  structured join (`book_series.series.name`), not a string that *might* contain
+  a series. Running a series-detector over a field already declared to be a
+  series name is how *"Elantris (1)"* became a shelf of one.
+- ⚠️ **`seriesIndexDisplay` is never written.** `book_series.position` is a
+  `float8` — a number, not a designation a publisher printed. It closes
+  `seriesIndexSort` only. Owner rule, 2026-08-19; same as the Wikidata rung.
+
+**The schema was confirmed, not assumed.** `docs.hardcover.app` answered **403**
+to an automated fetch, so the field names were read straight off the vendor's
+published SDL — `hardcoverapp/hardcover-docs@main/schema.graphql`, 2026-08-25:
+`query_root.editions(where:, limit:) : [editions!]!`, `editions.isbn_13: String`,
+`editions.book: books!`, `books.description: String`,
+`books.book_series(...): [book_series!]!`, `book_series.position: float8`,
+`book_series.series: series` → `series.name: String!`. **The research doc's
+sketch was right in every particular.** Free tier confirmed at 5,000/day, burst
+10, 60/min.
+
+**Verified.**
+- `npm run test` — **1728 pass / 0 fail** (was 1714; +10 isbn, +4 ladder).
+  `npm run typecheck` — clean.
+- Asserted by test: the ISBN travels as a GraphQL **variable** and the query text
+  never contains it; a decimal `position` (1.5) survives; a `float8` arriving as
+  a numeric string is read; the first `book_series` row that actually *names* a
+  series wins; no edition → null; HTTP 500 → throws; a malformed ISBN makes **no
+  request at all**; the ladder writes no printed designation from the number;
+  Hardcover closes the series **before** Wikidata is dialled.
+- ⚠️ **NOT verified: the live Hardcover call.** Nothing in CI or in these tests
+  ever contacts `api.hardcover.app` — every test mocks `fetch`, and the real
+  token was deliberately never used from this session. The request SHAPE is
+  verified against the vendor's schema; that a real token gets a real answer is
+  **not**.
+- ⚠️ **The friend instance skips this rung entirely** until the owner sets the
+  secret: `HARDCOVER_API_TOKEN` is on the main Worker only. It reports
+  `Hardcover: not asked — no HARDCOVER_API_TOKEN` — a named skip, never a silent
+  one, so a rung nobody could ask is distinguishable from one that was asked and
+  knew nothing. To turn it on:
+  `npm run secret:friend HARDCOVER_API_TOKEN` (it is already on the
+  `push-secrets.mjs` allowlist).
+- Nothing was measured about how many books this actually closes. That number
+  needs a run against real data and is not claimed here.
+
+**Where to see it:** <https://library.heygabi.ai/queue> — a book whose series or
+description was filled by this rung shows *"answered by: series — Hardcover"* on
+its run line.
+
 ## ✅ Scan lookup — `bestCandidate` borrows Google's description across rungs (was discarded) — both instances — 2026-08-25
 
 **Why.** Owner: scanning misses description/series; *"we should have google books, its turned on in our gcp."*

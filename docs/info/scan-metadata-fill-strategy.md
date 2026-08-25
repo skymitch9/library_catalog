@@ -44,11 +44,13 @@ origin) returned zero results — our catalog skews exactly this way.
    `volumeInfo.seriesInfo` off the response we already fetch — `bookDisplayNumber`
    (general) / `volumeSeries[].orderNumber` (Collection/Omnibus only). Free but
    series rarely populated.
-3. **Wikidata SPARQL — the dedicated series/volume rung.** The only source with a
+3. ✅ **BUILT 2026-08-25** — `packages/isbn/src/wikidata.ts`, wired as the LAST free rung of `apps/worker/src/lib/free-details.ts`.
+   **Wikidata SPARQL — the dedicated series/volume rung.** The only source with a
    structured, sourced, *ordinal-numbered* series field, CC0 (cleanest terms of
    anything), free, no key. Misses self-pub/indie — that's fine, the LLM stays
    for the residue.
-4. **Hardcover.app GraphQL — description + series + volume in ONE call.** Free
+4. ✅ **BUILT 2026-08-25** — `packages/isbn/src/hardcover.ts`, asked BEFORE the Wikidata rung (the genre/indie skew gets first crack); MAIN instance only until the friend instance gets `HARDCOVER_API_TOKEN`, where it skips by name.
+   **Hardcover.app GraphQL — description + series + volume in ONE call.** Free
    API key, 5,000 req/day, community skew (ex-Goodreads genre/LitRPG readers) is
    the best available match for our content. Best single addition if we only add
    one vendor.
