@@ -32,6 +32,30 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
+## ☐ F9 — a volume number is written only against the SAME series (owner: option A, 2026-08-25)
+
+Review finding F9 (`info/review-2026-08-25-overnight-work.md`), deferred by the
+fix batch as a design call; the owner decided **A — skip on mismatch**: in
+`free-details.ts`, `fieldsClosedBy`/`seriesInHand` must compare the rung's series
+NAME against the series already in hand (the catalogued one, or one an earlier
+rung closed) using the project's ONE matcher (`packages/core/src/matching.ts`
+`titleSimilarity`/`isConfidentMatch` — never a new fold), and when they differ
+the ordinal is DROPPED with a named skip ("<rung>: names series X, but this book
+is filed under Y — volume not written"). Never option B (re-filing a book from a
+rung). Tests: Wikidata answers "The Cosmere, 7" for a Stormlight book → no
+`seriesIndexSort` written, skip named; same series spelled differently
+("Stormlight Archive" vs "The Stormlight Archive") → still written. Dispatched
+with the index-read build.
+
+## ☐ Custody gap: `DONOR_TOKEN` + `AUDIOBOOK_MAPPING_TOKEN` are live but absent from `.dev.vars` (found 2026-08-25)
+
+A bulk run cannot rotate them (`--both --dry-run`: "skip (not set locally)").
+Their masters: `AUDIOBOOK_MAPPING_TOKEN` = `audiobook_catalog/.env`
+`LIBRARY_MAPPING_TOKEN` (that is where padhard's copy was piped from today);
+`DONOR_TOKEN` — unknown, no readable copy found. Record both in
+`access/RECOVERY.md` custody table; mint `DONOR_TOKEN` fresh into `.dev.vars`
+(trailing-newline check) and `secrets:push:both` when convenient.
+
 ## ☐ Shelf is COPY-DRIVEN + EditBox tab merge — LANDED FOR REVIEW (branch `feature/shelf-copy-driven`, 2026-08-24)
 
 Fixes the ownership bug where an OWNED book read as **Wanted**. `deriveShelfView`
