@@ -17,6 +17,82 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ Audiobook near-miss audit + linking (109 confirmed + the 12) — both instances — 2026-08-25
+
+**Why.** Owner: *"find books that look like they match an audiobook but didn't
+quite line up … make a report for padhard."* Plus specific fixes (Fourth Wing,
+the ACOTAR dramatizations).
+
+**The audit.** `tmp` script fuzzy-matched every library work (both instances)
+against `audiobook_catalog/site/catalog.csv` (9,406 audiobooks) by shared author
+surname + title similarity after stripping series/volume tails. Output = an
+interactive checklist artifact the owner tapped through
+(`claude.ai/code/artifact/cc9566f0…`, `artifact` capability → owner's Yes/No
+saved back). Result: 25 near-misses on Sky, 116 on padhard (padhard had **zero**
+audio links). Owner marked **109 yes / 20 no / 12 undecided**.
+
+**⚠️ How audio linking actually works here — the durable mechanisms:**
+1. **Per-work edition link** = a `work_alias` row (`kind='title'`) whose clean
+   title matches the audiobook, then run `npm run backfill:audiobooks --
+   --remote --commit` (`--friend` for padhard). The matcher
+   (`packages/core/src/matching.ts`, via `scripts/backfill-audiobook-holdings.mjs`)
+   asks under our aliases, writes `audiobook_edition_holding`, and marks unmatched
+   rows **stale (never deletes)** — so aliases are re-matched every run = durable.
+2. **Whole-series link** = a row in `audiobook_series_link`
+   (`series`, `audiobook_series`, `confirmed_by`). Read-time
+   `deriveAudiobookHoldingFromSeriesLink` then shows EVERY book in that series as
+   "owned on audio" via the series ladder. This is how The Empyrean (Onyx Storm
+   etc.) already worked.
+
+**⚠️ Two gotchas that cost real time:**
+- **The matcher's volume guard (`numbersAgree`) blocks multi-part dramatizations.**
+  *"A Court of Mist and Fury (Part 1 of 2) (Dramatized Adaptation) - A Court of
+  Thorns and Roses 2"* carries numbers a clean book title lacks, so NO alias
+  (even the exact title) links it. **Do not try to fix this in the matcher** — the
+  **series-link** solves it cleanly (each dramatized book is one series rung), no
+  code change, and auto-covers future ACOTAR audio. Verified live: work 458 (Sky)
+  and 178 (padhard) show "Audiobook OWNED".
+- **The audit only checked `audiobook_edition_holding` (per-work), not
+  `audiobook_series_holding`.** So works already covered by a series ladder
+  (Stormlight, ACOTAR) showed as false "near-misses". A better audit joins both.
+
+**What was applied.**
+- **109 confirmed** → clean-title aliases (`tmp/alias_main.sql`, `alias_friend.sql`)
+  + backfill --commit both. Sky **126→133** edition-linked works; padhard
+  **0→101**. Fourth Wing (#507) among them (`matched_via=exact`).
+- **The 12 undecided:** 3 standard (ACOTAR #325, Wind and Truth #418, Rhythm of
+  War #465) + 7 dramatized ACOTAR (Sky #458/#459; padhard #178/#179/#180/#182) +
+  Twilight #392 → all resolved by **series-links**: added `audiobook_series_link`
+  rows for **The Stormlight Archive, A Court of Thorns and Roses, The Twilight
+  Saga** (main) and **A Court of Thorns and Roses** (friend). Twilight is the
+  "Tenth Anniversary/Life and Death Dual Edition" — a variant, noted in the link.
+  **Out Law #28 skipped** ("The Law" is a *different* Dresden novella).
+- The 20 rejections held: most are volume conflicts the matcher self-rejects; the
+  3 risky containment ones (Skyward Collection, 2× DCC variants) the matcher
+  declined on its own.
+
+**Durability:** aliases + series-link rows persist; both re-derive every run, so
+the overnight pipeline did not disturb them.
+
+## ✅ Catalog clerical fixes — Onyx Storm copies + Spanish Goblet of Fire merge — 2026-08-25
+
+- **Onyx Storm (work 100)** — the Target (#656) and Barnes & Noble (#674)
+  hardcover **editions** existed but had **no `copy` rows** (a data-entry gap; no
+  deletion in `change_log`, so the copies were never recorded). Added 2 owned
+  copies (#459 on Target, #460 on Barnes), each logged `__row__`. ⚠️ *"Also on
+  audio" showed via The Empyrean series link even with no copies — a format shows
+  as owned only when it has an owned copy (physical) or a series/edition holding
+  (audio).*
+- **work/503 "Harry Potter y el Caliz de Fuego"** → merged into the English
+  **Goblet of Fire (work 334)**: moved its Spanish paperback edition (#650, ISBN
+  9788478887620) and its owned copy (#436) onto 334, set `edition_name='Spanish
+  edition (Harry Potter y el Caliz de Fuego)'` + `language='Spanish'`, linked the
+  copy to that edition, then **deleted work 503** (0 references — no reviews,
+  read-state, holdings, or aliases). All logged under batch `c48df1f4…`.
+  ⚠️ **No app UI does a work merge** (merging moves `work_key`, which the
+  audiobook bridge/reviews join on — a migration, not a click); this was a manual
+  D1 edit, safe only because 503 had zero inbound references.
+
 ## ✅ Cover search turned on — paid web `findCover` behind an owner-gate + confirm — SHIPPED both instances — 2026-08-24
 
 **Why.** Owner ask, 2026-08-24: *"turn on cover search."* The `RequestCovers`
@@ -53,38 +129,42 @@ today; the rows that reach this rung are ISBN-less anyway). Un-refusing `cover`
 in the details queue stays an explicit owner cost-decision — see `TODO.md`
 "Covers for the SECOND instance" piece 3.
 
-## ✅ "Recorded twice" reclaimed → "Owned 2+ (physical)" — books owned in 2+ physical copies, across editions — SHIPPED both instances — 2026-08-24
+## ✅ "Owned 2+ (physical)" filter — a SEPARATE checkbox, NOT a repurpose — SHIPPED both instances — 2026-08-24/25
 
 **Why.** Owner ask, 2026-08-24: *"i want the recorded twice to show me any book
-i own 2 of in physical, even if different editions."* This restores the
-board-game-style copy-count meaning the owner originally asked to mimic; the
-earlier "duplicate records" interpretation was an author's divergence.
+i own 2 of in physical, even if different editions."*
 
-**What shipped** (commit `f6a1946`, deployed main `f1aa2ce2` / friend `fd754497`).
+**⚠️ This shipped TWICE — the first way was wrong. Read this before touching the
+two "twice" controls.** The first attempt (`f6a1946`) *repurposed* the existing
+"Recorded twice" checkbox: it removed the duplicate-**records** finder (two rows
+for one book) and pointed that checkbox at the new copy-count narrowing. Deployed
+to both instances, then the owner reported *"a bunch of my books are gone, i dont
+see any of my duplicates"* — because with the box ticked the grid narrowed to the
+tiny owned-2+ set, and the records finder was gone. **Root cause: two different
+questions ("is this book entered twice?" vs "do I own 2 copies?") were folded
+onto one control.** Reverted on both instances (`1f5f969b`, deployed main
+`72aad922`… see deploys.log), restoring the records finder verbatim.
 
-- **db** (`packages/db/src/works.ts`): new `CollectionQuery.ownedTwice` +
-  exported `OWNED_TWICE_PHYSICAL` — `COUNT(*)` of held copies (`HELD_STATUSES`)
-  on a physical-or-null edition `>= 2`, no binds. A **narrowing** that composes
-  with every filter, unlike the record-finder it replaced (which took over the
-  whole view). Counting copies already means counting physical objects (ebooks/
-  audio live in their own holding tables); the `format IN (…)` guard makes "in
-  physical" explicit and survives a copy attached to a digital edition. Null
-  edition counts — a copy recorded before its printing is known is still a
-  physical book.
-- **worker**: `?duplicates=1` (kept for back-compat with the control it replaced)
-  → `query.ownedTwice`.
-- **web**: the checkbox is relabelled **"Owned 2+ (physical)"**, drives the grid
-  query (not a separate view), help note rewritten. The groups-view render + the
-  dupes fetch were removed.
-- **The record-finder is KEPT**, not deleted: `GET /api/collection/duplicates` +
-  `groupDuplicates` + `duplicates-view.ts` still exist and are still tested; they
-  are simply no longer wired to a control, and can be resurfaced if the owner
-  wants both.
+**What actually shipped (the redo, `7189d70`, deployed main `f1aa2ce2`… /
+friend):** a **brand-new, separate** control that leaves the records finder
+untouched.
+
+- **db** (`packages/db/src/works.ts`): `CollectionQuery.ownedTwice` + exported
+  `OWNED_TWICE_PHYSICAL` — `COUNT(*)` of held copies (`HELD_STATUSES`) on a
+  physical-or-null edition `>= 2`, no binds. A narrowing that composes with every
+  filter. Copies are already physical objects (ebooks/audio live in their own
+  holding tables); the `format IN (…)` guard makes "in physical" explicit; a
+  null-edition copy counts (a physical book whose printing isn't typed yet).
+- **its OWN param + checkbox**: `?owned2=1` (NOT `?duplicates=1`, which stays the
+  records finder), a second checkbox **"Owned 2+ (physical)"** beside "Recorded
+  twice". The two never share state or param.
 - **test**: `owned-twice-clause.test.ts` (11 cases) runs the shipping SQL on
-  SQLite — including the two-different-editions case the owner named.
+  SQLite, incl. the two-different-editions case the owner named.
 
-**Verified.** typecheck + build clean; 1698→1701 tests pass across this + the
-cover work.
+**Lesson (also in [`KNOWN_ISSUES`]/gotchas territory):** "Recorded twice"
+(duplicate **records**, `?duplicates=1`, `groupDuplicates`) and "Owned 2+"
+(copy **count**, `?owned2=1`, `OWNED_TWICE_PHYSICAL`) are DIFFERENT questions and
+must stay separate controls. Verified: typecheck + build clean; 1701/1701 tests.
 
 ## ✅ Collection filters consolidated — one **Type** dropdown-of-checkboxes replaces Edition + Printing — SHIPPED both instances — 2026-08-24
 
