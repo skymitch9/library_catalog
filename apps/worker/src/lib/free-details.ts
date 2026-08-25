@@ -94,6 +94,7 @@ import {
 import {
   editionsOfWork,
   lookupGoogleBooksByIsbn,
+  lookupWikidataSeries,
   schedule,
   workDescription,
   workKeyForIsbn,
@@ -107,7 +108,7 @@ import { quotedDesignation } from './detail-values.js';
 const UA = 'library_catalog (+private household catalog)';
 
 /** A rung that costs nothing. `'index'` is reserved and dark — see the header. */
-export type FreeRung = 'audiobook' | 'index' | 'openlibrary' | 'googlebooks';
+export type FreeRung = 'audiobook' | 'index' | 'openlibrary' | 'googlebooks' | 'wikidata';
 
 /**
  * Who answered for one field. The free rungs plus the paid one, so a single
@@ -122,6 +123,7 @@ export const RUNG_LABEL: Record<DetailSource, string> = {
   index: 'the estate index',
   openlibrary: 'Open Library',
   googlebooks: 'Google Books',
+  wikidata: 'Wikidata',
   llm: 'a paid lookup',
 };
 
@@ -660,6 +662,47 @@ async function askGoogleBooks(
   }
 }
 
+/**
+ * Wikidata — the only free rung with a STRUCTURED, sourced series + ordinal, so
+ * it is the last free chance to fill `series`/`seriesIndex` before the paid
+ * lookup. It answers series ONLY (Wikidata carries no synopsis worth using), and
+ * only when one is still open. See `lookupWikidataSeries` in `@lc/isbn` for the
+ * two-hop ISBN→edition→work query and why the ISBN is de-hyphenated in the FILTER.
+ *
+ * ⚠️ **No `seriesIndexDisplay`.** `P1545` is an ordinal NUMBER, not a designation
+ * a publisher printed, so it closes the sort/position (`seriesIndexSort`) but
+ * never the printed form — `printedFormIn`'s rule, the same one the title-parse
+ * rungs obey. A book that needs "Book One" on the page still gets it from a rung
+ * that quotes it, or from a person; this rung will not invent one from a digit.
+ */
+async function askWikidata(
+  ctx: LadderContext,
+  open: ReadonlySet<DetailField>,
+  skipped: string[],
+): Promise<FieldAnswer[]> {
+  if (!open.has('series') && !open.has('seriesIndex')) return [];
+
+  const isbn = await ctx.isbn13();
+  if (!isbn) {
+    skipped.push('Wikidata: no ISBN on any edition of this book to ask with');
+    return [];
+  }
+
+  try {
+    const hit = await lookupWikidataSeries(isbn, { fetchImpl: ctx.doFetch, userAgent: UA });
+    if (!hit) {
+      skipped.push(`Wikidata: no series recorded for ISBN ${isbn}`);
+      return [];
+    }
+    const answer: FieldAnswer = { rung: 'wikidata', series: hit.series };
+    if (hit.ordinal !== null) answer.seriesIndexSort = hit.ordinal;
+    return [answer];
+  } catch (err) {
+    skipped.push(`Wikidata: ${err instanceof Error ? err.message : String(err)}`);
+    return [];
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Running it
 // ---------------------------------------------------------------------------
@@ -758,6 +801,9 @@ export async function freeDetailsFor(
     (o) => askIndex(ctx, o, outcome.skipped),
     (o) => askOpenLibrary(ctx, o, outcome.skipped, throttle),
     (o) => askGoogleBooks(ctx, o, outcome.skipped),
+    // Last, and series-only: the structured source that catches what the
+    // title-parse rungs above miss on indie/genre books — the owner's actual gap.
+    (o) => askWikidata(ctx, o, outcome.skipped),
   ];
 
   for (const rung of rungs) {
