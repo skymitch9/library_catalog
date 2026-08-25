@@ -176,8 +176,13 @@ test('the estimated tick stays inside a Worker invocation, worst case', () => {
 });
 
 test('a book with every field missing takes the tick to itself', () => {
-  // 12 + 15 (free ladder) + 4x4 = 43 each; two of them is 86, past the budget
+  // 12 + 18 (free ladder) + 4x4 = 46 each; two of them is 92, past the budget
   // and past the ceiling. It is picked alone rather than fitted in beside another.
+  //
+  // ⚠️ This is the case that forced SWEEP_BUDGET 44 -> 46 when rung 2 went live
+  // (2026-08-25). `planSweep` BREAKS rather than continues, and this book sorts
+  // first (never attempted), so at 44 the sweep would have picked NOTHING every
+  // hour instead of deferring it. A four-gap book is the one the sweep is for.
   const greedy = (id: number) =>
     candidate({ workId: id, missing: ['firstPublished', 'series', 'seriesIndex', 'description'] });
   const plan = planSweep([greedy(1), greedy(2)]);
@@ -190,23 +195,23 @@ test('an ordinary AI book is picked and stays inside the budget', () => {
   // The common shape by a distance: every work in this catalog was missing its
   // year and its description when the queue was measured (2026-08-10). Since the
   // free-details ladder is now counted (audit HIGH, details-sweep.ts:328), an
-  // AI-only two-gap book estimates at 12 + 15 + 8 = 35, so a single one fits
-  // under the 44 budget but TWO (70) no longer do — the ladder cost
+  // AI-only two-gap book estimates at 12 + 18 + 8 = 38, so a single one fits
+  // under the 46 budget but TWO (76) no longer do — the ladder cost
   // that was silently overrunning the 50-subrequest ceiling is now honest.
   const one = planSweep([candidate({ workId: 1 })]);
   assert.equal(one.pick.length, 1);
   assert.ok(one.estimated <= SWEEP_BUDGET, `${one.estimated} over budget`);
 
   const two = planSweep([candidate({ workId: 1 }), candidate({ workId: 2 })]);
-  assert.equal(two.pick.length, 1, 'two AI books really cost 70 > 44 — one is picked, honestly');
+  assert.equal(two.pick.length, 1, 'two AI books really cost 76 > 46 — one is picked, honestly');
   assert.equal(two.deferred, 1);
   assert.ok(two.estimated <= SWEEP_BUDGET);
 });
 
 test('the item cap binds even when the budget would allow more', () => {
   // A deliberately generous budget so the BUDGET is not what binds — this test
-  // isolates the item cap. (Under the real 44 budget, the free-ladder cost means
-  // even one-field AI books at 31 each let only one through, so the cap and the
+  // isolates the item cap. (Under the real 46 budget, the free-ladder cost means
+  // even one-field AI books at 34 each let only one through, so the cap and the
   // budget can no longer be exercised by the same fixture.)
   const cheap = (id: number) => candidate({ workId: id, missing: ['description'] });
   const plan = planSweep([cheap(1), cheap(2), cheap(3), cheap(4)], SWEEP_LIMIT, 500);
@@ -252,7 +257,7 @@ test('⚠️ the ladder price is DERIVED from the ladder — a new rung cannot l
   // and the `getWork` re-read after. `free-details.test.ts` proves the ladder
   // half against a real worst-case run.
   assert.equal(FREE_LADDER_SUBREQUESTS, FREE_DETAILS_SUBREQUESTS + 2);
-  assert.equal(FREE_LADDER_SUBREQUESTS, 15, 'today: 13 in the ladder + 2 around it');
+  assert.equal(FREE_LADDER_SUBREQUESTS, 18, 'today: 16 in the ladder + 2 around it');
 });
 
 // ---------------------------------------------------------------------------

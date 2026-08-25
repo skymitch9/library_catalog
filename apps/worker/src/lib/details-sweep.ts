@@ -80,11 +80,11 @@
  * | donor bookkeeping when either donor rung answers — createRun, saveFindings, listFindings (inside auto-apply), finishRun | 4 |
  * | `claimRun` — closeStaleRuns, activeRun, getWork, gapsFor (getWork + verdicts), createRun | 6 |
  * | `runDetailsResearch` — getWork, the Claude call, saveFindings, finishRun | 5 |
- * | **the FREE-DETAILS LADDER `runDetailsResearch` now always runs first** — listAliasesForWork, freeDetailsFor (getWork, listGapVerdicts, audiobook, Open Library ×4, Google Books, Hardcover, Wikidata, writeFreeValues ×3), re-read getWork; **derived** from `FREE_LADDER_RUNGS`, see `FREE_LADDER_SUBREQUESTS` | **15** |
+ * | **the FREE-DETAILS LADDER `runDetailsResearch` now always runs first** — listAliasesForWork, freeDetailsFor (getWork, listGapVerdicts, audiobook, Open Library ×4, Google Books, Hardcover, Wikidata, writeFreeValues ×3), re-read getWork; **derived** from `FREE_LADDER_RUNGS`, see `FREE_LADDER_SUBREQUESTS` | **18** |
  * | apply — 4 per field applied | 4·fields |
- * | **one book, AI only** | **27 + 4·fields** |
+ * | **one book, AI only** | **30 + 4·fields** |
  * | **one book, donor only** | **5 + 4·fields** |
- * | **one book, both paths live** | **33 + 4·fields** |
+ * | **one book, both paths live** | **36 + 4·fields** |
  *
  * ⚠️ The donor's two rungs are **exclusive**, so they do not add up: the judge
  * fires only when the exact match missed, and either way exactly one donor run
@@ -95,9 +95,9 @@
  *
  * Each field is APPLIED at most once — by whichever path answered it — so the
  * `4·fields` term is never doubled when both paths run; what doubles is the
- * run bookkeeping, hence 33 rather than 39. On an AI-only instance a two-gap
- * book is ~35 and a four-gap book ~43; donor-only, 13 and 21; both live, 41
- * and 49. ⚠️ Those AI columns are why `planSweep` and `estimateSubrequests`
+ * run bookkeeping, hence 36 rather than 42. On an AI-only instance a two-gap
+ * book is ~38 and a four-gap book ~46; donor-only, 13 and 21; both live, 44
+ * and 52. ⚠️ Those AI columns are why `planSweep` and `estimateSubrequests`
  * take the mode AND count the free ladder: even on an AI-only instance two
  * ordinary books now estimate past 50 — the whole ceiling — so the plan
  * honestly picks ONE, rather than fitting two in on an estimate blind to the
@@ -259,8 +259,32 @@ export const SWEEP_LIMIT = 2;
  * gets. The two queue reads take 2 more, and the remaining slack is on purpose:
  * the per-book figure is an estimate, and being wrong about it does not throw —
  * it silently kills the invocation mid-lookup.
+ *
+ * ⚠️ **44 → 46 on 2026-08-25, when rung 2 of the free ladder stopped being
+ * dark.** This is a raise made reluctantly and it is the smallest one that
+ * works, because the alternative was worse than tight slack:
+ *
+ * `planSweep` **`break`s** rather than `continue`s when the next book will not
+ * fit (deliberately — skipping ahead would reorder the rotation). The queue is
+ * ordered never-attempted-first, so an unaffordable book at the HEAD is not
+ * deferred, it stalls the whole sweep, every hour, silently. At the old 44 an
+ * AI-only book missing all four details cost `12 + 18 + 16 = 46` and would have
+ * done exactly that — and a four-gap book is precisely the one the sweep exists
+ * for.
+ *
+ * So the slack under the 50 ceiling is now **2, not 4**. What makes that
+ * defensible rather than reckless is that the largest term stopped being an
+ * estimate: `FREE_DETAILS_SUBREQUESTS` is summed from `FREE_LADDER_RUNGS` and
+ * `free-details.test.ts` **counts the real calls** of a worst-case run against
+ * it. What is still guessed here is the bookkeeping constants, and they have
+ * not moved since they were enumerated.
+ *
+ * ⚠️ Do not raise this again to make a book fit. 48 + 2 IS the ceiling, and a
+ * budget equal to the ceiling has stopped being a budget. If the ladder grows
+ * another rung, the next move is to price the rung down (see
+ * `INDEX_MAX_IDENTITIES` in `free-details.ts`), not to spend the last two.
  */
-export const SWEEP_BUDGET = 44;
+export const SWEEP_BUDGET = 46;
 
 /**
  * ⚠️ Must match `wrangler.toml`'s `crons` entry EXACTLY — `scheduled()`
@@ -338,7 +362,16 @@ const FREE_LADDER_CALLER_SUBREQUESTS = 2;
  * Every AI-mode book was priced 4 subrequests short against a ceiling whose
  * overrun does not throw but silently kills the invocation.
  *
- * Today: 13 (ladder) + 2 (caller) = **15**.
+ * Today: 16 (ladder) + 2 (caller) = **18**.
+ *
+ * ⚠️ **It moved 15 → 18 on 2026-08-25 when rung 2 stopped being dark**, and
+ * that is the whole reason `INDEX_MAX_IDENTITIES` exists rather than the rung
+ * fanning out over every alias `selectTitleAliases` allows. At the uncapped
+ * price (1 + 4 = 5, so a ladder of 18 and a total of 20) a two-question book on
+ * a donor instance cost 46 against a budget of 44, and `planSweep` would have
+ * picked **nothing, every hour, silently** — a worse outcome than asking three
+ * spellings instead of five. Reprice the rung and this number follows; it is
+ * derived, and the cost test counts the real calls.
  *
  * Only in AI mode: `if (!mode.ai) continue;` gates runDetailsResearch, so a
  * donor-only tick never walks this ladder.
@@ -350,7 +383,7 @@ export const FREE_LADDER_SUBREQUESTS =
  * See the table in the header. Per field, because apply is per field; per
  * mode, because each live path carries its own run bookkeeping — an estimate
  * blind to the donor would under-count by 5 per book, and one blind to the free
- * ladder under-counts by `FREE_LADDER_SUBREQUESTS` (15) per AI book; the overrun
+ * ladder under-counts by `FREE_LADDER_SUBREQUESTS` (18) per AI book; the overrun
  * does not throw, it silently kills the invocation.
  *
  * ⚠️ The donor term is 6 rather than 5 wherever a judge is possible: the two
