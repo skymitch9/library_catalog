@@ -126,7 +126,16 @@ import { quotedDesignation } from './detail-values.js';
 // PREDICATE — see the note there — rather than growing a second normaliser.
 import { canonicalUniverse } from './universes.js';
 
-const UA = 'library_catalog (+private household catalog)';
+/**
+ * How this catalog identifies itself to every free API the ladder asks.
+ *
+ * ⚠️ **The contact is not decoration.** Wikidata's policy requires one and
+ * blocks by UA when it throttles (F14, 2026-08-25); Open Library asks for one
+ * too. A block arrives as a thrown HTTP error — a rung permanently skipped,
+ * reported as one line in `skipped`, which is a quiet way to lose a source.
+ * Same address and same spelling as `scripts/backfill-openlibrary-ids.mjs`.
+ */
+const UA = 'library_catalog/1.0 (private household catalog; nbaslamking@gmail.com)';
 
 /** A rung that costs nothing. `'index'` is reserved and dark — see the header. */
 export type FreeRung =
