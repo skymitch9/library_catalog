@@ -17,6 +17,75 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ Cover search turned on — paid web `findCover` behind an owner-gate + confirm — SHIPPED both instances — 2026-08-24
+
+**Why.** Owner ask, 2026-08-24: *"turn on cover search."* The `RequestCovers`
+scaffold on the book page pointed at a route that did not exist; this builds it.
+
+**What shipped** (commit `2fadc19`, deployed main `f1aa2ce2` / friend `fd754497`).
+
+- **`POST /api/works/:id/cover/find`** in `apps/worker/src/routes/covers.ts`,
+  `requireCapability('runResearch')` — the same owner/admin/moderator money-gate
+  the research run route uses (not `editCatalog`; the search spends money).
+  Checks `ANTHROPIC_API_KEY` (503 with a sentence), runs `findCover`, fetches the
+  returned URL through `verifyCoverUrl`, and **returns the proposal** — it does
+  NOT store. A cover is permanent (nothing revisits the column), so applying one
+  stays a human's call via the verified PUT. Awaited, not `waitUntil`-only (the
+  search takes 20–90s).
+- **Web** (`RequestCovers` in `EditBox.tsx`): a **"Search the web for a cover"**
+  button shown only with `runResearch`, a `window.confirm` before each ~6¢ run
+  (the money-spend is deliberate, per the owner), the proposal rendered (image,
+  source, confidence, note), and **"Use this cover"** applying it through the
+  free re-verified `setCover`. The free "Choose from known covers" pointer stays
+  for `editCatalog` readers.
+- **API**: `api.findCover(id)` + `CoverProposal` / `CoverFindResult` types.
+- **Capability wiring test** updated with the new route (`runResearch`).
+
+**Verified.** typecheck + build clean; 1701/1701 tests pass. The live search
+itself is not exercised in CI (it bills); the route's gate, key-check, and
+verify path are covered by the capability-wiring test + the existing cover PUT
+tests it shares `verifyCoverUrl` with. **Not yet exercised live against a real
+book** — that is the owner's to run (it spends money): open any cover-less book →
+Edit → Cover → "Search the web for a cover".
+
+**Deferred:** passing a work's edition ISBN to `findCover` (it sends `isbn: null`
+today; the rows that reach this rung are ISBN-less anyway). Un-refusing `cover`
+in the details queue stays an explicit owner cost-decision — see `TODO.md`
+"Covers for the SECOND instance" piece 3.
+
+## ✅ "Recorded twice" reclaimed → "Owned 2+ (physical)" — books owned in 2+ physical copies, across editions — SHIPPED both instances — 2026-08-24
+
+**Why.** Owner ask, 2026-08-24: *"i want the recorded twice to show me any book
+i own 2 of in physical, even if different editions."* This restores the
+board-game-style copy-count meaning the owner originally asked to mimic; the
+earlier "duplicate records" interpretation was an author's divergence.
+
+**What shipped** (commit `f6a1946`, deployed main `f1aa2ce2` / friend `fd754497`).
+
+- **db** (`packages/db/src/works.ts`): new `CollectionQuery.ownedTwice` +
+  exported `OWNED_TWICE_PHYSICAL` — `COUNT(*)` of held copies (`HELD_STATUSES`)
+  on a physical-or-null edition `>= 2`, no binds. A **narrowing** that composes
+  with every filter, unlike the record-finder it replaced (which took over the
+  whole view). Counting copies already means counting physical objects (ebooks/
+  audio live in their own holding tables); the `format IN (…)` guard makes "in
+  physical" explicit and survives a copy attached to a digital edition. Null
+  edition counts — a copy recorded before its printing is known is still a
+  physical book.
+- **worker**: `?duplicates=1` (kept for back-compat with the control it replaced)
+  → `query.ownedTwice`.
+- **web**: the checkbox is relabelled **"Owned 2+ (physical)"**, drives the grid
+  query (not a separate view), help note rewritten. The groups-view render + the
+  dupes fetch were removed.
+- **The record-finder is KEPT**, not deleted: `GET /api/collection/duplicates` +
+  `groupDuplicates` + `duplicates-view.ts` still exist and are still tested; they
+  are simply no longer wired to a control, and can be resurfaced if the owner
+  wants both.
+- **test**: `owned-twice-clause.test.ts` (11 cases) runs the shipping SQL on
+  SQLite — including the two-different-editions case the owner named.
+
+**Verified.** typecheck + build clean; 1698→1701 tests pass across this + the
+cover work.
+
 ## ✅ Collection filters consolidated — one **Type** dropdown-of-checkboxes replaces Edition + Printing — SHIPPED both instances — 2026-08-24
 
 **Why.** Owner PRIORITY ask, 2026-08-24: *"in the filters list for library the

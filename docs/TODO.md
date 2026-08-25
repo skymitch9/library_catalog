@@ -412,15 +412,17 @@ of it as evidence about the second instance.
    `--standins` target set, made `--llm` read the key of the **instance** it is
    pointed at, and stopped it auto-writing low-confidence proposals. Both
    instances have been swept with `--commit`.
-2. **~1–2 h — the button on the book page.** `POST /api/works/:id/cover/find`
-   in `routes/covers.ts` → `findCover` → `verifyCoverUrl` → propose, and
-   `CoverPanel` grows a **"Find a cover"** button beside "Choose from known
-   covers". ⚠️ `ANTHROPIC_API_KEY` is already an optional binding in
-   `apps/worker/src/env.ts`, and `routes/research.ts` is the precedent for a
-   paid LLM call behind a capability. Capability: **`runResearch`** (it spends
-   money), not `editCatalog`. Show the proposal with its `confidence` and
-   `note` and let a person press Use — do **not** auto-apply, because
-   *nothing in this system ever revisits a cover column*.
+2. ~~**~1–2 h — the button on the book page.**~~ **DONE 2026-08-24** (owner:
+   *"turn on cover search"*), shipped `2fadc19`, deployed both instances.
+   `POST /api/works/:id/cover/find` in `routes/covers.ts` → `findCover` →
+   `verifyCoverUrl` → propose (no store). `RequestCovers` grows a **"Search the
+   web for a cover"** button beside "Choose from known covers", gated on
+   **`runResearch`**, a `window.confirm` before each ~6¢ search, the proposal
+   shown with its `confidence`/`note`/`source` and a **"Use this cover"** that
+   applies through the verified `setCover` — no auto-apply, because *nothing in
+   this system ever revisits a cover column*. Whole record in [`DONE.md`](DONE.md).
+   ⚠️ Passing a work's edition ISBN to `findCover` for disambiguation is a later
+   refinement (it passes `isbn: null` today; the target rows are ISBN-less anyway).
 3. **The details queue — DECIDE, do not just build.** `cover` is currently an
    explicit entry in `REFUSED_FIELDS` (`packages/core/src/gaps.ts`), reasoned
    *"Research cannot make a JPEG"*. `findCover` post-dates that reason and
