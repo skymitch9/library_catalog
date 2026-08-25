@@ -32,6 +32,24 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
+## ☐ `push-secrets.mjs` — two mechanical guards from the 2026-08-25 rotation (small; batch with deferred F9/F21)
+
+1. **Refuse a glued value.** Incident in [`info/gotchas.md`](info/gotchas.md) ("I
+   appended a key to `.dev.vars` and the push shipped a corrupted secret"): a
+   `>>` onto a file with no trailing newline glued `PEER_TOKEN=…` onto
+   `HARDCOVER_API_TOKEN`'s value and `secrets:push:both` shipped it to both
+   instances. When parsing `.dev.vars`, if any value matches
+   `/[A-Z][A-Z0-9_]{2,}=/` or contains CR/LF, refuse the WHOLE run with a
+   sentence naming the key (never the value). Test with a fixture.
+2. **Route-enabling tokens must be opt-in for friend.** `EBOOK_INGEST_TOKEN` and
+   `AUDIOBOOK_MAPPING_TOKEN` are "shared by design" but UNSET on padhard on
+   purpose (unset = route disabled). `--both` pushed `EBOOK_INGEST_TOKEN` to her
+   as a side effect of the PEER_TOKEN rotation (2026-08-25) — reverted the same
+   minute with `wrangler secret delete … --env friend`. Split `SHARED_SECRETS`
+   into `SHARED_ALWAYS` and `SHARED_OPT_IN` (pushed to friend only with an
+   explicit `--enable NAME`), print `skip (opt-in; --enable NAME)` otherwise.
+   Update `access/secrets.md`.
+
 ## ☐ Shelf is COPY-DRIVEN + EditBox tab merge — LANDED FOR REVIEW (branch `feature/shelf-copy-driven`, 2026-08-24)
 
 Fixes the ownership bug where an OWNED book read as **Wanted**. `deriveShelfView`

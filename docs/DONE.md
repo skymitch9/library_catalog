@@ -17,6 +17,36 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ PEER_TOKEN rotated — the leaked cross-instance bearer is dead — 2026-08-25
+
+**Why.** 2026-08 audit CRITICAL: the live `PEER_TOKEN` sat in plaintext in
+`wrangler.toml`'s `PEERS` literal (twice) in a public repo; it authenticates the
+route that wipes and rewrites `peer_holding` on both instances. The code fix
+(`feature/peer-token-secret`, merged: outbound header reads the secret, `PEERS`
+carries no token) had shipped; the value itself had not been rotated. Owner:
+*"rotate it."*
+
+**What was done (values never seen by the session).** Fresh 32-byte value
+written by the shell into `apps/worker/.dev.vars`; `npm run secrets:push:both`
+set it on `library-catalog` and `library-catalog-friend`; **verified live** —
+`GET /api/peer/holdings` returns 200 with the new token and 404 with a wrong one
+on BOTH hosts. No deploy needed (code already reads the secret). Git history
+still holds the old, now-dead value; purging it is optional.
+
+**Two things went wrong on the way, both repaired within minutes, both now
+guarded in `TODO.md` + `info/gotchas.md`:**
+1. The append glued `PEER_TOKEN=` onto `HARDCOVER_API_TOKEN`'s line (no trailing
+   newline) and the first push shipped the corrupted Hardcover token to both
+   instances. Repaired structurally with `sed` (counts-only verification),
+   re-pushed, Hardcover re-tested live (Way of Kings resolves).
+2. `--both` pushed `EBOOK_INGEST_TOKEN` to padhard because it is on the SHARED
+   list and present locally — enabling her ebook-ingest route, which was off on
+   purpose. Deleted from friend the same minute; her list is back to 7 names.
+   The owner's decision on her machine-route tokens is untouched.
+
+Audit doc + `access/secrets.md` updated; the `--both` side effect is now a 🔴
+warning there until the opt-in split lands.
+
 ## ✅ REVIEW FIXES — the 2026-08-25 adversarial review (21 findings) — 2026-08-25
 
 Moved whole from [`TODO.md`](TODO.md) at completion. The report itself, with

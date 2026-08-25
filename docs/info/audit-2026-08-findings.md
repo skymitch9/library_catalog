@@ -23,15 +23,15 @@ clean). Rows are marked `✅ FIXED` in the table below.
 
 **Left open (🚩 FLAGGED), by design:**
 
-- 🟡 **PEER_TOKEN** (`wrangler.toml:203`/`:418`) — now **FIXED-IN-CODE** on
-  branch `feature/peer-token-secret` (2026-08-24). The plaintext `token` field
-  was removed from both `PEERS` entries, and outbound `X-Peer-Token` now reads
-  the already-set `PEER_TOKEN` secret instead of the PEERS literal — so the
-  strip is safe to deploy without breaking peer auth (the earlier reason for
-  leaving it untouched no longer applies). **Still owner-pending:** rotate
-  `PEER_TOKEN` to a FRESH value on both workers and deploy both — until then the
-  OLD leaked value remains valid in git history. See the section immediately
-  below.
+- ✅ **PEER_TOKEN — ROTATED 2026-08-25 (owner: "rotate it").** The code fix
+  (`feature/peer-token-secret`) was already merged and deployed (`wrangler.toml`
+  `PEERS` carries no `token`; `lib/peer-push.ts` sends the `PEER_TOKEN` secret).
+  A fresh value was generated straight into `.dev.vars` (never read by the
+  session) and pushed to BOTH workers with `secrets:push:both`. **Verified
+  live:** `GET /api/peer/holdings` on library AND padhard → 200 with the new
+  token, 404 with a wrong one. The old leaked value is dead; it survives only
+  in git history (purge with BFG/`git filter-repo` remains optional — nothing
+  it unlocks exists any more). See the section below for the record.
 - **HIGH — LibraryThing rung** (`scripts/backfill-missing-isbns.mjs:246`) — the
   correct fix depends on the live LibraryThing `thingTitle` XML shape (whether
   it returns a per-item title/author to gate on — the code parses only
@@ -48,7 +48,12 @@ that carry it (`backfill-work-covers`, `backfill-edition-kinds`,
 bare `{ remote }` to d1 and share the latent gap — recommend a consistent
 `--friend` sweep across all writing backfills as a follow-up.
 
-## 🔴 PEER_TOKEN — rotate now, OWNER ACTION  ·  🟡 FIXED-IN-CODE 2026-08-24
+## ✅ PEER_TOKEN — ROTATED 2026-08-25 (was: 🔴 rotate now, OWNER ACTION · 🟡 FIXED-IN-CODE 2026-08-24)
+
+**Closed 2026-08-25.** Fresh value on both workers via `secrets:push:both`,
+verified live on both instances (200 with the new token, 404 with a wrong one).
+The text below is the record as it stood before rotation; "not yet deployed,
+NOT rotated" is no longer true.
 
 **Code fix (2026-08-24, branch `feature/peer-token-secret`):** the `token`
 field has been removed from both `PEERS` entries in `wrangler.toml`, and

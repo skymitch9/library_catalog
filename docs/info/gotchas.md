@@ -493,3 +493,26 @@ rescue anything untracked BEFORE removing, every time.
 - `du -sm` over one of these trees ate a two-minute command timeout on its own.
   Do not measure the size first; just delete, and check the count after.
 
+
+## "I appended a key to `.dev.vars` and the push shipped a corrupted secret" — 2026-08-25
+
+**Symptom.** `printf 'PEER_TOKEN=%s\n' "$(openssl rand -hex 32)" >> apps/worker/.dev.vars`
+reported **0** `^PEER_TOKEN=` lines afterwards, and the `secrets:push:both` run
+that followed pushed `HARDCOVER_API_TOKEN` to BOTH instances — with the new
+`PEER_TOKEN=…` glued onto the end of its value. The Hardcover rung was live-broken
+for the ~4 minutes until the repair.
+
+**Cause.** The file had **no trailing newline**, so `>>` continued the last line
+instead of starting a new one. Nothing in the push script noticed: a value is a
+value.
+
+**Repair (values never read):** `sed -i -E 's/(.)PEER_TOKEN=/\1\nPEER_TOKEN=/'`,
+then verify by COUNTS only (`grep -c '^KEY='` = 1 for each, glued = 0,
+`tail -c1 | od -c` shows `\n`), then re-push. Live re-test of Hardcover passed.
+
+**Rules.** (1) Before any `>>` into `.dev.vars`, check `tail -c1` for a newline
+or write `printf '\nKEY=%s\n'`. (2) Verify structure by counts before pushing.
+(3) ⚠️ `grep -c` exits 1 on a zero count, so a `&&` chain that includes a
+"glued lines = 0" check kills itself silently — use `|| true` or test the
+variable, not the exit code. (4) The mechanical guard is queued in `TODO.md`:
+`push-secrets.mjs` should refuse a value that itself contains `[A-Z_]+=`.

@@ -74,7 +74,21 @@ suffixed secret matched, so main's value on her Worker would file her rows as
 ⚠️ **`EBOOK_INGEST_TOKEN` and `AUDIOBOOK_MAPPING_TOKEN` are shared by design but
 UNSET on her instance today** — unset means those routes are *disabled*, not
 open. Pushing them to her is what turns her machine routes on: a deliberate act,
-not a tidy-up.
+not a tidy-up. 🔴 **And `--both` WILL push them whenever they are present in
+`.dev.vars`** — measured 2026-08-25: the PEER_TOKEN rotation's `secrets:push:both`
+created `EBOOK_INGEST_TOKEN` on padhard as a side effect (reverted the same
+minute with `echo y | wrangler secret delete EBOOK_INGEST_TOKEN --env friend`).
+Until the opt-in split in `TODO.md` lands, run `--both --dry-run` first and
+check for those two names under FRIEND.
+
+✅ **The friend push path was exercised for real on 2026-08-25** (the rotation):
+`push friend HARDCOVER_API_TOKEN` / `PEER_TOKEN` → "Successfully created" on
+`library-catalog-friend`, verified by the peer route accepting the new token.
+
+⚠️ **Appending to `.dev.vars`:** check for a trailing newline first
+(`tail -c1 apps/worker/.dev.vars | od -c`) or write `printf '\nKEY=%s\n'` — a
+`>>` onto a file without one glues the new key onto the last value, and the
+push ships it. Full incident in `info/gotchas.md`.
 
 ⚠️ `secrets:push` **with no flags is unchanged** — same list, same output, same
 last-4 fingerprints. The both-instances work is additive.
