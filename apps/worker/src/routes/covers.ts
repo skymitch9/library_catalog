@@ -113,11 +113,21 @@ export const coverRoutes = new Hono<AppBindings>()
     // can act on, said in a sentence rather than as a 500. Mirrors the research
     // run route.
     if (!c.env.ANTHROPIC_API_KEY) {
+      // ⚠️ **The sentence is for the PERSON; the remediation goes to the log**
+      // (F17, 2026-08-25). This route is held by owner, admin AND moderator, and
+      // the old detail told whoever clicked it to edit `apps/worker/.dev.vars`
+      // and run `npm run secrets:push` — not an action a moderator has any way
+      // to take, and a developer instruction shown to a person besides. Whoever
+      // can act reads `wrangler tail`; whoever clicked reads a sentence.
+      console.warn(
+        'cover search refused: ANTHROPIC_API_KEY is unset on this instance. ' +
+          'Set it in apps/worker/.dev.vars and run `npm run secrets:push` (add --friend for padhard).',
+      );
       return c.json(
         {
           error: 'not_configured',
           detail:
-            'No Anthropic API key. Put ANTHROPIC_API_KEY in apps/worker/.dev.vars, then `npm run secrets:push`.',
+            "The cover search isn't set up on this catalog yet — ask the owner to configure the AI key.",
         },
         503,
       );
@@ -137,10 +147,30 @@ export const coverRoutes = new Hono<AppBindings>()
         isbn: null,
       });
     } catch (err) {
-      // The search itself failed (timeout, budget exhausted, upstream). Say so in
-      // a sentence; nothing was stored, and the caller can retry or give up.
-      const detail = err instanceof Error ? err.message : 'The cover search failed.';
-      return c.json({ error: 'search_failed', detail }, 502);
+      // The search itself failed (timeout, budget exhausted, upstream).
+      //
+      // ⚠️ **The sentence has to answer "was I charged?"** (F13, 2026-08-25).
+      // Control only reaches here after `findCover` was CALLED, so the search
+      // may well have run and been billed before it died — and the client's
+      // generic 5xx wording ("try again in a moment") invites exactly the retry
+      // that bills a second time. Nothing was stored either way, which is the
+      // other half a person needs to know before deciding.
+      //
+      // The cause is appended rather than shown alone: an upstream message is
+      // not a sentence, and `error-wording.ts` renders this `detail` verbatim.
+      const cause = err instanceof Error ? err.message : String(err);
+      console.warn('cover search failed for work', id, '—', cause);
+      return c.json(
+        {
+          error: 'search_failed',
+          detail:
+            'The cover search failed before it could answer. Nothing was saved, but the ' +
+            'search may already have been charged — check the spend before running it again' +
+            (cause ? ` (${cause})` : '') +
+            '.',
+        },
+        502,
+      );
     }
 
     const { proposal, usage } = result;

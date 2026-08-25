@@ -18,6 +18,49 @@
  */
 export const ACCESS_UNAVAILABLE = "Couldn't check your access right now. Try again in a moment.";
 
+/** The generic 5xx sentence — what a failure nobody named gets. */
+export const SERVER_PROBLEM = 'The server had a problem. Try again in a moment.';
+
+/**
+ * A feature that is not SET UP on this instance, which is neither an outage nor
+ * a permission problem and must not be worded as either.
+ *
+ * Used when the Worker names `not_configured` without writing its own sentence.
+ * ⚠️ It names the **AI key** and an **admin**, not a file — see F17: `runResearch`
+ * is held by moderators too, and *"put ANTHROPIC_API_KEY in
+ * apps/worker/.dev.vars, then `npm run secrets:push`"* is not an action a
+ * moderator has any way to take. The remediation for whoever CAN act lives in
+ * the Worker log, beside the refusal.
+ */
+export const NOT_CONFIGURED =
+  "This isn't set up on this catalog yet — an admin needs to add the AI key.";
+
+/**
+ * Error codes whose route wrote a sentence FOR A PERSON and means it to render.
+ *
+ * ⚠️ An allowlist, not "any code with a `detail`": `detail` is also where a
+ * validation dump and a raw upstream message land, and neither is a sentence.
+ * A route joins this set by writing prose a person can act on.
+ */
+const CARRIES_ITS_OWN_SENTENCE = new Set([
+  // The scan service is unconfigured — an outage with nothing to do with the
+  // person asking.
+  'scan_unavailable',
+  // The paid cover search has no API key on this instance (F2).
+  'not_configured',
+  // The paid cover search was reached and failed (F13) — timeout, budget,
+  // upstream. The sentence says whether the attempt is believed to have been
+  // billed, which is the question a person actually has before retrying.
+  'search_failed',
+]);
+
+/** Did the route write its own person-facing sentence for this body? */
+function ownSentence(body: { error?: unknown; detail?: unknown } | null): string | null {
+  const error = typeof body?.error === 'string' ? body.error : '';
+  const detail = typeof body?.detail === 'string' ? body.detail : '';
+  return CARRIES_ITS_OWN_SENTENCE.has(error) && detail ? detail : null;
+}
+
 /**
  * Which 503 this is, in words.
  *
@@ -25,16 +68,44 @@ export const ACCESS_UNAVAILABLE = "Couldn't check your access right now. Try aga
  * outage read as a permission problem** — the exact thing the estate rule
  * forbids (*a network or server failure is NOT a permission failure*), and it
  * sends people asking for access they already have. The Worker now says which
- * outage it is (`error: 'scan_unavailable'`) and writes the sentence itself; a
- * body we do not recognise still falls back rather than showing a bare status.
+ * outage it is and writes the sentence itself; a body we do not recognise still
+ * falls back rather than showing a bare status.
+ *
+ * ⚠️ **`not_configured` was the same bug wearing a different code** (F2,
+ * 2026-08-25). The paid cover-search route answers 503 `not_configured` when
+ * the instance has no `ANTHROPIC_API_KEY`, and every 503 that was not
+ * `scan_unavailable` fell through to *"Couldn't check your access right now"* —
+ * so an owner clicking **Search the web for a cover** on an instance with no key
+ * was told their ACCESS could not be checked, and went and asked for a role they
+ * already held. A missing key is a configuration fact, and it is now said as one.
  */
 export function describeUnavailable(
   body: { error?: unknown; detail?: unknown } | null,
 ): string {
-  if (body?.error === 'scan_unavailable' && typeof body.detail === 'string' && body.detail) {
-    return body.detail;
-  }
+  const said = ownSentence(body);
+  if (said) return said;
+  if (body?.error === 'not_configured') return NOT_CONFIGURED;
   return ACCESS_UNAVAILABLE;
+}
+
+/**
+ * Which 5xx this is, in words.
+ *
+ * ⚠️ **The generic branch used to eat a sentence the route had deliberately
+ * written** (F13, 2026-08-25). `describeError` handled `status >= 500` before it
+ * ever reached the `detail` fallback, so the cover search's 502 `search_failed`
+ * — *timeout / budget exhausted / upstream* — rendered as *"The server had a
+ * problem. Try again in a moment."* The person could not tell whether the
+ * search had run (and been billed at ~6¢) before it died, so the reasonable
+ * thing to do was click again and be billed twice.
+ *
+ * Codes are allowlisted rather than "any 5xx with a detail", because a `detail`
+ * on an unhandled 500 is as likely to be a stack fragment as a sentence.
+ */
+export function describeServerFailure(
+  body: { error?: unknown; detail?: unknown } | null,
+): string {
+  return ownSentence(body) ?? SERVER_PROBLEM;
 }
 
 /**

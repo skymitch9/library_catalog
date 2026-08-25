@@ -1,6 +1,6 @@
 import { CAPABILITY_MATRIX, ROLE_LADDER, type Capability, type Role } from '@lc/core';
 import { ApiError } from '../api.js';
-import { describeUnavailable } from './error-wording.js';
+import { describeServerFailure, describeUnavailable } from './error-wording.js';
 
 /**
  * Turns a failed request into a sentence a person can act on.
@@ -104,8 +104,11 @@ export function describeError(err: unknown): string {
       return 'That could not be found.';
     }
 
+    // ⚠️ NOT a flat sentence any more (F13): a route that wrote person-facing
+    // prose for its own 5xx gets it rendered. `error-wording.ts` holds the
+    // allowlist and the decision, so a test can reach it without Vite.
     if (err.status >= 500) {
-      return 'The server had a problem. Try again in a moment.';
+      return describeServerFailure(body);
     }
 
     // Ordinary validation / business refusals (400/409/422/…) — the route
