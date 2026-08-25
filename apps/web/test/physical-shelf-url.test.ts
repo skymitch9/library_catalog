@@ -21,6 +21,7 @@ import {
   EBOOK_ONLY_FILTERS,
   collectionInUniversePath,
   collectionPath,
+  parseCollection,
   type CollectionFilters,
 } from '../src/router.tsx';
 
@@ -117,5 +118,73 @@ describe('the physical shelf in the address bar', () => {
     // one. If a third value ever turns up here, check that first — an
     // "ebooks only" value belongs on `medium`, which already has one.
     assert.deepEqual([...EBOOK_ONLY_FILTERS], ['hide', 'show']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ⚠️ F7 — what an already-shared link means now (2026-08-25)
+// ---------------------------------------------------------------------------
+//
+// The Type consolidation changed bindings and kinds from AND to OR (the owner's
+// ask, and right for a control where every ticked box adds books) and migrated
+// `?format=` into `?binding=`. Both halves were documented; their INTERACTION
+// inverted the meaning of links people had already sent each other:
+//
+//     /?format=hardcover&kind=collectors
+//       then → hardcover AND collector's
+//       now  → hardcover OR collector's  ← a handful became most of the shelf
+//
+// AND cannot be given back for that one shape without a second predicate path
+// beside `collectionFilter`, which is the thing that builder exists to prevent.
+// So the legacy migration narrows instead: the format becomes the binding, the
+// kind is dropped, and the result is a shelf that CONTAINS the old answer
+// rather than one that swamps it.
+
+describe('a link shared before the Type consolidation (F7)', () => {
+  it('⚠️ legacy ?format= + ?kind= keeps the format and DROPS the kind', () => {
+    const f = parseCollection('?format=hardcover&kind=collectors');
+    assert.deepEqual(f.bindings, ['hardcover']);
+    assert.deepEqual(
+      f.editionKinds,
+      [],
+      'keeping both would OR them, and "hardcover OR collectors" is most of the shelf',
+    );
+  });
+
+  it('a legacy ?format= on its own still migrates, exactly as before', () => {
+    assert.deepEqual(parseCollection('?format=paperback').bindings, ['paperback']);
+    assert.deepEqual(parseCollection('?format=paperback').editionKinds, []);
+  });
+
+  it('a legacy ebook format still folds to the coarse `ebook` type', () => {
+    // Stated in 1333ff2 and accepted as a trade: `?format=epub` now also matches
+    // a work whose only file is a PDF. The Type control offers one ebook box.
+    assert.deepEqual(parseCollection('?format=ebook_epub').bindings, ['ebook']);
+  });
+
+  it('⚠️ a link the CURRENT control produced is left completely alone', () => {
+    // `?binding=…&kind=…` is what ticking two boxes writes. It means OR, the
+    // person built it a moment ago, and nothing here may quietly narrow it.
+    const f = parseCollection('?binding=hardcover&kind=collectors');
+    assert.deepEqual(f.bindings, ['hardcover']);
+    assert.deepEqual(f.editionKinds, ['collectors']);
+  });
+
+  it('?kind= alone is untouched — there is no legacy format to interact with', () => {
+    assert.deepEqual(parseCollection('?kind=collectors').editionKinds, ['collectors']);
+    assert.deepEqual(parseCollection('?kind=collectors,unsorted').editionKinds, [
+      'collectors',
+      'unsorted',
+    ]);
+  });
+
+  it('an unknown legacy format drops the kind only when it really was there', () => {
+    // `?format=junk` produces no binding at all (`legacyFormatBinding` folds
+    // unknown to `ebook` only for real EDITION_FORMATS; `pick` rejects the rest)
+    // — but the parameter WAS present, so the link is still a legacy one and
+    // widening it would be the same bug.
+    const f = parseCollection('?format=junk&kind=collectors');
+    assert.deepEqual(f.bindings, []);
+    assert.deepEqual(f.editionKinds, []);
   });
 });

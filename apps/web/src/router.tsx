@@ -356,7 +356,39 @@ function legacyFormatBinding(format: string | null): string[] {
   return [(PHYSICAL_FORMATS as readonly string[]).includes(format) ? format : 'ebook'];
 }
 
-function parseCollection(search: string): CollectionFilters {
+/**
+ * ⚠️ **A LEGACY `?format=` beside a `?kind=` drops the kind** (F7, 2026-08-25).
+ *
+ * The Type consolidation changed these two axes from AND to OR — the owner's
+ * ask, and right for the control, where every ticked box adds books. It also
+ * migrated `?format=` into `?binding=`. Both halves were documented; their
+ * INTERACTION was not, and it inverts the meaning of an already-shared link:
+ *
+ *     /?format=hardcover&kind=collectors
+ *       then → has a hardcover edition **AND** a collector's printing
+ *       now  → has a hardcover **OR** a collector's printing
+ *
+ * On a 224-work shelf that turns a handful into most of the hardcovers. There
+ * is no cheap way to give this one shape AND back: `collectionFilter` builds the
+ * two axes as ONE OR group, and a second predicate path for a legacy URL would
+ * be a second place for the filter's meaning to live — the thing that builder
+ * exists to prevent.
+ *
+ * So the migration NARROWS instead of widening: the format becomes the binding
+ * and the kind is dropped. `hardcover` is a superset of `hardcover AND
+ * collectors` — not the old answer, but a shelf that CONTAINS it, which is much
+ * closer than "everything hardcover or collectors" and is one tick away from
+ * either. `DONE.md` records this rather than the old "shared links survive".
+ *
+ * ⚠️ Only for the legacy shape: `?format=` present, and no `?binding=`. A link
+ * the CURRENT control produced (`?binding=…&kind=…`) means OR, is what a person
+ * just built by ticking boxes, and is left exactly alone.
+ */
+function legacyDropsKind(p: URLSearchParams): boolean {
+  return p.get('format') !== null && !(p.get('binding') ?? '').trim();
+}
+
+export function parseCollection(search: string): CollectionFilters {
   const p = new URLSearchParams(search);
   return {
     q: p.get('q') ?? '',
@@ -378,10 +410,10 @@ function parseCollection(search: string): CollectionFilters {
     // `?binding=hardcover,junk` filters to hardcover and ignores the rest, the
     // page having no rendering for an unknown type. De-duplicated, order kept.
     //
-    // ⚠️ The removed `?format=` select folds in here, so an old shared link
-    // still narrows to the same shelf: a physical format is its own binding
-    // token, any ebook_* format becomes the coarse `ebook`. See
-    // `legacyFormatBinding`.
+    // ⚠️ The removed `?format=` select folds in here: a physical format is its
+    // own binding token, any ebook_* format becomes the coarse `ebook`. See
+    // `legacyFormatBinding` — and `legacyDropsKind` for what happens when such
+    // a link ALSO carries a `?kind=`, which is not the same shelf it was.
     bindings: [
       ...new Set(
         [
@@ -393,16 +425,18 @@ function parseCollection(search: string): CollectionFilters {
     // `?kind=collectors,unsorted` — a comma-separated list now that the printing
     // options live in the one Type control. Each token kept only if known; an
     // old single-value `?kind=collectors` still parses as a one-element list.
-    editionKinds: [
-      ...new Set(
-        (p.get('kind') ?? '')
-          .split(',')
-          .map((s) => s.trim())
-          .filter((v): v is EditionKindFilter =>
-            (EDITION_KIND_FILTERS as readonly string[]).includes(v),
+    editionKinds: legacyDropsKind(p)
+      ? []
+      : [
+          ...new Set(
+            (p.get('kind') ?? '')
+              .split(',')
+              .map((s) => s.trim())
+              .filter((v): v is EditionKindFilter =>
+                (EDITION_KIND_FILTERS as readonly string[]).includes(v),
+              ),
           ),
-      ),
-    ],
+        ],
     status: pick(search, 'status', COPY_STATUSES) ?? '',
     needs: pick(search, 'needs', NEEDS_FILTERS) ?? '',
     // `?duplicates=1`, exactly as the board-game catalog spells it.

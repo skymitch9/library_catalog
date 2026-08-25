@@ -313,6 +313,20 @@ edition→work hop, + Hardcover GraphQL) is in
 Also flagged there: OL's `jscmd=data` (rung 1 of `resolveIsbn`) returns no
 description — the WORK record does; a free future fix.
 
+🔴 **CORRECTED 2026-08-25 (review F4) — the description did NOT flow from this
+commit.** `bestCandidate` borrowed it correctly and **nothing read the field**:
+`applyCandidate` copied six fields and not that one, `ScanLine` had no key for
+it, and `gabi-delegated`'s `createWorkSchema.parse({…})` named cover, year and
+`openlibraryWorkId` and never `description`. So the headline above — "borrows
+Google's description across rungs" — was true of the borrow and false of the
+outcome: descriptions still arrived only via the free ladder (`freeDetailsFor`),
+a different mechanism, later, and sometimes from the PAID rung. What actually
+shipped on 2026-08-25 was the `publisher`/`publishedYear` borrow on the scan
+path and `publisher`/`publishedYear`/`pages`/`language` on the delegated one.
+The description was threaded end to end in the review-fix batch below (F4), with
+contract tests on both paths that NAME the fields carried, because an absent
+field cannot fail a behavioural test.
+
 ## ✅ Audiobook near-miss audit + linking (109 confirmed + the 12) — both instances — 2026-08-25
 
 **Why.** Owner: *"find books that look like they match an audiobook but didn't
@@ -489,6 +503,19 @@ see the tripwire note below — until that was reconciled in `1719af9`):
   ANY checked box shows — was AND across axes). Old `?format=` folds into
   `?binding=` on parse and old `?kind=collectors` still parses, so shared links
   survive.
+  - 🔴 **CORRECTED 2026-08-25 (review F7 — the sentence above was wrong for one
+    shape).** A link carrying BOTH axes — `/?format=hardcover&kind=collectors`,
+    or `?binding=…&kind=…` — did **not** survive: it meant *hardcover AND
+    collector's* and now parses to an **OR**, which on a 224-work shelf turns a
+    handful into most of the hardcovers. It resolved to a SUPERSET, not the same
+    shelf. AND cannot be given back for that shape without a second predicate
+    path beside `collectionFilter`, which is what that one builder exists to
+    prevent. **What was done instead:** the LEGACY shape only (`?format=`
+    present, no `?binding=`) now drops the `kind` and keeps the format, so the
+    link narrows to a shelf that CONTAINS the old answer instead of swamping it.
+    A link the current control produced is left exactly alone — it means OR
+    because somebody just ticked two boxes. See `legacyDropsKind` in
+    `router.tsx` and the F7 cases in `physical-shelf-url.test.ts`.
 - **No migration.** Reads only pre-existing columns (binding + Migration 0050
   `editionKind`); the `0430` special-editions booleans are NOT touched — verified
   the commit carries no `.sql` and no `sprayed_edges`/`slipcase`/`leatherbound_*`
