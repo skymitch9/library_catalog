@@ -92,6 +92,7 @@ assessed the image**. Automated work leaves it **NULL** — "nobody has looked" 
 because promoting rows to `'ok'` would empty the "cover needed" list with work
 nobody did. 0040's rule, applied to covers.
 
+- [`review-2026-08-25-overnight-work.md`](review-2026-08-25-overnight-work.md) — **2026-08-25 code review** of the overnight work (Type-filter consolidation, Owned 2+, paid cover search, `bestCandidate`, the Wikidata rung; plus catalog-platform's `037cb35` and `onedrive-exclude.ps1`). 21 findings ranked, each traced to file:line and labelled CONFIRMED/PLAUSIBLE, with an explicit clean list. 🔴 Leads with `FREE_LADDER_SUBREQUESTS` left at 11 after two new rungs (silent invocation-kill risk), a missing API key rendering to a person as an ACCESS failure, and the facet counts not honouring `?owned2=1`.
 - [`gotchas.md`](gotchas.md) — the traps that cost real time, findable by symptom. Extracted from the work log 2026-08-16.
 - [`decisions.md`](decisions.md) — why things are as they are, including what was deliberately NOT built, plus the honest known-imperfect list.
 - [`audit-2026-08-findings.md`](audit-2026-08-findings.md) — **2026-08 review/verify audit**, severity-ranked (4 critical / 13 high / 53 medium / 25 low confirmed). 🔴 Leads with a live PEER_TOKEN committed in plaintext to this public repo, rotation steps included. CRITICAL/HIGH items are also tracked in `../TODO.md`'s "AUDIT 2026-08" section.
