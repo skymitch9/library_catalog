@@ -3401,6 +3401,22 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
 .book-detail .field--check > .field__label { grid-column: 2; grid-row: 1; align-self: center; }
 .book-detail .field--check > .muted { grid-column: 2; grid-row: 2; }
 
+/* Owner 2026-08-25: Series, Volume and First-published on ONE line (the wrapping
+   .controls flex let the wide Series field push the other two down). */
+.book-detail .controls--seriesrow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 6rem 9rem;
+  align-items: start;
+  gap: 0.7rem;
+}
+.book-detail .controls--seriesrow > .field { min-width: 0; }
+.book-detail .controls--seriesrow > .field input,
+.book-detail .controls--seriesrow .series-ac,
+.book-detail .controls--seriesrow .series-ac input { width: 100%; }
+@media (max-width: 40rem) {
+  .book-detail .controls--seriesrow { grid-template-columns: 1fr; }
+}
+
 /* ---- mobile: honor the mockup's 720px collapse + the app's 26rem rules ---- */
 @media (max-width: 720px) {
   .book-detail { padding: 0.85rem 0.85rem 2.5rem; }

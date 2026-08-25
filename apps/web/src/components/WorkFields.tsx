@@ -221,7 +221,7 @@ export function WorkFields({
             />
           </label>
 
-          <div className="controls">
+          <div className="controls controls--seriesrow">
             <label className="field">
               <span className="field__label">Series</span>
               <SeriesAutocomplete value={series} onChange={setSeries} placeholder="Cradle" />
