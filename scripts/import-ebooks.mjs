@@ -47,6 +47,42 @@
  *
  * Dry run is the default, as it is for every importer in this project.
  *
+ * ## 🆕 Running it against padhard, the second instance (2026-08-25)
+ *
+ *     npm run import:ebooks -- --friend                       # dry run
+ *     npm run import:ebooks -- --friend --commit
+ *     npm run import:ebooks -- --commit --api https://padhard.heygabi.ai
+ *
+ * `--friend` is nothing but an ALIAS for that `--api` URL — there is no second
+ * code path, no second token and no second manifest. It exists because typing
+ * the host by hand is how you end up importing the whole shelf into the wrong
+ * catalog, and because `--friend` is what every other two-instance command in
+ * this repo already calls it.
+ *
+ * ⚠️ **Why one manifest and one token is correct here, and not laziness.**
+ * The owner and padhard **share one audio and ebook pool** (owner decision
+ * 2026-08-25: *"they're already pre-mixed with mine; they should count as she
+ * owns them too"*), so both instances are readers of the SAME
+ * `audiobook_catalog/site/ebooks.json`. And `EBOOK_INGEST_TOKEN` is a
+ * `SHARED_OPT_IN` key in `scripts/push-secrets.mjs` — one value, two holders,
+ * authenticating the IMPORTER rather than an instance. It was set on her
+ * instance by hand on 2026-08-25, which is what makes her `/api/ingest/ebook`
+ * route answer at all; before that it was a 404 by design.
+ *
+ * ⚠️ **`--friend` moves the D1 half too, not just the URL.** The import itself
+ * is HTTP, but two parts of this script read the database directly — the dry-run
+ * probe and `--prune` — and an alias that pointed the HTTP half at padhard while
+ * those read MAIN would be worse than no alias at all. `--friend` therefore
+ * implies `remote` for them (there is no local copy of the second instance:
+ * both instances bind `DB`, so a local `--friend` read returns the MAIN catalog
+ * while reporting on hers — `scripts/lib/d1.mjs` refuses that outright). Every
+ * message says which database it read, in words.
+ *
+ * If `padhard.heygabi.ai` looks dead right after a deploy, that is this LAN's
+ * ~30-minute NXDOMAIN cache, not the Worker: use
+ * `--api https://library-catalog-friend.bgc-worker.workers.dev` instead
+ * (`docs/access/second-instance.md` → Gotchas).
+ *
  * ## Pruning
  *
  * Import is append-only: delete or rename an EPUB and its edition lives on,
@@ -54,6 +90,7 @@
  *
  *     npm run import:ebooks -- --prune --remote            # show the orphans
  *     npm run import:ebooks -- --prune --remote --commit   # delete them
+ *     npm run import:ebooks -- --prune --friend            # …hers (implies remote)
  *
  * `--prune` reads D1 directly and so needs a wrangler login; `--remote` picks
  * production over the local dev database. It only ever removes editions with
@@ -94,6 +131,13 @@ const INCLUDE_PDF = args.includes('--include-pdf');
 const PRUNE = args.includes('--prune');
 const FORCE_PRUNE = args.includes('--force-prune');
 const REMOTE = args.includes('--remote');
+/**
+ * `--friend` — padhard, the second instance. An alias, not a mode. See the
+ * header: it picks a different `--api` default and a different D1 database, and
+ * changes nothing else. An explicit `--api` still wins over it, which is how you
+ * reach her `*.workers.dev` host when this LAN is negative-caching the subdomain.
+ */
+const FRIEND = args.includes('--friend');
 
 function argValue(name, fallback) {
   const i = args.indexOf(name);
@@ -104,7 +148,26 @@ const MANIFEST = argValue(
   '--manifest',
   path.resolve(here, '../../audiobook_catalog/site/ebooks.json'),
 );
-const API = argValue('--api', 'https://library-catalog.bgc-worker.workers.dev').replace(/\/$/, '');
+const API = argValue(
+  '--api',
+  FRIEND ? 'https://padhard.heygabi.ai' : 'https://library-catalog.bgc-worker.workers.dev',
+).replace(/\/$/, '');
+/**
+ * ⚠️ The D1 flags for the two places this reads the database directly (the
+ * dry-run probe and `--prune`).
+ *
+ * `--friend` implies `remote` because **there is no local copy of the second
+ * instance** — both instances bind `DB`, so miniflare keeps one local database
+ * and a local `--friend` read would return the MAIN catalog while reporting on
+ * hers. `scripts/lib/d1.mjs` refuses that combination outright; forcing `remote`
+ * here means `--friend` never reaches the refusal by accident, and never reaches
+ * the wrong catalog either. This is exactly why `--friend` had to touch these
+ * two call sites rather than only the `--api` default: an alias that pointed the
+ * HTTP half at padhard while the D1 half read main would be worse than no alias.
+ */
+const D1_FLAGS = { remote: REMOTE || FRIEND, friend: FRIEND };
+/** What to CALL the database in a message, so a report can never be misread. */
+const D1_LABEL = FRIEND ? 'FRIEND (padhard)' : REMOTE ? 'REMOTE' : 'local';
 // The machine token. Read from the environment, or from .dev.vars so an
 // unattended run needs no shell setup at all — .dev.vars is already the single
 // source of truth for secrets and is gitignored.
@@ -235,11 +298,11 @@ async function dryRunProbe() {
   let aliases;
   try {
     const { query } = await import('./lib/d1.mjs');
-    works = query('SELECT id, title, authors, series, work_key FROM work', { remote: REMOTE });
-    aliases = query('SELECT work_id, alias, kind FROM work_alias', { remote: REMOTE });
+    works = query('SELECT id, title, authors, series, work_key FROM work', D1_FLAGS);
+    aliases = query('SELECT work_id, alias, kind FROM work_alias', D1_FLAGS);
   } catch (err) {
     console.log(
-      `\n(could not read the ${REMOTE ? 'REMOTE' : 'local'} database — ` +
+      `\n(could not read the ${D1_LABEL} database — ` +
         `attach-vs-create cannot be classified: ${err instanceof Error ? err.message.split('\n')[0] : err})`,
     );
     let n = 0;
@@ -306,7 +369,7 @@ async function dryRunProbe() {
   }
 
   console.log(
-    `\nprobe (${REMOTE ? 'REMOTE' : 'local'} db, ${works.length} works): ` +
+    `\nprobe (${D1_LABEL} db, ${works.length} works): ` +
       `${counts.key} attach by key, ${counts.alias} by alias, ` +
       `${counts.series_prefix} by series prefix, ${counts.create} would CREATE`,
   );
@@ -435,7 +498,7 @@ async function runPrune() {
   const { query, execute, lit } = await import('./lib/d1.mjs');
 
   const FILE_FORMATS = Object.values(FORMAT_MAP);
-  const flags = { remote: REMOTE };
+  const flags = D1_FLAGS;
 
   // "An edition this script owns" — spelled out once per alias rather than
   // derived from the other by string surgery, because the two differ only by a
@@ -456,7 +519,7 @@ async function runPrune() {
   const orphans = existing.filter((row) => !onDisk.has(row.source_url));
 
   console.log(
-    `\nprune: ${existing.length} file edition(s) in the ${REMOTE ? 'REMOTE' : 'local'} database, ` +
+    `\nprune: ${existing.length} file edition(s) in the ${D1_LABEL} database, ` +
       `${manifest.count} file(s) in the manifest, ${orphans.length} orphan(s)`,
   );
 

@@ -17,10 +17,58 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ The pipelines now TARGET padhard — the shared pool has two readers — 2026-08-25
+
+Item **3** of the `push-secrets.mjs` TODO section, moved whole at completion the
+same day as items 1–2 (entry below). It was the half that mattered: her machine
+routes were opened by hand that morning, and **an open route nothing calls does
+nothing**.
+
+**Two repos, one commit each.**
+
+- **`audiobook_catalog` `806b5bd`** — STEP 11's `_run_sibling_link()` runs main,
+  then `_link_one_instance(..., friend=True)` with `--remote --friend --commit`.
+  ⚠️ `--friend` REQUIRES `--remote`: both instances bind `DB`, so there is no
+  local copy of the second one and a local `--friend` run would rewrite MAIN's
+  holdings while reporting on hers (`scripts/lib/d1.mjs` refuses it outright).
+  Two D1s are **two failure domains** — each half writes its own `_link_report`
+  line (main's FIRST, so its real result is on the status page even if the
+  friend half then hangs for the full 900 s), a mixed outcome is a named
+  **`partial`**, and a padhard failure never fails main's sweep. New config
+  switch `SIBLING_LINK_FRIEND` (`app/config.py`, default **ON**,
+  `SIBLING_LINK_FRIEND=0` to disable) so it can be turned off without a code
+  change; imported separately from `LIBRARY_CATALOG_DIR` and defaulting True,
+  because a missing switch means "this checkout predates it", not "go back to
+  main only". Tests `test_pipeline_steps.py` **45 → 61 pass**.
+  ⚠️ **The old contract "exactly ONE named outcome per run" changed to "one per
+  instance plus a combined line that wins"**, so seven existing tests and the
+  `_link_detail()` helper were updated with the reason written down.
+- **`library_catalog` (this repo)** — `scripts/import-ebooks.mjs` gains
+  `--friend`, an ALIAS for `--api https://padhard.heygabi.ai`. Same manifest,
+  same `EBOOK_INGEST_TOKEN`, same code path; an explicit `--api` still wins
+  (which is how you reach her `*.workers.dev` host when this LAN is
+  negative-caching the subdomain). ⚠️ **It moves the D1 half too** — the dry-run
+  probe and `--prune` read the database directly, so `--friend` points them at
+  `library-catalog-2nd` and implies `--remote`. An alias that pointed the HTTP
+  half at padhard while the D1 half read main would be worse than no alias.
+  Docs: [`access/second-instance.md`](access/second-instance.md) → "Running the
+  PIPELINES against her", plus the script's own header.
+
+**Measured 2026-08-25:** `npm run secret:list:friend` now names **nine**
+secrets, up from seven — `AUDIOBOOK_MAPPING_TOKEN` and `EBOOK_INGEST_TOKEN` are
+both present, confirming the owner's hand-set. That retires this doc set's
+standing claim that those two are "deliberately never set" on her instance.
+
+🔴 **NOT VERIFIED, and deliberately so: neither pipeline has been RUN against
+her.** The sibling link's friend half writes another application's production D1
+and its first real execution is the first scheduled cycle; `import:ebooks
+--friend` was not run at all, only smoke-loaded. Both are *shipped*, neither is
+*exercised* — track them separately.
+
 ## ✅ `push-secrets.mjs` — two mechanical guards from the 2026-08-25 rotation — 2026-08-25
 
-Items **1 and 2** of that TODO section, moved whole at completion. **Item 3 (the
-pipelines must TARGET her) is still open** and stays in [`TODO.md`](TODO.md).
+Items **1 and 2** of that TODO section, moved whole at completion. Item 3 was
+completed the same day and has its own entry above.
 
 **Shipped.** `scripts/push-secrets.mjs` + `scripts/test/push-secrets.test.mjs`
 (dependency-injected, nothing calls wrangler, nothing reads `.dev.vars`) and
@@ -73,6 +121,12 @@ The two items exactly as they were written:
 >    count as she owns them too"* — done that day (`EBOOK_INGEST_TOKEN` +
 >    `AUDIOBOOK_MAPPING_TOKEN` set on friend). **Any FUTURE library is opt-in by
 >    the owner**, which is exactly what the `--enable` flag enforces.
+> 3. **The pipelines must TARGET her too, or the unlocked routes do nothing.**
+>    `audiobook_catalog/scripts/sync_to_drive.py` `_run_sibling_link` (STEP 11)
+>    runs `backfill-audiobook-holdings.mjs` for MAIN only — padhard's 101 audio
+>    links today were a manual `--friend` run. Make STEP 11 run main then
+>    `--friend` (or `npm run for-both`), and do the same for whatever calls the
+>    ebook ingest route. Shared pool = both instances are readers of it.
 
 ## ✅ PEER_TOKEN rotated — the leaked cross-instance bearer is dead — 2026-08-25
 

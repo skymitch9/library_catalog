@@ -32,19 +32,6 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
-## ☐ `push-secrets.mjs` — the pipelines must TARGET padhard (guards 1–2 DONE 2026-08-25)
-
-> ✅ Items **1 (glued-value refusal)** and **2 (`SHARED_ALWAYS`/`SHARED_OPT_IN`
-> + `--enable`)** shipped 2026-08-25 and moved whole to
-> [`DONE.md`](DONE.md). Item 3, unchanged and still open, is below.
-
-3. **The pipelines must TARGET her too, or the unlocked routes do nothing.**
-   `audiobook_catalog/scripts/sync_to_drive.py` `_run_sibling_link` (STEP 11)
-   runs `backfill-audiobook-holdings.mjs` for MAIN only — padhard's 101 audio
-   links today were a manual `--friend` run. Make STEP 11 run main then
-   `--friend` (or `npm run for-both`), and do the same for whatever calls the
-   ebook ingest route. Shared pool = both instances are readers of it.
-
 ## ☐ Shelf is COPY-DRIVEN + EditBox tab merge — LANDED FOR REVIEW (branch `feature/shelf-copy-driven`, 2026-08-24)
 
 Fixes the ownership bug where an OWNED book read as **Wanted**. `deriveShelfView`

@@ -1,11 +1,15 @@
 # Second Library Instance (friend) — Access Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED — no secret values here.
-> Last verified: **2026-08-25** — her secret NAMES were re-read that day
-> (`npm run secret:list:friend`, seven of them) and the "one command for BOTH
-> instances" work landed. ⚠️ NOT re-verified that day: the D1 id, the R2 bucket
+> Last verified: **2026-08-25** — her secret NAMES were re-read **twice** that
+> day (`npm run secret:list:friend`: seven in the morning, **nine** after the
+> owner set her two machine-route tokens by hand), the "one command for BOTH
+> instances" work landed, and the pipelines learned to target her.
+> ⚠️ NOT re-verified that day: the D1 id, the R2 bucket
 > URL, her `app_user` role, and everything in the estate-identity section below
-> — those still carry their 2026-08-17 measurement.
+> — those still carry their 2026-08-17 measurement. ⚠️ **Neither pipeline has
+> been RUN against her**: the sibling link's friend half and
+> `import:ebooks --friend` are both shipped-but-unexercised.
 > The 2026-08-17 revision applied estate credentials catalog findings F-5, F-6
 > and F-8: her estate identity is `library2`, and the "no Anthropic key /
 > donor-only" claims were corrected. Built and deployed 2026-08-16, when the
@@ -71,6 +75,57 @@ these run **main first, then her, stopping on the first failure**.
   would need the same loop copied into ~15 scripts. The loop lives in one place
   instead. `scripts/for-both.mjs` carries the full argument.
 
+## 🆕 Running the PIPELINES against her (2026-08-25)
+
+⚠️ **Turning her machine routes on was only half the job.** `EBOOK_INGEST_TOKEN`
+and `AUDIOBOOK_MAPPING_TOKEN` were set on padhard by hand on 2026-08-25 (owner
+decision: he and padhard **share one audio and ebook pool** — *"they're already
+pre-mixed with mine; they should count as she owns them too"*). An open route
+that nothing calls does nothing, so both pipelines had to learn to target her.
+
+| Pipeline | Reaches her by | State |
+|---|---|---|
+| **Audiobook holdings** (`backfill-audiobook-holdings.mjs`) | `audiobook_catalog`'s STEP 11 now runs **main, then `--remote --friend --commit`** | ✅ shipped 2026-08-25, ⚠️ **never run live** |
+| **Ebook import** (`scripts/import-ebooks.mjs`) | `--friend`, a new alias for `--api https://padhard.heygabi.ai` | ✅ shipped 2026-08-25, ⚠️ **never run against her** |
+
+### The ebook importer
+
+```
+npm run import:ebooks -- --friend                      # dry run against padhard
+npm run import:ebooks -- --friend --commit             # …and write
+npm run import:ebooks -- --commit --api https://padhard.heygabi.ai   # the long form
+```
+
+- `--friend` is **an alias, not a mode**: same manifest
+  (`audiobook_catalog/site/ebooks.json`), same `EBOOK_INGEST_TOKEN`, same code
+  path. One shared pool means both instances are readers of the SAME manifest.
+- An explicit `--api` still **wins** over it — which is how you reach
+  `https://library-catalog-friend.bgc-worker.workers.dev` on a day this LAN is
+  negative-caching the `padhard` subdomain (see Gotchas).
+- ⚠️ **It moves the D1 half too.** The dry-run probe and `--prune` read the
+  database directly, so `--friend` points those at `library-catalog-2nd` and
+  **implies `--remote`** — there is no local copy of the second instance. An
+  alias that pointed the HTTP half at padhard while the D1 half read main would
+  be worse than no alias. Every message names the database it read.
+
+### The audiobook sibling link (STEP 11, in `audiobook_catalog`)
+
+`scripts/sync_to_drive.py`'s `_run_sibling_link()` runs this repo's
+`backfill-audiobook-holdings.mjs` twice per cycle — main, then padhard. Before
+this, **her 101 audio links existed only because somebody ran `--friend` by
+hand**, which is the staleness STEP 11 exists to prevent, one instance over.
+
+- ⚠️ `--friend` **requires `--remote`** (`scripts/lib/d1.mjs` refuses the pair's
+  absence): both instances bind `DB`, so a local `--friend` run would rewrite
+  MAIN's holdings while reporting on hers.
+- Two D1 databases are **two failure domains**: each half reports its own line,
+  a mixed outcome is a named **`partial`**, and a padhard failure never fails
+  main's sweep.
+- Turn the friend half off with **no code change**: `SIBLING_LINK_FRIEND=0`
+  (`audiobook_catalog/app/config.py`, default ON).
+- By hand, from this repo, either instance:
+  `npm run backfill:audiobooks -- --remote [--friend] --commit`.
+
 ## Commands (each is the main instance's command + `:friend`)
 
 | Do | Command |
@@ -110,10 +165,19 @@ vice versa.
 
 ## Secrets — names only, and who can set them
 
-Her env holds **seven secrets** — names read from `npm run secret:list:friend`,
-**re-measured 2026-08-25**: `ANTHROPIC_API_KEY` (**HER OWN key**, see below),
-`DONOR_TOKEN`, `ESTATE_APP_TOKEN_DISCORD`, `ESTATE_APP_TOKEN_LIBRARY2`,
+Her env holds **nine secrets** — names read from `npm run secret:list:friend`,
+**re-measured 2026-08-25 (later that day)**: `ANTHROPIC_API_KEY` (**HER OWN
+key**, see below), `AUDIOBOOK_MAPPING_TOKEN`, `DONOR_TOKEN`,
+`EBOOK_INGEST_TOKEN`, `ESTATE_APP_TOKEN_DISCORD`, `ESTATE_APP_TOKEN_LIBRARY2`,
 `GOOGLE_BOOKS_API_KEY`, `HARDCOVER_API_TOKEN`, `PEER_TOKEN`.
+
+⚠️ **`AUDIOBOOK_MAPPING_TOKEN` and `EBOOK_INGEST_TOKEN` are the two new ones**,
+set by hand on 2026-08-25 on the owner's decision that he and padhard share one
+audio and ebook pool. **Her ebook-ingest and audiobook-mapping routes are
+therefore LIVE**, where the 2026-08-17 revision of this section said they never
+would be. They are `SHARED_OPT_IN` in `scripts/push-secrets.mjs`, so a bulk push
+skips them unless `--enable NAME` is typed — that flag protects the NEXT
+instance, not this one.
 
 ⚠️ The 2026-08-17 revision of this section said "four secrets" and named
 `ESTATE_APP_TOKEN_LIBRARY` as dead weight. **That stale one was deleted
@@ -123,9 +187,15 @@ wants a piped confirm), and live health still reports `configured: true`.
 
 Deliberately never set: `INDEX_PUSH_TOKEN` (federation is phase 2 — and it is a
 **per-SOURCE** bearer, so hers would be a `library2` token, never main's),
-`EBOOK_INGEST_TOKEN` (her ebook surface is a 404 and stays one),
-`AUDIOBOOK_MAPPING_TOKEN` (no audiobook pipeline), `INDEX_READ_TOKEN` (the read
-half of the index does not exist on either instance).
+`INDEX_READ_TOKEN` (the read half of the index does not exist on either
+instance).
+
+⚠️ ~~`EBOOK_INGEST_TOKEN` (her ebook surface is a 404 and stays one),
+`AUDIOBOOK_MAPPING_TOKEN` (no audiobook pipeline)~~ — **both were set on
+2026-08-25 and both routes are live.** The reasoning above was overturned by the
+shared-pool decision, not by drift: the audiobook pipeline now sweeps her
+instance too (STEP 11 runs `--friend`), and the ebook importer reaches her with
+`--friend`. See "Running the PIPELINES against her" above.
 
 ### How a bulk push is safe now (changed 2026-08-25)
 
