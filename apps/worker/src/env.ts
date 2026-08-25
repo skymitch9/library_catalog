@@ -81,6 +81,14 @@ export interface Env {
    */
   GOOGLE_BOOKS_API_KEY?: string;
 
+  /**
+   * Hardcover.app GraphQL API token (Bearer). Optional — the free-details ladder
+   * skips its Hardcover rung when unset, same as Google Books. Hardcover answers
+   * description AND structured series+volume in one call; see
+   * docs/info/scan-metadata-fill-strategy.md. Free key at hardcover.app/account/api.
+   */
+  HARDCOVER_API_TOKEN?: string;
+
   /** Anthropic key for the research pipeline (phase 5). Secret, never in wrangler.toml. */
   ANTHROPIC_API_KEY?: string;
 

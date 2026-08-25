@@ -73,6 +73,7 @@ const CONFIG = join(root, 'apps', 'worker', 'wrangler.toml');
  */
 const PRODUCTION_SECRETS = [
   'GOOGLE_BOOKS_API_KEY',
+  'HARDCOVER_API_TOKEN',
   'ANTHROPIC_API_KEY',
   'EBOOK_INGEST_TOKEN',
   // The audiobook pipeline's mapping export bearer (routes/audiobook-mapping.ts).
