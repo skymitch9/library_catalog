@@ -17,6 +17,163 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ REVIEW FIXES — the 2026-08-25 adversarial review (21 findings) — 2026-08-25
+
+Moved whole from [`TODO.md`](TODO.md) at completion. The report itself, with
+file:line, failure scenarios and the explicit CLEAN list, stays at
+[`info/review-2026-08-25-overnight-work.md`](info/review-2026-08-25-overnight-work.md)
+— that is the reference; this is the outcome.
+
+**Per finding.** 17 of 21 fixed; F9 deferred with a reason.
+
+| # | Sev | Outcome | What was done |
+|---|---|---|---|
+| **F1** | HIGH | ✅ `342bc53` | `FREE_LADDER_SUBREQUESTS` is now **derived**, not typed. The true worst case is **15** — not 11, and not the review's 13. See below. |
+| **F4** | HIGH | ✅ `c8184a4` | The description borrow was **inert**; threaded end to end on both add paths. |
+| **F3** | HIGH | ✅ `e52f52c` | Facet counts honour `owned2` — and `series`, which was missing the same way. |
+| **F2** | HIGH | ✅ `e7288fd` | A missing API key stopped reading as an ACCESS problem. |
+| **F13** | MED | ✅ `e7288fd` | The 502's sentence renders, and says whether the ~6¢ search may already have been billed. |
+| **F17** | LOW | ✅ `e7288fd` | The 503 no longer tells a moderator to edit `.dev.vars`; that goes to the Worker log. |
+| **F5** | MED | ✅ `c8184a4` | `bestCandidate` returns `borrowed`; the edition's `change_log` note names which rung supplied each borrowed field. |
+| **F6** | MED | ✅ `c8184a4` | `undefined` ("no rung can say") is no longer flattened into `null` ("asked, and none"). |
+| **F7** | MED | ✅ `3af763d` | A legacy `?format=`+`?kind=` link **narrows** instead of widening; the "shared links survive" claim corrected in place. |
+| **F8** | MED | ✅ `7407b7e` | Wikidata orders its window and prefers the statement carrying an ordinal. |
+| **F12** | MED | ✅ `15c43d3` | The two dead facet queries **deleted** — see the choice below. |
+| **F14** | LOW | ✅ `7407b7e` | Both User-Agents carry the contact Wikidata's policy requires. |
+| **F15** | LOW | ✅ `ccf863f` | Tripwire: `KIND_CLAUSE`'s keys must equal `[...EDITION_KINDS, 'unsorted']`. |
+| **F16** | LOW | ✅ `ccf863f` | The cover proposal shows its **size** (KI-6), and the `<img>` gained an `onError`. |
+| **F19** | LOW | ✅ `ccf863f` | `aria-haspopup` removed, `aria-controls` added, ids per-instance via `useId`. |
+| **F20** | LOW | ✅ (docs) | The "not wired to any route or button" line in `TODO.md` corrected — it sat four lines above the item recording that it was. |
+| **F21** | LOW | ✅ (tests) | 6 of the 7 named gaps closed; the one left is named below. |
+| **F9** | MED | ⏸️ **DEFERRED** | See below. |
+| **F10/F11/F18** | MED/LOW | ✅ **repo B** `28fd537` | `catalog-platform/scripts/onedrive-exclude.ps1`, committed separately. |
+
+**Tests: 1728 → 1809 pass / 0 fail** (291 suites). Typecheck clean; web build clean.
+
+### F9 — deferred, and why
+
+`fieldsClosedBy` / `writeFreeValues` gate `seriesIndex` on a series **existing**
+(`seriesInHand`), never on it being the **same** series — so a Wikidata ordinal
+can be written against whatever series is already on the row.
+
+Not patched here because it is **structural and needs a design decision**, not a
+guard: the comparison must reuse `packages/core/src/matching.ts` (this estate has
+already shipped a silent failure from two normalisers that agreed until they did
+not), and what to do on a mismatch — skip with a named reason, or prefer the
+answer's own series — is a question about which source wins, which is the
+owner's call and not a subagent's.
+
+The live risk is real but bounded: it needs a work whose `series` was already
+filled from a DIFFERENT taxonomy **and** whose `seriesIndex` is still open.
+Wikidata (`84df3e1`) is the first rung whose series comes from a wholly
+independent taxonomy, and Hardcover (`893dd37`) adds a third — which is what
+turns a theoretical mismatch into a likely one, so this should not sit for long.
+It will want the SQL-level test named under F21 anyway.
+
+### F1 — the number was wrong in BOTH directions, and is now derived
+
+The review said 13 (11 plus the two unpriced rungs). Recounting against the code
+says **15**, because the `11` it was correcting was itself two short:
+
+| Step | Subrequests |
+|---|---|
+| `listAliasesForWork` | 1 |
+| `freeDetailsFor` — `getWork`, `listGapVerdicts` | 2 |
+| rung 1 `askAudiobook` | 1 |
+| rung 2 `askIndex` | 0 — DARK, returns before its fetch |
+| rung 3 `askOpenLibrary` | **4** — `isbn13` (D1) + `workKeyForIsbn` + `editionsOfWork` + `workDescription`. The old note said 3. |
+| rung 4 `askGoogleBooks` | 1 |
+| rung 5 `askHardcover` | 1 — **landed `893dd37`, never priced** |
+| rung 6 `askWikidata` | 1 — **landed `84df3e1`, never priced** |
+| `writeFreeValues` | **3** — `getWork`, plus `updateWork`'s OWN `getWork` (`works.ts:361`) before its batch. The old note said 2. |
+| the `getWork` re-read after the ladder | 1 |
+| **total** | **15** |
+
+⚠️ **The mechanism matters more than the number.** The rungs are a table now
+(`FREE_LADDER_RUNGS`) carrying each rung's price; `FREE_DETAILS_SUBREQUESTS` sums
+it and `details-sweep` adds the 2 its own caller spends. Two tests hold it: every
+`FreeRung` in the union must have a priced entry, and a worst-case run is
+**executed** against a counting D1 and a counting `fetch` and must spend exactly
+the derived total. A seventh rung cannot land unpriced.
+
+Knock-on: an AI-mode book is estimated at `12 + 15 + 4·fields`, so a four-gap book
+is 43 against `SWEEP_BUDGET` 44 — still one book a tick, honestly.
+
+### The three choices this batch had to make
+
+**F5 — how to stop the edition row lying.** `bestCandidate` keeps rung 1's
+`source`/`sourceUrl` (right: they are the IDENTITY's provenance) while coalescing
+`publisher`, `pages`, `language` and `coverUrl` from later rungs — so a row could
+read `publisher='Tor', pages=384, source='openlibrary'` when Open Library carried
+neither. **Chosen: the cheapest honest option.** `bestCandidate` returns a
+`borrowed` map (field → rung) and `gabi-delegated` writes it into the edition's
+`change_log` note through `borrowingActor`. Rejected: per-field provenance
+columns (a migration, to answer an audit question), and `source='mixed'` (which
+would destroy the provenance that IS true).
+
+**F7 — what to do about already-shared links.** OR is the owner's ask and stays.
+AND cannot be given back for the one legacy shape without a second predicate path
+beside `collectionFilter`, which is exactly what that single builder exists to
+prevent. So the LEGACY shape only (`?format=` present, no `?binding=`) drops the
+`kind` and keeps the format: `hardcover` CONTAINS `hardcover AND collectors`
+rather than swamping it, and is one tick from either. A link the current control
+produced is untouched — it means OR because somebody just ticked two boxes.
+
+**F12 — delete, not rewire.** Grep found **zero** consumers of `facets.kinds` and
+`facets.formats`; the two selects that read them were deleted by the Type
+consolidation. Rewiring would also have shipped a wrong count: under OR semantics
+the `withoutKind` variant dropped only the kind half, counting an intersection
+that clicking the box could never produce. Both queries and both response fields
+are gone — two fewer D1 calls per facets request — and the doc comment left in
+their place says what a correct version would have to do (drop the WHOLE OR
+group; count per option, not as two totals).
+
+### F21 — the gaps closed, and the one still open
+
+Closed: the `FREE_LADDER_SUBREQUESTS`-vs-ladder assertion (executed, not
+restated); a facet-vs-list agreement tripwire; `bestCandidate`'s `undefined`
+description case (through a helper that OMITS the key, the shape `cand()` could
+not build); contract tests naming the fields each add path carries; the Wikidata
+"the ISBN really reaches the query" assertion; the two-binding ordering cases.
+
+⚠️ **Still open:** there is still **no SQL test over `collectionFilter`'s
+OR-grouping**, and no ladder-level `askWikidata` test. The first is what F9's fix
+will want anyway.
+
+### Two things fixed alongside, both found while fixing something else
+
+**`docs/deploys.log` recorded `version-unknown` on every line** (`bd54438`), so
+the 3am rollback reference named nothing rollable. Two independent bugs failing
+into the same empty catch: `execFileSync('npx', …)` cannot run npx on Windows
+(it is `npx.cmd` — ENOENT, and EINVAL through `execFile` since Node 22), so the
+lookup had never run once on this machine; and the regex took the first UUID in
+the human output, which is the OLDEST deployment's `id` and not a version id at
+all. Now `process.execPath` + wrangler's own entry script, `--json` parsed,
+newest deployment by `created_on`, version with the largest percentage (so a
+gradual rollout does not record the half being rolled out). Verified live: it
+returns `537859c2-…` for the main worker, matching the 17:09 deploy the log had
+recorded as unknown.
+
+**`docs/access/secrets.md`'s Hardcover section was a day stale** — it told the
+owner to set the friend instance's token interactively and described the rung as
+a separate build still to do. The token is on BOTH instances and on the SHARED
+push allowlist (`npm run secrets:push:both` re-pushes it), and the rung shipped
+2026-08-25. Corrected in place, with what was NOT re-checked stated in the header.
+
+### What was NOT verified
+
+- **Nothing was exercised against production or a live D1.** Every claim here is
+  about code and tests. The one live read taken was `wrangler deployments list`,
+  for the tooling fix above.
+- **Whether `ANTHROPIC_API_KEY` is set on either instance** — a secret store
+  cannot be read back (KI-7). F2's *trigger* is an absent key; how often it fires
+  is unmeasured.
+- **The Wikidata rung has still never run end to end here.** F8's ordering is
+  pinned with mocked bindings, not against a live multi-`P179` book.
+- **`onedrive-exclude.ps1` was not RUN** (per the brief). Its changes were
+  parse-checked, and the F10 guard plus the PS 5.1 "`.Target` is a string ARRAY"
+  finding were exercised against a real junction on this machine.
+
 ## ✅ Hardcover rung: a UNIVERSE can land in `work.series` — FIXED, both instances, 2026-08-25
 
 **✅ FIXED 2026-08-25**, deployed to main and friend the same day.

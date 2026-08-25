@@ -1,7 +1,12 @@
 # Secrets & ops commands — how to set/push keys and run the npx tooling
 
 > **Audience:** the owner + Claude sessions. **Status:** TRACKED.
-> **Last verified: 2026-08-25.** Complements [`RECOVERY.md`](RECOVERY.md), which
+> **Last verified: 2026-08-25** — the Hardcover section below was re-checked
+> against the code and the push allowlist that day and CORRECTED (it described
+> work that was already done). ⚠️ **Not re-checked in the same pass:** whether
+> each named secret is actually set on each instance — a secret store cannot be
+> read back (KI-7), and `npm run secret:list` names only what exists.
+> Complements [`RECOVERY.md`](RECOVERY.md), which
 > is the disaster *inventory* (what every secret is + where a copy lives); this is
 > the *operational* how-to (how to set, push, and rotate them, and the ops
 > commands). One fact, one home: custody lives in RECOVERY, procedure lives here.
@@ -99,20 +104,31 @@ npm run secret:list:friend     # friend
   `ESTATE_APP_TOKEN_LIBRARY2`, `GOOGLE_BOOKS_API_KEY`, `HARDCOVER_API_TOKEN`,
   `PEER_TOKEN`.
 
-## The Hardcover.app key, concretely (owner has one, 2026-08-25)
+## The Hardcover.app key, concretely — ✅ SET ON BOTH, RUNG LIVE (2026-08-25)
 
 Secret name: **`HARDCOVER_API_TOKEN`** (Bearer token; free key at
-`hardcover.app/account/api`). Already added to `env.ts` + the push allowlist.
+`hardcover.app/account/api`). In `env.ts` and on the `push-secrets.mjs`
+allowlist.
 
-- **main:** add `HARDCOVER_API_TOKEN=<key>` to `apps/worker/.dev.vars`, then Claude
-  runs `npm run secrets:push`. (Owner never pastes the key to Claude; Claude never
-  reads `.dev.vars`.)
-- **friend:** owner runs
-  `npx wrangler secret put HARDCOVER_API_TOKEN --config apps/worker/wrangler.toml --env friend`.
-- The Hardcover **rung** that USES it (in the free-details ladder) is a separate
-  build — see `docs/TODO.md` / delegated to a subagent; it reads
-  `env.HARDCOVER_API_TOKEN` and skips when unset, exactly like the Google Books
-  and Wikidata rungs.
+**State, corrected 2026-08-25** (this section described the work as still to do
+for a day after it was done):
+
+- **The token is on BOTH instances.** Nothing to set. It is on the SHARED
+  allowlist, so `npm run secrets:push:both` is what re-pushes it if it is ever
+  rotated — the friend instance does **not** need the interactive
+  `wrangler secret put` this section used to tell the owner to run.
+- **The rung is SHIPPED.** `askHardcover` is rung 5 of the free-details ladder
+  (`apps/worker/src/lib/free-details.ts`), deployed to both instances. It reads
+  `env.HARDCOVER_API_TOKEN`, and an instance without it records the NAMED skip
+  *"Hardcover: not asked — no HARDCOVER_API_TOKEN"* rather than looking like a
+  rung that was asked and knew nothing.
+- ⚠️ **It refuses to write a UNIVERSE into `work.series`** (fixed the same day):
+  Hardcover files universes as series rows too, and *The Way of Kings* answers
+  `[The Stormlight Archive #1, The Cosmere #7]`. Row order was deciding which
+  tier landed. See the header of `askHardcover`.
+- Rotation, if ever needed: put the new value in `apps/worker/.dev.vars` and run
+  `npm run secrets:push:both`. (Owner never pastes the key to Claude; Claude
+  never reads `.dev.vars`.)
 
 ## Ops command reference (which Claude can run vs which need the owner)
 
