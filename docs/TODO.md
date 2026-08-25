@@ -46,9 +46,20 @@
    purpose (unset = route disabled). `--both` pushed `EBOOK_INGEST_TOKEN` to her
    as a side effect of the PEER_TOKEN rotation (2026-08-25) — reverted the same
    minute with `wrangler secret delete … --env friend`. Split `SHARED_SECRETS`
-   into `SHARED_ALWAYS` and `SHARED_OPT_IN` (pushed to friend only with an
-   explicit `--enable NAME`), print `skip (opt-in; --enable NAME)` otherwise.
-   Update `access/secrets.md`.
+   into `SHARED_ALWAYS` and `SHARED_OPT_IN` (pushed to a non-main instance only
+   with an explicit `--enable NAME`), print `skip (opt-in; --enable NAME)`
+   otherwise. Update `access/secrets.md`.
+   **Owner decision 2026-08-25:** padhard gets BOTH turned ON — *"her and I
+   share audio and ebooks … they're already pre-mixed with mine; they should
+   count as she owns them too"* — done that day (`EBOOK_INGEST_TOKEN` +
+   `AUDIOBOOK_MAPPING_TOKEN` set on friend). **Any FUTURE library is opt-in by
+   the owner**, which is exactly what the `--enable` flag enforces.
+3. **The pipelines must TARGET her too, or the unlocked routes do nothing.**
+   `audiobook_catalog/scripts/sync_to_drive.py` `_run_sibling_link` (STEP 11)
+   runs `backfill-audiobook-holdings.mjs` for MAIN only — padhard's 101 audio
+   links today were a manual `--friend` run. Make STEP 11 run main then
+   `--friend` (or `npm run for-both`), and do the same for whatever calls the
+   ebook ingest route. Shared pool = both instances are readers of it.
 
 ## ☐ Shelf is COPY-DRIVEN + EditBox tab merge — LANDED FOR REVIEW (branch `feature/shelf-copy-driven`, 2026-08-24)
 
