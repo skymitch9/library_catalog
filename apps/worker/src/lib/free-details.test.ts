@@ -33,6 +33,7 @@ import type { Env } from '../env.js';
 import {
   FREE_DETAILS_SUBREQUESTS,
   FREE_LADDER_RUNG_NAMES,
+  INDEX_MAX_IDENTITIES,
   RUNG_LABEL,
   freeDetailsFor,
   readSeriesLabel,
@@ -338,58 +339,219 @@ describe('rung 1 — audiobook_holding', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Rung 2 — the dark index rung
+// Rung 2 — the estate index, over the MACHINE read route (live 2026-08-25)
 // ---------------------------------------------------------------------------
 
+/** The index config this rung needs. Both halves, always — see `askIndex`. */
+const INDEX_ENV = {
+  INDEX_URL: 'https://index.heygabi.ai',
+  INDEX_READ_TOKEN: 'test-only-read-token',
+} as const;
+
+/** `read.ts:39-40,79` — the envelope `/api/machine/lookup` really answers. */
+function lookupBody(matches: Record<string, unknown>[], query = 'Elantris') {
+  return {
+    query,
+    title_fold: query.toLowerCase(),
+    matches: matches.map((m) => ({
+      source: 'audiobook',
+      source_id: '1',
+      title: query,
+      creator: 'Brandon Sanderson',
+      title_fold: query.toLowerCase(),
+      work_fold: null,
+      universe: null,
+      series: null,
+      series_slug: null,
+      series_index: null,
+      year: null,
+      publisher: null,
+      format: 'audiobook',
+      kind: null,
+      parent_source_id: null,
+      cover_url: null,
+      detail_url: null,
+      pushed_at: '2026-08-25T00:00:00Z',
+      ...m,
+    })),
+  };
+}
+
+/** A fetch that answers every index call with one body, recording the requests. */
+function indexFetch(body: unknown, status = 200) {
+  const calls: { url: string; init: RequestInit | undefined }[] = [];
+  const impl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({ url: String(input), init });
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as unknown as typeof fetch;
+  return { impl, calls };
+}
+
 describe('rung 2 — the estate index', () => {
-  it('⚠️ is skipped with a NAMED reason when INDEX_READ_TOKEN is unset, and names the gap', async () => {
+  it('⚠️ is skipped with a NAMED reason when the pairing is not configured', async () => {
     const { db } = stubDb({ holding: null });
-    const out = await freeDetailsFor(env(db, { INDEX_URL: 'https://index.heygabi.ai' }), 514, [
-      'series',
-    ], { throttle: false });
+    const out = await freeDetailsFor(env(db, { INDEX_URL: INDEX_ENV.INDEX_URL }), 514, ['series'], {
+      throttle: false,
+    });
 
     const reason = out.skipped.find((s) => s.startsWith('the estate index:'));
     assert.ok(reason, 'an unaskable rung must say so — it is not the same as "nothing found"');
     assert.match(reason, /INDEX_READ_TOKEN/, 'the missing thing must be named, so it can be fixed');
-    assert.match(reason, /index-worker/, 'and so must the mount that would have to accept it');
+    assert.match(
+      reason,
+      /INDEX_READ_TOKEN_<THIS INSTANCE>/,
+      'and so must the name the OTHER holder keeps — the pairing is where this goes wrong',
+    );
   });
 
   it('never invents a token: with INDEX_URL set and no token, nothing is fetched', async () => {
     const fetchStub = stubFetch({});
     const { db } = stubDb({ holding: null });
-    await freeDetailsFor(env(db, { INDEX_URL: 'https://index.heygabi.ai' }), 514, ['series'], {
+    await freeDetailsFor(env(db, { INDEX_URL: INDEX_ENV.INDEX_URL }), 514, ['series'], {
       throttle: false,
       fetchImpl: fetchStub.impl,
     });
     assert.equal(
       fetchStub.calls.filter((u) => u.includes('index.heygabi.ai')).length,
       0,
-      'a dark rung must not dial the host at all',
+      'an unconfigured rung must not dial the host at all',
     );
   });
 
-  it('answers when a token IS configured (the shape is unverified — see the module header)', async () => {
-    const fetchStub = stubFetch({ '/api/lookup': { series: 'Cradle', series_index: 3 } });
+  it('⚠️ calls /api/machine/lookup — NOT the human /api/lookup — with the bearer and title only', async () => {
+    // The regression this pins is the one the rung shipped with: the human
+    // route sits below the index's requireEstateMember() blanket and answers
+    // 401 to a bearer, so a rung pointed at it is refused every run while
+    // looking perfectly configured.
+    const f = indexFetch(lookupBody([{ series: 'Elantris', series_index: 1 }]));
     const { db } = stubDb({ holding: null });
-    const out = await freeDetailsFor(
-      env(db, { INDEX_URL: 'https://index.heygabi.ai', INDEX_READ_TOKEN: 'test-only' }),
-      514,
-      ['series', 'seriesIndex'],
-      { throttle: false, fetchImpl: fetchStub.impl },
+    await freeDetailsFor(env(db, INDEX_ENV), 514, ['series', 'seriesIndex'], {
+      throttle: false,
+      fetchImpl: f.impl,
+    });
+
+    assert.equal(f.calls.length, 1);
+    const url = new URL(f.calls[0]!.url);
+    assert.equal(url.origin, 'https://index.heygabi.ai');
+    assert.equal(url.pathname, '/api/machine/lookup', 'the MACHINE route, by name');
+    assert.equal(url.searchParams.get('title'), 'Elantris');
+    // ⚠️ lookupHandler reads `title` and nothing else (read.ts:57). A `creator`
+    // param would be decoration that reads like an author gate.
+    assert.equal(url.searchParams.get('creator'), null, 'no param the server never reads');
+
+    const headers = f.calls[0]!.init?.headers as Record<string, string>;
+    assert.equal(headers.authorization, `Bearer ${INDEX_ENV.INDEX_READ_TOKEN}`);
+  });
+
+  it('parses the { query, title_fold, matches } envelope and writes series + volume', async () => {
+    const f = indexFetch(lookupBody([{ series: 'Elantris', series_index: 1, source: 'audiobook' }]));
+    const { db, writes } = stubDb({ holding: null });
+    const out = await freeDetailsFor(env(db, INDEX_ENV), 514, ['series', 'seriesIndex'], {
+      throttle: false,
+      fetchImpl: f.impl,
+    });
+    assert.equal(out.sources.series, 'index');
+    assert.equal(out.sources.seriesIndex, 'index');
+    assert.ok(wrote(writes, 'Elantris'));
+    assert.ok(wrote(writes, 1));
+  });
+
+  it('⚠️ a lookup answers MANY rows — the first one NAMING a series wins, not matches[0]', async () => {
+    // The estate-level restatement of rule 2: the audiobook copy is present and
+    // silent about series; the library row two positions down carries it.
+    // Taking matches[0] would end the rung on a row that answered nothing.
+    const f = indexFetch(
+      lookupBody([
+        { source: 'audiobook', series: null, series_index: null },
+        { source: 'audiobook', format: 'ebook', series: null },
+        { source: 'library', series: 'Elantris', series_index: 1 },
+      ]),
     );
+    const { db } = stubDb({ holding: null });
+    const out = await freeDetailsFor(env(db, INDEX_ENV), 514, ['series', 'seriesIndex'], {
+      throttle: false,
+      fetchImpl: f.impl,
+    });
     assert.equal(out.sources.series, 'index');
     assert.equal(out.sources.seriesIndex, 'index');
   });
 
+  it('rows present but none naming a series is reported as that, not as "nothing held"', async () => {
+    const f = indexFetch(lookupBody([{ series: null }, { series: '   ' }]));
+    const { db } = stubDb({ holding: null });
+    const out = await freeDetailsFor(env(db, INDEX_ENV), 514, ['series'], {
+      throttle: false,
+      fetchImpl: f.impl,
+    });
+    const skip = out.skipped.find((s) => s.startsWith('the estate index'));
+    assert.ok(skip);
+    assert.match(skip, /2 row\(s\) across the estate, none naming a series/);
+  });
+
+  it('an empty matches array says no shelf holds it — a different fact', async () => {
+    const f = indexFetch(lookupBody([]));
+    const { db } = stubDb({ holding: null });
+    const out = await freeDetailsFor(env(db, INDEX_ENV), 514, ['series'], {
+      throttle: false,
+      fetchImpl: f.impl,
+    });
+    assert.ok(out.skipped.some((s) => /no shelf in the estate holds this title/.test(s)));
+  });
+
+  it('⚠️ a refusal carries the index’s own error CODE into the skip, never a bare status', async () => {
+    // "the index said no" and "your token is not the one it holds" send an
+    // operator to two completely different places.
+    const f = indexFetch({ error: 'machine_token_invalid', detail: 'nope' }, 401);
+    const { db } = stubDb({ holding: null });
+    const out = await freeDetailsFor(env(db, INDEX_ENV), 514, ['series'], {
+      throttle: false,
+      fetchImpl: f.impl,
+    });
+    const skip = out.skipped.find((s) => s.startsWith('the estate index'));
+    assert.ok(skip);
+    assert.match(skip, /HTTP 401/);
+    assert.match(skip, /machine_token_invalid/);
+  });
+
+  it('a 200 that is not the envelope is a named CONTRACT skip, not a parsed guess', async () => {
+    // The old rung accepted a bare row or one wrapped in `item`. Both were
+    // wrong, and the guesswork is what let a broken rung look merely empty.
+    const f = indexFetch({ series: 'Elantris', series_index: 1 });
+    const { db, writes } = stubDb({ holding: null });
+    const out = await freeDetailsFor(env(db, INDEX_ENV), 514, ['series'], {
+      throttle: false,
+      fetchImpl: f.impl,
+    });
+    assert.equal(out.sources.series, undefined, 'nothing may be written off an unknown shape');
+    assert.equal(writes.length, 0);
+    assert.ok(out.skipped.some((s) => /has changed its contract/.test(s)));
+  });
+
+  it('an unreachable index is a named skip and the ladder carries on', async () => {
+    const fetchImpl = (async () => {
+      throw new TypeError('fetch failed');
+    }) as unknown as typeof fetch;
+    const { db } = stubDb({ holding: null });
+    const out = await freeDetailsFor(env(db, INDEX_ENV), 514, ['series'], {
+      throttle: false,
+      fetchImpl,
+    });
+    assert.ok(out.skipped.some((s) => /could not be reached/.test(s)));
+  });
+
   it('⚠️ fans out over title aliases and answers off the one that names a series', async () => {
-    // The catalogued title finds nothing; the alias does — exactly the shape the
-    // whole build exists for. A fetch that answers by the `title` query param.
     const calls: string[] = [];
     const fetchImpl = (async (input: RequestInfo | URL) => {
       const url = String(input);
       calls.push(url);
-      const title = new URL(url).searchParams.get('title');
-      const body = title === 'The Selish Cycle' ? { series: 'Elantris', series_index: 1 } : {};
+      const title = new URL(url).searchParams.get('title') ?? '';
+      const body =
+        title === 'The Selish Cycle'
+          ? lookupBody([{ series: 'Elantris', series_index: 1 }], title)
+          : lookupBody([], title);
       return new Response(JSON.stringify(body), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -397,45 +559,226 @@ describe('rung 2 — the estate index', () => {
     }) as unknown as typeof fetch;
 
     const { db } = stubDb({ holding: null });
-    const out = await freeDetailsFor(
-      env(db, { INDEX_URL: 'https://index.heygabi.ai', INDEX_READ_TOKEN: 'test-only' }),
-      514,
-      ['series', 'seriesIndex'],
-      { throttle: false, fetchImpl, titleAliases: ['The Selish Cycle'] },
-    );
+    const out = await freeDetailsFor(env(db, INDEX_ENV), 514, ['series', 'seriesIndex'], {
+      throttle: false,
+      fetchImpl,
+      titleAliases: ['The Selish Cycle'],
+    });
 
-    // Both identities were tried, the catalogued title first.
     assert.equal(calls.length, 2, 'the title and then the alias should each be asked');
     assert.match(calls[0] ?? '', /title=Elantris/);
     assert.match(calls[1] ?? '', /title=The\+Selish\+Cycle/);
-    // The answer came from the alias and was written.
     assert.equal(out.sources.series, 'index');
     assert.equal(out.sources.seriesIndex, 'index');
-    // The title miss is named, not swallowed.
     assert.ok(
-      out.skipped.some((s) => s.includes('the estate index') && s.includes('no series')),
+      out.skipped.some((s) => s.includes('the estate index') && s.includes('no shelf in the estate')),
       'the identity that came back empty should be recorded',
     );
   });
 
   it('stops at the first identity that answers — no needless second call', async () => {
-    const calls: string[] = [];
-    const fetchImpl = (async (input: RequestInfo | URL) => {
-      calls.push(String(input));
-      return new Response(JSON.stringify({ series: 'Elantris', series_index: 1 }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
-    }) as unknown as typeof fetch;
-
+    const f = indexFetch(lookupBody([{ series: 'Elantris', series_index: 1 }]));
     const { db } = stubDb({ holding: null });
-    await freeDetailsFor(
-      env(db, { INDEX_URL: 'https://index.heygabi.ai', INDEX_READ_TOKEN: 'test-only' }),
-      514,
-      ['series', 'seriesIndex'],
-      { throttle: false, fetchImpl, titleAliases: ['The Selish Cycle'] },
+    await freeDetailsFor(env(db, INDEX_ENV), 514, ['series', 'seriesIndex'], {
+      throttle: false,
+      fetchImpl: f.impl,
+      titleAliases: ['The Selish Cycle'],
+    });
+    assert.equal(f.calls.length, 1, 'the catalogued title answered, so the alias is not asked');
+  });
+
+  it('⚠️ the fan-out is CAPPED at INDEX_MAX_IDENTITIES — the sweep budget depends on it', async () => {
+    // `selectTitleAliases` caps at 4 aliases, so 5 identities are possible. The
+    // rung's declared price is INDEX_MAX_IDENTITIES and the sweep prices the
+    // whole ladder off it; an uncapped fan-out would overrun a ceiling whose
+    // breach does not throw, it kills the invocation.
+    const f = indexFetch(lookupBody([]));
+    const { db } = stubDb({ holding: null });
+    await freeDetailsFor(env(db, INDEX_ENV), 514, ['series'], {
+      throttle: false,
+      fetchImpl: f.impl,
+      titleAliases: ['A', 'B', 'C', 'D'],
+    });
+    assert.equal(f.calls.length, INDEX_MAX_IDENTITIES);
+    assert.equal(INDEX_MAX_IDENTITIES, 3, 'change this and reprice FREE_LADDER_RUNGS with it');
+  });
+
+  it('the stored series_index wins over a number parsed out of the label', async () => {
+    const f = indexFetch(lookupBody([{ series: 'Cradle, Volume 1', series_index: 9 }]));
+    const { db, writes } = stubDb({ holding: null });
+    const out = await freeDetailsFor(env(db, INDEX_ENV), 514, ['series', 'seriesIndex'], {
+      throttle: false,
+      fetchImpl: f.impl,
+    });
+    assert.equal(out.sources.seriesIndex, 'index');
+    assert.ok(wrote(writes, 9), 'the pushed position, not the 1 in the string');
+  });
+
+  it('falls back to the label’s number when series_index is null', async () => {
+    const f = indexFetch(lookupBody([{ series: 'Cradle, Volume 5', series_index: null }]));
+    const { db, writes } = stubDb({ holding: null });
+    await freeDetailsFor(env(db, INDEX_ENV), 514, ['series', 'seriesIndex'], {
+      throttle: false,
+      fetchImpl: f.impl,
+    });
+    assert.ok(wrote(writes, 5));
+    assert.equal(loggedValue(writes, 'series'), '"Cradle"');
+  });
+
+  it('cannot answer description — it is an identity index, so the rung is not even asked', async () => {
+    const f = indexFetch(lookupBody([{ series: 'Elantris', series_index: 1 }]));
+    const { db } = stubDb({ holding: null, work: { series: 'Elantris', series_index_sort: 1 } });
+    const out = await freeDetailsFor(env(db, INDEX_ENV), 514, ['description'], {
+      throttle: false,
+      fetchImpl: f.impl,
+    });
+    assert.equal(
+      f.calls.length,
+      0,
+      'a rung that cannot answer the open field must not spend a subrequest',
     );
-    assert.equal(calls.length, 1, 'the catalogued title answered, so the alias is not asked');
+    assert.equal(out.sources.description, undefined);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F9 — a volume number is written only against the SAME series
+// ---------------------------------------------------------------------------
+
+describe('F9 — the volume belongs to the series in hand, or it is not written', () => {
+  it('⚠️ Wikidata answering "The Cosmere, 7" for a Stormlight book writes NO volume', async () => {
+    // The live case, 2026-08-25: a UNIVERSE is a true fact about the book and a
+    // wrong number for its shelf. Before this gate, 7 landed in
+    // series_index_sort and The Way of Kings became Stormlight volume 7.
+    const fetchStub = stubFetch({
+      'query.wikidata.org': {
+        results: { bindings: [{ seriesLabel: { value: 'The Cosmere' }, ordinal: { value: '7' } }] },
+      },
+    });
+    const { db, writes } = stubDb({
+      holding: null,
+      work: { series: 'The Stormlight Archive', series_index_sort: null },
+      editions: [{ isbn13: '9780765326355' }],
+    });
+
+    const out = await freeDetailsFor(db ? env(db) : env(db), 514, ['seriesIndex'], {
+      throttle: false,
+      fetchImpl: fetchStub.impl,
+    });
+
+    assert.equal(out.sources.seriesIndex, undefined, 'the ordinal must not be attributed');
+    assert.ok(!wrote(writes, 7), 'and it must not reach the row');
+    const skip = out.skipped.find((s) => s.includes('volume not written'));
+    assert.ok(skip, 'the drop is NAMED — a silent one is indistinguishable from "knew nothing"');
+    assert.match(skip, /Wikidata: names series The Cosmere/);
+    assert.match(skip, /filed under The Stormlight Archive/);
+  });
+
+  it('the same series spelled differently IS written — the one matcher, not string equality', async () => {
+    // titleSimilarity("Stormlight Archive", "The Stormlight Archive") = 0.8,
+    // over the 0.7 spine floor. A leading article must not cost a real answer.
+    const fetchStub = stubFetch({
+      'query.wikidata.org': {
+        results: {
+          bindings: [{ seriesLabel: { value: 'Stormlight Archive' }, ordinal: { value: '1' } }],
+        },
+      },
+    });
+    const { db, writes } = stubDb({
+      holding: null,
+      work: { series: 'The Stormlight Archive', series_index_sort: null },
+      editions: [{ isbn13: '9780765326355' }],
+    });
+
+    const out = await freeDetailsFor(env(db), 514, ['seriesIndex'], {
+      throttle: false,
+      fetchImpl: fetchStub.impl,
+    });
+
+    assert.equal(out.sources.seriesIndex, 'wikidata');
+    assert.ok(wrote(writes, 1));
+    assert.ok(!out.skipped.some((s) => s.includes('volume not written')));
+  });
+
+  it('a rung bringing BOTH series and volume to an unfiled book still writes both', async () => {
+    // The empty-shelf case: there is nothing to contradict, so the gate must
+    // not fire. This is the ordinary path and the one a bad gate would break.
+    const fetchStub = stubFetch({
+      'query.wikidata.org': {
+        results: { bindings: [{ seriesLabel: { value: 'Cradle' }, ordinal: { value: '3' } }] },
+      },
+    });
+    const { db, writes } = stubDb({ holding: null, editions: [{ isbn13: '9780765350374' }] });
+    const out = await freeDetailsFor(env(db), 514, ['series', 'seriesIndex'], {
+      throttle: false,
+      fetchImpl: fetchStub.impl,
+    });
+    assert.equal(out.sources.series, 'wikidata');
+    assert.equal(out.sources.seriesIndex, 'wikidata');
+    assert.ok(wrote(writes, 'Cradle'));
+    assert.ok(wrote(writes, 3));
+  });
+
+  it('⚠️ the gate follows a series set EARLIER IN THE SAME RUN, not just the stored one', async () => {
+    // Rung 1 files the book under Cradle; a later rung then claims a volume of
+    // something else. The book was unfiled when the run started, so a gate that
+    // only read `work.series` would wave this through.
+    const fetchStub = stubFetch({
+      'query.wikidata.org': {
+        results: { bindings: [{ seriesLabel: { value: 'The Cosmere' }, ordinal: { value: '7' } }] },
+      },
+    });
+    const { db, writes } = stubDb({
+      // Rung 1 answers a series with NO volume, so seriesIndex stays open.
+      holding: { series: 'Cradle', index_display: null },
+      editions: [{ isbn13: '9780765350374' }],
+    });
+    const out = await freeDetailsFor(env(db), 514, ['series', 'seriesIndex'], {
+      throttle: false,
+      fetchImpl: fetchStub.impl,
+    });
+
+    assert.equal(out.sources.series, 'audiobook');
+    assert.equal(out.sources.seriesIndex, undefined);
+    assert.ok(!wrote(writes, 7));
+    assert.ok(out.skipped.some((s) => /names series The Cosmere.*filed under Cradle/.test(s)));
+  });
+
+  it('a mismatched volume does not stop a LATER rung answering it correctly', async () => {
+    // Dropping the ordinal must leave `seriesIndex` OPEN, not closed-and-empty:
+    // the per-field rule says a rung that cannot answer hands on to the next.
+    // Hardcover names the right series, Wikidata (asked last) names the universe.
+    const fetchStub = stubFetch({
+      'api.hardcover.app': {
+        data: {
+          editions: [
+            {
+              book: {
+                description: null,
+                book_series: [
+                  { position: 1, series: { name: 'The Stormlight Archive', books_count: 5 } },
+                ],
+              },
+            },
+          ],
+        },
+      },
+      'query.wikidata.org': {
+        results: { bindings: [{ seriesLabel: { value: 'The Cosmere' }, ordinal: { value: '7' } }] },
+      },
+    });
+    const { db, writes } = stubDb({
+      holding: null,
+      work: { series: 'The Stormlight Archive', series_index_sort: null },
+      editions: [{ isbn13: '9780765326355' }],
+    });
+    const out = await freeDetailsFor(env(db, { HARDCOVER_API_TOKEN: 'tok' }), 514, ['seriesIndex'], {
+      throttle: false,
+      fetchImpl: fetchStub.impl,
+    });
+    assert.equal(out.sources.seriesIndex, 'hardcover');
+    assert.ok(wrote(writes, 1));
+    assert.ok(!wrote(writes, 7));
   });
 });
 
@@ -1082,10 +1425,12 @@ describe("the ladder's price", () => {
   it('⚠️ a worst-case run spends exactly FREE_DETAILS_SUBREQUESTS', async () => {
     // The most expensive shape the ladder has: no recorded Open Library work
     // key (so the ISBN must be resolved), an audiobook row that exists and
-    // cannot answer, both keys present, every rung asked, and a last-rung answer
-    // that forces the write. Counted, not computed — a rung added without a
-    // price moves this number and fails here.
+    // cannot answer, ⚠️ the index CONFIGURED and fanned out to its full
+    // `INDEX_MAX_IDENTITIES` while answering nothing, both keys present, every
+    // rung asked, and a last-rung answer that forces the write. Counted, not
+    // computed — a rung added without a price moves this number and fails here.
     const fetchStub = stubFetch({
+      '/api/machine/lookup': { query: 'Elantris', title_fold: 'elantris', matches: [] },
       '/isbn/': { works: [{ key: '/works/OL1W' }] },
       '/editions.json': { entries: [] },
       'OL1W.json': {},
@@ -1104,10 +1449,16 @@ describe("the ladder's price", () => {
     const counted = countingDb(inner.db);
 
     const out = await freeDetailsFor(
-      env(counted.db, { GOOGLE_BOOKS_API_KEY: 'k', HARDCOVER_API_TOKEN: 'tok' }),
+      env(counted.db, { GOOGLE_BOOKS_API_KEY: 'k', HARDCOVER_API_TOKEN: 'tok', ...INDEX_ENV }),
       514,
       ALL,
-      { throttle: false, fetchImpl: fetchStub.impl },
+      {
+        throttle: false,
+        fetchImpl: fetchStub.impl,
+        // Two aliases + the catalogued title = INDEX_MAX_IDENTITIES asks, the
+        // rung's declared worst case.
+        titleAliases: ['The Selish Cycle', 'Spirit of Elantris'],
+      },
     );
 
     assert.equal(out.sources.series, 'wikidata', 'the last rung answered, so the write happened');

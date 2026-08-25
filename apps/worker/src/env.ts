@@ -208,34 +208,42 @@ export interface Env {
   INDEX_PUSH_TOKEN?: string;
 
   /**
-   * ⚠️ **The READ half of the index — and it does not exist yet. Naming the
-   * gap is the whole point of this entry.**
+   * **The READ half of the index — LIVE on both instances since 2026-08-25.**
    *
-   * `INDEX_PUSH_TOKEN` above is the WRITE direction and is live. The free
-   * details ladder (`lib/free-details.ts`, rung 2) wants the other direction:
-   * `GET {INDEX_URL}/api/lookup`, the estate's own cross-catalog row, which
-   * carries a canonical **series** and volume for a book another catalogue in
-   * this household already knows. It is the one rung that can answer for a book
-   * no public database indexes — which, measured, is about half this library.
+   * `INDEX_PUSH_TOKEN` above is the WRITE direction. This is the other one: the
+   * free details ladder (`lib/free-details.ts`, rung 2) asks
+   * `GET {INDEX_URL}/api/machine/lookup?title=…` with this as a bearer, and gets
+   * back the estate's own cross-catalog rows — a canonical **series** and volume
+   * for a book another catalogue in this household already knows. It is the one
+   * rung that can answer for a book no public database indexes, which, measured,
+   * is about half this library.
    *
-   * **Why it is unset, and must stay unset until the owner decides.**
-   * `index.heygabi.ai/api/lookup` sits behind a blanket **human Firebase-token**
-   * check, and no machine-read credential exists anywhere in the estate. One
-   * would have to be minted, and the mount that would accept it lives in
-   * ANOTHER repo — `catalog-platform/apps/index-worker/src/index.ts`. That is an
-   * **access-INCREASING** change, which the estate's standing rule says must be
-   * confirmed rather than acted on: the value would open a read path to every
-   * catalogue's rows for whoever holds it.
+   * ⚠️ **PER INSTANCE, and this is the half that goes wrong.** The index tells
+   * its machine callers apart BY THE VALUE presented — there is no `app` field
+   * on the wire — so the two instances are two apps and hold two values:
    *
-   * So the rung is built DARK. Unset — which is every environment today — means
-   * it is skipped with a **named** reason that travels in the response, not
-   * silently. ⚠️ Never guess a value, and never point it at `INDEX_PUSH_TOKEN`:
-   * that is the index's WRITE credential and the two sides are separate on
-   * purpose.
+   * | This Worker | The index holds it as |
+   * |---|---|
+   * | main (`ESTATE_APP = "library"`) | `INDEX_READ_TOKEN_LIBRARY` |
+   * | friend (`ESTATE_APP = "library2"`) | `INDEX_READ_TOKEN_LIBRARY2` |
    *
-   * ⚠️ **The request this rung would send has never been exercised against the
-   * real index.** `docs/info/free-details-ladder.md` records that plainly rather
-   * than letting an unrun code path read as a working one.
+   * Same name on this side, different values — exactly the
+   * `ESTATE_APP_TOKEN_LIBRARY` / `…_LIBRARY2` shape, and for the same reason: a
+   * shared value would make the app name meaningless and one leak would revoke
+   * both. `scripts/push-secrets.mjs` marks it PER_INSTANCE so a `--both` run
+   * refuses it with a sentence.
+   *
+   * ⚠️ **Never point this at `INDEX_PUSH_TOKEN`** — that is the WRITE
+   * credential and the two directions are separate on purpose. Unset is still a
+   * **named** skip that travels in the response, never a silent one.
+   *
+   * 🔴 **The trap this entry used to BE.** Until 2026-08-25 this comment said
+   * the rung was built dark and could never fire. It was wrong: `INDEX_URL` and
+   * this token were both set on main, so the rung ran — at `/api/lookup`, the
+   * HUMAN route, which sits below the index's `requireEstateMember()` blanket
+   * and answers 401 to a bearer. Refused every run, looking perfectly
+   * configured. ⚠️ **"The token is set" is not "the rung works",** and the fix
+   * was the PATH, not the credential. See `docs/info/free-details-ladder.md` §4.
    */
   INDEX_READ_TOKEN?: string;
 

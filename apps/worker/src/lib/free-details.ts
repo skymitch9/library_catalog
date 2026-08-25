@@ -20,7 +20,7 @@
  * | # | Rung | Can answer | Costs |
  * |---|---|---|---|
  * | 1 | `audiobook_holding` — our own D1 | series, volume | a JOIN |
- * | 2 | the estate index (`/api/lookup`) | series, volume | ⚠️ **DARK** — see below |
+ * | 2 | the estate index (`/api/machine/lookup`) | series, volume | 1–3 requests |
  * | 3 | Open Library `/works/<key>/editions.json` | series, volume, description | 1 req/s |
  * | 4 | Google Books by ISBN | description, series hints | a keyed request |
  * | 5 | Hardcover.app GraphQL by ISBN | description, series, volume | a keyed request, 5,000/day |
@@ -34,14 +34,34 @@
  * rather than a silent one (both instances hold `HARDCOVER_API_TOKEN` since
  * 2026-08-25; the named skip is what a future instance without it will see).
  *
- * ⚠️ **Rung 2 is built and cannot fire.** `index.heygabi.ai/api/lookup` is
- * behind a blanket human Firebase-token check and no machine-read credential
- * exists; minting one is an access-INCREASING change in another repo
- * (`catalog-platform/apps/index-worker/src/index.ts`) and therefore the owner's
- * decision, not a build step. It is gated on `INDEX_READ_TOKEN` (see
- * `env.ts`), and unset — every environment today — means **skipped with a named
- * reason that travels in the response**, never silently. Nothing here guesses a
- * value, and the request shape has never been exercised against the real index.
+ * ⚠️ **Rung 2 IS LIVE since 2026-08-25 — it was dark for two days and this
+ * paragraph used to say so.** The gap it named ("no machine-read credential
+ * exists anywhere in the estate") was closed by the index Worker's named
+ * MACHINE READ exception, built 2026-08-23 and keyed 2026-08-25:
+ *
+ * | | Then (dark) | Now |
+ * |---|---|---|
+ * | Endpoint | `/api/lookup` — the HUMAN route | **`/api/machine/lookup`** |
+ * | Credential | none existed | `INDEX_READ_TOKEN`, one value per INSTANCE |
+ * | Response shape | **a guess**, parsed defensively from `unknown` | read off `read.ts:39-40,79` and parsed to a named type |
+ *
+ * ⚠️ **The old code dialled the wrong door and would have been refused every
+ * run.** `INDEX_URL` and `INDEX_READ_TOKEN` were both set on this instance,
+ * which read as "the rung is live", while the request went to `/api/lookup` —
+ * a route sitting *below* the index's `requireEstateMember()` blanket, which
+ * wants a human's Firebase ID token and answers 401 to a bearer. The machine
+ * routes are mounted ABOVE that blanket, by name. So a rung can be configured,
+ * unskipped, and still answer nothing; "the token is set" was never the same
+ * fact as "the rung works".
+ *
+ * ⚠️ **Still gated on `INDEX_READ_TOKEN`, and unset is still a NAMED skip.**
+ * A future instance without one must not look like a rung that was asked and
+ * knew nothing. Nothing here guesses a value.
+ *
+ * ⚠️ **What the index will NOT answer: `description`.** It is an identity
+ * index, not a metadata store — the projection this catalog pushes
+ * (`packages/db/src/index-projection.ts`) carries no such column, and neither
+ * does the row that comes back.
  *
  * ## ⚠️ The three rules that are not negotiable
  *
@@ -90,12 +110,16 @@
  * `FREE_DETAILS_SUBREQUESTS`, summed from `FREE_LADDER_RUNGS` — see the table
  * there — because it was wrong twice: two rungs (Hardcover, Wikidata) landed
  * without moving it, and the enumeration it was copied from never counted
- * `updateWork`'s own `getWork`. Today it is **13**; the ordinary case is still
- * 4 or 5.
+ * `updateWork`'s own `getWork`. Today it is **16** (13 + rung 2 going live at
+ * `INDEX_MAX_IDENTITIES`); the ordinary case is still 4 or 5.
  */
 
 import {
   detectSeriesFromTitle,
+  // ⚠️ THE project's one matcher — F9's same-series gate compares with this and
+  // never with a fold of its own. See `fieldsClosedBy`, and `matching.ts`'s
+  // header for the three wrong matches a second similarity function cost.
+  isConfidentMatch,
   parseVolumeNumber,
   type DetailField,
 } from '@lc/core';
@@ -137,7 +161,7 @@ import { canonicalUniverse } from './universes.js';
  */
 const UA = 'library_catalog/1.0 (private household catalog; nbaslamking@gmail.com)';
 
-/** A rung that costs nothing. `'index'` is reserved and dark — see the header. */
+/** A rung that costs nothing. */
 export type FreeRung =
   | 'audiobook'
   | 'index'
@@ -444,44 +468,178 @@ async function askAudiobook(
   return [answer];
 }
 
-/** A record-shaped value, or null. Used only where the shape is genuinely unknown. */
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
+/**
+ * The route this rung calls, and the ONLY one it may call.
+ *
+ * ⚠️ **`/api/machine/lookup`, never `/api/lookup`.** They are the same handler
+ * (`read.ts`'s `lookupHandler`, mounted twice on purpose so the two surfaces
+ * cannot drift about what a lookup MEANS) behind two completely different
+ * gates: the human one sits below the index's `requireEstateMember()` blanket
+ * and wants a person's Firebase ID token; the machine one is mounted ABOVE it,
+ * by name, and takes this bearer. Pointing this at the human path is the bug
+ * this rung shipped with — it looked configured and was refused every run.
+ */
+const INDEX_LOOKUP_PATH = '/api/machine/lookup';
+
+/**
+ * ⚠️ **The fan-out cap, and it is a BUDGET decision, not a taste one.**
+ *
+ * This is the one rung whose cost scales with a work's aliases, and the hourly
+ * sweep's `SWEEP_BUDGET` is the binding constraint on the whole ladder
+ * (`details-sweep.ts`: an overrun does not throw, it silently kills the
+ * invocation). Pricing an uncapped fan-out at `1 + MAX_ALIAS_IDENTITIES` = 5
+ * pushed `estimateSubrequests` past the budget for a two-question book on the
+ * donor instances, which would have meant the sweep quietly picking NOTHING —
+ * a worse failure than a rung that asks three spellings instead of five.
+ *
+ * Three is enough for the question actually being asked: this is the
+ * household's OWN store, keyed on an exact title fold. If three spellings of a
+ * title do not find a row here, a fourth is not going to.
+ *
+ * ⚠️ Change this and `FREE_LADDER_RUNGS`' price for `index` must change with
+ * it — they are the same number and the cost test counts the real calls.
+ */
+export const INDEX_MAX_IDENTITIES = 3;
+
+/**
+ * ONE row of the index's `matches` array — the columns this rung reads.
+ *
+ * ⚠️ **Read off the real handler, not guessed.** `read.ts:39-40` is the
+ * `ENTRY_COLS` string the SELECT uses and `read.ts:79` is the envelope it is
+ * wrapped in. The full row also carries `source_id`, `title_fold`, `work_fold`,
+ * `universe`, `series_slug`, `year`, `publisher`, `format`, `kind`,
+ * `parent_source_id`, `cover_url`, `detail_url` and `pushed_at`; they are
+ * deliberately absent from this type because nothing here reads them, and a
+ * type that claims fields it does not use is a type nobody re-checks.
+ */
+interface IndexMatch {
+  /** `audiobook` | `library` | `game` — which shelf this row came from. */
+  source: string;
+  title: string;
+  creator: string | null;
+  series: string | null;
+  /** A NUMBER on the wire (or null) — the index stores the sort position. */
+  series_index: number | null;
 }
 
-function stringOrNull(value: unknown): string | null {
-  return typeof value === 'string' ? value : null;
-}
-
-/** The index's answer, whether it arrives bare or wrapped in `item`. */
-function pickIndexRow(body: unknown): Record<string, unknown> | null {
-  const top = asRecord(body);
-  if (!top) return null;
-  return asRecord(top['item']) ?? top;
+/** `read.ts:79` — `{ query, title_fold, matches }`. */
+interface IndexLookupResponse {
+  query: string;
+  title_fold: string;
+  matches: IndexMatch[];
 }
 
 /**
- * Rung 2 — the estate's own cross-catalogue index. ⚠️ **DARK. See the header.**
+ * Parse the lookup envelope, or return null.
  *
- * Everything below the config check is unexercised: no machine-read credential
- * exists, so this code has never met the real `/api/lookup`. It is shaped after
- * the projection this catalog PUSHES (`packages/db/src/index-projection.ts`:
- * `title`, `creator`, `series`, `series_index`) and reads defensively, because
- * the response contract is genuinely unknown rather than merely unread. It
- * cannot answer `description` — the index is an identity index, not a metadata
- * store, and the projection carries no such column.
+ * ⚠️ **This is a PARSE against a known contract, not the old defensive guess.**
+ * The previous version accepted a bare row or one wrapped in `item` because
+ * nobody had seen the response; both shapes were wrong, and the guesswork is
+ * what let a rung that could never work look like one that merely found
+ * nothing. What is checked here is only what the reader must not crash on: an
+ * envelope carrying a `matches` ARRAY. A body that is not that shape means the
+ * index changed its contract, and the honest answer is a named skip rather
+ * than a row invented out of whatever did arrive.
+ */
+function parseIndexLookup(body: unknown): IndexLookupResponse | null {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) return null;
+  const b = body as Record<string, unknown>;
+  if (!Array.isArray(b.matches)) return null;
+
+  const matches: IndexMatch[] = [];
+  for (const raw of b.matches) {
+    if (typeof raw !== 'object' || raw === null) continue;
+    const r = raw as Record<string, unknown>;
+    matches.push({
+      source: typeof r.source === 'string' ? r.source : '',
+      title: typeof r.title === 'string' ? r.title : '',
+      creator: typeof r.creator === 'string' ? r.creator : null,
+      series: typeof r.series === 'string' ? r.series : null,
+      series_index:
+        typeof r.series_index === 'number' && Number.isFinite(r.series_index)
+          ? r.series_index
+          : null,
+    });
+  }
+  return {
+    query: typeof b.query === 'string' ? b.query : '',
+    title_fold: typeof b.title_fold === 'string' ? b.title_fold : '',
+    matches,
+  };
+}
+
+/**
+ * The first match that actually NAMES a series.
+ *
+ * ⚠️ **A lookup answers MANY rows** — every format on every shelf whose
+ * `title_fold` equals the query's, `ORDER BY source, format, title`
+ * (`read.ts:74`). Most of them are silent about series. Taking `matches[0]`
+ * would let the *audiobook* copy's blank series field end the rung while the
+ * *games* row two positions down carried the answer, which is rule 2 of this
+ * file's header — a present row with a null column is not an answer — repeated
+ * one level up.
+ *
+ * The index's own ordering is kept rather than re-sorted here: it is stable,
+ * it is the same order a member's lookup shows, and a second ranking would be
+ * a second matcher.
+ */
+function firstIndexRowWithSeries(matches: readonly IndexMatch[]): IndexMatch | null {
+  return matches.find((m) => (m.series ?? '').trim() !== '') ?? null;
+}
+
+/**
+ * Rung 2 — the estate's own cross-catalogue index, over the MACHINE read route.
+ *
+ * ## The request, in full
+ *
+ * `GET {INDEX_URL}/api/machine/lookup?title=<one identity>` with
+ * `Authorization: Bearer {INDEX_READ_TOKEN}`. That is the whole of it, and the
+ * two things it deliberately does NOT send are worth naming:
+ *
+ * - ⚠️ **No `creator` param.** The old code sent one; `lookupHandler` reads
+ *   `title` and nothing else (`read.ts:57`), so it was a parameter the server
+ *   has never looked at — decoration that read like a safety gate. Removing it
+ *   changes no behaviour and stops the next reader believing the rung filters
+ *   by author when it does not.
+ * - ⚠️ **No author gate of our own either, and that is the endpoint's own
+ *   contract rather than laziness.** `/api/lookup` is the *exact-identity*
+ *   endpoint (`read.ts:22-23`): it joins on `title_fold`, the same fold the
+ *   write side used, and the estate treats that fold AS identity. This rung is
+ *   not searching the open web — where an unmatched author is how *Firefight*
+ *   came back as a different 2001 book — it is asking the household's own
+ *   store whether one of its other shelves holds this exact title. A
+ *   similarity gate here would be a second matcher over a key that is already
+ *   exact.
+ *
+ * ## Why `/api/machine/search?source=library` is NOT used for series
+ *
+ * The machine surface offers a search too, and this rung deliberately ignores
+ * it, for two independent reasons either of which would be enough:
+ *
+ * 1. ⚠️ **It is a RANKED PARTIAL match, and this rung AUTO-WRITES.** The index's
+ *    own header is explicit that its search "claims resemblance and never
+ *    identity", and that title-only matching is safe "HERE AND ONLY HERE"
+ *    because a human is looking at a result list with covers and publishers
+ *    (`read.ts:19-25`). Nothing looks at this ladder's result list — it writes
+ *    `work.series` straight into the row. Feeding a resemblance score into an
+ *    auto-acting write is the 0.34/0.7 lesson this project has already paid
+ *    for twice.
+ * 2. **`source=library` narrows to rows THIS catalog pushed.** The projection
+ *    it would be reading back is `packages/db/src/index-projection.ts` — our
+ *    own `series` column, which is blank, which is why the rung is running.
+ *    The value of the index is the shelves that are NOT ours (the audiobook
+ *    pool, the games shelf), and that param excludes exactly those.
  *
  * ## Aliases: this is the one free rung that fans out over them
  *
  * The index is keyed by TITLE STRING, so an alias is a different question to ask
  * it — exactly like the enrich route (`routes/enrich.ts`) searching Open Library
- * under a pen name. It tries the catalogued title first, then each alias, and
- * stops at the first identity that names a series. A miss on one identity is
- * recorded and the next is tried; only when EVERY identity comes back empty is
- * the rung's silence reported. `askAudiobook` (work_id) and the two ISBN/key
- * rungs have no title to vary, so they do not fan out — see the options doc.
+ * under a pen name. It tries the catalogued title first, then each alias (up to
+ * `INDEX_MAX_IDENTITIES` in total), and stops at the first identity that names a
+ * series. A miss on one identity is recorded and the next is tried; only when
+ * EVERY identity comes back empty is the rung's silence reported. `askAudiobook`
+ * (work_id) and the two ISBN/key rungs have no title to vary, so they do not fan
+ * out — see the options doc.
  */
 async function askIndex(
   ctx: LadderContext,
@@ -491,46 +649,74 @@ async function askIndex(
   if (!open.has('series') && !open.has('seriesIndex')) return [];
 
   if (!ctx.env.INDEX_URL || !ctx.env.INDEX_READ_TOKEN) {
+    // ⚠️ Which of the two is missing is NOT reported separately, on purpose:
+    // both are set together at the same deploy step, and naming one would send
+    // an operator to fix half a pairing.
     skipped.push(
-      'the estate index: not asked — INDEX_READ_TOKEN is unset. The index only accepts a ' +
-        'human sign-in today; a machine-read credential has to be minted and mounted in ' +
-        'catalog-platform/apps/index-worker/src/index.ts, which is an access-increasing ' +
-        'change and the owner’s call. See docs/info/free-details-ladder.md.',
+      'the estate index: not asked — INDEX_URL / INDEX_READ_TOKEN are not both set on this ' +
+        'instance. The index holds the matching value as INDEX_READ_TOKEN_<THIS INSTANCE>; ' +
+        'the owner mints one value per instance and sets it on both holders in one sitting. ' +
+        'See docs/info/free-details-ladder.md.',
     );
     return [];
   }
 
-  for (const title of ctx.titleIdentities()) {
+  for (const title of ctx.titleIdentities().slice(0, INDEX_MAX_IDENTITIES)) {
     const under = title === ctx.work.title ? '' : ` (as “${title}”)`;
-    const url = new URL('/api/lookup', ctx.env.INDEX_URL);
+    const url = new URL(INDEX_LOOKUP_PATH, ctx.env.INDEX_URL);
     url.searchParams.set('title', title);
-    if (ctx.work.authors) url.searchParams.set('creator', ctx.work.authors);
 
     try {
       const res = await ctx.doFetch(url.toString(), {
         headers: { authorization: `Bearer ${ctx.env.INDEX_READ_TOKEN}` },
       });
       if (!res.ok) {
-        skipped.push(`the estate index${under}: answered HTTP ${res.status}`);
+        // ⚠️ The index answers WORDED refusals with a named `error` code
+        // (`machine_token_invalid`, `machine_read_unconfigured`,
+        // `unfoldable_query`…). Carrying the code into the skip is the whole
+        // difference between "the index said no" and knowing WHICH no — a bare
+        // status would send whoever reads the queue to guess between a broken
+        // pairing, an unminted secret and a title that cannot fold.
+        skipped.push(`the estate index${under}: answered HTTP ${res.status}${await refusalCode(res)}`);
         continue;
       }
-      // ⚠️ Read as `unknown` and narrowed by hand, not cast to a shape. Every
-      // other rung in this file is typed against a response somebody has actually
-      // seen; this one is a guess, and a cast would let the guess masquerade as
-      // knowledge the first time the index answers something else. A row may
-      // arrive bare or wrapped in `item`, so both are tried.
-      const body: unknown = await res.json();
-      const row = pickIndexRow(body);
-      const label = readSeriesLabel(stringOrNull(row?.series), true);
+      const parsed = parseIndexLookup(await res.json());
+      if (!parsed) {
+        skipped.push(
+          `the estate index${under}: answered 200 but not the { query, title_fold, matches } ` +
+            'envelope this rung parses — the index has changed its contract',
+        );
+        continue;
+      }
+      const row = firstIndexRowWithSeries(parsed.matches);
+      if (!row) {
+        skipped.push(
+          parsed.matches.length === 0
+            ? `the estate index${under}: no shelf in the estate holds this title`
+            : `the estate index${under}: ${parsed.matches.length} row(s) across the estate, none naming a series`,
+        );
+        continue;
+      }
+
+      // Declared: `entry.series` IS a series field, so a label carrying no
+      // volume ("Cradle") is still a series name and is taken whole.
+      const label = readSeriesLabel(row.series, true);
       if (!label) {
-        skipped.push(`the estate index${under}: no series recorded for this book`);
+        skipped.push(`the estate index${under}: the row's series is blank after parsing`);
         continue;
       }
       const answer: FieldAnswer = { rung: 'index', series: label.series };
-      const raw = row?.series_index;
-      const sort = typeof raw === 'number' && Number.isFinite(raw) ? raw : label.sort;
+      // ⚠️ `series_index` wins over anything parsed out of the label: it is a
+      // STORED position, the same number the source pushed, where the label's
+      // is read out of a string. Falls back to the label's only when the
+      // column is null.
+      const sort = row.series_index ?? label.sort;
       if (sort !== null) {
         answer.seriesIndexSort = sort;
+        // ⚠️ No display form from `series_index` — it is a number, not a
+        // designation a publisher printed. Same rule as `askWikidata` and
+        // `askHardcover`. `label.display` is only ever non-null when the
+        // series STRING itself quoted one.
         answer.seriesIndexDisplay = label.display;
       }
       return [answer];
@@ -542,6 +728,23 @@ async function askIndex(
     }
   }
   return [];
+}
+
+/**
+ * ` (machine_token_invalid)` for a worded refusal, or `''`.
+ *
+ * Never throws and never blocks the ladder: a refusal body that is not JSON, or
+ * carries no `error`, simply adds nothing. Reading the body is free here — the
+ * response is already in hand and a refusal is never large.
+ */
+async function refusalCode(res: Response): Promise<string> {
+  try {
+    const body: unknown = await res.json();
+    const code = (body as Record<string, unknown> | null)?.['error'];
+    return typeof code === 'string' && code ? ` (${code})` : '';
+  } catch {
+    return '';
+  }
 }
 
 /**
@@ -883,10 +1086,16 @@ interface FreeLadderRung {
 const FREE_LADDER_RUNGS: readonly FreeLadderRung[] = [
   // getAudiobookHolding — one D1 read.
   { rung: 'audiobook', subrequests: 1, ask: (ctx, open, skipped) => askAudiobook(ctx, open, skipped) },
-  // ⚠️ DARK: returns before its fetch while INDEX_READ_TOKEN is unset, so it
-  // costs nothing today. Revisit the day the rung goes live — it fans out over
-  // aliases, so its worst case is 1 + the alias cap, not 1.
-  { rung: 'index', subrequests: 0, ask: (ctx, open, skipped) => askIndex(ctx, open, skipped) },
+  // ⚠️ LIVE since 2026-08-25, and the ONLY rung whose price is not 1-per-call:
+  // it fans out over title identities, so its worst case is one fetch per
+  // identity — `INDEX_MAX_IDENTITIES`, which exists to bound exactly this. The
+  // note that used to sit here said "revisit the day the rung goes live"; this
+  // is that revision.
+  {
+    rung: 'index',
+    subrequests: INDEX_MAX_IDENTITIES,
+    ask: (ctx, open, skipped) => askIndex(ctx, open, skipped),
+  },
   // isbn13 (1 D1, memoised here) + workKeyForIsbn + editionsOfWork + workDescription.
   {
     rung: 'openlibrary',
@@ -938,21 +1147,71 @@ export const FREE_LADDER_RUNG_NAMES: readonly FreeRung[] = FREE_LADDER_RUNGS.map
  * ⚠️ A volume number with no series to hang on is not an answer — `applyFinding`
  * refuses the same thing for the same reason. So `seriesIndex` counts only when
  * the work already has a series or this same ladder is about to set one.
+ *
+ * ## ⚠️ F9 — a volume number is written only against the SAME series
+ *
+ * Owner decision **A**, 2026-08-25 ("skip on mismatch"), from review finding F9
+ * (`docs/info/review-2026-08-25-overnight-work.md`).
+ *
+ * The bug: a rung answering `series` + `seriesIndex` had its NAME thrown away
+ * and only its NUMBER kept whenever the book already had a series. Live case,
+ * measured on the Hardcover rung the same day: ISBN 9780765326355 (*The Way of
+ * Kings*) is filed under **The Stormlight Archive** and Wikidata answers **The
+ * Cosmere, 7** — a true fact about a UNIVERSE, which this catalogue keeps one
+ * tier above series. Before this gate, `7` landed in `series_index_sort` and
+ * *The Way of Kings* became volume 7 of Stormlight: a wrong number that sorts,
+ * filters and looks exactly like data.
+ *
+ * So when a rung NAMES a series and the book is already filed under a
+ * different one, the ordinal is **dropped with a named skip**. Never option B
+ * (re-filing the book from a rung): a free rung may fill a blank, and moving a
+ * book somebody else shelved is not a gap-fill.
+ *
+ * ⚠️ **The comparison is the project's ONE matcher** (`isConfidentMatch` over
+ * `titleSimilarity`, `packages/core/src/matching.ts`) and never a new fold.
+ * That file's header is explicit about why: the sibling project shipped three
+ * wrong matches and every one came from a second similarity function drifting
+ * from the first. At the 0.7 spine floor, `"Stormlight Archive"` vs `"The
+ * Stormlight Archive"` scores 0.8 and is written; `"The Cosmere"` vs `"The
+ * Stormlight Archive"` scores 0.4 and is not.
+ *
+ * ⚠️ `isConfidentMatch` (0.7) and not `isTrustedMatch` (0.34), because nobody
+ * confirmed this pairing — it is exactly the "matched without anyone looking"
+ * case the stricter floor was measured for.
+ *
+ * `seriesNameInHand` is what the book is filed under RIGHT NOW: the catalogued
+ * series, or the one an earlier rung closed in this same run. `null` means the
+ * shelf is empty, so there is nothing to contradict.
  */
 function fieldsClosedBy(
   answer: FieldAnswer,
   open: ReadonlySet<DetailField>,
-  seriesInHand: boolean,
+  seriesNameInHand: string | null,
+  skipped: string[],
 ): DetailField[] {
   const closed: DetailField[] = [];
   if (answer.series !== undefined && open.has('series')) closed.push('series');
-  if (
-    answer.seriesIndexSort !== undefined &&
-    open.has('seriesIndex') &&
-    (seriesInHand || answer.series !== undefined)
-  ) {
-    closed.push('seriesIndex');
+
+  if (answer.seriesIndexSort !== undefined && open.has('seriesIndex')) {
+    const claimed = answer.series;
+    if (seriesNameInHand === null) {
+      // No series yet. The ordinal is only an answer if this same rung is
+      // bringing the series with it — otherwise it has nowhere to hang, which
+      // is `applyFinding`'s refusal and `writeFreeValues`' too.
+      if (claimed !== undefined) closed.push('seriesIndex');
+    } else if (claimed === undefined || isConfidentMatch(claimed, seriesNameInHand)) {
+      // Either the rung made no claim about WHICH series (so it is not
+      // contradicting anything), or it named the one this book is already
+      // filed under, spelling allowed to differ.
+      closed.push('seriesIndex');
+    } else {
+      skipped.push(
+        `${RUNG_LABEL[answer.rung]}: names series ${claimed}, but this book is filed under ` +
+          `${seriesNameInHand} — volume not written`,
+      );
+    }
   }
+
   if (answer.description !== undefined && open.has('description')) closed.push('description');
   return closed;
 }
@@ -1019,7 +1278,10 @@ export async function freeDetailsFor(
 
   const ctx = new LadderContext(env, work, doFetch, options.titleAliases ?? []);
   const held: FieldAnswer[] = [];
-  let seriesInHand = (work.series ?? '').trim() !== '';
+  // ⚠️ The series NAME, not a boolean — F9. `fieldsClosedBy` has to be able to
+  // ask "is this rung talking about the same shelf?", and a boolean threw away
+  // the only thing that could answer.
+  let seriesNameInHand: string | null = (work.series ?? '').trim() || null;
 
   // ⚠️ The order — and the price — live in `FREE_LADDER_RUNGS`. Hardcover sits
   // before Wikidata because its community skews genre/indie (exactly the books
@@ -1037,14 +1299,19 @@ export async function freeDetailsFor(
       continue;
     }
     for (const answer of answers) {
-      const closed = fieldsClosedBy(answer, open, seriesInHand);
+      const closed = fieldsClosedBy(answer, open, seriesNameInHand, outcome.skipped);
       if (closed.length === 0) continue;
       held.push(answer);
       for (const field of closed) {
         outcome.sources[field] = answer.rung;
         open.delete(field);
       }
-      if (closed.includes('series')) seriesInHand = true;
+      // ⚠️ The NAME the shelf now carries, so a later rung's ordinal is checked
+      // against what this run just filed the book under and not against the
+      // blank it started from.
+      if (closed.includes('series') && answer.series !== undefined) {
+        seriesNameInHand = answer.series;
+      }
     }
   }
 
