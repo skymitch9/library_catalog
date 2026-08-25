@@ -417,10 +417,32 @@ PEER_SELF_LABEL = "the Padhard Library"
 SITE_ORIGIN = "https://padhard.heygabi.ai"
 PEERS = "[{\"id\":\"sky\",\"label\":\"Sky's Library\",\"url\":\"https://library.heygabi.ai\"}]"
 
-# ⚠️ INDEX_URL deliberately ABSENT — her estate-index integration is PHASE 2
-# (friend-ingest-design.md §7). Unset means every push trigger in
-# lib/index-push.ts logs one line and does nothing: inert by design, the
-# games-catalog precedent. Same for the INDEX_PUSH_TOKEN secret.
+# ── The estate index: READ is ON here, PUSH is still OFF ─────────────────────
+#
+# ⚠️ This block said INDEX_URL was "deliberately ABSENT" until 2026-08-25. Half
+# of that is still true and the half that changed is the free-details ladder.
+#
+# **READ (on, 2026-08-25).** `lib/free-details.ts` rung 2 asks the index
+# `GET /api/machine/lookup?title=…` before anything is paid for, and it needs a
+# host. She is her OWN calling app there — the index's MACHINE_APPS knows her as
+# `library2` and holds her value as INDEX_READ_TOKEN_LIBRARY2, which she
+# presents as the secret INDEX_READ_TOKEN. ⚠️ NOT main's value: the index
+# resolves the caller FROM the value, so sharing one would make the app name
+# meaningless and one leak would revoke both instances. Set with
+# `npm run secret:friend -- INDEX_READ_TOKEN`; push-secrets.mjs refuses to send
+# it in a bulk run, on purpose.
+#
+# ⚠️ Holding it does NOT widen what she can see. Every machine caller resolves
+# to {audiobook, library, games} — so `library2` the APP cannot read `library2`
+# the SHELF, and that is deliberate, not an oversight to tidy up.
+#
+# **PUSH (still off).** Her estate-index INGEST is still PHASE 2
+# (friend-ingest-design.md §7). `lib/index-push.ts` requires INDEX_URL *and*
+# INDEX_PUSH_TOKEN together, and hers stays unset — so setting this host turns
+# the read half on and leaves the write half exactly as inert as before.
+# ⚠️ Do not "complete the pair" by minting INDEX_PUSH_TOKEN here: that is
+# federation day, and it labels her rows on a shelf other people can see.
+INDEX_URL = "https://index.heygabi.ai"
 
 # Estate auth: same mode as the main instance's production posture (enforce,
 # flipped after its shadow soak). ⚠️ Until the ESTATE_APP_TOKEN_LIBRARY2

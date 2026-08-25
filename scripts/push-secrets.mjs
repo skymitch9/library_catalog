@@ -107,6 +107,12 @@ export const PRODUCTION_SECRETS = [
   // the dispatcher's deploy step. Absent = not pushed — the push triggers in
   // lib/index-push.ts then log one line and do nothing, by design.
   'INDEX_PUSH_TOKEN',
+  // The shared-index READ bearer — the OTHER direction, and a DIFFERENT
+  // credential (free-details ladder rung 2, live 2026-08-25). The index Worker
+  // holds MAIN's value as INDEX_READ_TOKEN_LIBRARY. ⚠️ It is ALSO on
+  // PER_INSTANCE_SECRETS: this list is the MAIN instance's set, and padhard
+  // holds her own value under the same name — see the note there.
+  'INDEX_READ_TOKEN',
 ];
 
 /**
@@ -144,12 +150,17 @@ export const PRODUCTION_SECRETS = [
  * federation day mints a `library2` token (`search-route.ts`, friend-ingest
  * design §7). It is in `PER_INSTANCE_SECRETS` instead.
  *
- * ⚠️ **`INDEX_READ_TOKEN` is NOT here either**, and not in `PER_INSTANCE_SECRETS`:
- * it is set live on MAIN but is in neither `PRODUCTION_SECRETS` nor the friend
- * instance's secret list, and the read half of the index does not exist yet
- * (`env.ts` says so at length). Unclassified means REFUSED for friend with a
- * sentence, which is the correct answer for a credential nobody has decided the
- * custody of.
+ * ⚠️ **`INDEX_READ_TOKEN` is still NOT here — but it is no longer unclassified.**
+ * This note used to say the read half of the index "does not exist yet" and that
+ * the key was therefore refused by default, which was the right answer while
+ * nobody had decided its custody. It was decided on **2026-08-25**: the index's
+ * machine read surface resolves the CALLING APP from the value presented
+ * (`MACHINE_APPS` in `catalog-platform/apps/index-worker/src/env.ts`), and the
+ * two instances are two apps — main is `library`, padhard is `library2`. So the
+ * value is **per-instance by construction**, exactly like `INDEX_PUSH_TOKEN`,
+ * and it now lives in `PER_INSTANCE_SECRETS` and `PRODUCTION_SECRETS`. Giving
+ * her main's value would not merely be untidy: it would make the app name
+ * meaningless and one leak would revoke both instances at once.
  */
 export const SHARED_ALWAYS = [
   'GOOGLE_BOOKS_API_KEY',
@@ -215,6 +226,13 @@ export const SHARED_SECRETS = [...SHARED_ALWAYS, ...SHARED_OPT_IN];
  *   (`ANTHROPIC_API_KEY_FRIEND_SAM`, piped then blanked) exists precisely so it
  *   can never reach an allowlist.
  * - `INDEX_PUSH_TOKEN` — per-source on the index Worker; see `SHARED_SECRETS`.
+ * - `INDEX_READ_TOKEN` — per-APP on the index Worker, the read direction's twin
+ *   of the same argument (2026-08-25). The index tells its machine callers apart
+ *   BY THE VALUE, so main's is its `INDEX_READ_TOKEN_LIBRARY` and hers is its
+ *   `INDEX_READ_TOKEN_LIBRARY2`. Hers is set from the drop-box line
+ *   `INDEX_READ_TOKEN_FRIEND_PADHARD` in the MAIN `.dev.vars`, piped then
+ *   blanked — the `ANTHROPIC_API_KEY_FRIEND_SAM` idiom, and for the same reason:
+ *   a value that must never reach an allowlist should not look like one that can.
  * - every `ESTATE_APP_TOKEN_*` — these assert *which consumer is speaking to
  *   the estate directory*, and the two instances are two consumers. Main's is
  *   `…_LIBRARY`, hers is `…_LIBRARY2`, and her stale `…_LIBRARY` was deleted on
@@ -226,7 +244,7 @@ export const SHARED_SECRETS = [...SHARED_ALWAYS, ...SHARED_OPT_IN];
  * Worker's bearer, minted elsewhere and piped to three holders, so a rotation is
  * a coordinated act, not a side effect of a library push.
  */
-export const PER_INSTANCE_SECRETS = ['ANTHROPIC_API_KEY', 'INDEX_PUSH_TOKEN'];
+export const PER_INSTANCE_SECRETS = ['ANTHROPIC_API_KEY', 'INDEX_PUSH_TOKEN', 'INDEX_READ_TOKEN'];
 
 /** Prefix rule, so a consumer nobody has thought of yet is refused by default. */
 export const PER_INSTANCE_PREFIXES = ['ESTATE_APP_TOKEN_'];
@@ -248,6 +266,12 @@ export const LOCAL_ONLY = {
   // ESTATE_APP_TOKEN_ prefix rule above, so a `--friend` run refuses it too:
   // set it one value at a time with
   // `npm run secret:friend -- ESTATE_APP_TOKEN_LIBRARY2`.
+  // The FRIEND instance's machine READ token, parked here between minting and
+  // piping (2026-08-25). Named so a bulk run says WHY it skipped it rather than
+  // reporting an unclassified key — and it is deliberately not the live name, so
+  // no allowlist can ever match it. Blanked once piped.
+  INDEX_READ_TOKEN_FRIEND_PADHARD:
+    "the FRIEND instance's machine read token — set with `npm run secret:friend -- INDEX_READ_TOKEN`, never pushed from here",
   ESTATE_APP_TOKEN_LIBRARY2:
     "the FRIEND instance's estate bearer — set with `npm run secret:friend -- ESTATE_APP_TOKEN_LIBRARY2`, never pushed from here",
 };
@@ -510,6 +534,14 @@ export function perInstanceReason(name) {
       'per-instance: padhard has her OWN key on her own spend since 2026-08-16. ' +
       'Set it with `npm run secret:friend -- ANTHROPIC_API_KEY` (the drop-box line ' +
       'ANTHROPIC_API_KEY_FRIEND_SAM in the MAIN .dev.vars is piped, then blanked).'
+    );
+  }
+  if (name === 'INDEX_READ_TOKEN') {
+    return (
+      'per-instance: the index resolves the CALLING APP from which machine read ' +
+      "token matched, so main's value would make her requests indistinguishable " +
+      "from main's. Hers is piped from the INDEX_READ_TOKEN_FRIEND_PADHARD " +
+      'drop-box line with `npm run secret:friend -- INDEX_READ_TOKEN`.'
     );
   }
   if (name === 'INDEX_PUSH_TOKEN') {

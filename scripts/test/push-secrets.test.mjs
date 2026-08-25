@@ -25,6 +25,7 @@ import {
   PUSH_MAIN,
   REFUSE_PER_INSTANCE,
   REFUSE_UNCLASSIFIED,
+  SKIP_LOCAL_ONLY,
   SHARED_ALWAYS,
   SHARED_OPT_IN,
   SHARED_SECRETS,
@@ -96,10 +97,17 @@ describe('the two lists', () => {
     // ESTATE_APP_TOKEN_LIBRARY, which was deleted 2026-08-25.
     assert.equal(SHARED_SECRETS.includes('INDEX_PUSH_TOKEN'), false);
     assert.ok(isPerInstance('INDEX_PUSH_TOKEN'));
-    // Unclassified on purpose — set on main, absent from PRODUCTION_SECRETS and
-    // from her list, and the read half of the index does not exist yet.
+    // ⚠️ Per-APP on the index Worker, the READ direction's twin of the argument
+    // above (classified 2026-08-25, when rung 2 went live). The index resolves
+    // its machine callers BY THE VALUE, so main is `library` and padhard is
+    // `library2`; one shared value would make the app name meaningless and one
+    // leak would revoke both. This assertion used to say the opposite — that the
+    // key was deliberately unclassified because the read half did not exist yet.
     assert.equal(SHARED_SECRETS.includes('INDEX_READ_TOKEN'), false);
-    assert.equal(isPerInstance('INDEX_READ_TOKEN'), false);
+    assert.ok(isPerInstance('INDEX_READ_TOKEN'));
+    // ⚠️ It is on the MAIN allowlist too, exactly like ANTHROPIC_API_KEY: the
+    // no-flag run must still push main's own value.
+    assert.ok(PRODUCTION_SECRETS.includes('INDEX_READ_TOKEN'));
   });
 });
 
@@ -137,10 +145,34 @@ describe('planFor — the friend path', () => {
   });
 
   it('names an UNCLASSIFIED key rather than guessing its custody', () => {
-    const plan = planFor(everything, { friend: true });
-    const row = plan.friend.find((r) => r.name === 'INDEX_READ_TOKEN');
+    // ⚠️ The subject changed on 2026-08-25: INDEX_READ_TOKEN was the example
+    // here until its custody was decided, and a test that kept asserting the old
+    // answer would have gone green while the whole point moved. LIBRARYTHING_API_KEY
+    // is a genuinely unclassified key today and stands in its place.
+    const plan = planFor([...everything, 'LIBRARYTHING_API_KEY'], { friend: true });
+    const row = plan.friend.find((r) => r.name === 'LIBRARYTHING_API_KEY');
     assert.equal(row?.action, REFUSE_UNCLASSIFIED);
     assert.match(row.why, /Classify it/);
+  });
+
+  it('⚠️ REFUSES the friend a machine READ token that would make her look like main', () => {
+    const plan = planFor(everything, { friend: true });
+    const row = plan.friend.find((r) => r.name === 'INDEX_READ_TOKEN');
+    assert.equal(row?.action, REFUSE_PER_INSTANCE);
+    // The sentence must name the drop-box, because a refusal with no route
+    // forward is how a key ends up pasted somewhere it should not be.
+    assert.match(row.why, /INDEX_READ_TOKEN_FRIEND_PADHARD/);
+    assert.match(row.why, /secret:friend/);
+  });
+
+  it('the FRIEND drop-box line is local-only, and can never match an allowlist', () => {
+    // Named rather than merely refused, so a bulk run explains it; and named
+    // DIFFERENTLY from the live key on purpose — an allowlist match is a
+    // string comparison, so the drop-box must not be that string.
+    const plan = planFor([...everything, 'INDEX_READ_TOKEN_FRIEND_PADHARD'], { friend: true });
+    assert.equal(actionFor(plan.friend, 'INDEX_READ_TOKEN_FRIEND_PADHARD'), SKIP_LOCAL_ONLY);
+    assert.equal(PRODUCTION_SECRETS.includes('INDEX_READ_TOKEN_FRIEND_PADHARD'), false);
+    assert.equal(SHARED_SECRETS.includes('INDEX_READ_TOKEN_FRIEND_PADHARD'), false);
   });
 
   it('says "not set locally" for a shared key missing from .dev.vars, not "refused"', () => {
