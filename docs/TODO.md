@@ -66,9 +66,11 @@ ESTATE_APP_TOKEN_LIBRARY2, configured: true, mode: enforce`; the auth-worker
 holds `…LIBRARY2` and `CONSUMER_APPS` includes `library2` (the `vis_library2`
 Members checkbox). ⚠️ Her Worker ALSO still carries a stale
 `ESTATE_APP_TOKEN_LIBRARY` (pre-2026-08-17 leftover, unread by her code — but it
-is the MAIN library's bearer on her instance). Delete it (access-reducing;
-main + auth-worker keep the value): `wrangler secret delete
-ESTATE_APP_TOKEN_LIBRARY --env friend` — awaiting the owner's go. (The earlier
+is the MAIN library's bearer on her instance). ✅ **DELETED 2026-08-25 on the
+owner's go** (`echo y | wrangler secret delete ESTATE_APP_TOKEN_LIBRARY --env
+friend` — wrangler 4.120 has no `--force`, it wants a piped confirm); her list is
+now `…LIBRARY2` + `…DISCORD` only and live health still `configured: true`.
+Main + the auth-worker keep the value. (The earlier
 "one is stale" note came from a listing filter that dropped digits, so
 `…LIBRARY2` was hidden — a measurement error, now corrected.)
 Per-instance for the build above: `ANTHROPIC_API_KEY`, `ESTATE_APP_TOKEN_*`.
