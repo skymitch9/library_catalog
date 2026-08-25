@@ -30,9 +30,10 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { Hono } from 'hono';
-import type { AppUser } from '@lc/core';
+import { blankLine, type AppUser } from '@lc/core';
+import type { BookCandidate } from '@lc/isbn';
 import type { AppBindings, Env } from '../env.js';
-import { scanJobRoutes } from './scan-jobs.js';
+import { applyCandidate, scanJobRoutes } from './scan-jobs.js';
 
 function userWith(role: AppUser['role']): AppUser {
   return {
@@ -177,5 +178,79 @@ describe('scan-jobs capability gates — behaviour, not just the matrix', () => 
       const body = (await res.json()) as { capability?: string };
       assert.equal(body.capability, 'editCatalog');
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ⚠️ F4 — the scan line's CONTRACT with `bestCandidate`
+// ---------------------------------------------------------------------------
+//
+// `bestCandidate` (`@lc/isbn`) keeps rung 1's identity and borrows every
+// supplementary fact rung 1 lacks — cover, year, publisher, and the
+// description Open Library's `jscmd=data` cannot carry at all. That borrow
+// shipped on 2026-08-25 with NO consumer: `applyCandidate` copied six fields
+// and not the seventh, `ScanLine` had no key for it, and the blurb was
+// discarded here and then bought from the paid details ladder minutes later.
+//
+// Nothing failed. No test went red, because every test asserted what the line
+// DOES carry. So this one names what it MUST carry — the fields whose loss is
+// silent — and a field added to the borrow without a home on the line fails
+// here.
+
+describe('a resolved scan line carries what the lookup borrowed (F4)', () => {
+  /** An Open Library rung that answers identity and carries no blurb at all. */
+  function candidate(over: Partial<BookCandidate> = {}): BookCandidate {
+    return {
+      isbn13: '9780765350374',
+      title: 'Elantris',
+      authors: 'Brandon Sanderson',
+      publisher: 'Tor',
+      publishedYear: 2005,
+      pages: 638,
+      language: 'en',
+      coverUrl: 'https://covers.example/e.jpg',
+      openlibraryWorkId: 'OL1W',
+      format: null,
+      source: 'openlibrary',
+      sourceUrl: null,
+      ...over,
+    };
+  }
+
+  it('⚠️ carries the DESCRIPTION — the borrow is inert without this line', () => {
+    const line = applyCandidate(
+      blankLine(1, 'barcode', '9780765350374'),
+      candidate({ description: 'The capital of Arelon.' }),
+      'Elantris',
+    );
+    assert.equal(line.description, 'The capital of Arelon.');
+  });
+
+  it('carries every other supplementary fact the borrow can supply', () => {
+    // Named one by one on purpose: `bestCandidate` coalesces six supplementary
+    // fields and a line that silently drops one is exactly F4 again.
+    const line = applyCandidate(
+      blankLine(1, 'barcode', '9780765350374'),
+      candidate({ description: 'A blurb.' }),
+      'Elantris',
+    );
+    assert.equal(line.isbn13, '9780765350374');
+    assert.equal(line.resolvedTitle, 'Elantris');
+    assert.equal(line.resolvedAuthors, 'Brandon Sanderson');
+    assert.equal(line.publisher, 'Tor');
+    assert.equal(line.publishedYear, 2005);
+    assert.equal(line.coverUrl, 'https://covers.example/e.jpg');
+    assert.equal(line.description, 'A blurb.');
+  });
+
+  it('⚠️ records NULL, never undefined, when the lookup found no blurb', () => {
+    // `undefined` on the line would read as "this job predates the field" to
+    // every consumer — a different fact from "we asked and there is none".
+    const line = applyCandidate(blankLine(1, 'barcode', '9780765350374'), candidate(), 'Elantris');
+    assert.equal(line.description, null);
+  });
+
+  it('a blank line starts with no description', () => {
+    assert.equal(blankLine(1, 'barcode', '9780765350374').description, null);
   });
 });

@@ -145,7 +145,7 @@ import {
   isConfirmableField,
   type FieldChange,
 } from '@lc/gabi-conv';
-import { bestCandidate, resolveIsbn } from '@lc/isbn';
+import { bestCandidate, resolveIsbn, type BestCandidate } from '@lc/isbn';
 import type { AppBindings, Env } from '../env.js';
 import { runDetailsSweep } from '../lib/details-sweep.js';
 import { physicalFormatLabels } from '../lib/format-labels.js';
@@ -636,7 +636,10 @@ export const gabiDelegatedRoutes = new Hono<AppBindings>()
       const edition = await createEdition(
         c.env.DB,
         createEditionSchema.parse(editionFrom(existing.id, isbn13, top)),
-        actor,
+        // ⚠️ Not the bare `actor`: the row's `source` names rung 1, and any
+        // field borrowed from a later rung is named in the note instead of
+        // silently wearing rung 1's provenance. See `borrowingActor`.
+        borrowingActor(actor, top.borrowed),
       );
       await createCopy(
         c.env.DB,
@@ -663,19 +666,14 @@ export const gabiDelegatedRoutes = new Hono<AppBindings>()
     const actor = actorFor(verdict.user.id, `by ISBN ${isbn13}`);
     const work = await createWork(
       c.env.DB,
-      createWorkSchema.parse({
-        title,
-        authors,
-        ...(top.coverUrl ? { coverUrl: top.coverUrl } : {}),
-        ...(top.publishedYear ? { firstPublished: top.publishedYear } : {}),
-        ...(top.openlibraryWorkId ? { openlibraryWorkId: top.openlibraryWorkId } : {}),
-      }),
+      createWorkSchema.parse(workFrom(title, authors, top)),
       actor,
     );
     const edition = await createEdition(
       c.env.DB,
       createEditionSchema.parse(editionFrom(work.id, isbn13, top)),
-      actor,
+      // See `borrowingActor` — `source` stays rung 1's, borrowed fields are named.
+      borrowingActor(actor, top.borrowed),
     );
     await createCopy(
       c.env.DB,
@@ -1066,6 +1064,71 @@ function actorFor(userId: number, what: string): Actor {
 }
 
 /**
+ * ⚠️ **The edition's stamp, when some of its facts came from a rung its
+ * `source` column does not name** (F5, 2026-08-25).
+ *
+ * `bestCandidate` keeps rung 1's `source`/`sourceUrl` because they are the
+ * IDENTITY's provenance — and that is right. But it coalesces `publisher`,
+ * `pages`, `language` and `coverUrl` from later rungs, so an edition row could
+ * read `publisher='Tor', pages=384, source='openlibrary'` when Open Library
+ * carried neither: anyone auditing where 384 came from follows the Open Library
+ * link and finds nothing there.
+ *
+ * The minimal honest fix, chosen over per-field provenance columns (a
+ * migration) and over `source='mixed'` (which would lose the identity
+ * provenance that IS true): the `change_log` note names each borrowed field and
+ * the rung that supplied it. `source` keeps meaning exactly what it says — where
+ * this printing's identity came from — and the audit trail can answer the rest.
+ */
+export function borrowingActor(actor: Actor, borrowed: BestCandidate['borrowed']): Actor {
+  const entries = Object.entries(borrowed);
+  if (entries.length === 0) return actor;
+  const said = entries.map(([field, rung]) => `${field} from ${rung}`).join(', ');
+  return { ...actor, note: `${actor.note ?? ''} (${said})`.trim() };
+}
+
+/**
+ * The WORK a resolved ISBN earns — the create body, and only ever a create.
+ *
+ * ⚠️ **Exported for the contract test, because the bug it carried was an
+ * ABSENCE** (F4, 2026-08-25). `bestCandidate` was taught to borrow a
+ * description across rungs and shipped with no consumer at all: this call named
+ * `coverUrl`, `firstPublished` and `openlibraryWorkId` and simply did not
+ * mention `description`, so the blurb Google Books had already handed us for
+ * free was dropped here and bought again from the paid ladder later. Nothing
+ * threw; the field was just never written. A test that NAMES the fields the
+ * body carries is the only shape that catches an absence.
+ *
+ * ⚠️ **Create only.** A work already on the shelf comes down the `existing`
+ * branch, which adds a printing and never touches the work’s own columns —
+ * "gaps only, never overwrite", the rule `writeFreeValues` and `applyFinding`
+ * both keep. Nothing here may quietly become an update.
+ *
+ * ⚠️ `title`/`authors` are the caller’s trimmed strings, NOT the candidate’s:
+ * `work_key` is derived from them and joins ~870 audiobook reviews, so the
+ * value the key was computed from is the value that must be stored.
+ */
+export function workFrom(
+  title: string,
+  authors: string | null,
+  candidate: {
+    coverUrl: string | null;
+    publishedYear: number | null;
+    openlibraryWorkId: string | null;
+    description?: string | null;
+  },
+) {
+  return {
+    title,
+    authors,
+    ...(candidate.coverUrl ? { coverUrl: candidate.coverUrl } : {}),
+    ...(candidate.publishedYear ? { firstPublished: candidate.publishedYear } : {}),
+    ...(candidate.openlibraryWorkId ? { openlibraryWorkId: candidate.openlibraryWorkId } : {}),
+    ...(candidate.description ? { description: candidate.description } : {}),
+  };
+}
+
+/**
  * The printing a resolved ISBN earns.
  *
  * ⚠️ `format: 'paperback'` is the same DOCUMENTED GUESS the scan path makes
@@ -1076,7 +1139,7 @@ function actorFor(userId: number, what: string): Actor {
  * ⚠️ It must not silently become something cleverer here: two spellings of this
  * guess is how the two paths drift.
  */
-function editionFrom(
+export function editionFrom(
   workId: number,
   isbn13: string,
   candidate: {

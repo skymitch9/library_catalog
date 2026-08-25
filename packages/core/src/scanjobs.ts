@@ -201,6 +201,20 @@ export interface ScanLine {
   publishedYear: number | null;
   coverUrl: string | null;
   /**
+   * The blurb the lookup found, when a rung carried one.
+   *
+   * ⚠️ **This is what makes `bestCandidate`'s description borrow do anything.**
+   * The borrow shipped on 2026-08-25 with no consumer at all: the line had no
+   * field for it, so a description Google Books had already handed us for free
+   * was dropped here and bought again later from the paid ladder (F4). It rides
+   * the line so the ADD can write it into the new work.
+   *
+   * ⚠️ Optional on the wire, like `overlap` and `lookedUp`: jobs written before
+   * this field existed have no key for it, and `undefined` reads correctly as
+   * "nothing found". `null` means the lookup answered and had none.
+   */
+  description?: string | null;
+  /**
    * How close the resolved title is to what was read, 0..1. Null when nothing
    * resolved, and **carried rather than enforced**: below
    * `MIN_SPINE_SIMILARITY` the review screen shows the match and declines to
@@ -283,11 +297,63 @@ export function blankLine(
     publisher: null,
     publishedYear: null,
     coverUrl: null,
+    description: null,
     similarity: null,
     relookedUpAs: null,
     lookedUp: false,
     addedWorkId: null,
     dismissed: false,
+  };
+}
+
+/**
+ * The create body for a brand-new work, out of a reviewed line.
+ *
+ * ⚠️ **Lives here, beside `proposedTitle`/`proposedAuthors`, and is exported so
+ * a test can NAME the fields it carries** — which is the only test shape that
+ * catches the bug this object literal has now had TWICE, both times an absence
+ * and both times silent:
+ *
+ *  1. **The cover.** The work was created from `{ title, authors }` alone while
+ *     the edition beside it took `line.coverUrl`. Every list renders
+ *     `work.cover_url`, so a barcode scan produced a book with a perfectly good
+ *     cover URL stored one table away and a blank tile on screen. Measured
+ *     before the fix: 143 editions carried 20 covers, all 20 on works showing
+ *     none.
+ *  2. **The description** (F4, 2026-08-25). `bestCandidate` was taught to borrow
+ *     a blurb from whichever lookup rung carries one (Open Library's
+ *     `jscmd=data` carries none) and nothing on this path read it — so a free
+ *     description was dropped at the scan and bought from the paid details
+ *     ladder minutes later. Nothing threw.
+ *
+ * ⚠️ **A CREATE, never an update.** The caller uses this only when no work
+ * matched; a book already on the shelf keeps every column it has ("gaps only,
+ * never overwrite") and the free ladder fills its blanks.
+ *
+ * ⚠️ `title`/`authors` are the caller's — the strings the work was MATCHED on,
+ * not the line's raw fields. `work_key` is derived from them and joins ~870
+ * audiobook reviews, so the value the key was computed from is the value stored.
+ * `undefined` (not `null`) for anything the lookup could not answer: absence
+ * means "nobody recorded one", which is a statement a scan is entitled to make;
+ * `null` is not.
+ */
+export function workCreateFrom(
+  line: ScanLine,
+  title: string,
+  authors: string | null,
+): {
+  title: string;
+  authors: string | null;
+  coverUrl: string | undefined;
+  firstPublished: number | undefined;
+  description: string | undefined;
+} {
+  return {
+    title,
+    authors,
+    coverUrl: line.coverUrl ?? undefined,
+    firstPublished: line.publishedYear ?? undefined,
+    description: line.description ?? undefined,
   };
 }
 

@@ -403,28 +403,94 @@ export function descriptionFrom(candidates: readonly BookCandidate[]): string | 
  * coalesce across rungs. `series` is deliberately NOT here — no rung supplies a
  * structured series today; that needs a Wikidata/Hardcover rung (see
  * `docs/info/scan-metadata-fill-strategy.md`).
+ *
+ * ## ⚠️ `borrowed` — because `source` would otherwise be a lie
+ *
+ * The returned candidate keeps rung 1's `source`/`sourceUrl`, which are its
+ * IDENTITY's provenance. But a `publisher` that came from Google Books stored
+ * on a row labelled `source='openlibrary'` sends anyone auditing that value to
+ * an Open Library page that does not contain it (F5, 2026-08-25). So every
+ * field this function takes from a rung OTHER than the first is named in
+ * `borrowed`, with the rung that supplied it. Callers that persist provenance
+ * must not claim a borrowed field as rung 1's; `routes/gabi-delegated.ts`
+ * records it in the edition's `change_log` note instead.
+ *
+ * `borrowed` is empty (not absent) when everything came from rung 1.
  */
+
+/** A supplementary field `bestCandidate` may take from a later rung. */
+export type BorrowedField =
+  | 'coverUrl'
+  | 'description'
+  | 'publishedYear'
+  | 'pages'
+  | 'publisher'
+  | 'language';
+
+export interface BestCandidate extends BookCandidate {
+  /**
+   * Which rung really supplied each field that did NOT come from `candidates[0]`.
+   * Empty when the first rung answered everything it was asked for.
+   */
+  borrowed: Partial<Record<BorrowedField, BookCandidate['source']>>;
+}
+
 export function bestCandidate(
   candidates: readonly BookCandidate[],
-): BookCandidate | undefined {
+): BestCandidate | undefined {
   const first = candidates[0];
   if (!first) return undefined;
-  const pick = <T>(get: (c: BookCandidate) => T | null | undefined): T | null => {
+
+  const borrowed: Partial<Record<BorrowedField, BookCandidate['source']>> = {};
+
+  /**
+   * The first usable value across the rungs, and a note when it did not come
+   * from the first one.
+   *
+   * ⚠️ `absent` is what it returns when NO rung carried a value at all, and it
+   * is the caller's job to decide whether that means `null` or `undefined` —
+   * see the `description` case below.
+   */
+  const pick = <T>(
+    field: BorrowedField,
+    get: (c: BookCandidate) => T | null | undefined,
+  ): T | null => {
     for (const c of candidates) {
       const v = get(c);
-      if (v !== null && v !== undefined && v !== '') return v;
+      if (v !== null && v !== undefined && v !== '') {
+        if (c !== first) borrowed[field] = c.source;
+        return v;
+      }
     }
     return null;
   };
-  return {
+
+  const merged: BestCandidate = {
     ...first,
-    coverUrl: pick((c) => c.coverUrl),
-    description: pick((c) => c.description),
-    publishedYear: pick((c) => c.publishedYear),
-    pages: pick((c) => c.pages),
-    publisher: pick((c) => c.publisher),
-    language: pick((c) => c.language),
+    coverUrl: pick('coverUrl', (c) => c.coverUrl),
+    publishedYear: pick('publishedYear', (c) => c.publishedYear),
+    pages: pick('pages', (c) => c.pages),
+    publisher: pick('publisher', (c) => c.publisher),
+    language: pick('language', (c) => c.language),
+    borrowed,
   };
+
+  /**
+   * ⚠️ **`undefined` and `null` are different answers here, and collapsing them
+   * was a real defect** (F6, 2026-08-25). `BookCandidate.description`'s own doc
+   * says it: `undefined` = *this rung does not carry descriptions*, `null` =
+   * *it does, and this book has none*. Open Library's rung builds its candidate
+   * with no `description` key at all, so a lookup that reached only that rung
+   * used to come back saying "asked, and there is none" — and a consumer
+   * branching on `!== undefined` would stop asking for ever.
+   *
+   * So the key is assigned only when at least one candidate CARRIED it. If none
+   * did, the spread of `first` leaves it absent, which is the truth.
+   */
+  const answered = candidates.some((c) => c.description !== undefined);
+  if (answered) merged.description = pick('description', (c) => c.description);
+
+  return merged;
 }
 
 /**

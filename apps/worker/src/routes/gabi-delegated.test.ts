@@ -37,9 +37,12 @@ import {
   DELEGATED_VERBS,
   DELEGATED_VERB_CAPABILITY,
   FIELD_CHANGED_REASON,
+  borrowingActor,
+  editionFrom,
   gabiDelegatedRoutes,
   instanceLabel,
   sweepSentence,
+  workFrom,
 } from './gabi-delegated.js';
 
 const TOKEN = 'bot-bearer-value';
@@ -941,5 +944,85 @@ describe('the TIER 2 confirm verb — fix-field', () => {
     const upd = updateOf(captured);
     assert.equal(upd!.binds[7], 1, 'sort unchanged');
     assert.equal(upd!.binds[8], '1', 'display unchanged');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ⚠️ F4 / F5 — what the delegated ADD writes, and whose provenance it claims
+// ---------------------------------------------------------------------------
+//
+// Both findings are about the WRITE BODY rather than the route: the add path
+// resolves an ISBN through `bestCandidate`, which keeps rung 1's identity and
+// borrows every supplementary fact rung 1 lacks. Two things went wrong with
+// that, and neither could fail a route test:
+//
+//   F4 — the borrowed DESCRIPTION was named nowhere in the create body, so the
+//        borrow was inert on this path too and the paid ladder re-bought it.
+//   F5 — the edition row stored `source='openlibrary'` beside a `publisher`
+//        and `pages` that came from Google Books, so an auditor following the
+//        Open Library link finds neither value there.
+
+describe('the delegated add writes what the lookup found (F4/F5)', () => {
+  const top = {
+    coverUrl: 'https://covers.example/e.jpg',
+    publishedYear: 2005,
+    openlibraryWorkId: 'OL1W',
+    description: 'The capital of Arelon.',
+  };
+
+  it('⚠️ carries the DESCRIPTION into the created work', () => {
+    assert.equal(workFrom('Elantris', 'Brandon Sanderson', top).description, 'The capital of Arelon.');
+  });
+
+  it('carries the cover, the year and the Open Library work id beside it', () => {
+    const body = workFrom('Elantris', 'Brandon Sanderson', top);
+    assert.equal(body.title, 'Elantris');
+    assert.equal(body.authors, 'Brandon Sanderson');
+    assert.equal(body.coverUrl, 'https://covers.example/e.jpg');
+    assert.equal(body.firstPublished, 2005);
+    assert.equal(body.openlibraryWorkId, 'OL1W');
+  });
+
+  it('omits what the lookup could not answer rather than writing empties', () => {
+    const body = workFrom('Elantris', null, {
+      coverUrl: null,
+      publishedYear: null,
+      openlibraryWorkId: null,
+    });
+    assert.deepEqual(body, { title: 'Elantris', authors: null });
+  });
+
+  it('⚠️ the edition keeps rung 1 as its `source` — identity provenance is true', () => {
+    const edition = editionFrom(7, '9780765350374', {
+      publisher: 'Tor',
+      publishedYear: 2005,
+      coverUrl: null,
+      pages: 638,
+      language: 'en',
+      source: 'openlibrary',
+      sourceUrl: 'https://openlibrary.org/books/OL1M',
+    });
+    assert.equal(edition.source, 'openlibrary');
+    assert.equal(edition.sourceUrl, 'https://openlibrary.org/books/OL1M');
+    assert.equal(edition.format, 'paperback', 'the documented guess a barcode earns');
+  });
+
+  it('⚠️ NAMES the fields that came from another rung, in the change_log note', () => {
+    // The row no longer lies: `source` says where the identity came from, and
+    // the audit note says where the borrowed facts came from.
+    const stamped = borrowingActor(
+      { userId: 4, how: 'auto', note: 'gabi-discord: added by ISBN 9780765350374' },
+      { publisher: 'googlebooks', pages: 'googlebooks' },
+    );
+    assert.match(stamped.note ?? '', /publisher from googlebooks/);
+    assert.match(stamped.note ?? '', /pages from googlebooks/);
+    assert.match(stamped.note ?? '', /^gabi-discord: added by ISBN 9780765350374/);
+    assert.equal(stamped.userId, 4, 'who asked for it is unchanged');
+    assert.equal(stamped.how, 'auto');
+  });
+
+  it('leaves the stamp exactly as it was when nothing was borrowed', () => {
+    const actor = { userId: 4, how: 'auto' as const, note: 'gabi-discord: added by ISBN X' };
+    assert.deepEqual(borrowingActor(actor, {}), actor);
   });
 });

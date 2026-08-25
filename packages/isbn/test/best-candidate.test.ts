@@ -82,4 +82,80 @@ describe('bestCandidate', () => {
   it('is undefined for an empty candidate list', () => {
     assert.equal(bestCandidate([]), undefined);
   });
+
+  // -------------------------------------------------------------------------
+  // ⚠️ F6 — `undefined` and `null` are DIFFERENT answers about a description
+  // -------------------------------------------------------------------------
+  //
+  // `BookCandidate.description`'s doc comment states the contract: `undefined`
+  // means *this rung does not carry descriptions*, `null` means *it does, and
+  // this book has none*. The Open Library rung really does build its candidate
+  // with no `description` key at all — `olRung()` below reproduces that shape,
+  // which `cand()` cannot, because its default of `null` is exactly the value
+  // under test.
+  //
+  // The defect: `pick()` returned `null` when nobody answered, so a lookup that
+  // reached only Open Library came back saying "asked, and there is none" — and
+  // a consumer branching on `!== undefined` (the pattern free-details.ts uses
+  // at three call sites) would stop asking for ever.
+
+  /** A rung that does not carry descriptions — no key at all, as Open Library's does. */
+  function olRung(over: Partial<BookCandidate> = {}): BookCandidate {
+    const c = cand(over);
+    delete c.description;
+    return c;
+  }
+
+  it('⚠️ leaves description UNDEFINED when no rung could answer it', () => {
+    const best = bestCandidate([olRung(), olRung()]);
+    assert.ok(best);
+    assert.equal(
+      best.description,
+      undefined,
+      'no rung carries descriptions, so the honest answer is "nobody was asked" — not "there is none"',
+    );
+  });
+
+  it('keeps NULL when a description-capable rung answered and had none', () => {
+    // Google Books answered; it simply has no blurb for this book. That IS a
+    // statement, and it must not be flattened into "nobody could say".
+    const best = bestCandidate([olRung(), cand({ source: 'googlebooks', description: null })]);
+    assert.ok(best);
+    assert.equal(best.description, null);
+  });
+
+  it('still borrows a real blurb when rung 1 cannot carry one at all', () => {
+    const best = bestCandidate([olRung(), cand({ source: 'googlebooks', description: 'Dragons.' })]);
+    assert.equal(best?.description, 'Dragons.');
+  });
+
+  // -------------------------------------------------------------------------
+  // ⚠️ F5 — a borrowed field must not wear rung 1's provenance
+  // -------------------------------------------------------------------------
+  //
+  // `source`/`sourceUrl` stay rung 1's, because they are the IDENTITY's
+  // provenance. But `publisher='Tor', pages=384, source='openlibrary'` on one
+  // row sends an auditor to an Open Library page carrying neither. `borrowed`
+  // is what lets a caller that persists provenance stay honest;
+  // `routes/gabi-delegated.ts` writes it into the edition's change_log note.
+
+  it('⚠️ names every field it took from a later rung, and the rung it came from', () => {
+    const ol = cand({ source: 'openlibrary', sourceUrl: 'https://openlibrary.org/books/OL1M' });
+    const gb = cand({ source: 'googlebooks', publisher: 'Tor', pages: 384, description: 'A blurb.' });
+    const best = bestCandidate([ol, gb]);
+    assert.ok(best);
+    assert.equal(best.source, 'openlibrary', 'identity provenance is rung 1 and stays true');
+    assert.equal(best.sourceUrl, 'https://openlibrary.org/books/OL1M');
+    assert.deepEqual(best.borrowed, {
+      publisher: 'googlebooks',
+      pages: 'googlebooks',
+      description: 'googlebooks',
+    });
+  });
+
+  it('borrows nothing — and says so — when rung 1 answered everything', () => {
+    const ol = cand({ publisher: 'Tor', pages: 384, description: 'A blurb.', coverUrl: 'https://x/c.jpg' });
+    const gb = cand({ source: 'googlebooks', publisher: 'Del Rey', pages: 999 });
+    assert.deepEqual(bestCandidate([ol, gb])?.borrowed, {});
+  });
 });

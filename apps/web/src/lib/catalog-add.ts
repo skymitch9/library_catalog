@@ -2,6 +2,7 @@ import {
   appendSharedIsbnNote,
   proposedAuthors,
   proposedTitle,
+  workCreateFrom,
   type PreorderAnswer,
   type RescanAnswer,
   type ScanLine,
@@ -289,12 +290,7 @@ export async function addLineToCatalog(
   const work =
     attachWork ??
     (
-      await api.createWork({
-        title,
-        authors,
-        coverUrl: line.coverUrl ?? undefined,
-        firstPublished: line.publishedYear ?? undefined,
-      })
+      await api.createWork(workCreateFrom(line, title, authors))
     ).work;
 
   // Attaching to a book we already hold is the ordinary case, and the scan may

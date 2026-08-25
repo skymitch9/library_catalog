@@ -235,8 +235,19 @@ function renumber(lines: ScanLine[]): ScanLine[] {
  * enforced**. A weak match is shown with its score and left unticked, which
  * tells the truth about what was found; discarding it would silently drop a
  * title the person can see on the shelf in front of them.
+ *
+ * ⚠️ **Exported for the contract test in `scan-jobs.test.ts`, because the bug
+ * this function carried was an ABSENCE** (F4, 2026-08-25): `bestCandidate` was
+ * taught to borrow a description across rungs and this function — the only
+ * thing that turns a candidate into a line — simply did not copy the field. No
+ * error, no failing test, just a free blurb dropped and bought again later. The
+ * only test shape that catches that is one that NAMES the fields carried.
  */
-function applyCandidate(line: ScanLine, candidate: BookCandidate, searchedFor: string): ScanLine {
+export function applyCandidate(
+  line: ScanLine,
+  candidate: BookCandidate,
+  searchedFor: string,
+): ScanLine {
   return {
     ...line,
     state: 'found',
@@ -250,6 +261,13 @@ function applyCandidate(line: ScanLine, candidate: BookCandidate, searchedFor: s
     publisher: candidate.publisher,
     publishedYear: candidate.publishedYear,
     coverUrl: candidate.coverUrl,
+    // ⚠️ Carried, and the reason it must be: `bestCandidate` borrows the blurb
+    // from whichever rung has one (Open Library's `jscmd=data` has no
+    // description field at all), and until 2026-08-25 nothing here read it — so
+    // a free description was thrown away at this line and bought from the paid
+    // ladder later (F4). `??` not `||`: a rung that answered "no blurb" says
+    // null, and that is a different fact from a rung that cannot say.
+    description: candidate.description ?? null,
     similarity: titleSimilarity(normaliseTitle(candidate.title), normaliseTitle(searchedFor)),
   };
 }
@@ -282,6 +300,7 @@ function unresolve(line: ScanLine): ScanLine {
     publisher: null,
     publishedYear: null,
     coverUrl: null,
+    description: null,
     similarity: null,
   };
 }
