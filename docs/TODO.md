@@ -32,6 +32,43 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
+## ☐ REVIEW FIXES — the 2026-08-25 adversarial review of the overnight work (21 findings, 4 HIGH)
+
+Full report with file:line, failure scenarios and the CLEAN list:
+[`info/review-2026-08-25-overnight-work.md`](info/review-2026-08-25-overnight-work.md).
+Fix batch delegated to an Opus subagent once the "both instances" build lands
+(same files). Order = severity:
+
+- **F1 HIGH** `lib/details-sweep.ts:343` — `FREE_LADDER_SUBREQUESTS` still 11
+  after two new rungs; true worst case 13; an overrun silently kills the
+  invocation. Fix the constant (and assert it from `rungs.length` in a test).
+- **F4 HIGH** — `bestCandidate`'s description borrow is INERT: `applyCandidate`
+  (scan-jobs) and `editionFrom`/`createWorkSchema` (gabi-delegated) never read
+  `description`, so `636c32a`'s headline was not delivered. Thread it through.
+- **F3 HIGH** `CollectionPage.tsx:378` — the facets call omits `owned2`, so
+  "Owned 2+" narrows the grid but not the counts labelling it.
+- **F2 HIGH** `error-wording.ts` ← `covers.ts:116` — the cover search's 503
+  `not_configured` is shown as an ACCESS problem (the exact mislabel the
+  global rule forbids). Map it to a configuration sentence; F13/F17 alongside
+  (502 `search_failed` sentence discarded; 503 detail tells a moderator to edit
+  `.dev.vars`).
+- **F5/F6 MED** — edition provenance (`source`/`sourceUrl`) from rung 1 while
+  fields come from rung 2; `pick()` collapses undefined→null on description.
+- **F7 MED** — old `?format=X&kind=collectors` links now OR (were AND); fix the
+  DONE claim, decide whether the parse should keep AND for that legacy shape.
+- **F8/F9 MED** Wikidata: `LIMIT 1` without `ORDER BY` picks an arbitrary
+  P179; `seriesInHand` never checks SAME series before writing an ordinal.
+- **F12 MED** `works.ts` facets: `withoutKind` is AND-shaped under OR
+  semantics; `facets.kinds/formats` have zero consumers yet cost 2 D1 queries.
+- **F10/F11/F18 MED/LOW** `catalog-platform/scripts/onedrive-exclude.ps1`:
+  `-Undo` restores ANY junction named node_modules/.claude without a `$Base`
+  check; `Move-Item` into an existing `$dst` nests silently; no try/catch in
+  Undo.
+- **F14–F16, F19–F21 LOW** — Wikidata UA lacks contact; `TYPE_OPTIONS` can grow
+  a kind `KIND_CLAUSE` doesn't know; cover `bytes` fetched never shown +
+  `<img>` has no `onError`; TypeFilter aria; stale TODO line 444; seven named
+  test gaps.
+
 ## ☐ Hardcover rung: a UNIVERSE can land in `work.series` (found 2026-08-25, live call)
 
 Hardcover's `book_series` for *The Way of Kings* = [The Stormlight Archive #1,
