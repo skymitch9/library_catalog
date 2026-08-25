@@ -8,6 +8,7 @@ import {
 } from '@lc/core';
 import { getWork, listCoverCandidates, updateWork } from '@lc/db';
 import { verifyCoverUrl } from '@lc/isbn';
+import { COVER_CENTS_EACH, findCover } from '@lc/research';
 import type { AppBindings, Env } from '../env.js';
 import { requireCapability } from '../middleware/auth.js';
 
@@ -75,6 +76,99 @@ export const coverRoutes = new Hono<AppBindings>()
       enabled: store !== null,
       maxBytes: MAX_COVER_BYTES,
       ...(store ? {} : { reason: NO_STORAGE }),
+    });
+  })
+
+  /**
+   * Ask the paid cover search for a brand-new candidate — the last rung of the
+   * cover ladder (`findCover` in `@lc/research`), for the residue Open Library
+   * and Google Books cannot supply.
+   *
+   * ## ⚠️ It PROPOSES; it does not store
+   *
+   * The route runs the search, fetches the URL it returns through the same
+   * `verifyCoverUrl` the PUT below uses, and hands the caller the verified
+   * candidate. It deliberately does NOT write `cover_url`: a cover is permanent
+   * (`docs/info/covers-and-series.md` — nothing revisits the column), so the
+   * decision to store one stays a human's, made against the image on screen and
+   * carried out by the verified PUT. The money is spent on the SEARCH; applying
+   * the result is free.
+   *
+   * ## ⚠️ `runResearch`, not `editCatalog` — this spends money
+   *
+   * The same owner/admin/moderator gate `POST /research/works/:id/run` uses, and
+   * for the same reason: an `editCatalog` reader may set a cover they found, but
+   * only the roles trusted with the bill may make the machine go and look. The UI
+   * confirms before calling, because each search costs ~6¢ (`COVER_CENTS_EACH`).
+   *
+   * Awaited, not `waitUntil`-only: the search takes 20-90s and a `waitUntil` task
+   * is silently cancelled ~30s after the response returns — the same clock the
+   * research run route documents at length.
+   */
+  .post('/works/:id/cover/find', requireCapability('runResearch'), async (c) => {
+    const id = Number(c.req.param('id'));
+    if (!Number.isInteger(id) || id <= 0) return c.json({ error: 'bad_request' }, 400);
+
+    // Checked before anything is spent: no key is a misconfiguration the caller
+    // can act on, said in a sentence rather than as a 500. Mirrors the research
+    // run route.
+    if (!c.env.ANTHROPIC_API_KEY) {
+      return c.json(
+        {
+          error: 'not_configured',
+          detail:
+            'No Anthropic API key. Put ANTHROPIC_API_KEY in apps/worker/.dev.vars, then `npm run secrets:push`.',
+        },
+        503,
+      );
+    }
+
+    const work = await getWork(c.env.DB, id);
+    if (!work) return c.json({ error: 'not_found' }, 404);
+
+    let result;
+    try {
+      result = await findCover(c.env.ANTHROPIC_API_KEY, {
+        title: work.title,
+        authors: work.authors ?? '',
+        // The books that reach this rung are usually the ISBN-less residue
+        // `findCover`'s header describes, so a null is the common case, not a
+        // gap; passing a work's edition ISBN when it has one is a later refinement.
+        isbn: null,
+      });
+    } catch (err) {
+      // The search itself failed (timeout, budget exhausted, upstream). Say so in
+      // a sentence; nothing was stored, and the caller can retry or give up.
+      const detail = err instanceof Error ? err.message : 'The cover search failed.';
+      return c.json({ error: 'search_failed', detail }, 502);
+    }
+
+    const { proposal, usage } = result;
+
+    // A proposed URL is not a cover — verify it the same way the PUT does before
+    // telling the caller it is usable. A well-formed, on-domain, 404 URL is the
+    // exact failure `verifyCoverUrl` exists to catch.
+    let verified = false;
+    let bytes: number | undefined;
+    let verifyReason: string | undefined;
+    if (proposal.found && proposal.url) {
+      const check = await verifyCoverUrl(proposal.url, {
+        userAgent: 'library_catalog (private household catalog)',
+      });
+      verified = check.ok;
+      if (check.ok) bytes = check.bytes;
+      else verifyReason = check.reason;
+    }
+
+    return c.json({
+      proposal,
+      /** True only when the URL actually returned a usable image just now. */
+      verified,
+      ...(bytes !== undefined ? { bytes } : {}),
+      ...(verifyReason ? { verifyReason } : {}),
+      /** Tokens this search burned, so the page can show what it cost. */
+      usage,
+      centsEach: COVER_CENTS_EACH,
     });
   })
 

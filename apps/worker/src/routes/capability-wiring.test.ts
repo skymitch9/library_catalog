@@ -249,6 +249,9 @@ const WIRED: Wired[] = [
   // ── covers.ts (/api) ──
   // `read` and not `editCatalog`: it reports a property of the DEPLOYMENT.
   { routes: coverRoutes, method: 'GET', path: '/cover-storage', capability: 'read' },
+  // `runResearch`, not `editCatalog`: the paid cover search spends money, so it
+  // carries the same gate the research run route does.
+  { routes: coverRoutes, method: 'POST', path: '/works/1/cover/find', capability: 'runResearch' },
   { routes: coverRoutes, method: 'GET', path: '/works/1/covers', capability: 'editCatalog' },
   { routes: coverRoutes, method: 'PUT', path: '/works/1/cover', capability: 'editCatalog' },
   { routes: coverRoutes, method: 'PATCH', path: '/works/1/cover-status', capability: 'editCatalog' },

@@ -58,6 +58,29 @@ export interface CoverCandidateView {
   editionId: number | null;
 }
 
+/** What the paid cover search claimed. See `findCover` in `@lc/research`. */
+export interface CoverProposal {
+  found: boolean;
+  url: string | null;
+  source: string | null;
+  confidence: 'high' | 'low';
+  note: string;
+}
+
+/**
+ * `POST /api/works/:id/cover/find` — a proposed cover plus whether its URL
+ * actually returned an image just now. Nothing is stored: applying it is a
+ * separate `setCover` call, which re-verifies.
+ */
+export interface CoverFindResult {
+  proposal: CoverProposal;
+  verified: boolean;
+  bytes?: number;
+  verifyReason?: string;
+  usage: { inputTokens: number; outputTokens: number };
+  centsEach: number;
+}
+
 /** One copy, as the deletion preview names it. Mirrors `WorkDeletionCopy` in `@lc/db`. */
 export interface DeletionCopy {
   id: number;
@@ -1293,6 +1316,16 @@ export const api = {
       coverStatus: 'ok' | 'standin' | null;
       candidates: CoverCandidateView[];
     }>(`/api/works/${id}/covers`),
+
+  /**
+   * Run the paid cover search for one book — owner/admin/moderator only, and the
+   * UI confirms first because it spends money (~6¢). Returns a proposed cover and
+   * whether its URL is live; applying it is a separate `setCover` call.
+   *
+   * ⚠️ Slow: the server awaits a 20-90s web search, so this promise is long-lived.
+   */
+  findCover: (id: number) =>
+    request<CoverFindResult>(`/api/works/${id}/cover/find`, { method: 'POST' }),
 
   /**
    * Point a book at an image somebody else hosts.

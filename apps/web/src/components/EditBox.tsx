@@ -1,6 +1,8 @@
 import { useState } from 'react';
-import type { Me } from '../api.js';
+import { api } from '../api.js';
+import type { CoverFindResult, Me } from '../api.js';
 import type { WorkEbookHolding } from '../api.js';
+import { describeError } from '../lib/errors.js';
 import type { WorkDetail } from '../lib/work-view.js';
 import { Accessories } from './Accessories.js';
 import { Aliases } from './Aliases.js';
@@ -97,7 +99,12 @@ export function EditBox({
           <div className="edit-box__section">
             <CoverPanel workId={workId} work={work} canEdit={canEdit} onChanged={onChanged} />
             {canEdit && (
-              <RequestCovers onRequestCovers={onRequestCovers} />
+              <RequestCovers
+                workId={workId}
+                canFind={me.capabilities.includes('runResearch')}
+                onChanged={onChanged}
+                onRequestCovers={onRequestCovers}
+              />
             )}
           </div>
         )}
@@ -195,19 +202,76 @@ function CameWith({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * "Request more covers" — Stage 3 scaffold. The known-covers grid (CoverSwap) is
- * already reachable from CoverPanel's "Choose from known covers"; this button is
- * the entry point for asking for MORE candidates than the catalog already knows.
+ * Ask for MORE covers than the catalog already knows — the known-covers grid
+ * (CoverSwap) is reachable from CoverPanel's "Choose from known covers"; this is
+ * the entry point for the paid web search (`findCover`) when the free rungs have
+ * nothing.
  *
- * ⚠️ **The backend is not wired.** A per-work cover backfill route
- * (`POST /api/works/:id/cover/find` → the paid LLM rung `findCover`) is designed
- * in `docs/TODO.md` (§"Covers for the SECOND instance", piece 2) but NOT built —
- * un-building it is a cost decision for the owner (the rung spends money). This
- * button therefore states plainly what exists and what is owed, rather than
- * failing on a route that 404s.
+ * ## ⚠️ The find button spends money, so two things gate it
+ *
+ * 1. **Capability.** Only shown when the person has `runResearch` — the same
+ *    owner/admin/moderator gate the route enforces. An `editCatalog` reader still
+ *    sees the "known covers" pointer, just not the paid button.
+ * 2. **A confirm before every search.** ~6¢ a run, and the owner asked for the
+ *    money-spend to be deliberate. The result is a PROPOSAL: nothing is stored
+ *    until "Use this cover" (a free, re-verified `setCover`).
  */
-function RequestCovers({ onRequestCovers }: { onRequestCovers?: () => void }) {
+function RequestCovers({
+  workId,
+  canFind,
+  onChanged,
+  onRequestCovers,
+}: {
+  workId: number;
+  canFind: boolean;
+  onChanged: () => void;
+  onRequestCovers?: () => void;
+}) {
   const [noted, setNoted] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<CoverFindResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [applied, setApplied] = useState(false);
+
+  async function find() {
+    // The confirm IS the money gate — each search costs ~6¢ and the owner asked
+    // for the spend to be a deliberate act, not a stray click.
+    if (
+      !window.confirm(
+        'Run a paid web search for a new cover? This asks Claude to search the web ' +
+          '(about 6¢ per book) and can take up to a minute and a half. Nothing is saved ' +
+          'until you pick the result.',
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    setApplied(false);
+    try {
+      setResult(await api.findCover(workId));
+    } catch (err) {
+      setError(describeError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function useIt(url: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.setCover(workId, { url, status: 'ok' });
+      setApplied(true);
+      onChanged();
+    } catch (err) {
+      setError(describeError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="stack request-scaffold">
       <div className="row-tight">
@@ -217,16 +281,81 @@ function RequestCovers({ onRequestCovers }: { onRequestCovers?: () => void }) {
             onRequestCovers?.();
           }}
         >
-          Request more covers
+          Choose from known covers
         </button>
+        {canFind && (
+          <button className="primary" onClick={find} disabled={busy}>
+            {busy ? 'Searching…' : 'Search the web for a cover'}
+          </button>
+        )}
       </div>
+
       {noted && (
         <p className="muted small">
           Use <b>Choose from known covers</b> above to pick from covers the catalog already knows.
-          Asking the paid cover search for a brand-new candidate is designed but not yet switched on
-          for the book page — it spends money, so turning it on is the owner’s call
-          (<code>POST /api/works/:id/cover/find</code>, see the covers TODO).
         </p>
+      )}
+
+      {canFind && !busy && !result && !error && (
+        <p className="muted small">
+          The web search is the last resort for books the free cover sources cannot supply — it
+          spends money (~6¢) and asks before each run.
+        </p>
+      )}
+
+      {error && <p className="notice notice--bad">Cover search failed: {error}</p>}
+
+      {result && !result.proposal.found && (
+        <p className="muted small">
+          The search did not find a cover for this book. That is a normal answer for the titles that
+          reach this step — a wrong cover would be worse than none.
+        </p>
+      )}
+
+      {result && result.proposal.found && result.proposal.url && (
+        <div className="stack">
+          <div className="row-tight" style={{ alignItems: 'flex-start', gap: '0.75rem' }}>
+            <img
+              src={result.proposal.url}
+              alt="Proposed cover"
+              style={{ maxWidth: '96px', maxHeight: '140px', border: '1px solid var(--et-hairline)' }}
+            />
+            <div className="stack" style={{ gap: '0.25rem' }}>
+              <p className="small">
+                {result.verified ? (
+                  <b>Found a cover.</b>
+                ) : (
+                  <b>Found a candidate, but its link would not load.</b>
+                )}{' '}
+                {result.proposal.confidence === 'low' && (
+                  <span className="muted">The search is unsure this is the right book. </span>
+                )}
+                {result.proposal.note}
+              </p>
+              {result.proposal.source && (
+                <p className="muted small">Source: {result.proposal.source}</p>
+              )}
+              {!result.verified && result.verifyReason && (
+                <p className="muted small">Why it can’t be used: {result.verifyReason}</p>
+              )}
+              {applied ? (
+                <p className="small">Saved as this book’s cover.</p>
+              ) : (
+                result.verified && (
+                  <div className="row-tight">
+                    <button
+                      className="primary"
+                      disabled={busy}
+                      onClick={() => useIt(result.proposal.url as string)}
+                    >
+                      {busy ? 'Saving…' : 'Use this cover'}
+                    </button>
+                  </div>
+                )
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
