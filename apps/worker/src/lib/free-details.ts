@@ -31,8 +31,8 @@
  * notability bar misses — so it is asked BEFORE the Wikidata fallback, and it is
  * the only free rung that answers a blurb and a series in one request. Like
  * Google Books it is keyed, and like Google Books its absence is a NAMED skip
- * rather than a silent one: the friend instance has no `HARDCOVER_API_TOKEN`
- * until the owner sets it.
+ * rather than a silent one (both instances hold `HARDCOVER_API_TOKEN` since
+ * 2026-08-25; the named skip is what a future instance without it will see).
  *
  * ⚠️ **Rung 2 is built and cannot fire.** `index.heygabi.ai/api/lookup` is
  * behind a blanket human Firebase-token check and no machine-read credential
@@ -697,10 +697,18 @@ async function askGoogleBooks(
  * the printed form. Same rule as `askWikidata`, same owner rule (2026-08-19)
  * behind it: the printed form is only ever written when a source QUOTED one.
  *
- * ⚠️ **Keyed, and its absence is a named skip.** The main instance holds
- * `HARDCOVER_API_TOKEN`; the friend instance does not until the owner sets it,
- * and a rung nobody could ask must never look like a rung that was asked and
- * knew nothing — see `FreeDetailsOutcome.skipped`.
+ * ⚠️ **Keyed, and its absence is a named skip.** Both instances hold
+ * `HARDCOVER_API_TOKEN` (set 2026-08-25); an instance without it must never
+ * look like a rung that was asked and knew nothing — see
+ * `FreeDetailsOutcome.skipped`.
+ *
+ * ⚠️ **Hardcover files UNIVERSES as series too.** Live 2026-08-25, ISBN
+ * 9780765326355 (The Way of Kings) answered `book_series` = [The Stormlight
+ * Archive #1, **The Cosmere #7**]. `lookupHardcover` takes the FIRST named
+ * entry, so a book whose universe happens to come first would get a universe
+ * written into `work.series` — a shelf this catalogue deliberately keeps one
+ * tier above series (`@lc/universes`). Open item in `docs/TODO.md`: skip any
+ * candidate whose name folds onto a known universe name.
  */
 async function askHardcover(
   ctx: LadderContext,

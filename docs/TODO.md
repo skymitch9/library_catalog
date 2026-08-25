@@ -32,6 +32,18 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
+## ☐ Hardcover rung: a UNIVERSE can land in `work.series` (found 2026-08-25, live call)
+
+Hardcover's `book_series` for *The Way of Kings* = [The Stormlight Archive #1,
+**The Cosmere #7**]. `lookupHardcover` takes the first named entry, so whichever
+Hardcover lists first is what gets written — and this catalogue keeps universes
+one tier ABOVE series (`@lc/universes`, `data/universes.json` in
+catalog-platform). Fix (small, delegated with the "both instances" build): in
+`askHardcover` / `lookupHardcover`, skip any candidate whose name folds onto a
+known universe (`universeIndex` canonical names + aliases from `@lc/universes`),
+and prefer the entry with the smallest `series.books_count` when several remain
+(a universe is always the bigger set). Test with the Way of Kings shape.
+
 ## ☐ One command for BOTH instances — stop doing different things for main vs padhard (owner ask, 2026-08-25)
 
 Owner: *"we should do something so we dont need to always do different things

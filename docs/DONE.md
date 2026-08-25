@@ -84,13 +84,18 @@ sketch was right in every particular.** Free tier confirmed at 5,000/day, burst
   series wins; no edition → null; HTTP 500 → throws; a malformed ISBN makes **no
   request at all**; the ladder writes no printed designation from the number;
   Hardcover closes the series **before** Wikidata is dialled.
-- ⚠️ **NOT verified: the live Hardcover call.** Nothing in CI or in these tests
-  ever contacts `api.hardcover.app` — every test mocks `fetch`, and the real
-  token was deliberately never used from this session. The request SHAPE is
-  verified against the vendor's schema; that a real token gets a real answer is
-  **not**.
-- ⚠️ **The friend instance skips this rung entirely** until the owner sets the
-  secret: `HARDCOVER_API_TOKEN` is on the main Worker only. It reports
+- ✅ **Live call VERIFIED 2026-08-25 (main session, after the build):** the exact
+  request shape with the real token (piped from `.dev.vars` by the shell, never
+  read) against ISBN 9780765326355 → `errors: null`, 1 edition, *The Way of
+  Kings*, description 2,159 chars, `book_series` = [The Stormlight Archive #1,
+  The Cosmere #7]. CI still mocks `fetch`; this was a one-off measurement.
+  ⚠️ That second entry is the finding: **Hardcover files UNIVERSES as series**,
+  and the rung takes the first named entry — open item in `TODO.md` (skip names
+  that fold onto a known universe).
+- ✅ **Both instances hold `HARDCOVER_API_TOKEN`** (main via `secrets:push`,
+  friend via a piped single-key `wrangler secret put`, both 2026-08-25). The
+  build's note that the friend skipped was true when written and is superseded.
+  An instance without the secret reports
   `Hardcover: not asked — no HARDCOVER_API_TOKEN` — a named skip, never a silent
   one, so a rung nobody could ask is distinguishable from one that was asked and
   knew nothing. To turn it on:

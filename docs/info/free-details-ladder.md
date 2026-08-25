@@ -64,9 +64,9 @@ Hardcover gets first crack and Wikidata is the fallback behind it.
 §5.2's rule, unchanged.
 
 **Rung 5 is keyed like rung 4, and its absence is a NAMED skip.**
-`HARDCOVER_API_TOKEN` is set on the main instance and **not** on the friend
-instance, which reports `Hardcover: not asked — no HARDCOVER_API_TOKEN` rather
-than looking like a rung that was asked and knew nothing.
+`HARDCOVER_API_TOKEN` is set on **both** instances (2026-08-25). An instance
+without it reports `Hardcover: not asked — no HARDCOVER_API_TOKEN` rather than
+looking like a rung that was asked and knew nothing.
 
 **Rung 2 cannot answer `description`** and never will: the index is an identity
 index, not a metadata store, and the projection this catalog pushes it
@@ -263,7 +263,7 @@ re-measuring if the scan path ever looks like it is dropping fills.
 |---|---|
 | **Rung 2, at all** | No credential exists — §4. Every line below its config check is unexercised against the real index. |
 | **Rung 4 end to end** | The exercise run got **`googlebooks 400`** from the live API with the key in `.dev.vars`. Not diagnosed, and **not** touched by this work — `lookupGoogleBooksByIsbn` is unchanged. The rung is covered by tests with a stubbed fetch; its live behaviour is an open question. ⚠️ Do not read the passing tests as evidence the live rung works. |
-| **Rung 5 (Hardcover) live** | Added 2026-08-25. The request shape was confirmed field-by-field against the vendor's published SDL (`hardcoverapp/hardcover-docs@main/schema.graphql`), but **no call has ever been made with the real token** — every test mocks `fetch`. The friend instance has no token at all and skips by name. |
+| **Rung 5 (Hardcover) live** | Added 2026-08-25. The request shape was confirmed field-by-field against the vendor's published SDL (`hardcoverapp/hardcover-docs@main/schema.graphql`), and the real call was made ONCE from the main session the same day (Way of Kings: description + Stormlight #1 + *Cosmere #7* — see the universe caveat in `askHardcover`'s header). CI still mocks `fetch`; nothing measures how many catalogue books it closes. Both instances hold the token. |
 | **Rung 6 (Wikidata) live** | Added 2026-08-25. The SPARQL was verified by hand at `query.wikidata.org` (Way of Kings → Stormlight #1); the rung as wired into the ladder has only mocked-fetch coverage. |
 | **The deployed HTTP route** | Nothing was deployed and `POST /works/:id/run` needs an owner sign-in. The ladder was driven directly against D1 instead. |
 | **The scan path in a browser** | The `waitUntil` hook is wired and typechecked; nobody has scanned a real barcode through it. |

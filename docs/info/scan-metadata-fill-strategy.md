@@ -49,7 +49,7 @@ origin) returned zero results — our catalog skews exactly this way.
    structured, sourced, *ordinal-numbered* series field, CC0 (cleanest terms of
    anything), free, no key. Misses self-pub/indie — that's fine, the LLM stays
    for the residue.
-4. ✅ **BUILT 2026-08-25** — `packages/isbn/src/hardcover.ts`, asked BEFORE the Wikidata rung (the genre/indie skew gets first crack); MAIN instance only until the friend instance gets `HARDCOVER_API_TOKEN`, where it skips by name.
+4. ✅ **BUILT 2026-08-25** — `packages/isbn/src/hardcover.ts`, asked BEFORE the Wikidata rung (the genre/indie skew gets first crack); token on BOTH instances; live call verified once (Way of Kings). ⚠️ Hardcover also lists universes (The Cosmere) as `book_series` — see TODO for the universe filter.
    **Hardcover.app GraphQL — description + series + volume in ONE call.** Free
    API key, 5,000 req/day, community skew (ex-Goodreads genre/LitRPG readers) is
    the best available match for our content. Best single addition if we only add
