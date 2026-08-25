@@ -43,25 +43,72 @@ try {
 }
 
 /**
- * Best-effort: ask Cloudflare which version is now live, so the log carries the
- * same id the dashboard shows. Wrapped because it is a network call in a hook —
- * a slow or failed lookup must not fail a deploy that already succeeded.
+ * Ask Cloudflare which version is now live, so the log carries the same id the
+ * dashboard shows — the 3am "put it back" reference is only useful if it names
+ * something rollable.
+ *
+ * ⚠️ **This silently recorded `version-unknown` on EVERY line for its whole
+ * life** (fixed 2026-08-25 with the review batch), for two independent reasons,
+ * both of which failed into the same empty `catch`:
+ *
+ *  1. **`execFileSync('npx', …)` cannot run npx on Windows.** npx is `npx.cmd`;
+ *     without `shell` the call is `ENOENT`, and since Node 22 running a `.cmd`
+ *     through `execFile` is `EINVAL` even when named exactly. So the lookup
+ *     never ran once on this machine. It is invoked through `process.execPath`
+ *     and wrangler's own entry script now — no shell, no `.cmd`, nothing to
+ *     quote, and the same call on every platform.
+ *  2. **The regex took the first UUID in the output**, which is the OLDEST
+ *     deployment's `id` — not a version id at all, and not the one that just
+ *     went live. `--json` is parsed instead: the newest deployment by
+ *     `created_on`, then the version carrying the largest percentage (100 for an
+ *     ordinary deploy; a gradual rollout has two, and the one being rolled OUT
+ *     is not what shipped).
+ *
+ * Still best-effort and still wrapped: it is a network call in a hook, and a
+ * slow or failed lookup must not fail a deploy that already succeeded. A blank
+ * is recorded as `version-unknown`, which is honest — but it should now be rare
+ * enough to be worth investigating rather than expected.
  */
-let version = '';
-try {
+const WRANGLER = join(ROOT, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
+
+/** The version id that is live now, or '' when it could not be read. */
+function liveVersionId() {
+  if (!existsSync(WRANGLER)) return '';
+  // The env name reaches a child process argument list; it comes from our own
+  // package.json scripts, and this keeps it that way.
+  if (instance !== 'default' && !/^[a-z0-9_-]+$/i.test(instance)) return '';
   const out = execFileSync(
-    'npx',
+    process.execPath,
     [
-      'wrangler',
+      WRANGLER,
       'deployments',
       'list',
       '--config',
-      'apps/worker/wrangler.toml',
+      join('apps', 'worker', 'wrangler.toml'),
       ...(instance === 'default' ? [] : ['--env', instance]),
+      '--json',
     ],
-    { cwd: ROOT, encoding: 'utf8', timeout: 45_000, stdio: ['ignore', 'pipe', 'ignore'] },
+    { cwd: ROOT, encoding: 'utf8', timeout: 60_000, stdio: ['ignore', 'pipe', 'ignore'] },
   );
-  version = out.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/)?.[0] ?? '';
+  const list = JSON.parse(out);
+  if (!Array.isArray(list) || list.length === 0) return '';
+  // ⚠️ Sorted, not `at(-1)`: the API happens to answer oldest-first today and
+  // "the newest is last" is not a documented promise.
+  const newest = list
+    .slice()
+    .sort((a, b) => String(a?.created_on ?? '').localeCompare(String(b?.created_on ?? '')))
+    .at(-1);
+  const versions = Array.isArray(newest?.versions) ? newest.versions : [];
+  const live = versions
+    .slice()
+    .sort((a, b) => Number(a?.percentage ?? 0) - Number(b?.percentage ?? 0))
+    .at(-1);
+  return typeof live?.version_id === 'string' ? live.version_id : '';
+}
+
+let version = '';
+try {
+  version = liveVersionId();
 } catch {
   /* leave it blank rather than guess */
 }
