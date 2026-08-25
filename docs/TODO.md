@@ -32,6 +32,37 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
+## ☐ One command for BOTH instances — stop doing different things for main vs padhard (owner ask, 2026-08-25)
+
+Owner: *"we should do something so we dont need to always do different things
+for these 2 libraries."* Today every ops action has a `:friend` twin and secrets
+are the worst case: `secrets:push` serves main from `.dev.vars`, and the friend
+path is a deliberate stub (no `.dev.vars.friend`, so a bulk push can never
+overwrite her OWN `ANTHROPIC_API_KEY` / estate identity). The Hardcover key had to
+be piped by hand: `grep … .dev.vars | wrangler secret put … --env friend`.
+
+**Design (settled, build delegated to an Opus subagent once the Hardcover rung
+lands — same tree):**
+- `scripts/push-secrets.mjs` gains two explicit lists: **`SHARED_SECRETS`** (same
+  value on both instances *by design*: `GOOGLE_BOOKS_API_KEY`,
+  `HARDCOVER_API_TOKEN`, `EBOOK_INGEST_TOKEN`, `DONOR_TOKEN`, `PEER_TOKEN`,
+  `AUDIOBOOK_MAPPING_TOKEN`, `INDEX_*`) and **`PER_INSTANCE_SECRETS`** (refused for
+  friend, always: `ANTHROPIC_API_KEY`, `ESTATE_APP_TOKEN_*`). Unknown → refused
+  with a sentence.
+- `npm run secrets:push -- --both` pushes the SHARED set to main AND friend from
+  the one `.dev.vars`, prints per key what it pushed and what it refused and
+  why. `--friend` alone = shared set to friend only. The stub refusal for
+  per-instance keys stays.
+- Same "both" switch for the rest of the twins where safe: `deploy:both`,
+  `db:migrate:both`, `backfill:* -- --both` (runs main then friend, stops on the
+  first failure). The `:friend` twins remain for one-off use.
+- Docs: `access/secrets.md` + `access/second-instance.md` updated; a
+  `deploys.log` line per instance as today.
+
+**Open question for the owner:** which secrets are genuinely shared vs hers —
+the friend's secret list today shows `ESTATE_APP_TOKEN_LIBRARY` (not `…LIBRARY2`
+as `second-instance.md` says her identity is) — one of the two is stale.
+
 ## ☐ Shelf is COPY-DRIVEN + EditBox tab merge — LANDED FOR REVIEW (branch `feature/shelf-copy-driven`, 2026-08-24)
 
 Fixes the ownership bug where an OWNED book read as **Wanted**. `deriveShelfView`
