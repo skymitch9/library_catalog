@@ -398,7 +398,6 @@ export interface CollectionFacets {
    * on the Kindle is counted in each.
    */
   media: { medium: string; count: number }[];
-  formats: { format: string; count: number }[];
   statuses: { status: string; count: number }[];
   /**
    * How much is still outstanding. The three overlap — a book can want a cover
@@ -407,13 +406,13 @@ export interface CollectionFacets {
    */
   needs: { cover: number; watch: number; author: number };
   /**
-   * Books holding a special printing, and books holding a *named* printing
-   * nothing has sorted yet. Overlapping, like `needs` — a book can be in both.
-   *
-   * There is no `ordinary` count on purpose: it is the default and would be the
-   * whole collection minus a handful. See `EDITION_KINDS` in `@lc/core`.
+   * ⚠️ **No `kinds` or `formats` here on purpose** (F12, 2026-08-25). They fed
+   * the old "Printing" and "Edition" selects, which the Type-filter
+   * consolidation deleted — and under the new OR semantics the variant behind
+   * `kinds` counted an intersection that clicking the box could never produce.
+   * The reasoning, and what a correct version would have to do, is on
+   * `CollectionFacets` in `@lc/db`.
    */
-  kinds: { collectors: number; unsorted: number };
   /**
    * How many books each shared universe holds, under the rest of the filter.
    *

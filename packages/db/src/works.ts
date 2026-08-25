@@ -1963,7 +1963,6 @@ export interface CollectionFacets {
    * point, and `MEDIUM_CLAUSE` explains it.
    */
   media: { medium: string; count: number }[];
-  formats: { format: string; count: number }[];
   statuses: { status: string; count: number }[];
   /**
    * How much is still outstanding. Counted with the `needs` clause itself
@@ -1973,20 +1972,27 @@ export interface CollectionFacets {
    */
   needs: { cover: number; watch: number; author: number };
   /**
-   * How many books hold a special printing, and how many hold a *named* one
-   * nothing has sorted yet. Counted with the kind clause itself removed, exactly
-   * as `series`, `media` and `needs` drop their own.
+   * ⚠️ **There are deliberately no `kinds` or `formats` counts here, and their
+   * absence is the fix rather than an oversight** (F12, 2026-08-25).
    *
-   * ⚠️ Two numbers rather than a breakdown, and they can overlap: a book with a
-   * signed leatherbound *and* an unrecognised second printing is in both. That
-   * is the same shape and the same reason as `needs` — a GROUP BY would have to
-   * pick one bucket for it.
+   * They fed exactly two controls — the old "Printing" `<select>` and the old
+   * "Edition" `<select>` — and the Type-filter consolidation (`1333ff2`) deleted
+   * both. What was left was two D1 queries per facets request, one of them a
+   * `work JOIN edition GROUP BY e.format`, whose results nothing read.
    *
-   * ⚠️ There is deliberately no `ordinary` count. It would be the whole
-   * collection minus a handful, it is the default, and `EDITION_KINDS` explains
-   * why "ordinary" is not a thing anybody filters for.
+   * ⚠️ **And they could not simply be rewired, because the consolidation also
+   * made them WRONG.** Bindings and kinds are now ONE **OR** group in
+   * `collectionFilter`; the `withoutKind` variant that fed `kinds` dropped only
+   * the kind half and kept the binding half, which is an AND idea. Under OR
+   * that counts an intersection clicking the box would never produce —
+   * "Collector's edition (2)" beside a selected Paperback, where ticking it
+   * grows the list from 40 to 45. A count that disagrees with the list it
+   * labels is, in `collectionFilter`'s own words, worse than no facet at all.
+   *
+   * If the Type dropdown ever wants counts, the correct variant drops the WHOLE
+   * OR group — `collectionFilter({ ...query, editionKinds: undefined, bindings:
+   * undefined })` — and the counts belong per-option, not as two totals.
    */
-  kinds: { collectors: number; unsorted: number };
   /**
    * ⚠️ There is deliberately no `universes` field here, even though the
    * collection has a universe filter and the API response carries the counts.
@@ -2019,10 +2025,6 @@ export async function collectionFacets(
   // count of books held *both* ways, which is not what picking it would give you.
   const withoutMedium = collectionFilter({ ...query, medium: undefined });
   const withoutNeeds = collectionFilter({ ...query, needs: undefined });
-  // And without its own kind clause, for the third time and the same reason:
-  // "Named, not sorted (2)" beside a selected "Collector's edition" would count
-  // the books that are BOTH, which is not what picking it would give you.
-  const withoutKind = collectionFilter({ ...query, editionKinds: undefined });
   // And, for the fifth time and the same reason, without the sold-hiding
   // clause: "Sold (n)" beside the default view would count only the books that
   // are sold AND still held some other way, which is a handful and usually
@@ -2030,9 +2032,8 @@ export async function collectionFacets(
   // the ONE facet that drops it; every other count stays inside the default
   // view, because those options really do describe what is on screen.
   const withoutSoldHidden = collectionFilter({ ...query, includeSold: true });
-  const all = collectionFilter(query);
 
-  const [series, media, formats, statuses, needs, kinds] = await Promise.all([
+  const [series, media, statuses, needs] = await Promise.all([
     db
       .prepare(
         `SELECT w.series AS name, COUNT(*) AS count
@@ -2060,14 +2061,6 @@ export async function collectionFacets(
       .first<{ physical: number | null; ebook: number | null }>(),
     db
       .prepare(
-        `SELECT e.format AS format, COUNT(DISTINCT w.id) AS count
-           FROM work w JOIN edition e ON e.work_id = w.id ${all.sql}
-          GROUP BY e.format ORDER BY count DESC`,
-      )
-      .bind(...all.binds)
-      .all<{ format: string; count: number }>(),
-    db
-      .prepare(
         `SELECT c.status AS status, COUNT(DISTINCT w.id) AS count
            FROM work w JOIN copy c ON c.work_id = w.id ${withoutSoldHidden.sql}
           GROUP BY c.status ORDER BY count DESC`,
@@ -2087,19 +2080,6 @@ export async function collectionFacets(
       )
       .bind(...withoutNeeds.binds)
       .first<{ cover: number | null; watch: number | null; author: number | null }>(),
-    // One row, two columns, for the third time — the two sets overlap (a book
-    // can hold a classified printing and an unsorted one) so a GROUP BY would
-    // have to choose a bucket for it. `KIND_CLAUSE` carries no binds, so
-    // `withoutKind.binds` is the whole bind list.
-    db
-      .prepare(
-        `SELECT
-            SUM(CASE WHEN ${KIND_CLAUSE.collectors} THEN 1 ELSE 0 END) AS collectors,
-            SUM(CASE WHEN ${KIND_CLAUSE.unsorted} THEN 1 ELSE 0 END) AS unsorted
-           FROM work w ${withoutKind.sql}`,
-      )
-      .bind(...withoutKind.binds)
-      .first<{ collectors: number | null; unsorted: number | null }>(),
   ]);
 
   return {
@@ -2109,16 +2089,11 @@ export async function collectionFacets(
       { medium: 'physical', count: media?.physical ?? 0 },
       { medium: 'ebook', count: media?.ebook ?? 0 },
     ],
-    formats: formats.results,
     statuses: statuses.results,
     // `SUM` over no rows is NULL. A zero here is a real and welcome answer —
     // it means nothing is outstanding — so the control stays put and reads
     // "Cover needed (0)" rather than vanishing, the rule `media` states.
     needs: { cover: needs?.cover ?? 0, watch: needs?.watch ?? 0, author: needs?.author ?? 0 },
-    // `SUM` over no rows is NULL. Both stay put at zero rather than vanishing,
-    // the rule `media` states — and "Named, not sorted (0)" is the reading this
-    // control most wants to be able to give.
-    kinds: { collectors: kinds?.collectors ?? 0, unsorted: kinds?.unsorted ?? 0 },
   };
 }
 
