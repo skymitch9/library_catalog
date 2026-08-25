@@ -3364,12 +3364,42 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
 }
 .book-detail .edit-box__section > .panel:first-child { border-top: 0; padding-top: 0; }
 .book-detail .field__label {
-  font-size: 0.72rem;
+  font-size: 0.82rem;
   font-weight: 700;
   letter-spacing: 0.03em;
   text-transform: uppercase;
   color: var(--bd-ink-faint);
 }
+
+/* Owner 2026-08-25: edit-mode font a touch bigger, and FIX the checkbox that
+   floated centered (no .field--check rule existed, so it fell into the vertical
+   .field column and a general input style ballooned it). */
+.book-detail .edit-box .field input,
+.book-detail .edit-box .field textarea,
+.book-detail .edit-box .field select { font-size: 1rem; }
+.book-detail .edit-box .muted { font-size: 0.85rem; }
+
+.book-detail .field--check {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  column-gap: 0.7rem;
+  row-gap: 2px;
+}
+.book-detail .field--check > input[type='checkbox'] {
+  appearance: auto;
+  -webkit-appearance: auto;
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  width: 1.2rem;
+  height: 1.2rem;
+  min-height: 0;
+  margin: 0.15rem 0 0;
+  padding: 0;
+  accent-color: var(--bd-teal);
+}
+.book-detail .field--check > .field__label { grid-column: 2; grid-row: 1; align-self: center; }
+.book-detail .field--check > .muted { grid-column: 2; grid-row: 2; }
 
 /* ---- mobile: honor the mockup's 720px collapse + the app's 26rem rules ---- */
 @media (max-width: 720px) {
