@@ -51,6 +51,18 @@ these run **main first, then her, stopping on the first failure**.
 - ⚠️ **It does not roll back.** If the friend half fails after main succeeded,
   the instances are out of step and the runner says so in those words. Fix and
   re-run; a runner that un-deploys a good deploy would be worse.
+- ⚠️ **It commits `docs/deploys.log` between the halves, and nothing else.**
+  Found the first time `deploy:both` ran (2026-08-25): main's `postdeploy`
+  appends to that log, which makes the tree dirty, which makes the friend half's
+  `check-clean` refuse — a circular requirement, because the deploy is what
+  writes the file. The runner commits **that one path only**
+  (`git commit -- docs/deploys.log`, never `git add -A`, index untouched, so it
+  is safe beside another agent's work in progress). If anything ELSE is dirty it
+  **stops** and tells you to run the remaining half by hand.
+  ⚠️ `check-clean.mjs` was deliberately **not** relaxed: teaching a deploy guard
+  to ignore a path would apply to every deploy for ever, and committing a log
+  `deploy-done.mjs` already asks you to commit costs nothing.
+  The LAST half's line is left uncommitted for you — commit it after.
 - For backfills there is no `:friend` twin, so `for-both` runs the same script
   twice and appends `--friend` the second time. `scripts/lib/d1.mjs` still
   refuses `--friend` without `--remote`, and that refusal is left to fire.

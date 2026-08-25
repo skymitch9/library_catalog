@@ -37,9 +37,30 @@
  * ⚠️ It does NOT roll back. A failure on the second instance leaves the first
  * one applied, which is the honest state — the alternative is a runner that
  * un-deploys a good deploy. It says so plainly and exits non-zero.
+ *
+ * ## ⚠️ Why this commits `docs/deploys.log` between the halves
+ *
+ * Found the first time `deploy:both` was run, 2026-08-25: main deploys →
+ * `postdeploy` runs `deploy-done.mjs`, whose whole job is to APPEND a line to
+ * `docs/deploys.log` → the tree is now dirty → the friend half's
+ * `predeploy:friend` runs `check-clean.mjs`, which refuses. The requirement is
+ * circular — the deploy is what writes the file — so the runner settles it.
+ *
+ * ⚠️ **Path-limited, one file, and only when it is the ONLY dirty path.**
+ * `git commit -- docs/deploys.log` commits that path alone and never touches
+ * the index, so it is safe beside a human or another agent with work in
+ * progress. Anything else dirty and the runner **STOPS** rather than
+ * committing: the estate's rule for a job that commits is an explicit
+ * allowlist, never `git add -A`, and this is that rule with a list of one.
+ *
+ * ⚠️ **`check-clean.mjs` is deliberately NOT relaxed.** Teaching a deploy guard
+ * to ignore a path is a change to the thing that stops uncommitted CODE
+ * reaching production, and it would apply to every deploy for ever. Committing
+ * the log — which `deploy-done.mjs` already tells you to do — costs nothing and
+ * leaves the guard exactly as strict as it was.
  */
 
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -81,6 +102,59 @@ function runNpm(name, args) {
   });
 }
 
+/** The one file this runner may ever commit. See the header. */
+const DEPLOY_LOG = 'docs/deploys.log';
+
+function git(args) {
+  // No shell: nothing here goes near PowerShell quoting, which is why a commit
+  // message can be passed with -m safely from this script and not from a
+  // chained shell command.
+  return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' });
+}
+
+/** `XY path`, or `XY old -> new` for a rename. */
+function pathOf(line) {
+  const rest = line.slice(3).trim();
+  const arrow = rest.indexOf(' -> ');
+  return (arrow === -1 ? rest : rest.slice(arrow + 4)).replace(/^"|"$/g, '');
+}
+
+/**
+ * Commit the deploy log the half that just finished wrote, so the NEXT half's
+ * `check-clean` sees a clean tree. Returns false when it cannot, having said
+ * why — the caller then stops rather than producing a confusing guard failure.
+ */
+function settleDeployLog(label) {
+  let dirty;
+  try {
+    dirty = git(['status', '--porcelain']).split('\n').filter((l) => l.trim() !== '');
+  } catch {
+    console.log('for-both: no git available — leaving the tree alone.');
+    return true;
+  }
+  if (dirty.length === 0) return true;
+
+  const others = dirty.filter((l) => pathOf(l) !== DEPLOY_LOG);
+  if (others.length > 0) {
+    console.error(`\nfor-both: STOPPING after ${label}. The tree is dirty beyond ${DEPLOY_LOG}:\n`);
+    for (const line of others.slice(0, 20)) console.error(`  ${line}`);
+    console.error(
+      [
+        '',
+        'The next instance would be refused by check-clean, and this runner will not',
+        'commit anything but the deploy log. Commit or set aside the work above, then',
+        'run the remaining half on its own (e.g. `npm run deploy:friend`).',
+        '',
+      ].join('\n'),
+    );
+    return false;
+  }
+
+  git(['commit', '-m', `deploys.log: ${script} — ${label} half (for-both)`, '--', DEPLOY_LOG]);
+  console.log(`\nfor-both: committed ${DEPLOY_LOG} for the ${label} half.`);
+  return true;
+}
+
 const runs = hasTwin
   ? [
       { label: 'MAIN', name: script, args: passthrough },
@@ -103,6 +177,10 @@ for (const [i, run] of runs.entries()) {
     );
     process.exit(code);
   }
+  // Between halves only. After the LAST one the caller owns the tree, and a
+  // runner that tidied up behind itself would hide what just changed.
+  if (i < runs.length - 1 && !settleDeployLog(run.label)) process.exit(1);
 }
 
 console.log(`\nfor-both: ${script} completed on BOTH instances.`);
+console.log(`⚠️ commit ${DEPLOY_LOG} — the last half's line is still uncommitted.`);
