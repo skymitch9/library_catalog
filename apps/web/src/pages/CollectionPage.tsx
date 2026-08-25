@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { COLLECTION_PAGE_SIZES, COPY_STATUSES, EDITION_MEDIA, READ_STATES } from '@lc/core';
 import {
   api,
@@ -1141,6 +1141,16 @@ function TypeFilter({
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  /**
+   * ⚠️ Per-instance ids (F19, 2026-08-25). They were hard-coded, so a second
+   * TypeFilter anywhere on a page would mint duplicate ids and BOTH buttons
+   * would resolve to the first label — and `aria-controls` had nothing stable
+   * to point at. One instance exists today; `useId` costs nothing and removes
+   * the trap rather than documenting it.
+   */
+  const id = useId();
+  const labelId = `${id}-label`;
+  const panelId = `${id}-panel`;
 
   // Close on a click or focus that lands outside the control, and on Escape.
   // Both listeners are attached only while open, so a filter panel full of
@@ -1181,16 +1191,24 @@ function TypeFilter({
 
   return (
     <div className={`field type-filter${chosen.length ? ' type-filter--active' : ''}`} ref={rootRef}>
-      <span className="field__label" id="type-filter-label">
+      <span className="field__label" id={labelId}>
         Type
       </span>
+      {/*
+        ⚠️ No `aria-haspopup` (F19). It defaults to "menu", and a menu is a list
+        of ACTIONS reached with the arrow keys; this opens a `role="group"` of
+        native checkboxes that Tab and Space already work in. Announcing a menu
+        promises keyboard behaviour that is not there. `aria-expanded` says the
+        true thing — this is a disclosure — and `aria-controls` now names what
+        it discloses.
+      */}
       <button
         ref={buttonRef}
         type="button"
         className="type-filter__button"
-        aria-haspopup="true"
         aria-expanded={open}
-        aria-labelledby="type-filter-label"
+        aria-controls={panelId}
+        aria-labelledby={labelId}
         onClick={() => setOpen((o) => !o)}
       >
         <span className="type-filter__summary">{summary}</span>
@@ -1199,7 +1217,7 @@ function TypeFilter({
         </span>
       </button>
       {open && (
-        <div className="type-filter__panel" role="group" aria-labelledby="type-filter-label">
+        <div className="type-filter__panel" id={panelId} role="group" aria-labelledby={labelId}>
           {options.map((o) => (
             <label className="row-tight" key={o.value}>
               <input

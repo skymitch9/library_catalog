@@ -1531,7 +1531,17 @@ export const EBOOK_ONLY_CLAUSE: Record<string, string> = {
  * No binds: both clauses are literals, and `edition_kind` values are compared
  * against text written here rather than against anything a caller sent.
  */
-const KIND_CLAUSE: Record<string, string> = {
+/**
+ * ⚠️ **Exported for the tripwire in `test/binding-clause.test.ts`** (F15,
+ * 2026-08-25). The Type control builds its checkboxes from
+ * `EDITION_KIND_FILTERS = [...EDITION_KINDS, 'unsorted']`, so it AUTO-EXPANDS
+ * the day a kind is added — and `EDITION_KINDS`' own doc invites exactly that
+ * (*"`omnibus` is the obvious candidate"*). This map does not auto-expand. A
+ * kind with a box and no clause renders a control that is indistinguishable
+ * from working: ticking it contributes no clause and returns the same list as
+ * leaving it unticked. The test asserts the two sets are equal.
+ */
+export const KIND_CLAUSE: Record<string, string> = {
   collectors:
     `EXISTS (SELECT 1 FROM edition e
               WHERE e.work_id = w.id AND e.edition_kind = 'collectors')`,

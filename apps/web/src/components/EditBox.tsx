@@ -230,6 +230,8 @@ function RequestCovers({
   const [noted, setNoted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<CoverFindResult | null>(null);
+  /** The proposed image failed to load HERE, whatever the Worker's fetch saw. */
+  const [imageBroken, setImageBroken] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [applied, setApplied] = useState(false);
 
@@ -248,6 +250,7 @@ function RequestCovers({
     setBusy(true);
     setError(null);
     setResult(null);
+    setImageBroken(false);
     setApplied(false);
     try {
       setResult(await api.findCover(workId));
@@ -315,9 +318,17 @@ function RequestCovers({
       {result && result.proposal.found && result.proposal.url && (
         <div className="stack">
           <div className="row-tight" style={{ alignItems: 'flex-start', gap: '0.75rem' }}>
+            {/*
+              ⚠️ `onError` (F16, 2026-08-25): a URL the Worker verified can still
+              fail in the browser — hotlink protection keyed on `Referer` is the
+              common one — and without this the page showed a broken-image icon
+              directly under the words "Found a cover." The Worker's verdict is
+              about a fetch it made, not about this <img>.
+            */}
             <img
               src={result.proposal.url}
               alt="Proposed cover"
+              onError={() => setImageBroken(true)}
               style={{ maxWidth: '96px', maxHeight: '140px', border: '1px solid var(--et-hairline)' }}
             />
             <div className="stack" style={{ gap: '0.25rem' }}>
@@ -332,8 +343,28 @@ function RequestCovers({
                 )}
                 {result.proposal.note}
               </p>
+              {imageBroken && (
+                <p className="notice notice--bad small">
+                  The image did not load in your browser, even though the server could fetch it —
+                  usually a site that blocks hotlinking. Saving it would leave a blank tile.
+                </p>
+              )}
               {result.proposal.source && (
                 <p className="muted small">Source: {result.proposal.source}</p>
+              )}
+              {/*
+                ⚠️ The size, shown (F16). KI-6: a Google Books cover can be a
+                4 KB "COVER COMING SOON" card, and no size check catches it —
+                `MIN_COVER_BYTES` rejects the 43-byte placeholder, not a card.
+                A person looking at a 96px thumbnail cannot tell either, and the
+                Worker already fetched and returned this number. Real covers in
+                the 2026-08-10 sample ran 14–95 KB.
+              */}
+              {result.bytes !== undefined && (
+                <p className="muted small">
+                  Image size: {Math.round(result.bytes / 1024)} KB
+                  {result.bytes < 8000 && ' — small for a cover; check it is not a placeholder card'}
+                </p>
               )}
               {!result.verified && result.verifyReason && (
                 <p className="muted small">Why it can’t be used: {result.verifyReason}</p>

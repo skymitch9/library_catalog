@@ -25,7 +25,8 @@ import { strict as assert } from 'node:assert';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, it } from 'node:test';
 
-import { BINDING_CLAUSE } from '../src/works.ts';
+import { EDITION_KINDS } from '@lc/core';
+import { BINDING_CLAUSE, KIND_CLAUSE } from '../src/works.ts';
 
 function fixture(): DatabaseSync {
   const db = new DatabaseSync(':memory:');
@@ -167,5 +168,44 @@ describe('BINDING_CLAUSE — the multi-type format selector', () => {
     assert.deepEqual(visible(db, ['board_book']), ['A', 'B']);
     addEdition(db, 1, 'hardcover');
     assert.deepEqual(visible(db, ['board_book', 'hardcover']), ['A']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ⚠️ F15 — a checkbox that matches nothing looks exactly like one that works
+// ---------------------------------------------------------------------------
+//
+// The Type control's options are built from
+// `EDITION_KIND_FILTERS = [...EDITION_KINDS, 'unsorted']`, so it AUTO-EXPANDS
+// the day a kind is added — and `EDITION_KINDS`' own doc in `@lc/core` invites
+// exactly that: *"the set is expected to grow; `omnibus` is the obvious
+// candidate"*, and *"an unrecognised value simply fails to match any filter"*.
+//
+// `KIND_CLAUSE` does NOT auto-expand. The old "Printing" `<select>` hard-coded
+// its two options, so adding a kind changed nothing on screen; the new dropdown
+// adds a box automatically. Tick a box whose clause is missing and the result is
+// IDENTICAL to leaving it unticked — no error, no empty list, nothing to notice.
+//
+// Today `EDITION_KINDS === ['collectors']` and this is clean. It goes live on
+// the one-line change its own doc invites, which is why the tripwire is here
+// rather than a note.
+
+describe('every filterable printing kind has a clause (F15)', () => {
+  it('⚠️ KIND_CLAUSE covers EDITION_KINDS plus `unsorted`, exactly', () => {
+    const expected = [...EDITION_KINDS, 'unsorted'].sort();
+    assert.deepEqual(
+      Object.keys(KIND_CLAUSE).sort(),
+      expected,
+      'the Type control renders a box per EDITION_KIND_FILTERS; a kind with no ' +
+        'clause here renders a control that silently matches nothing',
+    );
+  });
+
+  it('and `unsorted` is in it — it is a filter, not a stored value', () => {
+    // The one member that is NOT an `edition_kind` value: it asks for named
+    // printings nothing has classified, which is where a missed special edition
+    // hides.
+    assert.ok(KIND_CLAUSE['unsorted']);
+    assert.ok(!(EDITION_KINDS as readonly string[]).includes('unsorted'));
   });
 });
