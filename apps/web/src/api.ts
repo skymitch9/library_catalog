@@ -378,13 +378,6 @@ export interface CollectionParams {
   /** `cover`, `watch` or `any` — what is still outstanding. Migration 0040. */
   needs?: string;
   readState?: string;
-  /**
-   * `1` narrows to books owned in 2+ physical copies (across editions) — the
-   * "Recorded twice" checkbox. Sent as `?duplicates=1`, kept from the control it
-   * replaced; the server reads it as `ownedTwice`. `0`/absent is off, and
-   * `collectionQuery` drops a `0` so an ordinary browse carries no param.
-   */
-  duplicates?: number;
   sort?: string;
   dir?: 'asc' | 'desc';
   page?: number;
