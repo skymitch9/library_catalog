@@ -145,7 +145,7 @@ import {
   isConfirmableField,
   type FieldChange,
 } from '@lc/gabi-conv';
-import { resolveIsbn } from '@lc/isbn';
+import { bestCandidate, resolveIsbn } from '@lc/isbn';
 import type { AppBindings, Env } from '../env.js';
 import { runDetailsSweep } from '../lib/details-sweep.js';
 import { physicalFormatLabels } from '../lib/format-labels.js';
@@ -568,7 +568,10 @@ export const gabiDelegatedRoutes = new Hono<AppBindings>()
       ...(c.env.GOOGLE_BOOKS_API_KEY ? { googleBooksKey: c.env.GOOGLE_BOOKS_API_KEY } : {}),
       userAgent: 'library_catalog (private household catalog, GABI delegated add)',
     });
-    const top = candidates[0];
+    // `bestCandidate`, not `candidates[0]`: rung 1 wins identity but the
+    // description/cover/year borrow across rungs (Google's blurb was being
+    // discarded here too). See `@lc/isbn`.
+    const top = bestCandidate(candidates);
     if (!top) {
       // ⚠️ The trace travels back. When a scan comes back empty the only useful
       // question is *which rung* was empty, and a trace that lives only in a

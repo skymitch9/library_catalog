@@ -364,6 +364,70 @@ export function coverFrom(candidates: readonly BookCandidate[]): string | null {
 }
 
 /**
+ * The first description any rung found, in rung order — the exact sibling of
+ * `coverFrom`, for the exact same reason.
+ *
+ * ⚠️ **Open Library's `jscmd=data` rung returns metadata with NO description**,
+ * and Google Books (rung 2) carries one. Every consumer took `candidates[0]`
+ * (rung 1) whole and so took its `null` description with it — paying the paid LLM
+ * for a blurb Google had already handed us for free. This is `coverFrom`'s board-
+ * book bug, one field over. Same ISBN join, so borrowing is safe. See
+ * `bestCandidate`.
+ */
+export function descriptionFrom(candidates: readonly BookCandidate[]): string | null {
+  for (const c of candidates) if (c.description) return c.description;
+  return null;
+}
+
+/**
+ * The one candidate to show/store from an ISBN lookup: rung 1 wins **identity**
+ * (title, authors, ISBN, source), but every **supplementary** fact rung 1 lacks
+ * is borrowed from a later rung that answered the same `isbn:` query.
+ *
+ * ## ⚠️ Why identity and supplements are treated differently
+ *
+ * Rung order encodes a trust order for *what the book IS* — Open Library's title
+ * and author are preferred over Google's, which is why `resolveIsbn` puts OL
+ * first and every consumer used `candidates[0]`. But that whole-record take also
+ * discarded the *facts* OL simply does not carry (description, and often the
+ * cover, year, page count, publisher). Those are not a matter of trust — they are
+ * the same edition's facts, joined by a hard ISBN — so a `null` on the trusted
+ * record should fall through to whichever rung has the value, never to the LLM.
+ * `coverFrom` already did this for the cover alone; this generalises it to every
+ * supplementary field, which is the "more direct fills, fewer LLM calls" the
+ * owner asked for (2026-08-25).
+ *
+ * Identity fields (`title`, `authors`, `isbn13`, `source`, `sourceUrl`,
+ * `format`, `openlibraryWorkId`) stay from `candidates[0]`. Supplementary fields
+ * (`coverUrl`, `description`, `publishedYear`, `pages`, `publisher`, `language`)
+ * coalesce across rungs. `series` is deliberately NOT here — no rung supplies a
+ * structured series today; that needs a Wikidata/Hardcover rung (see
+ * `docs/info/scan-metadata-fill-strategy.md`).
+ */
+export function bestCandidate(
+  candidates: readonly BookCandidate[],
+): BookCandidate | undefined {
+  const first = candidates[0];
+  if (!first) return undefined;
+  const pick = <T>(get: (c: BookCandidate) => T | null | undefined): T | null => {
+    for (const c of candidates) {
+      const v = get(c);
+      if (v !== null && v !== undefined && v !== '') return v;
+    }
+    return null;
+  };
+  return {
+    ...first,
+    coverUrl: pick((c) => c.coverUrl),
+    description: pick((c) => c.description),
+    publishedYear: pick((c) => c.publishedYear),
+    pages: pick((c) => c.pages),
+    publisher: pick((c) => c.publisher),
+    language: pick((c) => c.language),
+  };
+}
+
+/**
  * The smallest thing we will believe is a book cover.
  *
  * Open Library's 1×1 placeholder is **43 bytes** (measured 2026-08-10 on ISBN
