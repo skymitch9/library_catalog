@@ -41,8 +41,8 @@ import type { CopyView } from './Copies.js';
 const TABS = [
   'Overview',
   'Cover',
-  'Details',
   'Title & author',
+  'Details',
   'Editions & copies',
   'Extras',
   'Related & aliases',
@@ -102,6 +102,12 @@ export function EditBox({
           </div>
         )}
 
+        {show('Title & author') && (
+          <div className="edit-box__section">
+            <EditTitleAuthor workId={workId} work={work} canEdit={canEdit} onSaved={onChanged} />
+          </div>
+        )}
+
         {show('Details') && (
           <div className="edit-box__section">
             <WorkFields workId={workId} work={work} canEdit={canEdit} onSaved={onChanged} />
@@ -111,12 +117,6 @@ export function EditBox({
                 audio (507/508) that reads as if it is not, because its title never
                 matched the per-work audiobook cache. */}
             <AudioSeriesLink series={work.series} canEdit={canEdit} onChanged={onChanged} />
-          </div>
-        )}
-
-        {show('Title & author') && (
-          <div className="edit-box__section">
-            <EditTitleAuthor workId={workId} work={work} canEdit={canEdit} onSaved={onChanged} />
           </div>
         )}
 
