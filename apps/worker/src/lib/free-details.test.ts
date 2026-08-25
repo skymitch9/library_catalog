@@ -30,7 +30,14 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { DetailField } from '@lc/core';
 import type { Env } from '../env.js';
-import { freeDetailsFor, readSeriesLabel, readVolumeDisplay } from './free-details.js';
+import {
+  FREE_DETAILS_SUBREQUESTS,
+  FREE_LADDER_RUNG_NAMES,
+  RUNG_LABEL,
+  freeDetailsFor,
+  readSeriesLabel,
+  readVolumeDisplay,
+} from './free-details.js';
 import { runDetailsResearch } from './research-run.js';
 
 // ---------------------------------------------------------------------------
@@ -990,5 +997,126 @@ describe('runDetailsResearch — the paid call is skipped when the free rungs cl
     } finally {
       globalThis.fetch = realFetch;
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ⚠️ The ladder's PRICE (F1, 2026-08-25)
+// ---------------------------------------------------------------------------
+//
+// `FREE_LADDER_SUBREQUESTS` in `details-sweep.ts` was a hand-typed `11` while
+// two rungs — Hardcover and Wikidata — had already been appended in front of
+// the number, and the enumeration it was copied from never counted the
+// `getWork` that `updateWork` does before it writes. Every AI-mode book was
+// priced four subrequests short against a 50-per-invocation ceiling whose
+// overrun does not throw: it silently kills the invocation.
+//
+// So the price is now DERIVED from `FREE_LADDER_RUNGS`, and these two tests are
+// what make the derivation true rather than merely tidy:
+//
+//   1. every rung in the `FreeRung` union has a priced entry in the table, so a
+//      new rung cannot be walked without a number beside it;
+//   2. a worst-case run really spends exactly `FREE_DETAILS_SUBREQUESTS` —
+//      counted by executing the ladder against a D1 and a `fetch` that tally
+//      every call, not by re-adding the table.
+
+describe("the ladder's price", () => {
+  /**
+   * Wraps a stub D1 and counts what it EXECUTES. `prepare` is free; `first`,
+   * `all`, `run` and `batch` are one subrequest each, which is the Worker's
+   * own accounting.
+   */
+  function countingDb(inner: D1Database): { db: D1Database; count: () => number } {
+    let calls = 0;
+    type Stmt = {
+      sql: string;
+      boundArgs: () => unknown[];
+      bind: (...args: unknown[]) => Stmt;
+      first: () => Promise<unknown>;
+      all: () => Promise<unknown>;
+      run: () => Promise<unknown>;
+    };
+    const wrap = (stmt: Stmt): Stmt => ({
+      sql: stmt.sql,
+      boundArgs: () => stmt.boundArgs(),
+      bind: (...args: unknown[]) => wrap(stmt.bind(...args)),
+      first: async () => {
+        calls += 1;
+        return stmt.first();
+      },
+      all: async () => {
+        calls += 1;
+        return stmt.all();
+      },
+      run: async () => {
+        calls += 1;
+        return stmt.run();
+      },
+    });
+    const raw = inner as unknown as {
+      prepare: (sql: string) => Stmt;
+      batch: (s: Stmt[]) => Promise<unknown>;
+    };
+    const db = {
+      prepare: (sql: string) => wrap(raw.prepare(sql)),
+      batch: async (statements: Stmt[]) => {
+        calls += 1;
+        return raw.batch(statements);
+      },
+    };
+    return { db: db as unknown as D1Database, count: () => calls };
+  }
+
+  it('⚠️ prices every rung the union names — a new rung cannot land unpriced', () => {
+    // `RUNG_LABEL` is a `Record<DetailSource, string>`, so a new member of the
+    // `FreeRung` union already fails to compile without a label. This closes the
+    // other half: it must also be walked, and walked at a stated price.
+    const named = Object.keys(RUNG_LABEL).filter((r) => r !== 'llm');
+    assert.deepEqual(
+      [...FREE_LADDER_RUNG_NAMES].sort(),
+      named.sort(),
+      'every free rung must appear in FREE_LADDER_RUNGS, which is where its subrequest cost lives',
+    );
+  });
+
+  it('⚠️ a worst-case run spends exactly FREE_DETAILS_SUBREQUESTS', async () => {
+    // The most expensive shape the ladder has: no recorded Open Library work
+    // key (so the ISBN must be resolved), an audiobook row that exists and
+    // cannot answer, both keys present, every rung asked, and a last-rung answer
+    // that forces the write. Counted, not computed — a rung added without a
+    // price moves this number and fails here.
+    const fetchStub = stubFetch({
+      '/isbn/': { works: [{ key: '/works/OL1W' }] },
+      '/editions.json': { entries: [] },
+      'OL1W.json': {},
+      'googleapis.com': { items: [] },
+      'api.hardcover.app': { data: { editions: [] } },
+      'query.wikidata.org': {
+        results: { bindings: [{ seriesLabel: { value: 'Cradle' }, ordinal: { value: '1' } }] },
+      },
+    });
+    const inner = stubDb({
+      // A row that exists with a NULL series: rung 1 is really asked and really
+      // falls through, which is what makes it cost its subrequest.
+      holding: { series: null, index_display: null },
+      editions: [{ isbn13: '9780765350374' }],
+    });
+    const counted = countingDb(inner.db);
+
+    const out = await freeDetailsFor(
+      env(counted.db, { GOOGLE_BOOKS_API_KEY: 'k', HARDCOVER_API_TOKEN: 'tok' }),
+      514,
+      ALL,
+      { throttle: false, fetchImpl: fetchStub.impl },
+    );
+
+    assert.equal(out.sources.series, 'wikidata', 'the last rung answered, so the write happened');
+    assert.equal(
+      counted.count() + fetchStub.calls.length,
+      FREE_DETAILS_SUBREQUESTS,
+      `worst case really cost ${counted.count()} D1 + ${fetchStub.calls.length} fetch; ` +
+        `FREE_DETAILS_SUBREQUESTS says ${FREE_DETAILS_SUBREQUESTS}. ` +
+        'Reprice FREE_LADDER_RUNGS rather than editing this number.',
+    );
   });
 });

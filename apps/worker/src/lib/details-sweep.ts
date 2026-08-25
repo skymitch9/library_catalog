@@ -80,11 +80,11 @@
  * | donor bookkeeping when either donor rung answers — createRun, saveFindings, listFindings (inside auto-apply), finishRun | 4 |
  * | `claimRun` — closeStaleRuns, activeRun, getWork, gapsFor (getWork + verdicts), createRun | 6 |
  * | `runDetailsResearch` — getWork, the Claude call, saveFindings, finishRun | 5 |
- * | **the FREE-DETAILS LADDER `runDetailsResearch` now always runs first** — listAliasesForWork, freeDetailsFor (getWork, listGapVerdicts, audiobook, Open Library ×3, Google Books, writeFreeValues ×2), re-read getWork; see `FREE_LADDER_SUBREQUESTS` | **11** |
+ * | **the FREE-DETAILS LADDER `runDetailsResearch` now always runs first** — listAliasesForWork, freeDetailsFor (getWork, listGapVerdicts, audiobook, Open Library ×4, Google Books, Hardcover, Wikidata, writeFreeValues ×3), re-read getWork; **derived** from `FREE_LADDER_RUNGS`, see `FREE_LADDER_SUBREQUESTS` | **15** |
  * | apply — 4 per field applied | 4·fields |
- * | **one book, AI only** | **23 + 4·fields** |
+ * | **one book, AI only** | **27 + 4·fields** |
  * | **one book, donor only** | **5 + 4·fields** |
- * | **one book, both paths live** | **29 + 4·fields** |
+ * | **one book, both paths live** | **33 + 4·fields** |
  *
  * ⚠️ The donor's two rungs are **exclusive**, so they do not add up: the judge
  * fires only when the exact match missed, and either way exactly one donor run
@@ -95,9 +95,9 @@
  *
  * Each field is APPLIED at most once — by whichever path answered it — so the
  * `4·fields` term is never doubled when both paths run; what doubles is the
- * run bookkeeping, hence 29 rather than 35. On an AI-only instance a two-gap
- * book is ~31 and a four-gap book ~39; donor-only, 13 and 21; both live, 37
- * and 45. ⚠️ Those AI columns are why `planSweep` and `estimateSubrequests`
+ * run bookkeeping, hence 33 rather than 39. On an AI-only instance a two-gap
+ * book is ~35 and a four-gap book ~43; donor-only, 13 and 21; both live, 41
+ * and 49. ⚠️ Those AI columns are why `planSweep` and `estimateSubrequests`
  * take the mode AND count the free ladder: even on an AI-only instance two
  * ordinary books now estimate past 50 — the whole ceiling — so the plan
  * honestly picks ONE, rather than fitting two in on an estimate blind to the
@@ -235,6 +235,9 @@ import type { Env } from '../env.js';
 import type { DonorCandidate, DonorDetailsReply } from '../routes/donor.js';
 import { autoApplyFindings, claimRun, runDetailsResearch } from './research-run.js';
 import { describeError } from './describe-error.js';
+// ⚠️ The ladder's price comes FROM the ladder — see `FREE_LADDER_SUBREQUESTS`
+// below for the failure that made this an import rather than a number.
+import { FREE_DETAILS_SUBREQUESTS } from './free-details.js';
 
 /**
  * The most books one tick may pay for.
@@ -316,38 +319,39 @@ export const DONOR_RUN_MODEL = 'donor';
 export const DONOR_FUZZY_RUN_MODEL = `donor+${DONOR_JUDGE_MODEL}`;
 
 /**
- * The free-details ladder's subrequest cost, spent by `runDetailsResearch` on
- * every AI-mode book BEFORE the paid model is (maybe) asked. None of it is in
- * the `12` term, whose `runDetailsResearch` slice counts only getWork + the
- * Claude call + saveFindings + finishRun — not the ladder that now runs first.
+ * What `runDetailsResearch` spends AROUND `freeDetailsFor`, worst case:
+ * `listAliasesForWork` before it (1) and the `getWork` re-read after it (1).
+ * Neither is inside the ladder, and neither is in the `12` term — that one
+ * counts only getWork + the Claude call + saveFindings + finishRun.
+ */
+const FREE_LADDER_CALLER_SUBREQUESTS = 2;
+
+/**
+ * ⚠️ **The free-details ladder's subrequest cost — DERIVED, never typed.**
  *
- * Enumerated (worst case, because an overrun does not throw, it silently kills
- * the invocation):
- *   listAliasesForWork            1
- *   freeDetailsFor.getWork        1
- *   freeDetailsFor.listGapVerdicts 1
- *   rung 1 askAudiobook (D1)      1
- *   rung 2 askIndex              0   (DARK — skipped on unset config; ⚠️ revisit
- *                                     this number the day the estate index rung
- *                                     goes live, it fans out over aliases)
- *   rung 3 askOpenLibrary         3   (work-key resolve + editions + description)
- *   rung 4 askGoogleBooks (keyed) 1
- *   writeFreeValues (getWork+patch) 2
- *   re-read getWork after ladder  1
- *   ---------------------------------
- *   total                        11
+ * Spent by `runDetailsResearch` on every AI-mode book BEFORE the paid model is
+ * (maybe) asked. The per-rung table is `FREE_LADDER_RUNGS` in `free-details.ts`
+ * and it is the only place a rung's price is written down; a hand-maintained
+ * copy here is exactly what went wrong — this constant read **11** while
+ * Hardcover and Wikidata had already landed on the ladder (2026-08-25), and its
+ * enumeration also missed the `getWork` that `updateWork` does before it writes.
+ * Every AI-mode book was priced 4 subrequests short against a ceiling whose
+ * overrun does not throw but silently kills the invocation.
+ *
+ * Today: 13 (ladder) + 2 (caller) = **15**.
  *
  * Only in AI mode: `if (!mode.ai) continue;` gates runDetailsResearch, so a
  * donor-only tick never walks this ladder.
  */
-const FREE_LADDER_SUBREQUESTS = 11;
+export const FREE_LADDER_SUBREQUESTS =
+  FREE_DETAILS_SUBREQUESTS + FREE_LADDER_CALLER_SUBREQUESTS;
 
 /**
  * See the table in the header. Per field, because apply is per field; per
  * mode, because each live path carries its own run bookkeeping — an estimate
  * blind to the donor would under-count by 5 per book, and one blind to the free
- * ladder under-counts by 11 per AI book; the overrun does not throw, it silently
- * kills the invocation.
+ * ladder under-counts by `FREE_LADDER_SUBREQUESTS` (15) per AI book; the overrun
+ * does not throw, it silently kills the invocation.
  *
  * ⚠️ The donor term is 6 rather than 5 wherever a judge is possible: the two
  * donor rungs are exclusive (one fetch, one run either way) and the extra 1 is

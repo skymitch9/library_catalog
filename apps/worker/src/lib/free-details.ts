@@ -84,8 +84,14 @@
  * `research-run.ts`). So every rung is **lazy**: the ISBN is looked up only when
  * a rung that needs one is actually going to run, the Open Library work record
  * is fetched only when `description` is still open, and a ladder with nothing
- * outstanding returns before it reads anything. Worst case here is ~12; the
- * ordinary case is 4 or 5.
+ * outstanding returns before it reads anything.
+ *
+ * ⚠️ **The worst case is not a number typed in a comment any more.** It is
+ * `FREE_DETAILS_SUBREQUESTS`, summed from `FREE_LADDER_RUNGS` — see the table
+ * there — because it was wrong twice: two rungs (Hardcover, Wikidata) landed
+ * without moving it, and the enumeration it was copied from never counted
+ * `updateWork`'s own `getWork`. Today it is **13**; the ordinary case is still
+ * 4 or 5.
  */
 
 import {
@@ -831,6 +837,89 @@ async function askWikidata(
 }
 
 // ---------------------------------------------------------------------------
+// The ladder, as data — so its COST can be derived rather than remembered
+// ---------------------------------------------------------------------------
+
+/** One rung: what it is called, what it costs at worst, and how to ask it. */
+interface FreeLadderRung {
+  readonly rung: FreeRung;
+  /**
+   * ⚠️ **Worst-case subrequests, counted by reading the rung.** Every D1 call
+   * and every `fetch` is one, and an overrun does not throw — it silently kills
+   * the invocation (`details-sweep.ts` header §2). `ctx.isbn13()` is memoised,
+   * so its one D1 read is charged to the FIRST rung that needs it and to no
+   * other.
+   */
+  readonly subrequests: number;
+  readonly ask: (
+    ctx: LadderContext,
+    open: ReadonlySet<DetailField>,
+    skipped: string[],
+    throttle: boolean,
+  ) => Promise<FieldAnswer[]>;
+}
+
+/**
+ * The ladder, in the order it is walked.
+ *
+ * ⚠️ **A new rung goes HERE, with its cost, or the build fails.** This table is
+ * the single source of both the order and the price:
+ * `free-details.test.ts` asserts that every `FreeRung` in the union has an entry
+ * and that a worst-case run really spends `FREE_DETAILS_SUBREQUESTS`, and
+ * `details-sweep.ts` prices `SWEEP_BUDGET` off the same sum. It exists because
+ * the number was a hand-written `11` when two rungs (Hardcover 2026-08-25,
+ * Wikidata 2026-08-25) had already landed in front of it — every AI-mode book
+ * was priced short, against a ceiling whose overrun is silent.
+ */
+const FREE_LADDER_RUNGS: readonly FreeLadderRung[] = [
+  // getAudiobookHolding — one D1 read.
+  { rung: 'audiobook', subrequests: 1, ask: (ctx, open, skipped) => askAudiobook(ctx, open, skipped) },
+  // ⚠️ DARK: returns before its fetch while INDEX_READ_TOKEN is unset, so it
+  // costs nothing today. Revisit the day the rung goes live — it fans out over
+  // aliases, so its worst case is 1 + the alias cap, not 1.
+  { rung: 'index', subrequests: 0, ask: (ctx, open, skipped) => askIndex(ctx, open, skipped) },
+  // isbn13 (1 D1, memoised here) + workKeyForIsbn + editionsOfWork + workDescription.
+  {
+    rung: 'openlibrary',
+    subrequests: 4,
+    ask: (ctx, open, skipped, throttle) => askOpenLibrary(ctx, open, skipped, throttle),
+  },
+  // One fetch; the ISBN is already in hand.
+  { rung: 'googlebooks', subrequests: 1, ask: (ctx, open, skipped) => askGoogleBooks(ctx, open, skipped) },
+  // One GraphQL POST.
+  { rung: 'hardcover', subrequests: 1, ask: (ctx, open, skipped) => askHardcover(ctx, open, skipped) },
+  // One SPARQL GET.
+  { rung: 'wikidata', subrequests: 1, ask: (ctx, open, skipped) => askWikidata(ctx, open, skipped) },
+];
+
+/**
+ * What `freeDetailsFor` spends OUTSIDE the rungs, worst case:
+ *
+ *   getWork                         1
+ *   listGapVerdicts                 1
+ *   writeFreeValues.getWork         1
+ *   updateWork's own getWork        1   ⚠️ `updateWork` re-reads the row before
+ *                                       it writes (`works.ts:361`) — the old
+ *                                       hand count missed this one
+ *   updateWork's batch              1   (UPDATE + change_log in one batch)
+ *   ---------------------------------
+ *                                   5
+ */
+const FREE_DETAILS_FIXED_SUBREQUESTS = 5;
+
+/**
+ * ⚠️ **The free ladder's worst-case subrequest cost, DERIVED.** `details-sweep`
+ * adds what its own caller spends around it; nothing else may re-type this
+ * number. See `FREE_LADDER_RUNGS`.
+ */
+export const FREE_DETAILS_SUBREQUESTS =
+  FREE_DETAILS_FIXED_SUBREQUESTS +
+  FREE_LADDER_RUNGS.reduce((total, r) => total + r.subrequests, 0);
+
+/** The rungs' names, in ladder order — what the cost test checks the union against. */
+export const FREE_LADDER_RUNG_NAMES: readonly FreeRung[] = FREE_LADDER_RUNGS.map((r) => r.rung);
+
+// ---------------------------------------------------------------------------
 // Running it
 // ---------------------------------------------------------------------------
 
@@ -923,25 +1012,16 @@ export async function freeDetailsFor(
   const held: FieldAnswer[] = [];
   let seriesInHand = (work.series ?? '').trim() !== '';
 
-  const rungs: ((o: ReadonlySet<DetailField>) => Promise<FieldAnswer[]>)[] = [
-    (o) => askAudiobook(ctx, o, outcome.skipped),
-    (o) => askIndex(ctx, o, outcome.skipped),
-    (o) => askOpenLibrary(ctx, o, outcome.skipped, throttle),
-    (o) => askGoogleBooks(ctx, o, outcome.skipped),
-    // Before Wikidata: Hardcover's community skews genre/indie — exactly the
-    // books Wikidata's notability bar misses — and it answers the blurb and the
-    // series in one request, so it gets first crack at both.
-    (o) => askHardcover(ctx, o, outcome.skipped),
-    // Last, and series-only: the structured source that catches what the
-    // title-parse rungs above miss on indie/genre books — the owner's actual gap.
-    (o) => askWikidata(ctx, o, outcome.skipped),
-  ];
-
-  for (const rung of rungs) {
+  // ⚠️ The order — and the price — live in `FREE_LADDER_RUNGS`. Hardcover sits
+  // before Wikidata because its community skews genre/indie (exactly the books
+  // Wikidata's notability bar misses) and it answers blurb and series in one
+  // request; Wikidata is last and series-only, the structured source that
+  // catches what the title-parse rungs above miss.
+  for (const rung of FREE_LADDER_RUNGS) {
     if (open.size === 0) break;
     let answers: FieldAnswer[];
     try {
-      answers = await rung(open);
+      answers = await rung.ask(ctx, open, outcome.skipped, throttle);
     } catch (err) {
       // A rung is allowed to fail; the ladder is not.
       outcome.skipped.push(`a rung failed: ${err instanceof Error ? err.message : String(err)}`);
