@@ -103,6 +103,35 @@ and prefer the entry with the smallest `series.books_count` when several remain
 | tests | `scripts/test/push-secrets.test.mjs` — 15 `node:test` cases against the **pure** `planFor`. Importing the module is safe because its imperative half sits behind an `isEntrypoint` guard; if that guard ever regresses, these tests are what will try to push secrets and fail loudly, which is the right way round. No wrangler call, no `.dev.vars` read |
 | docs | [`access/secrets.md`](access/secrets.md) and [`access/second-instance.md`](access/second-instance.md), both re-dated, with the live secret NAMES re-measured that day (main 11, friend 7) |
 
+🔴 **Found by RUNNING it, not by reading it: `deploy:both` failed on its own
+second half the first time.** Main deployed, `postdeploy` appended its line to
+`docs/deploys.log`, the tree was now dirty, and the friend half's `check-clean`
+refused. The requirement is circular — the deploy is what writes the file.
+
+Fixed in `scripts/for-both.mjs`, which now commits **that one path** between
+halves: `git commit -- docs/deploys.log`, path-limited, index untouched, safe
+beside another agent's work in progress. Anything else dirty and it STOPS and
+says to run the remaining half by hand. The last half's line is left for the
+caller, with a printed reminder.
+
+⚠️ **`check-clean.mjs` was deliberately NOT relaxed.** The first attempt was to
+teach the guard to ignore that path; that is a change to the thing which stops
+uncommitted CODE reaching production, it would apply to every deploy for ever,
+and committing a log `deploy-done.mjs` already asks you to commit costs nothing.
+The guard is exactly as strict as it was.
+
+✅ **Verified by a second, clean end-to-end `npm run deploy:both`:**
+
+| Instance | Commit | Version id |
+|---|---|---|
+| main (`library.heygabi.ai`) | `22d9f27` | `537859c2-b1a3-40c2-af80-68b934c3b6b1` |
+| friend (`padhard.heygabi.ai`) | `a9b689a` | `244a4e2f-da2d-49a7-8a68-4c361ab49e03` |
+
+Live `/api/health` after the deploy: both `ok:true`, `database: up`, universes
+17 / schemaVersion 1; estate `app: library` / `ESTATE_APP_TOKEN_LIBRARY` and
+`app: library2` / `ESTATE_APP_TOKEN_LIBRARY2`, both `configured: true`, mode
+`enforce`.
+
 ⚠️ **`secrets:push --both` was NOT run for real** — it would re-push every shared
 key to no purpose. Verified with `--dry-run` only, so **the wrangler call on the
 friend path has never been exercised**; it is the same `secret bulk` + stdin
