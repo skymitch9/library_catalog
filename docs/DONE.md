@@ -17,6 +17,54 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ Collection filters consolidated — one **Type** dropdown-of-checkboxes replaces Edition + Printing — SHIPPED both instances — 2026-08-24
+
+**Why.** Owner PRIORITY ask, 2026-08-24: *"in the filters list for library the
+type needs to be a drop down with check boxes in it. and we kind of already have
+it, lets just add the type into the edition. also remove the printing filter.
+move printing options into the same drop down with checkboxes, obviously dont
+include duplicates."*
+
+**What shipped** (commit `1333ff2`, deployed main `72aad922` / friend
+`75eb00ca`; the deploy was blocked ~11 min by a failing `predeploy` test —
+see the tripwire note below — until that was reconciled in `1719af9`):
+
+- **New `TypeFilter` component** — a disclosure button + checkbox panel
+  (Escape / outside-click close, keyboard-reachable), `--et-*`-themed to match
+  the field selects and the settings-cog popover. Drives two state arrays
+  (`bindings` + `editionKinds`).
+- **Three overlapping controls folded into one.** The old `format` (Edition)
+  single-select and `editionKind` (Printing) single-select are gone; their
+  options join the `bindings` (Type) checkboxes as the **deduped union** of
+  binding/cover types + printing kinds. The coarse `medium` (Format) select is
+  unchanged — a genuinely different axis.
+- **Query/URL:** `editionKind` is a list end to end; the two halves ride
+  `?binding=` and `?kind=`; `collectionFilter` **ORs** the chosen
+  `BINDING_CLAUSE` + `KIND_CLAUSE` entries into ONE predicate (a book matching
+  ANY checked box shows — was AND across axes). Old `?format=` folds into
+  `?binding=` on parse and old `?kind=collectors` still parses, so shared links
+  survive.
+- **No migration.** Reads only pre-existing columns (binding + Migration 0050
+  `editionKind`); the `0430` special-editions booleans are NOT touched — verified
+  the commit carries no `.sql` and no `sprayed_edges`/`slipcase`/`leatherbound_*`
+  column read. Migrate-before-deploy holds vacuously.
+
+**Verified live** (`library.heygabi.ai` → Filters): row 1 now reads
+**Series · Universe · Format · Type**; Edition and Printing selects gone; the
+help text confirms multi-check ("Tick more than one Type box… matching any of
+them") and the "Collector's edition is one bucket for every special printing"
+folding. Screenshot taken 2026-08-24 ~23:00 Phoenix.
+
+**Tripwire it tripped, and the fix.** `predeploy → npm run test` failed on
+`packages/core/test/universes.test.ts` — this session's earlier owner-approved
+`catalog-platform` universe edits (DotHack added; Riordanverse completed 6→9
+series) had not yet been reconciled into that file's two content assertions
+(`universeNames` order, and the per-universe counts tally). Reconciled in
+`1719af9`: sixteen→seventeen universes, `+DotHack` in the names list + zero-list,
+`Riordanverse [6,0,0]→[9,0,0]`, `+DotHack [4,0,0]`. 1687/1687 tests pass. This is
+the tripwire WORKING as designed — a universe cannot appear in catalog-platform
+without a decision landing in this file too.
+
 ## ✅ Book detail page — comprehensive fidelity pass (theme fonts, cyberpunk legibility, undefined-token fix, widen) — SHIPPED both instances — 2026-08-24
 
 **Why.** Owner review of the live redesigned page: *"just please match the mock

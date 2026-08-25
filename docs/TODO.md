@@ -105,11 +105,12 @@ count from step 2 below.
 
 **Deferred / not done:** a facet count on the new Type filter (a GROUP BY per
 type per keystroke for boxes read off the list — deliberately omitted, matching
-the facets-cost note); consolidating the new multi-type **Type** selector with
-the pre-existing single-select **Edition** (exact format) and **Format** (medium)
-controls — the new one is a superset for the physical/leather/audio axes and the
-three now overlap, an owner call on whether to retire the older two (one
-fact/one surface). No D1 unit harness exists in this repo, so `createCopy` /
+the facets-cost note). ~~consolidating the new multi-type **Type** selector with
+the pre-existing single-select **Edition**/**Printing** controls~~ **DONE
+2026-08-24** — owner ruled retire Edition + Printing into the Type dropdown, keep
+`medium` (Format) as its own axis; shipped `1333ff2`, deployed both instances,
+verified live. Whole record in [`DONE.md`](DONE.md). No D1 unit harness exists in
+this repo, so `createCopy` /
 `updateCopy`'s write path is covered by typecheck + the migration round-trip SQL
 test, not a live-D1 test.
 
