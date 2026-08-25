@@ -181,19 +181,21 @@ export interface CollectionFilters {
    */
   needs: string;
   /**
-   * Show the books recorded twice, grouped, instead of the collection list.
+   * Narrow the collection to books owned in 2+ physical copies (across
+   * editions) — the "Owned 2+ (physical)" checkbox.
    *
-   * ⚠️ **Mimicked from the Board Game Catalog on purpose**, down to the
-   * spelling: `apps/web/src/router.tsx:100,118` there parses `duplicates` as a
-   * `1`/`0` flag and emits `duplicates=1` only when it is on. The owner asked
-   * for that filter and not a new one — *"we have this filter in boardgame
-   * catalog so lets mimic it from there instead of redesigning the wheel"* —
-   * so the address bar is the same address bar.
+   * ⚠️ **Mimicked from the Board Game Catalog**, down to the spelling: there
+   * `duplicates` is a `1`/`0` flag emitting `duplicates=1` only when on, and so
+   * is this. The address bar is the same address bar, and as of 2026-08-24 the
+   * MEANING is the sibling's too — *"we own 2+ copies"* — which is what the
+   * owner asked for from the start: *"i want the recorded twice to show me any
+   * book i own 2 of in physical, even if different editions."*
    *
-   * ⚠️ What it MEANS differs, and that is his call too: there,
-   * `duplicates=1` is *"we own 2+ copies"*; here it is *"the same book is in
-   * the catalog twice"*. Two copies of one book is a legitimate holding and is
-   * never flagged. `packages/core/src/duplicates.ts` carries the argument.
+   * ⚠️ It used to mean *"the same book is in the catalog as two rows"* (a
+   * record-finder that replaced the whole view). That was an author's divergence;
+   * the owner reclaimed it. The record-finder still exists at
+   * `GET /api/collection/duplicates` + `groupDuplicates`, no longer wired to a
+   * control. The server reads this flag as `CollectionQuery.ownedTwice`.
    *
    * A boolean rather than a string, unlike every other filter here, because it
    * is a checkbox in the games UI and a checkbox here.

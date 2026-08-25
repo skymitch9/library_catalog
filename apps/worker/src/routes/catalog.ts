@@ -140,6 +140,12 @@ function collectionQueryFrom(c: {
     // reaches the statement.
     needs: c.req.query('needs'),
     readState: c.req.query('readState'),
+    // "Recorded twice" — books owned in 2+ physical copies across editions. A
+    // `1`/`0` flag, spelled `?duplicates=1` for backward compatibility with the
+    // control it replaced (see `CollectionQuery.ownedTwice`). Any value other
+    // than the literal `'1'` reads as off, so a stale or malformed param shows
+    // the collection rather than erroring.
+    ownedTwice: c.req.query('duplicates') === '1',
     readerId,
     sort: isCollectionSort(sortParam) ? sortParam : 'series',
     dir,

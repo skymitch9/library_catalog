@@ -1302,6 +1302,21 @@ export interface CollectionQuery {
   /** Read state for ONE person — the caller's, never a body parameter. */
   readState?: string | undefined;
   readerId?: number | undefined;
+  /**
+   * Narrow to books the household owns **two or more physical copies** of,
+   * counting across editions — a hardcover of one printing and a paperback of
+   * another are two copies of the one book. Owner ask, 2026-08-24: *"i want the
+   * recorded twice to show me any book i own 2 of in physical, even if different
+   * editions."* See `OWNED_TWICE_PHYSICAL`.
+   *
+   * ⚠️ This REPLACED the earlier `?duplicates=1` behaviour, which showed
+   * duplicate *records* (two rows for one book). That was an author's divergence
+   * from the owner's original "mimic the board-game duplicates filter" ask; this
+   * restores the board-game meaning (own 2+ copies). The record-finder still
+   * lives at `GET /api/collection/duplicates` + `groupDuplicates`, no longer
+   * wired to the checkbox — see that route.
+   */
+  ownedTwice?: boolean | undefined;
   sort?: CollectionSort | undefined;
   dir?: 'asc' | 'desc' | undefined;
   limit: number;
@@ -1651,6 +1666,39 @@ export const NOT_ONLY_SOLD =
     OR EXISTS (SELECT 1 FROM copy c WHERE c.work_id = w.id AND c.status <> 'sold'))`;
 
 /**
+ * "The household owns two or more PHYSICAL copies of this book" — counted across
+ * editions, as SQL. The narrowing behind the "Recorded twice" checkbox since the
+ * owner reclaimed it, 2026-08-24 (`CollectionQuery.ownedTwice`).
+ *
+ * ⚠️ **Copies, not editions, and not media.** A `copy` row is an object in the
+ * house (`holdings.ts` and migration 0001); ebooks and audiobooks are tracked in
+ * their own holding tables, never as `copy` rows. So counting copies already
+ * means counting physical objects — and the `format IN (physical…)` guard makes
+ * "in physical" explicit and survives the day someone attaches a copy to a
+ * digital edition. `edition_id IS NULL` counts too: a copy recorded before its
+ * printing is known is still a physical book on the shelf.
+ *
+ * ⚠️ **HELD_STATUSES, not `owned` alone** — a book lent out is still owned, the
+ * same rule `ownedMoreThanOnce` (`@lc/core`) and the series page's "Bought more
+ * than once" apply, so the two surfaces agree. `>= 2` is the whole of "twice".
+ *
+ * No binds — every value is a constant from `@lc/core` (`HELD_STATUSES`,
+ * `PHYSICAL_FORMATS`), never caller text, inlined the same way the held-copy
+ * counts already are (see `seriesReport`'s `copies` count) and `KIND_CLAUSE`
+ * beside it. Exported so `test/owned-twice-clause.test.ts` can run the shipping
+ * SQL against a real SQLite rather than restating it.
+ */
+export const OWNED_TWICE_PHYSICAL =
+  `(SELECT COUNT(*) FROM copy c
+     WHERE c.work_id = w.id
+       AND c.status IN (${HELD_STATUSES.map((s) => `'${s}'`).join(', ')})
+       AND (c.edition_id IS NULL
+            OR EXISTS (SELECT 1 FROM edition e
+                        WHERE e.id = c.edition_id
+                          AND e.format IN (${PHYSICAL_FORMATS.map((f) => `'${f}'`).join(', ')})))
+   ) >= 2`;
+
+/**
  * "Is one of these works", as SQL. See `CollectionQuery.universeIds`.
  *
  * ⚠️ **Inlined rather than bound, and that is not a shortcut.** D1 caps a
@@ -1769,6 +1817,10 @@ function collectionFilter(query: CollectionQuery): { sql: string; binds: unknown
   // No binds — see `universeClause`. `undefined` adds no clause (nobody asked,
   // or the name was not one of the six); an empty array adds `0 = 1`.
   if (query.universeIds) where.push(universeClause(query.universeIds));
+  // No binds — `OWNED_TWICE_PHYSICAL` is a literal built from `@lc/core`
+  // constants. A narrowing, not a replacement: it composes with every filter
+  // above, unlike the record-finder it replaced (which took over the whole view).
+  if (query.ownedTwice) where.push(OWNED_TWICE_PHYSICAL);
   if (query.readState && query.readerId) {
     // 'unread' has to include rows with no `user_book` at all — a book nobody has
     // opened has no row, and treating that as "not unread" would hide most of the
