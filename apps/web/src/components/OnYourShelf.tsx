@@ -20,16 +20,17 @@ import { ebookShelfUrl } from '../lib/ebook-site.js';
  *
  *   - Owned **audio** → the audiobook site's title search (`audiobookDetailUrl`),
  *     which lands on the book by putting it alone in the search box.
- *   - Owned **ebook** → the ebook shelf (`ebookShelfUrl`). ⚠️ The shelf, NOT the
- *     specific book: this catalog cannot compute the manifest anchor the shelf
- *     deep-links by, and the shelf has no title-search hash — see `ebook-site.ts`.
+ *   - Owned **ebook** → the ebook shelf's title search (`ebookShelfUrl`), which
+ *     lands on the book the same way. ⚠️ By TITLE, not the manifest anchor: this
+ *     catalog cannot compute that anchor and must not mirror it — see
+ *     `ebook-site.ts`.
  *
  * Returns null for every other row, which then renders as a plain (non-link) card.
  */
 function rowCatalogHref(row: ShelfRow, title: string): string | null {
   if (!row.owned) return null;
   if (row.medium === 'audio') return audiobookDetailUrl(title);
-  if (row.medium === 'ebook') return ebookShelfUrl();
+  if (row.medium === 'ebook') return ebookShelfUrl(title);
   return null;
 }
 
@@ -221,7 +222,7 @@ export function OnYourShelf({
                   title={
                     row.medium === 'audio'
                       ? 'Open this book on the audiobook catalog (new tab)'
-                      : 'Open the ebook shelf (new tab)'
+                      : 'Open this book on the ebook shelf (new tab)'
                   }
                 >
                   {cardInner}
