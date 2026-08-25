@@ -50,6 +50,27 @@ file:line, failure scenarios and the explicit CLEAN list, stays at
 
 **Tests: 1728 → 1809 pass / 0 fail** (291 suites). Typecheck clean; web build clean.
 
+**Deployed 2026-08-25 via `npm run deploy:both`** (which runs the full suite
+before each half):
+
+| Instance | Commit | Version id |
+|---|---|---|
+| main — `library.heygabi.ai` | `5558056` | `e1393535-78fd-411b-b565-3f7e1e13d53e` |
+| friend — `padhard.heygabi.ai` | `5cb589d` | `9dffbe67-4a9e-4ad5-8c66-0d3f0fc0f347` |
+
+⚠️ **Those are the first two real ids `docs/deploys.log` has ever carried** —
+every line before them says `version-unknown`, which is the tooling bug fixed in
+`bd54438` and described below. The friend commit differs from main's because
+`for-both` commits the main half's log line between the halves.
+
+**Where to look:**
+[`library.heygabi.ai/?owned2=1`](https://library.heygabi.ai/?owned2=1) — tick
+**Owned 2+ (physical)** and the Series/Sold/Cover-needed counts should now agree
+with the grid (F3). Then a book page's **Edit → covers → Search the web for a
+cover** on an instance with no AI key should say the search is not set up rather
+than that your access could not be checked (F2/F17), and a successful proposal
+now prints its image size beside it (F16).
+
 ### F9 — deferred, and why
 
 `fieldsClosedBy` / `writeFreeValues` gate `seriesIndex` on a series **existing**
