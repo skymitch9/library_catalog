@@ -160,8 +160,11 @@ for a day after it was done):
 
 ## ⚠️ Known secret-hygiene gap (2026-08 audit)
 
-A live **`PEER_TOKEN`** was committed in plaintext to this (public) repo — it needs
-rotating. There is **no central password/key vault** (1Password/Bitwarden/etc.);
-secrets are spread across Cloudflare, `.dev.vars`, GCP, Firebase. A proper
-secrets-management review (inventory → flag exposed → recommend a vault +
-rotation) is offered as a follow-up. See `docs/info/audit-2026-08-findings.md`.
+~~A live **`PEER_TOKEN`** was committed in plaintext to this (public) repo~~ —
+**rotated 2026-08-25**, verified live on both instances (see `DONE.md`).
+There is still **no central vault**: secrets are spread across Cloudflare,
+`.dev.vars` (plaintext, on a OneDrive-synced disk), GCP, Firebase, and some exist
+ONLY on a Worker with no readable master (KI-7). **Owner decision 2026-08-25:
+defer the vault (option C).** He has **1Password**, so when it happens the
+target is 1Password's `op` CLI with `.dev.vars` GENERATED from it — not
+Bitwarden. Until then: the two `push-secrets.mjs` guards in `TODO.md`.
