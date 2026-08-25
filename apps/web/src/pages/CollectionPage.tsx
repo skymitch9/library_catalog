@@ -375,14 +375,47 @@ export function CollectionPage({
 
   useEffect(() => {
     api
-      .facets({ q, universe, medium, ebookOnly: effectiveEbookOnly, binding: bindings.join(','), editionKind: editionKinds.join(','), status, needs, readState })
+      .facets({
+        q,
+        series,
+        universe,
+        medium,
+        ebookOnly: effectiveEbookOnly,
+        binding: bindings.join(','),
+        editionKind: editionKinds.join(','),
+        status,
+        needs,
+        readState,
+        owned2: ownedTwice ? 1 : 0,
+      })
       .then(setFacets)
       .catch(() => setFacets(null));
-    // ⚠️ `ebookOnly` is in here and not only in the list's params, or the
-    // counts stop describing the list they label — "Ebook (126)" over a
-    // physical shelf holding 32 of them is the disagreement `collectionFilter`
-    // exists as one builder to prevent.
-  }, [q, universe, medium, effectiveEbookOnly, bindings, editionKinds, status, needs, readState]);
+    // ⚠️ **Every param that narrows the LIST is in here too, or the counts stop
+    // describing the list they label** — "Ebook (126)" over a physical shelf
+    // holding 32 of them is the disagreement `collectionFilter` exists as one
+    // builder to prevent.
+    //
+    // ⚠️ `owned2` was missed when the checkbox landed (F3, 2026-08-25): the grid
+    // narrowed to the books held twice while the Series dropdown still read
+    // "Cradle (6)" over the whole ~1,100-work collection, so picking a facet
+    // that said six gave an empty list. It is threaded end to end — the server
+    // already read it (`collectionQueryFrom` is shared with `/collection`, and
+    // every facet variant is built from `collectionFilter`), so this call was
+    // the only half missing. `facet-list-agreement.test.ts` now pins the rule.
+    //
+    // ⚠️ `series` was missing for the same reason and with the same effect,
+    // found while fixing F3: every facet variant EXCEPT the series one is built
+    // from the query it is handed, so with no series in it "Ebook (126)" was
+    // counted over the whole collection beside a six-book Cradle shelf. The
+    // series facet itself is unaffected — `collectionFacets` drops the series
+    // clause server-side before counting it, which is the whole point of
+    // `withoutSeries`.
+    //
+    // ⚠️ `duplicates` is deliberately NOT here: it REPLACES the grid with
+    // groups rather than filtering it, so it is not a narrowing at all. Nor are
+    // `sort`, `dir`, `page` and `pageSize` — they order and slice the list
+    // without changing which books are in it.
+  }, [q, series, universe, medium, effectiveEbookOnly, bindings, editionKinds, status, needs, readState, ownedTwice]);
 
   const loadHeader = useCallback(() => {
     api.stats().then(setStats).catch(() => setStats(null));
