@@ -1084,7 +1084,8 @@ export interface RunView {
   /**
    * Which rung answered each field — `{ series: 'audiobook', description:
    * 'llm' }`. Keys are `DetailField` names; values are
-   * `audiobook | index | openlibrary | googlebooks | llm`.
+   * `audiobook | index | openlibrary | googlebooks | hardcover | wikidata | llm`
+   * (the `FreeRung` union in `apps/worker/src/lib/free-details.ts`, plus `llm`).
    *
    * ⚠️ **`{}` means "nobody wrote it down", NOT "the model found everything".**
    * Every run made before 2026-08-23 is in that state, and rendering an empty

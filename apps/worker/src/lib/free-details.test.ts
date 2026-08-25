@@ -533,6 +533,114 @@ describe('rung 4 — Google Books', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Rung 5 — Hardcover
+// ---------------------------------------------------------------------------
+
+describe('rung 5 — Hardcover', () => {
+  /** The shape `lookupHardcover` reads, per the published SDL. */
+  function hardcoverBody(book: unknown) {
+    return { data: { editions: [{ book }] } };
+  }
+
+  it('answers description AND a structured series+volume in one call', async () => {
+    const fetchStub = stubFetch({
+      'api.hardcover.app': hardcoverBody({
+        description: 'The capital of Arelon.',
+        book_series: [{ position: 1, series: { name: 'Elantris' } }],
+      }),
+    });
+    const { db, writes } = stubDb({ holding: null, editions: [{ isbn13: '9780765350374' }] });
+
+    const out = await freeDetailsFor(env(db, { HARDCOVER_API_TOKEN: 'tok' }), 514, ALL, {
+      throttle: false,
+      fetchImpl: fetchStub.impl,
+    });
+
+    assert.deepEqual(out.sources, {
+      series: 'hardcover',
+      seriesIndex: 'hardcover',
+      description: 'hardcover',
+    });
+    assert.ok(wrote(writes, 'The capital of Arelon.'));
+    assert.ok(wrote(writes, 'Elantris'));
+  });
+
+  it('⚠️ never writes a printed designation from the numeric `position`', async () => {
+    const fetchStub = stubFetch({
+      'api.hardcover.app': hardcoverBody({
+        description: null,
+        book_series: [{ position: 1.5, series: { name: 'Cradle' } }],
+      }),
+    });
+    const { db, writes } = stubDb({ holding: null, editions: [{ isbn13: '9780765350374' }] });
+
+    await freeDetailsFor(env(db, { HARDCOVER_API_TOKEN: 'tok' }), 514, ['series', 'seriesIndex'], {
+      throttle: false,
+      fetchImpl: fetchStub.impl,
+    });
+
+    const update = writes.find((w) => w.sql.includes('UPDATE work SET'));
+    assert.ok(update, 'the series and volume should have been written');
+    assert.ok(update.bound.includes(1.5), 'the float8 position closes the sort value');
+    // ⚠️ `UPDATE work` names every column, so the SQL text proves nothing — the
+    // question is whether a STRING form of the number was bound. It must not be:
+    // a number is not a designation anybody printed (owner rule, 2026-08-19).
+    assert.equal(
+      update.bound.some((v) => typeof v === 'string' && v.includes('1.5')),
+      false,
+      'no printed designation may be derived from the numeric position',
+    );
+  });
+
+  it('⚠️ is skipped with a NAMED reason when HARDCOVER_API_TOKEN is unset', async () => {
+    // The friend instance's state until the owner sets the secret. A rung
+    // nobody could ask must not read as a rung that was asked and knew nothing.
+    const fetchStub = stubFetch({});
+    const { db } = stubDb({ holding: null, editions: [{ isbn13: '9780765350374' }] });
+
+    const out = await freeDetailsFor(env(db), 514, ['description'], {
+      throttle: false,
+      fetchImpl: fetchStub.impl,
+    });
+
+    assert.ok(
+      out.skipped.some((s) => s === 'Hardcover: not asked — no HARDCOVER_API_TOKEN'),
+      `the missing secret must be named. Got: ${JSON.stringify(out.skipped)}`,
+    );
+    assert.equal(
+      fetchStub.calls.some((u) => u.includes('hardcover')),
+      false,
+      'no token means no request at all',
+    );
+  });
+
+  it('is asked BEFORE Wikidata — the genre/indie skew gets first crack at the series', async () => {
+    const fetchStub = stubFetch({
+      'api.hardcover.app': hardcoverBody({
+        description: null,
+        book_series: [{ position: 2, series: { name: 'The Stormlight Archive' } }],
+      }),
+      'query.wikidata.org': {
+        results: { bindings: [{ seriesLabel: { value: 'WRONG — Wikidata was asked first' } }] },
+      },
+    });
+    const { db } = stubDb({ holding: null, editions: [{ isbn13: '9780765326355' }] });
+
+    const out = await freeDetailsFor(env(db, { HARDCOVER_API_TOKEN: 'tok' }), 514, ['series'], {
+      throttle: false,
+      fetchImpl: fetchStub.impl,
+    });
+
+    assert.equal(out.sources.series, 'hardcover');
+    assert.equal(
+      fetchStub.calls.some((u) => u.includes('query.wikidata.org')),
+      false,
+      'the series was closed before the Wikidata fallback, so it must not be dialled',
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // The rules that cut across the rungs
 // ---------------------------------------------------------------------------
 

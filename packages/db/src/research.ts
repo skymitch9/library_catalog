@@ -80,7 +80,8 @@ export interface ResearchRun {
    * Whatever the run wanted to say for itself. Free-form by design.
    *
    * `sources` maps a `DetailField` name to the rung that answered it —
-   * `audiobook` | `index` | `openlibrary` | `googlebooks` | `llm`. Added
+   * `audiobook` | `index` | `openlibrary` | `googlebooks` | `hardcover` |
+   * `wikidata` | `llm` (the `FreeRung` union, plus `llm`). Added
    * 2026-08-23 with the free ladder, and it needs **no migration**: the whole
    * object is `result_json`, a TEXT column whose reader already tolerates
    * anything. ⚠️ A run recorded before the ladder existed simply has no

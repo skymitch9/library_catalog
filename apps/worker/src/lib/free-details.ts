@@ -23,6 +23,16 @@
  * | 2 | the estate index (`/api/lookup`) | series, volume | ⚠️ **DARK** — see below |
  * | 3 | Open Library `/works/<key>/editions.json` | series, volume, description | 1 req/s |
  * | 4 | Google Books by ISBN | description, series hints | a keyed request |
+ * | 5 | Hardcover.app GraphQL by ISBN | description, series, volume | a keyed request, 5,000/day |
+ * | 6 | Wikidata SPARQL by ISBN | series, volume | a keyless request |
+ *
+ * ⚠️ **Rung 5 is where the structured series arrives first.** Hardcover's
+ * contributors skew genre/indie — the end of this catalogue that Wikidata's
+ * notability bar misses — so it is asked BEFORE the Wikidata fallback, and it is
+ * the only free rung that answers a blurb and a series in one request. Like
+ * Google Books it is keyed, and like Google Books its absence is a NAMED skip
+ * rather than a silent one: the friend instance has no `HARDCOVER_API_TOKEN`
+ * until the owner sets it.
  *
  * ⚠️ **Rung 2 is built and cannot fire.** `index.heygabi.ai/api/lookup` is
  * behind a blanket human Firebase-token check and no machine-read credential
@@ -94,6 +104,7 @@ import {
 import {
   editionsOfWork,
   lookupGoogleBooksByIsbn,
+  lookupHardcover,
   lookupWikidataSeries,
   schedule,
   workDescription,
@@ -108,7 +119,13 @@ import { quotedDesignation } from './detail-values.js';
 const UA = 'library_catalog (+private household catalog)';
 
 /** A rung that costs nothing. `'index'` is reserved and dark — see the header. */
-export type FreeRung = 'audiobook' | 'index' | 'openlibrary' | 'googlebooks' | 'wikidata';
+export type FreeRung =
+  | 'audiobook'
+  | 'index'
+  | 'openlibrary'
+  | 'googlebooks'
+  | 'hardcover'
+  | 'wikidata';
 
 /**
  * Who answered for one field. The free rungs plus the paid one, so a single
@@ -123,6 +140,7 @@ export const RUNG_LABEL: Record<DetailSource, string> = {
   index: 'the estate index',
   openlibrary: 'Open Library',
   googlebooks: 'Google Books',
+  hardcover: 'Hardcover',
   wikidata: 'Wikidata',
   llm: 'a paid lookup',
 };
@@ -663,6 +681,80 @@ async function askGoogleBooks(
 }
 
 /**
+ * Rung 5 — Hardcover.app. The only free rung that answers a BLURB and a
+ * STRUCTURED series in the same request.
+ *
+ * ⚠️ **The series here is not parsed out of anything.** Hardcover models it as a
+ * join (`book_series.series.name`), so unlike Google Books' title hint or Open
+ * Library's subtitle there is nothing to read: the name is taken whole and
+ * `readSeriesLabel` is deliberately NOT applied. Running a series-detector over
+ * a field that is already a series name is how *"Elantris (1)"* became a shelf
+ * of one — the parse is for strings that MIGHT contain a series, not for ones
+ * that are declared to be one.
+ *
+ * ⚠️ **No `seriesIndexDisplay`.** `position` is a `float8` — a number, not a
+ * designation any publisher printed — so it closes `seriesIndexSort` and never
+ * the printed form. Same rule as `askWikidata`, same owner rule (2026-08-19)
+ * behind it: the printed form is only ever written when a source QUOTED one.
+ *
+ * ⚠️ **Keyed, and its absence is a named skip.** The main instance holds
+ * `HARDCOVER_API_TOKEN`; the friend instance does not until the owner sets it,
+ * and a rung nobody could ask must never look like a rung that was asked and
+ * knew nothing — see `FreeDetailsOutcome.skipped`.
+ */
+async function askHardcover(
+  ctx: LadderContext,
+  open: ReadonlySet<DetailField>,
+  skipped: string[],
+): Promise<FieldAnswer[]> {
+  const wantsSeries = open.has('series') || open.has('seriesIndex');
+  const wantsDescription = open.has('description');
+  if (!wantsSeries && !wantsDescription) return [];
+
+  if (!ctx.env.HARDCOVER_API_TOKEN) {
+    skipped.push('Hardcover: not asked — no HARDCOVER_API_TOKEN');
+    return [];
+  }
+  const isbn = await ctx.isbn13();
+  if (!isbn) {
+    skipped.push('Hardcover: no ISBN on any edition of this book to ask with');
+    return [];
+  }
+
+  try {
+    const hit = await lookupHardcover(isbn, {
+      token: ctx.env.HARDCOVER_API_TOKEN,
+      fetchImpl: ctx.doFetch,
+      userAgent: UA,
+    });
+    if (!hit) {
+      skipped.push(`Hardcover: no edition indexed for ISBN ${isbn}`);
+      return [];
+    }
+
+    const answers: FieldAnswer[] = [];
+    if (wantsDescription) {
+      if (hit.description) answers.push({ rung: 'hardcover', description: hit.description });
+      else skipped.push('Hardcover: the record carries no description');
+    }
+    if (wantsSeries) {
+      if (hit.series) {
+        const answer: FieldAnswer = { rung: 'hardcover', series: hit.series };
+        // A number closes the position and nothing else. See the header.
+        if (hit.position !== null) answer.seriesIndexSort = hit.position;
+        answers.push(answer);
+      } else {
+        skipped.push('Hardcover: the record names no series');
+      }
+    }
+    return answers;
+  } catch (err) {
+    skipped.push(`Hardcover: ${err instanceof Error ? err.message : String(err)}`);
+    return [];
+  }
+}
+
+/**
  * Wikidata — the only free rung with a STRUCTURED, sourced series + ordinal, so
  * it is the last free chance to fill `series`/`seriesIndex` before the paid
  * lookup. It answers series ONLY (Wikidata carries no synopsis worth using), and
@@ -801,6 +893,10 @@ export async function freeDetailsFor(
     (o) => askIndex(ctx, o, outcome.skipped),
     (o) => askOpenLibrary(ctx, o, outcome.skipped, throttle),
     (o) => askGoogleBooks(ctx, o, outcome.skipped),
+    // Before Wikidata: Hardcover's community skews genre/indie — exactly the
+    // books Wikidata's notability bar misses — and it answers the blurb and the
+    // series in one request, so it gets first crack at both.
+    (o) => askHardcover(ctx, o, outcome.skipped),
     // Last, and series-only: the structured source that catches what the
     // title-parse rungs above miss on indie/genre books — the owner's actual gap.
     (o) => askWikidata(ctx, o, outcome.skipped),

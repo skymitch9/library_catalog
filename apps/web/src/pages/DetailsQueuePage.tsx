@@ -941,16 +941,24 @@ const KIND_LABEL: Record<string, string> = {
 
 /**
  * The rungs, in words. Kept here rather than shared with the Worker's own
- * `RUNG_LABEL`: these five strings are what a person reads on this page, and
- * the Worker's copy is what goes into a run's stored sentence. They are allowed
- * to be worded differently for their two audiences; what must not drift is the
+ * `RUNG_LABEL`: these strings are what a person reads on this page, and the
+ * Worker's copy is what goes into a run's stored sentence. They are allowed to
+ * be worded differently for their two audiences; what must not drift is the
  * KEY, and an unrecognised key falls through to itself rather than vanishing.
+ *
+ * ⚠️ **Keep this in step with `FreeRung` in `apps/worker/src/lib/free-details.ts`
+ * whenever a rung is added.** The fall-through means a missed key renders as the
+ * bare identifier (`wikidata`) rather than the name — not broken, but visibly
+ * unfinished, which is how `wikidata` was found missing when `hardcover` was
+ * added on 2026-08-25.
  */
 const SOURCE_LABEL: Record<string, string> = {
   audiobook: 'the audiobook catalogue',
   index: 'the estate index',
   openlibrary: 'Open Library',
   googlebooks: 'Google Books',
+  hardcover: 'Hardcover',
+  wikidata: 'Wikidata',
   llm: 'a paid lookup',
 };
 

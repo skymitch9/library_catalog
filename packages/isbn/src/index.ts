@@ -1,3 +1,4 @@
+export * from './hardcover.js';
 export * from './resolve.js';
 export * from './search.js';
 export * from './throttle.js';
