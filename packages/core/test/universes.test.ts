@@ -297,6 +297,7 @@ describe('universes over catalog rows', () => {
         'Middle-earth',
         'Dungeon Crawler Carl',
         'Innworld',
+        'DotHack',
       ],
     );
   });
@@ -343,7 +344,7 @@ describe('universes over catalog rows', () => {
  * -------------------------------------------------------------------------- */
 
 describe('the approved content, so an edit in catalog-platform cannot land unnoticed', () => {
-  it('sixteen universes, in the order the owner/coordinator approved them', () => {
+  it('seventeen universes, in the order the owner/coordinator approved them', () => {
     // ⚠️ Willverse was added 2026-08-12 and was the SEVENTH. Marvel and Disney
     // were added 2026-08-15 (owner/coordinator: separate universes). Same
     // day, revised again: Star Wars split OUT of Disney on the owner's
@@ -375,6 +376,7 @@ describe('the approved content, so an edit in catalog-platform cannot land unnot
       'Middle-earth',
       'Dungeon Crawler Carl',
       'Innworld',
+      'DotHack',
     ]);
   });
 
@@ -423,7 +425,11 @@ describe('the approved content, so an edit in catalog-platform cannot land unnot
       // cleanup pack ("Yes to the clean up pack") — also not a fold, since it
       // shares no words with 'From the World of Percy Jackson', under which the
       // same book was already claimed. All three are Camp Half-Blood continuity.
-      Riordanverse: [6, 0, 0],
+      // 6 -> 9 on 2026-08-24: catalog-platform completed the Riordanverse to the
+      // owner's ruling that ALL Rick Riordan books belong in it — the three added
+      // series cover Kane Chronicles / Magnus Chase / Percy Jackson-adjacent lines
+      // the list had not yet spelled.
+      Riordanverse: [9, 0, 0],
       Solaria: [2, 0, 0],
       // Cradle and The Last Horizon are owned; The Elder Empire and The
       // Traveler's Gate are listed so a future purchase files itself.
@@ -498,6 +504,10 @@ describe('the approved content, so an edit in catalog-platform cannot land unnot
       // naming rule). Singer of Terandria is set on a continent of the same
       // world; the household owns Gravesong and Huntsong.
       Innworld: [2, 0, 0],
+      // New 2026-08-24, renamed from '.hack' to 'DotHack' at the owner's request.
+      // 4 series (.hack//Another Birth / G.U.+ / Legend of the Twilight / XXXX),
+      // no overrides or exclusions.
+      DotHack: [4, 0, 0],
     });
   });
 
