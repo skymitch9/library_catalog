@@ -1302,6 +1302,18 @@ export interface CollectionQuery {
   /** Read state for ONE person — the caller's, never a body parameter. */
   readState?: string | undefined;
   readerId?: number | undefined;
+  /**
+   * Narrow to books the household owns **two or more physical copies** of,
+   * counting across editions. Owner ask, 2026-08-24: *"i want ... any book i own
+   * 2 of in physical, even if different editions."* See `OWNED_TWICE_PHYSICAL`.
+   *
+   * ⚠️ A SEPARATE control from the "Recorded twice" duplicate-**records** finder
+   * (`?duplicates=1` → `GET /api/collection/duplicates`). This one narrows the
+   * grid; that one groups duplicate rows. They answer different questions and
+   * coexist — the first attempt conflated them and hid the record-finder, which
+   * is why this rides its own `?owned2=1` param and its own checkbox.
+   */
+  ownedTwice?: boolean | undefined;
   sort?: CollectionSort | undefined;
   dir?: 'asc' | 'desc' | undefined;
   limit: number;
@@ -1651,6 +1663,37 @@ export const NOT_ONLY_SOLD =
     OR EXISTS (SELECT 1 FROM copy c WHERE c.work_id = w.id AND c.status <> 'sold'))`;
 
 /**
+ * "The household owns two or more PHYSICAL copies of this book" — counted across
+ * editions, as SQL. The narrowing behind the "Owned 2+ (physical)" checkbox
+ * (`CollectionQuery.ownedTwice`, owner ask 2026-08-24).
+ *
+ * ⚠️ **Copies, not editions, and not media.** A `copy` row is an object in the
+ * house (`holdings.ts`, migration 0001); ebooks and audiobooks live in their own
+ * holding tables, never as `copy` rows. So counting copies already means counting
+ * physical objects — the `format IN (physical…)` guard makes "in physical"
+ * explicit and survives a copy attached to a digital edition. `edition_id IS NULL`
+ * counts too: a copy recorded before its printing is known is still a physical
+ * book on the shelf.
+ *
+ * ⚠️ **HELD_STATUSES, not `owned` alone** — a book lent out is still owned, the
+ * rule `ownedMoreThanOnce` (`@lc/core`) and the series page's "Bought more than
+ * once" also apply, so the surfaces agree. `>= 2` is the whole of "twice".
+ *
+ * No binds — every value is a `@lc/core` constant (`HELD_STATUSES`,
+ * `PHYSICAL_FORMATS`), inlined the way the held-copy counts already are.
+ * Exported so `test/owned-twice-clause.test.ts` runs the shipping SQL on SQLite.
+ */
+export const OWNED_TWICE_PHYSICAL =
+  `(SELECT COUNT(*) FROM copy c
+     WHERE c.work_id = w.id
+       AND c.status IN (${HELD_STATUSES.map((s) => `'${s}'`).join(', ')})
+       AND (c.edition_id IS NULL
+            OR EXISTS (SELECT 1 FROM edition e
+                        WHERE e.id = c.edition_id
+                          AND e.format IN (${PHYSICAL_FORMATS.map((f) => `'${f}'`).join(', ')})))
+   ) >= 2`;
+
+/**
  * "Is one of these works", as SQL. See `CollectionQuery.universeIds`.
  *
  * ⚠️ **Inlined rather than bound, and that is not a shortcut.** D1 caps a
@@ -1769,6 +1812,9 @@ function collectionFilter(query: CollectionQuery): { sql: string; binds: unknown
   // No binds — see `universeClause`. `undefined` adds no clause (nobody asked,
   // or the name was not one of the six); an empty array adds `0 = 1`.
   if (query.universeIds) where.push(universeClause(query.universeIds));
+  // No binds — `OWNED_TWICE_PHYSICAL` is a literal built from `@lc/core`
+  // constants. A narrowing that composes with every filter above.
+  if (query.ownedTwice) where.push(OWNED_TWICE_PHYSICAL);
   if (query.readState && query.readerId) {
     // 'unread' has to include rows with no `user_book` at all — a book nobody has
     // opened has no row, and treating that as "not unread" would hide most of the

@@ -378,6 +378,12 @@ export interface CollectionParams {
   /** `cover`, `watch` or `any` — what is still outstanding. Migration 0040. */
   needs?: string;
   readState?: string;
+  /**
+   * `1` narrows to books owned in 2+ physical copies (across editions) — the
+   * "Owned 2+ (physical)" checkbox. Sent as `?owned2=1`; the server reads it as
+   * `ownedTwice`. `0`/absent is off, and `collectionQuery` drops a `0`.
+   */
+  owned2?: number;
   sort?: string;
   dir?: 'asc' | 'desc';
   page?: number;

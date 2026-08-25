@@ -140,6 +140,10 @@ function collectionQueryFrom(c: {
     // reaches the statement.
     needs: c.req.query('needs'),
     readState: c.req.query('readState'),
+    // "Owned 2+ (physical)" — books held in 2+ physical copies across editions.
+    // A `1`/`0` flag on its OWN param, deliberately NOT `?duplicates=1` (that is
+    // the separate duplicate-records finder). Any value but `'1'` reads as off.
+    ownedTwice: c.req.query('owned2') === '1',
     readerId,
     sort: isCollectionSort(sortParam) ? sortParam : 'series',
     dir,

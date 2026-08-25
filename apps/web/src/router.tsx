@@ -200,6 +200,16 @@ export interface CollectionFilters {
    */
   duplicates: boolean;
   /**
+   * Narrow to books owned in 2+ physical copies (across editions) — the
+   * "Owned 2+ (physical)" checkbox, `?owned2=1`. Owner ask, 2026-08-24.
+   *
+   * ⚠️ A SEPARATE control from `duplicates` above: that one shows duplicate
+   * *records* (two rows for one book) and REPLACES the grid; this one NARROWS the
+   * grid to a copy-count. They coexist and never share a param — an earlier
+   * attempt folded them together and hid the record-finder.
+   */
+  ownedTwice: boolean;
+  /**
    * One shared fictional world — `The Cosmere`, `Runnerverse` — or empty.
    *
    * ⚠️ The tier **above** `series`, and it composes with it rather than
@@ -397,6 +407,8 @@ function parseCollection(search: string): CollectionFilters {
     needs: pick(search, 'needs', NEEDS_FILTERS) ?? '',
     // `?duplicates=1`, exactly as the board-game catalog spells it.
     duplicates: flag(search, 'duplicates', false),
+    // `?owned2=1` — its own param, the copy-count narrowing (see `ownedTwice`).
+    ownedTwice: flag(search, 'owned2', false),
     readState: pick(search, 'read', READ_STATES) ?? '',
     sort: pick(search, 'sort', SORTS),
     dir: pick(search, 'dir', ['asc', 'desc'] as const),
@@ -438,6 +450,7 @@ export function collectionPath(f: CollectionFilters): string {
   // Emitted only when on, so an ordinary browse stays `/` — the same rule the
   // sibling follows (`if (f.duplicates) p.set('duplicates', '1')`).
   if (f.duplicates) p.set('duplicates', '1');
+  if (f.ownedTwice) p.set('owned2', '1');
   if (f.readState) p.set('read', f.readState);
   if (f.sort && f.sort !== DEFAULT_PREFS.sort) p.set('sort', f.sort);
   if (f.dir && f.dir !== DEFAULT_PREFS.dir) p.set('dir', f.dir);
@@ -469,6 +482,7 @@ export function collectionInUniversePath(universe: string): string {
     needs: '',
     // A link into a world is a link to its books, not to its filing mistakes.
     duplicates: false,
+    ownedTwice: false,
     readState: '',
     sort: null,
     dir: null,

@@ -144,6 +144,12 @@ export function CollectionPage({
   // `CollectionFilters.duplicates`; the board-game filter this copies is a
   // WHERE clause because its answer is a list, and this answer is groups.
   const [duplicates, setDuplicates] = useState(filters.duplicates);
+  // A SEPARATE narrowing from `duplicates` above: books owned in 2+ physical
+  // copies across editions (owner ask 2026-08-24). Unlike `duplicates` it does
+  // NOT replace the grid — it filters it, so it composes with everything and
+  // rides the normal collection query. Its own state + param so the two "twice"
+  // controls never interfere.
+  const [ownedTwice, setOwnedTwice] = useState(filters.ownedTwice);
   const [readState, setReadState] = useState(filters.readState);
   const [sort, setSort] = useState(filters.sort ?? prefs.sort);
   const [dir, setDir] = useState<'asc' | 'desc'>(filters.dir ?? prefs.dir);
@@ -162,6 +168,7 @@ export function CollectionPage({
         filters.status ||
         filters.needs ||
         filters.duplicates ||
+        filters.ownedTwice ||
         filters.readState,
     ),
   );
@@ -251,9 +258,12 @@ export function CollectionPage({
       q, series, universe, medium, ebookOnly: effectiveEbookOnly,
       binding: bindings.join(','), editionKind: editionKinds.join(','),
       status, needs, readState,
+      // Owned 2+ physical — a narrowing of the grid. `0` when off, dropped by
+      // `collectionQuery`.
+      owned2: ownedTwice ? 1 : 0,
       sort, dir, page, pageSize,
     }),
-    [q, series, universe, medium, effectiveEbookOnly, bindings, editionKinds, status, needs, readState, sort, dir, page, pageSize],
+    [q, series, universe, medium, effectiveEbookOnly, bindings, editionKinds, status, needs, readState, ownedTwice, sort, dir, page, pageSize],
   );
 
   const reload = useCallback(() => {
@@ -295,6 +305,7 @@ export function CollectionPage({
     status,
     needs,
     readState,
+    ownedTwice,
     sort,
     dir,
     pageSize,
@@ -327,6 +338,7 @@ export function CollectionPage({
         status,
         needs,
         duplicates,
+        ownedTwice,
         readState,
         sort,
         dir,
@@ -334,7 +346,7 @@ export function CollectionPage({
         page: page + 1,
       }),
     );
-  }, [q, series, universe, medium, ebookOnly, bindings, editionKinds, status, needs, duplicates, readState, sort, dir, pageSize, page]);
+  }, [q, series, universe, medium, ebookOnly, bindings, editionKinds, status, needs, duplicates, ownedTwice, readState, sort, dir, pageSize, page]);
 
   // ⚠️ Fetched only while the box is ticked, and re-fetched every time it is
   // ticked rather than cached: the whole point of the screen is to go and fix
@@ -811,6 +823,20 @@ export function CollectionPage({
             <span>Recorded twice</span>
           </label>
 
+          {/* A SEPARATE control from "Recorded twice": that finds duplicate
+              RECORDS (two rows for one book); this narrows to books you own in
+              2+ PHYSICAL copies across editions (owner ask 2026-08-24). Two
+              different questions, two checkboxes — folding them together once hid
+              the record-finder and narrowed the whole collection by surprise. */}
+          <label className="row-tight" title="Books you own two or more physical copies of, across editions">
+            <input
+              type="checkbox"
+              checked={ownedTwice}
+              onChange={(e) => setOwnedTwice(e.target.checked)}
+            />
+            <span>Owned 2+ (physical)</span>
+          </label>
+
           {filtered && (
             <button
               onClick={() => {
@@ -827,6 +853,7 @@ export function CollectionPage({
                 setStatus('');
                 setNeeds('');
                 setDuplicates(false);
+                setOwnedTwice(false);
                 setReadState('');
               }}
             >
