@@ -2897,8 +2897,11 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
   padding: 1.1rem 1.15rem 3rem;
   /* WIDEN to the mockup's shell (owner 2026-08-24): the mockup .wrap/.topbar-in
      are max-width:1120px. `main` caps at 64rem; this page is the wide layout, so
-     it overrides to 70rem (= 1120px). `margin:0 auto` is inherited from `main`. */
-  max-width: 70rem;
+     it overrides to 70rem. Owner 2026-08-25: 70rem read as the middle band on
+     wide screens — widen to fill the page, and bump the base size. Reading text
+     self-limits (bd-desc 62ch) so a wide shell only helps the editor/shelf. */
+  max-width: min(95vw, 92rem);
+  font-size: 1.06rem;
 }
 
 /* (Dark/light is inherited from the estate --et-* tokens above — no page-scoped
@@ -2927,10 +2930,13 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
 .book-detail .panel h3 {
   font-family: var(--bd-font-display);
   font-weight: 600;
-  font-size: 1.05rem;
+  font-size: 1.35rem;
   letter-spacing: -0.01em;
-  color: var(--bd-ink);
-  margin: 0 0 0.85rem;
+  /* The theme's heading voice — cyberpunk's brand YELLOW (+ its glow); ink
+     elsewhere. Was hardcoded --bd-ink, which killed the yellow. */
+  color: var(--et-heading-color, var(--bd-ink));
+  text-shadow: var(--et-glow-title, none);
+  margin: 0 0 0.9rem;
 }
 
 /* ---- identity header (the "beautiful top bar") --------------------------- */
@@ -2975,20 +2981,21 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
 
 .book-detail .bd-id-main { min-width: 0; }
 .book-detail .bd-eyebrow {
-  font-size: 0.72rem;
+  font-size: 0.8rem;
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--bd-ink-faint);
+  color: var(--bd-brass);
 }
 .book-detail .bd-title {
   font-family: var(--bd-font-display);
   font-weight: 600;
-  font-size: clamp(28px, 4.4vw, 40px);
+  font-size: clamp(34px, 5vw, 52px);
   letter-spacing: -0.015em;
-  line-height: 1.12;
+  line-height: 1.1;
   margin: 0.35rem 0 0;
-  color: var(--bd-ink);
+  color: var(--et-heading-color, var(--bd-ink));
+  text-shadow: var(--et-glow-title, none);
 }
 .book-detail .bd-subtitle {
   font-family: var(--bd-font-display);
