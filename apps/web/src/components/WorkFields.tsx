@@ -93,7 +93,6 @@ export function WorkFields({
   canEdit: boolean;
   onSaved: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [subtitle, setSubtitle] = useState(work.subtitle ?? '');
   const [illustrator, setIllustrator] = useState(work.illustrator ?? '');
   const [series, setSeries] = useState(work.series ?? '');
@@ -161,7 +160,6 @@ export function WorkFields({
         description: orNull(description),
       });
       setSaid('Saved.');
-      setOpen(false);
       onSaved();
     } catch (err) {
       setSaid(describeError(err));
@@ -174,21 +172,9 @@ export function WorkFields({
     <section className="panel">
       <div className="section-head">
         <h3>About</h3>
-        <button onClick={() => setOpen(!open)} aria-expanded={open}>
-          {open ? 'Cancel' : work.description || !nothingYet ? 'Edit' : 'Add details'}
-        </button>
       </div>
 
-      {!open && work.description && <p className="description">{work.description}</p>}
-      {!open && !work.description && (
-        <p className="muted small">
-          No description recorded. A lookup on the <em>what is missing</em> page will fill this
-          in, or write it yourself.
-        </p>
-      )}
-
-      {open && (
-        <div className="stack">
+      <div className="stack">
           {/* First, because it is the only field here that answers "which book is
               this?" rather than describing one. A bare series line on the shelf
               is the case it exists for. */}
@@ -303,7 +289,6 @@ export function WorkFields({
             </button>
           </div>
         </div>
-      )}
 
       {said && <p className="muted small">{said}</p>}
     </section>

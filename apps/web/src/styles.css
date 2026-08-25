@@ -3340,14 +3340,17 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
   border-bottom: 2px solid transparent;
   border-radius: 9px 9px 0 0;
   background: transparent;
-  color: var(--bd-ink-soft);
+  /* Owner 2026-08-25: edit-mode tabs in the theme brand colour (cyberpunk YELLOW
+     = accent-2); the active one is fuller + a yellow underline + glow. */
+  color: color-mix(in srgb, var(--bd-brass) 78%, var(--bd-ink-faint));
   padding: 0.55rem 0.8rem;
   margin-bottom: -1px;
 }
 .book-detail .edit-box__tabs .chip.primary {
   background: var(--bd-sunk);
-  color: var(--bd-ink);
-  border-bottom-color: var(--bd-teal);
+  color: var(--bd-brass);
+  border-bottom-color: var(--bd-brass);
+  text-shadow: var(--et-glow-title, none);
 }
 .book-detail .edit-box__tabs .chip.primary:hover { background: var(--bd-sunk); }
 .book-detail .edit-box .panel {

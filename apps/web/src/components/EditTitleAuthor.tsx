@@ -62,7 +62,6 @@ export function EditTitleAuthor({
   canEdit: boolean;
   onSaved: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [title, setTitle] = useState(work.title);
   const [authors, setAuthors] = useState(work.authors ?? '');
   const [check, setCheck] = useState<Check>({ state: 'pending' });
@@ -72,7 +71,7 @@ export function EditTitleAuthor({
   const provisional = work.authors === null;
 
   useEffect(() => {
-    if (!open || provisional) return;
+    if (provisional) return;
     let live = true;
     setCheck({ state: 'pending' });
     (async () => {
@@ -96,7 +95,7 @@ export function EditTitleAuthor({
       live = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, workId, provisional]);
+  }, [workId, provisional]);
 
   if (!canEdit) return null;
 
@@ -113,7 +112,6 @@ export function EditTitleAuthor({
     if (nextTitle !== work.title) patch.title = nextTitle;
     if (nextAuthors !== work.authors) patch.authors = nextAuthors;
     if (Object.keys(patch).length === 0) {
-      setOpen(false);
       return;
     }
 
@@ -143,7 +141,6 @@ export function EditTitleAuthor({
           },
         });
       }
-      setOpen(false);
       onSaved();
     } catch (err) {
       // The server's refusals carry their reason in `detail` — the code alone
@@ -177,20 +174,9 @@ export function EditTitleAuthor({
     <section className="panel">
       <div className="section-head">
         <h3>{provisional ? 'Author' : 'Title & author'}</h3>
-        <button onClick={() => setOpen(!open)} aria-expanded={open}>
-          {open ? 'Cancel' : provisional ? 'Add the author' : 'Edit title & author'}
-        </button>
       </div>
 
-      {!open && provisional && (
-        <p className="muted small">
-          Added without an author. Add it to unlock reviews — always safe on this book, because
-          no review can attach until it has one.
-        </p>
-      )}
-
-      {open && (
-        <div className="stack">
+      <div className="stack">
           {provisional ? (
             <p className="muted small">
               This book has no author recorded, so nothing can be attached to it yet — filling
@@ -239,7 +225,6 @@ export function EditTitleAuthor({
             </button>
           </div>
         </div>
-      )}
 
       {said && <p className="muted small">{said}</p>}
     </section>
