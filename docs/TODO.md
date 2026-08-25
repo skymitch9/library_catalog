@@ -32,20 +32,57 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
-## ☐ F9 — a volume number is written only against the SAME series (owner: option A, 2026-08-25)
+## ☐ 🔴 The hourly sweep STALLS on a book it cannot afford — it does not skip it (found 2026-08-25)
 
-Review finding F9 (`info/review-2026-08-25-overnight-work.md`), deferred by the
-fix batch as a design call; the owner decided **A — skip on mismatch**: in
-`free-details.ts`, `fieldsClosedBy`/`seriesInHand` must compare the rung's series
-NAME against the series already in hand (the catalogued one, or one an earlier
-rung closed) using the project's ONE matcher (`packages/core/src/matching.ts`
-`titleSimilarity`/`isConfidentMatch` — never a new fold), and when they differ
-the ordinal is DROPPED with a named skip ("<rung>: names series X, but this book
-is filed under Y — volume not written"). Never option B (re-filing a book from a
-rung). Tests: Wikidata answers "The Cosmere, 7" for a Stormlight book → no
-`seriesIndexSort` written, skip named; same series spelled differently
-("Stormlight Archive" vs "The Stormlight Archive") → still written. Dispatched
-with the index-read build.
+Found while repricing the ladder for rung 2 going live; **pre-existing, not
+caused by that work**, and not fixed there because the fix is a policy change.
+
+`planSweep` (`apps/worker/src/lib/details-sweep.ts`) **`break`s** rather than
+`continue`s when the next candidate costs more than the remaining budget. That
+is deliberate and documented — skipping ahead would reorder the
+never-attempted-first rotation the sort just established. But the two rules
+compose badly: an unaffordable book at the HEAD of the queue is not deferred,
+it stops the tick, and it is still at the head an hour later. **The sweep picks
+nothing, for ever, silently.**
+
+Measured (arithmetic, from `estimateSubrequests`), on a DONOR instance — which
+both instances are today (main has `DONOR_URL` + `DONOR_TOKEN`; padhard has
+hers):
+
+| Book | Cost | Budget 46 |
+|---|---|---|
+| 2 asks | `12 + 18 + 6 + 8` = 44 | fits |
+| 3 asks | `12 + 18 + 6 + 12` = 48 | **stalls** |
+| 4 asks | `12 + 18 + 6 + 16` = 52 | **stalls** |
+
+⚠️ It was already true before 2026-08-25 (3 asks cost 45 against a budget of
+44), so if a four-gap book has ever sat at the head of either queue, that
+instance's sweep has been dead and nothing says so. **Nobody has checked
+whether one is there** — that check is step 1.
+
+**Step 1 — measure, do not assume.** Read the head of
+`listWorksNeedingDetails()` on both instances and count the asks. If the head
+is a 3-or-4-ask book, the sweep is currently doing nothing on that instance and
+this becomes urgent rather than latent.
+
+**Step 2 — the fix, which is a policy call.** Three shapes, cheapest first:
+
+1. **Let one over-budget book take the tick alone.** If `pick` is EMPTY, admit
+   the head candidate regardless of cost and stop. Its real cost is a worst
+   case that assumes every rung is asked and every rung fails; a 52-estimate
+   book rarely spends 52. Preserves the rotation exactly.
+2. **Skip-and-remember** — `continue` past an unaffordable book but record that
+   it was passed over, so the rotation cannot starve it. More code, and it
+   reintroduces the reordering the `break` exists to prevent.
+3. **Make an expensive book cheaper** — drop a field from the ask. Refuses to
+   answer a question the book actually owes; worst of the three.
+
+⚠️ **Whichever is chosen, the sweep must SAY when it picks nothing and why.** A
+tick that plans zero books currently looks exactly like a tick with an empty
+queue, and that indistinguishability is what let this hide.
+
+Reference: `info/free-details-ladder.md` §8 (the budget arithmetic and why
+`SWEEP_BUDGET` is not the lever).
 
 ## ☐ Custody gap: `DONOR_TOKEN` + `AUDIOBOOK_MAPPING_TOKEN` are live but absent from `.dev.vars` (found 2026-08-25)
 
@@ -603,11 +640,12 @@ go. **This is being done separately** — `audiobook_holding` becomes a VIEW ove
 new `audiobook_edition_holding` table. Until that lands, the work page names one
 of several audio editions without saying so.
 
-**3. 🔴 OWNER DECISION — `INDEX_READ_TOKEN`.** The estate index is the ladder's
-best rung, and it is built dark. Turning it on means minting a machine-read
-credential and mounting it in **another repo**
-(`catalog-platform/apps/index-worker/src/index.ts`), which is
-**access-increasing** and so cannot be done unasked. See
+~~**3. 🔴 OWNER DECISION — `INDEX_READ_TOKEN`.**~~ ✅ **TAKEN AND SHIPPED
+2026-08-25** — moved whole to [`DONE.md`](DONE.md) ("Rung 2 of the free ladder is
+LIVE"). The credential exists on both instances and the rung calls
+`/api/machine/lookup`. ⚠️ It turned out the rung was not merely dark: it was
+pointed at the HUMAN route with both env vars set, so it was **refused every run
+while looking configured**. Contract of record:
 [`info/free-details-ladder.md`](info/free-details-ladder.md) §4.
 
 **Verify, once the branch is deployed:** work 514 shows its audiobook and its

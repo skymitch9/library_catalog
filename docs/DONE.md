@@ -17,6 +17,126 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ Rung 2 of the free ladder is LIVE — the estate index answers at last — 2026-08-25
+
+Item **3** of *"Audiobook links after a bulk import, and TWO audio editions"* in
+[`TODO.md`](TODO.md), moved at completion. It was the owner decision the ladder's
+best rung had been waiting on since 2026-08-23, and taking it turned up a second
+defect nobody had looked for.
+
+**🔴 The rung was not dark. It was pointed at the wrong door.**
+`apps/worker/src/env.ts` and `info/free-details-ladder.md` both said rung 2 could
+not fire because `INDEX_READ_TOKEN` was unset. Measured this session: on the MAIN
+instance `INDEX_URL = "https://index.heygabi.ai"` and `INDEX_READ_TOKEN` were
+**both set and live** — so `askIndex` was not skipped, reported nothing unusual,
+and called `/api/lookup`: the HUMAN route, which sits below the index's
+`requireEstateMember()` blanket and answers 401 to a bearer. Every run, refused,
+silently. ⚠️ *"The token is set"* was never the same fact as *"the rung works"*,
+and the doc claiming it was dark was wrong in the other direction — two records
+disagreeing with reality in opposite ways, neither checkable from the page.
+
+**What shipped**
+
+- `askIndex` calls **`GET {INDEX_URL}/api/machine/lookup?title=…`** with
+  `Authorization: Bearer {INDEX_READ_TOKEN}` — the named machine exception the
+  index built 2026-08-23, mounted ABOVE its auth blanket.
+- The **`creator` param is gone.** `lookupHandler` reads `title` and nothing else
+  (`read.ts:57`), so it was a parameter the server has never looked at, reading
+  like an author gate it never was.
+- ⚠️ **`pickIndexRow`'s defensive guesswork is deleted.** It accepted a bare row
+  or one wrapped in `item` because nobody had seen the response; both shapes were
+  wrong. Replaced by a typed parse of the real envelope
+  (`{ query, title_fold, matches[] }`, `read.ts:79`), and a 200 that is not that
+  shape is a NAMED skip rather than a row invented out of whatever arrived.
+- ⚠️ **The first match NAMING a series wins, not `matches[0]`** — the estate-level
+  restatement of the *Elantris* rule: a lookup returns every format on every
+  shelf, and the audiobook copy can be present and silent while the library row
+  two positions down carries the series.
+- **`series_index` (a stored position) beats a number parsed out of the label**;
+  the label's is the fallback. No printed form is derived from it — same rule as
+  Wikidata and Hardcover.
+- Refusals carry **the index's own `error` code** into the skip
+  (`machine_token_invalid`, `machine_read_unconfigured`, `unfoldable_query`), not
+  a bare status — three faults with three different owners.
+- The per-identity fan-out is kept, now **capped at `INDEX_MAX_IDENTITIES` = 3**,
+  and the rung is priced at that in `FREE_LADDER_RUNGS`.
+
+**The cost, which was the hard part.** `FREE_DETAILS_SUBREQUESTS` 13 → **16**,
+`FREE_LADDER_SUBREQUESTS` 15 → **18**, and `SWEEP_BUDGET` **44 → 46**. Priced
+uncapped (1 + `MAX_ALIAS_IDENTITIES` = 5) the ladder came to 20 and a two-question
+book on a donor instance cost 46 against a budget of 44 — and `planSweep`
+**`break`s** rather than skipping, on a queue ordered never-attempted-first, so
+the sweep would have picked **nothing, every hour, silently**. The cap and the
+budget raise are the two smallest changes that avoid that; the reasoning is in
+`info/free-details-ladder.md` §8 and in `details-sweep.ts`'s own comment.
+
+**Both instances, different values.** The index's `MACHINE_APPS` gained
+`library2`, so padhard is her own calling app with her own
+`INDEX_READ_TOKEN_LIBRARY2` — never main's value, for the same reason her
+`ESTATE_APP_TOKEN_LIBRARY2` is not main's. ⚠️ The app name does **not** widen the
+slice: every machine caller resolves to `{audiobook, library, games}`, so
+`library2` the APP still cannot read `library2` the SHELF. `INDEX_URL` was added
+to `[env.friend.vars]`; her `INDEX_PUSH_TOKEN` stays unset, so the READ half is
+on and the PUSH half is untouched. `INDEX_READ_TOKEN` was classified in
+`push-secrets.mjs` as **per-instance** (and added to `PRODUCTION_SECRETS`), which
+is what stops a `--both` run putting main's value on her Worker.
+
+⚠️ **NOT verified:** no `/queue` lookup has been driven end to end showing *"the
+estate index"* as a field's source. The live route was exercised by curl (200
+with rows for a real title; a wrong bearer → the named 401), and everything
+between that and the column is inference. §6's table says so.
+
+## ✅ F9 — a volume number is written only against the SAME series (owner: option A, 2026-08-25)
+
+Review finding F9 (`info/review-2026-08-25-overnight-work.md`), deferred by the
+fix batch as a design call; the owner decided **A — skip on mismatch**: in
+`free-details.ts`, `fieldsClosedBy`/`seriesInHand` must compare the rung's series
+NAME against the series already in hand (the catalogued one, or one an earlier
+rung closed) using the project's ONE matcher (`packages/core/src/matching.ts`
+`titleSimilarity`/`isConfidentMatch` — never a new fold), and when they differ
+the ordinal is DROPPED with a named skip ("<rung>: names series X, but this book
+is filed under Y — volume not written"). Never option B (re-filing a book from a
+rung). Tests: Wikidata answers "The Cosmere, 7" for a Stormlight book → no
+`seriesIndexSort` written, skip named; same series spelled differently
+("Stormlight Archive" vs "The Stormlight Archive") → still written. Dispatched
+with the index-read build.
+
+### As built — 2026-08-25 (evening), shipped with the index-read batch
+
+`apps/worker/src/lib/free-details.ts`:
+
+- `fieldsClosedBy` takes **`seriesNameInHand: string | null`** instead of the
+  old `seriesInHand: boolean`. The boolean was the bug in one word: it threw
+  away the only thing that could answer *"is this rung talking about the same
+  shelf?"*.
+- The loop's `seriesInHand` became `seriesNameInHand`, seeded from
+  `work.series` and updated to the NAME whenever a rung closes `series` — so a
+  later rung's ordinal is checked against what THIS RUN just filed the book
+  under, not against the blank it started from.
+- On a mismatch the ordinal is dropped and `outcome.skipped` gains
+  `"<rung label>: names series X, but this book is filed under Y — volume not
+  written"`. `seriesIndex` stays **OPEN**, so a later rung can still answer it
+  correctly — pinned by a test where Hardcover supplies Stormlight #1 and
+  Wikidata's Cosmere #7 is refused in the same run.
+- The comparison is `isConfidentMatch` from `packages/core/src/matching.ts`
+  (0.7 spine floor) — ⚠️ the project's ONE matcher, no new fold.
+  `isConfidentMatch` and not `isTrustedMatch` (0.34) because nobody confirmed
+  this pairing; it is exactly the "matched without anyone looking" case the
+  stricter floor was measured for. Measured on the two cases the decision
+  named: `"The Cosmere"` vs `"The Stormlight Archive"` = 0.4 (refused),
+  `"Stormlight Archive"` vs `"The Stormlight Archive"` = 0.8 (written).
+
+Five tests in `free-details.test.ts` under *"F9 — the volume belongs to the
+series in hand, or it is not written"*: the Cosmere/Stormlight drop with its
+named skip; the differently-spelled series still written; a rung bringing BOTH
+series and volume to an unfiled book (the ordinary path a bad gate would
+break); the gate following a series set earlier in the same run; and the drop
+leaving the field open for a later rung.
+
+⚠️ **NOT verified live** — mocked `fetch` only. No real run has yet dropped an
+ordinal.
+
+
 ## ✅ The pipelines now TARGET padhard — the shared pool has two readers — 2026-08-25
 
 Item **3** of the `push-secrets.mjs` TODO section, moved whole at completion the
