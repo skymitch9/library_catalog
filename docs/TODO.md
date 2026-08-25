@@ -59,9 +59,19 @@ lands — same tree):**
 - Docs: `access/secrets.md` + `access/second-instance.md` updated; a
   `deploys.log` line per instance as today.
 
-**Open question for the owner:** which secrets are genuinely shared vs hers —
-the friend's secret list today shows `ESTATE_APP_TOKEN_LIBRARY` (not `…LIBRARY2`
-as `second-instance.md` says her identity is) — one of the two is stale.
+**Identity VERIFIED 2026-08-25 (owner asked):** padhard IS on her own estate
+identity — `[env.friend.vars] ESTATE_APP = "library2"`, live
+`padhard.heygabi.ai/api/health` reports `app: library2, tokenVar:
+ESTATE_APP_TOKEN_LIBRARY2, configured: true, mode: enforce`; the auth-worker
+holds `…LIBRARY2` and `CONSUMER_APPS` includes `library2` (the `vis_library2`
+Members checkbox). ⚠️ Her Worker ALSO still carries a stale
+`ESTATE_APP_TOKEN_LIBRARY` (pre-2026-08-17 leftover, unread by her code — but it
+is the MAIN library's bearer on her instance). Delete it (access-reducing;
+main + auth-worker keep the value): `wrangler secret delete
+ESTATE_APP_TOKEN_LIBRARY --env friend` — awaiting the owner's go. (The earlier
+"one is stale" note came from a listing filter that dropped digits, so
+`…LIBRARY2` was hidden — a measurement error, now corrected.)
+Per-instance for the build above: `ANTHROPIC_API_KEY`, `ESTATE_APP_TOKEN_*`.
 
 ## ☐ Shelf is COPY-DRIVEN + EditBox tab merge — LANDED FOR REVIEW (branch `feature/shelf-copy-driven`, 2026-08-24)
 
