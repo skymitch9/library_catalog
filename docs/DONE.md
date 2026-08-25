@@ -17,6 +17,76 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ Hardcover rung: a UNIVERSE can land in `work.series` — FIXED, both instances, 2026-08-25
+
+**✅ FIXED 2026-08-25**, deployed to main and friend the same day.
+
+**What changed.**
+
+1. `lookupHardcover` (`packages/isbn/src/hardcover.ts`) now returns **every**
+   named `book_series` row as `seriesEntries: {name, position, booksCount}[]`,
+   and the query asks for `series { name books_count }`. ⚠️ `series.books_count`
+   was re-read from the published SDL that day (`series.books_count: Int!`) —
+   not taken from memory — and a test asserts the query text contains it.
+2. A new pure helper **`pickSeries(entries, isUniverseName)`** in the same file
+   makes the whole tier decision: drop every universe → among the rest prefer
+   the **smallest `books_count`** (a universe is always the bigger set, and this
+   is the second line of defence for a universe the shared list has not learned
+   yet) → ties to the FIRST, so the answer is stable → **all universes ⇒ no
+   series at all**. ⚠️ An unknown `booksCount` sorts LAST: absence is not
+   evidence of a small set.
+3. ⚠️ **The predicate is INJECTED, not imported.** `@lc/isbn` must not depend on
+   `@lc/universes` — that is the one package reading a file generated from
+   another checkout, and pulling it in would spread the cross-repo dependency
+   through every consumer of the ISBN ladder. `askHardcover`
+   (`apps/worker/src/lib/free-details.ts`) passes
+   `(name) => canonicalUniverse(name) !== null`, the SAME fold
+   (`normaliseUniverseText`, via `resolveUniverseName`) the universe filter, the
+   facets and the universe URLs already use. No second normaliser was written —
+   this estate has already shipped a silent failure from two folds that agreed
+   until they did not.
+4. Dropping everything now produces the **named** skip
+   `Hardcover: only a universe named, no series`, distinct from
+   `Hardcover: the record names no series`. They are different facts.
+
+**🔍 Found while testing, and worth keeping: the estate was already half-right.**
+The first assertion written — "the string *The Cosmere* must appear nowhere in
+the write" — FAILED, on correct behaviour. `UPDATE work SET` names every column,
+and the work-write path **already** resolves a universe from the new series into
+the separate `work.universe` column (`universe_how = 'list'`). So the Way of
+Kings write is now `series = 'The Stormlight Archive'`, `series_index_sort = 1`,
+`universe = 'The Cosmere'` — both tiers, each in its own column, which is exactly
+the model. The tests assert through the **change log** (one row per field)
+instead of hunting strings in the UPDATE, and a new `loggedValue` helper in
+`free-details.test.ts` carries that warning for whoever writes the next one.
+
+**Tests.** `packages/isbn/test/hardcover.test.ts` (+13: the Way of Kings shape in
+BOTH row orders, all-universes, `books_count` preference, the tie-break, an
+unknown count, the no-predicate default, empty, and the query-shape assertion)
+and `apps/worker/src/lib/free-details.test.ts` (+4, against the **real**
+`@lc/universes` list, because the half that can silently break is the wiring —
+including the bare alias `Cosmere`, which folds only because the predicate uses
+the shared `canonicalNames` map rather than comparing against the canonical
+names). Suite 1743 → 1761, all green; typecheck clean.
+
+**⚠️ NOT verified:** no live Hardcover call was made from this build. The fix is
+exercised against the recorded live SHAPE from 2026-08-25, not against the API.
+
+---
+
+**The item as it was written:**
+
+Hardcover's `book_series` for *The Way of Kings* = [The Stormlight Archive #1,
+**The Cosmere #7**]. `lookupHardcover` takes the first named entry, so whichever
+Hardcover lists first is what gets written — and this catalogue keeps universes
+one tier ABOVE series (`@lc/universes`, `data/universes.json` in
+catalog-platform). Fix (small, delegated with the "both instances" build): in
+`askHardcover` / `lookupHardcover`, skip any candidate whose name folds onto a
+known universe (`universeIndex` canonical names + aliases from `@lc/universes`),
+and prefer the entry with the smallest `series.books_count` when several remain
+(a universe is always the bigger set). Test with the Way of Kings shape.
+
+
 ## ✅ One command for BOTH instances — stop doing different things for main vs padhard — SHIPPED 2026-08-25
 
 **✅ BUILT 2026-08-25.** What landed, line by line against the design below.

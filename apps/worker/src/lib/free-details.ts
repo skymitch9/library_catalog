@@ -115,6 +115,10 @@ import type { Env } from '../env.js';
 // and the header of that file says exactly why. The free rungs read volume
 // numbers with `parseVolumeNumber`, which understands words and Roman numerals.
 import { quotedDesignation } from './detail-values.js';
+// ⚠️ The ONE place the shared universe list meets this catalog's rows, and the
+// only fold of a universe name in the Worker. `askHardcover` uses it as a
+// PREDICATE — see the note there — rather than growing a second normaliser.
+import { canonicalUniverse } from './universes.js';
 
 const UA = 'library_catalog (+private household catalog)';
 
@@ -702,13 +706,26 @@ async function askGoogleBooks(
  * look like a rung that was asked and knew nothing — see
  * `FreeDetailsOutcome.skipped`.
  *
- * ⚠️ **Hardcover files UNIVERSES as series too.** Live 2026-08-25, ISBN
- * 9780765326355 (The Way of Kings) answered `book_series` = [The Stormlight
- * Archive #1, **The Cosmere #7**]. `lookupHardcover` takes the FIRST named
- * entry, so a book whose universe happens to come first would get a universe
- * written into `work.series` — a shelf this catalogue deliberately keeps one
- * tier above series (`@lc/universes`). Open item in `docs/TODO.md`: skip any
- * candidate whose name folds onto a known universe name.
+ * ⚠️ **Hardcover files UNIVERSES as series too — and this rung refuses to write
+ * one** (fixed 2026-08-25). Live that day, ISBN 9780765326355 (*The Way of
+ * Kings*) answered `book_series` = [The Stormlight Archive #1, **The Cosmere
+ * #7**]. Taking the first named entry meant Hardcover's row order decided
+ * whether a UNIVERSE landed in `work.series` — a shelf this catalogue keeps one
+ * tier ABOVE series (`@lc/universes`, from `catalog-platform/data/universes.json`).
+ *
+ * `lookupHardcover` now returns EVERY named entry and `pickSeries` chooses:
+ * universes dropped, then the smallest `series.books_count` wins (a universe is
+ * always the bigger set), ties to the first. If every entry was a universe the
+ * rung answers **no series** with a named skip, because "we found only a
+ * universe" and "Hardcover knows no series" are different facts.
+ *
+ * ⚠️ The predicate is built from `canonicalUniverse` — the SAME fold the
+ * universe filter and facets use (`normaliseUniverseText` inside
+ * `@lc/universes`). It is passed IN rather than imported by `@lc/isbn`, so the
+ * cross-repo dependency stays in one package and no second similarity or
+ * normalising function is created. That ban is not stylistic: this estate has
+ * already shipped a silent failure from two normalisers that agreed until they
+ * did not (`resolve_author_link` / `_resolveAuthorFolder`).
  */
 async function askHardcover(
   ctx: LadderContext,
@@ -734,6 +751,11 @@ async function askHardcover(
       token: ctx.env.HARDCOVER_API_TOKEN,
       fetchImpl: ctx.doFetch,
       userAgent: UA,
+      // Non-null for any canonical universe name OR any alias in the shared
+      // list's `canonicalNames` map — "cosmere", "the cosmere universe" and
+      // "arand multiverse" all fold, because that is the map the rest of the
+      // catalog resolves universe URLs and filters with.
+      isUniverseName: (name) => canonicalUniverse(name) !== null,
     });
     if (!hit) {
       skipped.push(`Hardcover: no edition indexed for ISBN ${isbn}`);
@@ -751,6 +773,11 @@ async function askHardcover(
         // A number closes the position and nothing else. See the header.
         if (hit.position !== null) answer.seriesIndexSort = hit.position;
         answers.push(answer);
+      } else if (hit.universesDropped.length > 0) {
+        // ⚠️ NOT "names no series". Hardcover named something; this catalogue
+        // files it a tier up. Reporting it as an empty record would send the
+        // next reader looking for a bug in Hardcover's data.
+        skipped.push('Hardcover: only a universe named, no series');
       } else {
         skipped.push('Hardcover: the record names no series');
       }

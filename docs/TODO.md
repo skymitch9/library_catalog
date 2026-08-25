@@ -69,18 +69,6 @@ Fix batch delegated to an Opus subagent once the "both instances" build lands
   `<img>` has no `onError`; TypeFilter aria; stale TODO line 444; seven named
   test gaps.
 
-## ☐ Hardcover rung: a UNIVERSE can land in `work.series` (found 2026-08-25, live call)
-
-Hardcover's `book_series` for *The Way of Kings* = [The Stormlight Archive #1,
-**The Cosmere #7**]. `lookupHardcover` takes the first named entry, so whichever
-Hardcover lists first is what gets written — and this catalogue keeps universes
-one tier ABOVE series (`@lc/universes`, `data/universes.json` in
-catalog-platform). Fix (small, delegated with the "both instances" build): in
-`askHardcover` / `lookupHardcover`, skip any candidate whose name folds onto a
-known universe (`universeIndex` canonical names + aliases from `@lc/universes`),
-and prefer the entry with the smallest `series.books_count` when several remain
-(a universe is always the bigger set). Test with the Way of Kings shape.
-
 ## ☐ Shelf is COPY-DRIVEN + EditBox tab merge — LANDED FOR REVIEW (branch `feature/shelf-copy-driven`, 2026-08-24)
 
 Fixes the ownership bug where an OWNED book read as **Wanted**. `deriveShelfView`

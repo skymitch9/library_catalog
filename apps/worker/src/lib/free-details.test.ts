@@ -138,6 +138,24 @@ function wrote(writes: { sql: string; bound: unknown[] }[], value: unknown): boo
   return writes.some((w) => w.sql.includes('UPDATE work SET') && w.bound.includes(value));
 }
 
+/**
+ * The `new_json` the change log recorded for one FIELD, or undefined.
+ *
+ * ⚠️ Use this, not `wrote`, whenever the question is *which column* a value
+ * landed in. `UPDATE work SET` names every column in one statement, and the
+ * work-write path fills `work.universe` from the shared universe list — so
+ * asserting that a universe name is absent from the whole statement fails on
+ * correct behaviour. The change log has one row per field, which is the
+ * question actually being asked.
+ */
+function loggedValue(
+  writes: { sql: string; bound: unknown[] }[],
+  field: string,
+): string | undefined {
+  const row = writes.find((w) => w.sql.includes('INSERT INTO change_log') && w.bound[3] === field);
+  return row?.bound[5] as string | undefined;
+}
+
 function env(db: D1Database, extra: Partial<Env> = {}): Env {
   return { DB: db, ...extra } as Env;
 }
@@ -637,6 +655,116 @@ describe('rung 5 — Hardcover', () => {
       false,
       'the series was closed before the Wikidata fallback, so it must not be dialled',
     );
+  });
+
+  // -------------------------------------------------------------------------
+  // ⚠️ A UNIVERSE must never land in `work.series` (fixed 2026-08-25)
+  // -------------------------------------------------------------------------
+  //
+  // The bug, from a LIVE call on 2026-08-25: ISBN 9780765326355 (The Way of
+  // Kings) answers `book_series` = [The Stormlight Archive #1, The Cosmere #7].
+  // Hardcover files both as series rows; this catalogue keeps a universe one
+  // tier ABOVE a series (`@lc/universes`). Taking the first named row meant
+  // HARDCOVER'S ROW ORDER decided which tier got written into `work.series`.
+  //
+  // ⚠️ These tests use the REAL universe list, not a stub, because the half
+  // that can silently break is the wiring: that the predicate `askHardcover`
+  // builds folds names the same way the universe filter and facets do. A stub
+  // would pass while the fold was wrong. `The Cosmere` and `Cosmere` are both
+  // in the shared list's `canonicalNames`; `The Stormlight Archive` is a SERIES
+  // inside that universe and is deliberately not.
+
+  /** The live Way of Kings shape, with the row order Hardcover returned. */
+  function wayOfKings(order: 'series-first' | 'universe-first') {
+    const stormlight = { position: 1, series: { name: 'The Stormlight Archive', books_count: 10 } };
+    const cosmere = { position: 7, series: { name: 'The Cosmere', books_count: 40 } };
+    return hardcoverBody({
+      description: null,
+      book_series: order === 'series-first' ? [stormlight, cosmere] : [cosmere, stormlight],
+    });
+  }
+
+  for (const order of ['series-first', 'universe-first'] as const) {
+    it(`⚠️ writes The Stormlight Archive and NOT The Cosmere (${order})`, async () => {
+      const fetchStub = stubFetch({ 'api.hardcover.app': wayOfKings(order) });
+      const { db, writes } = stubDb({ holding: null, editions: [{ isbn13: '9780765326355' }] });
+
+      const out = await freeDetailsFor(
+        env(db, { HARDCOVER_API_TOKEN: 'tok' }),
+        514,
+        ['series', 'seriesIndex'],
+        { throttle: false, fetchImpl: fetchStub.impl },
+      );
+
+      assert.equal(out.sources.series, 'hardcover');
+      // ⚠️ Asserted through the CHANGE LOG, not by hunting the string in the
+      // UPDATE's bound values. `UPDATE work SET` names every column and the
+      // work-write path resolves a universe of its own into `work.universe` —
+      // so "The Cosmere appears somewhere in this statement" is TRUE and
+      // CORRECT. The question is only ever which COLUMN each name landed in.
+      assert.equal(
+        loggedValue(writes, 'series'),
+        '"The Stormlight Archive"',
+        'a UNIVERSE must never be written into work.series',
+      );
+      assert.equal(loggedValue(writes, 'seriesIndexSort'), '1', 'the volume travels with the SERIES');
+
+      // …and the tier that WAS right: `universe` is a separate column, filled
+      // by the work-write path from the shared list. Nothing here fights it.
+      const update = writes.find((w) => w.sql.includes('UPDATE work SET'));
+      assert.ok(update?.bound.includes('The Cosmere'), 'the universe still lands in work.universe');
+    });
+  }
+
+  it('⚠️ a book whose ONLY named series is a universe is a NAMED skip, not "no series"', async () => {
+    // "Hardcover named nothing" and "Hardcover named only a universe" are
+    // different facts. Reporting the second as the first sends the next reader
+    // hunting for a gap in Hardcover's data that is not there.
+    const fetchStub = stubFetch({
+      'api.hardcover.app': hardcoverBody({
+        description: null,
+        book_series: [{ position: 7, series: { name: 'Cosmere', books_count: 40 } }],
+      }),
+      // Left un-dialled only if the ladder stops; it must NOT stop, because
+      // `series` is still open — so Wikidata is allowed to answer nothing.
+      'query.wikidata.org': { results: { bindings: [] } },
+    });
+    const { db, writes } = stubDb({ holding: null, editions: [{ isbn13: '9780765326355' }] });
+
+    const out = await freeDetailsFor(env(db, { HARDCOVER_API_TOKEN: 'tok' }), 514, ['series'], {
+      throttle: false,
+      fetchImpl: fetchStub.impl,
+    });
+
+    assert.ok(
+      out.skipped.some((s) => s === 'Hardcover: only a universe named, no series'),
+      `the universe skip must be named. Got: ${JSON.stringify(out.skipped)}`,
+    );
+    assert.equal(out.sources.series, undefined, 'nothing was answered, so nothing was sourced');
+    assert.equal(loggedValue(writes, 'series'), undefined, 'no series may be written at all');
+    // ⚠️ The alias `Cosmere` (no "The") must fold too — that is the whole reason
+    // the predicate uses the shared list's canonicalNames map rather than a
+    // string compare against the six canonical names.
+  });
+
+  it('prefers the SMALLEST books_count when two genuine series remain', async () => {
+    const fetchStub = stubFetch({
+      'api.hardcover.app': hardcoverBody({
+        description: null,
+        book_series: [
+          { position: 3, series: { name: 'A Publisher Omnibus Grouping', books_count: 55 } },
+          { position: 3, series: { name: 'Cradle', books_count: 12 } },
+        ],
+      }),
+    });
+    const { db, writes } = stubDb({ holding: null, editions: [{ isbn13: '9780765326355' }] });
+
+    await freeDetailsFor(env(db, { HARDCOVER_API_TOKEN: 'tok' }), 514, ['series'], {
+      throttle: false,
+      fetchImpl: fetchStub.impl,
+    });
+
+    assert.equal(loggedValue(writes, 'series'), '"Cradle"');
   });
 });
 

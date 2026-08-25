@@ -29,10 +29,27 @@
  * | `books.book_series(...)` | `[book_series!]!` |
  * | `book_series.position` | `float8` — nullable, and **decimal**, so a 3.5 novella survives |
  * | `book_series.series` | `series` → `series.name: String!` |
+ * | `series.books_count` | `Int!` — re-read from the same SDL on 2026-08-25 |
  *
  * ⚠️ **`position` is a `float8`, so it can arrive as a JSON number OR as a
  * string** depending on how the server serialises the scalar. Both are read;
  * anything else is null rather than `NaN`.
+ *
+ * ## ⚠️ Hardcover files UNIVERSES as series, and this catalogue does not
+ *
+ * Measured live on 2026-08-25: ISBN 9780765326355 (*The Way of Kings*) answers
+ * `book_series` = **[The Stormlight Archive #1, The Cosmere #7]**. Both are real
+ * `series` rows to Hardcover. To this estate they are two different TIERS — a
+ * universe sits one level ABOVE a series, is held in
+ * `catalog-platform/data/universes.json`, and reaches this repo through
+ * `@lc/universes`. Writing *The Cosmere* into `work.series` files a book on the
+ * wrong shelf and hides the shelf it belongs on.
+ *
+ * Taking the first named row therefore depended on Hardcover's ordering, which
+ * is not a promise anybody made. `pickSeries` decides instead, and this module
+ * stays free of the universe list: the caller passes a PREDICATE, so `@lc/isbn`
+ * keeps its "no cross-repo data" property and the one universe normaliser in
+ * the estate is not duplicated here.
  *
  * ## ⚠️ Injection safety: a GraphQL VARIABLE, never a built string
  *
@@ -76,11 +93,27 @@ const HARDCOVER_QUERY = `query BookByIsbn13($isbn: String!) {
         position
         series {
           name
+          books_count
         }
       }
     }
   }
 }`;
+
+/** One `book_series` row that actually names a series. */
+export interface HardcoverSeriesEntry {
+  /** `series.name` — `String!` in the SDL, so never empty once it is named. */
+  name: string;
+  /** `book_series.position`, a `float8`, so `1.5` is a real answer. */
+  position: number | null;
+  /**
+   * `series.books_count` — how many books Hardcover files under that series.
+   *
+   * ⚠️ Declared `Int!`, but read defensively as nullable: this rung must not
+   * throw on a shape change in a field it only uses to BREAK A TIE.
+   */
+  booksCount: number | null;
+}
 
 export interface HardcoverBook {
   /** The book-level blurb, trimmed. Null when Hardcover has none. */
@@ -89,6 +122,20 @@ export interface HardcoverBook {
   series: string | null;
   /** `book_series.position`, a `float8`, so `1.5` is a real answer. */
   position: number | null;
+  /**
+   * EVERY named `book_series` row, in the order Hardcover returned them.
+   *
+   * ⚠️ The single `series`/`position` above is one CHOICE made over this list
+   * by `pickSeries`. The list is kept so a caller can say something specific
+   * about what it declined — "only a universe was named" is a different fact
+   * from "Hardcover knows no series", and the free ladder reports them apart.
+   */
+  seriesEntries: HardcoverSeriesEntry[];
+  /**
+   * The names dropped for being universes, in the order they arrived. Empty
+   * when the caller passed no predicate, which is the default.
+   */
+  universesDropped: string[];
 }
 
 /** The shape of the response, as far as we read it. */
@@ -99,7 +146,7 @@ interface HardcoverResponse {
         description?: string | null;
         book_series?: Array<{
           position?: number | string | null;
-          series?: { name?: string | null } | null;
+          series?: { name?: string | null; books_count?: number | string | null } | null;
         } | null> | null;
       } | null;
     } | null> | null;
@@ -114,6 +161,70 @@ function readPosition(raw: number | string | null | undefined): number | null {
   return null;
 }
 
+/** What `pickSeries` decided, and what it declined. */
+export interface HardcoverSeriesPick {
+  /** The series to write, or null when there is nothing this catalogue would file. */
+  chosen: HardcoverSeriesEntry | null;
+  /** Names dropped for being universes, in arrival order. */
+  universesDropped: string[];
+}
+
+/**
+ * Choose ONE series from everything Hardcover named — the whole of the tier
+ * decision, in one pure function so it can be tested without a request.
+ *
+ * The rule, in order:
+ *
+ * 1. **Drop every universe.** A universe is not a series here, and a universe
+ *    written into `work.series` is a wrong answer, not a rough one.
+ * 2. **Prefer the smallest `books_count`.** Among genuine series the smaller
+ *    set is the more specific one — the sub-series or the main sequence rather
+ *    than a publisher's omnibus grouping. It is also the second line of defence
+ *    for a universe the shared list has not learned yet: a universe is always
+ *    the bigger set.
+ * 3. **Ties go to the FIRST**, so the answer stays stable across calls when
+ *    Hardcover has nothing to separate two rows.
+ * 4. **All universes ⇒ no series at all.** Answering "no series" is correct;
+ *    answering with the universe is the bug. The caller says so by name.
+ *
+ * ⚠️ `isUniverseName` is INJECTED rather than imported. `@lc/isbn` must not
+ * depend on `@lc/universes` — that package is the one place in the repo that
+ * reads a file generated from another checkout, and pulling it in here would
+ * spread the cross-repo dependency into every consumer of the ISBN ladder. It
+ * also keeps the estate's single universe normaliser single: the predicate the
+ * Worker passes folds names with `normaliseUniverseText`, and nothing in this
+ * file writes a second fold.
+ *
+ * ⚠️ A missing `booksCount` sorts LAST, not first. An unknown size is not
+ * evidence of a small set, and a rung that guessed the other way would prefer
+ * exactly the rows Hardcover knows least about.
+ */
+export function pickSeries(
+  entries: readonly HardcoverSeriesEntry[],
+  isUniverseName: (name: string) => boolean = () => false,
+): HardcoverSeriesPick {
+  const universesDropped: string[] = [];
+  const candidates: HardcoverSeriesEntry[] = [];
+  for (const entry of entries) {
+    if (isUniverseName(entry.name)) universesDropped.push(entry.name);
+    else candidates.push(entry);
+  }
+
+  let chosen: HardcoverSeriesEntry | null = null;
+  for (const entry of candidates) {
+    if (chosen === null) {
+      chosen = entry;
+      continue;
+    }
+    const best = chosen.booksCount ?? Number.POSITIVE_INFINITY;
+    const here = entry.booksCount ?? Number.POSITIVE_INFINITY;
+    // Strictly smaller only, so a tie keeps the earlier row.
+    if (here < best) chosen = entry;
+  }
+
+  return { chosen, universesDropped };
+}
+
 /**
  * Ask Hardcover for a book's description + series + volume by ISBN-13.
  *
@@ -125,10 +236,21 @@ function readPosition(raw: number | string | null | undefined): number | null {
  *
  * Throws only on a transport/HTTP failure or a GraphQL error, which the free
  * ladder catches and turns into a NAMED skip.
+ *
+ * ⚠️ `opts.isUniverseName` is how a caller keeps a UNIVERSE out of
+ * `work.series` — see `pickSeries`. Omitting it is the honest default (no
+ * universe list, no universe filtering) and is what a caller with no catalogue
+ * of its own should do; the Worker's free ladder always passes one.
  */
 export async function lookupHardcover(
   isbn13: string,
-  opts: { token: string; fetchImpl?: typeof fetch; userAgent?: string },
+  opts: {
+    token: string;
+    fetchImpl?: typeof fetch;
+    userAgent?: string;
+    /** True for a name this catalogue files as a UNIVERSE, not a series. */
+    isUniverseName?: (name: string) => boolean;
+  },
 ): Promise<HardcoverBook | null> {
   // Only bare digits ever leave here, and they leave as a VARIABLE — see the
   // header. A malformed ISBN costs no request at all.
@@ -163,11 +285,27 @@ export async function lookupHardcover(
 
   const description = (book.description ?? '').trim() || null;
 
-  // A book can sit in more than one series; take the first row that actually
-  // names one rather than the first row, which may carry a null `series`.
-  const named = (book.book_series ?? []).find((row) => (row?.series?.name ?? '').trim() !== '');
-  const series = (named?.series?.name ?? '').trim() || null;
-  const position = series ? readPosition(named?.position) : null;
+  // A book can sit in more than one series — and on this catalogue's data one
+  // of them is regularly a UNIVERSE. Read every row that actually NAMES a
+  // series (a row can carry a null `series`), then let `pickSeries` decide.
+  const seriesEntries: HardcoverSeriesEntry[] = [];
+  for (const row of book.book_series ?? []) {
+    const name = (row?.series?.name ?? '').trim();
+    if (!name) continue;
+    seriesEntries.push({
+      name,
+      position: readPosition(row?.position),
+      booksCount: readPosition(row?.series?.books_count),
+    });
+  }
 
-  return { description, series, position };
+  const pick = pickSeries(seriesEntries, opts.isUniverseName);
+
+  return {
+    description,
+    series: pick.chosen?.name ?? null,
+    position: pick.chosen?.position ?? null,
+    seriesEntries,
+    universesDropped: pick.universesDropped,
+  };
 }
