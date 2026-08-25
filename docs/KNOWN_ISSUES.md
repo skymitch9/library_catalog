@@ -265,6 +265,26 @@ that number reads 0, the strip stays.
 
 ---
 
+## KI-11 · We cache Google Books responses; Google's API ToS forbids it — `ACCEPTED`
+
+**Symptom.** Rung 2 of the ISBN fill (`packages/isbn/src/resolve.ts`) calls the
+Google Books API and we store the result in D1. Google's umbrella API Terms
+([developers.google.com/terms](https://developers.google.com/terms), governing
+Books) forbid *"permanent copies … or cached copies longer than permitted by the
+cache header."* Surfaced by the 2026-08-25 metadata-API research
+([`info/scan-metadata-fill-strategy.md`](info/scan-metadata-fill-strategy.md)).
+
+**Status:** `ACCEPTED`. **Why tolerated:** private, non-commercial, single-
+household catalog; the cached values are factual book metadata, not resold or
+exposed publicly; re-fetching on every read defeats a catalog and hammers the
+quota. **Pre-existing** — applies to the Google Books rung we already ship, not
+to anything new. **What would change it:** the catalog going public/commercial,
+or a Google enforcement contact → TTL the Google-sourced rows to the cache header,
+or drop the rung for the free Open-Library-work / Wikidata / Hardcover rungs the
+strategy doc recommends.
+
+---
+
 ## Resolved and removed — 2026-08-23
 
 ⚠️ **Kept as a pointer, not as content.** These were live entries in this file
