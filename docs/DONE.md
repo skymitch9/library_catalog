@@ -17,6 +17,33 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ "Is scanning down on padhard?" — no; verified live, the two misses were data — 2026-08-25
+
+Owner ask 18:4x Phoenix: *"check if scanning is down on the app or if the app is
+down? Samantha is unable to scan"*, then *"she scanned 2 books and they aren't
+resolving, is it the pipeline changes we added?"*
+
+**Measured 2026-08-25 18:52–18:55 Phoenix, nothing changed, nothing deployed:**
+
+| Check | Result |
+|---|---|
+| `padhard.heygabi.ai/api/health` (and the workers.dev twin, and main) | **200**, `database: up`, estate `library2` configured |
+| `/api/isbn/…`, `/api/scan-jobs` unauthenticated | **401** with a body — the Worker is alive and gating, not dead |
+| `scan_job` on `library-catalog-2nd` since 00:55Z | **31 jobs in ~60 min, 0 with `error` set**; 26 resolved and added (works 541 → 601) |
+| The two she reported | **9781534441644** → `owned` (*Bloodmarked*, work 593 — already in her catalog). **9781665981996** → `not_found`: it is *Legendborn* **B&N Exclusive Edition** (Feb 2025); Open Library answers 404 / `{}` for it from here too. She photographed the cover 10 min later and it resolved → work 600 |
+| Other `not_found` today | 9798892425131 — a `979-8` indie prefix, the class KI/gotchas already say the free ladder cannot see |
+
+**Was it the 14:22 batch (`446243a` free-details rung 2, `13cb92c`, `14231fb`)?**
+No. `freeDetailsFor` is only reached AFTER a line is added (`scan-jobs.ts:207`),
+never on the barcode resolve path (`resolveIsbn`, line 383); and every barcode
+scanned after that deploy resolved except the two above, both explained by data.
+⚠️ Not verified: her browser/console — the API layer and D1 rows only.
+
+⚠️ Tool gotcha, again: Git-Bash `curl` from the sandboxed shell answered
+**HTTP 000 in 20 ms** for every URL — that is the local artifact in memory
+(`curl-dev-null-exit-43`), not an outage. PowerShell `Invoke-WebRequest` is the
+instrument.
+
 ## ✅ Rung 2 of the free ladder is LIVE — the estate index answers at last — 2026-08-25
 
 Item **3** of *"Audiobook links after a bulk import, and TWO audio editions"* in
