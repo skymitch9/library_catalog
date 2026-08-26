@@ -32,6 +32,49 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
+## ☐ padhard #348 is not linked to the same book on audio or the main library — cross-instance identity + alias-aware audio match (owner, 2026-08-26 ~15:15)
+
+Owner: *"padhard 348 isnt linked to the exact same book on audio or my library as
+it should be. we might need to rerun our check or expand it. we have different
+editions so that might have ruined an isbn compare."*
+
+Measured 2026-08-26 15:15 Phoenix (read-only):
+
+| | padhard #348 | main #4 |
+|---|---|---|
+| title | `Isles of the Emberdark: A Cosmere Novel` | `Isles of the Emberdark` |
+| work_key | `isles of the emberdark a cosmere novel\|brandon sanderson` | `isles of the emberdark\|brandon sanderson` |
+| editions | `9781250415394` hardcover (Tor) | `9781938570506` hardcover (Dragonsteel) + epub |
+| audiobook link | **0** — `backfill:audiobooks --remote --friend` dry-run files it under **"no audiobook"** | linked (`Isles of the Emberdark`) |
+| work_alias | `Isles of the Emberdark` (kind title) — **present, and still not matched** | — |
+
+So the owner is right on both counts: the ISBNs differ (two publishers' editions),
+and the **subtitle** is baked into padhard's `work_key`, so nothing on either
+instance sees these as one book. Two defects, one build:
+1. The audiobook backfill does not link even though an exact-title alias exists
+   — find why (alias kind/`source` filter? the catalog row's title carries
+   `- A Cosmere Novel Secret Projects, Book 5`?) and fix it in the existing
+   matcher path, no second matcher.
+2. Cross-instance "same book": donor / shelf-parity / any place that asks "does
+   the other library hold this?" must consider `work_alias` titles on both sides
+   and a subtitle-stripped comparison through the existing normaliser. ⚠️ `work_key`
+   is a persisted key — changing how it is derived is a MIGRATION, not an edit;
+   prefer matching through aliases over re-keying.
+Then re-run the backfill on BOTH instances and report every NEW link for the
+owner to confirm (he asked to see near-misses before, 2026-08-25 audit precedent).
+
+## ✅ Answered 2026-08-26 — marking TBR/read on padhard while signed in as the owner goes to the OWNER's list
+
+Owner: *"if i mark things on tbr or read on my account in padhard library does
+that add them to my list or her list? … the user's list … should be global."*
+Verified in code: the write path is `readingListDocId(uid, bookId)` =
+`${uid}_${bookId}` (`packages/core/src/tbr.ts:88`), same bundle on both
+instances, so the document is keyed to the signed-in ACCOUNT, never to the
+catalog. Marking on padhard as the owner writes to the owner's list; Samantha's
+list changes only when she is the one signed in. Read state is already global
+across sites by construction (§8 of `info/tbr.md`). No work needed; move this
+to DONE with the next landing.
+
 ## ☐ Read-state filters in every search bar + a search bar (with the wheel) on `/tbr` (owner asks, 2026-08-26 ~15:12)
 
 Owner, on his phone, two messages apart:
