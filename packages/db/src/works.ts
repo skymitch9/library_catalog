@@ -1303,6 +1303,34 @@ export interface CollectionQuery {
   readState?: string | undefined;
   readerId?: number | undefined;
   /**
+   * The works on this person's cross-catalog **reading list**, at the status
+   * they asked for — **already resolved**, exactly like `universeIds` above.
+   *
+   * Owner ask, 2026-08-26: *"can we also add a filter in each of the search bars
+   * for tbr and other read states"*.
+   *
+   * ⚠️ **Ids and not a status, and the reason is that this package — and the
+   * Worker — cannot see the list at all.** It lives in Firestore
+   * (`readingLists`, shared with the audiobook site) and there is no service
+   * account anywhere in this project on purpose (`apps/worker/src/routes/
+   * reviews.ts` carries that argument). The BROWSER is the only thing in the
+   * estate that can see both stores, so it reads its own documents, posts their
+   * keys to `POST /api/tbr/resolve` — the SAME `resolveTbrEntries` path `/tbr`
+   * uses, never a second matcher — and hands the work ids back here.
+   *
+   * ⚠️ **NOT the same question as `readState` above.** That one is
+   * `user_book.read_state`, this catalog's own column. This is what a document
+   * in a shared store says, and the two disagree by construction: this catalog
+   * has never written a `status: 'read'` reading-list document (it deletes them
+   * instead), so all 162 in production came from a sibling catalogue.
+   * `READING_LIST_STATUSES` in `@lc/core` carries the measurement.
+   *
+   * ⚠️ An empty array means **"nothing on that list is in this catalogue"** and
+   * returns no rows. `undefined` means nobody asked. Collapsing them would
+   * answer an empty TBR with the whole collection.
+   */
+  readingListIds?: readonly number[] | undefined;
+  /**
    * Narrow to books the household owns **two or more physical copies** of,
    * counting across editions. Owner ask, 2026-08-24: *"i want ... any book i own
    * 2 of in physical, even if different editions."* See `OWNED_TWICE_PHYSICAL`.
@@ -1704,21 +1732,28 @@ export const OWNED_TWICE_PHYSICAL =
    ) >= 2`;
 
 /**
- * "Is one of these works", as SQL. See `CollectionQuery.universeIds`.
+ * "Is one of these works", as SQL. See `CollectionQuery.universeIds` and
+ * `CollectionQuery.readingListIds` — **two callers, one clause**, because they
+ * are the same idea (a set of ids the SERVER could not derive, resolved by the
+ * caller and handed over) and a second copy is a second place for the empty
+ * case to be got wrong.
  *
  * ⚠️ **Inlined rather than bound, and that is not a shortcut.** D1 caps a
  * statement at 100 bound parameters; The Cosmere alone can supply more ids than
- * that as the shelf grows, and a filter that starts erroring at book 101 is a
- * trap laid for later. Inlining is safe here for the reason `KIND_CLAUSE` and
- * `NEEDS_CLAUSE` are literals: no caller text reaches the statement. These are
- * integers this database issued, filtered through `Number.isInteger` on the way
- * past — a non-integer cannot survive the join.
+ * that as the shelf grows, and a reading list can supply three hundred — a
+ * filter that starts erroring at book 101 is a trap laid for later. Inlining is
+ * safe here for the reason `KIND_CLAUSE` and `NEEDS_CLAUSE` are literals: no
+ * caller text reaches the statement. These are integers this database issued,
+ * filtered through `Number.isInteger` on the way past — a non-integer cannot
+ * survive the join.
  *
  * `0 = 1` for the empty case, because `w.id IN ()` is not valid SQLite and
- * "this universe holds nothing here" must return nothing rather than
- * everything.
+ * "that universe holds nothing here" / "nothing on your list is in this
+ * catalogue" must return nothing rather than everything. ⚠️ Getting that
+ * backwards would answer an empty TBR with the entire collection, which reads
+ * as the filter being ignored.
  */
-function universeClause(ids: readonly number[]): string {
+function workIdsClause(ids: readonly number[]): string {
   const safe = ids.filter((id) => Number.isInteger(id));
   return safe.length === 0 ? '0 = 1' : `w.id IN (${safe.join(', ')})`;
 }
@@ -1819,9 +1854,14 @@ function collectionFilter(query: CollectionQuery): { sql: string; binds: unknown
   // sort allowlist and `MEDIUM_CLAUSE` follow.
   const needs = query.needs ? NEEDS_CLAUSE[query.needs] : undefined;
   if (needs) where.push(needs);
-  // No binds — see `universeClause`. `undefined` adds no clause (nobody asked,
+  // No binds — see `workIdsClause`. `undefined` adds no clause (nobody asked,
   // or the name was not one of the six); an empty array adds `0 = 1`.
-  if (query.universeIds) where.push(universeClause(query.universeIds));
+  if (query.universeIds) where.push(workIdsClause(query.universeIds));
+  // The cross-catalog reading list, resolved by the caller for the reason
+  // `readingListIds` gives — the same shape, the same clause, and the same
+  // empty-array rule: a list this catalogue holds none of is `0 = 1`, never the
+  // whole shelf.
+  if (query.readingListIds) where.push(workIdsClause(query.readingListIds));
   // No binds — `OWNED_TWICE_PHYSICAL` is a literal built from `@lc/core`
   // constants. A narrowing that composes with every filter above.
   if (query.ownedTwice) where.push(OWNED_TWICE_PHYSICAL);

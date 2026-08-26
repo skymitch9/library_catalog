@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { COLLECTION_PAGE_SIZES, COPY_STATUSES, EDITION_MEDIA, READ_STATES } from '@lc/core';
+import {
+  COLLECTION_PAGE_SIZES,
+  COPY_STATUSES,
+  EDITION_MEDIA,
+  READING_LIST_STATUSES,
+  READING_LIST_STATUS_LABEL,
+  READ_STATES,
+  type ReadingListStatus,
+} from '@lc/core';
 import {
   api,
   type CollectionFacets,
@@ -9,6 +17,15 @@ import {
   type WorkSummary,
 } from '../api.js';
 import { describeError } from '../lib/errors.js';
+import { currentUid, watchAuth } from '../lib/firebase.js';
+import {
+  READING_LIST_NO_ACCOUNT,
+  readingListEmptyMessage,
+  readingListErrorMessage,
+  readingListNote,
+  readingListWorkIds,
+} from '../lib/reading-list-filter.js';
+import { fetchMyReadingList } from '../lib/tbr.js';
 import {
   duplicateAuthorLabel,
   duplicateRowDetail,
@@ -151,6 +168,23 @@ export function CollectionPage({
   // controls never interfere.
   const [ownedTwice, setOwnedTwice] = useState(filters.ownedTwice);
   const [readState, setReadState] = useState(filters.readState);
+  /**
+   * The cross-catalog reading-list narrowing — `''`, `'tbr'` or `'read'`.
+   * Owner ask, 2026-08-26: *"can we also add a filter in each of the search
+   * bars for tbr and other read states"*.
+   *
+   * ⚠️ **A DIFFERENT STORE from `readState` above, answering a different
+   * question**, which is why it is a second control and not another option in
+   * the first. That one is `user_book.read_state` — this catalogue's own
+   * column, five values deep. This is `status` on a Firestore document in the
+   * `readingLists` collection shared with the audiobook site, measured
+   * 2026-08-26 as exactly `tbr` (393) and `read` (162). They genuinely
+   * disagree: this catalogue has never written a `'read'` reading-list
+   * document, it DELETES the entry instead, so all 162 came from a sibling.
+   * Folding them into one dropdown would put two stores behind one control and
+   * make "Read" mean whichever the last person to touch it thought it meant.
+   */
+  const [readingList, setReadingList] = useState(filters.readingList);
   const [sort, setSort] = useState(filters.sort ?? prefs.sort);
   const [dir, setDir] = useState<'asc' | 'desc'>(filters.dir ?? prefs.dir);
   const [pageSize, setPageSize] = useState(filters.pageSize ?? prefs.pageSize);
@@ -169,6 +203,7 @@ export function CollectionPage({
         filters.needs ||
         filters.duplicates ||
         filters.ownedTwice ||
+        filters.readingList ||
         filters.readState,
     ),
   );
@@ -184,6 +219,127 @@ export function CollectionPage({
   const [stats, setStats] = useState<Stats | null>(null);
   const [recent, setRecent] = useState<WorkSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  /* ── the cross-catalog reading list, resolved for the filter ──────────── */
+
+  /**
+   * The live Firebase account, watched rather than read once.
+   *
+   * ⚠️ **`currentUid()` alone is a race, and the race is ordinary.** Firebase
+   * publishes a restored session asynchronously (~340 ms of token refresh
+   * measured on the sibling app), and a reading list is attributed by uid ALONE
+   * since the 2026-08-18 account migration — so reading it a moment too early
+   * fails CLOSED and every document is rejected, which renders as an empty
+   * list. `watchAuth` is the one subscription every auth-aware surface in this
+   * app already uses; the initial value is the synchronous read so a session
+   * that is already settled costs no extra render.
+   */
+  const [uid, setUid] = useState<string | null>(() => currentUid());
+  useEffect(() => watchAuth((u) => setUid(u?.uid ?? null)), []);
+
+  /**
+   * What the reading-list read came to — `null` until it has answered for the
+   * status currently selected.
+   *
+   * ⚠️ **`status` rides along on purpose.** It is what tells "resolved for the
+   * list you are looking at" from "resolved for the one you were looking at a
+   * moment ago", and the grid must not be queried with the second: switching
+   * TBR → Read would otherwise narrow to the TBR ids under a control that says
+   * Read, which is the class of wrong that looks right.
+   *
+   * `listed` is documents at that status; `ids.length` is how many of them this
+   * catalogue holds a row for. **They differ by design** — measured 2026-08-26,
+   * 53 of Samantha's 358 to-read entries name a book padhard has no row for —
+   * and the gap is what `readingListNote` says out loud.
+   */
+  const [listResolved, setListResolved] = useState<{
+    status: string;
+    ids: number[];
+    listed: number;
+  } | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
+
+  /**
+   * Read the person's own reading list and resolve it to work ids.
+   *
+   * ⚠️ **The browser does this because nothing else can.** The list is in
+   * Firestore (`readingLists`, shared with the audiobook site) and there is no
+   * service account anywhere in this project on purpose — `routes/reviews.ts`
+   * argues that at length. So the page reads its own documents and hands their
+   * KEYS to `POST /api/tbr/resolve`, which is the SAME `resolveTbrEntries` path
+   * `/tbr` uses: the indexed `work_key` pass, the title-slug scan, and the
+   * `audiobook_holding` / `ebook_holding` bridge. **No second matcher, and no
+   * second store.**
+   *
+   * ⚠️ Two round trips, and only while the filter is on. Turning it off
+   * clears the state rather than caching it: the list is a thing that changes
+   * from another site, and a cached one would quietly go stale.
+   */
+  useEffect(() => {
+    if (!readingList || !uid) {
+      setListResolved(null);
+      setListError(null);
+      return;
+    }
+    let live = true;
+    setListError(null);
+    void (async () => {
+      try {
+        // The lane, from the server — a dev build must never read the
+        // collection the live site writes. Same rule `TbrPage` follows.
+        const { collection } = await api.tbrCollection();
+        const entries = await fetchMyReadingList(
+          collection,
+          { email: me.email, reviewName: me.reviewName, uid },
+          readingList,
+        );
+        if (!live) return;
+        if (entries.length === 0) {
+          // ⚠️ An EMPTY list is an answer, not an absent one. It must still
+          // reach the query as `?list=tbr` with no ids, or the grid would show
+          // the whole collection under a filter that found nothing.
+          setListResolved({ status: readingList, ids: [], listed: 0 });
+          return;
+        }
+        const { entries: matched } = await api.tbrResolve(
+          entries.map((e) => ({ docId: e.docId, bookId: e.bookId, workKey: e.workKey })),
+        );
+        if (!live) return;
+        setListResolved({
+          status: readingList,
+          ids: readingListWorkIds(matched),
+          listed: entries.length,
+        });
+      } catch (err: unknown) {
+        if (!live) return;
+        // ⚠️ AN OUTAGE IS NOT AN EMPTY LIST. Cleared rather than left stale,
+        // and the grid is not queried at all while this is set — see the reload
+        // guard — because a full collection under a failed filter reads as the
+        // filter being ignored.
+        setListResolved(null);
+        setListError(readingListErrorMessage(describeError(err)));
+      }
+    })();
+    return () => {
+      live = false;
+    };
+    // ⚠️ `me.email` / `me.reviewName` rather than `me`: the object is rebuilt
+    // by App on every render and depending on it would re-read Firestore
+    // continuously. Those two fields are the whole of what this read uses.
+  }, [readingList, uid, me.email, me.reviewName]);
+
+  /** The filter is on and this session cannot say whose list it is. */
+  const listNoAccount = Boolean(readingList) && !uid;
+  /** Asked, and the answer for THIS status has not arrived yet. */
+  const listPending =
+    Boolean(readingList) && !!uid && !listError && listResolved?.status !== readingList;
+  /**
+   * ⚠️ The reading-list narrowing is only sent once it is settled FOR THE
+   * SELECTED STATUS, and the grid is not queried before then — a request that
+   * left these out would answer with the whole collection under a filter the
+   * person has already applied.
+   */
+  const listApplied = readingList && listResolved?.status === readingList ? listResolved : null;
 
   // The duplicates read, fetched only when the checkbox is on. `null` is "not
   // asked yet", which the render tells apart from "asked, nothing there" — the
@@ -237,6 +393,7 @@ export function CollectionPage({
       status ||
       needs ||
       duplicates ||
+      readingList ||
       readState,
   );
 
@@ -258,12 +415,20 @@ export function CollectionPage({
       q, series, universe, medium, ebookOnly: effectiveEbookOnly,
       binding: bindings.join(','), editionKind: editionKinds.join(','),
       status, needs, readState,
+      // ⚠️ The reading-list narrowing, as TWO params. `list` says it is in
+      // force and is what the address bar carries; `listIds` is this person's
+      // resolved answer and travels only here. `list` with an empty `listIds`
+      // is "asked, and none of them are in this catalogue" — `collectionQuery`
+      // drops the empty string and the server reads the pair correctly. See
+      // `readingListIdsFrom` in the Worker.
+      list: listApplied ? readingList : '',
+      listIds: listApplied ? listApplied.ids.join(',') : '',
       // Owned 2+ physical — a narrowing of the grid. `0` when off, dropped by
       // `collectionQuery`.
       owned2: ownedTwice ? 1 : 0,
       sort, dir, page, pageSize,
     }),
-    [q, series, universe, medium, effectiveEbookOnly, bindings, editionKinds, status, needs, readState, ownedTwice, sort, dir, page, pageSize],
+    [q, series, universe, medium, effectiveEbookOnly, bindings, editionKinds, status, needs, readState, readingList, listApplied, ownedTwice, sort, dir, page, pageSize],
   );
 
   const reload = useCallback(() => {
@@ -281,10 +446,28 @@ export function CollectionPage({
 
   // Debounced, so typing a title is one query and not one per keystroke against
   // a LIKE over the whole table.
+  //
+  // ⚠️ **NOT RUN while the reading-list filter is unsettled**, and that guard is
+  // the whole difference between a filter and a flicker: a query sent before
+  // the ids arrive carries no narrowing at all, so the grid would show the
+  // entire collection for a beat under a control the person has already set —
+  // and on a slow read, indefinitely. `listNoAccount` and `listError` are the
+  // two states that never settle; the render says which, in words, in place of
+  // the grid.
   useEffect(() => {
+    if (listNoAccount || listError) {
+      setRows([]);
+      setTotal(0);
+      setLoading(false);
+      return;
+    }
+    if (listPending) {
+      setLoading(true);
+      return;
+    }
     const t = setTimeout(reload, 220);
     return () => clearTimeout(t);
-  }, [reload]);
+  }, [reload, listPending, listNoAccount, listError]);
 
   // A filter change moves you back to the first page. Staying on page 3 of a
   // list that now has one page shows an empty screen that looks like a failure.
@@ -305,6 +488,7 @@ export function CollectionPage({
     status,
     needs,
     readState,
+    readingList,
     ownedTwice,
     sort,
     dir,
@@ -339,6 +523,10 @@ export function CollectionPage({
         needs,
         duplicates,
         ownedTwice,
+        // ⚠️ The QUESTION travels, the answer does not. `collectionPath` emits
+        // `?list=tbr` and never `?listIds=` — a shared link opens the
+        // recipient's OWN list, not a snapshot of this person's.
+        readingList,
         readState,
         sort,
         dir,
@@ -346,7 +534,7 @@ export function CollectionPage({
         page: page + 1,
       }),
     );
-  }, [q, series, universe, medium, ebookOnly, bindings, editionKinds, status, needs, duplicates, ownedTwice, readState, sort, dir, pageSize, page]);
+  }, [q, series, universe, medium, ebookOnly, bindings, editionKinds, status, needs, duplicates, ownedTwice, readingList, readState, sort, dir, pageSize, page]);
 
   // ⚠️ Fetched only while the box is ticked, and re-fetched every time it is
   // ticked rather than cached: the whole point of the screen is to go and fix
@@ -386,6 +574,13 @@ export function CollectionPage({
         status,
         needs,
         readState,
+        // ⚠️ Both halves, for the reason the whole note below gives: a count
+        // taken over a wider set than the grid is a promise the grid breaks.
+        // This one narrows harder than most — a TBR of 40 books against a
+        // catalogue of 1,100 — so "Cradle (6)" beside it would be six books
+        // that are almost certainly not on the list.
+        list: listApplied ? readingList : '',
+        listIds: listApplied ? listApplied.ids.join(',') : '',
         owned2: ownedTwice ? 1 : 0,
       })
       .then(setFacets)
@@ -415,7 +610,7 @@ export function CollectionPage({
     // groups rather than filtering it, so it is not a narrowing at all. Nor are
     // `sort`, `dir`, `page` and `pageSize` — they order and slice the list
     // without changing which books are in it.
-  }, [q, series, universe, medium, effectiveEbookOnly, bindings, editionKinds, status, needs, readState, ownedTwice]);
+  }, [q, series, universe, medium, effectiveEbookOnly, bindings, editionKinds, status, needs, readState, readingList, listApplied, ownedTwice]);
 
   const loadHeader = useCallback(() => {
     api.stats().then(setStats).catch(() => setStats(null));
@@ -833,6 +1028,53 @@ export function CollectionPage({
             </select>
           </label>
 
+          {/* ⚠️ THE CROSS-CATALOG READING LIST — owner, 2026-08-26: *"can we
+              also add a filter in each of the search bars for tbr and other
+              read states"*. The audiobook site's search bar gained the same
+              two options, spelled the same way, on the same day.
+
+              ⚠️ **A SECOND control beside "Read", not another option inside
+              it.** They are two stores answering two questions: "Read" is
+              `user_book.read_state`, this catalogue's own column; this is
+              `status` on a document in the `readingLists` collection shared with
+              the audiobook site. They disagree by construction — this catalogue
+              has never written a `'read'` reading-list document (it deletes the
+              entry instead), so all 162 in production came from a sibling.
+              One dropdown holding both would make "Read" mean whichever store
+              the last person to touch the code had in mind.
+
+              ⚠️ **NOT RENDERED WITHOUT AN ACCOUNT**, and that is the estate rule
+              rather than a nicety: a reading list is attributed by uid alone
+              since the 2026-08-18 migration, so with no session there is
+              literally nothing to filter by — and a control that answers
+              "nothing" to every choice is worse than no control. It appears the
+              moment `watchAuth` publishes a session. A person who IS signed in
+              but whose session has not settled gets a sentence instead of an
+              empty grid; see `READING_LIST_NO_ACCOUNT`.
+
+              ⚠️ No facet counts, unlike Copies and Needs. They would have to
+              be counted over a set only the browser can compute, which means a
+              second resolve per keystroke — and the note under the panel says
+              the two numbers that actually matter (on your list / in this
+              catalogue) once, which is the thing a count here would be for. */}
+          {uid && (
+            <label className="field">
+              <span className="field__label">My list</span>
+              <select
+                value={readingList}
+                onChange={(e) => setReadingList(e.target.value)}
+                title="Books on your own to-read list, shared with the audiobook site"
+              >
+                <option value="">Any book</option>
+                {READING_LIST_STATUSES.map((v) => (
+                  <option key={v} value={v}>
+                    {READING_LIST_STATUS_LABEL[v]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
           {/* ⚠️ Placed here, last before Clear, because that is where the
               Board Game Catalog puts it — `apps/web/src/pages/CollectionPage.tsx:299`
               there, a `.check-inline` checkbox reading "We own 2+", after the
@@ -887,6 +1129,7 @@ export function CollectionPage({
                 setNeeds('');
                 setDuplicates(false);
                 setOwnedTwice(false);
+                setReadingList('');
                 setReadState('');
               }}
             >
@@ -952,6 +1195,38 @@ export function CollectionPage({
             only that — a book held on the shelf and on a screen is under both. Tick more than
             one Type box and you get the books matching <b>any</b> of them.
           </p>
+
+          {/* ⚠️ Written down for the reason every note on this panel is: the
+              wrong guess is silent, and here it is that "Read" and "My list →
+              Marked read" are the same thing. They are not, they can disagree
+              for the same book, and both answers are correct — one is what this
+              catalogue records, the other is what a document in the shared store
+              says. */}
+          {uid && (
+            <p className="controls__note muted">
+              <b>My list</b> is your cross-catalogue reading list — the same one the
+              audiobook site writes, and the same one the <b>My TBR</b> screen shows.{' '}
+              <b>Read</b> beside it is this catalogue&rsquo;s own record of what you have
+              read. They are different questions and can disagree.
+            </p>
+          )}
+
+          {/* ⚠️ THE TWO NUMBERS, said once and out loud: how many of the books
+              on the list this catalogue actually holds, and how many it does
+              not. Measured 2026-08-26 — 53 of Samantha's 358 to-read entries name
+              a book padhard has no row for — and a person counting a shorter
+              grid than their list with nothing explaining the gap reads it as
+              the sync having dropped books. It had not. See
+              `lib/reading-list-filter.ts` and `docs/info/tbr.md` §10. */}
+          {listApplied && readingList && (
+            (() => {
+              const note = readingListNote(readingList as ReadingListStatus, {
+                listed: listApplied.listed,
+                matched: listApplied.ids.length,
+              });
+              return note ? <p className="controls__note muted">{note}</p> : null;
+            })()
+          )}
           {/* ⚠️ Written down for the same reason the sentence above it is: the
               answer is not guessable and the wrong guess is silent. Somebody
               reading "Cover needed" will assume it means an empty cover, and
@@ -1073,11 +1348,33 @@ export function CollectionPage({
         )
       ) : error ? (
         <p className="notice notice--bad">Could not load the collection: {error}</p>
+      ) : /* ⚠️ THE THREE WAYS THE READING-LIST FILTER CAN LEAVE THE GRID EMPTY,
+             kept apart because the fixes are three different fixes — the estate
+             rule that a person never sees a bare refusal, applied to an empty
+             result. An outage worded as "your list is empty" is the most
+             expensive of the three to get wrong: it reads as data loss. */
+      listNoAccount ? (
+        <p className="notice">{READING_LIST_NO_ACCOUNT}</p>
+      ) : listError ? (
+        <p className="notice notice--bad">{listError}</p>
       ) : loading && rows.length === 0 ? (
         <p className="muted">Loading…</p>
       ) : rows.length === 0 ? (
         <p className="muted">
-          {filtered ? 'Nothing matches that.' : 'Nothing here yet. Add the first book.'}
+          {/* ⚠️ "Nothing matches that" is the WRONG sentence when the reading
+              list is the reason — it points at the search box for a list that is
+              empty, or for books that live on another shelf entirely.
+              `readingListEmptyMessage` answers `null` when the list DID match
+              books and something else excluded them, and then the generic
+              sentence is right again: blaming the reading list for a Series
+              dropdown would be worse than saying nothing. */}
+          {(listApplied && readingList
+            ? readingListEmptyMessage(readingList as ReadingListStatus, {
+                listed: listApplied.listed,
+                matched: listApplied.ids.length,
+              })
+            : null) ??
+            (filtered ? 'Nothing matches that.' : 'Nothing here yet. Add the first book.')}
         </p>
       ) : (
         <div

@@ -349,11 +349,40 @@ export function myTbrEntries(
   docs: readonly (TbrLike & { docId: string })[],
   me: { uid?: string | null; email?: string | null; reviewName?: string | null },
 ): TbrEntry[] {
+  return myReadingListEntries(docs, me, TBR_STATUS);
+}
+
+/**
+ * The same list, at any `status` the shared store holds — `READING_LIST_STATUSES`.
+ *
+ * ⚠️ **`myTbrEntries` IS this function with `'tbr'` bound**, so there is one
+ * ownership rule, one dedupe rule and one `bookId` guard between them. Added
+ * 2026-08-26 for the owner's ask — *"can we also add a filter in each of the
+ * search bars for tbr and other read states"* — and written this way round
+ * rather than as a second reader for the reason `tbrFoldKey`'s header gives:
+ * a second definition of "these documents are mine" is a second thing to get
+ * out of step, and this one carries the whole account migration in it.
+ *
+ * ⚠️ **A status this catalog does not know is still DROPPED.** The caller picks
+ * from `READING_LIST_STATUSES`, which is measured against the live collection
+ * rather than assumed; anything else selects nothing, which is the honest
+ * answer for a value only the sibling site understands.
+ *
+ * ⚠️ **`'read'` here means the DOCUMENT says read** — a state the audiobook
+ * site writes and this catalog never has (measured: 162 documents, all
+ * sibling-written). It is not `user_book.read_state`, which has its own filter;
+ * see `READING_LIST_STATUSES` for why the two must not be folded together.
+ */
+export function myReadingListEntries(
+  docs: readonly (TbrLike & { docId: string })[],
+  me: { uid?: string | null; email?: string | null; reviewName?: string | null },
+  status: string,
+): TbrEntry[] {
   const byKey = new Map<string, TbrEntry>();
 
   for (const doc of docs) {
     if (!ownsTbrDoc(doc, me)) continue;
-    if ((doc.status ?? '') !== TBR_STATUS) continue;
+    if ((doc.status ?? '') !== status) continue;
 
     const bookId = typeof doc.bookId === 'string' ? doc.bookId.trim() : '';
     if (!bookId) continue;

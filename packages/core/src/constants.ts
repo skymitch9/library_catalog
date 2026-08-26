@@ -864,7 +864,7 @@ export const RATING_STEP = 0.5;
 export const OBSERVED_RATINGS_MAX = 500;
 
 /**
- * The one `status` value either catalog writes to a `readingLists` document.
+ * The one `status` value either catalog **writes** to a `readingLists` document.
  *
  * ⚠️ **The audiobook site's vocabulary, not ours** — its TBR button writes
  * `status: 'tbr'` and its own filter reads `data.status === 'tbr'`
@@ -874,6 +874,53 @@ export const OBSERVED_RATINGS_MAX = 500;
  * catalog does not: `myTbrEntries` drops it rather than guessing.
  */
 export const TBR_STATUS = 'tbr';
+
+/**
+ * Every `status` the shared `readingLists` collection actually **holds** — the
+ * one vocabulary the read-state filters on all three surfaces speak.
+ *
+ * ⚠️ **MEASURED, not assumed.** Counted against the live collection through the
+ * audiobook repo's service account on **2026-08-26 ~15:55 Phoenix**, read-only:
+ *
+ * | | |
+ * |---|---:|
+ * | `readingLists` documents | **555** |
+ * | `status: 'tbr'` | **393** |
+ * | `status: 'read'` | **162** |
+ * | anything else | **0** |
+ * | `readingLists_dev` | **0** — still never written to |
+ *
+ * So the owner's ask — *"a filter in each of the search bars for tbr and other
+ * read states"* — has exactly two answers rather than an open set. Re-measure
+ * before adding a third; a value this catalog has never seen is **dropped**,
+ * never guessed at, which is the rule `TBR_STATUS`'s own header already states.
+ *
+ * ⚠️ **`'read'` here is NOT `READ_STATES`' `'read'`, and conflating them is the
+ * expensive mistake.** `READ_STATES` is `user_book.read_state` — this catalog's
+ * own per-person column, five values deep, written by `PUT /works/:id/reading`
+ * and filtered by `?read=`. This is a field on a Firestore document in a store
+ * shared with the audiobook site, filtered by `?list=`, and **this catalog has
+ * never written a single `'read'` one**: it clears an intention by DELETING the
+ * document (`docs/info/tbr.md` §5), so all 162 came from a sibling catalogue.
+ * Two stores, two questions, two params — kept apart on purpose.
+ */
+export const READING_LIST_STATUSES = ['tbr', 'read'] as const;
+export type ReadingListStatus = (typeof READING_LIST_STATUSES)[number];
+
+/**
+ * How each `readingLists` status is written where a person reads it.
+ *
+ * ⚠️ One spelling across all three surfaces — this catalog's collection filter,
+ * its `/tbr` page, and the audiobook site's own dropdown — for the reason
+ * `READING_LIST_MEDIA` in `audiobook_catalog/site/reviews.js` gives for the
+ * media emoji: two vocabularies for one idea is drift, and a person who reads
+ * "To read" on one site and "Want to read" on the other has to work out whether
+ * they are the same list.
+ */
+export const READING_LIST_STATUS_LABEL: Record<ReadingListStatus, string> = {
+  tbr: 'On my TBR',
+  read: 'Marked read',
+};
 
 /**
  * How many TBR entries one `POST /api/tbr/resolve` may carry.

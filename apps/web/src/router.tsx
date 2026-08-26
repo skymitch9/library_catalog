@@ -37,6 +37,7 @@ import {
   EDITION_MEDIA,
   PHYSICAL_FORMATS,
   READ_STATES,
+  READING_LIST_STATUSES,
 } from '@lc/core';
 import { DEFAULT_PREFS, SORTS } from './lib/prefs.js';
 
@@ -209,6 +210,37 @@ export interface CollectionFilters {
    * attempt folded them together and hid the record-finder.
    */
   ownedTwice: boolean;
+  /**
+   * This person's own cross-catalog **reading list** — `tbr` or `read`, or
+   * empty for "not narrowed by it". `?list=tbr` in the address bar.
+   *
+   * Owner ask, 2026-08-26: *"can we also add a filter in each of the search
+   * bars for tbr and other read states"*.
+   *
+   * ## ⚠️ `?list=` and NOT `?read=`, because `?read=` is already taken
+   *
+   * `readState` below is `user_book.read_state` — this catalog's own column,
+   * five values deep (`READ_STATES`), set on the book page. **This is a
+   * different store answering a different question**: the shared Firestore
+   * `readingLists` collection, which the audiobook site also writes, and whose
+   * `status` is only ever `tbr` or `read` (measured 2026-08-26: 555 documents,
+   * 393/162, nothing else — `READING_LIST_STATUSES`). The two genuinely
+   * disagree: this catalog has never written a `status: 'read'` document, it
+   * DELETES the entry instead, so every one of those 162 came from a sibling.
+   *
+   * ⚠️ **`list` is the audiobook site's own spelling**, which is why it was
+   * chosen over inventing a third: that site has had `#list=tbr&user=…` since
+   * long before this, and now answers `#list=read` too. One vocabulary across
+   * the estate, the rule `READING_LIST_MEDIA` follows for the format emoji.
+   *
+   * ⚠️ **The URL carries the QUESTION, never one person's answer.** A link
+   * to `/?list=tbr` opens the recipient's OWN list, because the work ids are
+   * resolved in the browser from the signed-in account's documents and travel
+   * only on the API call (`?listIds=`, see `readingListIdsFrom` in the Worker).
+   * Putting the ids in the address bar would make a shared link a snapshot of
+   * somebody else's reading list.
+   */
+  readingList: string;
   /**
    * One shared fictional world — `The Cosmere`, `Runnerverse` — or empty.
    *
@@ -443,6 +475,12 @@ export function parseCollection(search: string): CollectionFilters {
     duplicates: flag(search, 'duplicates', false),
     // `?owned2=1` — its own param, the copy-count narrowing (see `ownedTwice`).
     ownedTwice: flag(search, 'owned2', false),
+    // `?list=tbr` / `?list=read` — the shared reading list, the audiobook
+    // site's own spelling. A closed vocabulary checked here, so `?list=junk` is
+    // simply the whole collection: the page has no rendering for a state that
+    // store has never held. See `CollectionFilters.readingList` for why this is
+    // NOT `?read=` below.
+    readingList: pick(search, 'list', READING_LIST_STATUSES) ?? '',
     readState: pick(search, 'read', READ_STATES) ?? '',
     sort: pick(search, 'sort', SORTS),
     dir: pick(search, 'dir', ['asc', 'desc'] as const),
@@ -485,6 +523,11 @@ export function collectionPath(f: CollectionFilters): string {
   // sibling follows (`if (f.duplicates) p.set('duplicates', '1')`).
   if (f.duplicates) p.set('duplicates', '1');
   if (f.ownedTwice) p.set('owned2', '1');
+  // ⚠️ The QUESTION only. `?listIds=` — the resolved work ids — is deliberately
+  // NOT emitted here: it is one person's answer, it changes as they add books,
+  // and a shared link carrying it would show the recipient a stale snapshot of
+  // somebody else's list instead of their own. See `CollectionFilters.readingList`.
+  if (f.readingList) p.set('list', f.readingList);
   if (f.readState) p.set('read', f.readState);
   if (f.sort && f.sort !== DEFAULT_PREFS.sort) p.set('sort', f.sort);
   if (f.dir && f.dir !== DEFAULT_PREFS.dir) p.set('dir', f.dir);
@@ -517,6 +560,10 @@ export function collectionInUniversePath(universe: string): string {
     // A link into a world is a link to its books, not to its filing mistakes.
     duplicates: false,
     ownedTwice: false,
+    // Nor to one person's reading list. A universe link is about the WORLD, and
+    // carrying a reading-list narrowing would make one link show two people two
+    // different shelves.
+    readingList: '',
     readState: '',
     sort: null,
     dir: null,

@@ -16,6 +16,11 @@ import { describeError } from '../lib/errors.js';
 import { currentUid } from '../lib/firebase.js';
 import { fetchMyTbr, removeFromTbr } from '../lib/tbr.js';
 import { notInCatalogueSentence, splitTbrGroupsByShelf } from '../lib/tbr-elsewhere.js';
+import {
+  narrowTbrGroups,
+  noTbrMatchSentence,
+  tbrSearchCountSentence,
+} from '../lib/tbr-search.js';
 import { Link, workPath } from '../router.js';
 
 /**
@@ -65,6 +70,26 @@ import { Link, workPath } from '../router.js';
  * ⚠️ **"Off the list" removes the WHOLE GROUP.** Deleting one document would
  * leave the other behind, and the sibling site's `✓ To Be Read` button would
  * still be lit for a book the person just cleared. They meant the book.
+ *
+ * ## ⚠️ THE SEARCH BOX NARROWS THE WHEEL TOO — 2026-08-26
+ *
+ * Owner: *"can we also add a search bar in the /tbr route too so people can
+ * search tbr books there too with the wheel"*. Both halves matter. The box
+ * narrows the folded groups CLIENT-SIDE (`narrowTbrGroups`, pure and tested —
+ * the page already holds the whole list, so there is nothing to fetch), and
+ * `TbrSpinner` is handed the NARROWED groups, so the wheel picks from what is
+ * on screen rather than from the whole list behind it.
+ *
+ * ⚠️ **The *"Not on these shelves"* section narrows with the same query**, and
+ * so does its count. Filtering one half and leaving the other at full length
+ * would read as the search being broken — and that section has already been
+ * misread once as books the sync lost (§10 of `docs/info/tbr.md`).
+ *
+ * ⚠️ **The query is NOT in the URL**, unlike the collection's `?q=`. This
+ * screen shows one person's own list, read from their Firebase session, so
+ * `/tbr?q=sanderson` would open a stranger's list narrowed by a word they never
+ * typed. The collection's box is shareable because the collection is the same
+ * for everybody; this one is not.
  */
 
 /** One row: what Firestore holds, plus what the catalog said about it. */
@@ -75,6 +100,19 @@ type Group = TbrGroup<Row>;
 
 export function TbrPage({ me }: { me: Me }) {
   const [groups, setGroups] = useState<Group[] | null>(null);
+  /**
+   * What is typed in the search box. Owner ask, 2026-08-26: *"can we also add a
+   * search bar in the /tbr route too so people can search tbr books there too
+   * with the wheel"*.
+   *
+   * ⚠️ **Not in the URL, unlike the collection's `?q=`, and that is
+   * deliberate.** This screen is not a view of the catalogue — it is a view of
+   * one person's own list, read from their Firebase session, and a link to
+   * `/tbr?q=sanderson` would open somebody else's list narrowed by a word they
+   * did not type. The collection's search is shareable because the collection
+   * is the same for everybody; this one is not.
+   */
+  const [query, setQuery] = useState('');
   const [cleared, setCleared] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -187,11 +225,29 @@ export function TbrPage({ me }: { me: Me }) {
   }
   if (groups === null) return <main className="muted">Loading…</main>;
 
-  const { here, elsewhere } = splitTbrGroupsByShelf(groups);
+  /**
+   * ⚠️ **THE SEARCH NARROWS EVERYTHING BELOW IT, INCLUDING THE WHEEL.**
+   * Owner, 2026-08-26: *"so people can search tbr books there too with the
+   * wheel"* — the wheel is handed `shown`, not `groups`, so it spins over what
+   * is on screen. `groupTbrEntries` has already made that one candidate per
+   * BOOK (§9 of `docs/info/tbr.md`), so narrowing cannot reintroduce the double
+   * count the fold removed.
+   *
+   * ⚠️ The *"Not on these shelves"* half narrows with the same query too. A
+   * search that filtered the matched books and left the unmatched section at
+   * full length would read as the search being broken — and that section is
+   * the one people have already misread once (§10).
+   */
+  const shown = narrowTbrGroups(groups, query);
+  const { here, elsewhere } = splitTbrGroupsByShelf(shown);
   /** How many books were on the list more than once — see the note below. */
   const foldedAway = groups.reduce((n, g) => n + (g.docIds.length - 1), 0);
   /** ⚠️ The number, said out loud — see `notInCatalogueSentence`'s header. */
   const notHere = notInCatalogueSentence(elsewhere.length);
+  /** "Showing 3 of 40" — only while a search is actually narrowing. */
+  const searchCount = tbrSearchCountSentence(query, shown.length, groups.length);
+  /** ⚠️ Said in words, and it says the list is intact. See the helper's header. */
+  const noMatch = shown.length === 0 ? noTbrMatchSentence(query, groups.length) : null;
 
   return (
     <main>
@@ -236,11 +292,47 @@ export function TbrPage({ me }: { me: Me }) {
             </p>
           )}
 
-          {/* Can't decide? Let the wheel decide. Picks from this whole list;
-              its filters narrow to shelves or series position.
+          {/* ⚠️ THE SEARCH BOX — owner, 2026-08-26: *"can we also add a search
+              bar in the /tbr route too so people can search tbr books there too
+              with the wheel"*.
+
+              `type="search"` and an `aria-label` rather than a visible one, the
+              same shape as the collection's own box (`#ab-search` on the
+              audiobook site is spelled the same way): a phone panel has no room
+              for a label above every control, and a search input is the one
+              widget whose purpose the placeholder genuinely carries.
+
+              ⚠️ NOT debounced, and it does not need to be. The collection's box
+              is, because every keystroke there is a `LIKE` over the whole work
+              table; this one is a substring test over a few hundred objects the
+              page is already holding, with no request behind it at all. */}
+          <div className="toolbar">
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search your list by title, author or series…"
+              aria-label="Search your to-read list"
+            />
+          </div>
+
+          {searchCount && <p className="muted small">{searchCount}</p>}
+
+          {/* Can't decide? Let the wheel decide. Picks from what the search left
+              — owner, 2026-08-26: *"so people can search tbr books there too with
+              the wheel"* — and its own filters narrow to shelves or series
+              position on top of that.
               ⚠️ One candidate per BOOK, not per document — otherwise a book
-              held in three formats would be three times as likely to win. */}
-          <TbrSpinner rows={groups.map(toSpinnerRow)} />
+              held in three formats would be three times as likely to win.
+              ⚠️ Not rendered over an empty pool: a wheel with nothing on it is
+              a control that cannot work, and the sentence below says why. */}
+          {shown.length > 0 && <TbrSpinner rows={shown.map(toSpinnerRow)} />}
+
+          {/* ⚠️ Said in words, and it says the list is still there. An empty
+              result under a search box reads as the list having been emptied —
+              and this is a list somebody has already reported as lost once when
+              it was not (§10 of `docs/info/tbr.md`). */}
+          {noMatch && <p className="muted">{noMatch}</p>}
 
           {here.length > 0 && <TbrList groups={here} busy={busy} onRemove={remove} />}
 

@@ -17,7 +17,7 @@
  */
 
 import { deleteDoc, doc, getDoc, setDoc } from 'firebase/firestore';
-import { myTbrEntries, type TbrEntry } from '@lc/core';
+import { TBR_STATUS, myReadingListEntries, type TbrEntry } from '@lc/core';
 import { firestore } from './firebase.js';
 import { fetchMineFrom } from './reviews.js';
 
@@ -40,10 +40,36 @@ export async function fetchMyTbr(
   collectionName: string,
   me: { uid?: string | null; email?: string | null; reviewName?: string | null },
 ): Promise<TbrEntry[]> {
+  return fetchMyReadingList(collectionName, me, TBR_STATUS);
+}
+
+/**
+ * The same fetch at any status the shared store holds — `READING_LIST_STATUSES`,
+ * measured 2026-08-26 as exactly `tbr` and `read`.
+ *
+ * ⚠️ **`fetchMyTbr` IS this with `'tbr'` bound**, so there is one Firestore
+ * query and one ownership gate between them. Added 2026-08-26 for the owner's
+ * ask — *"can we also add a filter in each of the search bars for tbr and other
+ * read states"* — because the collection filter has to reach `status: 'read'`
+ * documents, which `myTbrEntries` drops by design.
+ *
+ * ⚠️ **The query is still the SUPERSET and `myReadingListEntries` is still
+ * the gate**, exactly as above: the fetch pulls name-matched documents too and
+ * the predicate rejects the ones that are not this account's. Do not be tempted
+ * to add a `where('status','==',…)` here as well — `fetchMineFrom` composes the
+ * queries this collection is indexed for, and a third clause is a composite
+ * index this project has never needed.
+ */
+export async function fetchMyReadingList(
+  collectionName: string,
+  me: { uid?: string | null; email?: string | null; reviewName?: string | null },
+  status: string,
+): Promise<TbrEntry[]> {
   const docs = await fetchMineFrom(collectionName, me);
-  return myTbrEntries(
+  return myReadingListEntries(
     docs.map((d) => ({ docId: d.id, ...(d.data as Record<string, unknown>) })),
     me,
+    status,
   );
 }
 

@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import {
   COLLECTION_PAGE_SIZE,
   COLLECTION_PAGE_SIZES,
+  READING_LIST_STATUSES,
   UNKNOWN_AUTHOR,
   WISHLIST_STATUSES,
   blankSiblingOf,
@@ -69,6 +70,72 @@ import { capabilityDenied, requireCapability } from '../middleware/auth.js';
 /** `copy.status` narrowed to "this is a wishlist row, not a held one." */
 function isWishlistStatus(status: string): boolean {
   return (WISHLIST_STATUSES as readonly string[]).includes(status);
+}
+
+/**
+ * The work ids of the caller's cross-catalog reading list, off the query string.
+ *
+ * Owner ask, 2026-08-26: *"can we also add a filter in each of the search bars
+ * for tbr and other read states"*.
+ *
+ * ## ⚠️ TWO PARAMS FOR ONE FILTER, and the pair is the design
+ *
+ * | Param | Says | Travels in |
+ * |---|---|---|
+ * | `?list=tbr` \| `read` | a reading-list narrowing is IN FORCE | the address bar — a shared link carries the QUESTION ("books on my TBR"), never one person's answer |
+ * | `?listIds=1,2,3` | the work ids the BROWSER resolved | the API call only |
+ *
+ * The ids come from the browser because **nothing server-side can see the
+ * list**: it lives in Firestore's `readingLists`, shared with the audiobook
+ * site, and there is no service account anywhere in this project on purpose
+ * (`routes/reviews.ts` carries that argument at length). The page reads its own
+ * documents, posts their keys to `POST /api/tbr/resolve` — the SAME
+ * `resolveTbrEntries` path `/tbr` uses, never a second matcher — and sends the
+ * work ids here. This is exactly the shape `universeIds` already has: a set the
+ * server cannot derive, resolved by the caller, handed over as ids.
+ *
+ * ## ⚠️ The pair is what tells an EMPTY list from an ABSENT one
+ *
+ * `?list=tbr` with **no** ids means *"asked, and this catalogue holds none of
+ * them"* — `readingListIds: []`, which `workIdsClause` turns into `0 = 1`. If
+ * the status param did not exist and this read only the ids, an empty TBR would
+ * be indistinguishable from no filter at all and would answer with the WHOLE
+ * collection, which reads as the control being broken.
+ *
+ * ## ⚠️ It grants nothing
+ *
+ * The ids only ever NARROW. Any caller reaching this route can already list
+ * every work in the catalogue, so ids it invented show it nothing it could not
+ * already see — unlike `readState`, whose `readerId` must come off the verified
+ * token because it names a PERSON. Nothing here names a person.
+ *
+ * An unrecognised status adds no clause, the rule `MEDIUM_CLAUSE`, `NEEDS_CLAUSE`
+ * and the sort allowlist all follow: a stale bookmark shows the collection, not
+ * a 400.
+ *
+ * ⚠️ **Exported only so its test can run the shipped parser**, not because
+ * anything else calls it. The pair rule above is the whole risk in this
+ * feature and it is invisible to the type system — both params are strings,
+ * and getting the empty case wrong answers an empty list with the entire
+ * collection. `collection-reading-list-param.test.ts` exercises it directly
+ * rather than through a route that would need the auth middleware stubbed.
+ */
+export function readingListIdsFrom(c: {
+  req: { query: (k: string) => string | undefined };
+}): number[] | undefined {
+  const status = c.req.query('list');
+  if (!status || !(READING_LIST_STATUSES as readonly string[]).includes(status)) return undefined;
+  return [
+    ...new Set(
+      (c.req.query('listIds') ?? '')
+        .split(',')
+        .map((s) => Number(s.trim()))
+        // ⚠️ Integers only, and this is the gate `workIdsClause` relies on to
+        // inline them safely. It filters again on its own side; both, because a
+        // clause built by string concatenation gets two guards, not one.
+        .filter((n) => Number.isInteger(n) && n > 0),
+    ),
+  ];
 }
 
 /**
@@ -140,6 +207,10 @@ function collectionQueryFrom(c: {
     // reaches the statement.
     needs: c.req.query('needs'),
     readState: c.req.query('readState'),
+    // The cross-catalog reading-list narrowing — owner ask 2026-08-26: *"can we
+    // also add a filter in each of the search bars for tbr and other read
+    // states"*. See `readingListIdsFrom` for why it is two params.
+    readingListIds: readingListIdsFrom(c),
     // "Owned 2+ (physical)" — books held in 2+ physical copies across editions.
     // A `1`/`0` flag on its OWN param, deliberately NOT `?duplicates=1` (that is
     // the separate duplicate-records finder). Any value but `'1'` reads as off.

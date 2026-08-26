@@ -403,6 +403,31 @@ export interface CollectionParams {
   needs?: string;
   readState?: string;
   /**
+   * `tbr` or `read` — narrow to this person's own cross-catalog reading list.
+   * Owner ask, 2026-08-26.
+   *
+   * ⚠️ **Sent WITH `listIds`, and the pair is the design.** This half says the
+   * narrowing is in force and is the half that goes in the address bar;
+   * `listIds` carries the work ids, which only the browser can resolve (the
+   * list lives in Firestore and the Worker has no service account). `list` with
+   * no `listIds` means *"asked, and this catalogue holds none of them"* — no
+   * rows, as against no filter at all. See `readingListIdsFrom` in the Worker.
+   *
+   * ⚠️ **Not `readState`.** That is `user_book.read_state`, this catalog's own
+   * column; this is a field on a shared Firestore document, and the two
+   * disagree by construction. `READING_LIST_STATUSES` in `@lc/core` carries the
+   * measurement and the reason they stay apart.
+   */
+  list?: string;
+  /**
+   * The work ids `POST /api/tbr/resolve` matched for the list above,
+   * comma-joined. Never bookmarked — one person's answer, not the question.
+   *
+   * ⚠️ Dropped by `collectionQuery` when empty, which is exactly right: `list`
+   * still travels, and the server reads that as "asked, nothing matched".
+   */
+  listIds?: string;
+  /**
    * `1` narrows to books owned in 2+ physical copies (across editions) — the
    * "Owned 2+ (physical)" checkbox. Sent as `?owned2=1`; the server reads it as
    * `ownedTwice`. `0`/absent is off, and `collectionQuery` drops a `0`.
