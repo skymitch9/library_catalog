@@ -17,6 +17,35 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+
+## 2026-08-26 — padhard's `INDEX_READ_TOKEN` gets a master, in the vault
+
+Her rung-2 machine read token had **no readable copy anywhere**: her Worker and
+`catalog-index` each held a write-only value, and the
+`INDEX_READ_TOKEN_FRIEND_PADHARD` drop-box in the main `.dev.vars` is empty (as a
+drop-box should be). Step 3 of the estate secrets review §5.
+
+`catalog-platform/scripts/op-rotate-pair.mjs` minted a fresh value into vault
+item **`library2.INDEX_READ_TOKEN`** and set both holders in one run, verifier
+first. **Proved live:** `GET index.heygabi.ai/api/machine/lookup?title=…` with the
+new value → **200, 2 matching rows**, having returned **401** with the same value
+before the rotation. Her secret NAMES after: **10**, unchanged.
+
+⚠️ **NOT proved:** that her Worker *sends* the new value on its own traffic —
+Worker secrets are write-only, so the evidence is that wrangler accepted the write
+and the name is still listed. The verifier half is proved directly.
+
+⚠️ **Her rung 2 was DOWN for a couple of minutes**, and the reason is worth
+keeping: **a Cloudflare secret change is not live the instant `wrangler`
+returns.** The first attempt set `catalog-index`, probed immediately, got 401 and
+stopped half-applied — correctly, by its own rule — but the value was fine and the
+edge simply had not caught up. Verifier-first is what the rotation plan
+prescribes for this pair and it buys no grace window (the verifier holds exactly
+one value per app), so the gap is inherent; the fix is that the handshake now
+retries with backoff before declaring failure.
+
+⚠️ **The drop-box channel is superseded for this key only.** Leave the line in
+place and empty — `ANTHROPIC_API_KEY_FRIEND_SAM` still needs it (KI-7).
 ## 2026-08-26 — 1Password is the MASTER: `.dev.vars` becomes a generated artifact
 
 📌 **Owner decision the same day (option A): adopt 1Password NOW**, superseding the

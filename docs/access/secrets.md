@@ -377,6 +377,33 @@ NAME exists, and *"do these two holders carry the same value?"* is still
 answerable only by the last-4 fingerprint on the main path, or by re-pushing both
 sides.
 
+### ✅ padhard's `INDEX_READ_TOKEN` HAS A MASTER NOW — 2026-08-26
+
+It had none: her instance and `catalog-index` each held a value nothing on this
+machine could read (estate secrets review §3.1), and the drop-box line
+`INDEX_READ_TOKEN_FRIEND_PADHARD` in the MAIN `.dev.vars` is empty, as a
+drop-box should be. `catalog-platform/scripts/op-rotate-pair.mjs` minted a fresh
+value into vault item **`library2.INDEX_READ_TOKEN`** and set it on BOTH holders
+in one run — `catalog-index` (the verifier) first, then her Worker.
+
+**Proved live:** `GET index.heygabi.ai/api/machine/lookup?title=…` with the new
+value returned **200 with 2 matching rows**, having returned **401** minutes
+earlier with the same value before the rotation. Her secret NAME list after: 10,
+unchanged.
+
+⚠️ **The drop-box channel is superseded for THIS key.** Setting hers no longer
+means piping `INDEX_READ_TOKEN_FRIEND_PADHARD` and blanking it — it means reading
+`library2.INDEX_READ_TOKEN` from the vault. Leave the drop-box line in place and
+empty; it is still the channel for anything the vault does not hold, and
+`ANTHROPIC_API_KEY_FRIEND_SAM` still needs it (KI-7 — only Sam can mint that one).
+
+⚠️ **A gotcha worth more than the rotation: a Cloudflare secret change is not
+live the instant `wrangler` returns.** The first attempt set the verifier, probed
+straight away, got 401, and stopped with the pair half-applied — her rung 2 was
+down for the couple of minutes it took to resume. The value was right; the edge
+had not caught up. Anything that pushes a secret and then immediately tests it
+must retry with backoff before calling it a failure.
+
 ### 🔴 Three custody gaps, MEASURED 2026-08-26 — two of them NEW
 
 The 2026-08-26 secrets review recorded these as *"master: library `.dev.vars`

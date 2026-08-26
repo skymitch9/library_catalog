@@ -247,11 +247,32 @@ describe('--keys-dir — the second caller (catalog-platform/docs/access/keys)',
     assert.equal(keyNameFromFile('claude-usage-token.txt'), 'CLAUDE_USAGE_TOKEN');
   });
 
-  it('gives those estate-wide singletons bare titles', () => {
-    // Each is one value with one or a few holders and no per-instance twin.
-    assert.equal(itemTitle(keyNameFromFile('estate-events-token.txt'), 'estate'), 'estate.ESTATE_EVENTS_TOKEN');
-    // …scoped by default, because nothing has classified them — which is the
-    // safe direction, and the catalog-platform caller passes its own holder.
+  it('⚠️ --bare titles those estate-wide singletons by NAME alone', () => {
+    // One FILE is one value there, and the file name IS the secret's name
+    // estate-wide — no second holder uses that name for anything else. A falsy
+    // holder is how the run says so.
+    for (const f of ['estate-conductor-token.txt', 'estate-events-token.txt', 'claude-usage-token.txt']) {
+      const name = keyNameFromFile(f);
+      assert.equal(itemTitle(name, null), name);
+      // …and the DEFAULT is still scoped, because a .dev.vars is one instance's
+      // view and an unclassified key there must not look estate-wide.
+      assert.equal(itemTitle(name), `library.${name}`);
+    }
+  });
+
+  it('labels its items with the CALLING repo, not this one', () => {
+    assert.ok(tagsFor('ESTATE_EVENTS_TOKEN', 'catalog-platform').includes('catalog-platform'));
+    assert.equal(tagsFor('ESTATE_EVENTS_TOKEN', 'catalog-platform').includes('library_catalog'), false);
+    assert.ok(tagsFor('ESTATE_EVENTS_TOKEN', 'catalog-platform').includes('estate'));
+    // …and the default is unchanged for this repo's own runs.
+    assert.ok(tagsFor('HARDCOVER_API_TOKEN').includes('library_catalog'));
+  });
+
+  it('carries the value into a bare-titled template just the same', () => {
+    const tpl = itemTemplate('ESTATE_EVENTS_TOKEN', FAKE, null, 'catalog-platform');
+    assert.equal(tpl.title, 'ESTATE_EVENTS_TOKEN');
+    assert.equal(tpl.fields.find((f) => f.id === 'password').value, FAKE);
+    assert.deepEqual(tpl.tags, ['estate', 'catalog-platform', 'credential']);
   });
 });
 

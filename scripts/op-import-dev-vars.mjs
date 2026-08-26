@@ -106,8 +106,18 @@ export function isBareTitled(name) {
   return BARE_EXTRA.includes(name);
 }
 
-/** `HARDCOVER_API_TOKEN` or `library.ANTHROPIC_API_KEY`. Never a slash. */
+/**
+ * `HARDCOVER_API_TOKEN` or `library.ANTHROPIC_API_KEY`. Never a slash.
+ *
+ * ⚠️ A **falsy holder** (the `--bare` flag) means *every* name in this run is
+ * already a whole identity, so nothing is scoped. That is true of
+ * `catalog-platform/docs/access/keys/`, where one FILE is one value and the file
+ * name IS the secret's name estate-wide — there is no second holder using that
+ * name for something else. It is NOT true of a `.dev.vars`, which is one
+ * instance's view, which is why the flag is opt-in per run and not the default.
+ */
 export function itemTitle(name, holder = HOLDER) {
+  if (!holder) return name;
   return isBareTitled(name) ? name : `${holder}${TITLE_SEP}${name}`;
 }
 
@@ -153,13 +163,21 @@ export function holdersNote(name) {
   return 'holders not yet recorded — classify it in scripts/push-secrets.mjs and re-run this import.';
 }
 
-/** `credential` or `local-config`, so nobody mistakes a dev flag for key material. */
-export function tagsFor(name) {
-  const kind =
-    name in LOCAL_ONLY || !(PRODUCTION_SECRETS.includes(name) || SHARED_SECRETS.includes(name) || HOLDERS[name])
-      ? 'local-config'
-      : 'credential';
-  return ['estate', 'library_catalog', kind];
+/**
+ * `credential` or `local-config`, so nobody mistakes a dev flag for key material.
+ *
+ * ⚠️ **`local-config` is decided by the EXPLICIT `LOCAL_ONLY` list, and an
+ * unrecognised name defaults to `credential`.** This wrote the rule the other way
+ * round for one afternoon — anything absent from the credential lists was called
+ * config — and the second caller found the bug immediately:
+ * `ESTATE_CONDUCTOR_TOKEN` and `ESTATE_EVENTS_TOKEN` are `catalog-platform`
+ * secrets, absent from THIS repo's lists, and were labelled `local-config`.
+ * A real credential wearing a config label is the dangerous direction; a dev flag
+ * wearing a credential label costs nothing.
+ */
+export function tagsFor(name, repoTag = 'library_catalog') {
+  const kind = name in LOCAL_ONLY ? 'local-config' : 'credential';
+  return ['estate', repoTag, kind];
 }
 
 // ---------------------------------------------------------------------------
@@ -194,11 +212,11 @@ export function planImport(vars, existingTitles = [], holder = HOLDER) {
 }
 
 /** The item JSON `op` reads from stdin. The ONLY place a value is interpolated. */
-export function itemTemplate(name, value, holder = HOLDER) {
+export function itemTemplate(name, value, holder = HOLDER, repoTag = 'library_catalog') {
   return {
     title: itemTitle(name, holder),
     category: 'PASSWORD',
-    tags: tagsFor(name),
+    tags: tagsFor(name, repoTag),
     fields: [
       { id: 'password', type: 'CONCEALED', purpose: 'PASSWORD', value },
       { id: 'notesPlain', type: 'STRING', purpose: 'NOTES', value: holdersNote(name) },
@@ -307,7 +325,10 @@ async function main() {
     if (i === -1) return null;
     return argv[i].includes('=') ? argv[i].split('=').slice(1).join('=') : (argv[i + 1] ?? null);
   };
-  const holder = flag('--holder') || HOLDER;
+  // ⚠️ `--bare` is a claim about the NAMES in this run, not a convenience: it
+  // says each one already identifies its value estate-wide. See `itemTitle`.
+  const holder = argv.includes('--bare') ? null : flag('--holder') || HOLDER;
+  const repoTag = flag('--tag') || 'library_catalog';
   const vault = flag('--vault') || VAULT;
   const keysDir = flag('--keys-dir');
 
@@ -336,7 +357,7 @@ async function main() {
   }
 
   console.log(`source: ${source}`);
-  console.log(`vault:  ${vault}   holder: ${holder}`);
+  console.log(`vault:  ${vault}   holder: ${holder ?? '(bare — names are whole identities)'}   tag: ${repoTag}`);
 
   // ⚠️ Before anything reaches the vault: a welded value is a broken FILE, and
   // importing one would make the vault the master of a corrupt string — the
@@ -395,7 +416,7 @@ async function main() {
   for (const row of plan) {
     if (row.action === SKIP_EMPTY) continue;
     const value = vars[row.name];
-    const template = JSON.stringify(itemTemplate(row.name, value, holder));
+    const template = JSON.stringify(itemTemplate(row.name, value, holder, repoTag));
 
     if (row.action === UPDATE) {
       // Read what is there now, so an unchanged value costs no write and no
