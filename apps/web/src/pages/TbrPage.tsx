@@ -15,6 +15,7 @@ import { ebookShelfUrl } from '../lib/ebook-site.js';
 import { describeError } from '../lib/errors.js';
 import { currentUid } from '../lib/firebase.js';
 import { fetchMyTbr, removeFromTbr } from '../lib/tbr.js';
+import { notInCatalogueSentence, splitTbrGroupsByShelf } from '../lib/tbr-elsewhere.js';
 import { Link, workPath } from '../router.js';
 
 /**
@@ -186,10 +187,11 @@ export function TbrPage({ me }: { me: Me }) {
   }
   if (groups === null) return <main className="muted">Loading…</main>;
 
-  const here = groups.filter((g) => g.workId !== null);
-  const elsewhere = groups.filter((g) => g.workId === null);
+  const { here, elsewhere } = splitTbrGroupsByShelf(groups);
   /** How many books were on the list more than once — see the note below. */
   const foldedAway = groups.reduce((n, g) => n + (g.docIds.length - 1), 0);
+  /** ⚠️ The number, said out loud — see `notInCatalogueSentence`'s header. */
+  const notHere = notInCatalogueSentence(elsewhere.length);
 
   return (
     <main>
@@ -251,10 +253,20 @@ export function TbrPage({ me }: { me: Me }) {
                   audiobooks against a few hundred works here), and the same
                   reasoning as the collection page's "most books belong to no
                   universe" note applies: an absence stated as a shortfall
-                  invents a job nobody asked for. */}
+                  invents a job nobody asked for.
+
+                  ⚠️ THE COUNT IS SAID OUT LOUD — owner, 2026-08-26: *"in the
+                  tbr list, not all have sync'd."* They had. Measured that day:
+                  53 of Samantha's 358 entries name a book padhard's catalogue
+                  has no row for, and 48 of the 53 are absent from the main
+                  instance too — audiobooks the household holds, with no library
+                  work behind them. A section that showed them without saying
+                  how many reads as a sync that dropped books. See
+                  `lib/tbr-elsewhere.ts` and `docs/info/tbr.md` §10. */}
+              {notHere && <p className="muted small">{notHere}</p>}
               <p className="muted small">
-                On your list, but this catalog holds no copy — they will be audiobooks, or
-                books spelled differently on the two sites.
+                They may also be books the two sites spell differently — the link on each
+                card searches the sibling shelf by the title on your list.
               </p>
               <TbrList groups={elsewhere} busy={busy} onRemove={remove} />
             </>
@@ -312,6 +324,42 @@ function toSpinnerRow(group: Group): SpinnerRow {
 function Formats({ group }: { group: Group }) {
   const { physical, audio, ebook } = group.formats;
   const showPhysical = physical && group.workId !== null && physical.state !== 'none';
+
+  // ⚠️ NOTHING MATCHED — say where to look, and do not pretend to know which
+  // shelf it is on. Added 2026-08-26 after the owner read a card with no chips
+  // at all as a book the sync had lost. The catalogue cannot name the format
+  // here (that is exactly what `workId === null` means), so these are SEARCHES
+  // on the two sibling shelves rather than the "You have it:" claims below —
+  // different wording because they are a different kind of statement.
+  //
+  // ⚠️ Both links are the EXISTING helpers. `audiobookDetailUrl` and
+  // `ebookShelfUrl` are each a port of the sibling site's own `#q=` reader; a
+  // third URL builder here would be a third place for those two sites' link
+  // shapes to drift.
+  if (group.workId === null) {
+    return (
+      <div className="wish__formats">
+        <span className="muted small">Look for it on:</span>
+        <a
+          className="chip-link"
+          href={audiobookDetailUrl(group.title)}
+          target="_blank"
+          rel="noreferrer"
+        >
+          🎧 Audiobooks ↗
+        </a>
+        <a
+          className="chip-link"
+          href={ebookShelfUrl(group.title)}
+          target="_blank"
+          rel="noreferrer"
+        >
+          📖 Ebooks ↗
+        </a>
+      </div>
+    );
+  }
+
   if (!showPhysical && !audio && !ebook) return null;
 
   return (

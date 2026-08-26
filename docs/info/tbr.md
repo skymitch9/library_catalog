@@ -1,6 +1,17 @@
 # Cross-catalog TBR — Information Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
+>
+> ## ⚠️ UPDATED 2026-08-26 (later) — THE AUDIT. READ §10.
+>
+> The owner reported *"not all have sync'd"*. **They had.** §10 carries the
+> read-only measurement against the live store and BOTH live D1 instances,
+> per person: Samantha's 53 unmatched entries are audiobooks her catalogue holds
+> no work for, and **zero** of them is a rung that should have fired and did
+> not. What came out of it is a **sentence**, not a matcher.
+> ⚠️ §10 also records that `readingLists` now measures **0 uid-less documents**,
+> which MEETS §8's removal condition for the whole legacy display-name lane.
+>
 > Last verified: **2026-08-26** (§9 — the media fold: 31 new tests green, the
 > suite at 1,878/0, and BOTH instances re-measured live after the deploy —
 > `library.heygabi.ai` and `padhard.heygabi.ai` each 200 with `database: up`
@@ -676,3 +687,155 @@ bridge/lookup, and both are separate asks.
 - **NOT verified: the audiobook site's surfaces in a browser.** Their fold is
   unit-tested and pushed to the `/dev/` lane; nobody has watched a count change
   there. **Prod promote is the owner's action and was not performed.**
+
+---
+
+## 10. ⚠️ THE AUDIT — "not all have sync'd" was the WORDING, not the matching (2026-08-26)
+
+The owner, on his phone, 2026-08-26:
+
+> *"in the tbr list, not all have sync'd — can we audit Diva's; also I don't see
+> the tag for what type of media a book is."*
+
+**"Diva" is Divaelf**, the retired v1 passphrase account whose 53 `read`
+documents were reassigned to **Samantha Hardman** on 2026-08-18 (`DONE.md`,
+`scripts/reassign_tbr_owner.py`). So "Diva's list" is Samantha's, and it belongs
+to `padhard.heygabi.ai` / D1 `library-catalog-2nd`.
+
+### How it was measured — and why the answer is trustworthy
+
+Read-only, and through the **shipped code** rather than a re-implementation of
+it: the live `readingLists` collection was dumped with the client/auth code from
+`audiobook_catalog/scripts/migrate_tbr_to_uid.py` (the read-only precedent), the
+six tables `resolveTbrEntries` touches were pulled out of **both** live D1
+instances with `wrangler d1 execute --remote` `SELECT`s, loaded into `node:sqlite`
+through the same D1 shim `packages/db/test/tbr-media-fold.test.ts` uses, and then
+`myTbrEntries` → `resolveTbrEntries` → `groupTbrEntries` were run over them in
+the page's own order. Nothing was written to Firestore or to either database.
+
+### The store, 2026-08-26
+
+| | |
+|---|---|
+| `readingLists` | **555** documents (was 234 on 2026-08-18) |
+| `readingLists_dev` | **0** — still never written to |
+| uid-less (legacy display-name keyed) | **0** |
+| `status: 'tbr'` / `'read'` | **393** / **162** |
+
+🔴 **`0` uid-less confirms §8's removal condition is MET.** `legacyReadingListDocId`,
+the `legacyDocId` field on `/api/tbr/:workId/keys`, the fallback read in
+`Tbr.tsx` and the uid-less branch of `ownsTbrDoc` are dead weight. Removing them
+is still **a separate pass with its own test sweep** — it was not folded into
+this one either.
+
+### Per person
+
+| Person | instance | docs | tbr | read | tbr written by the library (`workKey`) | tbr written by a sibling (`bookId` only) |
+|---|---|---:|---:|---:|---:|---:|
+| **Samantha Hardman ("Diva")** | padhard | 428 | 359 | 69 | **294** | **65** |
+| **Skylar (owner)** | main | 52 | 2 | 50 | 2 | 0 |
+| Solomon Hardman | padhard | 22 | 22 | 0 | 22 | 0 |
+| Jamie Jeremiah Lievertz | ⚠️ no `app_user` row on either instance | 53 | 10 | 43 | 0 | 10 |
+
+⚠️ **Every `read` document in the store was written by a sibling catalogue** —
+162 of them, none carrying a `workKey`. This catalogue has never written a
+`status: 'read'` reading-list document, and does not: it clears an intention by
+DELETING the document (§5), which is why `spentTbrEntries` measured **0** spent
+groups for everybody on the day of the audit.
+
+### How each `tbr` entry resolves — the three rungs, measured
+
+| Person | rung 1 `work_key` | rung 2 `title_slug` | rung 3 `audio_bridge` | rung 3 `ebook_bridge` | **unresolved** |
+|---|---:|---:|---:|---:|---:|
+| Samantha (358 after the pre-resolve dedupe, 1 dropped) | 283 | 15 | **7** | 0 | **53** |
+| Owner (2) | 2 | 0 | 0 | 0 | **0** |
+| Solomon (22) | 21 | 1 | 0 | 0 | **0** |
+
+### ⚠️ The 53 — and none of them is a matching failure
+
+The 53 unresolved entries ARE "the ones that didn't sync", and every one of them
+carries **no `workKey`** (all sibling-written) and matches **no `work.title`, no
+fresh `audiobook_holding` / `audiobook_edition_holding` row, and no
+`ebook_holding` row** in padhard's database. Cross-checked against the MAIN
+instance as well:
+
+| | |
+|---|---:|
+| absent from **both** library instances entirely | **48** |
+| present in the **main** instance's `work` (not hers) | 4 — *Defiant*, *Isles of the Emberdark*, *Unmapped*, *Untapped* |
+| present in the **main** instance's `audiobook_holding` (not hers) | 1 — *Fae and Fare - The Wandering Inn, Book 2* |
+| a rung that should have fired and did not | **0** |
+
+So: they are audiobooks Samantha put on her list from the audiobook site, for
+books **her** catalogue has no row for. The five that the main instance knows
+are not a defect either — `padhard` is her own library, and it is not supposed
+to hold the owner's books. ⚠️ **`ebook_holding` is EMPTY on padhard (0 rows)**,
+so an `ebook_bridge` match is impossible there by construction; the main
+instance has 126.
+
+### What the three surfaces count for the same person
+
+| Person | library `/tbr` (folded, this catalogue) | audiobook **prod** | audiobook **`/dev/`** |
+|---|---:|---:|---:|
+| **Samantha** | **351** cards — 298 on her shelves, **53** *"Not on these shelves"* | **359** (documents — no fold) | **358** (its own weaker fold) |
+| Owner | 2 | 2 | 2 |
+| Solomon | 22 | 22 | 22 |
+| Jamie | n/a — no library account | 10 | 10 |
+
+⚠️ **Prod really is unfolded, measured rather than assumed:** prod's
+`reviews.js` is 26,521 bytes with **0** occurrences of `foldReadingList`;
+`/dev/`'s is 31,504 bytes with 1. `/community` is 27,622 bytes with 0 against
+`/dev/community`'s 28,991 with 4. **The promote is the owner's action and was
+not performed.**
+
+### The fix this produced — Part B, and it is a SENTENCE
+
+The matching was right and the page was quiet about it. `/tbr` already listed
+these entries under *"Not on these shelves"*, but it never said **how many**,
+and a card with no format chip on it reads as a book the sync lost. So:
+
+| Where | Change |
+|---|---|
+| `apps/web/src/lib/tbr-elsewhere.ts` | new — `splitTbrGroupsByShelf` (the `workId === null` predicate, and nothing softer) and `notInCatalogueSentence` |
+| `apps/web/src/pages/TbrPage.tsx` | renders the count, and gives every unmatched card **both** sibling links |
+
+⚠️ **The unmatched card's links are SEARCHES, not claims.** `workId === null`
+means the catalogue cannot name the format, so the row says *"Look for it on:"*
+with 🎧 Audiobooks and 📖 Ebooks, against the matched row's *"You have it:"*.
+Both use the existing `audiobookDetailUrl` / `ebookShelfUrl` helpers — a third
+URL builder would be a third place for the sibling sites' `#q=` shapes to drift.
+
+⚠️ **The sentence never says "sync", "failed" or "missing"**, and its test
+asserts all three absences. Those entries are in the shared store exactly as
+recorded; blaming the sync would send the next session hunting a bug that
+measured clean.
+
+### The media tag — what the SIBLING side can and cannot do
+
+The second half of the ask ("I don't see the tag for what type of media a book
+is") is the audiobook site's, and its answer is in that repo's KI-7. The short
+version, because it constrains anything built here later:
+
+- 📕 **Library** is derivable there client-side — only this catalogue writes a
+  `workKey`.
+- 🎧 **Audiobook** is derivable — the page already holds its own catalogue.
+- 📖 **Ebook is NOT.** ⚠️ `site/ebooks.json` is gitignored *and left the
+  deployment* by owner directive (*"I don't want people scraping my books"*);
+  the manifest is served only behind a Firebase token and the estate's `ebooks`
+  grant. Publishing a title list to power a chip would be **access-increasing**,
+  so it was not built. 🔴 **The route that closes it is this catalogue writing
+  the formats onto the document it already writes** — which is a new field on a
+  shared store and therefore its own ask, not a side effect of a chip.
+
+### Verified — and what is NOT
+
+- **Measured 2026-08-26** against the live Firestore collection and both live D1
+  instances, through the shipped functions. Read-only throughout.
+- **Tests:** 8 new (`apps/web/test/tbr-elsewhere.test.ts`). Suite
+  **1,889 → 1,897 pass, 0 fail**; typecheck clean.
+- 🔴 **NOT verified: the signed-in screen, still.** Nobody has loaded `/tbr` as
+  the owner or as Samantha since the change — §9's closing note stands unchanged,
+  and the build environment cannot hold either session.
+- **NOT verified: whether the 53 titles exist in the household's audio library
+  at all.** The audit proves they are absent from both *library* catalogues; it
+  did not ask the audiobook catalogue's own `catalog.csv` about them.
