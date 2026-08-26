@@ -17,6 +17,154 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ Answered 2026-08-26 — marking TBR/read on padhard while signed in as the owner goes to the OWNER's list
+
+Owner: *"if i mark things on tbr or read on my account in padhard library does
+that add them to my list or her list? … the user's list … should be global."*
+Verified in code: the write path is `readingListDocId(uid, bookId)` =
+`${uid}_${bookId}` (`packages/core/src/tbr.ts:88`), same bundle on both
+instances, so the document is keyed to the signed-in ACCOUNT, never to the
+catalog. Marking on padhard as the owner writes to the owner's list; Samantha's
+list changes only when she is the one signed in. Read state is already global
+across sites by construction (§8 of `info/tbr.md`). No work needed; move this
+to DONE with the next landing.
+
+## ✅ Read-state filters in every search bar + a search bar (with the wheel) on `/tbr` (owner asks, 2026-08-26 ~15:12) — LANDED 2026-08-26
+
+Owner, on his phone, two messages apart:
+1. *"can we also add a filter in each of the search bars for tbr and other read
+   states"* — the collection search on **both library instances** and the
+   audiobook site's search need a read-state filter: **TBR / read / (whatever
+   other states `readingLists` carries)**. One vocabulary across sites; the
+   state comes from the same account-keyed `readingLists` docs `/tbr` reads,
+   folded by `tbrFoldKey` — no second store, no second matcher.
+2. *"can we also add a search bar in the /tbr route too so people can search
+   tbr books there too with the wheel"* — `/tbr` gets a search box that narrows
+   the folded groups, and **the wheel spins over the narrowed set** (one
+   candidate per book, as §9 of `info/tbr.md` already guarantees).
+
+Queued behind the TBR audit build (Samantha's list / unsynced named / media
+tags) because both touch `TbrPage.tsx` and the audiobook list view. Dispatch as
+ONE build once that lands; audiobook side on the `/dev/` lane only.
+
+### ✅ AS BUILT — 2026-08-26 (evening)
+
+**Step 0, and it settled the vocabulary: the store was MEASURED before anything
+was written.** Read-only, through the audiobook repo's service account,
+**2026-08-26 ~15:55 Phoenix**:
+
+| | |
+|---|---:|
+| `readingLists` documents | **555** |
+| `status: 'tbr'` | **393** |
+| `status: 'read'` | **162** |
+| anything else | **0** |
+| `readingLists_dev` | **0** — still never written to |
+
+So *"tbr and other read states"* is a closed set of **two**, not an open one.
+`READING_LIST_STATUSES` in `@lc/core` carries that reading and its date, and a
+test asserts the list is exactly those two, so a third value cannot arrive
+without a fresh measurement.
+
+**The collection filter — `?list=tbr` / `?list=read`.** A SECOND control beside
+the existing "Read" one, and deliberately not another option inside it:
+
+| Control | Store | Written by |
+|---|---|---|
+| **Read** (`?read=`) | `user_book.read_state`, five values | this catalogue, on the book page |
+| **My list** (`?list=`) | `status` on a `readingLists` document | the audiobook site — this catalogue has **never** written a `'read'` one; it DELETES the entry instead |
+
+They genuinely disagree for the same book, and both answers are right. One
+dropdown holding both would make "Read" mean whichever store the last person to
+touch the code had in mind. ⚠️ `?read=` was already taken, and `list` is the
+audiobook site's own spelling (`#list=tbr` has worked there for months) — so the
+estate has one vocabulary rather than a third.
+
+**How it resolves, and what it deliberately did NOT add.** No second store and
+no second matcher. `myTbrEntries` became `myReadingListEntries(…, 'tbr')` — one
+ownership rule, one dedupe, one `bookId` guard between them — and the browser
+posts the document keys to **`POST /api/tbr/resolve`, the same
+`resolveTbrEntries` path `/tbr` uses** (the indexed `work_key` pass, the
+title-slug scan, the `audiobook_holding` / `ebook_holding` bridge). The work ids
+come back and go into the collection query. That is the shape `universeIds`
+already had: a set the server cannot derive, resolved by the caller.
+`universeClause` was renamed `workIdsClause` and now serves both — two callers,
+one clause.
+
+⚠️ **TWO PARAMS, ONE FILTER, and the pair is the design.** `?list=` says the
+narrowing is in force and is the half the address bar carries; `?listIds=` is
+one person's answer and travels only on the API call. So a shared `/?list=tbr`
+link opens the RECIPIENT's own list rather than a snapshot of somebody else's —
+and `?list=tbr` with **no** ids means *"asked, and this catalogue holds none of
+them"*, which is `0 = 1` and not the whole collection. Getting that backwards is
+the expensive failure and no type could catch it, so it has tests on both sides
+of the wire.
+
+**The facets carry both params.** This is **F3** (2026-08-25) in a new place and
+the worst place for it: a to-read list narrows harder than any other control, so
+*"Cradle (6)"* beside it would be six books almost certainly not on the list.
+`facet-list-agreement.test.ts` already pins the rule and passed unchanged.
+
+**Four ways the grid can come back empty, four sentences**
+(`apps/web/src/lib/reading-list-filter.ts`, the precedent `tbr-elsewhere.ts`
+set):
+
+| Cause | What is said |
+|---|---|
+| not signed in | the control is **not rendered at all** — a reading list is attributed by uid alone since 2026-08-18, so there is nothing to filter by |
+| signed in, session not settled | a worded notice (~340 ms of token refresh is an ordinary race), never an empty list |
+| list empty | says so, and says where a book is added from |
+| on the list, not in this catalogue | the COUNT, and that they are audiobooks or ebooks held elsewhere |
+| matched, excluded by another control | `null` — the page's own *"Nothing matches that"* is right again, and blaming the reading list for a Series dropdown would be worse |
+
+⚠️ **None of them says "failed", "missing" or "sync"**, and the tests assert
+those absences. §10 of `info/tbr.md` measured why: 53 of Samantha's 358 entries
+are the fourth row, and it was already misread once as a sync that dropped
+books.
+
+**The `/tbr` search box.** Client-side over the groups the page already holds
+(`narrowTbrGroups`, pure), and **`TbrSpinner` is handed the NARROWED groups**, so
+the wheel spins over what is on screen — still one candidate per BOOK, so the
+media fold's guarantee survives. The *"Not on these shelves"* section and its
+count narrow with the same query; filtering one half and leaving the other at
+full length would read as the search being broken.
+
+⚠️ **It matches EVERY spelling a group was recorded under**, not just the card's
+— typing "reckoners" finds a book whose card says *Firefight*. Folding the match
+set would HIDE a book, which is the rule the audiobook site's `matchTitles`
+already records. ⚠️ It is **not a matcher**, and deliberately does not use
+`normaliseTitle`: that function builds a persisted key, and a search box is
+exactly the caller that later wants "one more small tweak" to how it folds.
+⚠️ The query is **not** in the URL, unlike the collection's `?q=`: this screen
+shows one person's own list, so `/tbr?q=sanderson` would open a stranger's list
+narrowed by a word they never typed.
+
+**The audiobook site** (`/dev/` lane): a **My Read List** option beside **My TBR
+List** in the same search-bar dropdown, and `#list=read&user=…` beside
+`#list=tbr&user=…`. The key → status mapping lives once
+(`readingListStatusFor` in `site/reviews.js`) — the hash reader's old inline
+`listType === 'tbr'` was the third copy of it and is gone. ⚠️ `matchTitles`
+still keeps every spelling, unchanged. An unknown list name now gets a sentence
+rather than a blank catalogue, and a module that would not load is worded as an
+OUTAGE rather than as an empty list. ⚠️ `site/index.html` is a rendered
+artifact — re-rendered with `python -m app.tools.rebuild_site_html`, and the
+diff is 93 lines with **no catalogue churn**.
+
+**Tests:** 64 new on the library side — 10 pure
+(`packages/core/test/reading-list-status.test.ts`), 10 against real SQL through
+the `node:sqlite` D1 shim (`packages/db/test/collection-reading-list.test.ts`),
+11 on the Worker's two-param reader
+(`apps/worker/src/routes/collection-reading-list-param.test.ts`), and 33 on the
+two web modules (`apps/web/test/reading-list-filter.test.ts`,
+`apps/web/test/tbr-search.test.ts`). Suite **1,897 → 1,961 pass, 0 fail** on the
+base this landed on; **1,979 / 0** after rebasing onto the concurrent #348 work.
+Typecheck clean, web build clean. Audiobook: 9 new
+(`site/__tests__/reading-list-status.test.js`), vitest **765 → 774 pass**;
+pytest **1,825 pass with the same 2 pre-existing `test_universes.py` failures**
+this repo's earlier 2026-08-26 entries already record — the shared universe list
+has moved past the 16 that file asserts, unrelated and untouched.
+
+
 ## ✅ TBR audit — "not all have sync'd" + the media tag (owner ask, 2026-08-26)
 
 Owner, on his phone: *"in the tbr list, not all have sync'd — can we audit
