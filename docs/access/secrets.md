@@ -1,7 +1,16 @@
 # Secrets & ops commands — how to set/push keys and run the npx tooling
 
 > **Audience:** the owner + Claude sessions. **Status:** TRACKED.
-> **Last verified: 2026-08-25** — the two `push-secrets.mjs` guards LANDED that
+> **Last verified: 2026-08-26** — 1Password became the MASTER that day (the
+> "vault" section below): 13 items imported into vault `Estate`, the
+> `--source op` plan proved byte-identical to the `--source file` plan on all
+> three paths (main / friend / both), and `HARDCOVER_API_TOKEN` was pushed to
+> BOTH instances *from the vault* and landed — both Workers rolled to a new
+> **Secret Change** version at 16:22 Phoenix. The live secret NAME lists were
+> re-taken the same minute: main 11, friend 10, unchanged.
+> ⚠️ **NOT re-checked:** whether the Hardcover ladder RUNG still answers — the
+> only live path to it writes to production; see that section.
+> **Previously verified: 2026-08-25** — the two `push-secrets.mjs` guards LANDED that
 > day, and the "Both instances" section below was rewritten against the shipped
 > code (`SHARED_ALWAYS` / `SHARED_OPT_IN` / `--enable`, and the glued-value
 > refusal). The `--both --dry-run` plan quoted there was **run**, names only.
@@ -19,15 +28,21 @@
 ## ⚠️ The rule that governs this whole doc
 
 **A raw secret value never goes into chat, and Claude never reads the file that
-holds it.** Two safe channels only:
+holds it.** Three safe channels:
 1. **Owner sets it interactively** — `wrangler secret put` prompts hidden; the
    value goes straight to Cloudflare. Claude can't see it and doesn't need to.
 2. **Owner writes it to `apps/worker/.dev.vars`** (gitignored) and Claude runs
    `npm run secrets:push` — the *script* reads the file and pushes; Claude runs
    the command but never opens `.dev.vars`.
+3. 🆕 **The vault (2026-08-26).** The owner puts it in 1Password vault `Estate`
+   and Claude runs `npm run secrets:push:op` — `op` resolves the value straight
+   into the push, and it never reaches the disk at all. See
+   "The vault" below; this is now the **preferred** channel.
 
-`.dev.vars` is gitignored and MUST stay that way. It is the single source of
-truth for the main instance's secrets.
+`.dev.vars` is gitignored and MUST stay that way. ⚠️ **Since 2026-08-26 it is no
+longer the source of truth — it is a GENERATED artifact** and the vault is the
+master. It still holds real key material whenever it exists, which is the reason
+the standing advice is to regenerate it, push, and delete it again.
 
 ## Where secrets live
 
@@ -257,6 +272,134 @@ for a day after it was done):
   `npm run secrets:push:both`. (Owner never pastes the key to Claude; Claude
   never reads `.dev.vars`.)
 
+## 🔐 The vault — 1Password is the MASTER as of 2026-08-26
+
+📌 **Owner decision 2026-08-26 (option A): adopt 1Password NOW**, superseding the
+2026-08-25 "defer (option C)". Plan of record:
+`catalog-platform/docs/info/secrets-review-2026-08-26.md` §5.
+
+**`apps/worker/.dev.vars` is no longer a hand-edited master. It is a GENERATED
+artifact** — a build output you may delete and regenerate at will. The master is
+1Password vault **`Estate`**.
+
+```
+apps/worker/.dev.vars.tpl     TRACKED. Names + pointers. No values.
+        |
+        |  npm run secrets:push:op        <- nothing touches the disk at all
+        |  op inject -i ... -o .dev.vars  <- ...or make the real file, then delete it
+        v
+apps/worker/.dev.vars         GENERATED. Gitignored. Ephemeral.
+```
+
+### The item-title convention — the SAME in every repo
+
+| Title | When | Examples |
+|---|---|---|
+| `<NAME>` | the NAME identifies **one value** estate-wide, however many holders | `HARDCOVER_API_TOKEN`, `PEER_TOKEN`, `DONOR_TOKEN`, `ESTATE_APP_TOKEN_LIBRARY` |
+| `<holder>.<NAME>` | the same NAME means a **different value** on another holder | `library.ANTHROPIC_API_KEY`, `library2.INDEX_READ_TOKEN` |
+
+- ⚠️ **The separator is a DOT, never a slash.** A secret reference is
+  `op://<vault>/<item>/<field>`, so a title containing a slash is unaddressable:
+  `op://Estate/library/ANTHROPIC_API_KEY/password` parses as item `library`,
+  section `ANTHROPIC_API_KEY`.
+- ⚠️ **`ESTATE_APP_TOKEN_*` is BARE**, even though `push-secrets.mjs` classifies
+  it `PER_INSTANCE`. The two answer different questions: the list asks *"may a
+  bulk run send this to her Worker?"* (no), the title asks *"does this name
+  identify one value?"* (yes — the instance is already in the SUFFIX).
+- **An unclassified key defaults to holder-scoped**, so a key nobody has decided
+  about can never be mistaken for an estate-wide shared value.
+- Every item carries tags `estate`, `library_catalog`, and `credential` or
+  `local-config`; the **notes field records WHICH HOLDERS receive the value**, so
+  the vault item *is* the custody record rather than a table that goes stale.
+
+### The commands
+
+```
+npm run secrets:import:op                  # .dev.vars  -> vault   (idempotent)
+npm run secrets:import:op -- --dry-run     # ...names + actions only
+node scripts/op-import-dev-vars.mjs --write-template   # regenerate the .tpl
+
+npm run secrets:push:op                    # vault -> MAIN
+npm run secrets:push:friend:op             # vault -> FRIEND (shared keys only)
+npm run secrets:push:both:op               # vault -> both
+npm run secrets:push:both:op -- --dry-run
+npm run secrets:push:both:op -- --only HARDCOVER_API_TOKEN   # ONE key
+```
+
+`SECRETS_SOURCE=op` in the environment is the same as `--source op`, for a shell
+that has switched over wholesale. **`--source file` is still the DEFAULT and is
+byte-for-byte unchanged** — backing the vault out is dropping a flag, not
+reverting a rotation.
+
+### 🆕 `--only NAME` — narrow a run to one key
+
+Repeatable. ⚠️ **It can only ever REMOVE keys from what a run would send.** A
+refusal stays a refusal, an opt-in key still needs `--enable`, and no key the
+allowlists did not already contain can be added by naming it. `--enable` is the
+flag that grants; this one only declines. It is how a single key is rotated
+without a bulk run — and it is how the `op` source was first exercised in
+production: one already-live value, re-sent unchanged.
+
+### Regenerating the real file, when you actually want one
+
+```
+op inject -i apps/worker/.dev.vars.tpl -o apps/worker/.dev.vars
+npm run secrets:push
+rm apps/worker/.dev.vars            # ⚠️ it is a build output, not a master
+```
+
+⚠️ Prefer `npm run secrets:push:op`, which resolves the template to **stdout** and
+parses it in memory — the file never exists, so there is no window in which it can
+be read, synced to OneDrive, or left behind.
+
+### ⚠️ The two traps, both measured on adoption day
+
+1. **`op inject` parses COMMENTS.** It reads the whole file, not only the
+   template expressions. A secret reference written in prose fails the entire
+   resolve with *"invalid secret reference … too few /"*, and a stray pair of
+   curly braces in prose fails it with *"only secret references or quoted strings
+   can be enclosed in unescaped braces"*. Both happened, in the template's own
+   header, minutes apart. The generated header now warns about it and a test
+   asserts it. Full symptom entry in [`../info/gotchas.md`](../info/gotchas.md).
+2. **Every `op` process can raise an authorization prompt a HUMAN must approve.**
+   Unanswered, `op` writes `authorization timeout`; dismissed,
+   `authorization prompt dismissed` — both were hit before the first successful
+   call. This is why the import is ONE Node process batching its `op` calls, and
+   why the push resolves the whole template with a single `op inject` rather than
+   one `op read` per key. Both scripts turn the refusal into a sentence naming the
+   click, never a bare exit code.
+
+### What the vault does NOT fix
+
+⚠️ **Worker secrets stay write-only.** The vault is a *master*, never a *readback
+of what is actually installed*. `npm run secret:list` still proves only that a
+NAME exists, and *"do these two holders carry the same value?"* is still
+answerable only by the last-4 fingerprint on the main path, or by re-pushing both
+sides.
+
+### 🔴 Three custody gaps, MEASURED 2026-08-26 — two of them NEW
+
+The 2026-08-26 secrets review recorded these as *"master: library `.dev.vars`
+(file exists; contents unopened)"* — a statement about the FILE. Parsing it for
+NAMES (never values) for the 1Password import measured the contents for the first
+time, and **two of those rows were wrong**:
+
+| Secret | Live on | In `.dev.vars`? | Status |
+|---|---|---|---|
+| `ESTATE_APP_TOKEN_LIBRARY` | main ✅ | 🔴 **NO** | **NEW** — no readable master. Re-mint needs BOTH sides; `estate-auth` is the verifier |
+| `INDEX_PUSH_TOKEN` | main ✅ | 🔴 **NO** | **NEW** — no readable master. Pairs with `catalog-index`'s `INDEX_PUSH_TOKEN_LIBRARY` |
+| `AUDIOBOOK_MAPPING_TOKEN` | main ✅ + friend ✅ | 🔴 **NO** | Already known (`TODO.md`). Master is `audiobook_catalog/.env` `LIBRARY_MAPPING_TOKEN` |
+
+All three print `skip (not set locally)` on a dry run, **from either source** —
+a bulk run cannot rotate them, and the vault cannot hold what the file never had.
+Closing each is a mint-and-set-both-sides operation. See [`../TODO.md`](../TODO.md).
+
+⚠️ Three `.dev.vars` lines are **drop-boxes and are deliberately NOT in the
+vault**: `ANTHROPIC_API_KEY_FRIEND_SAM`, `INDEX_READ_TOKEN_FRIEND_PADHARD` and
+`CLOUDFLARE_API_TOKEN_CI`. All three are empty, which is their correct resting
+state — a filled drop-box is an unfinished operation, never storage. The import
+skips an empty value by name, and the template carries them as blank lines.
+
 ## Ops command reference (which Claude can run vs which need the owner)
 
 | Command | What | Who |
@@ -271,17 +414,27 @@ for a day after it was done):
 | **`npm run secrets:push:both` / `:friend`** | Push `SHARED_ALWAYS` to both / to friend; per-instance keys refused; `SHARED_OPT_IN` skipped unless `-- --enable NAME` | Claude (never reads the file) |
 | `npx wrangler secret put ... [--env friend]` | Set one secret interactively | **Owner** (hidden prompt) |
 | `npm run secret:list[:friend]` | List secret NAMES | Either |
+| 🆕 `npm run secrets:push:op` / `:friend:op` / `:both:op` | The same pushes, values resolved from the 1Password vault. Nothing written to disk | Claude (never sees a value) |
+| 🆕 `… -- --only NAME` | Narrow any push to one key. ⚠️ Can only ever REMOVE keys from a run | Claude |
+| 🆕 `npm run secrets:import:op` | Import `.dev.vars` into the vault. Idempotent; prints names + actions only | Claude (never opens the file) |
+| 🆕 `node scripts/op-import-dev-vars.mjs --write-template` | Regenerate `apps/worker/.dev.vars.tpl` | Claude |
+| `op item list --vault Estate` | List vault item TITLES (no values) | Either — ⚠️ raises a 1Password approval prompt the **owner** must click |
 
 ## ⚠️ Known secret-hygiene gap (2026-08 audit)
 
 ~~A live **`PEER_TOKEN`** was committed in plaintext to this (public) repo~~ —
 **rotated 2026-08-25**, verified live on both instances (see `DONE.md`).
-There is still **no central vault**: secrets are spread across Cloudflare,
-`.dev.vars` (plaintext, on a OneDrive-synced disk), GCP, Firebase, and some exist
-ONLY on a Worker with no readable master (KI-7). **Owner decision 2026-08-25:
-defer the vault (option C).** He has **1Password**, so when it happens the
-target is 1Password's `op` CLI with `.dev.vars` GENERATED from it — not
-Bitwarden. ✅ **The two `push-secrets.mjs` guards that were queued in `TODO.md`
+✅ **The "no central vault" half of this gap CLOSED on 2026-08-26** — owner
+decision option A, superseding the 2026-08-25 "defer (option C)". 1Password vault
+`Estate` is now the master for this repo's 13 `.dev.vars` keys and `.dev.vars`
+is a generated artifact. See "The vault" above.
+
+⚠️ **What is NOT closed, and must not be claimed as closed:** secrets still exist
+ONLY on a Worker with no readable master — KI-7 (padhard's `ANTHROPIC_API_KEY`,
+which only Sam can mint) plus the three measured gaps listed in that section
+(`ESTATE_APP_TOKEN_LIBRARY`, `INDEX_PUSH_TOKEN`, `AUDIOBOOK_MAPPING_TOKEN`). A
+vault cannot hold a value nothing on this machine can read; each of those needs a
+mint-and-set-both-sides operation before the vault can become its master. ✅ **The two `push-secrets.mjs` guards that were queued in `TODO.md`
 landed 2026-08-25** (the glued-value refusal and the opt-in split, both above);
 they narrow the blast radius of a hand-edited `.dev.vars` but do not replace a
 vault.

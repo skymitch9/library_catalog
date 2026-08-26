@@ -17,6 +17,137 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## 2026-08-26 — 1Password is the MASTER: `.dev.vars` becomes a generated artifact
+
+📌 **Owner decision the same day (option A): adopt 1Password NOW**, superseding the
+2026-08-25 "defer (option C)". Plan of record:
+`catalog-platform/docs/info/secrets-review-2026-08-26.md` §5, step 1 of 4.
+
+**What landed**
+
+- `apps/worker/.dev.vars.tpl` — TRACKED, and safe in a PUBLIC repo because every
+  line is a NAME and a pointer. **Generated** by the import script, so its titles
+  cannot drift from the titles the import creates.
+  ⚠️ `.gitignore`'s `.dev.vars.*` rule swallowed it; added the `!.dev.vars.tpl`
+  negation beside the existing `!.dev.vars.example` and verified with
+  `git ls-files --others --exclude-standard` rather than by reading the file.
+- `scripts/op-import-dev-vars.mjs` — `.dev.vars` → vault, idempotent, names-only
+  output, reusing the existing glued-value guard. `--keys-dir` is the second
+  caller, for `catalog-platform/docs/access/keys/*.txt`.
+- `scripts/op-cli.mjs` — the `op` plumbing, in its own file to break an import
+  CYCLE (see the gotcha below).
+- `scripts/push-secrets.mjs` — `--source op` (default stays `file`, unchanged) and
+  `--only NAME`. npm: `secrets:push:op` / `:friend:op` / `:both:op` /
+  `secrets:import:op`.
+- 25 new tests, every fixture the literal string `placeholder-not-a-secret`.
+  Suite 1914/1914 green.
+
+**The item-title convention** — the same in every repo: BARE `<NAME>` when the
+name identifies one value estate-wide; `<holder>.<NAME>` when the same name means
+a different value somewhere else; unclassified defaults to holder-scoped.
+⚠️ The separator is a DOT because `/` is the `op://vault/item/field` delimiter.
+⚠️ `ESTATE_APP_TOKEN_*` stays BARE even though `push-secrets.mjs` calls it
+per-instance — the two answer different questions and the instance is already in
+the suffix. Full statement in [`access/secrets.md`](access/secrets.md).
+
+**Measured, 2026-08-26**
+
+| Check | Result |
+|---|---|
+| Import into vault `Estate` | **13 created**, 3 empty drop-boxes skipped by name, 0 failed |
+| Re-run (idempotency) | **13 unchanged**, 0 writes — which also proves each vault value is byte-identical to the file's |
+| `--source op` vs `--source file` dry-run plans | **IDENTICAL** on all three paths: `--both` 26/26 rows, main-only 16/16, `--friend` 16/16 |
+| …and the main-only plan carries the last-4 fingerprints | so that is a **value-level** match on the 5 pushed keys, not name parity |
+| `HARDCOVER_API_TOKEN` pushed to BOTH instances **from the vault** | landed — both Workers rolled to a new **Secret Change** version at 16:22 Phoenix (main `458f0c0d…`, friend `773c4eb0…`) |
+| Live secret NAMES after | main **11**, friend **10** — unchanged from before the push |
+
+⚠️ **NOT verified: that the Hardcover ladder RUNG still answers.** Every live path
+to `askHardcover` goes through a research run / scan job and WRITES to production
+(`lib/free-details.ts` is only reached from `routes/scan-jobs.ts` and
+`lib/research-run.ts`); there is no read-only probe of that rung. The value pushed
+was proved byte-identical to the one already live, so a rung probe could only
+re-confirm what was true before the push — but it was not run, and this row says so
+rather than implying it was.
+
+**Two gotchas that cost real time, both filed by symptom in
+[`info/gotchas.md`](info/gotchas.md)**
+
+1. ⚠️ **`op inject` parses COMMENTS.** Twice, minutes apart, the template's own
+   explanatory header took the whole resolve down — once for a secret reference
+   written in prose (*"invalid secret reference 'op://pointers': too few '/'"*),
+   once for a pair of curly braces used to talk about the syntax (*"only secret
+   references or quoted strings can be enclosed in unescaped braces"*). Neither
+   line was a template expression. A test now asserts the rendered file is clean.
+2. ⚠️ **An import CYCLE with a top-level `await` is a DEADLOCK wearing a crash's
+   clothes.** `push-secrets.mjs` reached back into `op-import-dev-vars.mjs` — which
+   imports it — with a dynamic `import()` that looked like it broke the cycle and
+   did not: the request queued behind `push-secrets.mjs`'s own evaluation, which
+   was blocked on `if (isEntrypoint) await main()`. Node printed *"Detected
+   unsettled top-level await"* and exited **13** with no other output. Fixed by
+   extracting `scripts/op-cli.mjs`, which neither file's lists depend on.
+
+**Also measured, and it falsifies a row in the secrets review:** parsing
+`.dev.vars` for NAMES showed `ESTATE_APP_TOKEN_LIBRARY` and `INDEX_PUSH_TOKEN`
+are **absent** from it, so both are live on main with no readable master —
+previously recorded as *"master: library `.dev.vars` (file exists; contents
+unopened)"*, which was a claim about the file. Open in
+[`TODO.md`](TODO.md) with `AUDIOBOOK_MAPPING_TOKEN`.
+
+⚠️ **What the vault does NOT fix, and must not be claimed to:** Worker secrets stay
+write-only, so the vault is a master and never a readback of what is installed.
+`secret:list` still proves only that a NAME exists.
+
+---
+
+### ✅ `DONOR_TOKEN` — DONE 2026-08-26. Custody established, minted, rotated, verified live both ways.
+
+**The shape, established from the CODE before anything was minted**
+(`apps/worker/src/env.ts:141-158`, `apps/worker/src/routes/donor.ts:242-247`):
+`DONOR_TOKEN` is the estate's *one value, two holders, the same NAME on both*
+idiom, and it does **double duty on each instance** — sent outbound as
+`X-Donor-Token` to `DONOR_URL`, and the inbound gate on that same instance's own
+`GET /api/donor/details`. Both instances point `DONOR_URL` at each other
+(`wrangler.toml` `[vars]` and `[env.friend.vars]`), so **each instance both
+sends and verifies it, under that one secret name.** ⚠️ **Exactly two holders** —
+checked across `catalog-platform`, `boardbuddy` and the estate credentials
+catalog; nothing else presents or verifies it.
+
+**Both halves ARE managed by `scripts/push-secrets.mjs`**, which is what made
+minting the right move rather than a report: `DONOR_TOKEN` is on **`SHARED_ALWAYS`**
+(`push-secrets.mjs:168`), and `planFor`'s `--both` branch sends MAIN
+`PRODUCTION_SECRETS ∪ SHARED_SECRETS` — so main gets it even though it is not on
+`PRODUCTION_SECRETS`, and friend gets it because it is shared-**always** rather
+than opt-in.
+
+**Done, in order:** trailing-newline check (the file already ended `\n`; checked
+without printing a byte) → `openssl rand -hex 32` piped straight in with the CR
+stripped and exactly one `\n` appended → `secrets:push:both -- --dry-run` (plan:
+`push main DONOR_TOKEN`, `push friend DONOR_TOKEN`, no opt-in key enabled, no
+glued-value refusal) → `secrets:push:both` (7 secrets to main, 4 to friend).
+
+**VERIFIED LIVE, both directions, 2026-08-26 ~14:47 Phoenix** —
+`GET /api/donor/details?title=The%20Way%20of%20Kings` with the rotated value:
+
+| Instance | correct token | wrong token | no header |
+|---|---|---|---|
+| `library.heygabi.ai` | **200** · `matched=true` · work **#419** · all four fields | 404 | 404 |
+| `padhard.heygabi.ai` | **200** · `matched=true` · work **#332** · all four fields | 404 | 404 |
+
+404-not-401 on a wrong token is the designed behaviour (`routes/donor.ts`'s
+header: one legitimate caller, nobody worth telling *"almost"*), so this also
+confirms the gate still fails closed.
+
+⚠️ **A stale line NOT fixed here, because it lives in another repo:**
+`audiobook_catalog/docs/access/CREDENTIALS.md` §4.4 says *"⚠️ Not in any push
+allowlist. `.dev.vars` is not the source of truth for this one"* and gives
+rotation as two interactive `npm run secret*` commands. **Both halves of that
+are now wrong.** That repo was off-limits to this session (a concurrent agent
+was working in it), so this is reported rather than edited.
+
+**What is still open above is `AUDIOBOOK_MAPPING_TOKEN` alone.** Its master is
+`audiobook_catalog/.env` `LIBRARY_MAPPING_TOKEN` — the same off-limits repo — so
+closing it means copying that value into `.dev.vars`, which is the owner's move
+or a later session's, not this one's.
 ## ✅ Answered 2026-08-26 — marking TBR/read on padhard while signed in as the owner goes to the OWNER's list
 
 Owner: *"if i mark things on tbr or read on my account in padhard library does

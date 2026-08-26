@@ -1,4 +1,11 @@
-# apps/worker/.dev.vars.tpl — GENERATED. Names + op:// pointers, never values.
+# apps/worker/.dev.vars.tpl — GENERATED. Names + pointers, never values.
+#
+# ⚠️ COMMENTS ARE PARSED TOO. `op inject` reads the WHOLE file, not only
+# the template expressions, so a bare secret reference OR a stray pair of
+# curly braces in prose fails the ENTIRE resolve — and the error names a
+# reference nobody wrote on purpose. Measured 2026-08-26, twice, both ways:
+#   invalid secret reference … too few /       (a reference in this header)
+#   only secret references or quoted strings   (empty braces in this header)
 #
 # ⚠️ This file is TRACKED and this repo is PUBLIC. Every line below is a NAME
 # and a POINTER into the 1Password vault `Estate`. Nothing here is secret.

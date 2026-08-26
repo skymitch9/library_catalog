@@ -494,6 +494,45 @@ rescue anything untracked BEFORE removing, every time.
   Do not measure the size first; just delete, and check the count after.
 
 
+## "`op inject` says my template has an invalid secret reference I never wrote" — 2026-08-26
+
+**Symptom.** `npm run secrets:push:op` dies before touching Cloudflare with
+either of these, naming something that is not in any of the real lines:
+
+```
+[ERROR] invalid secret reference 'op://pointers': too few '/': secret references
+        should have at least vault, item and field specified
+[ERROR] parsing error at 4:53: only secret references or quoted strings can be
+        enclosed in unescaped {{ }}s
+```
+
+**Cause.** ⚠️ **`op inject` parses the WHOLE file, comments included.** It is not
+a line-oriented `NAME=` substituter. Both errors above came from the template's
+own explanatory HEADER: the first from the phrase *"Names + op:// pointers"* in a
+`#` comment (it read `op:// pointers` as the reference `op://pointers`), the
+second from a comment that used an empty `{{ }}` to talk *about* the syntax.
+Neither line was a template expression; both took the whole resolve down, and the
+error named a reference nobody had written on purpose.
+
+**Repair.** Keep comments free of both — no `op://` in prose, no curly braces in
+prose. `scripts/op-import-dev-vars.mjs`'s `renderTemplate` generates the header,
+so the fix lives in ONE place; the generated header now carries a warning about
+itself, and `scripts/test/op-import-dev-vars.test.mjs` asserts that no rendered
+line outside a `{{ }}` contains a reference.
+
+**Rule.** A template's documentation belongs where the parser cannot reach it —
+in the script that generates it, or in `docs/access/secrets.md`. What goes in the
+file itself is the minimum a human needs, written in words the injector will not
+mistake for syntax.
+
+⚠️ **Sibling trap, same day, same tool: every `op` process can raise a 1Password
+approval prompt a HUMAN must click.** Unanswered it is `authorization timeout`,
+dismissed it is `authorization prompt dismissed`, and both look like a broken
+install. They are neither — they are a person not at the machine. Batch `op`
+calls into as few processes as possible (the import is one Node process; the push
+resolves everything with a single `op inject`) and translate the refusal into a
+sentence naming the click.
+
 ## "I appended a key to `.dev.vars` and the push shipped a corrupted secret" — 2026-08-25
 
 **Symptom.** `printf 'PEER_TOKEN=%s\n' "$(openssl rand -hex 32)" >> apps/worker/.dev.vars`

@@ -63,9 +63,11 @@
  */
 
 import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
-import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve, basename, extname } from 'node:path';
+
+import { isAuthorizationRefusal, opBinary, opFailureMessage, runOp } from './op-cli.mjs';
+export { isAuthorizationRefusal, opBinary, opFailureMessage, runOp } from './op-cli.mjs';
 
 import {
   LOCAL_ONLY,
@@ -214,7 +216,14 @@ export function itemTemplate(name, value, holder = HOLDER) {
 export function renderTemplate(names, emptyNames = [], holder = HOLDER, vault = VAULT) {
   const empty = new Set(emptyNames);
   const lines = [
-    '# apps/worker/.dev.vars.tpl — GENERATED. Names + op:// pointers, never values.',
+    '# apps/worker/.dev.vars.tpl — GENERATED. Names + pointers, never values.',
+    '#',
+    '# ⚠️ COMMENTS ARE PARSED TOO. `op inject` reads the WHOLE file, not only',
+    '# the template expressions, so a bare secret reference OR a stray pair of',
+    '# curly braces in prose fails the ENTIRE resolve — and the error names a',
+    '# reference nobody wrote on purpose. Measured 2026-08-26, twice, both ways:',
+    '#   invalid secret reference … too few /       (a reference in this header)',
+    '#   only secret references or quoted strings   (empty braces in this header)',
     '#',
     '# ⚠️ This file is TRACKED and this repo is PUBLIC. Every line below is a NAME',
     '# and a POINTER into the 1Password vault `' + vault + '`. Nothing here is secret.',
@@ -250,55 +259,6 @@ export function renderTemplate(names, emptyNames = [], holder = HOLDER, vault = 
 // ---------------------------------------------------------------------------
 // `op` — every value goes over stdin, never argv.
 // ---------------------------------------------------------------------------
-
-/**
- * ⚠️ `op` is installed by winget and is not on PATH in shells that predate the
- * install. Resolved by name first (so a PATH install wins), then at the winget
- * package path measured 2026-08-26.
- */
-export const OP_FALLBACK =
-  'C:\\Users\\nbasl\\AppData\\Local\\Microsoft\\WinGet\\Packages\\AgileBits.1Password.CLI_Microsoft.Winget.Source_8wekyb3d8bbwe\\op.exe';
-
-export function opBinary(env = process.env) {
-  return env.OP_CLI || (process.platform === 'win32' ? OP_FALLBACK : 'op');
-}
-
-/** Spawn `op`, optionally writing `stdin`. Resolves { code, stdout, stderr }. */
-export function runOp(args, { stdin = null, bin = opBinary() } = {}) {
-  return new Promise((res) => {
-    const child = spawn(bin, args, { stdio: ['pipe', 'pipe', 'pipe'] });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (c) => (stdout += c));
-    child.stderr.on('data', (c) => (stderr += c));
-    child.on('error', (err) => res({ code: -1, stdout, stderr: String(err) }));
-    child.on('close', (code) => res({ code, stdout, stderr }));
-    if (stdin !== null) child.stdin.end(stdin);
-    else child.stdin.end();
-  });
-}
-
-/**
- * ⚠️ **The authorization prompt is a HUMAN step, and its failure has a name.**
- * `op` reports `authorization prompt dismissed` / `authorization timeout` on
- * stderr and this is not a bug to retry blindly — somebody has to click Approve
- * in the 1Password desktop app.
- */
-export function isAuthorizationRefusal(stderr = '') {
-  return /authorization (prompt dismissed|timeout)|not currently signed in/i.test(stderr);
-}
-
-/** A sentence a person can act on — never a bare exit code. */
-export function opFailureMessage(action, title, { code, stderr }) {
-  if (isAuthorizationRefusal(stderr)) {
-    return (
-      `${action} ${title}: 1Password did not authorize the request. The desktop app ` +
-      'raises an approval prompt for each `op` process — approve it (Touch ID / ' +
-      'Windows Hello / your account password) and run this again. Nothing was written.'
-    );
-  }
-  return `${action} ${title}: op exited ${code}. ${(stderr || '').trim().split('\n')[0] || 'No detail on stderr.'}`;
-}
 
 /**
  * ⚠️ **The argv for a create / an edit, built WITHOUT the value.**

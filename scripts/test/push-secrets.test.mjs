@@ -30,6 +30,7 @@ import {
   SHARED_OPT_IN,
   SHARED_SECRETS,
   SKIP_OPT_IN,
+  SKIP_NOT_SELECTED,
   SKIP_UNSET,
   assertListsDisjoint,
   assertNoGluedValues,
@@ -38,6 +39,7 @@ import {
   gluedRefusalMessage,
   isPerInstance,
   looksGlued,
+  narrowTo,
   optInReason,
   parseDevVars,
   planFor,
@@ -438,5 +440,57 @@ describe('planFor — the opt-in rule', () => {
   it('the printed action carries the flag a reader needs to type', () => {
     assert.equal(SKIP_OPT_IN, 'skip (opt-in; --enable NAME)');
     assert.match(optInReason('EBOOK_INGEST_TOKEN'), /capability grant, not a rotation/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// `--only NAME` — narrowing, and only ever narrowing (2026-08-26)
+// ---------------------------------------------------------------------------
+
+describe('narrowTo — the --only flag', () => {
+  const present = [...PRODUCTION_SECRETS, 'DONOR_TOKEN', 'PEER_TOKEN'];
+
+  it('keeps the named key and turns every other PUSH into a skip', () => {
+    const plan = narrowTo(planFor(present, { both: true }), ['HARDCOVER_API_TOKEN']);
+    assert.equal(actionFor(plan.main, 'HARDCOVER_API_TOKEN'), PUSH_MAIN);
+    assert.equal(actionFor(plan.friend, 'HARDCOVER_API_TOKEN'), PUSH_FRIEND);
+    assert.equal(actionFor(plan.main, 'GOOGLE_BOOKS_API_KEY'), SKIP_NOT_SELECTED);
+    assert.equal(actionFor(plan.friend, 'PEER_TOKEN'), SKIP_NOT_SELECTED);
+  });
+
+  it('⚠️ can NEVER widen — a refusal stays a refusal even when named', () => {
+    // The whole safety argument. --enable is the flag that grants; this one only
+    // ever declines, so naming a per-instance key cannot smuggle it onto her
+    // Worker, and naming an unclassified key cannot classify it.
+    const plan = narrowTo(planFor([...present, 'LIBRARYTHING_API_KEY'], { both: true }), [
+      'ANTHROPIC_API_KEY',
+      'LIBRARYTHING_API_KEY',
+      'EBOOK_INGEST_TOKEN',
+    ]);
+    assert.equal(actionFor(plan.friend, 'ANTHROPIC_API_KEY'), REFUSE_PER_INSTANCE);
+    assert.equal(actionFor(plan.friend, 'LIBRARYTHING_API_KEY'), REFUSE_UNCLASSIFIED);
+    // …and an opt-in key still needs --enable; --only does not stand in for it.
+    assert.equal(actionFor(plan.friend, 'EBOOK_INGEST_TOKEN'), SKIP_OPT_IN);
+  });
+
+  it('names a key that is not set locally as unset, not as selected', () => {
+    const plan = narrowTo(planFor(['GOOGLE_BOOKS_API_KEY'], { both: true }), ['HARDCOVER_API_TOKEN']);
+    assert.equal(actionFor(plan.main, 'HARDCOVER_API_TOKEN'), SKIP_UNSET);
+  });
+
+  it('is a no-op with no --only, so every existing path is untouched', () => {
+    const plan = planFor(present, { both: true });
+    assert.deepEqual(narrowTo(plan, []), plan);
+    assert.deepEqual(narrowTo(plan), plan);
+  });
+
+  it('never puts a VALUE in a narrowed row either', () => {
+    const plan = narrowTo(planFor(present, { both: true }), ['PEER_TOKEN']);
+    for (const row of [...plan.main, ...plan.friend]) {
+      assert.deepEqual(
+        Object.keys(row).filter((k) => !['name', 'action', 'why'].includes(k)),
+        [],
+      );
+    }
   });
 });

@@ -17,6 +17,7 @@
  *   npm run secrets:push -- --both --dry-run   # print the plan, push nothing
  *   npm run secrets:push -- --both --enable EBOOK_INGEST_TOKEN   # opt-in key
  *   npm run secrets:push:op            # …the same, sourced from 1Password
+ *   npm run secrets:push:both:op -- --only HARDCOVER_API_TOKEN   # one key
  *
  * ## 🆕 `--source op` — the vault, not the file (owner decision 2026-08-26)
  *
@@ -59,6 +60,17 @@
  *
  * ⚠️ `.dev.vars` is gitignored and must stay that way. It is the one file in
  * this repo that holds real key material.
+ *
+## `--only NAME` — narrow a run to one key (2026-08-26)
+ *
+ * Repeatable. ⚠️ **It can only ever REMOVE keys from what a run would send.** A
+ * refusal stays a refusal, an unclassified key stays unclassified, and no key
+ * the allowlists did not already contain can be added by naming it. `--enable`
+ * is the flag that grants; this one only declines.
+ *
+ * It is how a single key is rotated without a bulk run, and it is how the `op`
+ * source was first exercised in production: one already-live value, re-sent
+ * unchanged, so the round trip was proved without moving anything.
  *
  * ## The "one command for BOTH instances" change (owner ask, 2026-08-25)
  *
@@ -108,6 +120,15 @@ import { existsSync, readFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
+
+// ⚠️ `op-cli.mjs`, NOT `op-import-dev-vars.mjs`. The import script imports THIS
+// file for its lists and its glued-value guard, so reaching back the other way
+// is a CYCLE — and because the last statement here is a top-level `await
+// main()`, the cycle deadlocks: Node prints "Detected unsettled top-level
+// await" and exits 13 with no other output. Measured 2026-08-26, with a
+// dynamic `import()` that looked like it broke the cycle and did not. Both
+// files depend on the plumbing module and on nothing of each other's.
+import { isAuthorizationRefusal, opBinary, runOp } from './op-cli.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -480,6 +501,32 @@ export const REFUSE_UNCLASSIFIED = 'refuse (not a shared secret)';
  * whole command out.
  */
 export const SKIP_OPT_IN = 'skip (opt-in; --enable NAME)';
+/**
+ * ⚠️ **`--only NAME` NARROWS a plan and can never widen one.** It turns a row
+ * that would have been pushed into a skip; it cannot turn a refusal into a push,
+ * and it cannot add a key the allowlists did not already contain. That direction
+ * is the whole safety argument — `--enable` is the flag that grants, and this
+ * one only ever declines.
+ *
+ * It exists because the safest way to exercise a new value SOURCE is to send one
+ * already-live value and change nothing (secrets review §5 step 1), and because
+ * a single-key rotation should not have to be a bulk run. The same
+ * one-pair-at-a-time discipline the rotation plan (§4) asks for by hand.
+ */
+export const SKIP_NOT_SELECTED = 'skip (not selected; --only)';
+
+/** Narrow a finished plan to the named keys. Pushes become skips, nothing else moves. */
+export function narrowTo(plan, only = []) {
+  if (!only.length) return plan;
+  const keep = new Set(only);
+  const narrow = (rows) =>
+    rows.map((row) =>
+      (row.action === PUSH_MAIN || row.action === PUSH_FRIEND) && !keep.has(row.name)
+        ? { name: row.name, action: SKIP_NOT_SELECTED }
+        : row,
+    );
+  return { main: narrow(plan.main), friend: narrow(plan.friend) };
+}
 
 /**
  * What a `--friend` / `--both` run WOULD do, as data — names only, no values.
@@ -683,6 +730,19 @@ async function main() {
     }
     enable.push(value);
   }
+  // `--only NAME`, repeatable. NARROWS what a run sends; see SKIP_NOT_SELECTED.
+  const only = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a !== '--only' && !a.startsWith('--only=')) continue;
+    const value = a.includes('=') ? a.slice('--only='.length) : (argv[i + 1] ?? null);
+    if (!value || value.startsWith('--')) {
+      console.error('--only needs a key NAME, e.g. --only HARDCOVER_API_TOKEN');
+      process.exit(1);
+    }
+    only.push(value);
+  }
+
   if (enable.length && !both && !friend) {
     console.error('--enable only applies to a non-main instance — add --friend or --both.');
     console.error('MAIN is the source of truth and already holds these keys.');
@@ -751,8 +811,8 @@ async function main() {
 
   console.log(`source: ${source === 'op' ? `1Password vault ${VAULT_NAME} (${TEMPLATE})` : DEV_VARS}`);
 
-  if (!both && !friend) return await pushMainOnly(vars, dry);
-  return await pushBoth(vars, { both, friend, dry, enable });
+  if (!both && !friend) return await pushMainOnly(vars, dry, only);
+  return await pushBoth(vars, { both, friend, dry, enable, only });
 }
 
 /**
@@ -764,7 +824,6 @@ async function main() {
  * that stdout. It goes straight into `parseDevVars` and never to a console.
  */
 async function readFromVault({ friend, both }) {
-  const { runOp, isAuthorizationRefusal, opBinary } = await import('./op-import-dev-vars.mjs');
   if (!existsSync(TEMPLATE)) {
     console.error(`No template at ${TEMPLATE}, so there is nothing to resolve.`);
     console.error('Generate it from the file that still exists:');
@@ -806,12 +865,14 @@ async function readFromVault({ friend, both }) {
  * secrets:push` with no flags must keep doing exactly what the runbook says it
  * does; the "both instances" work is additive and lives in `pushBoth`.
  */
-async function pushMainOnly(vars, dry) {
+async function pushMainOnly(vars, dry, only = []) {
   const payload = {};
   const skipped = [];
+  const selected = (key) => !only.length || only.includes(key);
 
   for (const key of PRODUCTION_SECRETS) {
-    if (vars[key]) payload[key] = vars[key];
+    if (!selected(key)) skipped.push(`${key} — not selected (--only)`);
+    else if (vars[key]) payload[key] = vars[key];
     else skipped.push(`${key} — not set locally`);
   }
   for (const [key, why] of Object.entries(LOCAL_ONLY)) {
@@ -853,8 +914,8 @@ async function pushMainOnly(vars, dry) {
 }
 
 /** The `--both` / `--friend` path: one command, both instances, names only. */
-async function pushBoth(vars, { both, friend, dry, enable = [] }) {
-  const plan = planFor(Object.keys(vars), { both, friend, enable });
+async function pushBoth(vars, { both, friend, dry, enable = [], only = [] }) {
+  const plan = narrowTo(planFor(Object.keys(vars), { both, friend, enable }), only);
 
   const say = (rows, heading) => {
     if (!rows.length) return;

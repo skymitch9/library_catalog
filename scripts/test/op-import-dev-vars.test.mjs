@@ -207,6 +207,20 @@ describe('renderTemplate — TRACKED, and this repo is PUBLIC', () => {
     assert.equal(out.includes('op://Estate/library.ANTHROPIC_API_KEY_FRIEND_SAM'), false);
   });
 
+  it('⚠️ carries NO bare secret reference outside a {{ }} — it breaks `op inject`', () => {
+    // Measured 2026-08-26: the header once read "Names + <a bare reference>
+    // pointers", and `op inject` — which scans the WHOLE file, not just the
+    // expressions — failed the entire resolve with "invalid secret reference
+    // 'op://pointers': too few '/'". One word of prose took the push path down,
+    // and the error named a reference nobody had written on purpose.
+    const stripped = out.replace(/\{\{[^{}]*\}\}/g, '');
+    assert.equal(
+      /op:\/\//.test(stripped),
+      false,
+      'a secret reference outside {{ }} fails the whole `op inject`',
+    );
+  });
+
   it('tells a reader how to regenerate the file AND to delete it again', () => {
     assert.match(out, /op inject -i apps\/worker\/\.dev\.vars\.tpl/);
     assert.match(out, /rm apps\/worker\/\.dev\.vars/);
