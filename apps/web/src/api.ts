@@ -3,7 +3,7 @@
  * nothing else has to.
  */
 
-import type { Role, ScanJob, ScanLine } from '@lc/core';
+import type { Role, ScanJob, ScanLine, TbrGroupFormats } from '@lc/core';
 import { getIdToken } from './lib/firebase.js';
 
 export class ApiError extends Error {
@@ -300,6 +300,30 @@ export interface TbrMatchView {
   series: string | null;
   seriesIndexDisplay: string | null;
   workCoverUrl: string | null;
+  /**
+   * ⚠️ The matched WORK's key — what two documents for one book fold on.
+   * See `tbrFoldKey` in `@lc/core`; null on an entry nothing matched.
+   */
+  workWorkKey: string | null;
+  /** Which shelves the book is on. Null when the catalog matched nothing. */
+  formats: TbrGroupFormats | null;
+  matchedVia: 'work_key' | 'title_slug' | 'audio_bridge' | 'ebook_bridge' | null;
+}
+
+/**
+ * The server's fold: which documents are one book.
+ *
+ * ⚠️ **No titles, deliberately** — see `routes/tbr.ts`. The page holds the
+ * titles it read from Firestore and re-folds with the same `groupTbrEntries`,
+ * so this is the authoritative COUNT rather than a second rendering path.
+ */
+export interface TbrGroupView {
+  key: string;
+  /** ⚠️ Every document in the group — "Off the list" deletes all of them. */
+  docIds: string[];
+  workId: number | null;
+  readState: string | null;
+  formats: TbrGroupFormats;
 }
 
 /** One work in a duplicate group, as `/api/collection/duplicates` returns it. */
@@ -1531,7 +1555,7 @@ export const api = {
    * read state comes back for the signed-in person only — see `routes/tbr.ts`.
    */
   tbrResolve: (entries: { docId: string; bookId: string; workKey: string | null }[]) =>
-    request<{ entries: TbrMatchView[] }>('/api/tbr/resolve', {
+    request<{ entries: TbrMatchView[]; groups: TbrGroupView[] }>('/api/tbr/resolve', {
       method: 'POST',
       body: JSON.stringify({ entries }),
     }),

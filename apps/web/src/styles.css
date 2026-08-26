@@ -1604,7 +1604,19 @@ ol.ladder > li::before {
 }
 .wish__book:hover { background: var(--lc-tint); }
 .wish__book .row-open__text { display: flex; flex-direction: column; }
-.wish__actions { display: flex; flex-wrap: wrap; gap: 0.3rem; flex: none; }
+.wish__actions { display: flex; flex-wrap: wrap; gap: 0.3rem; flex: none; align-items: center; }
+
+/*
+ * The TBR card's FORMATS row — every shelf one book is actually on (owner ask,
+ * 2026-08-26: *"we need to have it single count with a link to all formats"*).
+ *
+ * ⚠️ It sits INSIDE `.wish__actions`, beside "Off the list", so the whole thing
+ * wraps as one unit on a phone rather than the format links wrapping under the
+ * card while the button stays stranded beside it. The `align-items: center`
+ * added above is what keeps the chips level with the button when it does wrap.
+ */
+.wish__formats { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; }
+.wish__formats > .muted { white-space: nowrap; }
 
 /* --- a parcel turning up -------------------------------------------------- */
 

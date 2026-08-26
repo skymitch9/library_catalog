@@ -1,5 +1,11 @@
 import { Hono } from 'hono';
-import { absoluteCoverUrl, legacyReadingListDocId, tbrDocFor, tbrResolveSchema } from '@lc/core';
+import {
+  absoluteCoverUrl,
+  groupTbrEntries,
+  legacyReadingListDocId,
+  tbrDocFor,
+  tbrResolveSchema,
+} from '@lc/core';
 import { getWork, resolveTbrEntries } from '@lc/db';
 import type { AppBindings } from '../env.js';
 import { requireCapability } from '../middleware/auth.js';
@@ -187,5 +193,33 @@ export const tbrRoutes = new Hono<AppBindings>()
       })),
     );
 
-    return c.json({ entries });
+    // ⚠️ THE FOLD IS DECIDED HERE, not in the browser — 2026-08-26, owner:
+    // *"it's double counting if something is owned in multiple media sources …
+    // we need to have it single count with a link to all formats."*
+    //
+    // Only the Worker can key it: the third rung of the fold is a lookup
+    // through `audiobook_holding` / `ebook_holding`, which live in D1 and which
+    // the browser has never seen. So the server says which documents are one
+    // book, and the page renders one card per group.
+    //
+    // ⚠️ `groups` carries NO TITLES, for the same reason `TbrEntryRef` does not:
+    // the titles came from the browser's own Firestore read, and a server that
+    // echoed them back would let the page print a string nothing checked as
+    // though the catalog had said it. It carries the ids, the work, and the
+    // state — the three facts only D1 can settle.
+    //
+    // The page calls the SAME `groupTbrEntries` over these entries merged with
+    // its own titles, so the count reported here and the number of cards on
+    // screen have one implementation between them and cannot drift.
+    const groups = groupTbrEntries(entries).map((g) => ({
+      key: g.key,
+      // ⚠️ EVERY document in the group. "Off the list" deletes all of them —
+      // the person meant the book, not one catalog's copy of it.
+      docIds: g.docIds,
+      workId: g.workId,
+      readState: g.readState,
+      formats: g.formats,
+    }));
+
+    return c.json({ entries, groups });
   });

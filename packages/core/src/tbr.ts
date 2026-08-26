@@ -423,3 +423,242 @@ export function spentTbrEntries<T extends TbrMatched>(entries: readonly T[]): T[
 export function outstandingTbrEntries<T extends TbrMatched>(entries: readonly T[]): T[] {
   return entries.filter((e) => e.readState !== 'read');
 }
+
+/* ── ONE BOOK, ONE ROW — the media fold, 2026-08-26 ──────────────────────── */
+
+/**
+ * Which shelves a folded book can actually be reached on, and under what name.
+ *
+ * ⚠️ **Only the formats that EXIST get a link.** The owner's ask was *"we need
+ * to have it single count with a link to all formats"* — all the formats it has,
+ * not a row of three buttons two of which apologise. A `null` here is the
+ * catalog saying it holds no such copy, which is a fact; a dead link would be a
+ * claim.
+ *
+ * `audio.title` and `ebook.title` are the SIBLING catalog's own spelling
+ * (`audiobook_holding.title`, `ebook_holding.title`) rather than this one's,
+ * because both sites' only per-book link is a title search-hash
+ * (`audiobookDetailUrl` / `ebookShelfUrl`) — searching them for *this* catalog's
+ * spelling finds the right thing far less often, which is the same lesson
+ * `DriveLinks` records for Drive.
+ */
+export interface TbrGroupFormats {
+  /**
+   * The physical shelf. `state` is the household's, not the person's:
+   * `'owned'` when a copy is held or lent, `'wanted'` when only a wishlist copy
+   * exists, `'none'` when the work is in the catalog with no copy at all.
+   */
+  physical: { workId: number; state: 'owned' | 'wanted' | 'none' } | null;
+  /** An `audiobook_holding` row exists for the matched work (migration 0010/0390). */
+  audio: { title: string } | null;
+  /** An `ebook_holding` row exists for the matched work (migration 0310). */
+  ebook: { title: string } | null;
+}
+
+/**
+ * One TBR document, with everything the fold is allowed to key on.
+ *
+ * ⚠️ Everything optional here is the CATALOG's answer, filled in by
+ * `resolveTbrEntries` — never by the browser. The document itself carries only
+ * `bookId`, `workKey` and `title`.
+ */
+export interface TbrFoldable {
+  docId: string;
+  bookId: string;
+  /** The composite key, when the DOCUMENT carries one (library-written only). */
+  workKey: string | null;
+  /** The title as the document spells it. */
+  title?: string | null;
+  /** The work this catalog matched the entry to, if any. */
+  workId?: number | null;
+  /** ⚠️ The matched WORK's own `work_key` — not the document's. */
+  workWorkKey?: string | null;
+  /** The matched work's author string. */
+  authors?: string | null;
+  /** This catalog's title for the matched work. */
+  workTitle?: string | null;
+  /** This catalog's cover for the matched work. */
+  workCoverUrl?: string | null;
+  /** The cover the DOCUMENT carries — the sibling catalog's, usually. */
+  coverUrl?: string | null;
+  readState?: string | null;
+  formats?: TbrGroupFormats | null;
+}
+
+/**
+ * The key that decides whether two TBR documents are the same BOOK.
+ *
+ * ## ⚠️ The bug this exists to fix
+ *
+ * Owner, 2026-08-26: *"for the tbr list, it's double counting if something is
+ * owned in multiple media sources. So if a book is audio, physical and ebook or
+ * any combination we need to have it single count with a link to all formats."*
+ *
+ * A `readingLists` document id is `` `${uid}_${bookId}` `` and `bookId` is
+ * `bookIdFromTitle(title)` — a slug of the title **as that catalog spells it**.
+ * The audiobook site says *Firefight - The Reckoners, Book 2*, this one says
+ * *Firefight*, so one intention becomes two documents and every surface that
+ * counts documents counts it twice.
+ *
+ * ## ⚠️ FOLDING AT READ TIME, NEVER BY RE-KEYING THE STORE
+ *
+ * The obvious-looking fix — make both catalogs write one id — is a **migration**
+ * of a persisted key, and §8 of `docs/info/tbr.md` already did one of those. It
+ * would also be wrong: the audiobook site has no author for most rows and so
+ * cannot build the composite key at all. So the documents stay exactly where
+ * they are and the fold happens on the way out.
+ *
+ * ## The rungs, strongest first
+ *
+ * | # | Key | Reaches |
+ * |---|---|---|
+ * | 1 | the matched WORK's `work_key` | anything the catalog could resolve — including an audiobook-written document bridged through `audiobook_holding` / `ebook_holding` |
+ * | 2 | the DOCUMENT's own `workKey` | library-written documents for books this catalog no longer holds |
+ * | 3 | `workKeyFor(cleanAudiobookTitle(title), authors)` | an entry with a known author but no stored key |
+ * | 4 | `bookId` — i.e. no fold | everything else |
+ *
+ * ⚠️ **Rung 4 is a REFUSAL, and it is the point.** There is no title-only rung:
+ * two books called *Gold* are two books, and `myTbrEntries` already records why
+ * a key with no `|` in it is not trusted. An entry that cannot be folded
+ * honestly stays its own row — a list that is right and slightly long beats one
+ * that quietly merges two different books. **No new matcher was written for
+ * this**; every rung is `@lc/core`'s existing `titles.ts`.
+ */
+export function tbrFoldKey(row: TbrFoldable): string {
+  const composite = (raw: string | null | undefined): string | null => {
+    const key = typeof raw === 'string' ? raw.trim() : '';
+    // The same guard `myTbrEntries` applies: `workKeyFor` always joins a folded
+    // title to a folded author, so a value with no `|` is not one of ours.
+    return key.includes('|') ? key : null;
+  };
+
+  const fromWork = composite(row.workWorkKey);
+  if (fromWork) return `work:${fromWork}`;
+
+  const fromDoc = composite(row.workKey);
+  if (fromDoc) return `work:${fromDoc}`;
+
+  const authors = typeof row.authors === 'string' ? row.authors.trim() : '';
+  const title = typeof row.title === 'string' ? row.title.trim() : '';
+  if (authors && authors !== UNKNOWN_AUTHOR && title) {
+    return `work:${workKeyFor(cleanAudiobookTitle(title), authors)}`;
+  }
+
+  return `book:${row.bookId}`;
+}
+
+/** One book, however many documents and formats recorded the intention. */
+export interface TbrGroup<T extends TbrFoldable> extends TbrMatched {
+  /** `tbrFoldKey`'s answer — stable, and what the count counts. */
+  key: string;
+  /** Every document that folded here, in the order they arrived. */
+  entries: T[];
+  /**
+   * ⚠️ **EVERY document id in the group.** Taking a book off the list deletes
+   * all of them: the person meant the book, not one catalog's copy of it, and
+   * leaving the other document behind would light the sibling site's
+   * `✓ To Be Read` button for a book they just cleared.
+   */
+  docIds: string[];
+  workId: number | null;
+  /**
+   * ⚠️ **`'read'` if ANY document in the group is read.** *"Finishing one format
+   * clears the intention"* is the owner's own rule (`docs/info/tbr.md` §5) and
+   * this is where it lands once a book is several documents.
+   */
+  readState: string | null;
+  title: string;
+  authors: string | null;
+  /** This catalog's cover, first non-null across the group. */
+  workCoverUrl: string | null;
+  /** The sibling catalog's cover, first non-null. Needs `resolveAudiobookCover`. */
+  docCoverUrl: string | null;
+  formats: TbrGroupFormats;
+}
+
+/** Owned beats wanted beats nothing, when two documents disagree. */
+function mergePhysical(
+  a: TbrGroupFormats['physical'],
+  b: TbrGroupFormats['physical'],
+): TbrGroupFormats['physical'] {
+  if (!a) return b;
+  if (!b) return a;
+  const rank = { owned: 2, wanted: 1, none: 0 } as const;
+  return rank[b.state] > rank[a.state] ? b : a;
+}
+
+/**
+ * Fold a person's TBR onto one row per BOOK.
+ *
+ * ⚠️ **Pure, and deliberately the ONLY implementation.** Both the Worker (over
+ * the catalog's own answer) and the browser (over that answer merged with the
+ * Firestore titles) call this, so the number the route reports and the number of
+ * cards on screen cannot come to disagree — the estate's "one fact, one home"
+ * rule applied to a count rather than a document.
+ *
+ * Group order is first-seen order; entry order inside a group is the same. The
+ * winner of every field is the FIRST non-null, which makes the result stable
+ * against a re-fetch that returns the documents in another order only insofar as
+ * the caller's own order is stable — the caller passes them in the order it read
+ * them, and no field here is a tiebreak worth more than that.
+ */
+export function groupTbrEntries<T extends TbrFoldable>(rows: readonly T[]): TbrGroup<T>[] {
+  const groups = new Map<string, TbrGroup<T>>();
+
+  for (const row of rows) {
+    const key = tbrFoldKey(row);
+    let group = groups.get(key);
+    if (!group) {
+      group = {
+        key,
+        entries: [],
+        docIds: [],
+        workId: null,
+        readState: null,
+        title: '',
+        authors: null,
+        workCoverUrl: null,
+        docCoverUrl: null,
+        formats: { physical: null, audio: null, ebook: null },
+      };
+      groups.set(key, group);
+    }
+
+    group.entries.push(row);
+    group.docIds.push(row.docId);
+
+    if (group.workId === null && typeof row.workId === 'number') group.workId = row.workId;
+    if (group.authors === null && row.authors) group.authors = row.authors;
+    if (group.workCoverUrl === null && row.workCoverUrl) group.workCoverUrl = row.workCoverUrl;
+    if (group.docCoverUrl === null && row.coverUrl) group.docCoverUrl = row.coverUrl;
+
+    // ⚠️ 'read' is sticky and beats everything: one finished format spends the
+    // whole intention. 'reading' beats a bare row for the same reason in
+    // miniature — the page says "you are reading this", and it is still true
+    // when a second document says nothing at all.
+    const state = row.readState ?? null;
+    if (state === 'read') group.readState = 'read';
+    else if (group.readState !== 'read' && state === 'reading') group.readState = 'reading';
+    else if (group.readState === null) group.readState = state;
+
+    const f = row.formats;
+    if (f) {
+      group.formats.physical = mergePhysical(group.formats.physical, f.physical);
+      group.formats.audio = group.formats.audio ?? f.audio;
+      group.formats.ebook = group.formats.ebook ?? f.ebook;
+    }
+  }
+
+  // ⚠️ The title is chosen in a SECOND pass, not as the documents arrive: this
+  // catalog's spelling wins over the sibling's wherever the group has one, and
+  // the entry that carries it is not necessarily the first. The audiobook
+  // packaging ("… - The Reckoners, Book 2") is what the person would otherwise
+  // read on a card for a book this catalog knows plainly as *Firefight*.
+  for (const group of groups.values()) {
+    const fromCatalog = group.entries.find((e) => !!e.workTitle)?.workTitle;
+    const fromDoc = group.entries.find((e) => !!e.title)?.title;
+    group.title = fromCatalog || fromDoc || group.entries[0]?.bookId || '';
+  }
+
+  return [...groups.values()];
+}

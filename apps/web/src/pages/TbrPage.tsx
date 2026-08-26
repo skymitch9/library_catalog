@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
-import { outstandingTbrEntries, spentTbrEntries, type TbrEntry } from '@lc/core';
+import {
+  groupTbrEntries,
+  outstandingTbrEntries,
+  spentTbrEntries,
+  type TbrEntry,
+  type TbrGroup,
+} from '@lc/core';
 import { api, type Me, type TbrMatchView } from '../api.js';
 import { BooksWithYou } from '../components/BooksWithYou.js';
 import { Cover } from '../components/Cover.js';
-import { TbrSpinner } from '../components/TbrSpinner.js';
+import { TbrSpinner, type SpinnerRow } from '../components/TbrSpinner.js';
 import { audiobookDetailUrl, resolveAudiobookCover } from '../lib/audiobook-site.js';
+import { ebookShelfUrl } from '../lib/ebook-site.js';
 import { describeError } from '../lib/errors.js';
 import { currentUid } from '../lib/firebase.js';
 import { fetchMyTbr, removeFromTbr } from '../lib/tbr.js';
@@ -40,13 +47,33 @@ import { Link, workPath } from '../router.js';
  * steps, neither of them new: the collection page's sweep (`lib/read-sync.ts`)
  * marks the work read from that rating, and this screen then retires the entry
  * it settled. Nothing on the audiobook side had to change for that to work.
+ *
+ * ## ⚠️ ONE CARD PER BOOK, NOT PER DOCUMENT — 2026-08-26
+ *
+ * Owner: *"for the tbr list, it's double counting if something is owned in
+ * multiple media sources. So if a book is audio, physical and ebook or any
+ * combination we need to have it single count with a link to all formats."*
+ *
+ * A book the household holds on paper and on audio is TWO `readingLists`
+ * documents, because each catalog keys its own by a slug of its own spelling of
+ * the title. They are folded here by `groupTbrEntries` — the same function the
+ * Worker uses to key the fold, so the count it reports and the cards drawn here
+ * have one implementation between them — and each group draws one card with a
+ * FORMATS row linking to every shelf the book is actually on.
+ *
+ * ⚠️ **"Off the list" removes the WHOLE GROUP.** Deleting one document would
+ * leave the other behind, and the sibling site's `✓ To Be Read` button would
+ * still be lit for a book the person just cleared. They meant the book.
  */
 
 /** One row: what Firestore holds, plus what the catalog said about it. */
 type Row = TbrEntry & TbrMatchView;
 
+/** One book: every document that named it, folded. */
+type Group = TbrGroup<Row>;
+
 export function TbrPage({ me }: { me: Me }) {
-  const [rows, setRows] = useState<Row[] | null>(null);
+  const [groups, setGroups] = useState<Group[] | null>(null);
   const [cleared, setCleared] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -67,7 +94,7 @@ export function TbrPage({ me }: { me: Me }) {
       // are the only ones such a session could have written.
       const entries = await fetchMyTbr(collection, { ...me, uid: currentUid() });
       if (entries.length === 0) {
-        setRows([]);
+        setGroups([]);
         return;
       }
 
@@ -83,24 +110,36 @@ export function TbrPage({ me }: { me: Me }) {
         return match ? [{ ...e, ...match }] : [];
       });
 
+      // ⚠️ THE FOLD HAPPENS BEFORE THE CLEARING, and the order matters: a book
+      // finished on audio and still listed on paper is ONE spent intention, and
+      // both of its documents have to go. Clearing per document first would
+      // delete the audio entry and leave the paperback one on the list, which
+      // is the double-count wearing a different hat.
+      const folded = groupTbrEntries(merged);
+
       // ⚠️ Deleted, not filtered. A finished book left in the collection would
       // still be on the audiobook site's list, which is the exact
       // cross-catalog staleness this feature exists to remove.
-      const spent = spentTbrEntries(merged);
-      for (const row of spent) {
-        try {
-          await removeFromTbr(collection, row.docId);
-        } catch {
-          /* One failed delete must not lose the whole list; it retries on the
-             next visit, because the read state that condemned it has not
-             changed. */
+      const spent = spentTbrEntries(folded);
+      for (const group of spent) {
+        for (const docId of group.docIds) {
+          try {
+            await removeFromTbr(collection, docId);
+          } catch {
+            /* One failed delete must not lose the whole list; it retries on the
+               next visit, because the read state that condemned it has not
+               changed. */
+          }
         }
       }
+      // ⚠️ Counted in BOOKS, not documents — it is the sentence the person
+      // reads ("took 2 books off the list"), and two documents for one book is
+      // one book taken off.
       setCleared(spent.length);
-      setRows(outstandingTbrEntries(merged));
+      setGroups(outstandingTbrEntries(folded));
     } catch (err) {
       setError(describeError(err));
-      setRows([]);
+      setGroups([]);
     }
   }, [me]);
 
@@ -108,12 +147,33 @@ export function TbrPage({ me }: { me: Me }) {
     void load();
   }, [load]);
 
-  async function remove(row: Row) {
-    setBusy(row.docId);
+  /**
+   * ⚠️ Removes EVERY document in the group. The person took the BOOK off their
+   * list; leaving the sibling catalog's document behind would light its
+   * `✓ To Be Read` button for a book they just cleared, which is the
+   * cross-catalog staleness this feature exists to remove.
+   */
+  async function remove(group: Group) {
+    setBusy(group.key);
     try {
       const { collection } = await api.tbrCollection();
-      await removeFromTbr(collection, row.docId);
-      setRows((current) => (current ?? []).filter((r) => r.docId !== row.docId));
+      let failed = 0;
+      for (const docId of group.docIds) {
+        try {
+          await removeFromTbr(collection, docId);
+        } catch {
+          failed++;
+        }
+      }
+      if (failed > 0) {
+        // ⚠️ Said out loud. A partial removal that looked like a success would
+        // put the book back on the list at the next load with no explanation.
+        setError(
+          `Took ${group.title} off ${group.docIds.length - failed} of ${group.docIds.length} lists — ` +
+            'the rest did not answer. Try again and it will finish the job.',
+        );
+      }
+      setGroups((current) => (current ?? []).filter((g) => g.key !== group.key));
     } catch (err) {
       setError(describeError(err));
     } finally {
@@ -121,13 +181,15 @@ export function TbrPage({ me }: { me: Me }) {
     }
   }
 
-  if (error && rows === null) {
+  if (error && groups === null) {
     return <main className="notice notice--bad">Could not load your TBR: {error}</main>;
   }
-  if (rows === null) return <main className="muted">Loading…</main>;
+  if (groups === null) return <main className="muted">Loading…</main>;
 
-  const here = rows.filter((r) => r.workId !== null);
-  const elsewhere = rows.filter((r) => r.workId === null);
+  const here = groups.filter((g) => g.workId !== null);
+  const elsewhere = groups.filter((g) => g.workId === null);
+  /** How many books were on the list more than once — see the note below. */
+  const foldedAway = groups.reduce((n, g) => n + (g.docIds.length - 1), 0);
 
   return (
     <main>
@@ -146,7 +208,7 @@ export function TbrPage({ me }: { me: Me }) {
 
       {error && <p className="notice notice--bad">{error}</p>}
 
-      {rows.length === 0 ? (
+      {groups.length === 0 ? (
         <p className="muted">
           Nothing on your list. A book page has an <em>Add to my TBR</em> button, and so
           does the audiobook site — it is the same list.
@@ -154,16 +216,31 @@ export function TbrPage({ me }: { me: Me }) {
       ) : (
         <>
           <p className="muted small">
-            {rows.length} {rows.length === 1 ? 'book' : 'books'} to read. This is the same
+            {groups.length} {groups.length === 1 ? 'book' : 'books'} to read. This is the same
             list as the audiobook site&rsquo;s, so a book you add there shows up here — and
             finishing it in any format takes it off both.
           </p>
 
-          {/* Can't decide? Let the wheel decide. Picks from this whole list;
-              its filters narrow to shelves or series position. */}
-          <TbrSpinner rows={rows} />
+          {/* ⚠️ Said out loud, because the number visibly dropped. The owner
+              reported the double count; a silent fix would leave him wondering
+              whether the list had lost books instead of stopped repeating
+              them. Only rendered when a fold actually happened. */}
+          {foldedAway > 0 && (
+            <p className="muted small">
+              {foldedAway === 1
+                ? 'One book was on your list twice — in two formats.'
+                : `${foldedAway} entries were repeats — the same book in another format.`}{' '}
+              Each book is one card now, with a link to every format you have.
+            </p>
+          )}
 
-          {here.length > 0 && <TbrList rows={here} busy={busy} onRemove={remove} />}
+          {/* Can't decide? Let the wheel decide. Picks from this whole list;
+              its filters narrow to shelves or series position.
+              ⚠️ One candidate per BOOK, not per document — otherwise a book
+              held in three formats would be three times as likely to win. */}
+          <TbrSpinner rows={groups.map(toSpinnerRow)} />
+
+          {here.length > 0 && <TbrList groups={here} busy={busy} onRemove={remove} />}
 
           {elsewhere.length > 0 && (
             <>
@@ -179,13 +256,13 @@ export function TbrPage({ me }: { me: Me }) {
                 On your list, but this catalog holds no copy — they will be audiobooks, or
                 books spelled differently on the two sites.
               </p>
-              <TbrList rows={elsewhere} busy={busy} onRemove={remove} />
+              <TbrList groups={elsewhere} busy={busy} onRemove={remove} />
             </>
           )}
         </>
       )}
 
-      {/* ⚠️ OUTSIDE the `rows.length === 0` branch, deliberately: a person can
+      {/* ⚠️ OUTSIDE the `groups.length === 0` branch, deliberately: a person can
           be holding three of this house's books and have an empty TBR, and
           hiding what they have behind a list they have not written would make
           it unfindable. It renders nothing at all when nothing is recorded
@@ -195,41 +272,121 @@ export function TbrPage({ me }: { me: Me }) {
   );
 }
 
+/**
+ * One card's worth of a group, for the wheel.
+ *
+ * ⚠️ Keyed by the group's FIRST document id, which is unique across groups
+ * because a document folds into exactly one — the spinner uses it as its
+ * candidate id, and two candidates sharing one would let the same book be
+ * excluded twice.
+ */
+function toSpinnerRow(group: Group): SpinnerRow {
+  const matched = group.entries.find((e) => e.workId !== null);
+  return {
+    docId: group.docIds[0] ?? group.key,
+    workId: group.workId,
+    readState: group.readState,
+    series: matched?.series ?? null,
+    seriesIndexDisplay: matched?.seriesIndexDisplay ?? null,
+    workTitle: matched?.workTitle ?? null,
+    title: group.title,
+    authors: group.authors,
+    workCoverUrl: group.workCoverUrl,
+    coverUrl: group.docCoverUrl,
+  };
+}
+
+/**
+ * Every shelf this book is actually on, each one a link.
+ *
+ * ⚠️ **Only the formats that EXIST.** The owner asked for *"a link to all
+ * formats"* — the ones he has, not three buttons two of which say no. Nothing
+ * renders when the catalog matched no work, because then there is no holding to
+ * speak for and the card's own link already goes where it can.
+ *
+ * ⚠️ The two off-site links use the SIBLING catalogs' spelling of the title
+ * (`audiobook_holding.title`, `ebook_holding.title`), not this one's: both sites'
+ * only per-book link is a title search-hash, and searching them for this
+ * catalog's spelling lands far less often. See `lib/audiobook-site.ts`.
+ */
+function Formats({ group }: { group: Group }) {
+  const { physical, audio, ebook } = group.formats;
+  const showPhysical = physical && group.workId !== null && physical.state !== 'none';
+  if (!showPhysical && !audio && !ebook) return null;
+
+  return (
+    <div className="wish__formats">
+      <span className="muted small">You have it:</span>
+      {showPhysical && physical && (
+        <Link to={workPath(physical.workId)} className="chip-link">
+          {physical.state === 'owned' ? '📕 Physical' : '📕 Physical — wanted'}
+        </Link>
+      )}
+      {audio && (
+        <a
+          className="chip-link"
+          href={audiobookDetailUrl(audio.title)}
+          target="_blank"
+          rel="noreferrer"
+        >
+          🎧 Audiobook ↗
+        </a>
+      )}
+      {ebook && (
+        <a
+          className="chip-link"
+          href={ebookShelfUrl(ebook.title)}
+          target="_blank"
+          rel="noreferrer"
+        >
+          📖 Ebook ↗
+        </a>
+      )}
+    </div>
+  );
+}
+
 function TbrList({
-  rows,
+  groups,
   busy,
   onRemove,
 }: {
-  rows: Row[];
+  groups: Group[];
   busy: string | null;
-  onRemove: (row: Row) => void;
+  onRemove: (group: Group) => void;
 }) {
   return (
     <ul className="works">
-      {rows.map((row) => {
+      {groups.map((group) => {
         // The catalog's own title and cover win where there is one: it is the
         // book as this app knows it, and the entry's title may be the audiobook
-        // packaging ("… - The Reckoners, Book 2").
-        const title = row.workTitle ?? row.title;
-        const cover = row.workCoverUrl ?? resolveAudiobookCover(row.coverUrl);
+        // packaging ("… - The Reckoners, Book 2"). `groupTbrEntries` already
+        // applied that preference across the whole group.
+        const title = group.title;
+        const cover = group.workCoverUrl ?? resolveAudiobookCover(group.docCoverUrl);
+        const matched = group.entries.find((e) => e.workId !== null);
         return (
-          <li key={row.docId}>
+          <li key={group.key}>
             <div className="wish">
-              {row.workId !== null ? (
-                <Link to={workPath(row.workId)} className="wish__book" aria-label={`Open ${title}`}>
+              {group.workId !== null ? (
+                <Link
+                  to={workPath(group.workId)}
+                  className="wish__book"
+                  aria-label={`Open ${title}`}
+                >
                   <Cover src={cover} title={title} size="row" />
                   <span className="row-open__text">
                     <span className="row-open__head">
                       <strong>{title}</strong>
                     </span>
-                    {row.authors && <span className="muted small">{row.authors}</span>}
-                    {row.series && (
+                    {group.authors && <span className="muted small">{group.authors}</span>}
+                    {matched?.series && (
                       <span className="series-tag">
-                        {row.series}
-                        {row.seriesIndexDisplay ? <b> {row.seriesIndexDisplay}</b> : null}
+                        {matched.series}
+                        {matched.seriesIndexDisplay ? <b> {matched.seriesIndexDisplay}</b> : null}
                       </span>
                     )}
-                    {row.readState === 'reading' && (
+                    {group.readState === 'reading' && (
                       <span className="muted small">You are reading this</span>
                     )}
                   </span>
@@ -254,10 +411,11 @@ function TbrList({
               )}
 
               <div className="wish__actions">
+                <Formats group={group} />
                 <button
                   className="chip"
-                  disabled={busy === row.docId}
-                  onClick={() => onRemove(row)}
+                  disabled={busy === group.key}
+                  onClick={() => onRemove(group)}
                 >
                   Off the list
                 </button>
