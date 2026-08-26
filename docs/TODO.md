@@ -75,28 +75,6 @@ list changes only when she is the one signed in. Read state is already global
 across sites by construction (§8 of `info/tbr.md`). No work needed; move this
 to DONE with the next landing.
 
-## ☐ TBR audit — "not all have sync'd" + the media tag (owner ask, 2026-08-26)
-
-Owner, on his phone: *"in the tbr list, not all have sync'd — can we audit
-Diva's; also I don't see the tag for what type of media a book is."*
-**Diva = Divaelf**, the retired v1 passphrase account whose 53 `read` documents
-were reassigned to **Samantha Hardman** on 2026-08-18 — so "Diva's list" is
-Samantha's, and it lives on `padhard.heygabi.ai` / D1 `library-catalog-2nd`.
-
-- **Part A — audit (read-only).** Done. Nothing is broken; the measured numbers
-  and the per-person tables are in [`info/tbr.md`](info/tbr.md) §10.
-- **Part B — say what could not be matched.** `/tbr`'s *"Not on these shelves"*
-  section now states the COUNT and links each card to both sibling shelves.
-- **Part C — media tags on the audiobook site's TBR views.** `/dev/` lane only,
-  in `audiobook_catalog`. ⚠️ **The 📖 Ebook tag is NOT buildable there** — the
-  ebook title list is permission-gated by owner directive and publishing it to
-  power a chip would be access-increasing. Recorded against KI-7 in that repo.
-
-⚠️ **The #348 item above is the same book from the other end.** *Isles of the
-Emberdark* is one of the 53 entries the audit found unmatched on padhard, and
-`info/tbr.md` §10 records it as one of the four the MAIN instance does hold —
-which is exactly the cross-instance identity gap #348 describes.
-
 ## ☐ Read-state filters in every search bar + a search bar (with the wheel) on `/tbr` (owner asks, 2026-08-26 ~15:12)
 
 Owner, on his phone, two messages apart:

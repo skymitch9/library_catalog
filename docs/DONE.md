@@ -17,6 +17,48 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ TBR audit — "not all have sync'd" + the media tag (owner ask, 2026-08-26)
+
+Owner, on his phone: *"in the tbr list, not all have sync'd — can we audit
+Diva's; also I don't see the tag for what type of media a book is."*
+**Diva = Divaelf**, the retired v1 passphrase account whose 53 `read` documents
+were reassigned to **Samantha Hardman** on 2026-08-18 — so "Diva's list" is
+Samantha's, and it lives on `padhard.heygabi.ai` / D1 `library-catalog-2nd`.
+
+- **Part A — audit (read-only).** Done. Nothing is broken; the measured numbers
+  and the per-person tables are in [`info/tbr.md`](info/tbr.md) §10.
+- **Part B — say what could not be matched.** `/tbr`'s *"Not on these shelves"*
+  section now states the COUNT and links each card to both sibling shelves.
+- **Part C — media tags on the audiobook site's TBR views.** `/dev/` lane only,
+  in `audiobook_catalog`. ⚠️ **The 📖 Ebook tag is NOT buildable there** — the
+  ebook title list is permission-gated by owner directive and publishing it to
+  power a chip would be access-increasing. Recorded against KI-7 in that repo.
+
+⚠️ **`TODO.md`'s open "padhard #348" item is the same book from the other end.**
+*Isles of the Emberdark* is one of the 53 entries this audit found unmatched on
+padhard, and `info/tbr.md` §10 records it as one of the four the MAIN instance
+does hold — which is exactly the cross-instance identity gap #348 describes. It
+stays open there; this item does not close it.
+
+**Landed.** Library `09f67e6` (+ `7f601c3`, the deploys.log pair), deployed to
+**both** instances and re-measured live: `library.heygabi.ai` version
+`d042fa8e-752d-4bc2-a9f1-4893238cfa7d`, `padhard.heygabi.ai` version
+`39ffe19f-1d22-41a2-936d-78ea7a0fc7e3`, both 200 with `database: up` and both
+serving `assets/index-BswM5nq1.js` — with the new wording confirmed **inside the
+fetched bundle**, not taken on the pipeline's word (§8's addendum rule).
+Audiobook `a13e502` on `main`, CI runs `33019971070` / `33019971043` /
+`33019971038` / `33019971208` all green, `/dev/` re-fetched and carrying the
+tags. Suites: library **1,897/0**; audiobook vitest **765/0**, pytest **1,825
+pass with 2 pre-existing `test_universes.py` failures** reproduced on a clean
+worktree of HEAD (the shared universe list has moved past the 16 that file
+asserts — unrelated, and untouched here).
+
+🔴 **NOT verified, and it is the same gap §9 left open:** nobody has loaded
+`/tbr` signed in as the owner or as Samantha, and nobody has watched
+`/dev/#list=tbr` or `/dev/community` with a session. The build environment
+cannot hold either. **No promote was performed** — prod's media tags are still
+the owner's call.
+
 ## ✅ The hourly sweep STALLED on a book it could not afford — FIXED on both instances (found 2026-08-25, landed 2026-08-26)
 
 Found while repricing the ladder for rung 2 going live; **pre-existing, not

@@ -775,18 +775,32 @@ instance has 126.
 
 ### What the three surfaces count for the same person
 
-| Person | library `/tbr` (folded, this catalogue) | audiobook **prod** | audiobook **`/dev/`** |
-|---|---:|---:|---:|
-| **Samantha** | **351** cards — 298 on her shelves, **53** *"Not on these shelves"* | **359** (documents — no fold) | **358** (its own weaker fold) |
-| Owner | 2 | 2 | 2 |
-| Solomon | 22 | 22 | 22 |
-| Jamie | n/a — no library account | 10 | 10 |
+| Person | library `/tbr` (folded, this catalogue) | audiobook **prod** at 22:05 UTC | audiobook **prod** after the 22:10 promote | audiobook **`/dev/`** |
+|---|---:|---:|---:|---:|
+| **Samantha** | **351** cards — 298 on her shelves, **53** *"Not on these shelves"* | **359** (documents — no fold) | **358** | **358** (its own weaker fold) |
+| Owner | 2 | 2 | 2 | 2 |
+| Solomon | 22 | 22 | 22 | 22 |
+| Jamie | n/a — no library account | 10 | 10 | 10 |
 
-⚠️ **Prod really is unfolded, measured rather than assumed:** prod's
-`reviews.js` is 26,521 bytes with **0** occurrences of `foldReadingList`;
-`/dev/`'s is 31,504 bytes with 1. `/community` is 27,622 bytes with 0 against
-`/dev/community`'s 28,991 with 4. **The promote is the owner's action and was
-not performed.**
+⚠️ **THE PROD COLUMN MOVED WHILE THE AUDIT WAS RUNNING, and it is recorded as
+two readings rather than overwritten.** At **22:05 UTC** prod's `reviews.js` was
+26,521 bytes with **0** occurrences of `foldReadingList` and `/community` was
+27,622 with 0 — genuinely unfolded, and counting Samantha's list at 359
+documents. A **"Promote to Prod" run completed at 22:10:11 UTC** (`gh` run
+`33018518477`, head `6a63710`) — **not by this session, and no promote was
+performed here** — and by 22:40 prod served the same 31,504-byte `reviews.js`
+and 28,991-byte `/community` the `/dev/` lane had, both with the fold. So prod's
+number for Samantha is now **358**, matching `/dev/`.
+
+⚠️ **This is the general lesson §8's addendum already records, from the other
+side: a measurement has an age.** The 359 was correct when taken and false forty
+minutes later, and the only reason anyone knows is that the artifact was
+re-fetched rather than the earlier reading re-quoted.
+
+⚠️ **Prod does NOT carry the 2026-08-26 media tags** — measured after the CI run
+landed: prod's `reviews.js` has **0** occurrences of `readingListMediaTags`
+against `/dev/`'s 3. That promote is still the owner's action, and none was
+performed here.
 
 ### The fix this produced — Part B, and it is a SENTENCE
 
