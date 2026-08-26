@@ -252,16 +252,76 @@ function numbersAgree(a: string, b: string): boolean {
  *   (neither side stated one clearly enough, or the data is inconsistent) →
  *   refuse. Same posture as "no volume on either side": a wrong match is worse
  *   than no match.
+ * - ⚠️ **Unless the candidates are an EDITION SET** — see `isEditionSet`, which
+ *   is checked first because such a group is not ambiguous at all.
  */
-function disambiguateByVolume<E extends { seriesIndex: number | null }>(
+function disambiguateByVolume<E extends FoldMember>(
   candidates: readonly E[],
   seriesIndex: number | null | undefined,
 ): E | null {
   if (candidates.length === 0) return null;
   if (candidates.length === 1) return candidates[0] as E;
+  // Not a fold this function has to settle: every member is the same volume of
+  // the same series, so they are recordings of ONE book and the first is as
+  // right an answer as any. Keeps `lookupAll(...)[0] === lookup(...)`, since
+  // `collapseAmbiguousFolds` returns the same group in the same order.
+  if (isEditionSet(candidates)) return candidates[0] as E;
   if (seriesIndex == null) return null;
   const withVolume = candidates.filter((c) => c.seriesIndex != null && c.seriesIndex === seriesIndex);
   return withVolume.length === 1 ? (withVolume[0] as E) : null;
+}
+
+/** What `isEditionSet` and `disambiguateByVolume` need of an index entry. */
+interface FoldMember {
+  seriesIndex: number | null;
+  /** `normaliseTitle(work.series)`, or null where the row states no series. */
+  seriesKey: string | null;
+}
+
+/**
+ * ⚠️ Are these same-folded-title rows different VOLUMES, or different
+ * RECORDINGS of one volume?
+ *
+ * ## Why the distinction had to be drawn — Isles of the Emberdark, 2026-08-26
+ *
+ * `disambiguateByVolume` and `collapseAmbiguousFolds` treat every multi-member
+ * fold as a set of rows the matcher cannot tell apart, and refuse. That is
+ * exactly right for *The Eminence in Shadow* vols 1–5, whose volume decoration
+ * the title cleaner strips: handing volume 1 all five recordings is the flat
+ * "All 5 held on audio" lie `numbersAgree` documents.
+ *
+ * It is exactly WRONG for two recordings of one book. Measured 2026-08-26
+ * against `audiobook_catalog/site/catalog.csv`: the household owns two
+ * *Isles of the Emberdark* audiobooks — one read by Kaleo Griffith and
+ * Jennifer Jill Araya, one read by Brandon Sanderson himself — filed under the
+ * identical title, the identical series (*Secret Projects*) and the identical
+ * volume number (5). Both catalogs' work pages therefore showed NO audiobook
+ * at all, and main's `audiobook_edition_holding` row for work 4 was marked
+ * `stale_at 2026-08-17` — the day the second recording landed in the CSV.
+ * Refusing a fold whose members cannot possibly be different volumes throws
+ * away the answer instead of protecting it, and it defeats the one thing
+ * migration 0390 was built to hold.
+ *
+ * ## The discriminator, and why it is safe
+ *
+ * The volume number is already the sanctioned discriminator here — this only
+ * reads it in the other direction. A group qualifies when **every** member
+ * states the same non-null `seriesIndex` AND the same non-null folded series
+ * name. Different volumes disagree on the number by definition, so they can
+ * never qualify; the *Eminence in Shadow* / *Space Knight* / *Reincarnated as a
+ * Sword* refusals are untouched. Requiring the series too is what stops two
+ * unrelated books that happen to share a title, an author and a volume number
+ * from being called editions of each other.
+ *
+ * Nothing here loosens the author gate: callers still apply it per member.
+ */
+function isEditionSet<E extends FoldMember>(candidates: readonly E[]): boolean {
+  if (candidates.length < 2) return false;
+  const first = candidates[0] as E;
+  if (first.seriesIndex == null || !first.seriesKey) return false;
+  return candidates.every(
+    (c) => c.seriesIndex === first.seriesIndex && c.seriesKey === first.seriesKey,
+  );
 }
 
 /**
@@ -302,6 +362,16 @@ export interface MatchableWork {
    * let a stray CSV number paper over a genuine title mismatch.
    */
   seriesIndex?: number | null;
+  /**
+   * The series this row is filed under, as printed — e.g. `catalog.csv`'s
+   * `series` column. Absent/null for a standalone book.
+   *
+   * ⚠️ Consulted for exactly ONE question, `isEditionSet`: are the members of
+   * an ambiguous fold different VOLUMES (refuse) or different RECORDINGS of one
+   * volume (keep them all)? It never enters a similarity score and never widens
+   * a title or author gate. A second use is the drift this file's header bans.
+   */
+  series?: string | null;
 }
 
 /**
@@ -330,6 +400,11 @@ export interface WorkIndex<T> {
     authorKeys: string[];
     /** Carried through from `MatchableWork.seriesIndex` — see its doc. */
     seriesIndex: number | null;
+    /**
+     * `normaliseTitle(work.series)`, or null where the row states no series.
+     * Read by `isEditionSet` and by nothing else — see its doc.
+     */
+    seriesKey: string | null;
   }[];
   /**
    * Folded alternate titles, exact-match only, kept apart from `entries` because
@@ -395,6 +470,10 @@ export function buildWorkIndex<T extends MatchableWork>(
       matchKey: foldVolumeMarker(titleKey),
       authorKeys: foldAuthorNames(work.authors, authorAliases.get(work.id) ?? []),
       seriesIndex: work.seriesIndex ?? null,
+      // ⚠️ `normaliseTitle` and not a second fold — this is compared against
+      // other rows' series names and nothing else, and `backfill-audiobook-
+      // holdings.mjs` already folds series names with exactly this function.
+      seriesKey: work.series ? normaliseTitle(work.series) || null : null,
     };
   });
 
@@ -655,7 +734,7 @@ export function matchIndexedWork<T extends MatchableWork>(
  * one is *Reincarnated as a Sword*, where ten "(Light Novel)" volumes clean to
  * one identical string and would otherwise all be filed as editions of book 5.
  */
-function collapseAmbiguousFolds<E extends { titleKey: string; seriesIndex: number | null }>(
+function collapseAmbiguousFolds<E extends FoldMember & { titleKey: string }>(
   candidates: readonly E[],
   seriesIndex: number | null | undefined,
 ): E[] {
@@ -667,6 +746,14 @@ function collapseAmbiguousFolds<E extends { titleKey: string; seriesIndex: numbe
   }
   const out: E[] = [];
   for (const group of byKey.values()) {
+    // ⚠️ The one group that is NOT a fold to be settled: same series, same
+    // volume, so its members are recordings of one book and every one of them
+    // belongs in `audiobook_edition_holding`. See `isEditionSet`. Order is
+    // preserved, so `[0]` stays the row `disambiguateByVolume` returns.
+    if (isEditionSet(group)) {
+      out.push(...group);
+      continue;
+    }
     // Handles the one-member case itself — see `disambiguateByVolume`.
     const one = disambiguateByVolume(group, seriesIndex);
     if (one) out.push(one);
@@ -771,17 +858,33 @@ export function matchIndexedWorkAll<T extends MatchableWork>(
   // Rung 1 — the literal title. See `matchIndexedWork` for why an ambiguous
   // fold refuses rather than falling through.
   const exactCandidates = index.entries.filter((e) => e.titleKey === target);
-  if (exactCandidates.length > 1) for (const e of exactCandidates) declined.add(e.work.id);
-  const exact = disambiguateByVolume(exactCandidates, seriesIndex);
-  if (exact) {
-    const a = authorOk(exact.authorKeys);
-    // A different book with the same name. Nothing weaker can help, and this
-    // is the one refusal that discards rather than stops: nothing has been
-    // proved yet at this point.
-    if (!authorPasses(a)) return [];
-    add({ work: exact.work, via: 'exact', titleSimilarity: 1, authorSimilarity: a });
-  } else if (exactCandidates.length > 1) {
-    return [];
+  // ⚠️ An EDITION SET is not an ambiguous fold — same series, same volume, so
+  // every member is a recording of this same book and all of them are answers.
+  // This is the whole reason `audiobook_edition_holding` is keyed per edition;
+  // see `isEditionSet` and the Isles of the Emberdark measurement in its doc.
+  if (isEditionSet(exactCandidates)) {
+    const passing = exactCandidates
+      .map((e) => ({ entry: e, score: authorOk(e.authorKeys) }))
+      .filter((x) => authorPasses(x.score));
+    // Every member is a different book with the same name — same refusal as
+    // the single-candidate case below, for the same reason.
+    if (passing.length === 0) return [];
+    for (const { entry, score } of passing) {
+      add({ work: entry.work, via: 'exact', titleSimilarity: 1, authorSimilarity: score });
+    }
+  } else {
+    if (exactCandidates.length > 1) for (const e of exactCandidates) declined.add(e.work.id);
+    const exact = disambiguateByVolume(exactCandidates, seriesIndex);
+    if (exact) {
+      const a = authorOk(exact.authorKeys);
+      // A different book with the same name. Nothing weaker can help, and this
+      // is the one refusal that discards rather than stops: nothing has been
+      // proved yet at this point.
+      if (!authorPasses(a)) return [];
+      add({ work: exact.work, via: 'exact', titleSimilarity: 1, authorSimilarity: a });
+    } else if (exactCandidates.length > 1) {
+      return [];
+    }
   }
 
   // Rung 2 — the same title with "Book 7" written as "7" on one side. Still

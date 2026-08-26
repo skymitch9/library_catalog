@@ -4,12 +4,20 @@ import {
   MIN_AUTHOR_SIMILARITY,
   MIN_TITLE_SIMILARITY,
   UNKNOWN_AUTHOR,
+  buildWorkIndex,
+  matchIndexedWork,
   normaliseTitle,
   titleSimilarity,
   workKeyFor,
   type DetailField,
 } from '@lc/core';
-import { findWorkByKey, getWork, listWorksForMatching, type Work } from '@lc/db';
+import {
+  findWorkByKey,
+  getWork,
+  listWorkAliases,
+  listWorksForMatching,
+  type Work,
+} from '@lc/db';
 import type { AppBindings } from '../env.js';
 import { secretEquals } from '../lib/secret-equals.js';
 
@@ -45,6 +53,46 @@ import { secretEquals } from '../lib/secret-equals.js';
  * a NO-match, not a coin flip — a donor that guesses writes a wrong author's
  * details into someone else's catalog, which is exactly the §4.4 failure shape
  * (right title, wrong book) with no person in the loop to catch it.
+ *
+ * ## ⚠️ The alias rung — BOTH sides' `work_alias`, one round trip (2026-08-26)
+ *
+ * `work_key` bakes the printed title in, so the two instances holding different
+ * *editions* of one book never meet: padhard #348 is
+ * *"Isles of the Emberdark: A Cosmere Novel"* (Tor) and main #4 is
+ * *"Isles of the Emberdark"* (Dragonsteel), and neither the key nor the folded
+ * title matches. ⚠️ **`work_key` is a persisted key** — re-deriving it is a
+ * migration, not an edit (`works.ts`) — so identity is bridged through aliases
+ * instead, which is what `work_alias` has been for since migration 0005.
+ *
+ * Both sides are asked, in ONE fetch:
+ *
+ * - **Ours**: the fold-miss path builds a `WorkIndex` over this catalog's works
+ *   AND its title aliases and asks `matchIndexedWork` — the project's one
+ *   matcher, with its author gate and its ambiguity refusals intact.
+ * - **Theirs**: the caller sends its own recorded title aliases as repeated
+ *   `alias=` parameters, tried in order after the printed title. One request,
+ *   so the sweep's subrequest budget (`FREE_LADDER_SUBREQUESTS`) is unchanged.
+ *
+ * ⚠️ **Only `exact` and `alias` are accepted; a containment match is REFUSED**,
+ * and that is a measurement rather than caution. Run 2026-08-26 over both live
+ * instances, containment would have answered main #222
+ * *"Dungeon Crawler Carl: Crocodile"* with padhard #25 *"Dungeon Crawler Carl"*
+ * at 0.86 — two different books, and the donor writes its findings with no
+ * person in the loop. `matching.ts`'s containment rung is right for the
+ * audiobook backfill, whose output a person reads before committing; it is
+ * wrong here.
+ *
+ * ⚠️ **A subtitle-stripped rung was measured and deliberately NOT built.** Same
+ * run: stripping everything after the first colon would have added 2 matches
+ * padhard→main and 0 the other way, and one of the two —
+ * *"Keepers of the Light: Book Two of the Broken Prophecies"* (padhard #489)
+ * reaching *"Keepers of the Light"* (main #328) — cannot be settled without the
+ * owner, because the subtitle says book two while BOTH rows record
+ * `series_index_sort = 1`. That is the *"Tamer: King of Dinosaurs"* shape
+ * `splitSeriesPrefix` warns about, arriving in real data. The durable fix for a
+ * pair the owner confirms is one `work_alias` row — the mechanism the
+ * 2026-08-25 near-miss audit used — which this rung then matches for free.
+ * See `docs/TODO.md`.
  *
  * ## The answer
  *
@@ -146,6 +194,21 @@ export interface DonorDetailsReply {
  * shortlist rides in one prompt whose cost is the reason this rung exists.
  */
 export const CANDIDATE_LIMIT = 5;
+
+/**
+ * How many `alias=` parameters one ask may carry.
+ *
+ * Ten, because the largest number of title aliases any work on either instance
+ * holds is far below it (measured 2026-08-26: 102 alias rows across 676 works
+ * on padhard, 56 across 492 on main, none of them stacked more than a couple
+ * deep) and because the loop below folds the catalog once and then asks it
+ * repeatedly — a cap keeps a malformed caller from turning one request into an
+ * unbounded scan.
+ */
+export const MAX_CALLER_ALIASES = 10;
+
+/** The floor `buildWorkIndex` applies to an alias key, applied to the wire too. */
+const MIN_ALIAS_LENGTH = 2;
 
 /** One row as `listWorksForMatching` returns it — the raw column, sentinel and all. */
 interface MatchRow {
@@ -252,6 +315,16 @@ export const donorRoutes = new Hono<AppBindings>()
   .get('/details', async (c) => {
     const title = (c.req.query('title') ?? '').trim();
     const author = (c.req.query('author') ?? '').trim();
+    // The caller's own recorded title aliases — the other half of the alias
+    // rung; see the header. Capped and de-duplicated so a malformed caller
+    // cannot turn one ask into an unbounded loop over the folded catalog.
+    const callerAliases = [
+      ...new Set(
+        (c.req.queries('alias') ?? [])
+          .map((a) => a.trim())
+          .filter((a) => a.length >= MIN_ALIAS_LENGTH && normaliseTitle(a) !== normaliseTitle(title)),
+      ),
+    ].slice(0, MAX_CALLER_ALIASES);
     if (!title) {
       // The caller is our own sweep, so a 400 here means a bug there — say so
       // plainly rather than answering matched:false and hiding it.
@@ -272,6 +345,25 @@ export const donorRoutes = new Hono<AppBindings>()
       const hits = all.filter((w) => normaliseTitle(w.title) === wanted);
       // Exactly one, or nobody. Ambiguity must not guess — header.
       if (hits.length === 1) work = await getWork(c.env.DB, hits[0]!.id);
+    }
+
+    // The alias rung — both catalogs' `work_alias`, still one round trip. See
+    // the header for why containment is refused and why a subtitle rung is not
+    // built. Reached only when the two exact rungs above found nothing, so an
+    // instance with no aliases pays one extra D1 read on a miss and nothing
+    // else changes.
+    if (!work) {
+      all ??= await listWorksForMatching(c.env.DB);
+      const aliases = await listWorkAliases(c.env.DB);
+      const index = buildWorkIndex(all, aliases);
+      for (const asked of [title, ...callerAliases]) {
+        const m = matchIndexedWork(index, asked, author || null);
+        // ⚠️ `exact` and `alias` only. A containment match is a guess, and this
+        // route's answers are applied with no person in the loop — header.
+        if (!m || (m.via !== 'exact' && m.via !== 'alias')) continue;
+        work = await getWork(c.env.DB, m.work.id);
+        if (work) break;
+      }
     }
 
     if (!work) {

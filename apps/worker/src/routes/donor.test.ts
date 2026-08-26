@@ -163,12 +163,27 @@ function workRow(id: number, title: string, authors: string, extra: Record<strin
   };
 }
 
+/** One `work_alias` row, in the shape `listWorkAliases` returns. */
+interface AliasRow {
+  workId: number;
+  alias: string;
+  kind: 'title' | 'author';
+}
+
 /**
- * Answers the three queries the route can make: work_key lookup, the
- * matching list, and getWork by id. Anything else throws, so a new query in
- * the route fails this file loudly instead of silently matching nothing.
+ * Answers the four queries the route can make: work_key lookup, the matching
+ * list, `work_alias`, and getWork by id. Anything else throws, so a new query
+ * in the route fails this file loudly instead of silently matching nothing.
+ *
+ * ⚠️ `work_alias` is tested BEFORE `FROM work`, because `'FROM work_alias'`
+ * contains `'FROM work'` as a substring and the looser test would quietly hand
+ * the alias reader a list of works.
  */
-function stubDb(rows: ReturnType<typeof workRow>[], byKey: Record<string, number> = {}) {
+function stubDb(
+  rows: ReturnType<typeof workRow>[],
+  byKey: Record<string, number> = {},
+  aliases: AliasRow[] = [],
+) {
   return {
     prepare(sql: string) {
       let bound: unknown[] = [];
@@ -188,6 +203,7 @@ function stubDb(rows: ReturnType<typeof workRow>[], byKey: Record<string, number
           throw new Error(`stubDb: unexpected first() for: ${sql}`);
         },
         async all() {
+          if (sql.includes('FROM work_alias')) return { results: aliases };
           if (sql.includes('FROM work')) {
             return { results: rows.map((r) => ({ id: r.id, title: r.title, authors: r.authors })) };
           }
@@ -264,6 +280,127 @@ describe('donor lookup', () => {
     assert.equal(reply.matched, true);
     assert.equal(reply.workId, 1);
     assert.deepEqual(reply.details, { firstPublished: 2001 });
+  });
+});
+
+/**
+ * ⚠️ The alias rung — the cross-instance identity bridge, measured 2026-08-26.
+ *
+ * padhard #348 is *"Isles of the Emberdark: A Cosmere Novel"* (the Tor
+ * edition, ISBN 9781250415394) and main #4 is *"Isles of the Emberdark"* (the
+ * Dragonsteel one, 9781938570506). `work_key` bakes the printed title in, so
+ * neither the key nor the folded title reaches the other, and `work_key` is a
+ * PERSISTED key — re-deriving it is a migration, not an edit. Both instances
+ * already record the other spelling as a `work_alias`, and this rung is what
+ * spends it.
+ *
+ * The exact strings below are the two live rows, verbatim.
+ */
+describe('donor lookup — the alias rung, both sides (2026-08-26)', () => {
+  const EMBERDARK_SUB = 'Isles of the Emberdark: A Cosmere Novel';
+  const EMBERDARK_BARE = 'Isles of the Emberdark';
+  const SANDERSON = 'Brandon Sanderson';
+
+  it('main answers padhard #348 because PADHARD sent its alias', async () => {
+    // main's catalog: one work, titled without the subtitle, no aliases of its
+    // own. The bridge is entirely the caller's `alias=` parameter.
+    const db = stubDb([workRow(4, EMBERDARK_BARE, SANDERSON, { first_published: 2025 })]);
+    const reply = await matched(
+      db,
+      `title=${encodeURIComponent(EMBERDARK_SUB)}&author=${encodeURIComponent(SANDERSON)}` +
+        `&alias=${encodeURIComponent(EMBERDARK_BARE)}`,
+    );
+    assert.equal(reply.matched, true, 'the recorded alias is what makes these one book');
+    assert.equal(reply.workId, 4);
+    assert.deepEqual(reply.details, { firstPublished: 2025 });
+  });
+
+  it('…and the same ask without the alias still misses — the alias is doing the work', async () => {
+    const db = stubDb([workRow(4, EMBERDARK_BARE, SANDERSON, { first_published: 2025 })]);
+    const reply = await matched(
+      db,
+      `title=${encodeURIComponent(EMBERDARK_SUB)}&author=${encodeURIComponent(SANDERSON)}`,
+    );
+    assert.equal(reply.matched, false, 'containment is 0.58 against a 0.6 floor — correctly refused');
+  });
+
+  it('padhard answers main #4 through its OWN recorded alias', async () => {
+    // The other direction: the caller has nothing to send, and the responder's
+    // `work_alias` row is what bridges it.
+    const db = stubDb(
+      [workRow(348, EMBERDARK_SUB, SANDERSON, { first_published: 2025 })],
+      {},
+      [{ workId: 348, alias: EMBERDARK_BARE, kind: 'title' }],
+    );
+    const reply = await matched(
+      db,
+      `title=${encodeURIComponent(EMBERDARK_BARE)}&author=${encodeURIComponent(SANDERSON)}`,
+    );
+    assert.equal(reply.matched, true);
+    assert.equal(reply.workId, 348);
+  });
+
+  it('⚠️ a CONTAINMENT near-miss is still refused — the rung takes exact and alias only', async () => {
+    // Measured 2026-08-26 over both live instances: containment would have
+    // answered main #222 "Dungeon Crawler Carl: Crocodile" with padhard #25
+    // "Dungeon Crawler Carl" at 0.86. Two different books, and the donor's
+    // findings are applied with no person in the loop.
+    const db = stubDb([workRow(25, 'Dungeon Crawler Carl', 'Matt Dinniman', { first_published: 2024 })]);
+    const reply = await matched(
+      db,
+      `title=${encodeURIComponent('Dungeon Crawler Carl: Crocodile')}` +
+        `&author=${encodeURIComponent('Matt Dinniman')}`,
+    );
+    assert.equal(reply.matched, false, 'containment must not reach the donor — it writes unattended');
+  });
+
+  it('the author gate still applies to an alias match', async () => {
+    const db = stubDb(
+      [workRow(348, EMBERDARK_SUB, 'Someone Else', { first_published: 2025 })],
+      {},
+      [{ workId: 348, alias: EMBERDARK_BARE, kind: 'title' }],
+    );
+    const reply = await matched(
+      db,
+      `title=${encodeURIComponent(EMBERDARK_BARE)}&author=${encodeURIComponent(SANDERSON)}`,
+    );
+    assert.equal(reply.matched, false, 'an alias asserts a string, not that anyone who used it wrote this');
+  });
+
+  it('an AUTHOR alias never widens the title rung — migration 0005’s `kind` doing its job', async () => {
+    const db = stubDb(
+      [workRow(348, EMBERDARK_SUB, SANDERSON)],
+      {},
+      [{ workId: 348, alias: EMBERDARK_BARE, kind: 'author' }],
+    );
+    const reply = await matched(
+      db,
+      `title=${encodeURIComponent(EMBERDARK_BARE)}&author=${encodeURIComponent(SANDERSON)}`,
+    );
+    assert.equal(reply.matched, false, 'an alternate AUTHOR name must never be offered as a title');
+  });
+
+  it('two works claiming the same alias still match NOBODY', async () => {
+    // `buildWorkIndex` rule 2: a contested alias is dropped rather than
+    // arbitrated. The ambiguity posture of the exact rung, one rung down.
+    const db = stubDb(
+      [workRow(1, 'Gold A', 'Raven Kennedy'), workRow(2, 'Gold B', 'Raven Kennedy')],
+      {},
+      [
+        { workId: 1, alias: 'Gold', kind: 'title' },
+        { workId: 2, alias: 'Gold', kind: 'title' },
+      ],
+    );
+    const reply = await matched(db, `title=Gold&author=${encodeURIComponent('Raven Kennedy')}`);
+    assert.equal(reply.matched, false);
+  });
+
+  it('an instance with no aliases answers exactly what it answered before this rung', async () => {
+    const db = stubDb([workRow(1, 'Unsouled', 'Will Wight')]);
+    const reply = await matched(db, 'title=Nonexistent');
+    assert.equal(reply.matched, false);
+    assert.deepEqual(reply.details, {});
+    assert.equal(reply.candidates, undefined);
   });
 });
 

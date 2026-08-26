@@ -2688,6 +2688,159 @@ describe('matching — the two Elantris audiobooks (measured 2026-08-23)', () =>
   });
 });
 
+/**
+ * ⚠️ Isles of the Emberdark — an EDITION SET, and the reason `isEditionSet`
+ * exists. Measured 2026-08-26.
+ *
+ * The household owns two recordings of one book, and
+ * `audiobook_catalog/site/catalog.csv` files them under the identical title,
+ * the identical series and the identical volume number — the strings below are
+ * verbatim from that file (rows 98 and 99), through `loadAudiobooks()`. Before
+ * this rule the ambiguous-fold refusal treated them as two different volumes,
+ * so BOTH catalogs showed the book as having no audiobook at all: padhard #348
+ * filed under "no audiobook" by the backfill dry run, and main #4's
+ * `audiobook_edition_holding` row marked `stale_at 2026-08-17` — the day the
+ * second recording landed in the CSV.
+ *
+ * The two padhard/main strings are pinned in BOTH directions because the two
+ * instances hold different EDITIONS of the print book — padhard the Tor
+ * *"…: A Cosmere Novel"* (ISBN 9781250415394), main the Dragonsteel
+ * *"Isles of the Emberdark"* (9781938570506) — and it was the subtitle that
+ * kept padhard's printed title out.
+ */
+describe('matching — Isles of the Emberdark, two recordings of one book (2026-08-26)', () => {
+  /** catalog.csv rows 98 and 99, as `loadAudiobooks()` produces them. */
+  const emberdark = [
+    {
+      id: 1,
+      title: 'Isles of the Emberdark',
+      authors: 'Brandon Sanderson',
+      series: 'Secret Projects',
+      seriesIndex: 5,
+    },
+    {
+      id: 2,
+      title: 'Isles of the Emberdark',
+      authors: 'Brandon Sanderson',
+      series: 'Secret Projects',
+      seriesIndex: 5,
+    },
+  ];
+  const index = buildWorkIndex(emberdark);
+
+  it('main #4 — the printed title reaches BOTH recordings, not neither', () => {
+    assert.deepEqual(
+      matchIndexedWorkAll(index, 'Isles of the Emberdark', 'Brandon Sanderson').map((m) => [
+        m.work.id,
+        m.via,
+      ]),
+      [
+        [1, 'exact'],
+        [2, 'exact'],
+      ],
+    );
+  });
+
+  it('padhard #348 — the subtitled title reaches nothing, its recorded ALIAS reaches both', () => {
+    // ⚠️ The printed title is genuinely out of reach and that is correct, not a
+    // gap this change papers over: folded, "isles of the emberdark" is 22
+    // characters against 38, a containment ratio of 0.58 under a floor of 0.6.
+    // The alias is what bridges it — which is exactly what `work_alias` is for.
+    assert.deepEqual(
+      matchIndexedWorkAll(index, 'Isles of the Emberdark: A Cosmere Novel', 'Brandon Sanderson'),
+      [],
+    );
+    assert.deepEqual(
+      matchIndexedWorkAll(index, 'Isles of the Emberdark', 'Brandon Sanderson').map(
+        (m) => m.work.id,
+      ),
+      [1, 2],
+    );
+  });
+
+  it('⚠️ keeps `lookupAll(...)[0] === lookup(...)` — the invariant the sweep relies on', () => {
+    const all = matchIndexedWorkAll(index, 'Isles of the Emberdark', 'Brandon Sanderson');
+    const one = matchIndexedWork(index, 'Isles of the Emberdark', 'Brandon Sanderson');
+    assert.equal(one?.work.id, all[0]?.work.id);
+    assert.equal(one?.via, 'exact');
+  });
+
+  it('the author gate still applies to every member', () => {
+    assert.deepEqual(matchIndexedWorkAll(index, 'Isles of the Emberdark', 'Some Other Author'), []);
+    assert.equal(matchIndexedWork(index, 'Isles of the Emberdark', 'Some Other Author'), null);
+  });
+
+  it('⚠️ DIFFERENT VOLUMES are still refused — the rule reads the number, it does not ignore it', () => {
+    // The protection this must not weaken. Same title, same series, DIFFERENT
+    // volume numbers: not an edition set, and the whole-fold refusal stands
+    // exactly as it did for The Eminence in Shadow.
+    const volumes = buildWorkIndex(
+      [1, 2, 3].map((v) => ({
+        id: v,
+        title: 'Space Knight',
+        authors: 'Ivan Kal',
+        series: 'Space Knight',
+        seriesIndex: v,
+      })),
+    );
+    assert.deepEqual(matchIndexedWorkAll(volumes, 'Space Knight', 'Ivan Kal'), []);
+    // Our own volume number still narrows it to exactly one — unchanged.
+    assert.deepEqual(
+      matchIndexedWorkAll(volumes, 'Space Knight', 'Ivan Kal', 2).map((m) => m.work.id),
+      [2],
+    );
+  });
+
+  it('⚠️ a fold with no SERIES is not an edition set either', () => {
+    // Series agreement is the second half of the discriminator, and it is what
+    // stops two unrelated books that share a title, an author and a volume
+    // number from being called recordings of each other. With the series
+    // dropped, the same rows refuse exactly as before.
+    const seriesless = buildWorkIndex([
+      { id: 1, title: 'Gold', authors: 'Raven Kennedy', seriesIndex: 1 },
+      { id: 2, title: 'Gold', authors: 'Raven Kennedy', seriesIndex: 1 },
+    ]);
+    assert.deepEqual(matchIndexedWorkAll(seriesless, 'Gold', 'Raven Kennedy'), []);
+  });
+
+  it('⚠️ a fold whose members state DIFFERENT series is not an edition set', () => {
+    const crossSeries = buildWorkIndex([
+      { id: 1, title: 'Gold', authors: 'Raven Kennedy', series: 'The Plated Prisoner', seriesIndex: 1 },
+      { id: 2, title: 'Gold', authors: 'Raven Kennedy', series: 'Something Else', seriesIndex: 1 },
+    ]);
+    assert.deepEqual(matchIndexedWorkAll(crossSeries, 'Gold', 'Raven Kennedy'), []);
+  });
+
+  it('the dramatized multi-part case, measured on the real ACOTAR rows', () => {
+    // The other thing the rule unblocked, and the reason `docs/DONE.md`'s
+    // 2026-08-25 note "do not try to fix this in the matcher" is superseded:
+    // Audible splits one dramatization across parts, `cleanTitleWithSeries`
+    // strips the part/series decoration, and the halves fold to one string with
+    // one series and one volume number. They are two files of one recording,
+    // not two volumes.
+    const acotar = buildWorkIndex([
+      {
+        id: 1,
+        title: 'A Court of Mist and Fury',
+        authors: 'Sarah J. Maas',
+        series: 'A Court of Thorns and Roses',
+        seriesIndex: 2,
+      },
+      {
+        id: 2,
+        title: 'A Court of Mist and Fury',
+        authors: 'Sarah J. Maas',
+        series: 'A Court of Thorns and Roses',
+        seriesIndex: 2,
+      },
+    ]);
+    assert.deepEqual(
+      matchIndexedWorkAll(acotar, 'A Court of Mist and Fury', 'Sarah J. Maas').map((m) => m.work.id),
+      [1, 2],
+    );
+  });
+});
+
 describe('matching — the bare-series-name rule, tier 2 (review-only)', () => {
   /*
    * The 2026-08-13 incident in miniature: *Space Knight* and *Tamer* are series

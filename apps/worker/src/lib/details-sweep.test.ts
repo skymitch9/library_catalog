@@ -660,6 +660,40 @@ test('⚠️ a donor-only instance never asks for a shortlist it could not judge
   assert.ok(withAi.includes('candidates=1'));
 });
 
+test('⚠️ the aliases ride in the SAME request — one subrequest however many there are', () => {
+  // The cross-instance identity bridge (2026-08-26). padhard #348 is
+  // "Isles of the Emberdark: A Cosmere Novel" and main #4 is
+  // "Isles of the Emberdark"; `work_key` bakes the printed title in and is a
+  // PERSISTED key, so the alias is what makes them one book. It travels as
+  // repeated `alias=` parameters rather than a second fetch, which is what
+  // keeps `estimateSubrequests` — and the free ladder's budget — unchanged.
+  const url = donorAskUrl(
+    'https://library.heygabi.ai',
+    'Isles of the Emberdark: A Cosmere Novel',
+    'Brandon Sanderson',
+    false,
+    ['Isles of the Emberdark', 'Emberdark'],
+  );
+  const parsed = new URL(url);
+  assert.deepEqual(parsed.searchParams.getAll('alias'), [
+    'Isles of the Emberdark',
+    'Emberdark',
+  ]);
+  assert.equal(parsed.pathname, '/api/donor/details', 'one path, one fetch');
+});
+
+test('no aliases: the URL is byte-for-byte what it was before the rung existed', () => {
+  assert.equal(
+    donorAskUrl('https://library.heygabi.ai', 'Unsouled', 'Will Wight', false, []),
+    donorAskUrl('https://library.heygabi.ai', 'Unsouled', 'Will Wight', false),
+  );
+  // A blank alias is dropped rather than sent as an empty parameter.
+  assert.equal(
+    donorAskUrl('https://library.heygabi.ai', 'Unsouled', 'Will Wight', false, ['  ']),
+    'https://library.heygabi.ai/api/donor/details?title=Unsouled&author=Will+Wight',
+  );
+});
+
 test('a confident verdict applies, wearing the judged tier rather than the exact one', () => {
   const outcome = judgedOutcome(
     { verdict: 'same', workId: 42, confidence: 'high', why: 'Same author; the title adds the series.' },

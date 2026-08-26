@@ -212,6 +212,7 @@ import {
   createRun,
   detailsRunHistory,
   finishRun,
+  listWorkAliases,
   listWorksNeedingDetails,
   saveFindings,
   type NeedsDetails,
@@ -426,6 +427,23 @@ export interface SweepCandidate {
    * the donor can match on the canonical `work_key` instead of title alone.
    */
   authors: string | null;
+  /**
+   * The other titles this book answers to (`work_alias`, `kind='title'`), sent
+   * with the donor ask so two instances can meet through an alias when their
+   * printed titles differ.
+   *
+   * ⚠️ Why this exists: `work_key` bakes the printed title in, so padhard's
+   * *"Isles of the Emberdark: A Cosmere Novel"* (#348, the Tor edition) and
+   * main's *"Isles of the Emberdark"* (#4, the Dragonsteel one) never met —
+   * measured 2026-08-26. `work_key` is a persisted key and re-deriving it is a
+   * migration, so identity is bridged with aliases instead.
+   *
+   * ⚠️ They ride in the SAME request (`alias=` repeated), so the donor step
+   * still costs exactly ONE subrequest and `estimateSubrequests` is unchanged.
+   * Absent/empty for a work with no recorded aliases — the ordinary case, and
+   * then the ask is byte-for-byte what it was before this existed.
+   */
+  titleAliases?: readonly string[];
   /** Everything this work still owes. Decides eligibility and the rotation. */
   missing: readonly DetailField[];
   /**
@@ -748,11 +766,20 @@ export function donorAskUrl(
   title: string,
   authors: string | null,
   wantCandidates: boolean,
+  titleAliases: readonly string[] = [],
 ): string {
   const url = new URL('/api/donor/details', base);
   url.searchParams.set('title', title);
   if (authors) url.searchParams.set('author', authors);
   if (wantCandidates) url.searchParams.set('candidates', '1');
+  // ⚠️ `append`, not `set` — repeated `alias=` parameters, read on the other
+  // side with `c.req.queries('alias')`. One request whatever the count, which
+  // is what keeps the donor step at one subrequest; the donor caps how many it
+  // will honour (`MAX_CALLER_ALIASES`) rather than trusting the wire.
+  for (const alias of titleAliases) {
+    const trimmed = alias.trim();
+    if (trimmed) url.searchParams.append('alias', trimmed);
+  }
   return url.toString();
 }
 
@@ -767,9 +794,10 @@ async function askDonor(
   title: string,
   authors: string | null,
   wantCandidates: boolean,
+  titleAliases: readonly string[] = [],
 ): Promise<{ ok: true; reply: DonorDetailsReply } | { ok: false; error: string }> {
   try {
-    const url = donorAskUrl(env.DONOR_URL as string, title, authors, wantCandidates);
+    const url = donorAskUrl(env.DONOR_URL as string, title, authors, wantCandidates, titleAliases);
     const res = await fetch(url, {
       headers: { 'X-Donor-Token': env.DONOR_TOKEN ?? '' },
       signal: AbortSignal.timeout(DONOR_TIMEOUT_MS),
@@ -897,10 +925,14 @@ export async function runDetailsSweep(
 
     let works: NeedsDetails[];
     let history: Awaited<ReturnType<typeof detailsRunHistory>>;
+    // ⚠️ Read only when a donor ask can actually happen — see `titleAliases`.
+    // An instance with no `DONOR_URL` pays nothing for a rung it never uses.
+    let aliasRows: Awaited<ReturnType<typeof listWorkAliases>> = [];
     try {
-      [works, history] = await Promise.all([
+      [works, history, aliasRows] = await Promise.all([
         listWorksNeedingDetails(env.DB),
         detailsRunHistory(env.DB),
+        mode.donor ? listWorkAliases(env.DB) : Promise.resolve([]),
       ]);
     } catch (err) {
       result.skipped.push(`queue read failed: ${(err as Error).message}`);
@@ -915,12 +947,23 @@ export async function runDetailsSweep(
     if (works.length === 0) return result;
 
     const seen = new Map(history.map((h) => [h.workId, h]));
+    // Title aliases only: an alternate TITLE is offered as a title and never as
+    // an author, the distinction migration 0005's `kind` column exists for and
+    // the one thing `matching.ts` says must not blur.
+    const aliasesByWork = new Map<number, string[]>();
+    for (const row of aliasRows) {
+      if (row.kind === 'author') continue;
+      const list = aliasesByWork.get(row.workId);
+      if (list) list.push(row.alias);
+      else aliasesByWork.set(row.workId, [row.alias]);
+    }
     const candidates: SweepCandidate[] = works.map((work) => {
       const past = seen.get(work.workId);
       return {
         workId: work.workId,
         title: work.title,
         authors: work.authors,
+        titleAliases: aliasesByWork.get(work.workId) ?? [],
         missing: work.missing,
         asks: work.asks,
         asked: past?.asked ?? [],
@@ -965,7 +1008,13 @@ export async function runDetailsSweep(
         if (mode.donor && remaining.length > 0) {
           // ⚠️ The shortlist is asked for ONLY when this instance can judge it
           // — header §4a. A donor-only instance sends the pre-judge request.
-          const donor = await askDonor(env, candidate.title, candidate.authors, mode.ai);
+          const donor = await askDonor(
+            env,
+            candidate.title,
+            candidate.authors,
+            mode.ai,
+            candidate.titleAliases ?? [],
+          );
           if (!donor.ok) {
             // Donor DOWN, not donor-has-no-answer. Nothing is recorded, so
             // the book stays exactly as eligible and is retried next tick;
