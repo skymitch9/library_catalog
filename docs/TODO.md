@@ -93,34 +93,6 @@ Their masters: `AUDIOBOOK_MAPPING_TOKEN` = `audiobook_catalog/.env`
 `access/RECOVERY.md` custody table; mint `DONOR_TOKEN` fresh into `.dev.vars`
 (trailing-newline check) and `secrets:push:both` when convenient.
 
-## ☐ TBR double-counts a book owned in several media — one entry per BOOK, linking every format (owner ask, 2026-08-26)
-
-Owner: *"for the tbr list, it's double counting if something is owned in
-multiple media sources. So if a book is audio, physical and ebook or any
-combination we need to have it single count with a link to all formats."*
-
-**Why it happens** (`info/tbr.md` §1/§8): a `readingLists` document is keyed
-`${uid}_${bookId}` and `bookId = bookIdFromTitle(title)` — a slug of the title
-AS THAT CATALOG SPELLS IT. The audiobook site and this library spell one book
-differently, so one intention becomes two documents, and every surface that
-counts documents counts it twice. Library-written docs already carry `workKey`
-(the cross-catalog bridge, `core/tbr.ts` `tbrDocFor`); audiobook-written ones
-do not.
-
-**Design (settled 2026-08-26, build delegated):** fold at READ time on every
-surface, never by re-keying the store (a persisted-key change is a migration —
-§8 did one already). Fold key = `workKey` when the doc has one; otherwise
-resolve the audiobook/ebook doc to a work through the bridges this catalog
-already holds (`audiobook_holding` by title, `ebook_holding`), else
-`workKeyFor(cleanAudiobookTitle(bookTitle), authors)`. One card per fold group:
-title, cover, and a **formats row** linking to each place it exists — the
-library work page (physical), the audiobook page, the ebook reader — with the
-owned/wanted state per format. The count is the number of GROUPS. Surfaces:
-library `TbrPage.tsx` (`/tbr`, GET `/api/tbr`), the audiobook site's
-reading-list filter (`app/web/templates/index.html`), `site/community.html`'s
-per-person TBR count, and `site/ebooks.html`. Removing a group removes every
-document in it (the user meant the book, not one catalog's copy of it).
-
 ## ☐ Shelf is COPY-DRIVEN + EditBox tab merge — LANDED FOR REVIEW (branch `feature/shelf-copy-driven`, 2026-08-24)
 
 Fixes the ownership bug where an OWNED book read as **Wanted**. `deriveShelfView`

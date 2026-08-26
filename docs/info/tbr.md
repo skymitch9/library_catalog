@@ -1,9 +1,23 @@
 # Cross-catalog TBR — Information Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
-> Last verified: **2026-08-18** (§8 — the account migration: live rules smoked
+> Last verified: **2026-08-26** (§9 — the media fold: 31 new tests green, the
+> suite at 1,878/0, and BOTH instances re-measured live after the deploy —
+> `library.heygabi.ai` and `padhard.heygabi.ai` each 200 with `database: up`
+> and each serving the new bundle `assets/index-Cu1y4gWG.js`. ⚠️ **What was
+> NOT verified: the signed-in screen.** Nobody has loaded `/tbr` as the owner
+> since the change, so the live count and the format links are still his to
+> check — §9's own closing note says so, and §7's untested list still stands).
+>
+> ## ⚠️ UPDATED 2026-08-26 — ONE CARD PER BOOK. READ §9.
+>
+> The owner reported the list double-counting a book he owns in several media.
+> Nothing about the STORE changed — the fold happens on the way out.
+>
+> §§1–8 were last verified **2026-08-18** and are unchanged; their evidence
+> follows. §8 (the account migration): live rules smoked
 > 17/17, the migration exercised end to end on the dev lane, prod measured
-> before and after). §§1–7 last verified **2026-08-17** against
+> before and after. §§1–7 last verified **2026-08-17** against
 > `audiobook_catalog` at that date —
 > `app/web/templates/index.html` (the TBR button and the reading-list filter),
 > `site/community.html` (the per-person TBR count) and `firestore.rules`
@@ -493,3 +507,172 @@ own test sweep**, not part of this one.
 change. The deployed bundle is confirmed to contain the code and the rules are
 smoked live, but no one has seen `✓ On my TBR` render against a migrated
 document. That remains the highest-value eyeball.
+
+⚠️ **Correction, noted 2026-08-26:** the removal condition above ("still 53,
+NOT 0") is **stale**. `audiobook_catalog/site/reviews.js` records that the
+owner's reassignment ran and `migrate_tbr_to_uid.py --report` printed **0** on
+2026-08-18, and that repo has since **deleted** its whole legacy lane —
+`legacyReadingListDocId`, `isUidKeyedListId`, and the display-name branch of
+`ownsReadingListDoc` are gone, and so is the legacy rule in `firestore.rules`.
+This catalog's `legacyReadingListDocId` / `legacyDocId` / `ownsTbrDoc` uid-less
+branch are therefore **dead weight rather than load-bearing**. ⚠️ Removing them
+is a **separate pass with its own test sweep**, exactly as this section says —
+it was not folded into the 2026-08-26 media-fold work. Re-run the `--report`
+command before acting on this note; it is read off the sibling repo's source,
+not re-measured against Firestore.
+
+---
+
+## 9. ⚠️ ONE CARD PER BOOK — the media fold, 2026-08-26
+
+The owner, 2026-08-26, verbatim:
+
+> *"for the tbr list, it's double counting if something is owned in multiple
+> media sources. So if a book is audio, physical and ebook or any combination we
+> need to have it single count with a link to all formats."*
+
+### Why it happened
+
+A `readingLists` document id is `` `${uid}_${bookId}` `` and `bookId` is
+`bookIdFromTitle(title)` — **a slug of the title as THAT catalog spells it**
+(§1). The audiobook site says *Firefight - The Reckoners, Book 2*; this one says
+*Firefight*. One intention, two documents, and every surface that counts
+documents counted it twice. Library-written documents carry `workKey` (§3);
+audiobook- and ebook-written ones carry **nothing but a slug**.
+
+### ⚠️ FOLDED AT READ TIME, NEVER BY RE-KEYING THE STORE
+
+The obvious fix — make both catalogs write one id — is a **migration of a
+persisted key**, and §8 already did one of those. It is also impossible on the
+sibling side: that catalog has no author for most rows, so it cannot build the
+composite key at all. **The documents stay exactly where they are.**
+
+### The fold key — `tbrFoldKey`, `packages/core/src/tbr.ts`
+
+| # | Key | Reaches |
+|---|---|---|
+| 1 | the matched **WORK's** `work_key` | anything D1 could resolve, including a sibling-written doc bridged through the holdings |
+| 2 | the **DOCUMENT's** own `workKey` | library-written docs for books this catalog no longer holds |
+| 3 | `workKeyFor(cleanAudiobookTitle(title), authors)` | a known author with no stored key |
+| 4 | the doc's `bookId` — i.e. **no fold** | everything else |
+
+⚠️ **Rung 4 is a REFUSAL, and it is the point.** There is deliberately **no
+title-only rung**: `workKeyFor` always joins a folded title to a folded author,
+so a key with no `|` is not one of ours and two books called *Gold* are two
+books (the same rule `myTbrEntries` already applied). The asymmetry that decides
+it: **a fold that is too eager is silent and permanent** — one book disappears
+from the list and nothing anywhere says so — while a fold that is too shy leaves
+the list slightly long, which is visible and reportable.
+
+⚠️ **No new matcher or normaliser was written.** Every rung is `@lc/core`'s
+existing `titles.ts` (`cleanAudiobookTitle`, `workKeyFor`) and `reviews.ts`
+(`bookIdFromTitle`). A second similarity function would be a second definition
+of "same book", which is the drift `matching.ts` exists to prevent.
+
+### The bridge — a THIRD rung in `resolveTbrEntries` (`packages/db/src/tbr.ts`)
+
+`resolveTbrEntries` had two rungs: the indexed `work_key IN (…)`, then a scan
+slugging this catalog's own titles. Both fail on an audiobook-written entry. The
+third rung slugs **the sibling catalogs' own spellings**, which this database
+already caches:
+
+| Source | Migration | Columns slugged |
+|---|---|---|
+| `audiobook_holding` (a VIEW, one best row per work) | 0010 → 0390 | `title` |
+| `audiobook_edition_holding` (every recording) | 0390 | `title` **and** `raw_title` |
+| `ebook_holding` | 0310 | `title` |
+
+⚠️ **It is a THIRD rung, never a replacement.** It is consulted only for entries
+the first two both missed, so **nothing that matched before can change** — pinned
+by its own test. ⚠️ **Stale rows are excluded**: a recording the sibling catalog
+has withdrawn must not merge two live entries, the same rule
+`audioEditionCountSql` applies. `matchedVia` (`work_key` / `title_slug` /
+`audio_bridge` / `ebook_bridge`) is recorded because a bridge match is a **weaker
+claim** — a title match made by another system at another time — and the same
+reasoning as `audiobook_holding.matched_via` says to keep it visible.
+
+⚠️ **Both rungs 2 and 3 are conditional full scans**, in that order, each running
+only if something is still unmatched. On a list written entirely from this
+catalog neither ever runs.
+
+### The formats row
+
+Read off `copy`, `audiobook_holding` and `ebook_holding` for the matched work.
+`physical.state` is the **household's** fact, decided by `HELD_STATUSES` and
+`WISHLIST_STATUSES` from `@lc/core` rather than a second spelling of them — so
+`lent` is owned (the book is ours, elsewhere) and `sold`/`borrowed` are neither.
+`owned` beats `wanted` beats `none` when two documents in a group disagree,
+because otherwise row order would decide whether the owner is told he owns his
+own paperback. `'none'` is a real answer, not a gap: the catalog holds the work
+without holding a copy.
+
+⚠️ **Only formats that EXIST are rendered.** *"A link to all formats"* means the
+ones he has, not three buttons two of which apologise.
+
+⚠️ **The two off-site links carry the SIBLING catalog's spelling of the title**
+(`audiobook_holding.title`, `ebook_holding.title`), not this one's. Both sites'
+only per-book link is a title search-hash (`audiobookDetailUrl`,
+`ebookShelfUrl`); searching them for this catalog's spelling lands far less
+often — the same lesson `DriveLinks` records for Drive file names.
+
+### Removal, and clearing, are by GROUP
+
+**"Off the list" deletes every document in the fold.** The person meant the
+book, not one catalog's copy of it, and leaving the other behind would light the
+audiobook site's `✓ To Be Read` button for a book they just cleared — the exact
+cross-catalog staleness §5 exists to remove. For the same reason `'read'` on
+**any** document in a group spends the whole intention: §5's *"finishing one
+format clears the intention"*, now that a book is several documents. `dnf` still
+does not clear, unchanged and pinned.
+
+The wheel (`TbrSpinner`) gets **one candidate per group**, so a book held in
+three formats is no longer three times as likely to win.
+
+### Where the fold is computed — and why it is in two places that cannot drift
+
+`groupTbrEntries` is pure and lives in `@lc/core`. The **Worker** calls it over
+the catalog's own answer and returns `groups` (keys, docIds, workId, readState,
+formats) — ⚠️ **carrying no titles**, for the reason `TbrEntryRef` carries none:
+the titles came from the browser's Firestore read, and a server that echoed them
+back would let the page print a string nothing checked. The **page** calls the
+same function over those entries merged with its own titles. One implementation,
+so the count the route reports and the cards on screen cannot disagree.
+
+### The audiobook side — what it CAN fold, and what it cannot
+
+That repo's surfaces get the best fold available to them client-side:
+**`workKey` when the document carries one, else the document's own `bookId`.**
+No matcher was invented in JS.
+
+⚠️ **This is materially weaker than the library's, and it is worth knowing
+exactly why.** Only library-written documents carry `workKey`; a document that
+site wrote has a `bookId` and nothing else. And because the document id is
+already `` `${uid}_${bookId}` ``, two documents of one person can never share a
+`bookId` — so the `bookId` branch folds nothing that was not already one row.
+**The fold there therefore only merges two documents that BOTH carry a
+`workKey`** (the same book added from two library-side spellings). ⚠️ **A
+paperback entry written here and an audiobook entry written there still count as
+two on that site**, because the bridge that joins them is `audiobook_holding` —
+a D1 table living in this repo, which that site cannot see. Closing it properly
+needs either a `workKey` on the audiobook side's writes or a published
+bridge/lookup, and both are separate asks.
+
+### Verified — and what is NOT
+
+- **Tests:** 31 new. 17 pure (`packages/core/test/tbr-fold.test.ts`) and 14
+  against real SQL through the `node:sqlite` D1 shim
+  (`packages/db/test/tbr-media-fold.test.ts`) — the shipped statements, the
+  UNION, and the stale-row guard exercised rather than reasoned about. Suite
+  **1,847 → 1,878 pass, 0 fail**; typecheck clean; web build clean.
+- **Deployed and re-measured:** `7a99067`, version ids
+  `7a3ab743-3c03-42b8-9504-889c9f09b406` (main) and
+  `e85b83fc-d2b3-4a9f-b9ec-39ed58c19dac` (friend). Both hosts answered **200**
+  and both serve `assets/index-Cu1y4gWG.js` — the artifact, not the pipeline's
+  word for it, per §8's addendum.
+- 🔴 **NOT verified: the signed-in screen.** Nobody has loaded `/tbr` as the
+  owner since the change. The live count, the format links and the *"N entries
+  were repeats"* note are all his to check — the build environment cannot hold
+  his session. §7's untested list still applies in full.
+- **NOT verified: the audiobook site's surfaces in a browser.** Their fold is
+  unit-tested and pushed to the `/dev/` lane; nobody has watched a count change
+  there. **Prod promote is the owner's action and was not performed.**

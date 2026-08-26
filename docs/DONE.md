@@ -17,6 +17,96 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ TBR double-counted a book owned in several media — folded at read time — one entry per BOOK, linking every format (owner ask, 2026-08-26)
+
+Owner: *"for the tbr list, it's double counting if something is owned in
+multiple media sources. So if a book is audio, physical and ebook or any
+combination we need to have it single count with a link to all formats."*
+
+**Why it happens** (`info/tbr.md` §1/§8): a `readingLists` document is keyed
+`${uid}_${bookId}` and `bookId = bookIdFromTitle(title)` — a slug of the title
+AS THAT CATALOG SPELLS IT. The audiobook site and this library spell one book
+differently, so one intention becomes two documents, and every surface that
+counts documents counts it twice. Library-written docs already carry `workKey`
+(the cross-catalog bridge, `core/tbr.ts` `tbrDocFor`); audiobook-written ones
+do not.
+
+**Design (settled 2026-08-26, build delegated):** fold at READ time on every
+surface, never by re-keying the store (a persisted-key change is a migration —
+§8 did one already). Fold key = `workKey` when the doc has one; otherwise
+resolve the audiobook/ebook doc to a work through the bridges this catalog
+already holds (`audiobook_holding` by title, `ebook_holding`), else
+`workKeyFor(cleanAudiobookTitle(bookTitle), authors)`. One card per fold group:
+title, cover, and a **formats row** linking to each place it exists — the
+library work page (physical), the audiobook page, the ebook reader — with the
+owned/wanted state per format. The count is the number of GROUPS. Surfaces:
+library `TbrPage.tsx` (`/tbr`, GET `/api/tbr`), the audiobook site's
+reading-list filter (`app/web/templates/index.html`), `site/community.html`'s
+per-person TBR count, and `site/ebooks.html`. Removing a group removes every
+document in it (the user meant the book, not one catalog's copy of it).
+
+
+### ✅ AS BUILT — 2026-08-26, live on both instances
+
+**Shipped** `7a99067`; deploys.log lines `9f8ea5e` (main) + `d164768` (friend).
+Version ids **`7a3ab743-3c03-42b8-9504-889c9f09b406`** (main, `library.heygabi.ai`)
+and **`e85b83fc-d2b3-4a9f-b9ec-39ed58c19dac`** (friend, `padhard.heygabi.ai`).
+Both instances re-measured after the deploy: **200**, `database: up`, and both
+serving the new bundle `assets/index-Cu1y4gWG.js` — the artifact, not the
+pipeline's word for it (the lesson §8's addendum records).
+
+**The fold key, strongest rung first** (`tbrFoldKey`, `packages/core/src/tbr.ts`):
+
+| # | Key | Reaches |
+|---|---|---|
+| 1 | the matched WORK's `work_key` | anything D1 could resolve — including an audiobook-written doc bridged through the holdings |
+| 2 | the DOCUMENT's own `workKey` | library-written docs for books no longer held |
+| 3 | `workKeyFor(cleanAudiobookTitle(title), authors)` | a known author, no stored key |
+| 4 | `bookId` — i.e. **no fold** | everything else |
+
+⚠️ **Rung 4 is a REFUSAL and it is the point.** There is no title-only rung:
+two books called *Gold* are two books. A fold that is too eager is silent and
+permanent (one book vanishes from the list and nothing says so); a fold that is
+too shy leaves the list slightly long, which is visible and reportable. **No new
+matcher was written** — every rung is `@lc/core`'s existing `titles.ts`.
+
+**The bridge is a THIRD rung in `resolveTbrEntries`** (`packages/db/src/tbr.ts`),
+consulted only for entries the key pass and the title-slug pass both missed, so
+**nothing that matched before can change**. It slugs the sibling catalogs' own
+titles — `audiobook_holding` (the per-work view), `audiobook_edition_holding`'s
+`title` **and** `raw_title`, `ebook_holding.title` — with the same
+`bookIdFromTitle`, and **excludes stale rows**: a withdrawn recording must not
+merge two live entries. `matchedVia` records which rung fired, because a bridge
+match is a weaker claim than a key match.
+
+**The formats row** is read off `copy` (through `HELD_STATUSES` /
+`WISHLIST_STATUSES`, never a second spelling of them), `audiobook_holding` and
+`ebook_holding`. `owned` beats `wanted` beats `none`; `lent` is owned, `sold` and
+`borrowed` are neither. The two off-site links use the **sibling catalogs'**
+spelling of the title, because both sites' only per-book link is a title
+search-hash and this catalog's spelling finds it far less often.
+
+**Removal is by GROUP.** "Off the list" deletes **every** document in the fold,
+and a book read in any format spends the whole intention across all of them —
+leaving one behind would light the audiobook site's `✓ To Be Read` button for a
+book just cleared. The wheel gets one candidate per book too, so a book held in
+three formats is no longer three times as likely to win.
+
+**Tests:** 31 new — 17 pure (`packages/core/test/tbr-fold.test.ts`) and 14
+against real SQL through the `node:sqlite` D1 shim
+(`packages/db/test/tbr-media-fold.test.ts`). Suite **1,847 → 1,878 pass, 0
+fail**; typecheck clean; web build clean.
+
+**The audiobook side** (`audiobook_catalog`, dev lane) folds by
+`workKey`-else-`bookId`, which is all that store exposes client-side. See
+`info/tbr.md` §9 for what that does **not** reach and why.
+
+⚠️ **NOT VERIFIED:** nobody has loaded `/tbr` signed in as the owner since the
+change — the live count and the format links are his to check. The build
+environment cannot hold his session. Everything either side of that was
+measured: the fold rules by test, the deployed artifact by its asset hash on
+both hosts.
+
 ## ✅ "Is scanning down on padhard?" — no; verified live, the two misses were data — 2026-08-25
 
 Owner ask 18:4x Phoenix: *"check if scanning is down on the app or if the app is
