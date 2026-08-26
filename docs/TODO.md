@@ -32,6 +32,24 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
+## ☐ SHIPPED-NOT-DEPLOYED: the donor alias rung is on `main` and NOT yet on either Worker (2026-08-26)
+
+The #348 build ([`DONE.md`](DONE.md)) landed in two halves and they have
+different states — exactly the distinction the verification rule asks be tracked
+per item:
+
+| Half | State |
+|---|---|
+| The audiobook link (`isEditionSet` + `backfill:audiobooks --commit`) | ✅ **LIVE on both instances.** A DATA change, no deploy needed. Verified by query: works #4 and #348 each return a live `audiobook_holding` row |
+| The donor alias rung (`routes/donor.ts`, `lib/details-sweep.ts`) | ⚠️ **committed and tested, NOT deployed.** Worker code; takes effect on the next `npm run deploy:both` |
+
+Deliberately not deployed by the session that wrote it: another agent was
+working the TBR route in its own worktree and may deploy both instances, and two
+concurrent deploys are how the deploy-guard's *"live commit is not in the tree
+being shipped"* refusal gets hit. **Nothing is broken by the wait** — the sweep
+simply keeps missing the cross-instance matches it has always missed. Fold it
+into the next deploy, then tick this and add the line to `deploys.log`.
+
 ## ☐ 🙋 OWNER: confirm these 2 cross-instance near-misses — one question, one answer each (2026-08-26)
 
 Fell out of the #348 build (now in [`DONE.md`](DONE.md)). A **subtitle-stripped**
