@@ -32,58 +32,6 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
-## ☐ 🔴 The hourly sweep STALLS on a book it cannot afford — it does not skip it (found 2026-08-25)
-
-Found while repricing the ladder for rung 2 going live; **pre-existing, not
-caused by that work**, and not fixed there because the fix is a policy change.
-
-`planSweep` (`apps/worker/src/lib/details-sweep.ts`) **`break`s** rather than
-`continue`s when the next candidate costs more than the remaining budget. That
-is deliberate and documented — skipping ahead would reorder the
-never-attempted-first rotation the sort just established. But the two rules
-compose badly: an unaffordable book at the HEAD of the queue is not deferred,
-it stops the tick, and it is still at the head an hour later. **The sweep picks
-nothing, for ever, silently.**
-
-Measured (arithmetic, from `estimateSubrequests`), on a DONOR instance — which
-both instances are today (main has `DONOR_URL` + `DONOR_TOKEN`; padhard has
-hers):
-
-| Book | Cost | Budget 46 |
-|---|---|---|
-| 2 asks | `12 + 18 + 6 + 8` = 44 | fits |
-| 3 asks | `12 + 18 + 6 + 12` = 48 | **stalls** |
-| 4 asks | `12 + 18 + 6 + 16` = 52 | **stalls** |
-
-⚠️ It was already true before 2026-08-25 (3 asks cost 45 against a budget of
-44), so if a four-gap book has ever sat at the head of either queue, that
-instance's sweep has been dead and nothing says so. **Nobody has checked
-whether one is there** — that check is step 1.
-
-**Step 1 — measure, do not assume.** Read the head of
-`listWorksNeedingDetails()` on both instances and count the asks. If the head
-is a 3-or-4-ask book, the sweep is currently doing nothing on that instance and
-this becomes urgent rather than latent.
-
-**Step 2 — the fix, which is a policy call.** Three shapes, cheapest first:
-
-1. **Let one over-budget book take the tick alone.** If `pick` is EMPTY, admit
-   the head candidate regardless of cost and stop. Its real cost is a worst
-   case that assumes every rung is asked and every rung fails; a 52-estimate
-   book rarely spends 52. Preserves the rotation exactly.
-2. **Skip-and-remember** — `continue` past an unaffordable book but record that
-   it was passed over, so the rotation cannot starve it. More code, and it
-   reintroduces the reordering the `break` exists to prevent.
-3. **Make an expensive book cheaper** — drop a field from the ask. Refuses to
-   answer a question the book actually owes; worst of the three.
-
-⚠️ **Whichever is chosen, the sweep must SAY when it picks nothing and why.** A
-tick that plans zero books currently looks exactly like a tick with an empty
-queue, and that indistinguishability is what let this hide.
-
-Reference: `info/free-details-ladder.md` §8 (the budget arithmetic and why
-`SWEEP_BUDGET` is not the lever).
-
 ## ☐ Custody gap: `DONOR_TOKEN` + `AUDIOBOOK_MAPPING_TOKEN` are live but absent from `.dev.vars` (found 2026-08-25)
 
 A bulk run cannot rotate them (`--both --dry-run`: "skip (not set locally)").

@@ -266,11 +266,18 @@ export const SWEEP_LIMIT = 2;
  *
  * `planSweep` **`break`s** rather than `continue`s when the next book will not
  * fit (deliberately — skipping ahead would reorder the rotation). The queue is
- * ordered never-attempted-first, so an unaffordable book at the HEAD is not
- * deferred, it stalls the whole sweep, every hour, silently. At the old 44 an
+ * ordered never-attempted-first, so an unaffordable book at the HEAD was not
+ * deferred, it stalled the whole sweep, every hour, silently. At the old 44 an
  * AI-only book missing all four details cost `12 + 18 + 16 = 46` and would have
  * done exactly that — and a four-gap book is precisely the one the sweep exists
  * for.
+ *
+ * ⚠️ **That stall is fixed as of 2026-08-26 — `planSweep` rule 4 admits an
+ * unaffordable HEAD alone rather than planning nothing — and this budget is
+ * still not the lever.** Rule 4 is a floor under the failure, not a licence to
+ * stop pricing: every book it admits exceeds the ceiling and risks a killed
+ * invocation. Raising this number buys one more field's headroom and costs the
+ * slack that keeps ordinary ticks safe.
  *
  * So the slack under the 50 ceiling is now **2, not 4**. What makes that
  * defensible rather than reckless is that the largest term stopped being an
@@ -446,6 +453,25 @@ export interface SweepPlan {
   deferred: number;
   /** Estimated subrequests `pick` will spend. */
   estimated: number;
+  /**
+   * Set when the head of the rotation was admitted **over** the budget because
+   * nothing else could be (rule 4 below). Null on an ordinary tick.
+   *
+   * ⚠️ Carried rather than inferred, because it is the one tick that can exceed
+   * the 50-subrequest ceiling and the reader deserves to know which book did it.
+   * `runDetailsSweep` names it in `skipped`.
+   */
+  overBudget: { workId: number; cost: number; budget: number } | null;
+  /**
+   * Why `pick` is empty, in words — null whenever something was picked.
+   *
+   * ⚠️ **This exists because a tick that planned nothing used to look exactly
+   * like a tick with an empty queue**, and that indistinguishability is what let
+   * padhard's sweep sit dead for a day and a half without a single line saying
+   * so (measured 2026-08-26, `docs/DONE.md`). Rule 4 means an unaffordable book
+   * can no longer be the reason; the reasons that remain are named here.
+   */
+  nothingPicked: string | null;
 }
 
 /**
@@ -465,6 +491,37 @@ export interface SweepPlan {
  *    budget is checked against what the book would actually cost, so a
  *    four-gap book takes the tick to itself rather than being fitted in beside
  *    another and taking the invocation down with it.
+ * 4. ⚠️ **A book that fits nowhere still gets its turn — it takes the tick
+ *    ALONE.** If rule 3 would leave `pick` EMPTY, the head candidate is admitted
+ *    regardless of cost, and the tick stops there.
+ *
+ * ## Why rule 4 exists (owner decision 2026-08-26 — option 1 of three)
+ *
+ * Rules 2 and 3 compose badly without it. The rotation is never-attempted-first
+ * and rule 3 `break`s rather than `continue`s, so **an unaffordable book at the
+ * HEAD is not deferred — it stops the tick, and it is still at the head an hour
+ * later.** The sweep then picks nothing, for ever, silently.
+ *
+ * That was not hypothetical. **Measured 2026-08-26 on `library-catalog-2nd`
+ * (padhard):** work **#541 *"Raising Jesca"***, never attempted, owing all four
+ * details, priced `12 + 18 + 6 + 16 = 52` against a budget of 46 — and **90
+ * eligible books behind it, 0 picked.** Main was converged (0 queued) and so was
+ * unaffected. `scripts/sweep-plan.mjs` is the read-only instrument that measured
+ * it and can measure it again.
+ *
+ * ⚠️ **The admitted book CAN exceed the 50-subrequest ceiling, and that is the
+ * accepted cost.** The estimate is a worst case that assumes every rung is asked
+ * and every rung fails; a 52-estimate book rarely spends 52. If it does, the
+ * invocation is killed mid-lookup — which is not a new failure and not a
+ * permanent one: `closeStaleRuns` reaps the abandoned `research_run`, the
+ * timestamp moves the book to the BACK of the rotation, and the other 90 books
+ * get their turn on the next tick. **Stalling forever was strictly worse than
+ * failing once.**
+ *
+ * The two rejected shapes, so nobody re-litigates them: *skip-and-remember*
+ * (`continue` plus a passed-over marker) reintroduces the reordering rule 3
+ * exists to prevent, and *make the book cheaper* refuses to answer a question
+ * the book actually owes. Both are in `docs/DONE.md`.
  */
 export function planSweep(
   candidates: readonly SweepCandidate[],
@@ -486,6 +543,7 @@ export function planSweep(
 
   const pick: SweepCandidate[] = [];
   let estimated = 0;
+  let overBudget: SweepPlan['overBudget'] = null;
   for (const candidate of ordered) {
     if (pick.length >= limit) break;
     // ⚠️ `asks`, not `missing` — the budget must price what the run will
@@ -497,12 +555,57 @@ export function planSweep(
     // ⚠️ `break`, not `continue`. Skipping ahead to find a cheaper book would
     // reorder the rotation the sort above just established, and a book that is
     // always too expensive to fit beside another would never be reached at all.
-    if (estimated + cost > budget) break;
+    if (estimated + cost > budget) {
+      // ⚠️ Rule 4 — the anti-stall. An empty `pick` here means this candidate is
+      // the HEAD of the rotation and does not fit even on its own, so `break`ing
+      // would plan nothing this tick and nothing every tick after it. Admit it
+      // alone and stop; the rotation is untouched, because the book taken is
+      // still the one the sort put first.
+      if (pick.length === 0) {
+        pick.push(candidate);
+        estimated += cost;
+        overBudget = { workId: candidate.workId, cost, budget };
+      }
+      break;
+    }
     pick.push(candidate);
     estimated += cost;
   }
 
-  return { pick, deferred: ordered.length - pick.length, estimated };
+  return {
+    pick,
+    deferred: ordered.length - pick.length,
+    estimated,
+    overBudget,
+    nothingPicked: nothingPickedReason(candidates.length, ordered.length, pick.length, limit),
+  };
+}
+
+/**
+ * Why a tick planned zero books, in a sentence — or null when it planned some.
+ *
+ * ⚠️ **Three causes, and they are NOT interchangeable**, which is the whole
+ * point of wording them apart: an empty catalogue queue is the converged, quiet,
+ * correct outcome; a queue whose every row has already been asked everything is
+ * the convergence rule doing its job; a limit of zero is a caller's choice.
+ * Since rule 4, "the head was unaffordable" is no longer among them — that book
+ * is picked and `overBudget` says so.
+ */
+function nothingPickedReason(
+  queued: number,
+  eligible: number,
+  picked: number,
+  limit: number,
+): string | null {
+  if (picked > 0) return null;
+  if (limit < 1) return `the per-tick limit is ${limit}`;
+  if (queued === 0) return 'the queue is empty — nothing in the catalogue owes a detail';
+  if (eligible === 0) {
+    return `all ${queued} book(s) on the queue have already been asked everything they owe`;
+  }
+  // Unreachable while rule 4 holds. Kept, and worded as the fault it would be,
+  // because a silent empty pick is exactly the failure this field exists to end.
+  return `${eligible} book(s) were eligible and none was picked — this should not happen`;
 }
 
 /**
@@ -805,7 +908,11 @@ export async function runDetailsSweep(
     }
 
     result.queued = works.length;
-    if (works.length === 0) return result; // The normal, quiet, converged case.
+    // The normal, quiet, converged case — and the ONE empty tick that stays
+    // quiet on purpose. `queued: 0` already says it without ambiguity, and a
+    // converged instance would otherwise print the same line every hour for
+    // ever. Every OTHER way of planning nothing is named below, in `skipped`.
+    if (works.length === 0) return result;
 
     const seen = new Map(history.map((h) => [h.workId, h]));
     const candidates: SweepCandidate[] = works.map((work) => {
@@ -826,7 +933,23 @@ export async function runDetailsSweep(
     if (plan.deferred > 0) {
       result.skipped.push(`${plan.deferred} eligible left for a later tick`);
     }
-    if (plan.pick.length === 0) return result;
+    // ⚠️ The tick that costs more than the ceiling says so, by name and by
+    // number. `skipped` is the only line anybody reads about this job (see its
+    // own doc comment), so the over-budget admission goes THERE rather than
+    // into a second status surface — one fact, one home.
+    if (plan.overBudget) {
+      result.skipped.push(
+        `#${plan.overBudget.workId} costs ${plan.overBudget.cost} subrequests against a budget ` +
+          `of ${plan.overBudget.budget} — admitted alone, so the queue cannot stall behind it`,
+      );
+    }
+    if (plan.pick.length === 0) {
+      // ⚠️ A tick that planned nothing must not read like a tick with nothing to
+      // do. `nothingPicked` words the difference; `queued`/`eligible` carry the
+      // numbers behind it.
+      if (plan.nothingPicked) result.skipped.push(`planned nothing — ${plan.nothingPicked}`);
+      return result;
+    }
 
     for (const candidate of plan.pick) {
       try {

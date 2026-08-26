@@ -17,6 +17,121 @@
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.
 
+## ✅ The hourly sweep STALLED on a book it could not afford — FIXED on both instances (found 2026-08-25, landed 2026-08-26)
+
+Found while repricing the ladder for rung 2 going live; **pre-existing, not
+caused by that work**, and not fixed there because the fix is a policy change.
+
+`planSweep` (`apps/worker/src/lib/details-sweep.ts`) **`break`s** rather than
+`continue`s when the next candidate costs more than the remaining budget. That
+is deliberate and documented — skipping ahead would reorder the
+never-attempted-first rotation the sort just established. But the two rules
+compose badly: an unaffordable book at the HEAD of the queue is not deferred,
+it stops the tick, and it is still at the head an hour later. **The sweep picks
+nothing, for ever, silently.**
+
+Measured (arithmetic, from `estimateSubrequests`), on a DONOR instance — which
+both instances are today (main has `DONOR_URL` + `DONOR_TOKEN`; padhard has
+hers):
+
+| Book | Cost | Budget 46 |
+|---|---|---|
+| 2 asks | `12 + 18 + 6 + 8` = 44 | fits |
+| 3 asks | `12 + 18 + 6 + 12` = 48 | **stalls** |
+| 4 asks | `12 + 18 + 6 + 16` = 52 | **stalls** |
+
+⚠️ It was already true before 2026-08-25 (3 asks cost 45 against a budget of
+44), so if a four-gap book has ever sat at the head of either queue, that
+instance's sweep has been dead and nothing says so. **Nobody has checked
+whether one is there** — that check is step 1.
+
+**Step 1 — measure, do not assume.** Read the head of
+`listWorksNeedingDetails()` on both instances and count the asks. If the head
+is a 3-or-4-ask book, the sweep is currently doing nothing on that instance and
+this becomes urgent rather than latent.
+
+**Step 2 — the fix, which is a policy call.** Three shapes, cheapest first:
+
+1. **Let one over-budget book take the tick alone.** If `pick` is EMPTY, admit
+   the head candidate regardless of cost and stop. Its real cost is a worst
+   case that assumes every rung is asked and every rung fails; a 52-estimate
+   book rarely spends 52. Preserves the rotation exactly.
+2. **Skip-and-remember** — `continue` past an unaffordable book but record that
+   it was passed over, so the rotation cannot starve it. More code, and it
+   reintroduces the reordering the `break` exists to prevent.
+3. **Make an expensive book cheaper** — drop a field from the ask. Refuses to
+   answer a question the book actually owes; worst of the three.
+
+⚠️ **Whichever is chosen, the sweep must SAY when it picks nothing and why.** A
+tick that plans zero books currently looks exactly like a tick with an empty
+queue, and that indistinguishability is what let this hide.
+
+Reference: `info/free-details-ladder.md` §8 (the budget arithmetic and why
+`SWEEP_BUDGET` is not the lever).
+
+---
+
+### ✅ LANDED 2026-08-26 — option 1, both instances
+
+**Step 1, MEASURED 2026-08-26 ~14:20 Phoenix** with a new read-only instrument,
+`scripts/sweep-plan.mjs` (`tsx scripts/sweep-plan.mjs --remote [--friend]`). It
+imports the REAL `listWorksNeedingDetails`, `detailsRunHistory` and `planSweep`
+against an in-memory mirror of production — no second copy of the gap predicate,
+no write, no money. ⚠️ Its one INPUT rather than measurement is `SweepMode`: a
+Cloudflare secret cannot be read back, so `ai + donor` is assumed from
+`npm run secret:list[:friend]` naming `ANTHROPIC_API_KEY` and `DONOR_TOKEN` on
+both, plus `DONOR_URL` in both `[vars]` blocks.
+
+| Instance | queued | eligible | head of the rotation | asks | cost | picked | stalled |
+|---|---|---|---|---|---|---|---|
+| main `library-catalog` | **0** | 0 | — (converged) | — | — | 0 | **no** — nothing to do |
+| friend `library-catalog-2nd` | **90** | **90** | **#541 *"Raising Jesca"***, never attempted | 4 (`firstPublished, series, seriesIndex, description`) | **52** | **0** | 🔴 **YES** |
+
+So the latent defect was live, on padhard, and had been since #541 reached the
+head. Second in her rotation is **#542 *"The Sun and the Starmaker"*** at 3 asks
+= 48 — also unaffordable, so clearing one book would not have cleared the stall.
+Main was never affected: its queue is empty (492 works, every remaining blank
+carries a `gap_verdict`).
+
+**Step 2 — option 1, as the section proposed.** `planSweep` gains **rule 4**: if
+rule 3 would leave `pick` EMPTY, the head candidate is admitted *regardless of
+cost* and the tick stops there. The rotation is untouched — the book taken is
+still the one the sort put first — and an unaffordable book that is **not** the
+head still `break`s exactly as before.
+
+⚠️ **The admitted book can exceed the 50-subrequest ceiling, and that is the
+accepted cost.** The estimate is a worst case assuming every rung is asked and
+every rung fails; a 52-estimate book rarely spends 52. If it does, the invocation
+is killed mid-lookup — not a new failure and not a permanent one: `closeStaleRuns`
+reaps the abandoned run, the timestamp moves the book to the BACK of the
+rotation, and the other 89 books get their turn next tick. **Stalling for ever
+was strictly worse than failing once.**
+
+**The sweep now SAYS it, in the one place anybody reads.** No second status
+surface — `SweepResult.skipped` already exists for exactly this ("named rather
+than counted"), so both new lines go there:
+
+- over-budget admission → `#541 costs 52 subrequests against a budget of 46 — admitted alone, so the queue cannot stall behind it`
+- a tick that planned nothing → `planned nothing — <reason>`, where the reasons
+  are worded apart and are **not** interchangeable: *the queue is empty* /
+  *all N book(s) … have already been asked everything they owe* / *the per-tick
+  limit is N*. "The head was unaffordable" is no longer among them — that book
+  is picked, and `overBudget` names it.
+
+⚠️ The **converged** tick (`queued: 0`) stays quiet on purpose: `queued` already
+says it without ambiguity, and main would otherwise print the same line every
+hour for ever.
+
+**Tests:** 5 new in `apps/worker/src/lib/details-sweep.test.ts` — head admitted
+alone; rotation not reordered; a non-head expensive book still deferred; the
+three "nothing picked" reasons distinguished; and the `skipped` wording pinned
+through the real `runDetailsSweep` with a fake that **throws** on any query it
+does not model. Suite **1878 → 1883**, 0 fail. Typecheck clean, web build clean.
+
+**Files:** `apps/worker/src/lib/details-sweep.ts` (`SweepPlan.overBudget`,
+`SweepPlan.nothingPicked`, `nothingPickedReason`, rule 4, the `skipped` lines),
+its test, and the new `scripts/sweep-plan.mjs`.
+
 ## ✅ TBR double-counted a book owned in several media — folded at read time — one entry per BOOK, linking every format (owner ask, 2026-08-26)
 
 Owner: *"for the tbr list, it's double counting if something is owned in

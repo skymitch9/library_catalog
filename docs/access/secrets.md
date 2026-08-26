@@ -242,6 +242,7 @@ for a day after it was done):
 | `npm run backfill:audiobooks -- --remote [--friend] [--commit]` | Re-run the audiobook matcher (durable audio links) | Claude |
 | **`npm run for-both -- <script> -- <args>`** | Run any npm script against main then friend, stopping on the first failure | Claude |
 | `npx wrangler d1 execute library-catalog[-2nd] --remote --command "..."` | Direct prod D1 read/write | Claude (writes with care) |
+| **`npx tsx scripts/sweep-plan.mjs --remote [--friend]`** | ⚠️ **READ-ONLY** — what the next hourly details-sweep tick would plan, and whether it is stalled. Calls the real `planSweep`; writes nothing, spends nothing | Claude |
 | `npm run secrets:push` | Push `.dev.vars` secrets to MAIN | Claude (never reads the file) |
 | **`npm run secrets:push:both` / `:friend`** | Push `SHARED_ALWAYS` to both / to friend; per-instance keys refused; `SHARED_OPT_IN` skipped unless `-- --enable NAME` | Claude (never reads the file) |
 | `npx wrangler secret put ... [--env friend]` | Set one secret interactively | **Owner** (hidden prompt) |

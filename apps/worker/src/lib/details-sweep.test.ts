@@ -56,6 +56,41 @@ function candidate(overrides: Partial<SweepCandidate> = {}): SweepCandidate {
   };
 }
 
+/**
+ * A D1 that can answer the sweep's two QUEUE READS and nothing else.
+ *
+ * ⚠️ Routed on a marker unique to each of the four statements
+ * `listWorksNeedingDetails` + `detailsRunHistory` issue, and it THROWS on
+ * anything else on purpose: a fake that answered an unrecognised query with an
+ * empty list would let a test go green while the code asked something entirely
+ * different. It is deliberately not a database — every test that needs one of
+ * those uses the real `wrangler d1` path in `scripts/`.
+ */
+function fakeQueueDb(rows: {
+  works: unknown[];
+  times: unknown[];
+  doneRuns: unknown[];
+  aliases?: unknown[];
+}): unknown {
+  const answer = (sql: string): unknown[] => {
+    if (sql.includes('FROM work_alias')) return rows.aliases ?? [];
+    if (sql.includes('GROUP BY r.work_id')) return rows.times;
+    if (sql.includes("r.status = 'done'")) return rows.doneRuns;
+    if (sql.includes('FROM work w')) return rows.works;
+    throw new Error(`fakeQueueDb was asked something it does not model: ${sql.slice(0, 80)}`);
+  };
+  return {
+    prepare(sql: string) {
+      const stmt = {
+        bind: () => stmt,
+        all: async () => ({ results: answer(sql), success: true, meta: {} }),
+        first: async () => answer(sql)[0] ?? null,
+      };
+      return stmt;
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Convergence — the money loop this feature would otherwise be
 // ---------------------------------------------------------------------------
@@ -189,6 +224,102 @@ test('a book with every field missing takes the tick to itself', () => {
   assert.equal(plan.pick.length, 1);
   assert.equal(plan.deferred, 1);
   assert.ok(plan.estimated <= SWEEP_BUDGET);
+});
+
+// ---------------------------------------------------------------------------
+// Rule 4 — the anti-stall. A book that fits nowhere still gets its turn.
+// ---------------------------------------------------------------------------
+
+/** Both paths live, which is what BOTH instances actually are (measured 2026-08-26). */
+const BOTH = { ai: true, donor: true };
+
+test('an unaffordable book at the HEAD is admitted alone rather than stalling the tick', () => {
+  // ⚠️ THE regression test for the 2026-08-26 fix. MEASURED on padhard the same
+  // day: work #541 "Raising Jesca", never attempted, owing all four details,
+  // priced 12 + 18 + 6 + 16 = 52 against a budget of 46 — with 90 eligible books
+  // behind it and ZERO picked, every hour, silently.
+  const head = candidate({
+    workId: 541,
+    missing: ['firstPublished', 'series', 'seriesIndex', 'description'],
+  });
+  const cost = estimateSubrequests(head.asks.length, BOTH);
+  assert.ok(cost > SWEEP_BUDGET, `the fixture must not fit: ${cost} vs ${SWEEP_BUDGET}`);
+
+  const plan = planSweep([head], SWEEP_LIMIT, SWEEP_BUDGET, BOTH);
+  assert.deepEqual(plan.pick.map((c) => c.workId), [541], 'the head takes the tick alone');
+  assert.equal(plan.estimated, cost);
+  assert.deepEqual(plan.overBudget, { workId: 541, cost, budget: SWEEP_BUDGET });
+  assert.equal(plan.nothingPicked, null, 'something WAS picked — this is not a nothing tick');
+});
+
+test('admitting an unaffordable head does not reorder the rotation', () => {
+  // The cheap book behind the expensive one must NOT be promoted past it — that
+  // is the reordering `break` exists to prevent, and rule 4 must not smuggle it
+  // back in. The head is still the head; everything else is deferred.
+  const head = candidate({
+    workId: 541,
+    missing: ['firstPublished', 'series', 'seriesIndex', 'description'],
+  });
+  const cheap = candidate({ workId: 547, missing: ['description'] });
+  const plan = planSweep([head, cheap], SWEEP_LIMIT, SWEEP_BUDGET, BOTH);
+
+  assert.deepEqual(plan.pick.map((c) => c.workId), [541]);
+  assert.equal(plan.deferred, 1, 'the cheap book waits its turn — it is not promoted');
+  assert.equal(plan.overBudget?.workId, 541);
+});
+
+test('an unaffordable book that is NOT the head is deferred, exactly as before', () => {
+  // Rule 4 is a floor under an empty pick, not a licence to overspend. With a
+  // book already picked, the expensive one behind it still `break`s.
+  const cheap = candidate({ workId: 1, missing: ['description'] });
+  const greedy = candidate({
+    workId: 2,
+    missing: ['firstPublished', 'series', 'seriesIndex', 'description'],
+    lastAttemptAt: '2026-08-20 00:00:00',
+  });
+  const plan = planSweep([cheap, greedy], SWEEP_LIMIT, SWEEP_BUDGET, BOTH);
+
+  assert.deepEqual(plan.pick.map((c) => c.workId), [1]);
+  assert.equal(plan.deferred, 1);
+  assert.equal(plan.overBudget, null, 'nothing was admitted over budget');
+  assert.ok(plan.estimated <= SWEEP_BUDGET);
+});
+
+test('"nothing picked" says WHY, and the reasons are not interchangeable', () => {
+  // ⚠️ The indistinguishability this fix exists to end: a tick that planned zero
+  // books used to look exactly like a tick with an empty queue. These are three
+  // different facts and they now read as three different sentences.
+  const empty = planSweep([], SWEEP_LIMIT, SWEEP_BUDGET, BOTH);
+  assert.match(empty.nothingPicked ?? '', /queue is empty/);
+
+  const allAsked = planSweep(
+    [
+      candidate({ workId: 1, missing: ['description'], asked: ['description'] }),
+      candidate({ workId: 2, missing: ['description'], asked: ['description'] }),
+    ],
+    SWEEP_LIMIT,
+    SWEEP_BUDGET,
+    BOTH,
+  );
+  assert.equal(allAsked.pick.length, 0);
+  assert.match(allAsked.nothingPicked ?? '', /already been asked/);
+  assert.notEqual(allAsked.nothingPicked, empty.nothingPicked);
+
+  // And the case that used to produce a silent empty pick now produces neither
+  // an empty pick nor a reason — it produces a named over-budget admission.
+  const unaffordable = planSweep(
+    [
+      candidate({
+        workId: 541,
+        missing: ['firstPublished', 'series', 'seriesIndex', 'description'],
+      }),
+    ],
+    SWEEP_LIMIT,
+    SWEEP_BUDGET,
+    BOTH,
+  );
+  assert.equal(unaffordable.nothingPicked, null);
+  assert.ok(unaffordable.overBudget, 'the expensive tick is named, not silent');
 });
 
 test('an ordinary AI book is picked and stays inside the budget', () => {
@@ -404,8 +535,66 @@ test('donor-only mode: no AI key no longer skips the tick', async () => {
   assert.equal(result.attempted, 0);
 });
 
-test('an empty queue plans nothing at all', () => {
-  assert.deepEqual(planSweep([]), { pick: [], deferred: 0, estimated: 0 });
+test('an empty queue plans nothing at all, and SAYS the queue was empty', () => {
+  assert.deepEqual(planSweep([]), {
+    pick: [],
+    deferred: 0,
+    estimated: 0,
+    overBudget: null,
+    nothingPicked: 'the queue is empty — nothing in the catalogue owes a detail',
+  });
+});
+
+test('a tick that planned nothing names the reason in `skipped`', async () => {
+  // ⚠️ Through the REAL `runDetailsSweep`, because the wording is the point: the
+  // `skipped` array is the only line anybody ever reads about this job, and a
+  // sweep that planned nothing must not be indistinguishable from one with
+  // nothing to do. The fixture is a work that still OWES three details but has
+  // already been ASKED all three — the convergence rule doing its job, which is
+  // a different fact from an empty queue and now reads as one.
+  const env = {
+    ANTHROPIC_API_KEY: 'set',
+    DB: fakeQueueDb({
+      works: [
+        {
+          id: 1,
+          title: 'Unsouled',
+          authors: 'Will Wight',
+          series: null,
+          series_index_sort: null,
+          series_index_display: null,
+          first_published: null,
+          description: null,
+          verdicts: null,
+        },
+      ],
+      times: [
+        {
+          work_id: 1,
+          last_ok_at: '2026-08-20 00:00:00',
+          last_error_at: null,
+          last_error_message: null,
+        },
+      ],
+      doneRuns: [
+        {
+          work_id: 1,
+          work_title: 'Unsouled',
+          input_title: 'Unsouled',
+          input_aliases: null,
+          unfilled: ',firstPublished,series,description,',
+        },
+      ],
+    }),
+  } as unknown as Env;
+
+  const result = await runDetailsSweep(env);
+  assert.equal(result.queued, 1, 'the book is still on the worklist — it owes three details');
+  assert.equal(result.eligible, 0);
+  assert.equal(result.attempted, 0);
+  assert.deepEqual(result.skipped, [
+    'planned nothing — all 1 book(s) on the queue have already been asked everything they owe',
+  ]);
 });
 
 // ---------------------------------------------------------------------------

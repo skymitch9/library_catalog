@@ -24,6 +24,13 @@
 > estate index"* as a field's source, and the F9 same-series gate has mocked
 > coverage only.
 
+> **Amended 2026-08-26 — §8's 🔴 four-gap stall is FIXED and is now ✅.** The
+> stall was **measured live on padhard that day** (work #541, 4 asks, 52 against
+> a budget of 46, **90 eligible and 0 picked**); `planSweep` gained rule 4 and
+> the sweep now names both the over-budget admission and any tick that plans
+> nothing. ⚠️ Only §8's bullet and §9's file map were touched — **no rung was
+> repriced and nothing else in this doc was re-measured.**
+
 **Read this before** touching `apps/worker/src/lib/free-details.ts`, adding a
 rung, changing what `POST /api/research/works/:id/run` costs, or wondering why a
 book's series says it came from "the audiobook catalogue".
@@ -401,12 +408,22 @@ fetched, never reasoned. See `REFUSED_FIELDS` in `packages/core/src/gaps.ts`.
   acceptable only because the largest term stopped being an estimate
   (`free-details.test.ts` counts the real calls of a worst-case run). **Do not
   raise it again**; price a rung down instead.
-- 🔴 **A four-gap book on a DONOR instance still cannot be picked at all, and
-  that predates this work** (`12 + 18 + 6 + 16 = 52` against 46; it was `49`
-  against `44` before). Because `planSweep` breaks on the first unaffordable
-  candidate and the queue is never-attempted-first, such a book at the head
-  **stalls the whole sweep** rather than being skipped. Tracked in
-  [`../TODO.md`](../TODO.md); not fixed here.
+- ✅ **A four-gap book on a DONOR instance costs more than the budget allows —
+  `12 + 18 + 6 + 16 = 52` against 46 — and since 2026-08-26 it TAKES THE TICK
+  ALONE rather than stalling the sweep.** It used to stall it: `planSweep` breaks
+  on the first unaffordable candidate and the queue is never-attempted-first, so
+  such a book at the head stopped the tick and was still at the head an hour
+  later. **Measured 2026-08-26**, and it was live: padhard's work **#541 *"Raising
+  Jesca"*** at 4 asks / 52, with **90 eligible books behind it and 0 picked**;
+  main was converged (0 queued) and unaffected. `planSweep`'s **rule 4** now
+  admits the head regardless of cost whenever the pick would otherwise be empty,
+  and `SweepResult.skipped` names both the over-budget admission and any tick
+  that plans nothing. ⚠️ **Such a tick can exceed the 50-subrequest ceiling** —
+  the accepted cost, because the 52 is a worst case that assumes every rung is
+  asked and fails, and a killed invocation is reaped by `closeStaleRuns`, demotes
+  that book in the rotation, and lets the other 89 through next tick. The
+  instrument: `tsx scripts/sweep-plan.mjs --remote [--friend]` (read-only). Full
+  record in [`../DONE.md`](../DONE.md).
 - ⚠️ **A free-rung write is NOT in `GET /api/research/auto-applied` and cannot
   be undone by `POST /undo`.** Those operate on `research_finding` rows, and the
   free rungs write through `updateWork` directly. The bargain the auto-apply
@@ -433,7 +450,8 @@ fetched, never reasoned. See `REFUSED_FIELDS` in `packages/core/src/gaps.ts`.
 |---|---|
 | `apps/worker/src/lib/free-details.ts` | the ladder |
 | `apps/worker/src/lib/free-details.test.ts` | **60 tests** (2026-08-25) — the fall-through, the per-field stop, attribution, both refusals, **rung 2's route + bearer + envelope parse + fan-out cap**, **F9's same-series gate**, the counted worst-case price, and "no paid call" |
-| `apps/worker/src/lib/details-sweep.ts` | `SWEEP_BUDGET` and `FREE_LADDER_SUBREQUESTS` — where the ladder's price is spent; §8 |
+| `apps/worker/src/lib/details-sweep.ts` | `SWEEP_BUDGET` and `FREE_LADDER_SUBREQUESTS` — where the ladder's price is spent; §8. Also `planSweep`'s **rule 4** (the anti-stall) and `SweepPlan.overBudget` / `.nothingPicked` |
+| `scripts/sweep-plan.mjs` | ⚠️ **READ-ONLY** — *"what would the next tick plan?"* against a live instance. Calls the real `listWorksNeedingDetails` / `detailsRunHistory` / `planSweep`; writes nothing. `tsx scripts/sweep-plan.mjs --remote [--friend]` |
 | `apps/worker/src/lib/detail-values.ts` | `printedFormIn` / `quotedDesignation` — §5.2 |
 | `apps/worker/src/lib/research-run.ts` | the wiring: free first, then only what is left |
 | `apps/worker/src/routes/scan-jobs.ts` | the add path, on `waitUntil` |
