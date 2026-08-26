@@ -30,6 +30,13 @@
 > the sweep now names both the over-budget admission and any tick that plans
 > nothing. ⚠️ Only §8's bullet and §9's file map were touched — **no rung was
 > repriced and nothing else in this doc was re-measured.**
+>
+> Two rung facts were also settled that day and are recorded where they belong:
+> §8 gains 🔴 **Google Books cannot give us a volume number** (`volumeInfo.seriesInfo`
+> absent on **49 of 49** real ISBNs — no rung was built for it), and §6's rung-4
+> row is corrected because **the `googlebooks 400` did not reproduce** (49 of 49
+> calls answered 200 with our key). The Open Library WORK-description hop §2 rung
+> 3 already makes was **re-verified live** — padhard #642, work `OL35014570W`.
 
 **Read this before** touching `apps/worker/src/lib/free-details.ts`, adding a
 rung, changing what `POST /api/research/works/:id/run` costs, or wondering why a
@@ -360,7 +367,7 @@ re-measuring if the scan path ever looks like it is dropping fills.
 | **Rung 2 on the FRIEND instance** | padhard's `INDEX_URL` and her own `INDEX_READ_TOKEN` were set 2026-08-25 and the pairing was verified by `wrangler secret list --env friend` (NAMES only) plus a live curl of the value. Her sweep has not been observed using the rung. |
 | **F9 — the same-series gate** | Mocked-fetch coverage only (the Cosmere-vs-Stormlight case, the spelling case, the empty-shelf case, the set-earlier-this-run case). No live run has yet dropped a real ordinal. |
 | **The 44 → 46 `SWEEP_BUDGET` raise** | Arithmetic, checked by test, not observed on a live tick. §8 has the reasoning. |
-| **Rung 4 end to end** | The exercise run got **`googlebooks 400`** from the live API with the key in `.dev.vars`. Not diagnosed, and **not** touched by this work — `lookupGoogleBooksByIsbn` is unchanged. The rung is covered by tests with a stubbed fetch; its live behaviour is an open question. ⚠️ Do not read the passing tests as evidence the live rung works. |
+| **Rung 4 end to end** | ⚠️ **PARTLY CLOSED 2026-08-26 — the `googlebooks 400` did NOT reproduce.** 49 live calls were made that day with the key from `.dev.vars` at the identical URL `lookupGoogleBooksByIsbn` builds (`/books/v1/volumes?q=isbn:…&key=…`): **49 of 49 answered 200**, 48 with a volume, 1 with nothing indexed. So the 400 was transient or specific to that one ISBN, and the rung reaches the API. ⚠️ What is STILL not verified is the rung *through the ladder* — no `/queue` lookup has shown "Google Books" as a field's source — and `lookupGoogleBooksByIsbn` remains unchanged. Do not read the passing tests as evidence of the whole path. |
 | **Rung 5 (Hardcover) live** | Added 2026-08-25. The request shape was confirmed field-by-field against the vendor's published SDL (`hardcoverapp/hardcover-docs@main/schema.graphql`), and the real call was made ONCE from the main session the same day (Way of Kings: description + Stormlight #1 + *Cosmere #7*). ✅ **The universe caveat is FIXED, 2026-08-25:** `lookupHardcover` returns every named `book_series` row and `pickSeries` drops universe names — predicate injected from `@lc/universes`, never a second normaliser — preferring the smallest `series.books_count` among the rest, so Stormlight is written and The Cosmere is not (it still lands in `work.universe`, which is its own column). All-universes ⇒ the named skip `Hardcover: only a universe named, no series`. ⚠️ CI still mocks `fetch`, **the fix itself was never exercised against the live API**, and nothing measures how many catalogue books this rung closes. Both instances hold the token. |
 | **Rung 6 (Wikidata) live** | Added 2026-08-25. The SPARQL was verified by hand at `query.wikidata.org` (Way of Kings → Stormlight #1); the rung as wired into the ladder has only mocked-fetch coverage. |
 | **The deployed HTTP route** | Nothing was deployed and `POST /works/:id/run` needs an owner sign-in. The ladder was driven directly against D1 instead. |
@@ -424,6 +431,17 @@ fetched, never reasoned. See `REFUSED_FIELDS` in `packages/core/src/gaps.ts`.
   that book in the rotation, and lets the other 89 through next tick. The
   instrument: `tsx scripts/sweep-plan.mjs --remote [--friend]` (read-only). Full
   record in [`../DONE.md`](../DONE.md).
+- 🔴 **Google Books cannot give this catalogue a VOLUME NUMBER, and that was
+  measured rather than assumed (2026-08-26).** `volumeInfo.seriesInfo` — the
+  field `scan-metadata-fill-strategy.md` recommended reading off the volume the
+  rung already fetches, for free — is **absent on 49 of 49 real ISBNs from these
+  two catalogues**, at `projection=lite`, at `projection=full` and on a direct
+  `GET /volumes/{id}`. It is a Google Play ebook-serialisation field and these
+  are print editions. **A rung for it was deliberately NOT built**; the numbers
+  and the re-check recipe are in
+  [`scan-metadata-fill-strategy.md`](scan-metadata-fill-strategy.md) — one fact,
+  one home. Rung 4 stays a description rung plus the subtitle series-HINT it
+  already reads with `declared: false` (§2).
 - ⚠️ **A free-rung write is NOT in `GET /api/research/auto-applied` and cannot
   be undone by `POST /undo`.** Those operate on `research_finding` rows, and the
   free rungs write through `updateWork` directly. The bargain the auto-apply

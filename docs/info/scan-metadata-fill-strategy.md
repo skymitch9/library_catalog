@@ -1,11 +1,27 @@
 # Scan metadata fill — direct-fill APIs before the paid LLM (research + strategy)
 
 > **Audience:** Claude sessions + the owner. **Status:** TRACKED — RESEARCH +
-> STRATEGY, no build yet.
+> STRATEGY. ⚠️ **"no build yet" was true for one day only; four of the five
+> recommendations below are BUILT.** See the 2026-08-26 amendment.
 > **Last verified: 2026-08-25.** Live-tested claims are marked ✅ (requests made
 > against Open Library and Wikidata during the research); everything else is from
 > the vendor's own API docs. Google Books was NOT live-tested (the research
 > sandbox hit a pre-exhausted shared quota — not our key).
+>
+> ### ⚠️ Amended 2026-08-26 — what is BUILT, and the one recommendation that is DEAD
+>
+> | Recommendation | State on 2026-08-26 |
+> |---|---|
+> | 1 · Open Library WORK description | ✅ **BUILT and live.** `askOpenLibrary` in `apps/worker/src/lib/free-details.ts` resolves `/isbn/{isbn}.json` → `works[0].key` (`workKeyForIsbn`) then reads `/works/{OLID}.json` (`workDescription`) whenever `description` is still open. Priced in `FREE_LADDER_RUNGS` at **4** subrequests, which already counts that hop. ✅ **Re-verified live 2026-08-26** on padhard work **#642 *The Ashes and the Star-Cursed King*** (no description in the catalogue): `9781250343161` → <https://openlibrary.org/works/OL35014570W> → a real blurb. Two controls the same minute: *The Way of Kings* (`OL15358691W`) answers, *Holly* (`OL45277957W`) is a work record with no description — a real "asked and knew nothing", not a broken call. |
+> | 2 · Google Books `volumeInfo.seriesInfo` | 🔴 **DEAD — measured, do not build.** See §"Google Books' `seriesInfo` is not there" below. |
+> | 2 · `GOOGLE_BOOKS_API_KEY` set as a secret | ✅ Confirmed on **both** instances (`npm run secret:list[:friend]`, names only, 2026-08-26). |
+> | 3 · Wikidata rung | ✅ BUILT 2026-08-25 (`packages/isbn/src/wikidata.ts`). |
+> | 4 · Hardcover rung | ✅ BUILT 2026-08-25 (`packages/isbn/src/hardcover.ts`). |
+>
+> The ladder those rungs live on is documented in
+> [`free-details-ladder.md`](free-details-ladder.md), which owns the rung order,
+> the per-field stop and the pricing. This file stays the *research*: what was
+> considered, what was measured, and what was ruled out.
 
 ## The problem (owner, 2026-08-25)
 
@@ -36,14 +52,53 @@ false-positive risk (Mistborn returned two competing tags) and **never** an
 index. ✅ Coverage gap is real: *He Who Fights with Monsters* (LitRPG, self-pub
 origin) returned zero results — our catalog skews exactly this way.
 
+## 🔴 Google Books' `seriesInfo` is not there — MEASURED 2026-08-26, do not build it
+
+The recommendation below says to read `volumeInfo.seriesInfo` off the volume we
+already fetch, for free. **It does not exist on this estate's books.**
+
+**Measured 2026-08-26** against the live API with our own key, on **49 real
+ISBNs taken from the two catalogues' own rows** — 25 works that have a series
+and **no volume number** (exactly the gap the field was meant to close) and 24
+works missing a description:
+
+| Sample | Indexed by Google | Carrying `volumeInfo.seriesInfo` |
+|---|---|---|
+| 25 series-volumes with no `series_index_sort` | 25 | **0** |
+| 24 works with no description | 24 (1 not indexed at all) | **0** |
+
+⚠️ **It is not a projection problem, and that was checked rather than assumed.**
+*The Way of Kings* (`9780765326355`) answers `seriesInfo: null` on
+`q=isbn:…&projection=lite`, on `projection=full`, **and** on a direct
+`GET /volumes/{id}` — three shapes, same absence. `seriesInfo` is a Google Play
+**ebook serialisation** field; these are print editions, and print editions are
+what this catalogue holds.
+
+**So a Google series/volume rung would be code that never fires**, priced into
+`SWEEP_BUDGET` (which is already 2 under the ceiling) for nothing. Not built.
+
+⚠️ **What Google DOES carry for a series is the SUBTITLE**, and the ladder
+already reads it: `lookupGoogleBooksByIsbn` joins `subtitle` onto `title` and
+`askGoogleBooks` runs `readSeriesLabel(title, false)` over the result. Real
+examples from the same measurement — *"The Songbird & the Heart of Stone: Book 1
+of the Shadowborn Duet"*, *"Kilian: A Broken Prophecies Story"*, *"The Demons
+That Haunt Him: The Redemption of Howard Marsh Omnibus 1"*. ⚠️ It is read with
+`declared: false` on purpose (most subtitles are subtitles), so how many of
+those shapes `detectSeriesFromTitle` actually parses is **NOT measured** and is
+the only Google-side question still worth asking.
+
+**What would change this:** `seriesInfo` appearing on a print volume. Re-check by
+sampling ~25 ISBNs from `edition` again; the count above is the baseline.
+
 ## Recommended rung order (before the LLM)
 
-1. **Open Library — fixed** to read the WORK description (above). Free.
-2. **Google Books** — already rung 2. ⚠️ **First confirm `GOOGLE_BOOKS_API_KEY`
-   is actually set as a secret** (anonymous calls 429). Also read
-   `volumeInfo.seriesInfo` off the response we already fetch — `bookDisplayNumber`
-   (general) / `volumeSeries[].orderNumber` (Collection/Omnibus only). Free but
-   series rarely populated.
+1. ✅ **BUILT 2026-08-25/26** — `askOpenLibrary` in `apps/worker/src/lib/free-details.ts`.
+   **Open Library — fixed** to read the WORK description (above). Free.
+2. **Google Books** — already rung 2. ✅ The key IS set on both instances
+   (confirmed 2026-08-26; anonymous calls 429). 🔴 **The `volumeInfo.seriesInfo`
+   half of this recommendation is DEAD** — measured absent on 49 of 49 real
+   ISBNs, see the section above. The rung stays a DESCRIPTION rung plus the
+   subtitle series-hint it already reads.
 3. ✅ **BUILT 2026-08-25** — `packages/isbn/src/wikidata.ts`, wired as the LAST free rung of `apps/worker/src/lib/free-details.ts`.
    **Wikidata SPARQL — the dedicated series/volume rung.** The only source with a
    structured, sourced, *ordinal-numbered* series field, CC0 (cleanest terms of
@@ -114,4 +169,11 @@ sweep (`apps/worker` research routes) fills gaps. A build would: (1) fix the OL
 work-description read; (2) confirm the Google Books key; (3) add a Wikidata rung
 and a Hardcover rung as `resolve.ts` steps returning `{description, series,
 seriesIndex}` before the LLM; (4) cache results per the existing pattern; (5)
-respect each source's terms. **No work started — this is the map for it.**
+respect each source's terms.
+
+⚠️ **This paragraph is the 2026-08-25 plan and it is now HISTORY** — steps 1, 3
+and 4 were built on 2026-08-25/26 and step 2 was measured dead (see the
+amendment at the top). The rungs did NOT land in `resolve.ts` as this predicted;
+they landed on the free-details ladder in `apps/worker/src/lib/free-details.ts`,
+which is where a book that is already catalogued gets its gaps filled.
+[`free-details-ladder.md`](free-details-ladder.md) is the doc for that.
