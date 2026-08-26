@@ -16,6 +16,42 @@
  *   npm run secrets:push -- --friend   # FRIEND only (shared keys)
  *   npm run secrets:push -- --both --dry-run   # print the plan, push nothing
  *   npm run secrets:push -- --both --enable EBOOK_INGEST_TOKEN   # opt-in key
+ *   npm run secrets:push:op            # …the same, sourced from 1Password
+ *
+ * ## 🆕 `--source op` — the vault, not the file (owner decision 2026-08-26)
+ *
+ * The owner adopted 1Password on 2026-08-26 (option A, superseding the
+ * 2026-08-25 "defer"). Plan of record:
+ * `catalog-platform/docs/info/secrets-review-2026-08-26.md` §5.
+ *
+ * | `--source` | Values come from | needs `.dev.vars`? |
+ * |---|---|---|
+ * | `file` (**default, unchanged**) | `apps/worker/.dev.vars` | yes |
+ * | `op` | vault `Estate`, via `op inject` on `apps/worker/.dev.vars.tpl` | **no** |
+ *
+ * `SECRETS_SOURCE=op` in the environment does the same thing, for a shell that
+ * has switched over wholesale.
+ *
+ * ⚠️ **The default is still `file`, deliberately.** The `op` path is additive:
+ * the allowlists, every refusal, the glued-value guard and the dry-run output are
+ * the SAME code — only where the strings came from changes. Backing out is
+ * dropping a flag, not reverting a rotation.
+ *
+ * ⚠️ **The `op` path never writes a value to disk.** `op inject` prints the
+ * resolved template to STDOUT and this process parses it from memory. The
+ * `-o apps/worker/.dev.vars` form exists for a human who wants the real file
+ * back (`docs/access/secrets.md`) — and that file is then a build output to
+ * delete, not a master to edit.
+ *
+ * ⚠️ **One `op` process, on purpose.** Every `op` process can raise an
+ * authorization prompt that a HUMAN must approve in the desktop app, so
+ * resolving 8 items with 8 `op read` calls would be 8 prompts. `op inject`
+ * resolves the whole template in one.
+ *
+ * ⚠️ **A name in the template but not in the vault fails the WHOLE run.** That
+ * is `op inject`'s behaviour and it is the right one here: a half-resolved
+ * template would push some keys and silently skip others, which is the
+ * partial-rotation failure `pushBoth` already refuses to create.
  *
  * ⚠️ This only ever *sets* secrets. Removing one from `.dev.vars` does not
  * delete it in production — use `wrangler secret delete` for that, so a typo
@@ -68,15 +104,25 @@
  * 2. **Route-ENABLING shared keys are opt-in per instance.** See `SHARED_OPT_IN`.
  */
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-const DEV_VARS = join(root, 'apps', 'worker', '.dev.vars');
+/**
+ * ⚠️ `SECRETS_DEV_VARS` exists so this can run from a git WORKTREE, where
+ * `.dev.vars` is gitignored and therefore absent while the real one sits in the
+ * primary checkout. Read-only, the glued-value guard still applies, and every
+ * run prints which path it read — it is not a quiet way to push another file.
+ */
+const DEV_VARS = process.env.SECRETS_DEV_VARS || join(root, 'apps', 'worker', '.dev.vars');
+/** TRACKED, and safe in a public repo: names + `op://` pointers, never values. */
+const TEMPLATE = process.env.SECRETS_TEMPLATE || join(root, 'apps', 'worker', '.dev.vars.tpl');
 const CONFIG = join(root, 'apps', 'worker', 'wrangler.toml');
+/** Named here only so a refusal can say WHERE the values came from. */
+const VAULT_NAME = 'Estate';
 /** wrangler's `[env.friend]` — padhard. The only second instance that exists. */
 const FRIEND_ENV = 'friend';
 
@@ -643,37 +689,116 @@ async function main() {
     process.exit(1);
   }
 
-  let raw;
-  try {
-    raw = readFileSync(DEV_VARS, 'utf8');
-  } catch {
-    console.error(`No .dev.vars at ${DEV_VARS}. Nothing to push.`);
-    console.error('Copy apps/worker/.dev.vars.example and fill it in.');
-    if (friend || both) {
-      console.error('');
-      console.error('⚠️ There is no `.dev.vars.friend` and there must not be one: the FRIEND');
-      console.error('push reads this same MAIN file and sends only the SHARED_SECRETS set.');
-    }
+  // `--source file` (default) | `--source op`. `SECRETS_SOURCE` does the same.
+  const sourceIdx = argv.findIndex((a) => a === '--source' || a.startsWith('--source='));
+  let source = process.env.SECRETS_SOURCE || 'file';
+  if (sourceIdx !== -1) {
+    source = argv[sourceIdx].includes('=')
+      ? argv[sourceIdx].split('=')[1]
+      : (argv[sourceIdx + 1] ?? '');
+  }
+  if (source !== 'file' && source !== 'op') {
+    console.error(`--source ${source || '(missing)'}: the sources are \`file\` and \`op\`.`);
+    console.error('  file — apps/worker/.dev.vars (the default, unchanged)');
+    console.error('  op   — the 1Password vault Estate, via apps/worker/.dev.vars.tpl');
     process.exit(1);
   }
-  const vars = parseDevVars(raw);
+
+  let vars;
+  if (source === 'op') {
+    vars = await readFromVault({ friend, both });
+  } else {
+    let raw;
+    try {
+      raw = readFileSync(DEV_VARS, 'utf8');
+    } catch {
+      console.error(`No .dev.vars at ${DEV_VARS}. Nothing to push.`);
+      console.error('Copy apps/worker/.dev.vars.example and fill it in,');
+      console.error('or take the values from the vault instead:  --source op');
+      if (friend || both) {
+        console.error('');
+        console.error('⚠️ There is no `.dev.vars.friend` and there must not be one: the FRIEND');
+        console.error('push reads this same MAIN file and sends only the SHARED_SECRETS set.');
+      }
+      process.exit(1);
+    }
+    vars = parseDevVars(raw);
+  }
 
   // ⚠️ Before ANY path, including the no-flag one and including --dry-run: a
   // welded value is a broken FILE, and the plan printed from a broken file is
   // itself wrong. Names only — the value never reaches this console.
+  //
+  // ⚠️ It runs on the `op` path too. A vault item cannot be welded by a `>>`
+  // append, but it CAN have been imported from a file that was — and then the
+  // corruption is permanent and wears a master's clothes. Cheap; keep it.
   try {
-    assertNoGluedValues(vars);
+    assertNoGluedValues(vars, source === 'op' ? `the ${VAULT_NAME} vault` : DEV_VARS);
   } catch (err) {
     console.error(err.message);
     console.error('');
-    console.error('Check the trailing newline before appending:');
-    console.error('  tail -c1 apps/worker/.dev.vars | od -c     # want \\n');
-    console.error("  printf '\\nKEY=%s\\n' \"$VALUE\" >> apps/worker/.dev.vars");
+    if (source === 'op') {
+      console.error('The VAULT item holds a welded value — almost certainly imported from a');
+      console.error('.dev.vars that was broken at the time. Fix the item in 1Password, then:');
+      console.error('  node scripts/op-import-dev-vars.mjs --dry-run');
+    } else {
+      console.error('Check the trailing newline before appending:');
+      console.error('  tail -c1 apps/worker/.dev.vars | od -c     # want \\n');
+      console.error("  printf '\\nKEY=%s\\n' \"$VALUE\" >> apps/worker/.dev.vars");
+    }
     process.exit(1);
   }
 
+  console.log(`source: ${source === 'op' ? `1Password vault ${VAULT_NAME} (${TEMPLATE})` : DEV_VARS}`);
+
   if (!both && !friend) return await pushMainOnly(vars, dry);
   return await pushBoth(vars, { both, friend, dry, enable });
+}
+
+/**
+ * Resolve `apps/worker/.dev.vars.tpl` against the vault and parse the result in
+ * MEMORY. One `op` process; nothing is written to disk at any point.
+ *
+ * ⚠️ `op inject` prints the resolved template to stdout, which is exactly what
+ * makes the disk-free path possible — and exactly why nothing here may print
+ * that stdout. It goes straight into `parseDevVars` and never to a console.
+ */
+async function readFromVault({ friend, both }) {
+  const { runOp, isAuthorizationRefusal, opBinary } = await import('./op-import-dev-vars.mjs');
+  if (!existsSync(TEMPLATE)) {
+    console.error(`No template at ${TEMPLATE}, so there is nothing to resolve.`);
+    console.error('Generate it from the file that still exists:');
+    console.error('  node scripts/op-import-dev-vars.mjs --write-template');
+    process.exit(1);
+  }
+
+  const r = await runOp(['inject', '-i', TEMPLATE], { bin: opBinary() });
+  if (r.code !== 0) {
+    // ⚠️ A person must never see a bare exit code: say what happened, what it
+    // needs, and how to get it.
+    if (isAuthorizationRefusal(r.stderr)) {
+      console.error('1Password did not authorize the request, so nothing was read and');
+      console.error('nothing was pushed. The desktop app raises an approval prompt for each');
+      console.error('`op` process — approve it (Windows Hello / your account password) and');
+      console.error('run this again.');
+    } else if (/isn't an item|not found|no item matching/i.test(r.stderr)) {
+      console.error('The template names an item that is not in the vault, so `op inject`');
+      console.error('refused to resolve it. Nothing was pushed — a half-resolved template');
+      console.error('would push some keys and silently skip others.');
+      console.error('See which items exist, then re-import what is missing:');
+      console.error(`  op item list --vault ${VAULT_NAME}`);
+      console.error('  node scripts/op-import-dev-vars.mjs --dry-run');
+    } else {
+      console.error(`op inject failed (exit ${r.code}). Nothing was pushed.`);
+      console.error((r.stderr || '').trim().split('\n').slice(0, 3).join('\n'));
+    }
+    if (friend || both) {
+      console.error('');
+      console.error('⚠️ Stopped BEFORE either instance — a rotation must not land on one side.');
+    }
+    process.exit(1);
+  }
+  return parseDevVars(r.stdout);
 }
 
 /**

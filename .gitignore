@@ -10,6 +10,13 @@ dist/
 # the second instance's). Same key material rules: never tracked.
 .dev.vars.*
 !.dev.vars.example
+# ⚠️ …and EXCEPT the 1Password template (2026-08-26). `.dev.vars.tpl` is TRACKED
+# on purpose: every line in it is a NAME and an `op://` POINTER, never a value,
+# which is what makes it safe in a PUBLIC repo. It is the input to `op inject`,
+# and `.dev.vars` becomes the GENERATED output — the whole point of the vault
+# adoption (secrets review §5). Without this negation the rule above swallows it
+# and the generated file has no source.
+!.dev.vars.tpl
 .DS_Store
 *.log
 # ⚠️ …EXCEPT the deploy record. `*.log` above would swallow it, and this file is
