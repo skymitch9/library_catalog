@@ -32,7 +32,7 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
-## ☐ Custody gap: `DONOR_TOKEN` + `AUDIOBOOK_MAPPING_TOKEN` are live but absent from `.dev.vars` (found 2026-08-25)
+## ☐ Custody gap: `AUDIOBOOK_MAPPING_TOKEN` is live but absent from `.dev.vars` (found 2026-08-25 — the `DONOR_TOKEN` half CLOSED 2026-08-26)
 
 A bulk run cannot rotate them (`--both --dry-run`: "skip (not set locally)").
 Their masters: `AUDIOBOOK_MAPPING_TOKEN` = `audiobook_catalog/.env`
@@ -40,6 +40,56 @@ Their masters: `AUDIOBOOK_MAPPING_TOKEN` = `audiobook_catalog/.env`
 `DONOR_TOKEN` — unknown, no readable copy found. Record both in
 `access/RECOVERY.md` custody table; mint `DONOR_TOKEN` fresh into `.dev.vars`
 (trailing-newline check) and `secrets:push:both` when convenient.
+
+### ✅ `DONOR_TOKEN` — DONE 2026-08-26. Custody established, minted, rotated, verified live both ways.
+
+**The shape, established from the CODE before anything was minted**
+(`apps/worker/src/env.ts:141-158`, `apps/worker/src/routes/donor.ts:242-247`):
+`DONOR_TOKEN` is the estate's *one value, two holders, the same NAME on both*
+idiom, and it does **double duty on each instance** — sent outbound as
+`X-Donor-Token` to `DONOR_URL`, and the inbound gate on that same instance's own
+`GET /api/donor/details`. Both instances point `DONOR_URL` at each other
+(`wrangler.toml` `[vars]` and `[env.friend.vars]`), so **each instance both
+sends and verifies it, under that one secret name.** ⚠️ **Exactly two holders** —
+checked across `catalog-platform`, `boardbuddy` and the estate credentials
+catalog; nothing else presents or verifies it.
+
+**Both halves ARE managed by `scripts/push-secrets.mjs`**, which is what made
+minting the right move rather than a report: `DONOR_TOKEN` is on **`SHARED_ALWAYS`**
+(`push-secrets.mjs:168`), and `planFor`'s `--both` branch sends MAIN
+`PRODUCTION_SECRETS ∪ SHARED_SECRETS` — so main gets it even though it is not on
+`PRODUCTION_SECRETS`, and friend gets it because it is shared-**always** rather
+than opt-in.
+
+**Done, in order:** trailing-newline check (the file already ended `\n`; checked
+without printing a byte) → `openssl rand -hex 32` piped straight in with the CR
+stripped and exactly one `\n` appended → `secrets:push:both -- --dry-run` (plan:
+`push main DONOR_TOKEN`, `push friend DONOR_TOKEN`, no opt-in key enabled, no
+glued-value refusal) → `secrets:push:both` (7 secrets to main, 4 to friend).
+
+**VERIFIED LIVE, both directions, 2026-08-26 ~14:47 Phoenix** —
+`GET /api/donor/details?title=The%20Way%20of%20Kings` with the rotated value:
+
+| Instance | correct token | wrong token | no header |
+|---|---|---|---|
+| `library.heygabi.ai` | **200** · `matched=true` · work **#419** · all four fields | 404 | 404 |
+| `padhard.heygabi.ai` | **200** · `matched=true` · work **#332** · all four fields | 404 | 404 |
+
+404-not-401 on a wrong token is the designed behaviour (`routes/donor.ts`'s
+header: one legitimate caller, nobody worth telling *"almost"*), so this also
+confirms the gate still fails closed.
+
+⚠️ **A stale line NOT fixed here, because it lives in another repo:**
+`audiobook_catalog/docs/access/CREDENTIALS.md` §4.4 says *"⚠️ Not in any push
+allowlist. `.dev.vars` is not the source of truth for this one"* and gives
+rotation as two interactive `npm run secret*` commands. **Both halves of that
+are now wrong.** That repo was off-limits to this session (a concurrent agent
+was working in it), so this is reported rather than edited.
+
+**What is still open above is `AUDIOBOOK_MAPPING_TOKEN` alone.** Its master is
+`audiobook_catalog/.env` `LIBRARY_MAPPING_TOKEN` — the same off-limits repo — so
+closing it means copying that value into `.dev.vars`, which is the owner's move
+or a later session's, not this one's.
 
 ## ☐ Shelf is COPY-DRIVEN + EditBox tab merge — LANDED FOR REVIEW (branch `feature/shelf-copy-driven`, 2026-08-24)
 

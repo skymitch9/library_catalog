@@ -198,7 +198,16 @@ npm run secret:list            # main
 npm run secret:list:friend     # friend
 ```
 
-**Measured 2026-08-25 (names only):**
+**Measured 2026-08-25, RE-TAKEN 2026-08-26 — unchanged on both (names only):**
+
+⚠️ **`DONOR_TOKEN` now has a master.** It was live on both instances with **no
+readable copy anywhere** until 2026-08-26, when it was re-minted into
+`apps/worker/.dev.vars` and pushed with `npm run secrets:push:both` (it is on
+`SHARED_ALWAYS`, so one command rotates both halves). Custody is catalogued in
+[`RECOVERY.md`](RECOVERY.md) §3; verification is a `GET /api/donor/details` with
+the header against **both** hostnames — done that day, 200 on both, and 404 for a
+wrong token or none.
+
 - main (11): `ANTHROPIC_API_KEY`, `AUDIOBOOK_MAPPING_TOKEN`, `DONOR_TOKEN`,
   `EBOOK_INGEST_TOKEN`, `ESTATE_APP_TOKEN_DISCORD`, `ESTATE_APP_TOKEN_LIBRARY`,
   `GOOGLE_BOOKS_API_KEY`, `HARDCOVER_API_TOKEN`, `INDEX_PUSH_TOKEN`,

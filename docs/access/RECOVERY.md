@@ -4,7 +4,12 @@
 > repo is **PUBLIC** (`gh repo view skymitch9/library_catalog` → `PUBLIC`,
 > verified 2026-08-18), so secret **NAMES ONLY**, never a value, never a
 > member email.
-> **Last verified: 2026-08-18.**
+> **Last verified: 2026-08-18** — ⚠️ except §3's secret table, whose custody
+> column was re-measured and rewritten **2026-08-26** (`DONOR_TOKEN` gained a
+> master and a one-command rotation; four keys that live in `.dev.vars` were
+> added; `AUDIOBOOK_MAPPING_TOKEN`'s gap is named). ⚠️ **Nothing else in this
+> file was re-checked that day** — §1, §2, §4 and §5 still carry their 2026-08-18
+> ages, and the rebuild sequence has still never been performed.
 >
 > **The question this file answers:** *from nothing but a git clone and the
 > blob backups, how do I rebuild this app?* It is the per-repo half of the
@@ -155,10 +160,13 @@ never read back. A rebuild **re-mints every one of them**.
 | `ESTATE_APP_TOKEN_LIBRARY` | ⚠️ **PAIRED** — this Worker **and** `estate-auth` | Worker secret, both sides | self-generated; ⚠️ **both sides together or it fails as a silent 401** |
 | `ESTATE_APP_TOKEN_DISCORD` | Worker | Worker secret | paired with the discord Worker |
 | `INDEX_PUSH_TOKEN` | ⚠️ **PAIRED** — this Worker **and** `catalog-index` | Worker secret, both sides | self-generated |
-| `AUDIOBOOK_MAPPING_TOKEN` | Worker | Worker secret | paired with the audiobook side |
-| `EBOOK_INGEST_TOKEN` | Worker | Worker secret | paired with the ebooks ingest side |
-| `DONOR_TOKEN` | Worker | Worker secret | paired with `DONOR_URL`'s far side |
-| `GOOGLE_BOOKS_API_KEY` | Worker | Worker secret | console.cloud.google.com |
+| `AUDIOBOOK_MAPPING_TOKEN` | Worker | Worker secret. 🔴 **No copy in `.dev.vars`, so a bulk run cannot rotate it** (`--both --dry-run` → *"skip (not set locally)"*). The master is `audiobook_catalog/.env` `LIBRARY_MAPPING_TOKEN` — checked 2026-08-26; `TODO.md` "Custody gap" | paired with the audiobook side |
+| `EBOOK_INGEST_TOKEN` | Worker | Worker secret **and** `apps/worker/.dev.vars` (`SHARED_OPT_IN` — travels only with `-- --enable EBOOK_INGEST_TOKEN`) | paired with the ebooks ingest side |
+| `DONOR_TOKEN` | ⚠️ **BOTH instances, and each one both SENDS it and VERIFIES it** — outbound `X-Donor-Token` to `DONOR_URL`, inbound gate on its own `/api/donor/details` (`env.ts:141-158`, `routes/donor.ts:242-247`). **Exactly two holders**, checked estate-wide 2026-08-26 | ✅ **Master added 2026-08-26**: `apps/worker/.dev.vars`, and it is on `SHARED_ALWAYS` in `scripts/push-secrets.mjs`, so **`npm run secrets:push:both` rotates both halves in one command**. Before that date it had **no readable copy anywhere** | `openssl rand -hex 32` → `.dev.vars` → `npm run secrets:push:both`. ⚠️ **Both halves together or the sweep 404s** — and a wrong token is **404, not 401**, by design, so a half-rotation looks exactly like the route not existing. Verify with `GET /api/donor/details?title=…` + `X-Donor-Token` against **both** hostnames; drilled 2026-08-26, 200 on both |
+| `GOOGLE_BOOKS_API_KEY` | Worker (both) | Worker secret **and** `apps/worker/.dev.vars` (`SHARED_ALWAYS`) | console.cloud.google.com |
+| `HARDCOVER_API_TOKEN` | Worker (both) | Worker secret **and** `apps/worker/.dev.vars` (`SHARED_ALWAYS`) | hardcover.app/account/api |
+| `PEER_TOKEN` | Worker (both) | Worker secret **and** `apps/worker/.dev.vars` (`SHARED_ALWAYS`) | self-generated; rotated 2026-08-25 |
+| `INDEX_READ_TOKEN` | ⚠️ **PER-INSTANCE** — main's value is the index's `INDEX_READ_TOKEN_LIBRARY`, padhard's her `…_LIBRARY2` | Main's in `apps/worker/.dev.vars`; hers is piped from a drop-box line and lives only on her Worker | self-generated at the index Worker |
 
 **Not secrets, but they decide who is an owner** — keep them in the rebuild
 checklist because omitting them is a privilege change: `OWNER_EMAILS`,
