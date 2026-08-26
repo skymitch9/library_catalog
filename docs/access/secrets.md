@@ -192,6 +192,21 @@ Paste the value at the hidden prompt. This is still the ONLY way to set a
 MAIN `.dev.vars`, piped, then blanked) is still how a value that must never sit
 in an allowlist travels. `ANTHROPIC_API_KEY_FRIEND_SAM` is the one in use.
 
+### ⚠️ A secret push CREATES A NEW WORKER VERSION, and `deploys.log` never sees it
+
+**Measured 2026-08-26.** `npm run secrets:push:both` rolled both Workers onto new
+versions — main `1414e626…` → `46ba520b…`, friend `7d64d4f1…` → `91fe750c…` —
+listed by `wrangler deployments list` as **Source: Secret Change**. The CODE is
+identical (the same bundle, redeployed with new bindings), but:
+
+- ⚠️ **`docs/deploys.log` records only `npm run deploy*` runs**, so after any
+  secret push the newest line's version id is **no longer what is live**. When
+  rolling back by version id, read `wrangler deployments list` as well —
+  `deploys.log` answers *"which COMMIT is live"*, not *"which VERSION id"*.
+- It is not a failure and needs no fix: a Secret Change version carries the same
+  commit as the deploy beneath it. It is only misleading if you assume the log
+  is complete.
+
 ### List what's set (no values shown)
 ```
 npm run secret:list            # main
