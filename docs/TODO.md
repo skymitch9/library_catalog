@@ -71,6 +71,15 @@ no code, and the alias rung that shipped today then matches it for free
 Looks like one book with a subtitle and the author's name written two ways, but
 that is an inference, not a measurement.
 
+✅ **ANSWERED 2026-08-26 ~16:10 Phoenix — YES, and "Sam's is more true than mine,
+can we copy that one?"** Applied by hand (D1, both instances, `change_log`
+batch `owner-2026-08-26-possibility-promise`): main #335 `authors`/`primary_author`
+`Matthew "Momo" Modrow` → **`Matthew Roland Modrow`**, `description` NULL → her
+353-char blurb; `work_alias` **main #335 ← `Possibility & Promise: Echoes of the
+Unknown`** and **padhard #480 ← `Possibility & Promise`** (both `manual`/`title`).
+`work_key` untouched on both (persisted key). Verified by re-read on both D1s.
+Move to DONE with Q2's answer.
+
 **Q2 — same book? ⚠️ The one that must NOT be guessed.**
 
 | | padhard #489 | main #328 |
