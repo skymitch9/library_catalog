@@ -1,12 +1,18 @@
 # library_catalog — Known Issues, Waivers & Exceptions
 
 > **Audience:** Claude/Kiro sessions and the owner. **Status:** TRACKED.
-> Last verified: **2026-08-23 21:00 Phoenix** — KI-7 was re-measured at that
+> Last verified: **2026-08-26 ~16:40 Phoenix** — **KI-8 was re-measured against
+> production D1 and RETIRED** (see the resolved table at the foot), and
+> **KI-12 was added** and measured against the live `catalog.csv` and both
+> production D1s. ⚠️ **Nothing else was re-checked on 2026-08-26** — KI-5,
+> KI-6, KI-7, KI-9, KI-10 and KI-11 still carry the ages stated next.
+> Previously **2026-08-23 21:00 Phoenix** — KI-7 was re-measured at that
 > hour against `apps/worker/.dev.vars` and rewritten: the 15 blank covers it
 > named are no longer what is blocked. KI-5 was re-measured 2026-08-23 against
 > production; four entries were retired as no longer true. KI-6 was added the
 > same day and measured against the repo and a LOCAL D1, not production.
-> ⚠️ **KI-6 and KI-8 were NOT re-checked at 21:00**; only KI-7 was.
+> ⚠️ **KI-6 and KI-8 were NOT re-checked at 21:00**; only KI-7 was. (KI-8 was
+> retired 2026-08-26 — see the resolved table.)
 >
 > **This file exists to stop the same non-bug being re-reported every month.**
 > It holds things that ARE wrong, or look wrong, and are deliberately tolerated.
@@ -136,47 +142,6 @@ specified API usage limits"* (`packages/db/src/research.ts`, the
 
 ---
 
-## KI-8 · Work 514 still shows one Elantris audiobook, not two — `ACCEPTED`
-
-**Symptom.** The household owns two *Elantris* recordings and
-<https://library.heygabi.ai/works/514> shows one, with no series. Migration 0390
-made the schema able to hold both; the MATCHER still finds only one, so the
-second row is never written.
-
-**Measured 2026-08-23**, against `audiobook_catalog/site/catalog.csv` lines 995
-and 996. `cleanTitleWithSeries` leaves row 996 untouched — the series-suffix
-strip only fires when the series name is a suffix, and here *Elantris* is the
-whole title of row 995 and the PREFIX of row 996. Folded:
-
-| | key | chars |
-|---|---|---|
-| ours | `elantris` | 8 |
-| row 996 | `elantris tenth anniversary special edition` | 42 |
-
-8/42 = **0.19** against the containment floor of **0.6** — the same floor that
-stops *Mistborn* reaching *Mistborn: The Final Empire*. `matchIndexedWorkAll`
-removes the early return and loosens nothing, so the refusal stands.
-
-⚠️ **The design note in `docs/TODO.md` part B said the early return was the
-cause. It was not** — that is why this entry exists rather than a fix.
-
-**Why tolerated.** Both routes out are decisions, not refactors, and each has a
-cost the schema change does not:
-
-- teach `cleanAudiobookTitle` that *"Tenth Anniversary Special Edition"* is
-  edition decoration — but that function produces STORED keys (`work_key`,
-  Firestore document ids), so changing it is a migration, not an edit; **or**
-- move the 0.6 containment floor — which `matching.ts`'s own header permits only
-  *with evidence*, and the evidence on file (Firefight, The Wandering Inn) argues
-  the floor is if anything too low for books.
-
-**What would change it.** An owner decision on which of the two, **or** a third
-route: a `work_alias` row on work 514 for the Tenth Anniversary title, which the
-sweep already asks under and which costs one INSERT and no code. That is the
-cheapest fix and needs no threshold moved.
-
----
-
 ## KI-9 · Containment can file two different VOLUMES as two editions — `WATCHING`
 
 **Symptom.** `matchIndexedWorkAll` returns every row that passes the unchanged
@@ -282,6 +247,61 @@ to anything new. **What would change it:** the catalog going public/commercial,
 or a Google enforcement contact → TTL the Google-sourced rows to the cache header,
 or drop the rung for the free Open-Library-work / Wikidata / Hardcover rungs the
 strategy doc recommends.
+
+---
+
+## KI-12 · Two recordings with the SAME raw title collapse to one row — `ACCEPTED`
+
+**Symptom.** The household owns two *Isles of the Emberdark* audiobooks and
+<https://library.heygabi.ai/works/4> / <https://padhard.heygabi.ai/works/348>
+each show **one**. The matcher hands both back (§4.7 of
+[`info/series-formats-and-audiobooks.md`](info/series-formats-and-audiobooks.md));
+the second is lost on the way to storage, not in the match.
+
+**Measured 2026-08-26** against the live `audiobook_catalog/site/catalog.csv`
+and both production D1s. Rows 98 and 99 are genuinely different recordings —
+
+| | narrator | year | cover file |
+|---|---|---|---|
+| row 98 | Kaleo Griffith, Jennifer Jill Araya | 2025-07-10 | `…Isles of the Emberdark - A Cosmere Novel Secret Projects, Book 5.jpg` |
+| row 99 | **Brandon Sanderson** | 2025 | `…Isles_of_the_Emberdark_by_Brandon_Sanderson.png` |
+
+— and their `title` column is **byte-identical**. `audiobook_edition_holding` is
+keyed `(work_id, audio_key)` where `audio_key` is that verbatim string
+(migration 0390), so the two collide: the backfill's per-edition map keeps one,
+and after `--commit` each work holds exactly one row. Confirmed by query on both
+instances: `work_id = 4` and `work_id = 348`, one live row each.
+
+**Why tolerated.** ⚠️ **`audio_key` is a persisted key, and it is deliberately
+the SAME string the content-warning join uses** — migration 0340's `raw_title`,
+which the audiobook site and `content_warnings.json` are both keyed by. Widening
+it (say `raw_title + narrator`, or the cover file) is a **migration with its own
+review**, not an edit, and it would split the edition identity from the warning
+identity that 0390 went out of its way to keep as one string. The visible cost
+today is one missing row on two works out of 1,168 across both instances; the
+book itself is linked, which is the question the owner asked.
+
+⚠️ **Not the same as the old KI-8.** That one was the MATCHER refusing a second
+edition; this one is the matcher succeeding and the STORAGE key refusing.
+Anything that "fixes" this by loosening the matcher is fixing the wrong half.
+
+**What would change it.** The owner deciding the second recording is worth a
+migration — the number to weigh is how many pairs share a raw title. Measured
+2026-08-26 over the 1,084-row catalog: **1 pair** (this one). Do it when that
+count is more than a handful, or when he asks to see both narrators on a work
+page. The ACOTAR dramatizations are NOT affected — their raw titles differ by
+`(Part 1 of 2)` / `(Part 2 of 2)`, so both halves store.
+
+---
+
+## Resolved and removed — 2026-08-26
+
+⚠️ Same rule as the 2026-08-23 block below: re-measured, found no longer true,
+removed rather than badged, recorded here so nobody re-opens it from memory.
+
+| Was | Claimed | Re-measured 2026-08-26 |
+|---|---|---|
+| **KI-8** | Work 514 shows one *Elantris* audiobook, not two — the matcher finds only one | ⚠️ **It shows two.** `audiobook_edition_holding` on production `library-catalog` holds two live rows for work 514: `audio_key = 'Elantris'` (`matched_via` exact, no alias) and `audio_key = 'Elantris - Tenth Anniversary Special Edition'` (exact, `via_alias = 'Elantris - Tenth Anniversary Special Edition'`), neither stale. Closed by the entry's own THIRD route — **a `work_alias` row**, one INSERT, no threshold moved and no code changed. Neither the 0.6 floor nor `cleanAudiobookTitle` was touched, exactly as the entry required |
 
 ---
 

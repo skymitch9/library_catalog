@@ -1,7 +1,15 @@
 # Series pages — formats, alternate printings, audiobooks — Information Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
-> Last verified: **2026-08-23** for §4.4 and §4.6 (migration 0390, the view, and
+> Last verified: **2026-08-26** for **§4.7 and §4.8** — measured against the
+> LIVE `catalog.csv` and BOTH production D1s that day (the backfill was run
+> `--remote` on each, dry then `--commit`; the cross-instance table is a
+> simulation over both catalogs' real works and aliases, not a live donor call).
+> ⚠️ **What was NOT verified on 2026-08-26:** the rendered work pages (the
+> `/api/works/:id` read needs a session), and the donor route change is
+> committed but **its deploy state is recorded in `docs/TODO.md`, not here**.
+> Nothing else in this file was re-checked that day.
+> Previously **2026-08-23** for §4.4 and §4.6 (migration 0390, the view, and
 > the recording count), against a LOCAL D1 — §4.6 with the second *Elantris*
 > edition inserted BY HAND, because `KI-6` stops the sweep writing it.
 > §3 (the duplicate rule) was last verified **2026-08-11** against a local D1
@@ -264,6 +272,140 @@ chip-only change would have rendered nothing at all. Same shape as the
 The ebook library (`ebooks.heygabi.ai`) is `audiobook_catalog`'s
 `site/ebooks.html` and was deliberately left alone — `docs/TODO.md` names the
 two files and why its join cannot count yet.
+
+### 4.7 🔴 "The alias exists and it STILL didn't link" — an EDITION SET, 2026-08-26
+
+**The symptom to search for.** A work has a `work_alias` row spelling the
+audiobook's title *exactly*, the backfill reports the alias rows as read, and the
+work is still filed under **"no audiobook"**. Or the quieter half: a link that
+used to exist is silently `stale_at`, and nothing says why.
+
+**What it is.** ⚠️ **Two rows in `catalog.csv` that fold to the same title.**
+The matcher treats every multi-member fold as rows it cannot tell apart and
+refuses — correctly for different volumes (§4.5, and `KI-9`), and **wrongly for
+two recordings of one book.** The alias never failed; it reached the right
+string and the fold refused it.
+
+**Measured 2026-08-26** — `catalog.csv` rows 98 and 99, *Isles of the
+Emberdark*, both `Secret Projects` #5, both Brandon Sanderson:
+
+| | narrator | year | cover |
+|---|---|---|---|
+| row 98 | Kaleo Griffith, Jennifer Jill Araya | 2025-07-10 | `Isles of the Emberdark - A Cosmere Novel Secret Projects, Book 5.jpg` |
+| row 99 | **Brandon Sanderson** | 2025 | `Isles_of_the_Emberdark_by_Brandon_Sanderson.png` |
+
+`disambiguateByVolume` saw a two-member fold and asked which one carries our
+volume number. **Both carry 5**, so `withVolume.length === 2` and it refused.
+Consequences on both instances: padhard **#348** filed under "no audiobook"
+(0 `audiobook_edition_holding` rows), and main **#4**'s row marked
+`stale_at 2026-08-17` — *the day the second recording landed in the CSV*, with
+no signal anywhere that a link had gone away.
+
+**The rule now — `isEditionSet` in `packages/core/src/matching.ts`.** A fold
+whose members all state the **same non-null series AND the same non-null volume
+number** cannot be different volumes; they are recordings of one book, which is
+exactly what migration 0390's per-edition key exists to hold. Such a group is
+returned whole by `matchIndexedWorkAll` and as its first member by
+`matchIndexedWork`, so `lookupAll(...)[0] === lookup(...)` still holds.
+
+⚠️ **Nothing else loosened.** The author gate, `numbersAgree`, the 0.6
+containment floor and every different-VOLUME refusal are untouched — *The
+Eminence in Shadow*, *Space Knight* and *Reincarnated as a Sword* still refuse,
+and `packages/core/test/core.test.ts` pins each. Requiring the SERIES to agree
+as well as the number is what stops two unrelated books sharing a title, an
+author and a volume number from being called editions of each other.
+
+**Measured effect, both instances, 2026-08-26 (`--remote` dry run, then
+committed):**
+
+| | matched works | audio editions |
+|---|---|---|
+| main, before → after | 131 → **135** | 132 → **140** |
+| padhard, before → after | 115 → **119** | 115 → **123** |
+
+Every one of the eight new editions on each side is `matched_via = 'exact'`.
+
+**⚠️ It also supersedes `DONE.md`'s 2026-08-25 note *"do not try to fix this in
+the matcher"*** about the dramatized ACOTAR volumes. Audible splits one
+dramatization across `(Part 1 of 2)` / `(Part 2 of 2)`; `cleanTitleWithSeries`
+strips the part and series decoration, and the halves fold to one title, one
+series, one volume — an edition set. They now link directly instead of only
+through an `audiobook_series_link`. The series-link is still the right tool for
+a whole series; it is no longer the *only* tool here.
+
+⚠️ **The consequence to know:** a two-part dramatization now counts as **two
+recordings** in §4.6's *"You own N audiobooks"*, because that is what the rows
+say. They are two files of one performance, not two performances. Nothing in the
+data distinguishes them from a genuine second edition, and inventing a
+`Part N of M` rule would put a second title-parsing heuristic beside
+`cleanAudiobookTitle` — the drift `matching.ts` opens by banning.
+
+#### ⚠️ The half this does NOT close: two recordings with the SAME raw title
+
+`audiobook_edition_holding` is keyed `(work_id, audio_key)` and **`audio_key` is
+`raw_title` verbatim** (§4.5). The two *Isles of the Emberdark* rows have the
+**identical** `raw_title`, so they collide on that key: the matcher hands back
+both, the backfill's per-edition map collapses them, and **one row is stored,
+not two.** Works #4 and #348 each show *one* audiobook — right for the owner's
+question, and short of the truth.
+
+Storing both would need `audio_key` to carry something more (the narrator, or the
+cover file) — and ⚠️ **`audio_key` is a persisted key deliberately equal to the
+content-warning key**, so changing it is a **migration with its own review**, not
+an edit. Written up for the owner in `docs/TODO.md`. The ACOTAR parts are
+unaffected: their raw titles differ, so both halves store.
+
+### 4.8 Cross-instance "same book" — the donor asks BOTH sides' aliases, 2026-08-26
+
+The other half of the same owner report. `work_key` is
+`normaliseTitle(title)|normaliseTitle(primaryAuthor)`, so **the printed title is
+baked into it** — and the two instances hold different print editions:
+
+| | padhard #348 | main #4 |
+|---|---|---|
+| title | `Isles of the Emberdark: A Cosmere Novel` | `Isles of the Emberdark` |
+| `work_key` | `isles of the emberdark a cosmere novel\|brandon sanderson` | `isles of the emberdark\|brandon sanderson` |
+| edition | `9781250415394` hardcover (Tor) | `9781938570506` hardcover (Dragonsteel) + epub |
+
+Neither `work_key` nor the folded title reaches the other, and ⚠️ **`work_key`
+is a persisted key — re-deriving it is a migration, not an edit**
+(`packages/db/src/works.ts`). Identity is therefore bridged with **aliases**,
+which is what `work_alias` has been for since migration 0005:
+
+- **Responder** (`apps/worker/src/routes/donor.ts`): on a fold miss it builds a
+  `WorkIndex` over its works **and its title aliases** and asks
+  `matchIndexedWork` — the one matcher, author gate and ambiguity refusals
+  intact.
+- **Asker** (`apps/worker/src/lib/details-sweep.ts`): sends its own recorded
+  title aliases as repeated `alias=` parameters in the **same** request. ⚠️ One
+  fetch whatever the count, so the donor step still costs exactly **one**
+  subrequest and `estimateSubrequests` / `FREE_LADDER_SUBREQUESTS` are unchanged.
+
+**Measured over both live instances, 2026-08-26** (works that match today: 38
+each way):
+
+| Rung | padhard → main | main → padhard |
+|---|---|---|
+| responder's own aliases | **+3** | **+4** ¹ |
+| asker's aliases sent on the wire | **+3** | **+3** |
+| subtitle-stripped (**not built**) | +2 | 0 |
+
+¹ ⚠️ One of those four was a **containment** match and is now **refused**: main
+#222 *"Dungeon Crawler Carl: Crocodile"* reaching padhard #25 *"Dungeon Crawler
+Carl"* at 0.86 — two different books. The rung takes `exact` and `alias` only,
+because the donor's findings are applied with **no person in the loop**.
+Containment stays right for the audiobook backfill, whose output a person reads
+before committing.
+
+⚠️ **The subtitle-stripped rung was measured and deliberately NOT built.** Of
+its two hits, *"Keepers of the Light: Book Two of the Broken Prophecies"*
+(padhard #489) reaching *"Keepers of the Light"* (main #328) **cannot be settled
+without the owner** — the subtitle says book two while BOTH rows record
+`series_index_sort = 1`. That is the *"Tamer: King of Dinosaurs"* shape
+`splitSeriesPrefix`'s own header warns about, arriving in real data. Both
+candidates are in `docs/TODO.md` for confirmation; the durable fix for a pair he
+confirms is **one `work_alias` row**, which this rung then matches for free — the
+same mechanism the 2026-08-25 near-miss audit used, at one INSERT and no code.
 
 ---
 

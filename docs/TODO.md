@@ -32,36 +32,64 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
-## ☐ padhard #348 is not linked to the same book on audio or the main library — cross-instance identity + alias-aware audio match (owner, 2026-08-26 ~15:15)
+## ☐ 🙋 OWNER: confirm these 2 cross-instance near-misses — one question, one answer each (2026-08-26)
 
-Owner: *"padhard 348 isnt linked to the exact same book on audio or my library as
-it should be. we might need to rerun our check or expand it. we have different
-editions so that might have ruined an isbn compare."*
+Fell out of the #348 build (now in [`DONE.md`](DONE.md)). A **subtitle-stripped**
+donor rung was measured and **deliberately not built**, because one of its two
+hits cannot be settled without you. ⚠️ Ask these **one at a time**; the durable
+fix for a YES is one `work_alias` row on the shorter-titled side — one INSERT,
+no code, and the alias rung that shipped today then matches it for free
+(the same mechanism the 2026-08-25 near-miss audit used).
 
-Measured 2026-08-26 15:15 Phoenix (read-only):
+**Q1 — same book?**
 
-| | padhard #348 | main #4 |
+| | padhard #480 | main #335 |
 |---|---|---|
-| title | `Isles of the Emberdark: A Cosmere Novel` | `Isles of the Emberdark` |
-| work_key | `isles of the emberdark a cosmere novel\|brandon sanderson` | `isles of the emberdark\|brandon sanderson` |
-| editions | `9781250415394` hardcover (Tor) | `9781938570506` hardcover (Dragonsteel) + epub |
-| audiobook link | **0** — `backfill:audiobooks --remote --friend` dry-run files it under **"no audiobook"** | linked (`Isles of the Emberdark`) |
-| work_alias | `Isles of the Emberdark` (kind title) — **present, and still not matched** | — |
+| title | `Possibility & Promise: Echoes of the Unknown` | `Possibility & Promise` |
+| author | Matthew Roland Modrow | Matthew "Momo" Modrow |
+| first published | 2025 | 2025 |
+| series | — | — |
 
-So the owner is right on both counts: the ISBNs differ (two publishers' editions),
-and the **subtitle** is baked into padhard's `work_key`, so nothing on either
-instance sees these as one book. Two defects, one build:
-1. The audiobook backfill does not link even though an exact-title alias exists
-   — find why (alias kind/`source` filter? the catalog row's title carries
-   `- A Cosmere Novel Secret Projects, Book 5`?) and fix it in the existing
-   matcher path, no second matcher.
-2. Cross-instance "same book": donor / shelf-parity / any place that asks "does
-   the other library hold this?" must consider `work_alias` titles on both sides
-   and a subtitle-stripped comparison through the existing normaliser. ⚠️ `work_key`
-   is a persisted key — changing how it is derived is a MIGRATION, not an edit;
-   prefer matching through aliases over re-keying.
-Then re-run the backfill on BOTH instances and report every NEW link for the
-owner to confirm (he asked to see near-misses before, 2026-08-25 audit precedent).
+Looks like one book with a subtitle and the author's name written two ways, but
+that is an inference, not a measurement.
+
+**Q2 — same book? ⚠️ The one that must NOT be guessed.**
+
+| | padhard #489 | main #328 |
+|---|---|---|
+| title | `Keepers of the Light: Book Two of the Broken Prophecies` | `Keepers of the Light` |
+| author | S. A. McClure | S. A. McClure |
+| series | The Broken Prophecies | The Broken Prophecies |
+| `series_index_sort` | **1** | **1** |
+| first published | 2018 | 2018 |
+
+⚠️ **The subtitle says *Book Two* and BOTH rows record volume 1.** So either
+they are one book and a volume number is wrong, or they are two books and one
+title is. This is the *"Tamer: King of Dinosaurs"* shape `splitSeriesPrefix`'s
+header warns about, in real data — which is exactly why the rung was not built.
+Whichever way it goes, the `series_index_sort` on at least one row needs fixing
+too.
+
+**Also worth a look, and NOT a question — it was refused on purpose:** main #222
+`Dungeon Crawler Carl: Crocodile` (2025) reaching padhard #25
+`Dungeon Crawler Carl` (2024, vol 1) at containment 0.86. Two different books;
+the donor now takes `exact` and `alias` only. Say so if you disagree.
+
+## ☐ Should the SECOND recording of a book be storable? (`audio_key` is a persisted key — 2026-08-26)
+
+Written up as [`KNOWN_ISSUES.md` KI-12](KNOWN_ISSUES.md) and repeated here
+because it needs an owner decision, not a fix. The household owns **two**
+*Isles of the Emberdark* audiobooks (one read by Kaleo Griffith + Jennifer Jill
+Araya, one read by **Brandon Sanderson himself**) and `catalog.csv` gives them
+the **byte-identical** title. `audiobook_edition_holding` is keyed
+`(work_id, audio_key)` with `audio_key` = that verbatim string, so they collide
+and only one is stored — works #4 and #348 each show one audiobook.
+
+⚠️ **`audio_key` is deliberately the same string as the content-warning key**
+(migration 0340's `raw_title`), so widening it is a **migration with its own
+review**, not an edit. Measured 2026-08-26: **1 pair** in the 1,084-row catalog
+is affected. Do it when that count grows, or when you want both narrators on a
+work page. The ACOTAR dramatizations are unaffected — their raw titles differ.
 
 ## ✅ Answered 2026-08-26 — marking TBR/read on padhard while signed in as the owner goes to the OWNER's list
 

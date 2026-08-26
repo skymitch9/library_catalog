@@ -58,6 +58,173 @@ asserts — unrelated, and untouched here).
 `/dev/#list=tbr` or `/dev/community` with a session. The build environment
 cannot hold either. **No promote was performed** — prod's media tags are still
 the owner's call.
+## ✅ padhard #348 / main #4 — the SAME book on audio and across instances — DONE 2026-08-26
+
+**Moved whole from `TODO.md`. The original section, verbatim, is at the foot of
+this entry; what follows is what was actually found and done, because the TODO's
+two guesses were both WRONG and that is the durable part.**
+
+### Root cause — established by RUNNING the matcher, not by reading it
+
+Neither the alias `kind`/`source` filter nor the `- A Cosmere Novel Secret
+Projects, Book 5` tail was the cause. ⚠️ **`audiobook_catalog/site/catalog.csv`
+carries TWO recordings of the book** — rows 98 and 99, *Isles of the Emberdark*,
+both `Secret Projects` #5, both Brandon Sanderson, one read by Kaleo Griffith +
+Jennifer Jill Araya and one read by **Sanderson himself**. They fold to one
+`titleKey`, `disambiguateByVolume` saw a two-member fold and asked which member
+carries our volume number, **both carry 5**, so `withVolume.length === 2` and it
+**refused**.
+
+The alias was never the problem — it reached the right string and the fold
+refused it. Probe, before the fix:
+
+```
+padhard printed  target="isles of the emberdark a cosmere novel" -> 0 hit(s)
+padhard alias    target="isles of the emberdark"                 -> 0 hit(s)
+main printed     target="isles of the emberdark"                 -> 0 hit(s)
+containment ratio 22 / 38 = 0.5789   (floor 0.6)
+```
+
+⚠️ **And main was broken too, silently.** Work #4's `audiobook_edition_holding`
+row was `last_seen_at 2026-08-15`, `stale_at` **2026-08-17** — the day the
+second recording landed in the CSV. The owner's *"or my library"* was exactly
+right and nothing had reported it.
+
+The second, independent blocker on padhard's PRINTED title is the containment
+floor: 22 chars against 38 is **0.579** against a floor of **0.6**. That refusal
+is correct and was left alone; the alias is what bridges it.
+
+### What was built — `isEditionSet`, ONE matcher, no new normaliser
+
+`packages/core/src/matching.ts`: a fold whose members all state the **same
+non-null series AND the same non-null volume number** cannot be different
+volumes — they are recordings of one book, which is what migration 0390's
+per-edition key exists to hold. Returned whole by `matchIndexedWorkAll`, and as
+its first member by `matchIndexedWork`, so `lookupAll(...)[0] === lookup(...)`
+still holds. `MatchableWork` gained an optional `series`, read by this one
+predicate and nothing else.
+
+⚠️ **Nothing loosened.** Author gate, `numbersAgree`, the 0.6 floor and every
+different-VOLUME refusal are untouched and pinned: *The Eminence in Shadow*,
+*Space Knight*, *Reincarnated as a Sword*, plus new tests for a fold with **no**
+series and a fold whose members state **different** series. `normaliseTitle` and
+`work_key` were not touched — both are persisted-key producers.
+
+**⚠️ This supersedes `DONE.md`'s 2026-08-25 note *"do not try to fix this in the
+matcher"*** for the dramatized multi-part case. Audible's `(Part 1 of 2)` /
+`(Part 2 of 2)` halves clean to one title, one series, one volume — an edition
+set — and now link directly rather than only through an `audiobook_series_link`.
+The series-link is still right for a whole series; it is no longer the only tool.
+
+### Cross-instance "same book" — the donor asks BOTH sides' aliases, one fetch
+
+`work_key` bakes the printed title in and is a **persisted key**, so identity is
+bridged with aliases instead of re-keying:
+
+- **responder** (`apps/worker/src/routes/donor.ts`): on a fold miss, builds a
+  `WorkIndex` over its works **and its title aliases** and asks
+  `matchIndexedWork` — the one matcher, gates intact;
+- **asker** (`apps/worker/src/lib/details-sweep.ts`): sends its own title
+  aliases as repeated `alias=` parameters **in the same request**, so the donor
+  step still costs exactly ONE subrequest and `estimateSubrequests` /
+  `FREE_LADDER_SUBREQUESTS` are unchanged.
+
+Two refusals, both **measured over the live instances** rather than assumed:
+
+| Rung | padhard → main | main → padhard |
+|---|---|---|
+| matched before this change | 38 | 38 |
+| responder's own aliases | +3 | +4 ¹ |
+| asker's aliases on the wire | +3 | +3 |
+| subtitle-stripped (**not built**) | +2 | 0 |
+
+¹ ⚠️ One of the four was **containment** and is now REFUSED: main #222
+*"Dungeon Crawler Carl: Crocodile"* → padhard #25 *"Dungeon Crawler Carl"* at
+0.86, two different books. The donor takes `exact` and `alias` only, because its
+findings are applied with **no person in the loop**.
+
+⚠️ **The subtitle rung was measured and deliberately NOT built** — one of its
+two hits cannot be settled without the owner (see the open TODO item). The
+durable fix for a pair he confirms is one `work_alias` row, which the rung above
+then matches for free.
+
+### Measured effect — both instances, dry run then `--commit`, 2026-08-26
+
+| | matched works | audio editions |
+|---|---|---|
+| main, before → after | 131 → **135** | 132 → **140** |
+| padhard, before → after | 115 → **119** | 115 → **123** |
+
+**Every one of the 8 new editions per instance is `matched_via = 'exact'`** —
+nothing rested on a weaker rung, so nothing needed confirming before the commit.
+
+| Instance | work | audio_key written | via |
+|---|---|---|---|
+| main | **#4** *Isles of the Emberdark* | `Isles of the Emberdark` | exact |
+| main | #325 *A Court of Thorns and Roses* | the standard reading + Parts 1 and 2 of the dramatization | exact ×3 |
+| main | #458 *A Court of Mist and Fury* | Parts 1 and 2 | exact ×2 |
+| main | #459 *A Court of Wings and Ruin* | Parts 2 and 3 | exact ×2 |
+| padhard | **#348** *Isles of the Emberdark: A Cosmere Novel* | `Isles of the Emberdark` | exact, **`via_alias = 'Isles of the Emberdark'`** |
+| padhard | #181 / #178 / #182 | the same ACOTAR set | exact ×7 |
+
+Verified by query on both production D1s: every row `stale_at IS NULL`, and the
+`audiobook_holding` VIEW returns *Isles of the Emberdark*, series *Secret
+Projects*, `index_display 5` for **both** work #4 and work #348.
+
+### Not verified
+
+- **The rendered work pages.** `/api/works/:id` answers 401 without a session,
+  so the two review links below were not opened by this session.
+- **The donor route live.** The code is committed and tested; whether it is
+  deployed is recorded in `docs/deploys.log`, not asserted here.
+- No live donor call was made — the cross-instance table is a simulation over
+  both catalogs' real works and aliases.
+
+### What it left behind
+
+- **`KI-12`** — two recordings with the SAME `raw_title` collapse to one stored
+  row, because `audio_key` is that string. One pair in 1,084 rows; widening the
+  key is a migration.
+- **`KI-8` retired** — work 514 shows both *Elantris* recordings now, closed by
+  the entry's own third route (a `work_alias` row), not by this change.
+- Durable reference: `info/series-formats-and-audiobooks.md` **§4.7** (the
+  "the alias exists and it still didn't link" gotcha) and **§4.8** (the
+  cross-instance rung).
+
+---
+
+**The original TODO section, moved whole:**
+
+## ☐ padhard #348 is not linked to the same book on audio or the main library — cross-instance identity + alias-aware audio match (owner, 2026-08-26 ~15:15)
+
+Owner: *"padhard 348 isnt linked to the exact same book on audio or my library as
+it should be. we might need to rerun our check or expand it. we have different
+editions so that might have ruined an isbn compare."*
+
+Measured 2026-08-26 15:15 Phoenix (read-only):
+
+| | padhard #348 | main #4 |
+|---|---|---|
+| title | `Isles of the Emberdark: A Cosmere Novel` | `Isles of the Emberdark` |
+| work_key | `isles of the emberdark a cosmere novel\|brandon sanderson` | `isles of the emberdark\|brandon sanderson` |
+| editions | `9781250415394` hardcover (Tor) | `9781938570506` hardcover (Dragonsteel) + epub |
+| audiobook link | **0** — `backfill:audiobooks --remote --friend` dry-run files it under **"no audiobook"** | linked (`Isles of the Emberdark`) |
+| work_alias | `Isles of the Emberdark` (kind title) — **present, and still not matched** | — |
+
+So the owner is right on both counts: the ISBNs differ (two publishers' editions),
+and the **subtitle** is baked into padhard's `work_key`, so nothing on either
+instance sees these as one book. Two defects, one build:
+1. The audiobook backfill does not link even though an exact-title alias exists
+   — find why (alias kind/`source` filter? the catalog row's title carries
+   `- A Cosmere Novel Secret Projects, Book 5`?) and fix it in the existing
+   matcher path, no second matcher.
+2. Cross-instance "same book": donor / shelf-parity / any place that asks "does
+   the other library hold this?" must consider `work_alias` titles on both sides
+   and a subtitle-stripped comparison through the existing normaliser. ⚠️ `work_key`
+   is a persisted key — changing how it is derived is a MIGRATION, not an edit;
+   prefer matching through aliases over re-keying.
+Then re-run the backfill on BOTH instances and report every NEW link for the
+owner to confirm (he asked to see near-misses before, 2026-08-25 audit precedent).
 
 ## ✅ The hourly sweep STALLED on a book it could not afford — FIXED on both instances (found 2026-08-25, landed 2026-08-26)
 
