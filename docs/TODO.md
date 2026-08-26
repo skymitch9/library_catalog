@@ -32,6 +32,24 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
+## ☐ Read-state filters in every search bar + a search bar (with the wheel) on `/tbr` (owner asks, 2026-08-26 ~15:12)
+
+Owner, on his phone, two messages apart:
+1. *"can we also add a filter in each of the search bars for tbr and other read
+   states"* — the collection search on **both library instances** and the
+   audiobook site's search need a read-state filter: **TBR / read / (whatever
+   other states `readingLists` carries)**. One vocabulary across sites; the
+   state comes from the same account-keyed `readingLists` docs `/tbr` reads,
+   folded by `tbrFoldKey` — no second store, no second matcher.
+2. *"can we also add a search bar in the /tbr route too so people can search
+   tbr books there too with the wheel"* — `/tbr` gets a search box that narrows
+   the folded groups, and **the wheel spins over the narrowed set** (one
+   candidate per book, as §9 of `info/tbr.md` already guarantees).
+
+Queued behind the TBR audit build (Samantha's list / unsynced named / media
+tags) because both touch `TbrPage.tsx` and the audiobook list view. Dispatch as
+ONE build once that lands; audiobook side on the `/dev/` lane only.
+
 ## ☐ Custody gap: `AUDIOBOOK_MAPPING_TOKEN` is live but absent from `.dev.vars` (found 2026-08-25 — the `DONOR_TOKEN` half CLOSED 2026-08-26)
 
 A bulk run cannot rotate them (`--both --dry-run`: "skip (not set locally)").
