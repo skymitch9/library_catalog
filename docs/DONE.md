@@ -165,6 +165,53 @@ this repo's earlier 2026-08-26 entries already record — the shared universe li
 has moved past the 16 that file asserts, unrelated and untouched.
 
 
+### ✅ DEPLOYED AND RE-MEASURED — 2026-08-26 23:13 UTC
+
+**Library, `npm run deploy:both` from `3daba40`** (`deploys.log` lines
+`bf82bc5` main + `0b00833` friend):
+
+| Instance | Host | Version id |
+|---|---|---|
+| main | `library.heygabi.ai` | **`a9256952-447e-455a-9edc-550d594a8b92`** |
+| friend | `padhard.heygabi.ai` | **`623d6073-98dc-4dbf-985f-b8a4581bcad9`** |
+
+Both answered **200** with `database: up`, both serve
+`assets/index-nHITDpEc.js`, and ⚠️ **the asset itself was fetched and grepped**
+rather than the pipeline being taken at its word (§8's addendum rule): both
+copies carry `listIds` ×2, `My list` ×2, `Search your list by title` and
+`cross-catalogue reading list`, at 997,458 bytes each.
+
+⚠️ **This deploy also shipped the concurrent #348 donor-alias rung**, which
+`TODO.md` had recorded as *"committed and awaiting the next deploy"*. It was
+already on `main` and this build is the deploy it was waiting for.
+
+**Audiobook, pushed to `main` (`b30066d`) → the `/dev/` lane.** CI runs all
+green: `33022404139` (JS Tests), `33022404215` (Tests), `33022404145` (Lint),
+`33022404248` (Deploy site). Re-fetched: `/dev/reviews.js` **200**, 40,390
+bytes, carrying `READING_LIST_STATUSES` / `readingListStatusFor` /
+`readingListStatusFromHash` / `readingListLabel`; `/dev/` **200** carrying
+`_myread|filter`, `My Read List` and the worded unknown-list sentence.
+
+⚠️ **PROD IS UNTOUCHED AND WAS RE-MEASURED TO PROVE IT.**
+`audiobooks.heygabi.ai/reviews.js` is **31,504 bytes with ZERO occurrences of
+`READING_LIST_STATUSES`** — and still zero of `readingListMediaTags`, so the
+2026-08-26 media tags are un-promoted as well. **No promote was performed; it is
+the owner's action.**
+
+**Review links, and what to look at:**
+
+| Link | Look at |
+|---|---|
+| <https://library.heygabi.ai/?list=tbr> | Filters → **My list** set to *On my TBR*, the grid narrowed to it, and the note giving both numbers (on your list / in this catalogue) |
+| <https://library.heygabi.ai/?list=read> | the same control at *Marked read* — expect **few or none** here: this catalogue has never written a `'read'` reading-list document, so it shows only what the audiobook site marked |
+| <https://padhard.heygabi.ai/tbr> | the new search box, the *"Showing N of M"* line, and ⚠️ **the wheel spinning over the narrowed set** — type a series name and spin |
+| <https://padhard.heygabi.ai/?list=tbr> | the same filter on Samantha's instance, where the "not in this catalogue" gap is largest (53 of 358, measured) |
+| <https://audiobooks.heygabi.ai/dev/#list=read&user=Skylar> | the new deep link; and the **My Read List** option in the sort/filter dropdown beside **My TBR List** |
+
+⚠️ **Sign in first on every one of them.** The "My list" control is deliberately
+not rendered without a session, so a signed-out visit shows the ordinary
+collection and nothing new — which is the intended behaviour, not a failure.
+
 ## ✅ TBR audit — "not all have sync'd" + the media tag (owner ask, 2026-08-26)
 
 Owner, on his phone: *"in the tbr list, not all have sync'd — can we audit
