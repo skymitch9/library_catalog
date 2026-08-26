@@ -1119,6 +1119,151 @@ describe('rung 5 — Hardcover', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Rung 6 — Wikidata
+// ---------------------------------------------------------------------------
+
+/**
+ * ⚠️ **F21, closed 2026-08-26.** The 2026-08-25 review's last finding named this
+ * absence: *"No ladder-level `askWikidata` test — `free-details.test.ts` gained
+ * 4 cases for Hardcover in `893dd37`, none for Wikidata in `84df3e1`."*
+ * `packages/isbn/test/wikidata.test.ts` proves the QUERY and the parse, and the
+ * F9 block above proves the same-series gate. Neither proves the RUNG: that it
+ * is reached, attributed, skipped by name, and silent about descriptions.
+ */
+describe('rung 6 — Wikidata', () => {
+  /** The SPARQL envelope `lookupWikidataSeries` reads. */
+  function sparql(bindings: unknown[]) {
+    return { results: { bindings } };
+  }
+
+  it('answers a structured series and ordinal, and records itself as the source', async () => {
+    const fetchStub = stubFetch({
+      'query.wikidata.org': sparql([
+        { seriesLabel: { value: 'The Stormlight Archive' }, ordinal: { value: '1' } },
+      ]),
+    });
+    const { db, writes } = stubDb({ holding: null, editions: [{ isbn13: '9780765326355' }] });
+
+    const out = await freeDetailsFor(env(db), 514, ['series', 'seriesIndex'], {
+      throttle: false,
+      fetchImpl: fetchStub.impl,
+    });
+
+    assert.deepEqual(out.sources, { series: 'wikidata', seriesIndex: 'wikidata' });
+    assert.ok(wrote(writes, 'The Stormlight Archive'));
+    assert.ok(wrote(writes, 1));
+  });
+
+  it('⚠️ never writes a printed designation from the numeric P1545 ordinal', async () => {
+    // Same rule as Hardcover's `position`, same reason (owner rule 2026-08-19):
+    // a number is not a designation any publisher printed.
+    const fetchStub = stubFetch({
+      'query.wikidata.org': sparql([
+        { seriesLabel: { value: 'Cradle' }, ordinal: { value: '3.5' } },
+      ]),
+    });
+    const { db, writes } = stubDb({ holding: null, editions: [{ isbn13: '9780765326355' }] });
+
+    await freeDetailsFor(env(db), 514, ['series', 'seriesIndex'], {
+      throttle: false,
+      fetchImpl: fetchStub.impl,
+    });
+
+    const update = writes.find((w) => w.sql.includes('UPDATE work SET'));
+    assert.ok(update, 'the series and volume should have been written');
+    assert.ok(update.bound.includes(3.5), 'the ordinal closes the sort value');
+    assert.equal(
+      update.bound.some((v) => typeof v === 'string' && v.includes('3.5')),
+      false,
+      'no printed designation may be derived from the ordinal',
+    );
+  });
+
+  it('cannot answer description — with only that open, the rung is not even asked', async () => {
+    // Wikidata carries no synopsis worth using, so spending a subrequest to be
+    // told nothing spends it against a ceiling whose overrun is silent.
+    const fetchStub = stubFetch({});
+    const { db } = stubDb({ holding: null, editions: [{ isbn13: '9780765326355' }] });
+
+    await freeDetailsFor(env(db), 514, ['description'], {
+      throttle: false,
+      fetchImpl: fetchStub.impl,
+    });
+
+    assert.equal(
+      fetchStub.calls.some((u) => u.includes('query.wikidata.org')),
+      false,
+      'no SPARQL call may be made for a field this rung cannot answer',
+    );
+  });
+
+  it('says so BY NAME when there is no ISBN to ask with, and asks nothing', async () => {
+    const fetchStub = stubFetch({});
+    const { db } = stubDb({ holding: null, editions: [] });
+
+    const out = await freeDetailsFor(env(db), 514, ['series', 'seriesIndex'], {
+      throttle: false,
+      fetchImpl: fetchStub.impl,
+    });
+
+    assert.ok(
+      out.skipped.some((s) => /Wikidata: no ISBN on any edition/.test(s)),
+      `a rung that could not be ASKED must say so: ${JSON.stringify(out.skipped)}`,
+    );
+    assert.equal(fetchStub.calls.some((u) => u.includes('query.wikidata.org')), false);
+  });
+
+  it('⚠️ "asked and knew nothing" is a DIFFERENT named skip from "could not be asked"', async () => {
+    const fetchStub = stubFetch({ 'query.wikidata.org': sparql([]) });
+    const { db, writes } = stubDb({ holding: null, editions: [{ isbn13: '9780765326355' }] });
+
+    const out = await freeDetailsFor(env(db), 514, ['series', 'seriesIndex'], {
+      throttle: false,
+      fetchImpl: fetchStub.impl,
+    });
+
+    assert.ok(out.skipped.some((s) => /Wikidata: no series recorded for ISBN/.test(s)));
+    assert.equal(writes.some((w) => w.sql.includes('UPDATE work SET')), false);
+  });
+
+  it('is the LAST free rung — a series Hardcover already answered is not re-asked', async () => {
+    const fetchStub = stubFetch({
+      'api.hardcover.app': {
+        data: {
+          editions: [
+            {
+              book: {
+                description: null,
+                book_series: [{ position: 1, series: { name: 'Elantris' } }],
+              },
+            },
+          ],
+        },
+      },
+      'query.wikidata.org': sparql([
+        { seriesLabel: { value: 'SHOULD NOT BE ASKED' }, ordinal: { value: '9' } },
+      ]),
+    });
+    const { db, writes } = stubDb({ holding: null, editions: [{ isbn13: '9780765350374' }] });
+
+    const out = await freeDetailsFor(
+      env(db, { HARDCOVER_API_TOKEN: 'tok' }),
+      514,
+      ['series', 'seriesIndex'],
+      { throttle: false, fetchImpl: fetchStub.impl },
+    );
+
+    assert.equal(out.sources.series, 'hardcover');
+    assert.equal(
+      fetchStub.calls.some((u) => u.includes('query.wikidata.org')),
+      false,
+      'the per-FIELD stop must reach the last rung too, or the budget is a fiction',
+    );
+    assert.ok(!wrote(writes, 'SHOULD NOT BE ASKED'));
+  });
+});
+
+// ---------------------------------------------------------------------------
 // The rules that cut across the rungs
 // ---------------------------------------------------------------------------
 

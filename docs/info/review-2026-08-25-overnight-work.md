@@ -531,6 +531,22 @@ Not defects, but the absences that would have caught the findings above:
 | No ladder-level `askWikidata` test (`free-details.test.ts` gained 4 cases for Hardcover in `893dd37`, none for Wikidata in `84df3e1`) | F9 |
 | No assertion that `FREE_LADDER_SUBREQUESTS` matches the `rungs` array length | F1 |
 
+#### ✅ F21 CLOSED 2026-08-26 — audited row by row
+
+⚠️ **Six of the seven were already closed before this session looked**, which is
+itself the finding: a gap list is only useful if somebody re-reads it, and
+re-reading it saved writing six tests that already existed.
+
+| Gap | State on 2026-08-26 |
+|---|---|
+| `collectionFilter` OR-grouping SQL | ✅ `packages/db/test/binding-clause.test.ts` — real SQLite, the clauses imported, the multi-select OR exercised as the worker builds it |
+| facet variant vs the list | ✅ `apps/web/test/facet-list-agreement.test.ts` — F3 by name |
+| `cand()` never builds the `undefined` case | ✅ `best-candidate.test.ts` grew `olRung()`, which `delete`s the key; three cases turn on undefined-vs-null |
+| `bestCandidate`'s output actually consumed | ✅ `packages/core/test/scan-add-fields.test.ts` — names the scan-line fields, F4 by name |
+| `wikidata.test.ts` never asserts the ISBN reaches the query | ✅ *"the ISBN really reaches the query — a deleted FILTER must not pass silently"* |
+| **ladder-level `askWikidata` test** | 🆕 **CLOSED 2026-08-26** — a `rung 6 — Wikidata` block, 6 cases, mirroring rung 5's: attribution, no printed form from the numeric P1545, not asked when only `description` is open, the no-ISBN skip, "asked and knew nothing" as a DIFFERENT named skip, and the per-field stop reaching the last rung |
+| `FREE_LADDER_SUBREQUESTS` vs the rungs array | ✅ *"prices every rung the union names"* + *"a worst-case run spends exactly FREE_DETAILS_SUBREQUESTS"* (counts real calls) |
+
 ---
 
 ## Checked and CLEAN
