@@ -128,6 +128,62 @@ three "nothing picked" reasons distinguished; and the `skipped` wording pinned
 through the real `runDetailsSweep` with a fake that **throws** on any query it
 does not model. Suite **1878 → 1883**, 0 fail. Typecheck clean, web build clean.
 
+### ✅ VERIFIED LIVE 2026-08-26 22:07 UTC — the first tick after the deploy
+
+**Deployed** with `npm run deploy:both` from commit `6d341d9`
+(`deploys.log`: main version `1414e626-0b1d-4bfa-8300-46974ce6cc70`, friend
+`7d64d4f1-5e26-48ae-9e46-4b0ca36fd52f`). ⚠️ The `secrets:push:both` that followed
+rolled both onto **Secret Change** versions — the ids that actually served the
+tick are main `46ba520b-9754-4759-ad37-40bad620f079` and friend
+`91fe750c-e9dc-49b5-809d-ae25a0d6d451`, same commit
+(`access/secrets.md` has that gotcha).
+
+Captured with `wrangler tail --format json` across the `7 * * * *` tick.
+
+**FRIEND — the stalled instance, from 0 books an hour to the book it could not afford:**
+
+```json
+{"queued":90,"eligible":90,"attempted":1,"filled":1,"donorFilled":0,"judged":0,
+ "heldForPerson":0,"notFound":0,"errored":0,
+ "skipped":["89 eligible left for a later tick",
+            "#541 costs 52 subrequests against a budget of 46 — admitted alone, so the queue cannot stall behind it"]}
+```
+
+`research_run` **#730**, work 541, `claude-opus-5`, `status: done`, started
+`22:08:01`, finished `22:08:49` — **48 seconds, and the invocation was NOT
+killed** by the 52-subrequest estimate, which is the risk rule 4 accepts.
+`first_published` **2025** and a description were written; `series` stayed NULL
+because *Raising Jesca* is a memoir and has none.
+
+**MAIN — the converged instance, still quiet:**
+
+```json
+{"queued":0,"eligible":0,"attempted":0,...,"skipped":[]}
+```
+
+Exactly as designed: `queued: 0` says it, and no line is printed hourly for ever.
+
+### 🔴 The stall was live for EIGHTEEN HOURS, and the run log proves it
+
+The arithmetic above said this *could* happen. `research_run` on padhard says it
+**did**, and dates it to the minute:
+
+| Tick | What ran |
+|---|---|
+| 2026-08-26 01:08 | work 536 |
+| 2026-08-26 02:08 | work 537 |
+| 2026-08-26 03:08 | work 540 |
+| **04:08 → 21:08 — eighteen consecutive ticks** | 🔴 **NOTHING** |
+| 2026-08-26 22:08 | work **541**, on the first tick after the fix |
+
+A batch of books was added to padhard between **00:53 and 01:03**. The rotation
+took them by `workId` — 536, 537, 540, one per tick because a 2-ask book costs 44
+of 46 — and then reached **#541 *"Raising Jesca"*** (created `00:55:10`, four
+gaps, 52) and **died**. Eighteen hours, eighteen ticks, ninety eligible books,
+zero runs, and not one line anywhere saying so. That silence is the half of this
+the `skipped` wording fixes.
+
+
 **Files:** `apps/worker/src/lib/details-sweep.ts` (`SweepPlan.overBudget`,
 `SweepPlan.nothingPicked`, `nothingPickedReason`, rule 4, the `skipped` lines),
 its test, and the new `scripts/sweep-plan.mjs`.
