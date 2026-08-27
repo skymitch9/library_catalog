@@ -50,7 +50,7 @@ being shipped"* refusal gets hit. **Nothing is broken by the wait** — the swee
 simply keeps missing the cross-instance matches it has always missed. Fold it
 into the next deploy, then tick this and add the line to `deploys.log`.
 
-✅ **DEPLOYED 2026-08-27 ~17:59 Phoenix**, folded into the TBR format-checkbox
+✅ **DEPLOYED 2026-08-27 ~10:59 Phoenix (17:59Z)**, folded into the TBR format-checkbox
 deploy exactly as this section asked: `dd290cd`, main
 `61f07f4a-2144-46d4-919d-1623fdcd4aba` / friend
 `aa8ea08a-0008-4a57-a271-a8d4d4b2bd32`, both lines in

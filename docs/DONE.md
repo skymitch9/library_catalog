@@ -95,7 +95,7 @@ key name and nothing reads it), so bumping it would have reset every saved
   driven off `PICKER_FORMATS`, the `where` dropdown and both of its retired
   option labels are gone, the "Any format" sentence is present, the row filter
   is wired, and the group carries an `aria-labelledby`.
-- **Deployed and re-measured 2026-08-27 ~17:59 Phoenix:** `dd290cd`, version ids
+- **Deployed and re-measured 2026-08-27 ~10:59 Phoenix (17:59Z):** `dd290cd`, version ids
   `61f07f4a-2144-46d4-919d-1623fdcd4aba` (main) and
   `aa8ea08a-0008-4a57-a271-a8d4d4b2bd32` (friend). Both hosts answered **200**
   and both reference the new bundle `assets/index-CUKXoZkD.js` — and the asset
