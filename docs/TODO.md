@@ -50,6 +50,29 @@ being shipped"* refusal gets hit. **Nothing is broken by the wait** — the swee
 simply keeps missing the cross-instance matches it has always missed. Fold it
 into the next deploy, then tick this and add the line to `deploys.log`.
 
+## ☐ A research run must SAY what the free ladder found and skipped (owner question, 2026-08-26 22:55)
+
+Owner, after a paid run on padhard #578 *After Life* (Gayle Forman, 2025):
+*"tell me why padhard library wasn't resolved by the free lookup with series and
+description?"* Measured: the description (1,609 chars) was already on the work
+before the run; the only open fields were `series`/`seriesIndex`; the paid rung
+answered **"no series — standalone"** (`gap_verdict` 305/306, Kirkus). The free
+ladder DID run first (`research-run.ts:451`), but **`research_run.result_json`
+for run 738 is 261 bytes and names only `sources: llm`** — nothing records which
+free rungs were asked, what each answered, or why each was skipped. So the
+question "why did this cost money?" is unanswerable from the page and had to be
+reconstructed by hand from code + tables.
+
+Fix: persist the free ladder's `FreeDetailsOutcome` (per rung: asked / answered
+field / named skip) into the run's `result_json` and show it on the work page's
+research history ("Free lookups: Open Library — no series; Google Books — title
+claims no series; Hardcover — record names no series; Wikidata — no ISBN match.
+Paid rung asked for: series, seriesIndex."). One home: the run record. No new
+matcher, no behaviour change in the ladder. Also state the standing limit in
+`info/free-details-ladder.md`: **the free rungs can find a series but can never
+assert "none"** — a standalone book stays open until the paid rung (or the owner)
+records the verdict, by design.
+
 ## ☐ 🙋 OWNER: confirm these 2 cross-instance near-misses — one question, one answer each (2026-08-26)
 
 Fell out of the #348 build (now in [`DONE.md`](DONE.md)). A **subtitle-stripped**
