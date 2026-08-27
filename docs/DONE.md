@@ -18,6 +18,65 @@
 > were extracted from this same history.
 
 
+## 2026-08-26 — the universe page showed people `forbidden` and `HTTP 503`
+
+Defect 2 of the three in
+`catalog-platform/docs/info/llm-billing-control-design.md` §6.1, found while
+reading for the billing-control design and fixed here.
+
+`apps/web/src/pages/UniversePage.tsx` caught a failed `api.universe()` and did
+`setError(err instanceof Error ? err.message : String(err))`. **An
+`ApiError`'s `message` is the server's machine code** — `body?.error ?? "HTTP
+<status>"` — so the page rendered the literal word `forbidden`, or the literal
+string `HTTP 503`, at a household member. It was the one screen bypassing
+`describeError`, which `lib/errors.ts`'s own header calls *"the ONE place that
+decodes an `ApiError` into words"*.
+
+🔴 **Two estate rules broken, not one.** The bare status is the obvious half.
+The worse half is that `estate_unreachable` — a **503, an outage** — reached
+the screen worded exactly like a refusal, and *"a network or server failure is
+NOT a permission failure; mislabelling an outage sends people asking for access
+they already have."* `describeError` has kept those apart since
+`errors.test.ts` was written; this page simply never called it.
+
+| Before | After |
+|---|---|
+| `setError(err instanceof Error ? err.message : String(err))` | `setError(describeError(err))` |
+| `Could not load that universe: {error}` | `Could not load that universe. {error}` |
+
+The wording change is not cosmetic: `describeError` returns a **complete
+sentence**, so the colon form produced *"Could not load that universe: Your
+session has expired. Sign in again to continue."*
+
+**Pinned** by `apps/web/test/universe-page-refusal.test.ts` (4 tests). ⚠️ It is
+a SOURCE assertion, not a render test, for the reason `errors.test.ts`'s header
+already records: `errors.ts → api.ts → firebase.ts` reads `import.meta.env`,
+which is `undefined` outside Vite, so importing either the page or
+`describeError` under `tsx` dies at module load before any assertion runs. Same
+shape as `instance-default-theme`, `facet-list-agreement` and
+`bulk-action-bar-hooks`.
+
+⚠️ **The gotcha the test bought, on its first run:** the whole-file grep for
+`err.message` **failed on the fix itself**, because the fix's own comment
+explains what `err.message` would have shown. The test now strips comments
+first. A guard that forbids *naming* the defect in prose is a guard that
+deletes its own explanation — and the tempting alternative, softening the
+assertion, would have left it able to pass on a page that really did render the
+code.
+
+The 404 branch is deliberately untouched and separately pinned: a wrong address
+is still *"Not a universe"*, an ordinary answer rather than an error.
+
+2,016 tests pass (4 new); `npm run typecheck` clean on both `@lc/web` and
+`@lc/worker`.
+
+**NOT verified:** nothing was rendered or opened in a browser, and no live
+403/503 was provoked against the universe route. The sentences are pinned at
+the source and by `errors.test.ts`'s existing wording tests; **nobody has SEEN
+one of them on the page.** Not deployed — the fix is committed only.
+
+---
+
 ## 2026-08-26 — padhard's `INDEX_READ_TOKEN` gets a master, in the vault
 
 Her rung-2 machine read token had **no readable copy anywhere**: her Worker and
