@@ -82,6 +82,12 @@ Move to DONE with Q2's answer.
 
 **Q2 — same book? ⚠️ The one that must NOT be guessed.**
 
+📌 **PINNED 2026-08-26 ~16:55 Phoenix — owner: "im not sure about broken prophecies
+yet, i need to confirm this one physically. lets put a pin in it and move on."**
+Nothing applied on either side. Re-ask only when he says he has checked the
+physical copies (`/work/489` on padhard, `/work/328` on main — note the path is
+`/work/`, singular; `/works/` is not a page).
+
 | | padhard #489 | main #328 |
 |---|---|---|
 | title | `Keepers of the Light: Book Two of the Broken Prophecies` | `Keepers of the Light` |
