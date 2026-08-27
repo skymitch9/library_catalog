@@ -50,19 +50,6 @@ being shipped"* refusal gets hit. **Nothing is broken by the wait** — the swee
 simply keeps missing the cross-instance matches it has always missed. Fold it
 into the next deploy, then tick this and add the line to `deploys.log`.
 
-## ☐ Wheel picker: "Where" dropdown → Audio / Ebook / Physical CHECKBOXES (owner ask, 2026-08-26 23:35)
-
-Owner: *"for the tbr page, change the where drop down to be audio ebook physical
-and let them be check boxes."* The control is the wheel's picker preference
-`Where` (`apps/web/src/components/TbrSpinner.tsx:446`, `PickerPrefs['where']`,
-a single-value `<select>`). Make it three independent checkboxes — **Audio,
-Ebook, Physical** — any combination; a book qualifies when it is held in at
-least one ticked format (the formats row the fold already computes); none
-ticked = no format restriction (say so in words next to the boxes). Persist the
-prefs the same way the existing `where` is persisted; migrate the old
-single value forward (old `where` value → the equivalent set) so nobody's saved
-preference silently resets. Both instances.
-
 ## ☐ A research run must SAY what the free ladder found and skipped (owner question, 2026-08-26 22:55)
 
 Owner, after a paid run on padhard #578 *After Life* (Gayle Forman, 2025):

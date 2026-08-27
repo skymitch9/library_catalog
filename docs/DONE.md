@@ -18,6 +18,90 @@
 > were extracted from this same history.
 
 
+## 2026-08-27 — Wheel picker: "Where" dropdown → Audio / Ebook / Physical CHECKBOXES (owner ask, 2026-08-26 23:35)
+
+⚠️ Moved WHOLE from [`TODO.md`](TODO.md). The ask, verbatim as it was written
+there:
+
+> Owner: *"for the tbr page, change the where drop down to be audio ebook physical
+> and let them be check boxes."* The control is the wheel's picker preference
+> `Where` (`apps/web/src/components/TbrSpinner.tsx:446`, `PickerPrefs['where']`,
+> a single-value `<select>`). Make it three independent checkboxes — **Audio,
+> Ebook, Physical** — any combination; a book qualifies when it is held in at
+> least one ticked format (the formats row the fold already computes); none
+> ticked = no format restriction (say so in words next to the boxes). Persist the
+> prefs the same way the existing `where` is persisted; migrate the old
+> single value forward (old `where` value → the equivalent set) so nobody's saved
+> preference silently resets. Both instances.
+
+### What shipped
+
+| Piece | Where |
+|---|---|
+| `PickerPrefs.where` → `PickerPrefs.formats` (three booleans) + the registry, labels, migration and the predicate | `apps/web/src/lib/tbr-picker-prefs.ts` |
+| The three checkboxes, the "Any format" sentence, and the row-level filter | `apps/web/src/components/TbrSpinner.tsx` |
+| `SpinnerRow.formats` fed from the group's formats row | `apps/web/src/pages/TbrPage.tsx` (`toSpinnerRow`) |
+| `.tbr-spinner__checks` / `__check` / `__hint` | `apps/web/src/styles.css` |
+| 38 tests | `apps/web/test/tbr-picker-formats.test.ts` |
+
+### The three calls worth keeping
+
+⚠️ **The set is applied by the PAGE, not by core.** `PickFilters.format` takes
+ONE medium and the owner asked for any combination. Widening core's filter
+would have been a second definition of the same axis, so `heldInSelectedFormats`
+narrows the rows *before* candidates exist — and because `eligibleItems` and
+`pickRandom` are then handed the identical array, the count under the wheel, the
+wedges it spins over and the book it lands on cannot diverge. No new matcher or
+normaliser was written; the predicate reads the media fold's existing formats
+row (`docs/info/tbr.md` §9).
+
+⚠️ **Physical means `state === 'owned'`, and `'wanted'` is NOT held.** `state`
+is the household's fact (core's `HELD_STATUSES`), so `lent` counts — ours,
+elsewhere — while a wishlist copy does not. "Can I read this tonight?" is the
+question the control asks.
+
+⚠️ **The old "Not on these shelves" (wishlist-only) option is GONE, and that is
+a deliberate, documented loss.** A wishlist-only book is held in no format, so
+it is excluded whenever any box is ticked and included when none is. There is no
+checkbox combination that means *"only the ones I do not have"*, and the
+migration drops the restriction rather than inventing a fourth box. Pinned by a
+test so nobody re-adds it by accident.
+
+### The migration, in place — the key was NOT bumped
+
+`lc_tbr_picker_v1` is on real browsers holding `{ theme, where, series }`. The
+module has never carried a version field of its own (the `_v1` is part of the
+key name and nothing reads it), so bumping it would have reset every saved
+**theme** as well, to fix one dropped field. `loadPickerPrefs` reads both shapes:
+
+| Stored | Becomes |
+|---|---|
+| `formats: {…}` | those three booleans; anything not exactly `true` is false |
+| `where: 'owned'` | Physical ticked |
+| `where: 'any'` | nothing ticked — same meaning, no restriction |
+| `where: 'wishlist'` | nothing ticked — ⚠️ no equivalent exists |
+| garbage / absent | nothing ticked, and the theme and series validate independently |
+
+### Verified — and what is NOT
+
+- **Tests:** 38 new (`apps/web/test/tbr-picker-formats.test.ts`). Suite
+  **2,016 → 2,054 pass, 0 fail** — the baseline was measured by running the
+  suite with the new file excluded, not inferred. Typecheck clean, web build
+  clean.
+- **The render is pinned by SOURCE TEXT, not a DOM mount**, following
+  `facet-list-agreement.test.ts` and `queue-load-waterfall.test.ts`: there is no
+  jsdom or vitest in this repo and `TbrSpinner.tsx` imports `firebase.ts`, which
+  reads `import.meta.env` at module scope. What is asserted: the boxes are
+  driven off `PICKER_FORMATS`, the `where` dropdown and both of its retired
+  option labels are gone, the "Any format" sentence is present, the row filter
+  is wired, and the group carries an `aria-labelledby`.
+- 🔴 **NOT verified: the signed-in screen.** Nobody has loaded `/tbr` as the
+  owner since the change — the wheel only renders for a session with a uid, so
+  the boxes, the migration of *his* saved `where`, and the pool count are all
+  his to check. §9 and §11 of `info/tbr.md` left the same gap and it is the same
+  gap here.
+
+
 ## 2026-08-26 — the universe page showed people `forbidden` and `HTTP 503`
 
 Defect 2 of the three in

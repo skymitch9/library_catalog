@@ -639,6 +639,18 @@ does not clear, unchanged and pinned.
 The wheel (`TbrSpinner`) gets **one candidate per group**, so a book held in
 three formats is no longer three times as likely to win.
 
+⚠️ **The formats row is also the wheel's FILTER, since 2026-08-27.** The
+picker's retired `Where` dropdown is three checkboxes — **Audio / Ebook /
+Physical** — and a book qualifies when it is held in at least one ticked
+format: `formats.audio` / `formats.ebook` non-null, and
+`formats.physical.state === 'owned'` (⚠️ `'wanted'` and `'none'` are NOT held,
+so the retired *"Not on these shelves"* option has no checkbox equivalent).
+**None ticked = no restriction**, said in words beside the boxes. The predicate
+is `heldInSelectedFormats` in `apps/web/src/lib/tbr-picker-prefs.ts` and it
+narrows the ROWS before core's picker sees them, because `PickFilters.format`
+takes one medium and the boxes are a set. Full entry: [`DONE.md`](../DONE.md)
+2026-08-27.
+
 ### Where the fold is computed — and why it is in two places that cannot drift
 
 `groupTbrEntries` is pure and lives in `@lc/core`. The **Worker** calls it over
@@ -990,6 +1002,16 @@ spinner already took `groups.map(toSpinnerRow)`, and `groupTbrEntries` had
 already made that one candidate per BOOK (§9), so narrowing cannot reintroduce
 the double count the fold removed. The wheel is not drawn at all over an empty
 pool — a control that cannot work.
+
+⚠️ **The search narrowing and the picker's format boxes INTERSECT, in that
+order.** `TbrPage` hands the spinner the groups the query left; the spinner's
+three format checkboxes (§9) then filter those rows again before any candidate
+exists, so `eligibleItems` and `pickRandom` are handed one identical array and
+the count under the wheel can never disagree with what it spins over. When the
+intersection is empty the wheel says so **in words** — and when the format boxes
+are the only thing narrowing it, the sentence names them
+(*"No book on your list is one you have in a ticked format."*) rather than
+offering a bare "no matches" over a filter the person just ticked.
 
 ⚠️ **The *"Not on these shelves"* half narrows with the same query**, count
 included. Filtering one half and leaving the other at full length would read as

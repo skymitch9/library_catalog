@@ -30,25 +30,44 @@
  *
  * ## What the live filters can and cannot do
  *
- * The core picker filters on format (audio/physical/ebook), hardcover,
- * series-position and owned/wishlist. This page can only populate the axes the
- * TBR **resolve** response actually carries: `workId` (→ owned vs. not on these
- * shelves) and `series` + `seriesIndexDisplay` (→ first vs. continuation). It
- * deliberately does NOT render format or hardcover toggles, because the resolve
- * endpoint returns no edition-medium split and no hardcover flag — surfacing a
- * control that cannot work would break the estate's "never show a control
- * someone can't use" rule. Those two axes are a noted follow-on that needs the
- * resolve route to return per-work edition data; the core support and its tests
- * are already in place for the day it does.
+ * Two controls, and each reads a field the TBR **resolve** response actually
+ * carries: the group's **formats row** (`{ physical, audio, ebook }`, the media
+ * fold — `docs/info/tbr.md` §9) and `series` + `seriesIndexDisplay`. Hardcover
+ * is still NOT rendered: the resolve endpoint returns no hardcover flag, and
+ * surfacing a control that cannot work would break the estate's "never show a
+ * control someone can't use" rule. Core's support for it and its tests are in
+ * place for the day the route carries it.
+ *
+ * ## ⚠️ The format boxes are applied HERE, not by core — 2026-08-26
+ *
+ * Owner: *"change the where drop down to be audio ebook physical and let them
+ * be check boxes."* Three independent boxes, any combination, **none ticked =
+ * no restriction** (said in words beside them). Core's `PickFilters.format`
+ * takes ONE medium, so the set is applied by `heldInSelectedFormats` over the
+ * rows before candidates are built — widening core's filter would be a second
+ * definition of the same axis. ⚠️ Both the wheel's visible pool and the pick
+ * read that same filtered array (`eligibleItems` and `pickRandom` are handed
+ * the identical `candidates`), so what spins and what is chosen cannot diverge.
  */
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { eligibleItems, nextSeed, pickRandom, type PickableItem, type PickResult } from '@lc/core';
+import {
+  eligibleItems,
+  nextSeed,
+  pickRandom,
+  type PickableItem,
+  type PickResult,
+  type TbrGroupFormats,
+} from '@lc/core';
 import { Cover } from './Cover.js';
 import { audiobookDetailUrl, resolveAudiobookCover } from '../lib/audiobook-site.js';
 import { currentUid } from '../lib/firebase.js';
 import {
+  anyFormatSelected,
+  heldInSelectedFormats,
   loadPickerPrefs,
+  PICKER_FORMAT_LABELS,
+  PICKER_FORMATS,
   savePickerPrefs,
   toPickFilters,
   type PickerPrefs,
@@ -74,6 +93,13 @@ export interface SpinnerRow {
   authors: string | null;
   workCoverUrl: string | null;
   coverUrl: string | null;
+  /**
+   * ⚠️ Which shelves this book is actually reachable on — the group's formats
+   * row, straight from the media fold (`docs/info/tbr.md` §9). It is what the
+   * three format checkboxes read; `null` is not expected from `TbrPage` (every
+   * group carries one) but is tolerated, and fails every ticked box.
+   */
+  formats: TbrGroupFormats | null;
 }
 
 /** A row plus the mapping we built for the picker — the stage renders the row. */
@@ -93,6 +119,12 @@ function seriesIndexOf(display: string | null): number | null {
  * fill are set; `format` and `hardcover` are left absent on purpose (see the
  * module header), and `openable` is true because a book on a person's own
  * to-read list is by definition one they mean to open.
+ *
+ * ⚠️ `acquisition` is still recorded, but since 2026-08-26 **no control drives
+ * it** — the retired `Where` dropdown was its only caller. It stays because it
+ * is a true fact about the row that core's picker already understands; it is
+ * not a dead option waiting to be re-rendered (see the prefs module on why
+ * "wishlist only" has no checkbox equivalent).
  */
 function toCandidate(row: SpinnerRow): Candidate {
   return {
@@ -375,7 +407,16 @@ export function TbrSpinner({ rows }: { rows: SpinnerRow[] }) {
 
   const active = SPINNER_STAGES.find((t) => t.id === prefs.theme) ?? SPINNER_STAGES[0]!;
 
-  const candidates = useMemo(() => rows.map(toCandidate), [rows]);
+  // ⚠️ The format boxes narrow the ROWS, before candidates exist — so the
+  // wheel's pool, the count under it and the pick are all the same set (see the
+  // module header). Nothing ticked leaves the array untouched.
+  const candidates = useMemo(
+    () =>
+      rows.filter((r) => heldInSelectedFormats(r.formats, prefs.formats)).map(toCandidate),
+    [rows, prefs.formats],
+  );
+
+  const formatFilterOn = anyFormatSelected(prefs.formats);
 
   const filters = useMemo(() => {
     const f = toPickFilters(prefs);
@@ -442,17 +483,38 @@ export function TbrSpinner({ rows }: { rows: SpinnerRow[] }) {
           </select>
         </label>
 
-        <label className="tbr-spinner__field">
-          <span className="tbr-spinner__field-label">Where</span>
-          <select
-            value={prefs.where}
-            onChange={(e) => update({ where: e.target.value as PickerPrefs['where'] })}
-          >
-            <option value="any">Anywhere</option>
-            <option value="owned">On these shelves</option>
-            <option value="wishlist">Not on these shelves</option>
-          </select>
-        </label>
+        {/* ⚠️ Three INDEPENDENT boxes, any combination, and none ticked is a
+            real answer — never a dead control. The sentence under them says
+            which it is in words, because an all-unticked group of checkboxes
+            otherwise reads as a filter that has been forgotten. */}
+        <div
+          className="tbr-spinner__field"
+          role="group"
+          aria-labelledby="tbr-spinner-formats-label"
+        >
+          <span className="tbr-spinner__field-label" id="tbr-spinner-formats-label">
+            Format
+          </span>
+          <div className="tbr-spinner__checks">
+            {PICKER_FORMATS.map((id) => (
+              <label key={id} className="tbr-spinner__check">
+                <input
+                  type="checkbox"
+                  checked={prefs.formats[id]}
+                  onChange={(e) =>
+                    update({ formats: { ...prefs.formats, [id]: e.target.checked } })
+                  }
+                />
+                <span>{PICKER_FORMAT_LABELS[id]}</span>
+              </label>
+            ))}
+          </div>
+          <span className="muted small tbr-spinner__hint">
+            {formatFilterOn
+              ? 'Books you have in at least one ticked format.'
+              : 'Any format — nothing is filtered out.'}
+          </span>
+        </div>
 
         <label className="tbr-spinner__field">
           <span className="tbr-spinner__field-label">Series</span>
@@ -467,9 +529,14 @@ export function TbrSpinner({ rows }: { rows: SpinnerRow[] }) {
         </label>
       </div>
 
+      {/* ⚠️ An empty pool gets a SENTENCE, and when the format boxes are the
+          only thing narrowing it, one that names them — "no matches" over a
+          filter the person just ticked reads as the wheel being broken. */}
       <p className="muted small tbr-spinner__count">
         {pool === 0
-          ? 'No book on your list matches these filters.'
+          ? formatFilterOn && prefs.series === 'any'
+            ? 'No book on your list is one you have in a ticked format.'
+            : 'No book on your list matches these filters.'
           : `${pool} ${pool === 1 ? 'book' : 'books'} in the running.`}
       </p>
 

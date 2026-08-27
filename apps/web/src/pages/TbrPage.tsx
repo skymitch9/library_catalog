@@ -397,6 +397,10 @@ function toSpinnerRow(group: Group): SpinnerRow {
     authors: group.authors,
     workCoverUrl: group.workCoverUrl,
     coverUrl: group.docCoverUrl,
+    // ⚠️ The GROUP's formats row, not one entry's — the fold already merged
+    // them (owned beats wanted beats none), and it is what the wheel's three
+    // format checkboxes filter on.
+    formats: group.formats,
   };
 }
 

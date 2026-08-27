@@ -2376,6 +2376,30 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
   letter-spacing: 0.04em;
   color: var(--et-muted);
 }
+/* The three format boxes (Audio / Ebook / Physical) — 2026-08-26. They sit in a
+   `.tbr-spinner__field` like the two selects, so the controls row still lines
+   up; the hint under them is the "none ticked = any format" sentence and must
+   never be dropped, or the boxes read as a filter somebody forgot. */
+.tbr-spinner__checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.9rem;
+  padding: 0.2rem 0;
+}
+.tbr-spinner__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tbr-spinner__check input {
+  margin: 0;
+}
+.tbr-spinner__hint {
+  display: block;
+  margin-top: 0.1rem;
+}
 .tbr-spinner__count {
   margin: 0.7rem 0 0;
 }
