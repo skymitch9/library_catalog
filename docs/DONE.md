@@ -95,11 +95,24 @@ key name and nothing reads it), so bumping it would have reset every saved
   driven off `PICKER_FORMATS`, the `where` dropdown and both of its retired
   option labels are gone, the "Any format" sentence is present, the row filter
   is wired, and the group carries an `aria-labelledby`.
+- **Deployed and re-measured 2026-08-27 ~17:59 Phoenix:** `dd290cd`, version ids
+  `61f07f4a-2144-46d4-919d-1623fdcd4aba` (main) and
+  `aa8ea08a-0008-4a57-a271-a8d4d4b2bd32` (friend). Both hosts answered **200**
+  and both reference the new bundle `assets/index-CUKXoZkD.js` — and the asset
+  itself was fetched from each host and grepped, per §8's addendum: `Any
+  format`, `tbr-spinner__checks` and `tbr-spinner-formats-label` each present
+  once in both, and the retired option string `On these shelves` **absent from
+  both** (0 occurrences). The pipeline's word for it was not accepted as
+  evidence. ⚠️ This deploy also carried the **donor alias rung** that
+  2026-08-26 left committed-but-undeployed.
 - 🔴 **NOT verified: the signed-in screen.** Nobody has loaded `/tbr` as the
   owner since the change — the wheel only renders for a session with a uid, so
   the boxes, the migration of *his* saved `where`, and the pool count are all
   his to check. §9 and §11 of `info/tbr.md` left the same gap and it is the same
   gap here.
+- **NOT verified: the boxes' BEHAVIOUR in a browser.** The predicate and the
+  migration are unit-tested and the markup was grepped out of the live bundle;
+  nobody has ticked a box and watched the pool count change.
 
 
 ## 2026-08-26 — the universe page showed people `forbidden` and `HTTP 503`

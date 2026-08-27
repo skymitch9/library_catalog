@@ -2,6 +2,26 @@
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
 >
+> ## ⚠️ UPDATED 2026-08-27 — the wheel's `Where` dropdown is now three FORMAT CHECKBOXES. §9 and §11.
+>
+> Owner: *"change the where drop down to be audio ebook physical and let them be
+> check boxes."* Any combination; a book qualifies when it is held in **at least
+> one ticked format**, read off the media fold's formats row; **none ticked = no
+> restriction**, said in words. ⚠️ The old *"Not on these shelves"*
+> (wishlist-only) option has **no checkbox equivalent** and is gone on purpose —
+> see §9. The set is applied by the page (`heldInSelectedFormats`), never by
+> core's single-medium `PickFilters.format`.
+>
+> Last verified: **2026-08-27 ~17:59 Phoenix** — 38 new tests green, the suite at
+> **2,054 / 0**, and BOTH instances re-measured live after the deploy
+> (`dd290cd`; main `61f07f4a-2144-46d4-919d-1623fdcd4aba`, friend
+> `aa8ea08a-0008-4a57-a271-a8d4d4b2bd32`): each 200, each serving
+> `assets/index-CUKXoZkD.js`, and **the asset itself fetched and grepped** —
+> `Any format` and `tbr-spinner__checks` present in both, the retired
+> `On these shelves` absent from both. ⚠️ **What was NOT verified: the signed-in
+> screen**, still — nobody has ticked a box with a session. ⚠️ **Nothing else in
+> this file was re-checked on 2026-08-27**; §10's and §11's own dates stand.
+>
 > ## ⚠️ UPDATED 2026-08-26 (later) — THE AUDIT. READ §10.
 >
 > The owner reported *"not all have sync'd"*. **They had.** §10 carries the
