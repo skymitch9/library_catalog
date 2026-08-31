@@ -212,8 +212,13 @@ ebook/audio moved onto the shelf as Owned rows).
 **EditBox:** the separate **Editions** and **Copies** tabs are merged into one
 **Editions & copies** tab (editions is the unit; copies nest inside).
 
-**State:** branch pushed. **Nothing deployed** — client-side derivation change,
-no migration, no API shape change. `work-detail-contract` + `work-page-render`
+**State:** branch pushed. ~~**Nothing deployed**~~ ⚠️ **superseded — measured
+2026-08-31: `feature/shelf-copy-driven` IS merged into `main`**
+(`git merge-base --is-ancestor` = yes), and main has deployed several times
+since (through `dd290cd`, 2026-08-27, per `deploys.log`) — so the copy-driven
+shelf is live on both instances. What is still open is the **owner review**
+below; nobody has confirmed /work/493 reads "Owned — Paperback" with their own
+eyes. Client-side derivation change, no migration, no API shape change. `work-detail-contract` + `work-page-render`
 kept green. Tests **1672 pass / 0 fail**; typecheck clean; web build clean.
 `shelf-view.test.ts` rewritten (26 cases) incl. the explicit 493 case.
 
@@ -238,8 +243,14 @@ individually selectable, OR-ed — a fixed-map clause (`BINDING_CLAUSE`), unknow
 type adds no clause. Leather ⊂ hardcover stays true in the data (ticking
 Hardcover matches a leatherbound copy) but leather is its own box.
 
-**State:** branch pushed. Migration **0430 is UNAPPLIED**. Nothing deployed.
-1661 tests pass / 0 fail; typecheck clean.
+**State:** branch pushed. ~~Migration **0430 is UNAPPLIED**. Nothing deployed.~~
+⚠️ **superseded — measured 2026-08-31:** `feature/special-editions-firstclass`
+IS merged into `main`; `wrangler d1 migrations list --remote` answers **"No
+migrations to apply!" on BOTH instances** (so 0430 is applied), and main has
+deployed since (through `dd290cd`, 2026-08-27). Go-live steps 1 and 4 below are
+therefore done. **Steps 2–3 (the sweep dry-run + commit) are NOT verified to
+have run** — no record of a `sweep-special-editions.mjs` run was found; that is
+what remains of this item. 1661 tests pass / 0 fail; typecheck clean.
 
 ⚠️ **The sweep's dry-run count is NOT yet measured** — the sweep reads the new
 columns to avoid re-proposing set ones, so it cannot run until 0430 is applied;
@@ -749,74 +760,10 @@ while looking configured**. Contract of record:
 series on <https://library.heygabi.ai/works/514>, and a "look up" on a book the
 audiobook catalog holds reports a free rung as the source rather than an LLM run.
 
-## ✅ GABI unification — ALL PHASES DEPLOYED (2026-08-21)
-
-Design of record: [`info/gabi-unification.md`](info/gabi-unification.md) (moved
-there 2026-08-21 from an untracked `docs/GABI_UNIFICATION_PLAN.md` that existed
-only on the owner's machine). Owner ask, 2026-08-20: *"I want them to be a 1 for
-1 with just a different entry point… If I'm linked in Discord I should see my
-Discord personality coming through in the chat on my UI too."*
-
-✅ **Phase 1 (write tools) — deployed 2026-08-21.**
-✅ **Phase 2 (shared memory endpoint) — deployed 2026-08-21.** Discord calls `GET/PUT /api/gabi/memory`, both surfaces key on `{surface:'shared', space, person}`.
-✅ **Phase 3 (unified prompt) — deployed 2026-08-21.** One canonical personality, Discord-side prompt deleted.
-✅ **Personal Context (reading state + notes) — deployed 2026-08-21.**
-
-⚠️ Migration `0380_gabi_person_profile.sql` applied as part of deploy.
-
----
-
-
-## ✅ Three feature branches — ALL MERGED 2026-08-21
-
-Completed by Kiro session 2026-08-21 (K2 typecheck green first, then K11 merges).
-All three (`series-overrides`, `openlibrary-ids`, `completeness-wishlist-relations`)
-merged into `main`, conflicts resolved, typecheck still green after all three.
-`npm run typecheck` exits 0 — 0 errors before and after merges.
-
-Found while answering *"what is scratchpad wave 3, it has so many changes?"*.
-**wave3 and wave4 were a false alarm** — both branches (`feature/scanjobs-vision`,
-`feature/research-details`) are **already merged into `main`**; their 245/249
-"changes" were deletions, because the Temp scratchpad directories had been
-gutted. Nothing to recover, nothing to merge.
-
-**But three other branches are genuinely outstanding**, all last touched
-2026-08-10 and now eleven days behind `main`:
-
-| Branch | Commits | Roughly |
-|---|---|---|
-| `feature/completeness-wishlist-relations` | 3 | series completeness, reachable wishlist, related books — ~4,400 insertions, heavy in `packages/db` |
-| `feature/series-overrides` | 2 | 24 of 37 series gaps filled with a source each, plus `--prune` for the ebook importer |
-| `feature/openlibrary-ids` | 1 | Open Library work ids, 35 of 116, corroborated on more than a name — ~3,700 insertions |
-
-⚠️ **MEASURED 2026-08-21: every one of them conflicts with `main`.** Computed
-with `git merge-tree --write-tree` (in-memory, no checkout — see the gotcha
-below for why a worktree could not be used):
-
-- `openlibrary-ids` → `packages/core/src/index.ts`, `packages/isbn/*`,
-  `package.json`, `docs/*` and more
-- `series-overrides` → `scripts/series-overrides.json`, `docs/HANDOFF.md`,
-  `docs/info/covers-and-series.md`
-- `completeness-wishlist-relations` → **8+ files across `apps/web`** including
-  `App.tsx`, `api.ts`, `CollectionPage.tsx` — exactly the files today's GABI
-  work also touched
-
-☐ **Owner: which of the three, and in what order?** These are not a chore. Each
-  needs real conflict resolution across core app files, and ⚠️ **this repo's
-  `npm run typecheck` is already RED before any merge** (pre-existing —
-  `WorkPage.tsx`, `lib/peer-push.ts`, `routes/catalog.ts`, all unmodified), so a
-  merge lands in a tree where new breakage cannot be told from old. **Fix the
-  typecheck first**, or the merges cannot be verified.
-☐ Suggested order once that is clear, smallest blast radius first:
-  `series-overrides` (data + one script) → `openlibrary-ids` (new modules,
-  mostly additive) → `completeness-wishlist-relations` (the web-heavy one).
-
-**Cleaned up the same day:** 15 stale `worktree-agent-*` branches and their
-worktrees, all fully merged, deleted. The seven fully-merged `feature/*`
-branches were LEFT ALONE — they are human-named and cost nothing.
-
----
-
+> ✂️ **2026-08-31:** the three ✅ sections that sat here (GABI unification — all
+> phases deployed 2026-08-21; three feature branches — all merged 2026-08-21;
+> ISBN backfill — complete 2026-08-21) moved WHOLE to [`DONE.md`](DONE.md), per
+> the done-items-get-moved-not-badged rule.
 
 ## 🧰 Tech debt (owner-ordered section, 2026-08-17: "all tech debt stuff move
 ## in to there so we can handle tech debt stuff later")
@@ -1751,26 +1698,6 @@ nothing", not "stored a dead link".
 
 ---
 
-
----
-
-## ✅ ISBN backfill — COMPLETE 2026-08-21 (free rungs + LLM)
-
-**Final result: 181 → 21 works without ISBN.** Free rungs wrote 89 (2026-08-20),
-then the LLM rung wrote another 71 (2026-08-21). LibraryThing API wired as
-rung 2.5 (key valid, Cloudflare 403 — dead for now but plumbed). The remaining
-21 are correctly ISBN-less (fan translations, crowdfund-only, indie).
-
-| Rung | Found |
-|---|---|
-| Open Library (title+author) | 70 |
-| Google Books (title+author) | 24 |
-| LibraryThing (rung 2.5, wired) | 0 (CF 403) |
-| LLM (Claude) | 71 |
-| UNIQUE conflicts (skipped) | 5 |
-| **Total written** | **160** |
-
-**Script:** `scripts/backfill-missing-isbns.mjs`, `npm run backfill:missing-isbns`.
 
 ---
 

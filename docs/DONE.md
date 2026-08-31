@@ -18,6 +18,97 @@
 > were extracted from this same history.
 
 
+## 2026-08-31 — three finished sections retired from TODO.md (all landed 2026-08-21)
+
+Moved WHOLE from [`TODO.md`](TODO.md), where they had sat marked ✅ since
+2026-08-21 — the exact "done items get moved, not badged" rule. No content
+changed; the embedded ☐ owner questions in the branches section were superseded
+by the section's own 2026-08-21 update (all three branches merged by Kiro).
+Verbatim:
+
+> ## ✅ GABI unification — ALL PHASES DEPLOYED (2026-08-21)
+>
+> Design of record: [`info/gabi-unification.md`](info/gabi-unification.md) (moved
+> there 2026-08-21 from an untracked `docs/GABI_UNIFICATION_PLAN.md` that existed
+> only on the owner's machine). Owner ask, 2026-08-20: *"I want them to be a 1 for
+> 1 with just a different entry point… If I'm linked in Discord I should see my
+> Discord personality coming through in the chat on my UI too."*
+>
+> ✅ **Phase 1 (write tools) — deployed 2026-08-21.**
+> ✅ **Phase 2 (shared memory endpoint) — deployed 2026-08-21.** Discord calls `GET/PUT /api/gabi/memory`, both surfaces key on `{surface:'shared', space, person}`.
+> ✅ **Phase 3 (unified prompt) — deployed 2026-08-21.** One canonical personality, Discord-side prompt deleted.
+> ✅ **Personal Context (reading state + notes) — deployed 2026-08-21.**
+>
+> ⚠️ Migration `0380_gabi_person_profile.sql` applied as part of deploy.
+>
+> ## ✅ Three feature branches — ALL MERGED 2026-08-21
+>
+> Completed by Kiro session 2026-08-21 (K2 typecheck green first, then K11 merges).
+> All three (`series-overrides`, `openlibrary-ids`, `completeness-wishlist-relations`)
+> merged into `main`, conflicts resolved, typecheck still green after all three.
+> `npm run typecheck` exits 0 — 0 errors before and after merges.
+>
+> Found while answering *"what is scratchpad wave 3, it has so many changes?"*.
+> **wave3 and wave4 were a false alarm** — both branches (`feature/scanjobs-vision`,
+> `feature/research-details`) are **already merged into `main`**; their 245/249
+> "changes" were deletions, because the Temp scratchpad directories had been
+> gutted. Nothing to recover, nothing to merge.
+>
+> **But three other branches are genuinely outstanding**, all last touched
+> 2026-08-10 and now eleven days behind `main`:
+>
+> | Branch | Commits | Roughly |
+> |---|---|---|
+> | `feature/completeness-wishlist-relations` | 3 | series completeness, reachable wishlist, related books — ~4,400 insertions, heavy in `packages/db` |
+> | `feature/series-overrides` | 2 | 24 of 37 series gaps filled with a source each, plus `--prune` for the ebook importer |
+> | `feature/openlibrary-ids` | 1 | Open Library work ids, 35 of 116, corroborated on more than a name — ~3,700 insertions |
+>
+> ⚠️ **MEASURED 2026-08-21: every one of them conflicts with `main`.** Computed
+> with `git merge-tree --write-tree` (in-memory, no checkout — see the gotcha
+> below for why a worktree could not be used):
+>
+> - `openlibrary-ids` → `packages/core/src/index.ts`, `packages/isbn/*`,
+>   `package.json`, `docs/*` and more
+> - `series-overrides` → `scripts/series-overrides.json`, `docs/HANDOFF.md`,
+>   `docs/info/covers-and-series.md`
+> - `completeness-wishlist-relations` → **8+ files across `apps/web`** including
+>   `App.tsx`, `api.ts`, `CollectionPage.tsx` — exactly the files today's GABI
+>   work also touched
+>
+> ☐ **Owner: which of the three, and in what order?** These are not a chore. Each
+>   needs real conflict resolution across core app files, and ⚠️ **this repo's
+>   `npm run typecheck` is already RED before any merge** (pre-existing —
+>   `WorkPage.tsx`, `lib/peer-push.ts`, `routes/catalog.ts`, all unmodified), so a
+>   merge lands in a tree where new breakage cannot be told from old. **Fix the
+>   typecheck first**, or the merges cannot be verified.
+> ☐ Suggested order once that is clear, smallest blast radius first:
+>   `series-overrides` (data + one script) → `openlibrary-ids` (new modules,
+>   mostly additive) → `completeness-wishlist-relations` (the web-heavy one).
+>
+> **Cleaned up the same day:** 15 stale `worktree-agent-*` branches and their
+> worktrees, all fully merged, deleted. The seven fully-merged `feature/*`
+> branches were LEFT ALONE — they are human-named and cost nothing.
+>
+> ## ✅ ISBN backfill — COMPLETE 2026-08-21 (free rungs + LLM)
+>
+> **Final result: 181 → 21 works without ISBN.** Free rungs wrote 89 (2026-08-20),
+> then the LLM rung wrote another 71 (2026-08-21). LibraryThing API wired as
+> rung 2.5 (key valid, Cloudflare 403 — dead for now but plumbed). The remaining
+> 21 are correctly ISBN-less (fan translations, crowdfund-only, indie).
+>
+> | Rung | Found |
+> |---|---|
+> | Open Library (title+author) | 70 |
+> | Google Books (title+author) | 24 |
+> | LibraryThing (rung 2.5, wired) | 0 (CF 403) |
+> | LLM (Claude) | 71 |
+> | UNIQUE conflicts (skipped) | 5 |
+> | **Total written** | **160** |
+>
+> **Script:** `scripts/backfill-missing-isbns.mjs`, `npm run backfill:missing-isbns`.
+
+---
+
 ## 2026-08-27 — Wheel picker: "Where" dropdown → Audio / Ebook / Physical CHECKBOXES (owner ask, 2026-08-26 23:35)
 
 ⚠️ Moved WHOLE from [`TODO.md`](TODO.md). The ask, verbatim as it was written
