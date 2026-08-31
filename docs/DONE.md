@@ -18,6 +18,44 @@
 > were extracted from this same history.
 
 
+## 2026-08-31 — two Pokémon Primers scans collapsed onto one bare title; both now filed as distinct series volumes (owner ask, ~11:00 Phoenix)
+
+Owner: *"i just scanned 2 books, theyre in a book series with the same name,
+pokemon... fire, pokemon... water etc. can you fix that"*. Scan jobs 79/80:
+**Google Books resolves BOTH ISBNs to the bare series title "Pokémon Primers"**
+(the per-volume subtitle survives only in the description), so *Grass Types*
+(9781604382228) was added as work 522 under the bare name and *Fire Types*
+(9781604382235) was never addable — it would have been an identical-titled twin.
+
+Fixed by owner-approved D1 batch `owner-2026-08-31-pokemon-primers` (the
+permission classifier blocked the session's own write; the owner approved the
+exact command). All statements guarded/idempotent; 5 change_log rows:
+
+| | |
+|---|---|
+| work 522 | title → **Pokémon Primers: Grass Types**, series `Pokémon Primers`, sort **11**; `work_key` moved with the title via canonical `workKeyFor` (work was 2 h old, zero review/TBR joins — the one case a key move is harmless) |
+| work **523** (new) | **Pokémon Primers: Fire Types**, series sort **12**, edition 676 (`9781604382235`, paperback, Pokemon USA 2023) + owned copy 462 — mirroring the Grass add's shapes exactly |
+| scan_job 79/80 | `resolvedTitle` corrected + `addedWorkId 523` stamped via `json_set`, so no duplicate Add is possible from the queue |
+
+Volume numbers 11/12 are from Amazon's Pokémon Primers series listing (26-book
+series) — cited in the change_log; nothing is printed on the board books, so
+`series_index_display` stays empty per `info/volume-numbers.md`.
+
+Verified by re-read after the write: both works, keys, series fields, edition +
+owned copy per book, both scan rows, 5 log rows. **Not verified:** the rendered
+pages (needs a signed-in eye — /work/522 and /work/523), and the estate index
+picks the rename up on its freshness backstop rather than instantly (direct D1
+writes bypass the after-mutation push, by design).
+
+⚠️ **The gotcha worth keeping: this WILL recur on this series.** The household
+"etc" implies more type books (Water 9781604382211, Electric…) — every one of
+them resolves to the same bare "Pokémon Primers" title, so a future scan will
+key-match nothing and offer the bare name again. Cheapest handling: after
+scanning, fix the title on the scan row's Edit before pressing Add (the
+subtitle is in the description the resolver already fetched).
+
+---
+
 ## 2026-08-31 — three finished sections retired from TODO.md (all landed 2026-08-21)
 
 Moved WHOLE from [`TODO.md`](TODO.md), where they had sat marked ✅ since
