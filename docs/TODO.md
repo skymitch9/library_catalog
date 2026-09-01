@@ -332,7 +332,15 @@ exactly what he is saying not to build.
 COPY (two physical copies, which is legitimate and common)? The two want
 different defaults.
 
-### OR-3. A manual pipeline pause should ask what it means
+### OR-3. A manual pipeline pause should ask what it means — ⚠️ appears BUILT, verify then close
+
+> ✅? **Measured 2026-08-31 while designing the pause-until-GPU feature:**
+> `audiobook_catalog/app/core/ingest_control.py` carries `pause_mode`
+> (`all` | `manual_only`, *"stop all work until unpaused"* vs *"let the
+> scheduled window continue"*), documented in-source as owner ask
+> **2026-08-23** — which is this OR-3, answered. ⚠️ Not verified: whether the
+> `/status` card actually OFFERS the choice when pausing (the "ask me" half).
+> Check the card signed-in; if it asks, move this whole item to DONE.
 
 > *"when i manually pause the pipeline it says nothing can override it. I want
 > it to ask me if i want to stop all work until unpaused or if scheduled window
