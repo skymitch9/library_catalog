@@ -18,6 +18,90 @@
 > were extracted from this same history.
 
 
+## 2026-08-31 — the 2 cross-instance near-misses: BOTH ANSWERED (Q2: it's Book ONE — moved whole from TODO.md)
+
+Q1 was answered and applied 2026-08-26; **Q2 was un-pinned 2026-08-31** — the
+owner checked the physical copy: *"ITS BOOK 1, updatr both libraries"*. So
+padhard #489 and main #328 are the same book, both volume-1 rows were right,
+and the **"Book Two" subtitle in padhard's title was the wrong half**.
+
+Applied (batch `owner-2026-08-31-broken-prophecies`, friend D1 only — main
+#328 was re-measured first and already correct on every field): #489 title →
+**"Keepers of the Light"**, `series_index_display` → **"1"** (a printed form
+per the owner's physical check, mirroring main), the old long title kept as a
+`work_alias` (manual/title) so anything that recorded it still matches, and
+3 change_log rows. ⚠️ `work_key` deliberately NOT moved — persisted key on a
+live catalog (the Q1 precedent's rule). With both titles now identical, the
+cross-instance donor rung matches on exact, no alias glue needed. Verified by
+re-read of the row, the alias and the log. **Not verified:** the rendered page
+(<https://padhard.heygabi.ai/work/489>).
+
+The section, verbatim as it stood in TODO.md:
+
+> ## ☐ 🙋 OWNER: confirm these 2 cross-instance near-misses — one question, one answer each (2026-08-26)
+>
+> Fell out of the #348 build (now in DONE.md). A **subtitle-stripped**
+> donor rung was measured and **deliberately not built**, because one of its two
+> hits cannot be settled without you. ⚠️ Ask these **one at a time**; the durable
+> fix for a YES is one `work_alias` row on the shorter-titled side — one INSERT,
+> no code, and the alias rung that shipped today then matches it for free
+> (the same mechanism the 2026-08-25 near-miss audit used).
+>
+> **Q1 — same book?**
+>
+> | | padhard #480 | main #335 |
+> |---|---|---|
+> | title | `Possibility & Promise: Echoes of the Unknown` | `Possibility & Promise` |
+> | author | Matthew Roland Modrow | Matthew "Momo" Modrow |
+> | first published | 2025 | 2025 |
+> | series | — | — |
+>
+> Looks like one book with a subtitle and the author's name written two ways, but
+> that is an inference, not a measurement.
+>
+> ✅ **ANSWERED 2026-08-26 ~16:10 Phoenix — YES, and "Sam's is more true than mine,
+> can we copy that one?"** Applied by hand (D1, both instances, `change_log`
+> batch `owner-2026-08-26-possibility-promise`): main #335 `authors`/`primary_author`
+> `Matthew "Momo" Modrow` → **`Matthew Roland Modrow`**, `description` NULL → her
+> 353-char blurb; `work_alias` **main #335 ← `Possibility & Promise: Echoes of the
+> Unknown`** and **padhard #480 ← `Possibility & Promise`** (both `manual`/`title`).
+> `work_key` untouched on both (persisted key). Verified by re-read on both D1s.
+> Move to DONE with Q2's answer.
+>
+> **Q2 — same book? ⚠️ The one that must NOT be guessed.**
+>
+> 📌 **PINNED 2026-08-26 ~16:55 Phoenix — owner: "im not sure about broken prophecies
+> yet, i need to confirm this one physically. lets put a pin in it and move on."**
+> Nothing applied on either side. Re-ask only when he says he has checked the
+> physical copies (`/work/489` on padhard, `/work/328` on main — note the path is
+> `/work/`, singular; `/works/` is not a page).
+>
+> | | padhard #489 | main #328 |
+> |---|---|---|
+> | title | `Keepers of the Light: Book Two of the Broken Prophecies` | `Keepers of the Light` |
+> | author | S. A. McClure | S. A. McClure |
+> | series | The Broken Prophecies | The Broken Prophecies |
+> | `series_index_sort` | **1** | **1** |
+> | first published | 2018 | 2018 |
+>
+> ⚠️ **The subtitle says *Book Two* and BOTH rows record volume 1.** So either
+> they are one book and a volume number is wrong, or they are two books and one
+> title is. This is the *"Tamer: King of Dinosaurs"* shape `splitSeriesPrefix`'s
+> header warns about, in real data — which is exactly why the rung was not built.
+> Whichever way it goes, the `series_index_sort` on at least one row needs fixing
+> too.
+>
+> **Also worth a look, and NOT a question — it was refused on purpose:** main #222
+> `Dungeon Crawler Carl: Crocodile` (2025) reaching padhard #25
+> `Dungeon Crawler Carl` (2024, vol 1) at containment 0.86. Two different books;
+> the donor now takes `exact` and `alias` only. Say so if you disagree.
+
+(The Q2 outcome differed from the section's own prediction: neither a
+volume-number fix nor an alias-on-the-shorter-side — the subtitle itself was
+false, so the fix was a retitle. The Dungeon Crawler Carl refusal stands.)
+
+---
+
 ## 2026-08-31 — two Pokémon Primers scans collapsed onto one bare title; both now filed as distinct series volumes (owner ask, ~11:00 Phoenix)
 
 Owner: *"i just scanned 2 books, theyre in a book series with the same name,

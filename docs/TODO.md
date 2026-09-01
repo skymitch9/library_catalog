@@ -86,63 +86,11 @@ matcher, no behaviour change in the ladder. Also state the standing limit in
 assert "none"** — a standalone book stays open until the paid rung (or the owner)
 records the verdict, by design.
 
-## ☐ 🙋 OWNER: confirm these 2 cross-instance near-misses — one question, one answer each (2026-08-26)
-
-Fell out of the #348 build (now in [`DONE.md`](DONE.md)). A **subtitle-stripped**
-donor rung was measured and **deliberately not built**, because one of its two
-hits cannot be settled without you. ⚠️ Ask these **one at a time**; the durable
-fix for a YES is one `work_alias` row on the shorter-titled side — one INSERT,
-no code, and the alias rung that shipped today then matches it for free
-(the same mechanism the 2026-08-25 near-miss audit used).
-
-**Q1 — same book?**
-
-| | padhard #480 | main #335 |
-|---|---|---|
-| title | `Possibility & Promise: Echoes of the Unknown` | `Possibility & Promise` |
-| author | Matthew Roland Modrow | Matthew "Momo" Modrow |
-| first published | 2025 | 2025 |
-| series | — | — |
-
-Looks like one book with a subtitle and the author's name written two ways, but
-that is an inference, not a measurement.
-
-✅ **ANSWERED 2026-08-26 ~16:10 Phoenix — YES, and "Sam's is more true than mine,
-can we copy that one?"** Applied by hand (D1, both instances, `change_log`
-batch `owner-2026-08-26-possibility-promise`): main #335 `authors`/`primary_author`
-`Matthew "Momo" Modrow` → **`Matthew Roland Modrow`**, `description` NULL → her
-353-char blurb; `work_alias` **main #335 ← `Possibility & Promise: Echoes of the
-Unknown`** and **padhard #480 ← `Possibility & Promise`** (both `manual`/`title`).
-`work_key` untouched on both (persisted key). Verified by re-read on both D1s.
-Move to DONE with Q2's answer.
-
-**Q2 — same book? ⚠️ The one that must NOT be guessed.**
-
-📌 **PINNED 2026-08-26 ~16:55 Phoenix — owner: "im not sure about broken prophecies
-yet, i need to confirm this one physically. lets put a pin in it and move on."**
-Nothing applied on either side. Re-ask only when he says he has checked the
-physical copies (`/work/489` on padhard, `/work/328` on main — note the path is
-`/work/`, singular; `/works/` is not a page).
-
-| | padhard #489 | main #328 |
-|---|---|---|
-| title | `Keepers of the Light: Book Two of the Broken Prophecies` | `Keepers of the Light` |
-| author | S. A. McClure | S. A. McClure |
-| series | The Broken Prophecies | The Broken Prophecies |
-| `series_index_sort` | **1** | **1** |
-| first published | 2018 | 2018 |
-
-⚠️ **The subtitle says *Book Two* and BOTH rows record volume 1.** So either
-they are one book and a volume number is wrong, or they are two books and one
-title is. This is the *"Tamer: King of Dinosaurs"* shape `splitSeriesPrefix`'s
-header warns about, in real data — which is exactly why the rung was not built.
-Whichever way it goes, the `series_index_sort` on at least one row needs fixing
-too.
-
-**Also worth a look, and NOT a question — it was refused on purpose:** main #222
-`Dungeon Crawler Carl: Crocodile` (2025) reaching padhard #25
-`Dungeon Crawler Carl` (2024, vol 1) at containment 0.86. Two different books;
-the donor now takes `exact` and `alias` only. Say so if you disagree.
+> ✂️ **2026-08-31:** the *"OWNER: confirm these 2 cross-instance near-misses"*
+> section moved WHOLE to [`DONE.md`](DONE.md) — Q1 was applied 2026-08-26, and
+> Q2 (*Keepers of the Light* / Broken Prophecies) was un-pinned by the owner's
+> physical check (*"ITS BOOK 1"*): padhard #489 retitled, printed form "1" set,
+> old title kept as alias, batch `owner-2026-08-31-broken-prophecies`.
 
 ## ☐ Should the SECOND recording of a book be storable? (`audio_key` is a persisted key — 2026-08-26)
 
