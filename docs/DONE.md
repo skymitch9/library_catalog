@@ -18,6 +18,41 @@
 > were extracted from this same history.
 
 
+## 2026-09-01 — OR-3 (the pause should ask what it means): BUILT 2026-08-23, verified by the owner's own live use (moved whole from TODO.md)
+
+Found while designing the soft-pause feature: `pause_mode`
+(`all` | `manual_only`) has existed in
+`audiobook_catalog/app/core/ingest_control.py` since the owner's 2026-08-23
+ask, and the card's choice is proven live — the 2026-09-01 08:00 ingest log
+refused a start with *"paused by the dashboard — the scheduled 12am-8am window
+may continue, but this is a manual start (set by estate-ops:…)"*, a
+`manual_only` pause the owner set himself from the dashboard. The item,
+verbatim as it stood (his original words preserved):
+
+> ### OR-3. A manual pipeline pause should ask what it means
+>
+> > *"when i manually pause the pipeline it says nothing can override it. I want
+> > it to ask me if i want to stop all work until unpaused or if scheduled window
+> > is fine to continue."*
+>
+> Today the pause is absolute and says so. He wants the pause to be a **question
+> with two answers**: stop everything until explicitly unpaused, or stop
+> interactive work but let the scheduled window proceed.
+>
+> ⚠️ **This lives in `audiobook_catalog`, not here** — the pipeline and its pause
+> card are that repo's (`app/core/pipeline_schedule.py`, the ingestion-pause card
+> on `/status`). Filed here only because he wrote it here; **move it to that
+> repo's TODO when it is picked up**, and do not build two pauses.
+>
+> **Ask him before building:** does the choice stick as a preference, or is it
+> asked afresh every time he pauses?
+
+⚠️ The successor work — soft pauses, recurring blockers, do-not-disturb
+processes — is designed and build-ready:
+`catalog-platform/docs/info/ingestion-pause-until-gpu-design.md`.
+
+---
+
 ## 2026-08-31 — the 2 cross-instance near-misses: BOTH ANSWERED (Q2: it's Book ONE — moved whole from TODO.md)
 
 Q1 was answered and applied 2026-08-26; **Q2 was un-pinned 2026-08-31** — the
