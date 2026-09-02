@@ -18,6 +18,71 @@
 > were extracted from this same history.
 
 
+## ✅ 2026-09-02 — the curated cross-catalog joins become assertions, and the DEAD-LINK check gets a home — commit `8baa88a`
+
+The sibling half of `audiobook_catalog`'s *"Cross-catalog book hyperlinks"*
+(owner, 2026-08-14; his *Wandering Inn* acceptance case, 2026-09-02).
+**Design of record for BOTH repos:**
+`audiobook_catalog/docs/info/cross-catalog-links.md` — one home, linked to
+rather than restated here.
+
+**This direction was already live, and worked for a reason nobody had written
+down.** Measured against production 2026-09-02, all four of the owner's works
+resolve — but 230 and 232 reach their audiobooks **only through two `work_alias`
+rows**:
+
+| work | reaches | how |
+|---|---|---|
+| 229 | *The Wandering Inn* audiobook | exact |
+| 230 | the same audiobook | exact, **via the alias `"The Wandering Inn"`** |
+| 231 | *Fae and Fare* audiobook | exact |
+| 232 | the same audiobook | exact, **via the alias `"Fae and Fare"`** |
+
+Delete either alias, or tighten the matcher, and two of the owner's four links
+vanish with **nothing failing anywhere**. `checkCuratedLinks` is what fails now.
+
+**What landed.** `scripts/lib/cross-catalog-overrides.mjs` reads the one home —
+`audiobook_catalog/site/cross-catalog-overrides.json`, out of the sibling
+checkout, the same way `audiobooks.mjs` reads `catalog.csv` (same
+`AUDIOBOOK_ROOT`, same `LC_AUDIOBOOK_ROOT` hatch, same worktree trap). Nothing
+is vendored here, and a test asserts the path leaves this repo.
+`npm run check:cross-links -- --remote` is **the check that stops a dead link
+shipping, and only this repo can make it** — the sibling renders
+`library.heygabi.ai/work/<id>` and cannot ask whether the work exists. Run
+2026-09-02 against MAIN: **4 resolved, 0 unresolved, 0 unknown work ids.**
+`backfill-audiobook-holdings.mjs` now prints one named line about the curated
+pairs on every run, never throwing, because it is pipeline STEP 11.
+
+**Why it GUARDS and does not WRITE.** `audiobook_edition_holding.matched_via` is
+`CHECK (matched_via IN ('exact','alias','containment'))` (0390, from 0010), so a
+`'curated'` value is a table rebuild plus its VIEW on two production databases.
+Migration 0110 already settled the shape that decision should take when somebody
+makes it: an owner-confirmed link got its **own table**, not a new enum value.
+
+🔴 **The gotcha, now in [`info/gotchas.md`](info/gotchas.md): work ids are
+per-instance and collide with different books.** On padhard, 229–232 are
+*Divine Rivals*, *Ruthless Vows*, *River Enchanted* and *Priory of the Orange
+Tree*, so `check:cross-links` **refuses `--friend`** — the dangerous outcome
+there is not a failure but a **green tick for a link to the wrong book**.
+
+**NOT deployed, and no deploy is needed:** every file is `scripts/` or a root
+`package.json` entry; none reaches the Worker or the web bundle, and the work
+page renders exactly what it rendered before.
+
+⚠️ **Tests: 2110 of 2110 pass** across every package except `estate-auth`,
+including the 8 added here. The full `npm test` was **2156/2161** — the 5
+failures are `packages/estate-auth/test/gate.test.ts` pinning a shape that an
+**uncommitted, in-flight `billingDenied` feature** in
+`catalog-platform/packages/estate-auth/src/seen.ts` (mtime 2026-09-02 12:07,
+*"BILLING POLICY (0016)"*) changes underneath it through the `pretest` sync.
+That file was left untouched — another writer's work in a shared tree — and
+⚠️ **it currently blocks `npm run deploy:both`, whose `predeploy` runs the
+suite.** Not caused by this work, and not this work's to fix.
+
+**Not verified:** nothing was clicked in a browser; the work page was never seen
+signed in; and `check:cross-links` has never been run against a database that
+FAILS it — the unknown-id and unresolved paths are unit-tested only.
+
 ## ✅ 2026-09-02 — "On your shelf" leads with the EDITION, and answers signed either way — SHIPPED both instances
 
 Landed `bc6bcbb`, deployed both instances 2026-09-02 ~11:13 Phoenix (18:13Z):

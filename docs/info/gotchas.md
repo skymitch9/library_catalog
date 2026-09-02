@@ -17,6 +17,39 @@ reproduced whole, with its original reasoning intact.
 sheet). That is deliberate duplication of the *headline* only; the full
 reasoning lives here.
 
+### 🔴 "The work id checks out on both instances" — WORK IDS ARE PER-INSTANCE, and they collide with DIFFERENT BOOKS — found 2026-09-02
+
+**Symptom.** A script, a link or a check that names a work id runs clean against
+MAIN and clean against `--friend`, and you conclude the id is good on both.
+
+**It is not the same book.** The two deployments are two separate D1 databases
+whose ids were allocated independently. Measured 2026-09-02:
+
+| id | MAIN (`library.heygabi.ai`) | FRIEND (`padhard.heygabi.ai`) |
+|---|---|---|
+| 229 | *The Wandering Inn* | *Divine Rivals* |
+| 230 | *No Killing Goblins* | *Ruthless Vows* |
+| 231 | *Fae and Fare* | *River Enchanted Deluxe Collector's Edition* |
+| 232 | *Immortal Games* | *Priory of the Orange Tree* |
+
+⚠️ **The dangerous case is not a failure, it is a PASS.** A check pointed at the
+wrong instance finds a work that exists, and if it happens to hold a matching
+row it reports **green for a link to the wrong book**. A red result would at
+least make somebody look.
+
+**What to do.** Any id-bearing artifact says which instance it belongs to, and
+anything that consumes it refuses the other rather than answering about books
+nobody meant. `scripts/check-cross-catalog-overrides.mjs` is the worked example:
+it exits 2 on `--friend`, printing the table above, because the overrides file
+names MAIN ids and the audiobook site links to `library.heygabi.ai` and nowhere
+else.
+
+⚠️ **Not the same as `--friend` threading** (the audit HIGH that
+`scripts/test/friend-threading.test.mjs` guards). That one is a `--friend` run
+silently reading or writing MAIN. This one is a run that reaches exactly the
+instance it was asked for and answers a question that only made sense on the
+other one.
+
 ### ⚠️ A GIT WORKTREE CANNOT TYPECHECK OR TEST — five sync scripts fail first — found 2026-08-23
 
 **Symptom.** In a fresh `git worktree` of this repo, `npm run typecheck` and
