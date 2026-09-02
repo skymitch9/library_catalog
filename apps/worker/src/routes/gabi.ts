@@ -36,11 +36,25 @@ import { gabiTurn } from '@lc/research';
 import type { AppBindings } from '../env.js';
 import { requireCapability } from '../middleware/auth.js';
 import { runGabiTurn } from '../lib/gabi-turn.js';
+import { BILLING_FEATURES, billingRefusal } from '../lib/billing-gate.js';
 
 export const gabiRoutes = new Hono<AppBindings>().post(
   '/turn',
   requireCapability('runResearch'),
   async (c) => {
+    // L6 — the spending gate. ANDed with `runResearch` above, with the
+    // `GABI_PANEL` env posture and with key presence inside `runGabiTurn`; it
+    // replaces none of them (billing design §3.3). Inert while
+    // `BILLING_POLICY` is "off".
+    //
+    // ⚠️ `gabi.panel` is this repo's own feature id and is NOT `gabi.chat` —
+    // that one is the Discord Worker's. Two surfaces, two switches, so the
+    // owner can silence one without the other. Getting the id wrong here would
+    // fail SILENTLY OPEN forever, which is the drift the registry's pin test
+    // exists to catch one layer up.
+    const billing = billingRefusal(c, BILLING_FEATURES.gabiPanel, 'The GABI panel', 'per turn');
+    if (billing) return c.json(billing.body, billing.status);
+
     const body = (await c.req.json().catch(() => ({}))) as {
       conversationId?: unknown;
       messages?: unknown;

@@ -261,6 +261,32 @@ ESTATE_AUTH_URL = "https://auth.heygabi.ai"
 # fails if the two instances ever name the same app.
 ESTATE_APP = "library"
 
+# ── SPENDING POLICY (lib/billing-gate.ts, phase 3, 2026-09-02) ───────────────
+#
+# ⚠️ BILLING_POLICY IS "off" ON THIS INSTANCE.
+#
+# Which money paths on THIS site may bill the model, decided by the owner from
+# the Spending panel on https://heygabi.ai/admin/ and delivered on the `/seen`
+# answer this Worker already makes. Design:
+# catalog-platform/docs/info/llm-billing-control-design.md §4.
+#
+#   off      nothing resolves, nothing is logged, nothing costs — TODAY
+#   shadow   the decision is logged with `proceeded`, and the call bills anyway
+#   enforce  a denied path is refused, in words
+#
+# ⚠️ It ships `off` and MUST. Flipping is the evidence-gated step, §4.2, and
+# both halves of the criterion must hold over ≥ 7 days: ZERO `"would_deny":true`
+# on a feature the owner did not switch off, AND AT LEAST ONE on a feature he
+# did — the second half is what makes the first falsifiable rather than
+# indistinguishable from an instrument that never ran.
+#
+#   npm run tail --workspace @lc/worker   # then grep '"evt":"billing_policy"'
+#
+# ⚠️ ONE SITE AT A TIME, and never as a side effect of an unrelated deploy.
+# `library` and `library2` are two estate sites spending two people's money, so
+# this is TWO flips: this line and the one in [env.friend.vars].
+BILLING_POLICY = "off"
+
 # ── GABI's DELEGATED DOOR (routes/gabi-delegated.ts, 2026-08-18) ─────────────
 #
 # Owner ask 2026-08-17: *"Can I dm her an isbn or a photo and she adds it to
@@ -508,6 +534,20 @@ ESTATE_AUTH_URL = "https://auth.heygabi.ai"
 # directory. `packages/estate-auth/test/instance-estate-app.test.ts` fails if
 # it ever matches the main instance's.
 ESTATE_APP = "library2"
+
+# ── SPENDING POLICY — padhard's own switch (phase 3, 2026-09-02) ─────────────
+#
+# ⚠️ BILLING_POLICY IS "off" ON THIS INSTANCE TOO, and it is a SEPARATE switch
+# from the main library's. `library2` is its own site in the policy table
+# because it spends HER key (ANTHROPIC_API_KEY under [env.friend]) — a switch
+# pressed for `library` must not reach her catalogue and vice versa. The site
+# id comes from ESTATE_APP above through `resolveEstateApp`, the same resolver
+# the estate gate uses, so the identity this Worker asserts and the site its
+# spending is judged against cannot drift apart (F-5's lesson).
+#
+# Same three values, same flip criterion, same one-site-at-a-time rule as the
+# main instance — see the block beside the other ESTATE_APP.
+BILLING_POLICY = "off"
 
 # ── The paused owner decision: her default role ──────────────────────────────
 # friend-ingest-design.md §3 recommends auto-granting `moderator` on HER

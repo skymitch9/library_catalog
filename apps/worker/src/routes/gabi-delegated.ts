@@ -148,6 +148,11 @@ import {
 import { bestCandidate, resolveIsbn, type BestCandidate } from '@lc/isbn';
 import type { AppBindings, Env } from '../env.js';
 import { runDetailsSweep } from '../lib/details-sweep.js';
+import {
+  BILLING_FEATURES,
+  billingRefusalFor,
+  parseCachedDenied,
+} from '../lib/billing-gate.js';
 import { physicalFormatLabels } from '../lib/format-labels.js';
 import { secretEquals } from '../lib/secret-equals.js';
 
@@ -364,7 +369,21 @@ export function instanceLabel(env: Pick<Env, 'ESTATE_APP'>): { app: string; site
 
 /** The identity half of the check, with every refusal already worded. */
 type Authority =
-  | { ok: true; user: AppUser }
+  | {
+      ok: true;
+      user: AppUser;
+      /**
+       * That person's cached billing deny-set, read from the SAME
+       * `readEstateCache` row the revocation check below uses — §4.5's
+       * one-answer rule, so the money answer and the membership answer are one
+       * answer taken at one moment rather than two with two ages.
+       *
+       * 🔴 `null` is UNKNOWN and proceeds; `[]` is "the directory denied
+       * nothing". A person who has never signed in here has never had a /seen
+       * answer cached, so they read `null` — which fails open, per §3.5 row 3.
+       */
+      billingDenied: string[] | null;
+    }
   | { ok: false; status: 403; body: Record<string, unknown> };
 
 /**
@@ -435,7 +454,7 @@ async function authority(
     };
   }
 
-  return { ok: true, user };
+  return { ok: true, user, billingDenied: parseCachedDenied(estate.billingDeniedJson) };
 }
 
 /** The on-behalf-of uid, or null. Never trusted for anything but a lookup. */
@@ -734,6 +753,34 @@ export const gabiDelegatedRoutes = new Hono<AppBindings>()
     );
     if (!verdict.ok) return c.json(verdict.body, verdict.status);
     const { site } = instanceLabel(c.env);
+
+    // L7 — the spending gate, resolved against the ON-BEHALF-OF person and
+    // never the bot (billing design §9 Q4: denying the bot would switch the
+    // feature off for the whole household, which is not what a per-person rule
+    // means). ANDed with the on-behalf-of capability check above and the
+    // key/donor check below; it replaces neither. Inert while `BILLING_POLICY`
+    // is "off".
+    const billing = billingRefusalFor(c.env, {
+      feature: BILLING_FEATURES.details,
+      label: 'Details research',
+      estCents: '2-8',
+      denied: verdict.billingDenied,
+      principal: verdict.user.email,
+    });
+    if (billing) {
+      // ⚠️ Shaped like this door's OTHER refusals — a `message` the bot can
+      // relay verbatim, not the browser-shaped `detail` the HTTP routes carry.
+      // A person reading this in Discord gets a sentence; a machine still gets
+      // `billing_denied` to switch on.
+      return c.json(
+        {
+          error: 'billing_denied',
+          feature: BILLING_FEATURES.details,
+          message: `Details research is switched off for ${site} right now. The owner can turn it back on from the Spending panel on heygabi.ai/admin — a change takes effect within 10 minutes.`,
+        },
+        billing.status,
+      );
+    }
 
     if (!c.env.ANTHROPIC_API_KEY && !(c.env.DONOR_URL && c.env.DONOR_TOKEN)) {
       return c.json(

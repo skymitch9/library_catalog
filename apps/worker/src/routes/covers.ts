@@ -11,6 +11,7 @@ import { verifyCoverUrl } from '@lc/isbn';
 import { COVER_CENTS_EACH, findCover } from '@lc/research';
 import type { AppBindings, Env } from '../env.js';
 import { requireCapability } from '../middleware/auth.js';
+import { BILLING_FEATURES, billingRefusal } from '../lib/billing-gate.js';
 
 /**
  * Giving a book the right cover — or admitting it has the wrong one.
@@ -108,6 +109,16 @@ export const coverRoutes = new Hono<AppBindings>()
   .post('/works/:id/cover/find', requireCapability('runResearch'), async (c) => {
     const id = Number(c.req.param('id'));
     if (!Number.isInteger(id) || id <= 0) return c.json({ error: 'bad_request' }, 400);
+
+    // L2 — the spending gate, ANDed with `runResearch` above and the key check
+    // below (billing design §3.3). Inert while `BILLING_POLICY` is "off".
+    const billing = billingRefusal(
+      c,
+      BILLING_FEATURES.covers,
+      'Paid cover search',
+      String(COVER_CENTS_EACH),
+    );
+    if (billing) return c.json(billing.body, billing.status);
 
     // Checked before anything is spent: no key is a misconfiguration the caller
     // can act on, said in a sentence rather than as a 500. Mirrors the research

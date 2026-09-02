@@ -64,6 +64,7 @@ import {
 import { RESEARCH_CENTS_EACH, RESEARCH_MODEL, estimateCents } from '@lc/research';
 import type { AppBindings } from '../env.js';
 import { requireCapability } from '../middleware/auth.js';
+import { BILLING_FEATURES, billingRefusal } from '../lib/billing-gate.js';
 import {
   applyFinding,
   claimRun,
@@ -277,6 +278,14 @@ export const researchRoutes = new Hono<AppBindings>()
   .post('/works/:id/run', requireCapability('runResearch'), async (c) => {
     const id = idParam(c.req.param('id'));
     if (!id) return c.json({ error: 'bad_request', detail: 'invalid id' }, 400);
+
+    // L1 — the spending gate, ANDed with `runResearch` above and the key check
+    // below; it replaces neither (billing design §3.3). Inert while
+    // `BILLING_POLICY` is "off". Placed before the run row is claimed for the
+    // same reason the key check is: a refusal must not leave a failed run
+    // recorded against a book that has nothing wrong with it.
+    const billing = billingRefusal(c, BILLING_FEATURES.details, 'Details research', '2-8');
+    if (billing) return c.json(billing.body, billing.status);
 
     // Checked before the run row exists: no key is a misconfiguration the caller
     // can act on, and recording it as a failed run would put an error against a

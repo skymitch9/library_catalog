@@ -240,43 +240,79 @@ export interface EstateCacheRow {
    * rather than in a second parser here.
    */
   visibilityJson: string | null;
+  /**
+   * The BILLING half of that same answer (migration 0440, billing design
+   * §3.4) — the denied money-path ids as the stored JSON-array text
+   * (`'["research.covers"]'`), or null.
+   *
+   * 🔴 **null is "UNKNOWN", not "nothing is denied".** `'[]'` is the directory
+   * answering and denying nothing; null is no answer existing at all — a row
+   * that predates 0440, or an auth Worker mid-deploy still running pre-0016
+   * code. A consumer that collapsed the two would un-switch every policy the
+   * owner had set for the length of that deploy, with nothing going red.
+   * Raw on purpose, same as `visibilityJson`: the canonical module parses it
+   * at the boundary so garbage dies there and not in a second parser here.
+   */
+  billingDeniedJson: string | null;
 }
 
 export async function readEstateCache(db: D1Database, userId: number): Promise<EstateCacheRow> {
   const row = await db
-    .prepare('SELECT estate_status, estate_checked_at, estate_visibility FROM app_user WHERE id = ?')
+    .prepare(
+      'SELECT estate_status, estate_checked_at, estate_visibility, estate_billing_denied FROM app_user WHERE id = ?',
+    )
     .bind(userId)
     .first<{
       estate_status: string | null;
       estate_checked_at: string | null;
       estate_visibility: string | null;
+      estate_billing_denied: string | null;
     }>();
   return {
     status: row?.estate_status ?? null,
     checkedAt: row?.estate_checked_at ?? null,
     visibilityJson: row?.estate_visibility ?? null,
+    billingDeniedJson: row?.estate_billing_denied ?? null,
   };
 }
 
 /**
- * Persist a fresh /seen answer — all three columns in one write, because the
- * §4.5 one-answer rule says status and visibility must not age separately
- * (they share `estate_checked_at` as their single freshness stamp). The cache
- * is the protocol's own bookkeeping (§5.2), never an enforcement act, and
- * pointedly never touches `role` / `approved_at`. `visibilityJson: null` is
- * written as NULL — an answer without a visibility fact (a pre-§4.5 server)
- * must not leave a stale set behind pretending to belong to the new status.
+ * Persist a fresh /seen answer — all FOUR columns in one write, because the
+ * §4.5 one-answer rule says status, visibility and the billing deny-set must
+ * not age separately (they share `estate_checked_at` as their single freshness
+ * stamp). The cache is the protocol's own bookkeeping (§5.2), never an
+ * enforcement act, and pointedly never touches `role` / `approved_at`.
+ * `visibilityJson: null` is written as NULL — an answer without a visibility
+ * fact (a pre-§4.5 server) must not leave a stale set behind pretending to
+ * belong to the new status.
+ *
+ * 🔴 The same holds, harder, for `billingDeniedJson`. NULL is written when the
+ * fresh answer carried no clean array — a pre-0016 auth Worker mid-deploy —
+ * and NULL means UNKNOWN. It must NOT be written as `'[]'`: that would be the
+ * old Worker's silence recorded as *"the directory says nothing is denied"*,
+ * which un-switches every policy the owner set until the deploy finishes.
  */
 export async function writeEstateCache(
   db: D1Database,
   userId: number,
-  cache: { status: string; checkedAt: string; visibilityJson: string | null },
+  cache: {
+    status: string;
+    checkedAt: string;
+    visibilityJson: string | null;
+    billingDeniedJson: string | null;
+  },
 ): Promise<void> {
   await db
     .prepare(
-      'UPDATE app_user SET estate_status = ?, estate_checked_at = ?, estate_visibility = ? WHERE id = ?',
+      'UPDATE app_user SET estate_status = ?, estate_checked_at = ?, estate_visibility = ?, estate_billing_denied = ? WHERE id = ?',
     )
-    .bind(cache.status, cache.checkedAt, cache.visibilityJson, userId)
+    .bind(
+      cache.status,
+      cache.checkedAt,
+      cache.visibilityJson,
+      cache.billingDeniedJson,
+      userId,
+    )
     .run();
 }
 

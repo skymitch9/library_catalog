@@ -340,6 +340,15 @@ export interface GateSubject {
   estateCheckedAt: string | null;
   /** The 0150 column: the cached §4.5 array as raw JSON text, or null. */
   estateVisibilityJson: string | null;
+  /**
+   * The 0440 column: the cached billing deny-set as raw JSON text, or null.
+   *
+   * 🔴 **null is UNKNOWN, not "nothing is denied"** — the load-bearing pin in
+   * `test/billing-denied-shape.test.ts`. Optional so a caller built before
+   * 0440 still compiles and behaves exactly as it did (it then always answers
+   * unknown, which fails open, which is today's behaviour).
+   */
+  estateBillingDeniedJson?: string | null;
 }
 
 /** An enforce-mode refusal, ready for `c.json(body, status)`. */
@@ -380,7 +389,25 @@ export interface GateOutcome {
    * status + visibility together (§4.5's one-answer rule; both stamped by
    * the one `checkedAt`).
    */
-  refresh: { status: EstateStatus; visibility: Catalog[] | null; checkedAt: string } | null;
+  refresh: {
+    status: EstateStatus;
+    visibility: Catalog[] | null;
+    billingDenied: string[] | null;
+    checkedAt: string;
+  } | null;
+  /**
+   * The EFFECTIVE billing deny-set for this person on this instance's site —
+   * fresh, cached or stale, whichever the §5.2 protocol used, so it rides with
+   * the very status the verdict was computed from (§4.5's one answer, one
+   * moment). This is what a money route reads.
+   *
+   * 🔴 **null is UNKNOWN and UNKNOWN PROCEEDS** (§3.5 row 3, chosen out loud):
+   * with the directory unreachable and no cache, every paid feature stays
+   * available, because denying them would turn an auth outage into a
+   * household-wide "everything is broken". `[]` is the other fact — the
+   * directory answered and denied nothing. The two never collapse.
+   */
+  billingDenied: string[] | null;
   /** One JSON line for the caller to `console.log`, or null (pure off). */
   logLine: string | null;
 }
@@ -393,6 +420,11 @@ const SKIPPED: Omit<GateOutcome, 'mode' | 'skipReason' | 'logLine'> = {
   wouldDeny: false,
   wouldAutoGrant: null,
   refresh: null,
+  // ⚠️ A SKIPPED gate answers UNKNOWN, never `[]`. `ESTATE_CHECK = off`, a
+  // missing bearer or an unrecognised `ESTATE_APP` are all "no answer was
+  // sought", not "the directory denied nothing" — and a money route reading
+  // `[]` from an off gate would believe a fact nobody established.
+  billingDenied: null,
 };
 
 /**
@@ -495,11 +527,19 @@ export async function estateGateCheck(
       status: isEstateStatus(subject.estateStatus) ? subject.estateStatus : null,
       checkedAt: subject.estateCheckedAt,
       visibility: parseCachedVisibility(subject.estateVisibilityJson),
+      billingDenied: parseCachedBillingDenied(subject.estateBillingDeniedJson ?? null),
     },
     {
       email: subject.email,
       firebaseUid: subject.firebaseUid,
       displayName: subject.displayName,
+      // ⚠️ The app's CLAIM about its own user's rung (billing design §3.4), so
+      // the directory can resolve `role`-principal deny rules — it does not
+      // hold this app's ladder and cannot ask. The trust level is right
+      // because policy can only DENY: a wrong claim can close something, never
+      // open it. Omit it and role rules are skipped; user and everyone rules
+      // still apply, which is what an old consumer mid-deploy does.
+      localRole: subject.role,
     },
     { baseUrl, appToken, fetchImpl: timedFetch },
     nowMs,
@@ -554,6 +594,7 @@ export async function estateGateCheck(
     wouldDeny,
     wouldAutoGrant,
     refresh: result.refresh,
+    billingDenied: result.billingDenied,
     logLine: JSON.stringify({
       tag,
       // ⚠️ The identity this instance ASSERTED, from ESTATE_APP — not the
@@ -566,6 +607,10 @@ export async function estateGateCheck(
       estate: result.status,
       src,
       visibility: result.visibility,
+      // ⚠️ Logged as the ARRAY, so `null` (unknown) and `[]` (the directory
+      // denied nothing) stay distinguishable in `wrangler tail` too. Reading a
+      // count would collapse exactly the distinction this phase rests on.
+      billing_denied: result.billingDenied,
       verdict,
       // Only present when ESTATE_DEFAULT_ROLE is set — the main instance's
       // lines stay byte-shaped as before. An invalid value is loud here so a
@@ -598,6 +643,34 @@ function parseCachedVisibility(raw: string | null): Catalog[] | null {
   if (raw === null) return null;
   try {
     return parseVisibility(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The cached 0440 column, parsed like the untrusted text it is — same
+ * treatment as `parseCachedVisibility` one function up, and the same failure
+ * direction.
+ *
+ * 🔴 THE `null` / `[]` DISTINCTION IS PRESERVED HERE ON PURPOSE, and it is the
+ * one thing this function exists to get right. A stored `'[]'` parses to `[]`
+ * — *the directory answered and denied nothing*, a fact a money route may act
+ * on. Anything else that is not a clean array of non-empty strings — a NULL
+ * column, unparseable text, a number, an object — dies into `null`, which is
+ * UNKNOWN, which proceeds. Non-string entries inside an otherwise good array
+ * are dropped rather than voiding the whole list, because refusing the list on
+ * one bad entry would fail in the ALLOWING direction, which for a deny-list is
+ * the wrong way round: the ids the directory did name are still names it meant.
+ * Mirrors `postSeenAnswer`'s wire parser exactly; the pins are in
+ * `test/billing-denied-shape.test.ts`.
+ */
+function parseCachedBillingDenied(raw: string | null): string[] | null {
+  if (raw === null) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    return parsed.filter((v): v is string => typeof v === 'string' && v.length > 0);
   } catch {
     return null;
   }

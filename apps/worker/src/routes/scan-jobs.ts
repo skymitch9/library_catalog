@@ -47,6 +47,7 @@ import {
   VisionError,
 } from '../lib/vision.js';
 import { requireCapability } from '../middleware/auth.js';
+import { BILLING_FEATURES, billingRefusal } from '../lib/billing-gate.js';
 
 /**
  * Scan jobs — the intake queue.
@@ -1164,6 +1165,22 @@ async function readPhoto(c: any, kind: 'shelf' | 'cover') {
   if (tooLarge(parsed.data.data)) {
     return c.json(badRequest('That photo is too large. Downscale it before sending.'), 413);
   }
+
+  /*
+   * L4 and L5 — the spending gate, checked ONCE for both routes because both
+   * are the registry's single `scan.photo` id. Placed for the same reason the
+   * key check below is: no job row is created for a photo that was never sent,
+   * so a refusal cannot leave a `failed` job claiming somebody paid for a read
+   * that did not work.
+   *
+   * ANDed with `requireCapability('scanPhoto')` on both routes; it replaces
+   * nothing (billing design §3.3). Inert while `BILLING_POLICY` is "off".
+   * ⚠️ `billing_denied` is a FIFTH distinct cause beside the four this
+   * function's own comment enumerates, and it gets its own sentence and its
+   * own wire code for exactly the reason that comment gives.
+   */
+  const billing = billingRefusal(c, BILLING_FEATURES.scanPhoto, 'Photo scanning', '$5/$25 per MTok');
+  if (billing) return c.json(billing.body, billing.status);
 
   /*
    * ⚠️ The service check comes BEFORE the job row, and answers with words.

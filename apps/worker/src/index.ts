@@ -8,6 +8,13 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { AppBindings, Env } from './env.js';
+import {
+  BILLING_FEATURES,
+  billingPosture,
+  billingSite,
+  decideBilling,
+} from './lib/billing-gate.js';
+import { fetchSystemDenied } from './lib/billing-system.js';
 import { DETAILS_SWEEP_CRON, runDetailsSweep } from './lib/details-sweep.js';
 import { indexBackstopOnRequest, indexPushAfterMutation } from './lib/index-push.js';
 import { peerPushAfterMutation } from './lib/peer-push.js';
@@ -223,6 +230,63 @@ app.onError((err, c) => {
   return c.json({ error: 'internal', detail: err.message }, 500);
 });
 
+/**
+ * L8 — the hourly details sweep, behind the `system` spending switch.
+ *
+ * 🔴 THE SWEEP IS THE ONE UNATTENDED BILLER IN THIS REPO. It has no user, so a
+ * per-person rule cannot reach it; it resolves through the estate's `system`
+ * principal and its own door (`lib/billing-system.ts`), and switching
+ * `sweep.details` off for this site is the only way to stop it that is not a
+ * deploy (billing design §2.5, §3.4, §7.1's clock-icon row).
+ *
+ * ⚠️ Shadow-first exactly like every other call site: `off` costs nothing and
+ * asks nothing; `shadow` asks, logs the decision with `proceeded: true`, and
+ * SWEEPS ANYWAY; `enforce` skips the sweep and says so in the log. There is no
+ * person here to word a refusal to — the log line IS the refusal, which is why
+ * it carries the same `evt: 'billing_policy'` shape the request paths emit and
+ * can be grepped with one filter across both.
+ *
+ * 🔴 An unknown policy (directory down, door unconfigured, garbage body) SWEEPS
+ * — §3.5 row 3's fail-open, chosen out loud. The wallet is bounded by
+ * `SWEEP_LIMIT = 2` and `SWEEP_BUDGET`, not by this switch.
+ */
+async function sweepIfPolicyAllows(env: Env) {
+  const posture = billingPosture(env.BILLING_POLICY);
+  if (posture === 'off') return runDetailsSweep(env);
+
+  const denied = await fetchSystemDenied(env);
+  const { wouldDeny, proceeded, log } = decideBilling({
+    posture,
+    site: billingSite(env),
+    feature: BILLING_FEATURES.sweep,
+    denied,
+  });
+
+  if (log) {
+    console.log(
+      JSON.stringify({
+        evt: 'billing_policy',
+        posture,
+        feature: BILLING_FEATURES.sweep,
+        site: billingSite(env),
+        // ⚠️ `system`, not `person`. A soak that could not tell the cron's
+        // decisions from a household member's could not answer §4.2's flip
+        // criterion for either.
+        principal_kind: 'system',
+        principal_value: null,
+        would_deny: wouldDeny,
+        proceeded,
+        est_cents: '~4/hr',
+      }),
+    );
+  }
+
+  if (!proceeded) {
+    return { skipped: 'billing_denied', feature: BILLING_FEATURES.sweep } as const;
+  }
+  return runDetailsSweep(env);
+}
+
 export default {
   fetch: app.fetch,
 
@@ -260,7 +324,7 @@ export default {
       return;
     }
 
-    const work = runDetailsSweep(env).then(
+    const work = sweepIfPolicyAllows(env).then(
       (run) => console.log('details sweep', JSON.stringify(run)),
       (err) => console.error('details sweep failed', err),
     );

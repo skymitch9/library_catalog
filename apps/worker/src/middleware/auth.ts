@@ -185,7 +185,7 @@ export function requireAuth(): MiddlewareHandler<AppBindings> {
         const cache =
           parsed.mode !== 'off'
             ? await readEstateCache(c.env.DB, user.id)
-            : { status: null, checkedAt: null, visibilityJson: null };
+            : { status: null, checkedAt: null, visibilityJson: null, billingDeniedJson: null };
         estate = await estateGateCheck(c.env, {
           email: user.email,
           firebaseUid: user.firebaseUid,
@@ -195,9 +195,11 @@ export function requireAuth(): MiddlewareHandler<AppBindings> {
           estateStatus: cache.status,
           estateCheckedAt: cache.checkedAt,
           estateVisibilityJson: cache.visibilityJson,
+          estateBillingDeniedJson: cache.billingDeniedJson,
         });
-        // The §5.2 cache columns — status + visibility together, one stamp
-        // (§4.5's one-answer rule). Bookkeeping, never enforcement.
+        // The §5.2 cache columns — status + visibility + the billing deny-set
+        // together, one stamp (§4.5's one-answer rule). Bookkeeping, never
+        // enforcement.
         if (estate.refresh) {
           await writeEstateCache(c.env.DB, user.id, {
             status: estate.refresh.status,
@@ -206,6 +208,17 @@ export function requireAuth(): MiddlewareHandler<AppBindings> {
               estate.refresh.visibility === null
                 ? null
                 : JSON.stringify(estate.refresh.visibility),
+            // 🔴 NULL STAYS NULL. A fresh answer that carried no clean array
+            // (a pre-0016 auth Worker mid-deploy) must be stored as UNKNOWN,
+            // not as `'[]'` — writing "the directory denied nothing" when the
+            // directory said nothing at all would un-switch every policy the
+            // owner set for the length of that deploy, silently. This is the
+            // pin `packages/estate-auth/test/billing-denied-shape.test.ts`
+            // exists to hold, one layer down.
+            billingDeniedJson:
+              estate.refresh.billingDenied === null
+                ? null
+                : JSON.stringify(estate.refresh.billingDenied),
           });
         }
         if (estate.logLine) console.log(estate.logLine);
@@ -244,6 +257,16 @@ export function requireAuth(): MiddlewareHandler<AppBindings> {
       // re-approval, §3.1 row 1) or 503 estate_unreachable (named, §6 row 1).
       return c.json(estate.deny.body, estate.deny.status);
     }
+
+    // The spending answer for THIS person, riding on the very same /seen
+    // answer the verdict above came from (§4.5: one answer, one moment).
+    // `lib/billing-gate.ts` is the only reader; `BILLING_POLICY = "off"` means
+    // it ignores this entirely, so setting it costs a pointer.
+    //
+    // 🔴 `null` when the gate was off, skipped, or had no answer to give —
+    // UNKNOWN, which proceeds. Never `[]`, which would be a claim the
+    // directory never made.
+    c.set('billingDenied', estate?.billingDenied ?? null);
 
     c.set('user', user);
     await next();

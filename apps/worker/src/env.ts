@@ -270,6 +270,22 @@ export interface Env {
   ESTATE_AUTH_URL?: string;
 
   /**
+   * The SPENDING posture — `off` | `shadow` | `enforce`, the exact idiom of
+   * `ESTATE_CHECK` above and for the same reasons (billing design §4).
+   * Unrecognised values fall to `off` and log; see `lib/billing-gate.ts`.
+   *
+   *   off      nothing resolves, nothing is logged, nothing costs
+   *   shadow   the decision is logged WITH `proceeded`, and the call proceeds
+   *            and bills — this is what a soak measures
+   *   enforce  a denied feature is refused, in words
+   *
+   * ⚠️ Ships `"off"` on BOTH instances, and each is flipped separately: the
+   * main library and padhard are two estate sites spending two people's money.
+   * Never flip as a side effect of an unrelated deploy (§4.2).
+   */
+  BILLING_POLICY?: string;
+
+  /**
    * Per-instance posture lever: the role the estate auto-grant hands out on
    * THIS instance, overriding LIBRARY_POSTURE's `member`. Built for the
    * second instance (friend-ingest-design.md §3 — its wrangler env can say
@@ -425,6 +441,17 @@ export interface Env {
 /** Values attached to the request context by middleware. */
 export interface Variables {
   user: AppUser;
+  /**
+   * The money-path ids this person may NOT spend on, on this instance's site —
+   * the cached `/seen` answer's billing half, put here by `requireAuth` and
+   * read by `lib/billing-gate.ts` (billing design §3.4).
+   *
+   * 🔴 `null` is UNKNOWN and proceeds; `[]` is "the directory denied nothing";
+   * `undefined` is a route that never ran `requireAuth` (the delegated lane,
+   * which resolves the on-behalf-of person itself). All three proceed, and
+   * only `[]` proceeds because an answer said so.
+   */
+  billingDenied?: string[] | null;
 }
 
 export type AppBindings = { Bindings: Env; Variables: Variables };

@@ -20,6 +20,7 @@ import {
 } from '@lc/db';
 import type { AppBindings } from '../env.js';
 import { requireCapability } from '../middleware/auth.js';
+import { BILLING_FEATURES, billingRefusal } from '../lib/billing-gate.js';
 import { ResearchError, runSeriesScan } from '../lib/series-scan.js';
 
 /**
@@ -149,6 +150,13 @@ export const seriesRoutes = new Hono<AppBindings>()
    */
   .post('/:name/scan', requireCapability('runResearch'), async (c) => {
     const name = decodeURIComponent(c.req.param('name'));
+
+    // L3 — the spending gate, ANDed with `runResearch` above and the key check
+    // below (billing design §3.3). Inert while `BILLING_POLICY` is "off".
+    // ⚠️ This route has no server-side concurrency lock (the inventory says so),
+    // which makes it the one most worth being able to switch off centrally.
+    const billing = billingRefusal(c, BILLING_FEATURES.series, 'Series volume scan', '8');
+    if (billing) return c.json(billing.body, billing.status);
 
     // Checked before any work happens, exactly as `/works/:id/run` does — a
     // missing key is a misconfiguration to report, not a scan that ran and
