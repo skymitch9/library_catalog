@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { gabiPanelEnabled } from '@lc/core';
 import { isDatabaseReachable } from '@lc/db';
 import { describeEstateGate } from '@lc/estate-auth';
+import { edgeMode } from '@lc/research';
 import { universeNames, universesDocument } from '@lc/universes';
 import type { AppBindings } from '../env.js';
 
@@ -83,6 +84,21 @@ export const healthRoutes = new Hono<AppBindings>().get('/', async (c) => {
     gabi: {
       panel: gabiPanelEnabled(c.env.GABI_PANEL),
       delegated: Boolean(c.env.ESTATE_APP_TOKEN_DISCORD),
+      /**
+       * ⚠️ How far she takes her personality here — the RESOLVED `full` /
+       * `standard`, not the raw var (2026-09-02).
+       *
+       * Reported for the same reason `panel` is: a posture nobody can observe
+       * from outside is one whose deploy cannot be verified. It matters MORE
+       * than `panel` does, because this var **fails open** — a typo still reads
+       * as `full` — so *"I set it to standard"* and *"she is on standard"* are
+       * two different claims and only this line settles the second.
+       *
+       * Not a secret and not a capability: it says how loud she is, never what
+       * she may do. Every tool gate, the confirm lane and the PG-13 ceiling are
+       * unchanged by it.
+       */
+      edge: edgeMode(c.env),
     },
     /** The per-instance ESTATE IDENTITY and its config state. See the header. */
     estate: describeEstateGate(c.env),

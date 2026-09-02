@@ -346,6 +346,28 @@ export interface Env {
   GABI_PANEL?: string;
 
   /**
+   * ⚠️ **HOW FAR GABI TAKES HER PERSONALITY ON THE PANEL — and it ships `full`.**
+   *
+   * Owner decision 2026-09-02: *"library panel should match gabi in discord no
+   * matter what. same experience different entry point"*. The edge posture was
+   * built for her Discord surface on 2026-09-01 and the panel did not have it,
+   * so one person got two different GABIs depending on which door they used.
+   *
+   * ⚠️ **This is the ONE posture var in this file that is NOT affirmative-only,
+   * and the inversion is deliberate.** `GABI_PANEL`/`GABI_CONFIRM_T2` fail
+   * closed because they turn a SURFACE on; this turns a REGISTER up on a surface
+   * that is already on, and the owner's answer to *"which way should a typo
+   * fall?"* is **no matter what**. So only the exact string `"standard"` turns
+   * her down — absent, empty, a typo, or anything else reads as `full`.
+   * `edgeMode` in `@lc/research` owns that parse; read its header first.
+   *
+   * ⚠️ It does NOT raise the PG-13 ceiling and it softens no honesty rule and no
+   * confirm lane. Those limits are stated inside the appended block itself,
+   * which is the structural reason the block goes last.
+   */
+  GABI_EDGE?: string;
+
+  /**
    * ⚠️ **TIER 2 — GABI's CATALOG-FIX CONFIRM LANE on the panel, and it ships
    * OFF.** `catalog-platform/docs/info/gabi-confirm-lanes-design.md`.
    *

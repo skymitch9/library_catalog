@@ -137,6 +137,26 @@ DEFAULT_THEME = "apple"
 # deploys; conversations on this instance spend the OWNER's key.
 GABI_PANEL = "on"
 
+# ⚠️ HOW FAR SHE TAKES IT. Owner decision 2026-09-02, verbatim: "library panel
+# should match gabi in discord no matter what. same experience different entry
+# point". Her Discord surface gained the `full` edge posture on 2026-09-01 and
+# the panel did not have it, so one person met two different GABIs depending on
+# which door they came through.
+#
+# ⚠️ THIS VAR INVERTS THE `GABI_PANEL` IDIOM ABOVE, ON PURPOSE. That one is
+# affirmative-only because it turns a SURFACE on; this turns a REGISTER up on a
+# surface that is already on, and the owner's answer to "which way should a typo
+# fall?" is *no matter what*. So only the exact string "standard" turns her down
+# — absent, empty, or a typo all read as "full". Written out rather than omitted
+# for the same reason GABI_PANEL is: "how loud is she here?" gets an answer in
+# this file rather than an absence.
+#
+# It does NOT raise the PG-13 ceiling, and it softens no honesty rule and no
+# confirm lane — those limits are stated inside the appended block itself.
+# `edgeMode` in packages/research/src/gabi.ts owns the parse and the argument;
+# apps/worker/src/lib/gabi-edge.test.ts pins the block and both postures.
+GABI_EDGE = "full"
+
 # ⚠️ Where an uploaded cover is READ from. Both this and the COVERS binding must
 # be set or the route refuses to write — storing an object and then being unable
 # to say where it went is the failure that guard exists for.
@@ -371,6 +391,19 @@ DEFAULT_THEME = "hearts"
 # a worded 404 (disabled, not open) wherever this is not "on", never a 403.
 # See the main [vars] block for why that distinction is load-bearing.
 GABI_PANEL = "on"
+
+# ⚠️ HOW FAR SHE TAKES IT — "full" here too. Owner decision 2026-09-02: "library
+# panel should match gabi in discord no matter what. same experience different
+# entry point". ⚠️ Wrangler environments inherit NOTHING, so omitting this line
+# would still land on "full" (the parse fails OPEN) — it is written out anyway,
+# because the main [vars] block's reasoning applies verbatim: "how loud is she
+# here?" must have an answer in this file rather than an absence, and a reader
+# comparing the two instances must not have to know the parse to compare them.
+#
+# ⚠️ It changes NOTHING about whose money is spent: her instance still spends
+# ANTHROPIC_API_KEY_FRIEND_SAM, and the tools are still the read-only phase-0
+# set. A register is not a capability.
+GABI_EDGE = "full"
 
 # The bucket's managed r2.dev public URL, enabled 2026-08-16. This WORKS —
 # the app only ever concatenates `COVERS_BASE_URL + '/' + objectKey` — but

@@ -85,7 +85,7 @@ import {
   rememberedFor,
   withRemembered,
 } from '@lc/gabi-conv';
-import { GABI_EFFORT, GABI_MODEL, ResearchError, type GabiModelCall } from '@lc/research';
+import { GABI_EFFORT, GABI_MODEL, ResearchError, edgeMode, type GabiModelCall } from '@lc/research';
 import type { Env } from '../env.js';
 import { formatContextForPrompt, loadPersonalContext } from './gabi-context.js';
 import { sharedConversationKey } from './shared-conversation-key.js';
@@ -335,7 +335,16 @@ export async function runGabiTurn(
   // ── The one model call. ───────────────────────────────────────────────────
 
   try {
-    const turn = await callModel(env.ANTHROPIC_API_KEY, { messages: prompt, personalContext: personalContext || undefined });
+    const turn = await callModel(env.ANTHROPIC_API_KEY, {
+      messages: prompt,
+      personalContext: personalContext || undefined,
+      // ⚠️ Read per turn from THIS instance's own var, never held in a module
+      // constant: the whole promise of the dial is that turning her down is one
+      // var flip and a deploy. `edgeMode` fails OPEN to `full` — the owner's
+      // standing choice, 2026-09-02 (*"same experience different entry point"*).
+      // See `@lc/research`'s `EDGE_MODES` header for why this one inverts.
+      edge: edgeMode(env),
+    });
 
     // ⚠️ Saved BEFORE the accounting row and before the return, but its failure
     // changes nothing about either: the memory is never load-bearing for the
