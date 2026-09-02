@@ -32,31 +32,6 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
-## 🔴 BLOCKED: `npm run deploy:both` cannot run — 5 estate-auth tests fail on somebody else's in-flight work (2026-09-02)
-
-`predeploy` runs `npm run test`, and the suite is **2156 of 2161**. The 5
-failures are all `packages/estate-auth/test/gate.test.ts`, and **none of them is
-this repo's doing**:
-
-`catalog-platform/packages/estate-auth/src/seen.ts` has an **UNCOMMITTED,
-in-flight** `billingDenied` feature (mtime **2026-09-02 12:07**, comment
-*"BILLING POLICY (0016, 2026-09-02)"*), and `pretest` → `sync-estate-auth.mjs`
-copies it into `packages/estate-auth/generated/`. That repo's own
-`test/seen.test.ts` was updated with it; **this repo's `gate.test.ts` pins the
-old shape and has not been taught.** Verified 2026-09-02: every other package is
-**2110 / 2110 green**.
-
-⚠️ **The file was deliberately NOT touched.** It is another writer's uncommitted
-work in a shared tree — the 2026-08-16 revert incident's rule. Whoever owns the
-billing feature teaches `gate.test.ts` the new shape, or lands and syncs.
-
-☐ **Until then, nothing deploys from this repo.** Do not reach for
-`--no-verify` or edit the guard: `predeploy` failing on a red suite is the guard
-working. Re-check with `npm test` and look at whether
-`catalog-platform` still shows `seen.ts` modified.
-
----
-
 ## ⚠️ FINDING: the work page now shows the audiobook link TWICE — two surfaces, one question (2026-09-02)
 
 Measured **in a real browser, signed in**, on <https://library.heygabi.ai/work/232>.

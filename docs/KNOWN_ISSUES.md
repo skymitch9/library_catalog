@@ -1,7 +1,15 @@
 # library_catalog — Known Issues, Waivers & Exceptions
 
 > **Audience:** Claude/Kiro sessions and the owner. **Status:** TRACKED.
-> Last verified: **2026-08-26 ~16:40 Phoenix** — **KI-8 was re-measured against
+> Last verified: **2026-09-02** — **KI-13 was added** and measured by reading
+> the code (`packages/estate-auth/src/gate.ts`,
+> `apps/worker/src/middleware/auth.ts`, the synced `generated/seen.js`).
+> ⚠️ **It was NOT measured against the live system** — no `/seen` call was made
+> and no production D1 was read, so the claim is "this code cannot use the
+> field", not "the owner pressed the switch and nothing happened". ⚠️ **Nothing
+> else was re-checked on 2026-09-02**: KI-5 through KI-12 all still carry the
+> ages stated below.
+> Previously **2026-08-26 ~16:40 Phoenix** — **KI-8 was re-measured against
 > production D1 and RETIRED** (see the resolved table at the foot), and
 > **KI-12 was added** and measured against the live `catalog.csv` and both
 > production D1s. ⚠️ **Nothing else was re-checked on 2026-08-26** — KI-5,
@@ -291,6 +299,49 @@ migration — the number to weigh is how many pairs share a raw title. Measured
 count is more than a handful, or when he asks to see both narrators on a work
 page. The ACOTAR dramatizations are NOT affected — their raw titles differ by
 `(Part 1 of 2)` / `(Part 2 of 2)`, so both halves store.
+
+---
+
+## KI-13 · This repo receives `billing_denied` and throws it away — no money path here is switchable — `ACCEPTED`
+
+**Symptom.** The owner switches a money path off for this site in the Spending
+panel on <https://heygabi.ai/admin>, and **nothing changes here.** The switch is
+real, the rule is stored, `/seen` answers it — and this Worker drops the field on
+the floor. Nothing goes red anywhere, which is the part that makes this worth an
+entry rather than a bug report six weeks from now.
+
+**Measured 2026-09-02**, by reading the code, not the live system:
+
+| Where | What happens |
+|---|---|
+| `packages/estate-auth/generated/seen.js` (synced) | parses `billing_denied` and returns `billingDenied` on the answer AND on `refresh` |
+| `packages/estate-auth/src/gate.ts:383` | `GateOutcome.refresh` declares **three** keys — the fourth travels at runtime and is invisible to the type |
+| `apps/worker/src/middleware/auth.ts:201-209` | persists `status`, `checkedAt`, `visibility`. **Not the denials.** |
+| `GateSubject` | has `estateStatus` / `estateCheckedAt` / `estateVisibilityJson` and **no billing column**, so a cache hit could not answer the money question even if something asked |
+
+**Why tolerated.** ⚠️ **It is an unbuilt phase, not a defect** — billing phase 3
+on catalog-platform's `TODO.md` is exactly *"library, library2 and games read
+`billing_denied` off /seen"*, and it is a separate build in a separate repo's
+sequence. Phase 1 shipped the resolver and the panel deliberately ahead of the
+consumers: a policy nothing reads denies nothing, so shipping it early changed
+nothing for anybody, which is what made it safe to ship at all.
+
+⚠️ **The failure direction is ALLOW, and that is chosen out loud** (design
+`catalog-platform/docs/info/llm-billing-control-design.md` §3.5 row 3): with no
+billing fact, every paid feature stays available. Denying instead would turn an
+auth outage into a household-wide "everything is broken". The wallet is bounded
+by the ceilings that already exist (`SWEEP_LIMIT`, `max_tokens`, the timeouts),
+never by this policy — *a policy that can only deny cannot be depended on to
+fail closed.*
+
+**What would change it.** Billing phase 3 landing here. The concrete work, in
+order: widen `GateOutcome.refresh` to four keys; add a cache column and put it on
+`GateSubject`; persist it in `middleware/auth.ts` beside `visibility`; then AND
+the resolved deny-set in front of this repo's own money paths. ⚠️ **The wire
+shape is already pinned** — `packages/estate-auth/test/billing-denied-shape.test.ts`,
+8 tests, including the one that matters: **`null` means unknown, `[]` means the
+directory said nothing is denied, and the two must never collapse into each
+other.** That file is where phase 3 starts.
 
 ---
 

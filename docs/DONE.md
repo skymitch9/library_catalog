@@ -18,6 +18,81 @@
 > were extracted from this same history.
 
 
+## ✅ 2026-09-02 — the estate-auth pins learn `billingDenied`, and `deploy:both` is unblocked
+
+**The item as it stood on `TODO.md`, moved whole:**
+
+> ## 🔴 BLOCKED: `npm run deploy:both` cannot run — 5 estate-auth tests fail on somebody else's in-flight work (2026-09-02)
+>
+> `predeploy` runs `npm run test`, and the suite is **2156 of 2161**. The 5
+> failures are all `packages/estate-auth/test/gate.test.ts`, and **none of them is
+> this repo's doing**:
+>
+> `catalog-platform/packages/estate-auth/src/seen.ts` has an **UNCOMMITTED,
+> in-flight** `billingDenied` feature (mtime **2026-09-02 12:07**, comment
+> *"BILLING POLICY (0016, 2026-09-02)"*), and `pretest` → `sync-estate-auth.mjs`
+> copies it into `packages/estate-auth/generated/`. That repo's own
+> `test/seen.test.ts` was updated with it; **this repo's `gate.test.ts` pins the
+> old shape and has not been taught.** Verified 2026-09-02: every other package is
+> **2110 / 2110 green**.
+>
+> ⚠️ **The file was deliberately NOT touched.** It is another writer's uncommitted
+> work in a shared tree — the 2026-08-16 revert incident's rule. Whoever owns the
+> billing feature teaches `gate.test.ts` the new shape, or lands and syncs.
+>
+> ☐ **Until then, nothing deploys from this repo.** Do not reach for
+> `--no-verify` or edit the guard: `predeploy` failing on a red suite is the guard
+> working. Re-check with `npm test` and look at whether
+> `catalog-platform` still shows `seen.ts` modified.
+
+**What resolved it.** The billing work LANDED in catalog-platform (`644338d`,
+billing phase 1) — so it stopped being another writer's uncommitted file and
+became a shipped dependency, which is exactly the condition the entry above named
+for touching the pins. The item's own instruction was followed: the file was left
+alone until it landed, then taught.
+
+⚠️ **THE PINS WERE WIDENED DELIBERATELY, AND THAT DISTINCTION IS THE WHOLE POINT
+OF THIS ENTRY.** A pin that goes red has said something, and "make it green" is
+not a reading of it. The honest question was which of two things had happened —
+a field arrived by DECISION, or a field arrived by ACCIDENT — and it was the
+first: `catalog-platform/docs/info/llm-billing-control-design.md` §3.4 names the
+field, why it exists, and what `null` means. Only then were the five assertions
+taught the new shape, each with a comment saying which commit and which design
+section put it there.
+
+**And the pin was made stronger rather than looser**, because a widened pin that
+learns nothing is a pin that will be widened again next time:
+
+- `packages/estate-auth/test/billing-denied-shape.test.ts` — **8 new tests** on
+  what the field MEANS at this repo's boundary. 🔴 The one that matters: **`null`
+  means UNKNOWN, `[]` means the directory answered and denies nothing, and the
+  two must never collapse.** An auth Worker mid-deploy answers no such field, and
+  reading its absence as an empty deny-list would silently un-switch every policy
+  the owner had set, for as long as the deploy took.
+- The two `Object.keys(refresh)` assertions now say in a comment that the KEY SET
+  is the point — it is what catches a directive this repo has not decided about,
+  and it did its job here.
+- `gate.test.ts`'s header note grows its third dated entry (`downloadEbooks` in,
+  `downloadEbooks` out, `billingDenied` in **and staying**), so the next reader
+  does not mistake three shape changes for churn.
+- The `seenFetch` stub now takes `billingDenied` and **omits it by default** —
+  which is what a pre-billing Worker answers, and the case the null rule exists
+  for. Defaulting it to `[]` would have made every test in the file exercise the
+  post-deploy world only.
+
+⚠️ **This repo still does not USE the field**, and that is now written down as a
+known issue rather than left as an absence: **KI-13** in
+[`KNOWN_ISSUES.md`](KNOWN_ISSUES.md). `GateOutcome.refresh` declares three keys,
+`middleware/auth.ts` persists three columns, and `GateSubject` has no billing
+cache — so no money path here is switchable from `/admin` yet. That is billing
+phase 3, a separate item in catalog-platform's sequence, and the new test file is
+where it starts.
+
+**Tests: 2161 (2156 pass / 5 fail) → 2169, all green.** `typecheck` clean across
+every workspace. `predeploy` re-run for both instances and passing.
+
+---
+
 ## ✅ 2026-09-02 — the curated cross-catalog joins become assertions, and the DEAD-LINK check gets a home — commit `8baa88a`
 
 The sibling half of `audiobook_catalog`'s *"Cross-catalog book hyperlinks"*

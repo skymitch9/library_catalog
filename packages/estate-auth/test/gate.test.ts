@@ -11,8 +11,9 @@
  * pin the combination table and /seen client; these pin THIS repo's use of
  * them — what the gate tells the middleware to do, and what it never does.
  *
- * ⚠️ A NOTE ON THE `refresh` SHAPE, because it moved twice in two days and
- * looks like churn otherwise. `refresh` is `{status, visibility, checkedAt}`:
+ * ⚠️ A NOTE ON THE `refresh` SHAPE, because it has moved three times now and
+ * looks like churn otherwise. `refresh` is today
+ * `{status, visibility, billingDenied, checkedAt}`:
  *
  *   2026-08-16  the ebooks gate lands in catalog-platform and adds a fourth
  *               key, `downloadEbooks` — the estate's per-person `dl_ebooks`
@@ -25,11 +26,44 @@
  *               modelled on THIS repo's `capabilitiesFor`, which is what "match
  *               library" names — so the estate stopped answering it and the key
  *               left the wire. These shapes returned to their pre-field form.
+ *   2026-09-02  `billingDenied` arrives, and this time it STAYS. Billing phase 1
+ *               (catalog-platform `644338d`, design
+ *               `catalog-platform/docs/info/llm-billing-control-design.md` §3.4)
+ *               gives `/seen` a `billing_denied` array — the money-path ids this
+ *               person may not spend on, on this app's site, already resolved by
+ *               the directory. It rides with `status` and `visibility` and ages
+ *               with them, because *"may this person spend"* and *"is this
+ *               person still a member"* are one answer taken at one moment
+ *               (§4.5's one-answer rule).
  *
- * So the three-key shape below is not a stale test that forgot an update; it is
- * the shape after a round trip. ⚠️ `packages/estate-auth/generated/` is SYNCED
- * from catalog-platform on every pretest, so if a `downloadEbooks` key ever
- * reappears here, the change came from THAT repo and the decision above is the
+ * ⚠️ THE 2026-09-02 PINS BELOW WERE WIDENED DELIBERATELY, NOT BECAUSE THEY WENT
+ * RED. Five assertions here failed the moment the pretest sync pulled that
+ * commit in, and the honest question was which of two things had happened: a
+ * field arrived by decision, or a field arrived by accident. It was the first —
+ * the design names the field, the reason and the null semantics — so the pins
+ * were taught the new shape and given the two tests below that pin what it
+ * MEANS. Widening a pin without answering that question is how a repo stops
+ * noticing what its dependency does to it.
+ *
+ * 🔴 AND THE MEANING IS THE PART THAT MATTERS: `null` IS "UNKNOWN", NOT
+ * "NOTHING IS DENIED". An auth Worker mid-deploy answers no such field, and
+ * reading its absence as an empty deny-list would silently un-switch every
+ * policy the owner had set for as long as the deploy took. The module returns
+ * `null` for a missing or malformed field and `[]` only when the directory
+ * actually said so; `billing-denied-shape.test.ts` in this same directory pins
+ * that distinction at this repo's boundary.
+ *
+ * ⚠️ THIS REPO DOES NOT YET *USE* THE FIELD, and that is a gap, not a decision
+ * that it does not need it. `GateOutcome.refresh` in `../src/gate.ts` still
+ * declares three keys, so the fourth travels at runtime and is invisible to the
+ * type; `apps/worker/src/middleware/auth.ts` persists status/visibility/
+ * checkedAt and drops it. Billing phase 3 (a separate item on catalog-platform's
+ * TODO) is where library, library2 and games start reading it. Until then no
+ * money path here is switchable from /admin — see `docs/KNOWN_ISSUES.md`.
+ *
+ * ⚠️ `packages/estate-auth/generated/` is SYNCED from catalog-platform on every
+ * pretest, so a shape change here always came from THAT repo. If a
+ * `downloadEbooks` key ever reappears, the 2026-08-17 decision above is the
  * thing to re-read before accommodating it.
  */
 import { strict as assert } from 'node:assert';
@@ -69,8 +103,19 @@ function subject(overrides: Partial<GateSubject> = {}): GateSubject {
   };
 }
 
-/** A fetch stub that answers /seen with the given status (or fails). */
-function seenFetch(answer: string | 'network-error' | 500, visibility?: unknown) {
+/**
+ * A fetch stub that answers /seen with the given status (or fails).
+ *
+ * ⚠️ `billingDenied` is OMITTED from the body unless passed, on purpose — that
+ * is what an auth Worker running the pre-billing code answers, and it is the
+ * case the `null`-means-unknown rule exists for. Defaulting it to `[]` here
+ * would make every test in this file exercise the post-deploy world only.
+ */
+function seenFetch(
+  answer: string | 'network-error' | 500,
+  visibility?: unknown,
+  billingDenied?: unknown,
+) {
   const calls: { url: string; init: RequestInit | undefined }[] = [];
   const impl = (async (input: RequestInfo | URL, init?: RequestInit) => {
     calls.push({ url: String(input), init });
@@ -78,6 +123,7 @@ function seenFetch(answer: string | 'network-error' | 500, visibility?: unknown)
     if (answer === 500) return new Response('{}', { status: 500 });
     const body: Record<string, unknown> = { status: answer };
     if (visibility !== undefined) body['visibility'] = visibility;
+    if (billingDenied !== undefined) body['billing_denied'] = billingDenied;
     return new Response(JSON.stringify(body), { status: 200 });
   }) as typeof fetch;
   return { impl, calls };
@@ -178,9 +224,14 @@ test('household member: estate approved + active local role → proceed, no woul
   assert.equal(out.wouldAutoGrant, null);
   // Fresh answer → cache refresh for the caller to persist. `visibility` rides
   // with the status since §4.5; null = "no visibility fact in the answer".
+  // ⚠️ `billingDenied: null` since 2026-09-02 (billing phase 1), and null here
+  // means UNKNOWN rather than "nothing denied" — this stub's body carries no
+  // `billing_denied` at all, which is exactly what a pre-billing auth Worker
+  // answers. See the header note and billing-denied-shape.test.ts.
   assert.deepEqual(out.refresh, {
     status: 'approved',
     visibility: null,
+    billingDenied: null,
     checkedAt: new Date(NOW).toISOString(),
   });
   assert.equal(calls.length, 1);
@@ -207,7 +258,16 @@ test('estate approved + local pending never decided → would auto-grant member,
   assert.equal(line.would_auto_grant, 'member');
   assert.equal(line.would_deny, false);
   // The outcome offers the caller ONLY a cache refresh — no role, no grant.
-  assert.deepEqual(Object.keys(out.refresh ?? {}).sort(), ['checkedAt', 'status', 'visibility']);
+  // ⚠️ THE KEY SET IS THE POINT OF THIS ASSERTION, not the values: it is what
+  // catches a directive arriving that this repo has not decided about. It
+  // caught `billingDenied` on 2026-09-02, which is the test working; the
+  // header records why that one was accommodated.
+  assert.deepEqual(Object.keys(out.refresh ?? {}).sort(), [
+    'billingDenied',
+    'checkedAt',
+    'status',
+    'visibility',
+  ]);
 });
 
 test('estate approved + locally DEMOTED pending → request_screen (the estate does not overrule)', async () => {
@@ -305,6 +365,7 @@ test('expired cache: /seen called, fresh answer replaces the cached status', asy
   assert.deepEqual(out.refresh, {
     status: 'approved',
     visibility: null,
+    billingDenied: null, // billing phase 1, 2026-09-02 — see the header note
     checkedAt: new Date(NOW).toISOString(),
   });
   const line = JSON.parse(out.logLine ?? 'null');
@@ -361,7 +422,14 @@ test('enforce / revoked + local owner → deny 403 estate_revoked (row 1: anythi
   // the outcome carries no role write, so a later re-approval restores the
   // person exactly as they were.
   assert.equal(out.autoGrant, null);
-  assert.deepEqual(Object.keys(out.refresh ?? {}).sort(), ['checkedAt', 'status', 'visibility']);
+  // The same key-set pin as its shadow twin above — see that comment for why
+  // `billingDenied` is in this list as of 2026-09-02.
+  assert.deepEqual(Object.keys(out.refresh ?? {}).sort(), [
+    'billingDenied',
+    'checkedAt',
+    'status',
+    'visibility',
+  ]);
   const line = JSON.parse(out.logLine ?? 'null');
   assert.equal(line.tag, 'estate_enforce');
   assert.equal(line.denied, true);
@@ -536,6 +604,7 @@ test('garbage visibility in the answer dies into null; the status half still cou
   assert.deepEqual(out.refresh, {
     status: 'approved',
     visibility: null,
+    billingDenied: null, // billing phase 1, 2026-09-02 — see the header note
     checkedAt: new Date(NOW).toISOString(),
   });
 });
