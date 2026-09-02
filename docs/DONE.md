@@ -18,6 +18,202 @@
 > were extracted from this same history.
 
 
+## 2026-09-02 — A research run now SAYS which free rungs it tried, and why each fell through (moved whole from TODO.md)
+
+Shipped `9bfea39`. `research_run.result_json` gains a **`free`** key — no
+migration, exactly as `sources` needed none, because the whole object is a TEXT
+column whose reader already tolerates anything:
+
+| key | is |
+|---|---|
+| `rungs` | the rungs actually invoked, in ladder order |
+| `skipped` | the ladder's own named skip lines, **verbatim** |
+| `applied` | one sentence per value a free rung wrote |
+| `stillOpen` | the fields handed on to the paid rung — what the money bought |
+
+⚠️ **The distinction the whole change is built around, and the one this project
+has already got wrong once** (the covers sweep's *"no cover anywhere"* for a
+rung that was never asked, `info/covers-and-series.md` §0):
+
+- a rung **with** a skip line → asked, and could not answer. Its own words.
+- a rung **not in `rungs`** → **never reached**, because the fields closed above
+  it. Renders as *"not reached"*, never as *"found nothing"*.
+- **`free` absent entirely** → nobody wrote it down. Renders as **nothing**.
+
+That last case is every run made before 2026-09-02, which is why this shipped
+with **no backfill** (the owner's brief said none was required, and it is also
+the honest choice: an empty ladder drawn for an old run would be a measurement
+nobody took). `toRunView` maps a missing record to `null` and never to `{}`.
+
+`FreeDetailsOutcome` gains `askedRungs`, stamped **before** each rung is called
+and **outside the try** — so a rung that THROWS is still recorded as reached,
+which is a different answer to *"why did this cost money?"* from one that was
+skipped for want of a credential.
+
+**Where it renders:** `/queue`, per work, under the existing *"answered by:"*
+line, folded behind a `<summary>` whose own line carries the one-sentence
+version — so nothing has to be opened to see whether a run was free. The
+sentences live in `apps/web/src/lib/free-ladder-view.ts` because this app has
+**no DOM renderer** and a sentence written inline in JSX cannot be pinned;
+`SOURCE_LABEL` moved there from `DetailsQueuePage` in the same commit, so the
+page and the new block cannot drift about what a rung is called.
+
+⚠️ **NOT verified:** no run has been driven end to end through the deployed
+route showing the new block — the record shape and every sentence are pinned by
+tests (2099 pass / 0 fail), and the ladder was exercised against the stub D1,
+but nobody has pressed **Look it up** on a live instance and read the result.
+That is the acceptance test, and it needs a signed-in human at
+<https://library.heygabi.ai/queue>.
+
+The item, verbatim as it stood:
+
+> ## ☐ A research run must SAY what the free ladder found and skipped (owner question, 2026-08-26 22:55)
+>
+> Owner, after a paid run on padhard #578 *After Life* (Gayle Forman, 2025):
+> *"tell me why padhard library wasn't resolved by the free lookup with series and
+> description?"* Measured: the description (1,609 chars) was already on the work
+> before the run; the only open fields were `series`/`seriesIndex`; the paid rung
+> answered **"no series — standalone"** (`gap_verdict` 305/306, Kirkus). The free
+> ladder DID run first (`research-run.ts:451`), but **`research_run.result_json`
+> for run 738 is 261 bytes and names only `sources: llm`** — nothing records which
+> free rungs were asked, what each answered, or why each was skipped. So the
+> question "why did this cost money?" is unanswerable from the page and had to be
+> reconstructed by hand from code + tables.
+>
+> Fix: persist the free ladder's `FreeDetailsOutcome` (per rung: asked / answered
+> field / named skip) into the run's `result_json` and show it on the work page's
+> research history ("Free lookups: Open Library — no series; Google Books — title
+> claims no series; Hardcover — record names no series; Wikidata — no ISBN match.
+> Paid rung asked for: series, seriesIndex."). One home: the run record. No new
+> matcher, no behaviour change in the ladder. Also state the standing limit in
+> `info/free-details-ladder.md`: **the free rungs can find a series but can never
+> assert "none"** — a standalone book stays open until the paid rung (or the owner)
+> records the verdict, by design.
+
+⚠️ **Two things in that text were corrected by looking:**
+
+1. *"show it on the **work page's** research history"* — **there is no research
+   history on the work page.** `WorkPage.tsx` renders no run, no finding and no
+   lookup control; the per-work run history is `QueueRow` on `/queue`, which is
+   where the block went. Building a second research surface on the work page
+   would be the one-fact-two-homes failure the standard names.
+2. The standing limit **is now stated** in
+   [`info/free-details-ladder.md`](info/free-details-ladder.md) §7, beside the
+   `firstPublished` refusal it belongs with.
+
+
+## 2026-09-02 — Pagination scroll-to-top: it had been shipped, and it had never worked (moved whole from TODO.md)
+
+Shipped `3fc7e43`. ⚠️ **The interesting half is that this looked done.** An
+effect had sat in `CollectionPage` since `5d12618` (2026-08-21) doing the
+obvious pair:
+
+```ts
+window.scrollTo({ top: 0, behavior: 'instant' });
+listTopRef.current?.focus();
+```
+
+**`HTMLElement.focus()` scrolls the focused element into view by default**, so
+the second line silently undid the first: the viewport went to the top of the
+document and straight back down until the results container's top edge met the
+top of the screen. Both lines read correctly on their own; only their ORDER and
+`focus`'s default make it wrong, which is why a reviewer would not catch it and
+a unit test would.
+
+`{ preventScroll: true }` is the whole fix. It now lives in
+`apps/web/src/lib/page-top.ts`'s `returnToListTop` rather than inline, because
+the trap is invisible when either line is read by itself, and
+`lib/use-page-top.ts`'s `useListTopOnPageChange` is the ONE page-change handler
+every paginated surface uses.
+
+**Measured while doing it — the "every paginated surface" check the item asked
+for:** `Pager` has **exactly one caller** in this app (`CollectionPage`,
+rendered above and below the list). There is no second paginated surface: the
+queue, series, wishlist, universe, TBR and scan-jobs pages all render their
+full list, and `apps/web` is the only front end in the repo. So the hook is not
+covering two call sites today — it is what makes the second one free rather
+than a second place to reintroduce the same ordering trap.
+
+The filter/sort half of the item needed nothing: a filter change already calls
+`setPage(0)`, so when that is a real move the same hook fires, and when you were
+already on page 0 nothing moved and nothing should.
+
+⚠️ **NOT verified:** nobody has turned a page on a live instance and watched the
+viewport. The `preventScroll` argument is pinned by `apps/web/test/page-top.test.ts`
+(5 cases, and the assertion that matters is `preventScroll === true` — a test that
+only checked `scrollTo` was called would pass on the broken code), but a unit test
+cannot prove a browser scrolled.
+
+The item, verbatim as it stood:
+
+> ## ☐ Pagination does not scroll to top — physical book library
+>
+> Owner, 2026-08-20: *"when we paginate to a new page on the physical book
+> libraries it doesnt scroll to the top, i know its an easy fix but we need to
+> save credits so file it."*
+>
+> **Symptom:** clicking through to the next page of the physical book library
+> leaves the viewport where it was, so the reader lands mid-list — or below it
+> entirely on a short page — and has to scroll up to see what they just asked
+> for. Worst on mobile, where the list is tallest relative to the screen.
+>
+> **Owner's own read: an easy fix.** Filed rather than fixed because the session
+> was near the weekly limit; NOT investigated, so the note below is a pointer,
+> not a diagnosis.
+>
+> ☐ **Fix:** on page change, scroll the list container (or window) back to the
+>   top — and move focus to the list heading at the same time, or a keyboard and
+>   screen-reader user is left at the old position even when the pixels move.
+> ☐ Check the same handler covers **every** way the page changes: next/prev,
+>   a numbered page, and any filter or sort that resets to page 1.
+>
+> **Not verified:** which component owns the pagination, whether the physical
+> book library shares it with any other list, and whether the ebook/audiobook
+> lists have the same behaviour. Look before assuming it is one call site.
+
+
+## 2026-09-02 — "Mark this copy signed": built 2026-08-22, and now GUARDED (moved whole from TODO.md)
+
+⚠️ **Nothing was built for this on 2026-09-02 and that is the finding.** The
+control exists and is live on both instances: `ede7ff3` (2026-08-22) put
+**Mark signed / Not signed** on the copy row, and `eeb08ab` (2026-08-24)
+generalised it to all four special-edition attributes behind `SPECIAL_TOGGLES`
+when migration 0430 made sprayed edges / leatherbound / slipcase first-class.
+Both are ancestors of `dd290cd`, the 2026-08-27 deploy on both instances.
+
+`PATCH /api/copies/:id` has always accepted `isSigned`: `updateCopySchema` is
+`createCopySchema.omit({workId}).partial().strict()`, and `.partial()` wraps
+each field as `ZodOptional<ZodDefault<…>>` so an absent key short-circuits at
+the `ZodOptional` — a one-key `{ isSigned: true }` sets the flag and **resets
+none of its neighbours**. Nothing needed extending; nothing was stripped.
+
+**What was missing was a test.** Nothing in the tree failed if the chips
+stopped rendering, and this is a control whose absence has been reported by the
+owner once already, in those words. `apps/web/test/copy-special-toggles.test.ts`
+(17 cases, `3fc7e43`) holds both halves: each attribute is accepted as a
+one-key PATCH that resets nothing, an unmodelled key is still **refused** rather
+than stripped (KI-10's other side), and the chips render on the **copy row**
+rather than only on the add form — the 2026-08-22 defect exactly.
+
+The item, verbatim as it stood:
+
+> ### C. Also found, not yet raised as work — "mark this copy signed"
+>
+> Owner, same session: *"i thought we had a way to mark signed books on the ui, i
+> dont see that option anymore."* **It never went away and it was never on an
+> existing copy.** The `Signed` checkbox lives in `Copies.tsx`'s **AddCopy** form
+> only (line 455), inside the `intent === 'owned'` block — so it can only be set
+> while first recording a copy.
+>
+> The API already supports the edit: `PATCH /api/copies/:id` → `updateCopy`
+> (`packages/db/src/editions.ts:543` handles `patch.isSigned`). **Only the control
+> is missing.** Small, self-contained, visible — a good first item next session.
+
+⚠️ **NOT verified:** nobody has marked a live copy signed through the deployed
+UI in this session. The claim above rests on reading the shipped source, the
+schema and `deploys.log` — not on pressing the button.
+
+
 ## 2026-09-01 — OR-3 (the pause should ask what it means): BUILT 2026-08-23, verified by the owner's own live use (moved whole from TODO.md)
 
 Found while designing the soft-pause feature: `pause_mode`

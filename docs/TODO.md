@@ -63,28 +63,11 @@ against either live Worker, so nobody has yet watched the alias rung match a
 cross-instance near-miss in production. **Whoever verifies it closes this and
 moves the section whole to [`DONE.md`](DONE.md).**
 
-## ☐ A research run must SAY what the free ladder found and skipped (owner question, 2026-08-26 22:55)
-
-Owner, after a paid run on padhard #578 *After Life* (Gayle Forman, 2025):
-*"tell me why padhard library wasn't resolved by the free lookup with series and
-description?"* Measured: the description (1,609 chars) was already on the work
-before the run; the only open fields were `series`/`seriesIndex`; the paid rung
-answered **"no series — standalone"** (`gap_verdict` 305/306, Kirkus). The free
-ladder DID run first (`research-run.ts:451`), but **`research_run.result_json`
-for run 738 is 261 bytes and names only `sources: llm`** — nothing records which
-free rungs were asked, what each answered, or why each was skipped. So the
-question "why did this cost money?" is unanswerable from the page and had to be
-reconstructed by hand from code + tables.
-
-Fix: persist the free ladder's `FreeDetailsOutcome` (per rung: asked / answered
-field / named skip) into the run's `result_json` and show it on the work page's
-research history ("Free lookups: Open Library — no series; Google Books — title
-claims no series; Hardcover — record names no series; Wikidata — no ISBN match.
-Paid rung asked for: series, seriesIndex."). One home: the run record. No new
-matcher, no behaviour change in the ladder. Also state the standing limit in
-`info/free-details-ladder.md`: **the free rungs can find a series but can never
-assert "none"** — a standalone book stays open until the paid rung (or the owner)
-records the verdict, by design.
+> ✂️ **2026-09-02:** *"A research run must SAY what the free ladder found and
+> skipped"* moved WHOLE to [`DONE.md`](DONE.md) — `result_json.free` is
+> persisted (no migration) and rendered per run on `/queue`. The standing
+> "the free rungs can never assert 'none'" limit is now
+> [`info/free-details-ladder.md`](info/free-details-ladder.md) §7.
 
 > ✂️ **2026-08-31:** the *"OWNER: confirm these 2 cross-instance near-misses"*
 > section moved WHOLE to [`DONE.md`](DONE.md) — Q1 was applied 2026-08-26, and
@@ -424,21 +407,17 @@ Migration 0390 shipped 2026-08-23 on `feature/audio-edition-holdings`; the whole
 item is in [`DONE.md`](DONE.md), and what it did NOT close is `KI-8`/`KI-9` in
 [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md).
 
-### C. Also found, not yet raised as work — "mark this copy signed"
+> ✂️ **2026-09-02:** part **C** (*"mark this copy signed"*) moved WHOLE to
+> [`DONE.md`](DONE.md). It was already built — `ede7ff3` (2026-08-22) put the
+> control on the copy row and `eeb08ab` (2026-08-24) generalised it to all four
+> special-edition attributes — and it is live on both instances. What was
+> missing was a test: nothing failed if the chips stopped rendering, and this is
+> a control whose absence has been reported once already. `2026-09-02` added
+> `apps/web/test/copy-special-toggles.test.ts`.
 
-Owner, same session: *"i thought we had a way to mark signed books on the ui, i
-dont see that option anymore."* **It never went away and it was never on an
-existing copy.** The `Signed` checkbox lives in `Copies.tsx`'s **AddCopy** form
-only (line 455), inside the `intent === 'owned'` block — so it can only be set
-while first recording a copy.
-
-The API already supports the edit: `PATCH /api/copies/:id` → `updateCopy`
-(`packages/db/src/editions.ts:543` handles `patch.isSigned`). **Only the control
-is missing.** Small, self-contained, visible — a good first item next session.
-
-**Verify all three:** work 514 shows both audio editions and its series
+**Verify the two that remain:** work 514 shows both audio editions and its series
 (<https://library.heygabi.ai/works/514>); `/status/processing` lists the new
-pipeline step by name; an existing copy can be marked signed without deleting it.
+pipeline step by name.
 
 ## ☐ Covers for the SECOND instance — owner ask, 2026-08-22
 
@@ -1136,30 +1115,10 @@ series has the same split (this will not be the only one).
 
 ---
 
-## ☐ Pagination does not scroll to top — physical book library
-
-Owner, 2026-08-20: *"when we paginate to a new page on the physical book
-libraries it doesnt scroll to the top, i know its an easy fix but we need to
-save credits so file it."*
-
-**Symptom:** clicking through to the next page of the physical book library
-leaves the viewport where it was, so the reader lands mid-list — or below it
-entirely on a short page — and has to scroll up to see what they just asked
-for. Worst on mobile, where the list is tallest relative to the screen.
-
-**Owner's own read: an easy fix.** Filed rather than fixed because the session
-was near the weekly limit; NOT investigated, so the note below is a pointer,
-not a diagnosis.
-
-☐ **Fix:** on page change, scroll the list container (or window) back to the
-  top — and move focus to the list heading at the same time, or a keyboard and
-  screen-reader user is left at the old position even when the pixels move.
-☐ Check the same handler covers **every** way the page changes: next/prev,
-  a numbered page, and any filter or sort that resets to page 1.
-
-**Not verified:** which component owns the pagination, whether the physical
-book library shares it with any other list, and whether the ebook/audiobook
-lists have the same behaviour. Look before assuming it is one call site.
+> ✂️ **2026-09-02:** *"Pagination does not scroll to top — physical book
+> library"* moved WHOLE to [`DONE.md`](DONE.md). ⚠️ It was **half-shipped and
+> silently broken**: the effect had existed since 2026-08-21 and `focus()`
+> scrolls by default, so it undid its own `scrollTo`.
 
 ---
 

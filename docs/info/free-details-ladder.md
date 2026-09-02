@@ -24,6 +24,14 @@
 > estate index"* as a field's source, and the F9 same-series gate has mocked
 > coverage only.
 
+> **Amended 2026-09-02 — a run now RECORDS which rungs it tried.**
+> `research_run.result_json` gains a `free` key (`rungs` / `skipped` /
+> `applied` / `stillOpen`), no migration, rendered per run on `/queue`; §7
+> gains the standing limit that made the owner ask — **the free rungs can find
+> a series but can never assert "none"**; §9 gains two rows. ⚠️ **Nothing else
+> was re-measured**, and no run has been driven through the deployed route
+> showing the new block.
+>
 > **Amended 2026-08-26 — §8's 🔴 four-gap stall is FIXED and is now ✅.** The
 > stall was **measured live on padhard that day** (work #541, 4 asks, 52 against
 > a budget of 46, **90 eligible and 0 picked**); `planSweep` gained rule 4 and
@@ -378,6 +386,38 @@ re-measuring if the scan path ever looks like it is dropping fills.
 
 ## 7. What the ladder does NOT answer, and why
 
+### 🔴 The free rungs can FIND a series. They can never assert there is NONE
+
+**The standing limit, and the reason a book like padhard #578 *After Life*
+stays open until money is spent.** Every rung here answers by producing a
+value: `audiobook_holding.series`, an index row's `series`, an Open Library
+label, a Hardcover `book_series`, a Wikidata `P179`. **Silence from all six is
+not a verdict.** A standalone novel and a series book none of these six
+happens to know look byte-identical from here, and they must, because the six
+between them cover a fraction of the indie / KU / webnovel end of this
+catalogue (`isbn-ladder.md` §1: Open Library misses about half of it by title).
+
+So `series: none` is a claim only the **paid rung** or **a person** can make,
+and it is recorded as a `gap_verdict` rather than as a blank column — which is
+exactly what happened on padhard #578: the six free rungs each fell through
+with a named skip, the paid rung answered *"no series — standalone"* citing
+Kirkus, and `gap_verdict` 305/306 closed it for good. **That run was not a
+failure of the ladder.** It is the design working, and the money bought the
+one thing free sources structurally cannot supply: a negative.
+
+⚠️ **Do not "fix" this by having a rung write a `none` verdict on silence.** Six
+sources not knowing a book is evidence about the sources, and a verdict minted
+from it would close the question for ever against a book the catalogue simply
+has not been able to look up yet. The visible cost of leaving it open is a row
+on the details queue; the cost of getting it wrong is a wrong fact that nothing
+revisits.
+
+**Since 2026-09-02 the run record SAYS all of this per run** — `result_json.free`
+carries which rungs were asked, each one's skip line verbatim, and the fields
+the paid rung was then asked for. See `DONE.md` (2026-09-02) and
+`apps/web/src/lib/free-ladder-view.ts`. ⚠️ It is **not backfilled**: `free`
+absent means *nobody wrote it down*, never *the rungs found nothing*.
+
 **`firstPublished`.** Every free rung here can produce *a* year and none can
 produce the right one: Open Library's editions and Google Books both date a
 **printing**, while `work.first_published` is a fact about the work's first
@@ -473,7 +513,8 @@ fetched, never reasoned. See `REFUSED_FIELDS` in `packages/core/src/gaps.ts`.
 | `apps/worker/src/lib/detail-values.ts` | `printedFormIn` / `quotedDesignation` — §5.2 |
 | `apps/worker/src/lib/research-run.ts` | the wiring: free first, then only what is left |
 | `apps/worker/src/routes/scan-jobs.ts` | the add path, on `waitUntil` |
-| `apps/web/src/pages/DetailsQueuePage.tsx` | the "answered by:" line |
+| `apps/web/src/pages/DetailsQueuePage.tsx` | the "answered by:" line, and `RunFreeLadder` — the folded per-run block that says which rungs were tried |
+| `apps/web/src/lib/free-ladder-view.ts` | the sentences that block renders, and `SOURCE_LABEL`. ⚠️ Pure, in `lib/`, because this app has no DOM renderer — a sentence written inline in JSX cannot be pinned |
 | `packages/isbn/src/works.ts` | `workDescription` — the OL work record's blurb |
 | `apps/worker/src/env.ts` | `INDEX_URL` / `INDEX_READ_TOKEN` — the per-instance pairing (§4.1) |
 | `catalog-platform/apps/index-worker/src/machine-route.ts` | ⚠️ **the other end** — the gate, the visibility set, and the three refusals rung 2's skips quote |
