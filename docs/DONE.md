@@ -18,6 +18,142 @@
 > were extracted from this same history.
 
 
+## ✅ 2026-09-02 — the two 2026-08-24 "LANDED FOR REVIEW" branches: both merged, both deployed, both moved here
+
+Moved here whole from [`TODO.md`](TODO.md), **two items in one entry because
+they were one release**: `feature/shelf-copy-driven` and
+`feature/special-editions-firstclass` both landed 2026-08-24, were both measured
+merged into `main` on **2026-08-31**, and have both been re-shipped by every
+deploy since — live today as **main** `2ee0da31-c2c2-4e0a-9065-767c629fd0b2`
+and **friend** `3abcb1de-de22-4ab4-af00-1daa72c6a039` (100% each, read from
+Cloudflare 2026-09-02).
+
+⚠️ **Each item's own strikethrough supersession notes are preserved below,
+unedited.** They are the interesting half: both sections said *"Nothing
+deployed"* / *"migration 0430 is UNAPPLIED"* for a week after neither was true,
+and the correction was written INTO the item as a strikethrough rather than
+moving it — which is exactly why they went on reading as open work long after
+they were finished. **A badge inside a live item is not a move.**
+
+⚠️ **What did NOT come here** is the owner-review half of each, consolidated
+into ONE compact item on [`TODO.md`](TODO.md) (*"OWNER REVIEW — three surfaces
+nobody has looked at with their own eyes"*): `/work/493`, `/work/269`, the
+multi-select **Type** filter, and 🔴 the special-editions **sweep**,
+whose dry-run count has never been measured and whose run left no record.
+Shipped is not verified; the two are tracked separately, per item.
+
+---
+
+### Item 1, whole — *Shelf is COPY-DRIVEN + EditBox tab merge*
+
+> ## ☐ Shelf is COPY-DRIVEN + EditBox tab merge — LANDED FOR REVIEW (branch `feature/shelf-copy-driven`, 2026-08-24)
+>
+> Fixes the ownership bug where an OWNED book read as **Wanted**. `deriveShelfView`
+> (`apps/web/src/lib/shelf-view.ts`) was **link-driven** — it marked an edition
+> Owned only when a copy's `edition_id` linked to it. But `copy.edition_id` is
+> **null across essentially the whole catalog** (no barcode to link on), so an
+> owned copy floated free while its unlinked edition showed Wanted. Work **493**
+> (".hack//Another Birth Vol 2") was the live proof: 1 owned copy, 1 paperback
+> edition, no link → "Paperback — Wanted".
+>
+> **Now copy-driven:** the shelf = what you HOLD. Owned copies group by their
+> *effective* format (linked edition's format → leather⇒hardcover → the work's sole
+> physical-edition format → unspecified physical); each format = one Owned row with
+> its copies nested as instances. Ebook editions/holding and audiobook holding
+> become Owned rows. **Wanted rows are wishlist copies ONLY** — an edition you
+> neither own nor want is not a row. Never empty → one neutral "not on your shelf"
+> slot (never a fabricated Wanted). `availability` is now **peers only** (your own
+> ebook/audio moved onto the shelf as Owned rows).
+>
+> **EditBox:** the separate **Editions** and **Copies** tabs are merged into one
+> **Editions & copies** tab (editions is the unit; copies nest inside).
+>
+> **State:** branch pushed. ~~**Nothing deployed**~~ ⚠️ **superseded — measured
+> 2026-08-31: `feature/shelf-copy-driven` IS merged into `main`**
+> (`git merge-base --is-ancestor` = yes), and main has deployed several times
+> since (through `dd290cd`, 2026-08-27, per `deploys.log`) — so the copy-driven
+> shelf is live on both instances. What is still open is the **owner review**
+> below; nobody has confirmed /work/493 reads "Owned — Paperback" with their own
+> eyes. Client-side derivation change, no migration, no API shape change. `work-detail-contract` + `work-page-render`
+> kept green. Tests **1672 pass / 0 fail**; typecheck clean; web build clean.
+> `shelf-view.test.ts` rewritten (26 cases) incl. the explicit 493 case.
+>
+> **Owner review:** `/work/493` (now reads **Owned — Paperback**) and `/work/269`.
+>
+> **Not done / deferred:** the `WorkPage.tsx` section comment still says "one hero
+> holding" (cosmetic, left untouched to keep the diff to the derivation + tabs). No
+> D1 unit harness exists, so the derivation is covered by the pure-function tests,
+> not a live-D1 read.
+
+---
+
+### Item 2, whole — *Special editions first-class + multi-type format filter*
+
+> ## ☐ Special editions first-class + multi-type format filter — LANDED FOR REVIEW (branch `feature/special-editions-firstclass`, 2026-08-24)
+>
+> Sprayed edges / leatherbound / slipcase are now first-class editable booleans on
+> a **copy** (migration `0430`, mirroring `is_signed`), replacing the read-only
+> parse of `edition_name` prose. `EditBox → What you have → Copies` gains per-copy
+> toggles and add-form checkboxes; the shelf-view badges read the real columns
+> first and fall back to the prose only for un-swept rows. The collection gains a
+> **multi-type format filter** (owner ask, revised 2026-08-24 to multi-select):
+> hardcover / leatherbound / paperback / mass_market / ebook / audiobook, each
+> individually selectable, OR-ed — a fixed-map clause (`BINDING_CLAUSE`), unknown
+> type adds no clause. Leather ⊂ hardcover stays true in the data (ticking
+> Hardcover matches a leatherbound copy) but leather is its own box.
+>
+> **State:** branch pushed. ~~Migration **0430 is UNAPPLIED**. Nothing deployed.~~
+> ⚠️ **superseded — measured 2026-08-31:** `feature/special-editions-firstclass`
+> IS merged into `main`; `wrangler d1 migrations list --remote` answers **"No
+> migrations to apply!" on BOTH instances** (so 0430 is applied), and main has
+> deployed since (through `dd290cd`, 2026-08-27). Go-live steps 1 and 4 below are
+> therefore done. **Steps 2–3 (the sweep dry-run + commit) are NOT verified to
+> have run** — no record of a `sweep-special-editions.mjs` run was found; that is
+> what remains of this item. 1661 tests pass / 0 fail; typecheck clean.
+>
+> ⚠️ **The sweep's dry-run count is NOT yet measured** — the sweep reads the new
+> columns to avoid re-proposing set ones, so it cannot run until 0430 is applied;
+> production reads are also blocked in the build environment. The owner gets the
+> count from step 2 below.
+>
+> **🔴 OWNER GO-LIVE SEQUENCE (in order):**
+> 1. **Apply migration 0430** to each instance:
+>    `npx wrangler d1 migrations apply library-catalog --remote` (main), then
+>    `--env friend` for padhard. (Migrate-before-deploy: the new code reads the
+>    new columns.)
+> 2. **Dry-run the sweep** and read the count:
+>    `node scripts/sweep-special-editions.mjs --remote` (main),
+>    `node scripts/sweep-special-editions.mjs --remote --friend` (padhard).
+>    It maps rows whose prose says leather/sprayed/slipcase onto the columns, and
+>    proposes edition `format → hardcover` for a leatherbound copy on a
+>    non-hardcover edition. Review the printed plan.
+> 3. **Commit the sweep** once the plan looks right:
+>    `node scripts/sweep-special-editions.mjs --remote --commit` (+ `--friend`).
+> 4. **Deploy** (`npm run deploy`, then the friend deploy) — see `access/deploy.md`.
+>
+> **Deferred / not done:** a facet count on the new Type filter (a GROUP BY per
+> type per keystroke for boxes read off the list — deliberately omitted, matching
+> the facets-cost note). ~~consolidating the new multi-type **Type** selector with
+> the pre-existing single-select **Edition**/**Printing** controls~~ **DONE
+> 2026-08-24** — owner ruled retire Edition + Printing into the Type dropdown, keep
+> `medium` (Format) as its own axis; shipped `1333ff2`, deployed both instances,
+> verified live. Whole record in [`DONE.md`](DONE.md). No D1 unit harness exists in
+> this repo, so `createCopy` /
+> `updateCopy`'s write path is covered by typecheck + the migration round-trip SQL
+> test, not a live-D1 test.
+
+---
+
+### Why one entry and not two
+
+The standard says an item moves once, whole, at completion. These two completed
+at the same moment by the same measurement — the 2026-08-31 merge check plus
+`wrangler d1 migrations list --remote` answering *"No migrations to apply!"* on
+both instances — and their leftovers were the same kind of thing: a person
+looking at a page. Splitting them would have put one review ask in two places,
+which is the duplicate-surface failure the standard names.
+
+
 ## ✅ 2026-09-02 — `docs/HANDOFF.md` is RETIRED: five facts rehomed, 31 references repaired, husk archived
 
 Moved here whole from [`TODO.md`](TODO.md). The item as it stood:

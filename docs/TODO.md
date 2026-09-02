@@ -241,98 +241,40 @@ dry run **from either source**, so `secrets:push:both` cannot rotate them.
   vault, set the VERIFIER first (`estate-auth`, `catalog-index`), then main, then
   verify the gated route. One at a time; a half-pushed pair is a silent 401/403/404.
 
-## ☐ Shelf is COPY-DRIVEN + EditBox tab merge — LANDED FOR REVIEW (branch `feature/shelf-copy-driven`, 2026-08-24)
+## ☐ OWNER REVIEW — three surfaces nobody has looked at with their own eyes (2026-08-24 builds, merged + deployed)
 
-Fixes the ownership bug where an OWNED book read as **Wanted**. `deriveShelfView`
-(`apps/web/src/lib/shelf-view.ts`) was **link-driven** — it marked an edition
-Owned only when a copy's `edition_id` linked to it. But `copy.edition_id` is
-**null across essentially the whole catalog** (no barcode to link on), so an
-owned copy floated free while its unlinked edition showed Wanted. Work **493**
-(".hack//Another Birth Vol 2") was the live proof: 1 owned copy, 1 paperback
-edition, no link → "Paperback — Wanted".
+Both 2026-08-24 branches are **merged, deployed and live on both instances**
+— measured 2026-08-31 and again 2026-09-02 — and each moved WHOLE to
+[`DONE.md`](DONE.md) on 2026-09-02. ⚠️ **This item is the part that did NOT
+land with them: nobody has confirmed any of it in a browser.** Shipped is not
+verified, and the two are tracked separately, per item.
 
-**Now copy-driven:** the shelf = what you HOLD. Owned copies group by their
-*effective* format (linked edition's format → leather⇒hardcover → the work's sole
-physical-edition format → unspecified physical); each format = one Owned row with
-its copies nested as instances. Ebook editions/holding and audiobook holding
-become Owned rows. **Wanted rows are wishlist copies ONLY** — an edition you
-neither own nor want is not a row. Never empty → one neutral "not on your shelf"
-slot (never a fabricated Wanted). `availability` is now **peers only** (your own
-ebook/audio moved onto the shelf as Owned rows).
+| ☐ | Look at | What should be true |
+|---|---|---|
+| ☐ | <https://library.heygabi.ai/work/493> | *.hack//Another Birth Vol 2* reads **Owned — Paperback**. This is the live proof of the copy-driven shelf: 1 owned copy, 1 paperback edition, **no `edition_id` link** — it used to read *"Paperback — Wanted"* |
+| ☐ | <https://library.heygabi.ai/work/269> | the second shelf case the build named |
+| ☐ | <https://library.heygabi.ai/collection> | the **Type** filter is multi-select — hardcover / leatherbound / paperback / mass_market / ebook / audiobook, each tickable, OR-ed. Ticking **Hardcover** must also match a **leatherbound** copy (leather ⊂ hardcover in the data), while **Leatherbound** stays its own box |
 
-**EditBox:** the separate **Editions** and **Copies** tabs are merged into one
-**Editions & copies** tab (editions is the unit; copies nest inside).
+🔴 **One owner ACTION is still outstanding, not just a look** — it is steps
+2 and 3 of the special-editions go-live, and **no record of a run was ever
+found**:
 
-**State:** branch pushed. ~~**Nothing deployed**~~ ⚠️ **superseded — measured
-2026-08-31: `feature/shelf-copy-driven` IS merged into `main`**
-(`git merge-base --is-ancestor` = yes), and main has deployed several times
-since (through `dd290cd`, 2026-08-27, per `deploys.log`) — so the copy-driven
-shelf is live on both instances. What is still open is the **owner review**
-below; nobody has confirmed /work/493 reads "Owned — Paperback" with their own
-eyes. Client-side derivation change, no migration, no API shape change. `work-detail-contract` + `work-page-render`
-kept green. Tests **1672 pass / 0 fail**; typecheck clean; web build clean.
-`shelf-view.test.ts` rewritten (26 cases) incl. the explicit 493 case.
+```bash
+node scripts/sweep-special-editions.mjs --remote            # main, DRY RUN — read the plan
+node scripts/sweep-special-editions.mjs --remote --friend   # padhard, DRY RUN
+node scripts/sweep-special-editions.mjs --remote --commit   # + --friend, once the plan looks right
+```
 
-**Owner review:** `/work/493` (now reads **Owned — Paperback**) and `/work/269`.
+It maps rows whose **prose** says leather / sprayed / slipcase onto the real
+columns migration `0430` added, and proposes `format → hardcover` for a
+leatherbound copy sitting on a non-hardcover edition. ⚠️ **Its dry-run count
+has never been measured** — the owner gets it from the first command. Until it
+runs, badges on un-swept rows come from the **prose fallback**, which still
+works; the sweep is what makes them read the columns.
 
-**Not done / deferred:** the `WorkPage.tsx` section comment still says "one hero
-holding" (cosmetic, left untouched to keep the diff to the derivation + tabs). No
-D1 unit harness exists, so the derivation is covered by the pure-function tests,
-not a live-D1 read.
-
-
-## ☐ Special editions first-class + multi-type format filter — LANDED FOR REVIEW (branch `feature/special-editions-firstclass`, 2026-08-24)
-
-Sprayed edges / leatherbound / slipcase are now first-class editable booleans on
-a **copy** (migration `0430`, mirroring `is_signed`), replacing the read-only
-parse of `edition_name` prose. `EditBox → What you have → Copies` gains per-copy
-toggles and add-form checkboxes; the shelf-view badges read the real columns
-first and fall back to the prose only for un-swept rows. The collection gains a
-**multi-type format filter** (owner ask, revised 2026-08-24 to multi-select):
-hardcover / leatherbound / paperback / mass_market / ebook / audiobook, each
-individually selectable, OR-ed — a fixed-map clause (`BINDING_CLAUSE`), unknown
-type adds no clause. Leather ⊂ hardcover stays true in the data (ticking
-Hardcover matches a leatherbound copy) but leather is its own box.
-
-**State:** branch pushed. ~~Migration **0430 is UNAPPLIED**. Nothing deployed.~~
-⚠️ **superseded — measured 2026-08-31:** `feature/special-editions-firstclass`
-IS merged into `main`; `wrangler d1 migrations list --remote` answers **"No
-migrations to apply!" on BOTH instances** (so 0430 is applied), and main has
-deployed since (through `dd290cd`, 2026-08-27). Go-live steps 1 and 4 below are
-therefore done. **Steps 2–3 (the sweep dry-run + commit) are NOT verified to
-have run** — no record of a `sweep-special-editions.mjs` run was found; that is
-what remains of this item. 1661 tests pass / 0 fail; typecheck clean.
-
-⚠️ **The sweep's dry-run count is NOT yet measured** — the sweep reads the new
-columns to avoid re-proposing set ones, so it cannot run until 0430 is applied;
-production reads are also blocked in the build environment. The owner gets the
-count from step 2 below.
-
-**🔴 OWNER GO-LIVE SEQUENCE (in order):**
-1. **Apply migration 0430** to each instance:
-   `npx wrangler d1 migrations apply library-catalog --remote` (main), then
-   `--env friend` for padhard. (Migrate-before-deploy: the new code reads the
-   new columns.)
-2. **Dry-run the sweep** and read the count:
-   `node scripts/sweep-special-editions.mjs --remote` (main),
-   `node scripts/sweep-special-editions.mjs --remote --friend` (padhard).
-   It maps rows whose prose says leather/sprayed/slipcase onto the columns, and
-   proposes edition `format → hardcover` for a leatherbound copy on a
-   non-hardcover edition. Review the printed plan.
-3. **Commit the sweep** once the plan looks right:
-   `node scripts/sweep-special-editions.mjs --remote --commit` (+ `--friend`).
-4. **Deploy** (`npm run deploy`, then the friend deploy) — see `access/deploy.md`.
-
-**Deferred / not done:** a facet count on the new Type filter (a GROUP BY per
-type per keystroke for boxes read off the list — deliberately omitted, matching
-the facets-cost note). ~~consolidating the new multi-type **Type** selector with
-the pre-existing single-select **Edition**/**Printing** controls~~ **DONE
-2026-08-24** — owner ruled retire Edition + Printing into the Type dropdown, keep
-`medium` (Format) as its own axis; shipped `1333ff2`, deployed both instances,
-verified live. Whole record in [`DONE.md`](DONE.md). No D1 unit harness exists in
-this repo, so `createCopy` /
-`updateCopy`'s write path is covered by typecheck + the migration round-trip SQL
-test, not a live-D1 test.
+⚠️ **Nothing here is blocked and nothing is broken.** Both features are live;
+this is the confirmation half of *shipped ≠ verified*, and it needs a signed-in
+human — which is why no session can close it.
 
 
 > ✂️ **2026-09-02:** *"Retire `docs/HANDOFF.md` — a competing living doc the
