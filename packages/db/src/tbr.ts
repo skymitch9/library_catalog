@@ -302,10 +302,14 @@ async function formatsForWorks(
         .all<{ work_id: number; status: string }>(),
       db
         .prepare(
-          `SELECT work_id, title FROM audiobook_holding WHERE stale_at IS NULL AND work_id IN (${marks})`,
+          // ⚠️ `raw_title` rides along because the CHIP IS A LINK and the link
+          // is a title search on the sibling site — the stripped `title` loses
+          // the volume, so a series-named book lands on the whole series. See
+          // `audiobookDetailUrl`'s measurement. Null on rows predating 0340.
+          `SELECT work_id, title, raw_title FROM audiobook_holding WHERE stale_at IS NULL AND work_id IN (${marks})`,
         )
         .bind(...chunk)
-        .all<{ work_id: number; title: string }>(),
+        .all<{ work_id: number; title: string; raw_title: string | null }>(),
       db
         .prepare(`SELECT work_id, title FROM ebook_holding WHERE work_id IN (${marks})`)
         .bind(...chunk)
@@ -325,7 +329,7 @@ async function formatsForWorks(
     }
     for (const row of audio.results ?? []) {
       const f = out.get(row.work_id);
-      if (f && !f.audio) f.audio = { title: row.title };
+      if (f && !f.audio) f.audio = { title: row.title, rawTitle: row.raw_title };
     }
     for (const row of ebooks.results ?? []) {
       const f = out.get(row.work_id);

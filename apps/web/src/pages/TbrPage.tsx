@@ -466,10 +466,14 @@ function Formats({ group }: { group: Group }) {
           {physical.state === 'owned' ? '📕 Physical' : '📕 Physical — wanted'}
         </Link>
       )}
+      {/* ⚠️ The verbatim title when the holding carries one — see
+          `audiobookDetailUrl`'s measurement. The other links on this page are
+          wish-list titles this catalog never matched, so they stay plain
+          searches: there is no verbatim string to prefer. */}
       {audio && (
         <a
           className="chip-link"
-          href={audiobookDetailUrl(audio.title)}
+          href={audiobookDetailUrl(audio.title, audio.rawTitle)}
           target="_blank"
           rel="noreferrer"
         >

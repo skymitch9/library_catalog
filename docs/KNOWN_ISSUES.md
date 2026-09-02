@@ -1,7 +1,13 @@
 # library_catalog — Known Issues, Waivers & Exceptions
 
 > **Audience:** Claude/Kiro sessions and the owner. **Status:** TRACKED.
-> Last verified: **2026-09-02 (later)** — **KI-13 was CLOSED BY A FIX** the
+> Last verified: **2026-09-02 (latest)** — **KI-14 was added** and measured by
+> replaying the audiobook site's own search over the 1,087 cards it ships. It
+> is the RESIDUE of a fix, not a new defect: the audiobook deep link now
+> searches the verbatim title (824 → 886 of 1,087 books reached uniquely, and
+> the one dead search closed), and a book whose title IS its series name still
+> cannot be isolated at all. ⚠️ **Nothing else was re-checked then.**
+> Previously **2026-09-02 (later)** — **KI-13 was CLOSED BY A FIX** the
 > same day it was filed: billing phase 3 landed and deployed to both instances
 > (`e7b3f6b`), and the entry moved to the resolved table below. ⚠️ **The fix
 > is INERT** — `BILLING_POLICY = "off"` — so what is verified is that the field
@@ -301,6 +307,49 @@ migration — the number to weigh is how many pairs share a raw title. Measured
 count is more than a handful, or when he asks to see both narrators on a work
 page. The ACOTAR dramatizations are NOT affected — their raw titles differ by
 `(Part 1 of 2)` / `(Part 2 of 2)`, so both halves store.
+
+---
+
+## KI-14 · A book whose TITLE is its SERIES name cannot be isolated on the audiobook site — `ACCEPTED`
+
+**Symptom.** The work page's audiobook link is a **search** on the sibling
+site (`#q=`, the only book anchor that site has), and for *The Wandering Inn*
+it drops **14** books into the search box rather than landing on one.
+
+**Measured 2026-09-02** by replaying that site's own `_normalize` / `_tokens` /
+`matchesAll` (`audiobook_catalog/site/index.html` lines 41175–41419) over the
+**1,087** cards it ships — not by reading the regexes:
+
+| query | lands on exactly ONE book | ≥10 books | 0 books | mean |
+|---|---|---|---|---|
+| the cleaned `title` (before 2026-09-02) | 824 | 48 | 1 | 2.20 |
+| the verbatim `raw_title` (now) | **886** | **17** | **0** | **1.74** |
+| *The Wandering Inn* specifically | — | **16 → 14** | — | — |
+
+**Why tolerated — it is not a query that can be written better.**
+`_applySearch` is an **AND of SUBSTRING tests**, so a query is only as specific
+as its rarest token, and every token volume 1's verbatim title has (`the`,
+`wandering`, `inn,`, `book`, `1`, `-`) is also a substring of its 15 siblings'
+cards. ⚠️ **A numeral can never discriminate under substring matching** — `1`
+is inside `16`, inside the year `2021`, inside the duration `45:21`. No query
+composed of that book's own words can exclude its siblings, and the only fields
+that would (year, duration, narrator-per-volume) are not stored on this side.
+The fix that shipped is the best available and is a one-way ratchet — adding
+tokens can never widen a conjunction — so no book was made worse: the single
+book whose match count ROSE went **0 → 1** (*A Court of Wings and Ruin (1 of 3)
+[Dramatized Adaptation]…* cleans to a string no card contains, i.e. its link
+was a **dead search**).
+
+**What would change it.** ⚠️ **An anchor on the OTHER side, not a cleverer
+query here.** `_parseHash` reads exactly two keys, `q` and `p`; if it grew a
+third — an id read as `bookIdFromTitle(raw_title)`, the slug both catalogs
+already agree on (`packages/core/src/reviews.ts`, and that site's own review
+documents are keyed by it) — this side would change one line of
+`audiobookDetailUrl` and land on the book exactly. **The number to watch is the
+17 books whose link still opens a wall of ten or more**; at 17 of 1,087 (1.6%)
+a cross-repo change to a site this catalog does not own is not worth it. Full
+record and the measurement script's findings:
+`apps/web/src/lib/audiobook-site.ts`'s header.
 
 ---
 

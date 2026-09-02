@@ -115,23 +115,15 @@ that double cover is deliberate and pinned upstream — a path under two switche
 is refused if EITHER denies.
 
 
-## ☐ The audiobook deep link is a SEARCH, and on a series-named title it finds 16 books (2026-09-02)
-
-✂️ The rest of this item — *"the work page shows the audiobook link TWICE"* —
-moved WHOLE to [`DONE.md`](DONE.md): the owner ruled that **the shelf owns it**,
-"Other versions available" was deleted, and the provenance sentence came across
-with it. This bullet was the second half and is untouched by that merge.
-
-☐ The link is `#q=<cleaned title>`, a token-substring search, so *"The Wandering
-  Inn"* drops **16 books** into the search box rather than landing on one. Fine
-  for *Fae and Fare*; poor for a title that is also its series name.
-  `audiobookDetailUrl` in `apps/web/src/lib/audiobook-site.ts` is the one place
-  that would change, and its header explains why a hash search was the only
-  option (the sibling site has no per-book URL).
-
-⚠️ **It is now more visible, not less:** the shelf's Audio section is on the main
-page rather than inside the collapsed Record Control drawer, so the poor landing
-is one click from every work page with an audiobook.
+> ✂️ **2026-09-02:** *"The audiobook deep link is a SEARCH, and on a
+> series-named title it finds 16 books"* moved WHOLE to [`DONE.md`](DONE.md) —
+> the link now searches the sibling catalog's **verbatim** title
+> (`raw_title` / `audioKey`) instead of our stripped one, measured over that
+> site's own 1,087 cards: **824 → 886** books reached uniquely, the one **dead
+> search closed**, walls of ten-or-more **48 → 17**. ⚠️ It does NOT close the
+> reported case — *The Wandering Inn* goes 16 → 14 and cannot go lower, because
+> a numeral cannot discriminate under substring matching. That residue is
+> [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) **KI-14**, with what would settle it.
 
 ---
 

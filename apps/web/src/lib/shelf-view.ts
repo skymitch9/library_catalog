@@ -794,6 +794,14 @@ function buildRows(
       titleSimilarity: number | null;
       staleAt: string | null;
       narrator?: string | null;
+      /** ⚠️ Two names for ONE thing — that catalog's verbatim title.
+       *  `rawTitle` on a `WorkAudiobookHolding` (migration 0340); `audioKey` on
+       *  a `WorkAudioEdition` (0390, where the same string is the row's
+       *  identity). Both are absent on the series-link rung, and the link then
+       *  falls back to `title` exactly as it always did. See
+       *  `audiobookDetailUrl` for what this buys, measured. */
+      rawTitle?: string | null;
+      audioKey?: string | null;
     },
     count: number | null,
   ): ShelfRow {
@@ -831,7 +839,10 @@ function buildRows(
       // so in the next breath; `couldBeYours` would be the wrong softening — the
       // question is not which copy is yours, it is whether the match still holds.
       ...stateWords(live ? 'owned' : 'available'),
-      href: audiobookDetailUrl(rec.title),
+      // ⚠️ The verbatim title is the search key, our spelling is the fallback —
+      // stripping Audible's decoration is exactly what throws the volume away,
+      // and on a series-named title that leaves the SERIES in the search box.
+      href: audiobookDetailUrl(rec.title, rec.rawTitle ?? rec.audioKey ?? null),
       coverUrl: resolveAudiobookCover(rec.coverHref),
       notes,
       signed: null,

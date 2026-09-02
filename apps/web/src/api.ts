@@ -661,6 +661,18 @@ export interface AudiobookRef {
  */
 export interface WorkAudiobookHolding {
   title: string;
+  /**
+   * That catalog's title **verbatim**, decoration and all (migration 0340) —
+   * the string its own cards carry, and therefore the one that makes the
+   * site's `#q=` search specific. See `audiobookDetailUrl`.
+   *
+   * ⚠️ **Optional here, and both absent forms mean the same thing: fall back
+   * to `title`.** `null` is the series-link rung, which carries no Audible
+   * string at all (`deriveAudiobookHoldingFromSeriesLink`); `undefined` is a
+   * response cached before the web app read this field — the same reading
+   * `audioEditionCount` documents. The route has sent it since 0340.
+   */
+  rawTitle?: string | null;
   authors: string | null;
   series: string | null;
   indexDisplay: string | null;

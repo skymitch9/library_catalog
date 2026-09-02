@@ -18,6 +18,113 @@
 > were extracted from this same history.
 
 
+## ✅ 2026-09-02 — the audiobook deep link searches the VERBATIM title, and the one dead link is closed
+
+Moved here whole from [`TODO.md`](TODO.md). The item as it stood:
+
+> ## ☐ The audiobook deep link is a SEARCH, and on a series-named title it finds 16 books (2026-09-02)
+>
+> ✂️ The rest of this item — *"the work page shows the audiobook link TWICE"* —
+> moved WHOLE to `DONE.md`: the owner ruled that **the shelf owns it**,
+> "Other versions available" was deleted, and the provenance sentence came across
+> with it. This bullet was the second half and is untouched by that merge.
+>
+> ☐ The link is `#q=<cleaned title>`, a token-substring search, so *"The Wandering
+>   Inn"* drops **16 books** into the search box rather than landing on one. Fine
+>   for *Fae and Fare*; poor for a title that is also its series name.
+>   `audiobookDetailUrl` in `apps/web/src/lib/audiobook-site.ts` is the one place
+>   that would change, and its header explains why a hash search was the only
+>   option (the sibling site has no per-book URL).
+>
+> ⚠️ **It is now more visible, not less:** the shelf's Audio section is on the main
+> page rather than inside the collapsed Record Control drawer, so the poor landing
+> is one click from every work page with an audiobook.
+
+Review: **<https://library.heygabi.ai/work/229>** (*The Wandering Inn*) → the
+**Audio** row's *"Audiobook"* link. It now carries the sibling catalog's own
+string — `#q=The+Wandering+Inn+-+The+Wandering+Inn%2C+Book+1` — instead of the
+bare series name. Compare **<https://library.heygabi.ai/work/514>**
+(*Elantris*, two recordings): each row links on **its own** `audioKey`, so the
+Tenth Anniversary row searches for the Tenth Anniversary edition.
+
+### The cause was one field being thrown away, not the link shape
+
+This catalog stores the sibling's title **twice**: `audiobook_holding.title`,
+stripped of Audible's decoration, and `raw_title` (migration 0340) /
+`audio_key` (0390), that catalog's **verbatim** string. Stripping the
+decoration is exactly what removes the volume, so the cleaned form of *"The
+Wandering Inn - The Wandering Inn, Book 1"* is the bare **series** name — and
+the link searched on that. ⚠️ **`raw_title` was already on the wire** (the
+route has sent it since 0340); only the web app's own interface omitted it. No
+migration, no API shape change, one new column read in the TBR query.
+
+### Measured, not asserted — the site's own search, replayed
+
+`_applySearch` (`audiobook_catalog/site/index.html` ~41410) is an **AND of
+SUBSTRING tests** over each card's text. Its `_normalize` / `_tokens` /
+`matchesAll` were replayed over the **1,087** cards that file ships:
+
+| query | exactly ONE book | ≥10 books (a wall) | 0 books (dead) | mean |
+|---|---|---|---|---|
+| the cleaned `title` (before) | 824 | 48 | **1** | 2.20 |
+| the verbatim raw title (now) | **886** | **17** | **0** | **1.74** |
+
+Narrower on **122** books, wider on **one** — and that one is the best result
+in the table: *"A Court of Wings and Ruin (1 of 3) [Dramatized Adaptation] - A
+Court of Thorns and Roses, Book 3"* cleans to `A Court of Wings and Ruin (1 of
+3) []`, a string **no card contains**, so its link was a **dead search** and
+now lands on the one right book. ⚠️ Adding tokens can never widen a
+conjunction, so this is a one-way ratchet: no book's link can have been made
+worse.
+
+### ⚠️ It does NOT close the reported case, and saying otherwise would be the fabrication
+
+*The Wandering Inn* goes **16 → 14**, and **14 is the floor.** Every token
+volume 1's verbatim title has (`the`, `wandering`, `inn,`, `book`, `1`, `-`) is
+also a substring of its 15 siblings' cards, and a **numeral can never
+discriminate under substring matching** — `1` is inside `16`, inside `2021`,
+inside `45:21`. No query composed of that book's own words can exclude them,
+and the fields that would (year, duration, per-volume narrator) are not stored
+on this side. Filed as **KI-14** in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) with
+the number to watch (**17** books still opening a wall) and what would settle
+it: a third hash key on the *other* site, read as
+`bookIdFromTitle(raw_title)` — the slug both catalogs already agree on — not a
+cleverer query here.
+
+### What changed
+
+| File | Change |
+|---|---|
+| `apps/web/src/lib/audiobook-site.ts` | `audiobookDetailUrl(title, verbatimTitle?)` — prefers a non-blank verbatim string, falls back to `title`. The measurement above lives in its header |
+| `apps/web/src/api.ts` | `WorkAudiobookHolding.rawTitle?` — already sent, now read |
+| `apps/web/src/lib/shelf-view.ts` | the Audio row links on `rec.rawTitle ?? rec.audioKey ?? null` |
+| `packages/db/src/tbr.ts` · `packages/core/src/tbr.ts` · `apps/web/src/pages/TbrPage.tsx` | the TBR *"You have it: 🎧 Audiobook"* chip gets the same string — one helper, one behaviour |
+
+⚠️ **Three links deliberately unchanged**: TbrPage's two *"Look for it on:"*
+chips and TbrSpinner's *"Find it on the audiobook site"*. Those are wish-list
+titles this catalog has **never matched** to a recording, so there is no
+verbatim string to prefer — they are genuine searches and are worded as such.
+
+⚠️ **Absence is indistinguishable from the old behaviour, by construction.**
+`null` (the series-link rung carries no Audible string at all), `undefined` (a
+response cached before the field was read) and a blank string all fall back to
+`title` — pinned by tests, so a future reader cannot mistake "not recorded" for
+"search for nothing".
+
+### Verified
+
+typecheck clean · **2218 tests pass / 0 fail** (2210 before; +8 — five on the
+helper's preference and fallbacks, three on the shelf row including the
+two-recording case).
+
+⚠️ **NOT verified:** nobody has clicked the new link in a browser against the
+live audiobook site. The 14/886/17 figures are a **replay of that site's
+matcher over the HTML it ships**, which is the right instrument for the query
+but is not the same as watching the page filter. And the sibling site's shipped
+`index.html` was read from disk, not fetched from `audiobooks.heygabi.ai` — if
+that host is serving an older build, its search could differ.
+
+
 ## ✅ 2026-09-02 — a PRINTING can have its own cover, and it needed no migration
 
 > **Owner, 2026-09-02 ~14:00, verbatim:** *"we should also add being able to set

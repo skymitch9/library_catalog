@@ -53,6 +53,46 @@ describe('audiobookDetailUrl — the hash-search deep link', () => {
     const title = 'The Hitchhiker’s Guide — édition';
     assert.equal(parseHashLikeTheSite(audiobookDetailUrl(title)), title);
   });
+
+  /**
+   * ⚠️ The owner's 2026-09-02 report: a series-named title dropped 16 books in
+   * the search box. The site's search is an AND of SUBSTRING tests, so the
+   * query is only as specific as its tokens — and our stored `title` has had
+   * the volume stripped off it. These pin the preference, not the site's own
+   * matcher (that is measured in the helper's header, over its shipped cards).
+   */
+  describe('the verbatim title is preferred, and absence is not a regression', () => {
+    it('searches the sibling catalog’s verbatim string when we hold one', () => {
+      assert.equal(
+        parseHashLikeTheSite(
+          audiobookDetailUrl(
+            'The Wandering Inn',
+            'The Wandering Inn - The Wandering Inn, Book 1',
+          ),
+        ),
+        'The Wandering Inn - The Wandering Inn, Book 1',
+      );
+    });
+
+    it('falls back to our spelling for null (the series-link rung carries none)', () => {
+      assert.equal(parseHashLikeTheSite(audiobookDetailUrl('Elantris', null)), 'Elantris');
+    });
+
+    it('falls back for undefined — a response cached before the field was read', () => {
+      assert.equal(parseHashLikeTheSite(audiobookDetailUrl('Elantris', undefined)), 'Elantris');
+      assert.equal(audiobookDetailUrl('Elantris'), audiobookDetailUrl('Elantris', null));
+    });
+
+    it('a blank or whitespace raw title is "not recorded", never an empty search', () => {
+      assert.equal(parseHashLikeTheSite(audiobookDetailUrl('Elantris', '')), 'Elantris');
+      assert.equal(parseHashLikeTheSite(audiobookDetailUrl('Elantris', '   ')), 'Elantris');
+    });
+
+    it('the verbatim string round-trips through the site parser too', () => {
+      const raw = 'A Court of Wings and Ruin (1 of 3) [Dramatized Adaptation] - A Court of Thorns and Roses, Book 3';
+      assert.equal(parseHashLikeTheSite(audiobookDetailUrl('A Court of Wings and Ruin', raw)), raw);
+    });
+  });
 });
 
 describe('resolveAudiobookCover — the sibling bucket port', () => {

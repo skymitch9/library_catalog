@@ -478,8 +478,18 @@ export interface TbrGroupFormats {
    * exists, `'none'` when the work is in the catalog with no copy at all.
    */
   physical: { workId: number; state: 'owned' | 'wanted' | 'none' } | null;
-  /** An `audiobook_holding` row exists for the matched work (migration 0010/0390). */
-  audio: { title: string } | null;
+  /**
+   * An `audiobook_holding` row exists for the matched work (migration
+   * 0010/0390).
+   *
+   * ⚠️ `rawTitle` is that catalog's title **verbatim** (migration 0340) and it
+   * is what the link searches on, because the stripped `title` loses the
+   * volume — measured in `audiobookDetailUrl`'s header, 824 → 886 books of
+   * 1,087 reached uniquely. Optional: `null` where the column was never
+   * backfilled and absent from a response cached before this field, and both
+   * mean "use `title`".
+   */
+  audio: { title: string; rawTitle?: string | null } | null;
   /** An `ebook_holding` row exists for the matched work (migration 0310). */
   ebook: { title: string } | null;
 }

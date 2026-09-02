@@ -218,7 +218,15 @@ describe('resolveTbrEntries — the formats row', () => {
       physical: { workId: 12, state: 'owned' },
       // ⚠️ The SIBLING catalog's spelling, because its only per-book link is a
       // title search-hash and this catalog's spelling finds it far less often.
-      audio: { title: 'Firefight - The Reckoners, Book 2' },
+      // ⚠️ `rawTitle` is that catalog's VERBATIM string (migration 0340) and
+      // rides along from 2026-09-02 because it — not the stripped `title` — is
+      // what the link searches on: stripping loses the volume, and a
+      // series-named book then lands on its whole series. It is equal to
+      // `title` here only because this fixture's row carries no decoration.
+      audio: {
+        title: 'Firefight - The Reckoners, Book 2',
+        rawTitle: 'Firefight - The Reckoners, Book 2',
+      },
       ebook: null,
     });
   });

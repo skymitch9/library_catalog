@@ -825,6 +825,60 @@ describe('the audiobook cross-link renders ONCE, in the Audio section (the doubl
     assert.equal(audio.href, audiobookDetailUrl('Harry Potter and the Chamber of Secrets'));
   });
 
+  /**
+   * ⚠️ Owner, 2026-09-02: the audiobook link is a SEARCH and a series-named
+   * title found 16 books. Our stored `title` has had the volume stripped off
+   * it, so for such a book it IS the series name; `rawTitle` / `audioKey` is
+   * that catalog's verbatim string and is what the search must carry. Absence
+   * must stay indistinguishable from the old behaviour.
+   */
+  it('searches the VERBATIM title when the holding carries one', () => {
+    const v = deriveShelfView({
+      ...NONE,
+      title: 'The Wandering Inn',
+      audiobookHolding: audioHolding({
+        title: 'The Wandering Inn',
+        rawTitle: 'The Wandering Inn - The Wandering Inn, Book 1',
+      }),
+    });
+    const audio = v.rows.find((r) => r.medium === 'audio')!;
+    assert.equal(
+      audio.href,
+      audiobookDetailUrl('The Wandering Inn', 'The Wandering Inn - The Wandering Inn, Book 1'),
+    );
+    assert.ok(String(audio.href).includes('Book+1'), 'the volume must survive into the query');
+  });
+
+  it('a series-link holding (rawTitle null) links exactly as it always did', () => {
+    const v = deriveShelfView({
+      ...NONE,
+      audiobookHolding: audioHolding({ matchedVia: 'series_link', rawTitle: null }),
+    });
+    const audio = v.rows.find((r) => r.medium === 'audio')!;
+    assert.equal(audio.href, audiobookDetailUrl('Harry Potter and the Chamber of Secrets'));
+  });
+
+  it('two recordings: each row searches on its OWN audioKey', () => {
+    const v = deriveShelfView({
+      ...NONE,
+      audioEditions: [
+        audioEdition({ audioKey: 'Elantris', title: 'Elantris' }),
+        audioEdition({
+          audioKey: 'Elantris - Tenth Anniversary Special Edition',
+          title: 'Elantris',
+        }),
+      ],
+      audiobookHolding: audioHolding({ title: 'Elantris', rawTitle: 'Elantris' }),
+    });
+    const rows = v.rows.filter((r) => r.medium === 'audio');
+    assert.equal(rows.length, 2);
+    assert.equal(rows[0].href, audiobookDetailUrl('Elantris', 'Elantris'));
+    assert.equal(
+      rows[1].href,
+      audiobookDetailUrl('Elantris', 'Elantris - Tenth Anniversary Special Edition'),
+    );
+  });
+
   it('resolves the cover via the ONE bucket helper, and null stays null', () => {
     const withCover = deriveShelfView({ ...NONE, audiobookHolding: audioHolding() });
     assert.equal(
