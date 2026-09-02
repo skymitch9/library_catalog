@@ -32,6 +32,67 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
+## ☐ Billing phase 3 landed INERT — two things remain (2026-09-02)
+
+The build is on both instances (`e7b3f6b`, versions `77a9f67c` / `37b83f8b`) and
+KI-13 is closed. What is NOT done:
+
+### 1. ⚠️ The soak, then the flip — `BILLING_POLICY` is `"off"` on both
+
+**The one-line change, per instance**, in `apps/worker/wrangler.toml`:
+
+| Instance | Line | Today | Next |
+|---|---|---|---|
+| main | `[vars]` block, beside `ESTATE_APP = "library"` | `BILLING_POLICY = "off"` | `"shadow"` |
+| padhard | `[env.friend.vars]`, beside `ESTATE_APP = "library2"` | `BILLING_POLICY = "off"` | `"shadow"` |
+
+⚠️ **`apps/worker/src/lib/billing-gate.test.ts` reads that file and FAILS unless
+both say `"off"`** — deliberately. Update the assertion in the same commit as
+the flip, so a flip can never ride along on an unrelated deploy (design §4.2).
+Then deploy that instance alone (`npm run deploy` or `npm run deploy:friend`),
+never `deploy:both`, because **one site at a time** is the rule.
+
+**Reading the soak:** `npm run tail --workspace @lc/worker`, then
+`jq 'select(.evt=="billing_policy")'`. Each line carries `would_deny` AND
+`proceeded` — the second field is the one the estate paid to learn it needed
+(`catalog-platform/docs/info/audiobook-auth-soak-2026-08-16.md`: a soak whose
+criterion cannot be falsified is not a soak).
+
+**Flip shadow → enforce only when BOTH hold over ≥ 7 days** (§4.2):
+1. **Zero `"would_deny":true`** on any feature the owner did not switch off.
+2. ⚠️ **At least one `"would_deny":true`** on a feature he DID switch off, on
+   that site. Without this half, "zero denials" is indistinguishable from "the
+   instrument never ran" — which is exactly the `0 of 0 — unmeasured, not clean`
+   verdict the audiobook soak reached.
+
+⚠️ **Nothing can be measured until a rule exists.** The `billing_policy` table
+has no row for `library` or `library2` today, so shadow would log a stream of
+`would_deny:false` and satisfy criterion 1 while failing criterion 2 forever.
+Write the throwaway deny FIRST, from the Spending panel on
+<https://heygabi.ai/admin/>.
+
+### 2. ☐ The CLI scripts (L9–L13) are still ungated, deliberately
+
+`backfill-missing-covers.mjs`, `backfill-missing-isbns.mjs`,
+`research-queue.mjs`, `audit-universes.mjs`, `probe-universes.mjs` — five paths
+whose only gate today is a command-line flag, and one
+(`research-queue.mjs:99`) hard-codes `OWNER_USER_ID = 1` and checks nothing.
+
+Design §9 Q5's recommendation, unchanged: **honour policy as a WARNING with an
+explicit `--ignore-policy` escape hatch, never a hard refusal.** A local script
+the owner runs deliberately is not the threat model, and a CLI that refuses its
+operator is a CLI that gets edited. The banner should read *"cover search is
+switched off for library; re-run with --ignore-policy"*.
+
+⚠️ They cannot reuse `lib/billing-gate.ts`: it reads a Worker request context.
+They need the **system door** client instead (`lib/billing-system.ts` is the
+shape — one HTTPS GET on this instance's app token), or the owner's own `/seen`
+answer if the script is ever taught an identity. `cli.backfill` is the registry
+id; ⚠️ L9 and L10 are ALSO covered by `research.covers` / `research.isbn`, and
+that double cover is deliberate and pinned upstream — a path under two switches
+is refused if EITHER denies.
+
+
 ## ⚠️ FINDING: the work page now shows the audiobook link TWICE — two surfaces, one question (2026-09-02)
 
 Measured **in a real browser, signed in**, on <https://library.heygabi.ai/work/232>.

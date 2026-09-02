@@ -1,14 +1,16 @@
 # library_catalog — Known Issues, Waivers & Exceptions
 
 > **Audience:** Claude/Kiro sessions and the owner. **Status:** TRACKED.
-> Last verified: **2026-09-02** — **KI-13 was added** and measured by reading
-> the code (`packages/estate-auth/src/gate.ts`,
-> `apps/worker/src/middleware/auth.ts`, the synced `generated/seen.js`).
-> ⚠️ **It was NOT measured against the live system** — no `/seen` call was made
-> and no production D1 was read, so the claim is "this code cannot use the
-> field", not "the owner pressed the switch and nothing happened". ⚠️ **Nothing
-> else was re-checked on 2026-09-02**: KI-5 through KI-12 all still carry the
-> ages stated below.
+> Last verified: **2026-09-02 (later)** — **KI-13 was CLOSED BY A FIX** the
+> same day it was filed: billing phase 3 landed and deployed to both instances
+> (`e7b3f6b`), and the entry moved to the resolved table below. ⚠️ **The fix
+> is INERT** — `BILLING_POLICY = "off"` — so what is verified is that the field
+> is now cached and read, not that a switch has ever changed an outcome here.
+> Earlier that day KI-13 was added and measured by reading the code
+> (`packages/estate-auth/src/gate.ts`, `apps/worker/src/middleware/auth.ts`,
+> the synced `generated/seen.js`), never against the live system.
+> ⚠️ **Nothing else was re-checked on 2026-09-02**: KI-5 through KI-12 all
+> still carry the ages stated below.
 > Previously **2026-08-26 ~16:40 Phoenix** — **KI-8 was re-measured against
 > production D1 and RETIRED** (see the resolved table at the foot), and
 > **KI-12 was added** and measured against the live `catalog.csv` and both
@@ -302,46 +304,14 @@ page. The ACOTAR dramatizations are NOT affected — their raw titles differ by
 
 ---
 
-## KI-13 · This repo receives `billing_denied` and throws it away — no money path here is switchable — `ACCEPTED`
+## Resolved and removed — 2026-09-02
 
-**Symptom.** The owner switches a money path off for this site in the Spending
-panel on <https://heygabi.ai/admin>, and **nothing changes here.** The switch is
-real, the rule is stored, `/seen` answers it — and this Worker drops the field on
-the floor. Nothing goes red anywhere, which is the part that makes this worth an
-entry rather than a bug report six weeks from now.
+⚠️ Same rule as the blocks below: closed by a real fix, removed rather than
+badged, recorded here so nobody re-opens it from memory.
 
-**Measured 2026-09-02**, by reading the code, not the live system:
-
-| Where | What happens |
-|---|---|
-| `packages/estate-auth/generated/seen.js` (synced) | parses `billing_denied` and returns `billingDenied` on the answer AND on `refresh` |
-| `packages/estate-auth/src/gate.ts:383` | `GateOutcome.refresh` declares **three** keys — the fourth travels at runtime and is invisible to the type |
-| `apps/worker/src/middleware/auth.ts:201-209` | persists `status`, `checkedAt`, `visibility`. **Not the denials.** |
-| `GateSubject` | has `estateStatus` / `estateCheckedAt` / `estateVisibilityJson` and **no billing column**, so a cache hit could not answer the money question even if something asked |
-
-**Why tolerated.** ⚠️ **It is an unbuilt phase, not a defect** — billing phase 3
-on catalog-platform's `TODO.md` is exactly *"library, library2 and games read
-`billing_denied` off /seen"*, and it is a separate build in a separate repo's
-sequence. Phase 1 shipped the resolver and the panel deliberately ahead of the
-consumers: a policy nothing reads denies nothing, so shipping it early changed
-nothing for anybody, which is what made it safe to ship at all.
-
-⚠️ **The failure direction is ALLOW, and that is chosen out loud** (design
-`catalog-platform/docs/info/llm-billing-control-design.md` §3.5 row 3): with no
-billing fact, every paid feature stays available. Denying instead would turn an
-auth outage into a household-wide "everything is broken". The wallet is bounded
-by the ceilings that already exist (`SWEEP_LIMIT`, `max_tokens`, the timeouts),
-never by this policy — *a policy that can only deny cannot be depended on to
-fail closed.*
-
-**What would change it.** Billing phase 3 landing here. The concrete work, in
-order: widen `GateOutcome.refresh` to four keys; add a cache column and put it on
-`GateSubject`; persist it in `middleware/auth.ts` beside `visibility`; then AND
-the resolved deny-set in front of this repo's own money paths. ⚠️ **The wire
-shape is already pinned** — `packages/estate-auth/test/billing-denied-shape.test.ts`,
-8 tests, including the one that matters: **`null` means unknown, `[]` means the
-directory said nothing is denied, and the two must never collapse into each
-other.** That file is where phase 3 starts.
+| Was | Claimed | Closed 2026-09-02 |
+|---|---|---|
+| **KI-13** | This repo receives `billing_denied` and throws it away — no money path here is switchable | ⚠️ **Closed by billing phase 3 landing** (`e7b3f6b`, deployed to both instances). Its own "what would change it" listed four steps and all four happened: `GateOutcome.refresh` is four keys; migration `0440` adds `app_user.estate_billing_denied` and `GateSubject` takes it; `middleware/auth.ts` persists it beside `visibility` in the same UPDATE; and eight money paths now AND the resolved deny-set in front of their existing gates (L1–L8 — see [`DONE.md`](DONE.md)). 🔴 **The load-bearing pin held on the way through**: `null` is unknown and `[]` is "the directory denied nothing", and they stay apart on the wire, in the column, in the parser and in the tail line. ⚠️ **Shipped INERT** — `BILLING_POLICY = "off"` on both instances, so the switch is wired but not yet acting; the soak that flips it is on [`TODO.md`](TODO.md). ⚠️ **Not verified:** no rule has ever been written for `library`/`library2`, so no `billing_denied` has been seen non-empty on a real `/seen` answer here, and the gate has never fired |
 
 ---
 

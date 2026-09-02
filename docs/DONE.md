@@ -18,6 +18,118 @@
 > were extracted from this same history.
 
 
+## ✅ 2026-09-02 — billing phase 3: eight money paths here can be switched off from `/admin`, and every one ships INERT
+
+Closes **KI-13**, filed the same morning. Commit `e7b3f6b`; deployed as
+`77a9f67c` (main) and `37b83f8b` (padhard); `docs/deploys.log` has both lines.
+Design: `catalog-platform/docs/info/llm-billing-control-design.md`, phase 3.
+
+**Review link:** nothing renders differently — that is the point of shipping at
+`off`. The switch that drives it is
+<https://heygabi.ai/admin/> → **"Spending — what may bill the model, and where"**,
+whose `library` / `library2` columns now reach real code.
+
+### The eight paths, and what each is ANDed with
+
+⚠️ **Nothing was replaced.** The existing gate still decides first; policy can
+only add a NO on top of it (design §3.3). Deny-only is structural here rather
+than a convention — the gate returns a refusal or `null`, so there is no code
+path by which a policy row opens anything (§9 Q1).
+
+| # | Path | Feature id | Still gated by, unchanged |
+|---|---|---|---|
+| L1 | `POST /api/research/works/:id/run` | `research.details` | `runResearch` + key presence + the in-flight claim |
+| L2 | `POST /api/works/:id/cover/find` | `research.covers` | `runResearch` + key presence |
+| L3 | `POST /api/series/:name/scan` | `research.series` | `runResearch` + key presence |
+| L4/L5 | `POST /api/scan-jobs/shelf` and `/single` | `scan.photo` | `scanPhoto` + key presence |
+| L6 | `POST /api/gabi/turn` | `gabi.panel` | `runResearch` + the `GABI_PANEL` posture + key presence |
+| L7 | `POST /api/gabi/delegated/run-details` | `research.details` | the bearer + the on-behalf-of capability check |
+| L8 | the hourly cron sweep | `sweep.details` | cron match + key presence + `SWEEP_LIMIT` / `SWEEP_BUDGET` |
+
+**L4 and L5 are checked ONCE**, inside `readPhoto`, because they are one
+registry id — and before the job row is created, so a refusal cannot leave a
+`failed` job claiming somebody paid for a read that did not work.
+
+**L7 resolves against the ON-BEHALF-OF person, never the bot** (§9 Q4). Denying
+the bot would switch the feature off for the whole household, which is not what
+a per-person rule means. It reuses the `readEstateCache` row `authority()`
+already reads for the revocation check — one row, one moment, §4.5.
+
+**L8 is the one that has no human**, and it is the reason the estate has a
+fourth principal. It goes through the SYSTEM door
+(`GET /api/estate/billing/policy` on this instance's own app token,
+`apps/worker/src/lib/billing-system.ts`), because a cron has no email to send to
+`/seen`. 🔴 **Switching `sweep.details` off is the only control in the estate
+that stops an unattended hourly biller without a deploy.**
+
+### What was built
+
+| Piece | File |
+|---|---|
+| The cache column | `migrations/0440_billing_cache.sql` — applied to BOTH remote D1s before the deploy |
+| The read/write | `packages/db/src/users.ts` — `EstateCacheRow` and `writeEstateCache` carry a fourth value |
+| The gate's half | `packages/estate-auth/src/gate.ts` — `refresh` is four keys, `GateSubject` takes the column, `billingDenied` is on the outcome and in the tail line, and `/seen` now sends `local_role` |
+| The persist | `apps/worker/src/middleware/auth.ts` |
+| The call-site gate | `apps/worker/src/lib/billing-gate.ts` + 20 tests |
+| The system door | `apps/worker/src/lib/billing-system.ts` + 11 tests |
+| The posture | `apps/worker/wrangler.toml` — `BILLING_POLICY = "off"` in `[vars]` **and** `[env.friend.vars]` |
+
+### The two things this build got right on purpose, either of which fails silently
+
+1. 🔴 **`null` is UNKNOWN; `[]` is "the directory denied nothing".** They never
+   collapse — not on the wire, not in the D1 column (nullable, **no**
+   `DEFAULT '[]'`), not in either parser, not in the tail line. An auth Worker
+   mid-deploy running pre-0016 code answers silence, and silence read as `[]`
+   would un-switch every policy the owner had set for the length of that
+   deploy, with nothing anywhere going red. Unknown **proceeds** (§3.5 row 3),
+   because denying every paid feature during an auth outage turns it into a
+   household-wide *"everything is broken"*. The wallet is bounded by
+   `SWEEP_LIMIT`, `SWEEP_BUDGET` and the timeouts — *a policy that can only
+   deny cannot be depended on to fail closed.*
+2. ⚠️ **The SITE comes from `ESTATE_APP`, not a constant.** This is the one
+   place the build departs from the index Worker's template, and it is forced:
+   one build runs as two estate consumers spending two people's money.
+   Hard-coding `'library'` would be estate-credentials **F-5** again — padhard
+   judged against the main library's rules, and a switch pressed on her
+   catalogue doing nothing. The site is resolved through `resolveEstateApp`,
+   the same function that picks which bearer to present, so the identity this
+   Worker asserts and the site its spending is judged against are one decision.
+
+### Mechanical guards, not prose
+
+- A **literal pin** on every feature id this Worker checks. A Worker checking
+  `research.cover` (singular) against a registry holding `research.covers`
+  fails **silently open, forever**, and nothing else in the estate would
+  notice. Same guard the registry has one layer up.
+- A test that **reads `wrangler.toml`** and fails unless BOTH instances say
+  `BILLING_POLICY = "off"`. A flip therefore has to be deliberate — it cannot
+  ride along on an unrelated deploy, which is exactly what §4.2 forbids.
+
+### Verified
+
+Tests **2169 → 2200** (+31), all green; `npm run typecheck` clean; both
+migrations applied remotely **before** the deploy; guarded `npm run deploy:both`
+(check-clean + deploy-guard + full suite) ran to completion; `/api/health` 200
+on both hosts afterwards, reporting `app: "library"` and `app: "library2"`
+respectively.
+
+### ⚠️ NOT verified
+
+- **No rule has ever been written for `library` or `library2`**, so
+  `billing_denied` has never been observed non-empty on a real `/seen` answer
+  here, and **the gate has never fired.** Every truth-table assertion is a unit
+  test.
+- **No `wrangler tail` was read**, so no shadow line has been seen in
+  production — `BILLING_POLICY` is `off`, so none has been emitted.
+- **The system door was never called live.** Its client is pinned by unit tests
+  against a stubbed fetch; nobody has watched the cron present a bearer to
+  `auth.heygabi.ai`.
+- **Nobody rendered the Spending panel signed in** — that is
+  `catalog-platform`'s own open item, not this repo's.
+- **The `local_role` claim now on the `/seen` body was not observed
+  server-side.** It is sent; nothing here proves the directory used it.
+
+
 ## ✅ 2026-09-02 — the estate-auth pins learn `billingDenied`, and `deploy:both` is unblocked
 
 **The item as it stood on `TODO.md`, moved whole:**
