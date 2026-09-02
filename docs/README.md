@@ -2,7 +2,10 @@
 
 > **Audience:** Claude/Kiro sessions first, the owner second.
 > **Status:** ⚠️ **MIXED** — parts of `docs/` are tracked, parts are not. Check `git check-ignore` before assuming.
-> Last verified: **2026-08-21** (the tree below was measured that day).
+> Last verified: **2026-09-02** — `HANDOFF.md` was **retired** that day and the
+> top level now holds exactly the seven pieces the standard names; the husk is
+> [`archive/HANDOFF.md`](archive/HANDOFF.md). ⚠️ The rest of the tree below was
+> last measured **2026-08-21** and was not re-walked.
 >
 > 📐 **The rules for this tree — filing, formatting, when to move things — live
 > in `catalog-platform/docs/DOCS_STANDARD.md`, and ONLY there.** All four repos
