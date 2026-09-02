@@ -1166,7 +1166,12 @@ The volume mapping itself is **done** — moved whole to
 [`info/serial-print-splits.md`](info/serial-print-splits.md). These two were
 kept out of that correction batch on purpose, and both need the owner.
 
-☐ **`work.multi_volume_printing` on works 229–232 — OWNER'S CHECKBOX.**
+✅ **RESOLVED 2026-09-02 by the owner himself: "i ticked all 4"** — all four
+  works flagged through the edit panel, the one sanctioned door. The judgement
+  call landed on *"this position spans volumes"*. Kept here (not moved) until a
+  session verifies the four flags read back true; then move whole to DONE.
+
+☐ ~~**`work.multi_volume_printing` on works 229–232 — OWNER'S CHECKBOX.**~~
   R6 (`info/volume-numbers.md` §3a) is **human-only and mechanically guarded**;
   no script, finding or sweep may write it, and a correction script setting it
   would be the exact bypass the guard exists to prevent. It may well belong on
