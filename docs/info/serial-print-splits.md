@@ -82,8 +82,10 @@ two paperbacks; Books 3 through 19 are one paperback each.**
 | … through *Couriers Outbound* | Book 19 | 19 | — |
 
 Publisher: **Harper Voyager** (HarperCollins — the `978-0-06` prefix on all four
-ISBNs is theirs). ⚠️ Our four `edition` rows record the publisher as
-*"Barnes & Noble"*, which is the **retailer**, not the publisher — see §6.
+ISBNs is theirs). ⚠️ Our four `edition` rows recorded the publisher as
+*"Barnes & Noble"*, the **retailer** — **corrected on production 2026-09-02** by
+`scripts/fix-retailer-publishers-2026-09-02.mjs`, together with the other three
+rows the same importer made. See §6 and [`../DONE.md`](../DONE.md).
 
 **Sources, all read 2026-09-02:**
 
@@ -252,7 +254,7 @@ run on the rows the page reads — not the pixels. See §7.
 | Item | Why it is not done here |
 |---|---|
 | **`work.multi_volume_printing`** on #229–#232 | R6 is human-only and mechanically guarded; §3.3 has the argument and the two readings of what the flag would mean. One checkbox each in the book edit panel, or one word from the owner. |
-| **`edition.publisher` = "Barnes & Noble"** on editions 322–325 | The retailer, not the publisher; it is **Harper Voyager**, confirmed by the `978-0-06` prefix on all four ISBNs and by every listing in §2.2. Real, but a *different* defect from the volume mapping, and widening a correction batch to sweep it in is how a batch stops being reviewable. Logged in `TODO.md`. |
+| ~~**`edition.publisher` = "Barnes & Noble"** on editions 322–325~~ ✅ **FIXED on production 2026-09-02** | The retailer, not the publisher; it is **Harper Voyager**, confirmed by the `978-0-06` prefix on all four ISBNs and by every listing in §2.2. Kept out of the volume batch because widening a correction batch is how a batch stops being reviewable — then corrected in its **own** batch, `scripts/fix-retailer-publishers-2026-09-02.mjs`, which also swept the other three rows `import-shop-orders.mjs` created and left the **two** editions where B&N really IS the publisher (511, 557) alone. Record in [`../DONE.md`](../DONE.md). |
 | **Books 3–19** | The household owns none of them. §3's scheme says what their numbers will be when they arrive; nothing is pre-created, because a catalog row for a book nobody owns is a wish, not a fact. |
 
 ---

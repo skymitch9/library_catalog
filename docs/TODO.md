@@ -1245,14 +1245,34 @@ kept out of that correction batch on purpose, and both need the owner.
   hence the ask. `serial-print-splits.md` §3.3 has the full argument.
   **Four ticks in the book edit panel, or one word.**
 
-☐ **`edition.publisher` reads "Barnes & Noble" on editions 322–325** — that is
-  the **retailer**, not the publisher. It is **Harper Voyager**, confirmed by
-  the `978-0-06` HarperCollins prefix on all four ISBNs and by every listing
-  read 2026-09-02. Left out of the volume batch because sweeping an unrelated
-  field in is how a correction batch stops being reviewable. ⚠️ Worth checking
-  whether the other B&N-imported works carry the same wrong publisher —
-  `import-shop-orders.mjs` created seven of them and this was never the field
-  anyone looked at.
+✂️ **2026-09-02:** the *"`edition.publisher` reads Barnes & Noble"* item moved
+  WHOLE to [`DONE.md`](DONE.md) — all **seven** B&N-imported editions corrected
+  on production (322–325 Harper Voyager, 326 Ballantine Books, 327 Clarkson
+  Potter, 328 Scholastic Press), and the **two rows where B&N really IS the
+  publisher** (511, 557) verified and left alone. What it left behind is the
+  next item.
+
+---
+
+## ☐ `import-shop-orders.mjs` writes the RETAILER into `edition.publisher` (2026-09-02)
+
+The data is corrected (see [`DONE.md`](DONE.md)); **the importer is not**, so its
+next run re-creates the defect on every row it adds. It writes the shop name into
+a field that answers a different question — it is already careful this way about
+`format` (`suggestFormat`, never the retailer's marketing word) and about
+`edition_name` (the retailer's wording preserved deliberately), so this is one
+field out of step with the file's own standard.
+
+**The fix is a decision, not a line.** A shop order genuinely does not know the
+publisher, and the honest options are: (a) leave `publisher` NULL and let the
+ISBN ladder fill it, or (b) record the shop where a shop belongs — `copy.vendor`
+already exists and the file's own header says so. ⚠️ Do **not** fix it by
+looking the publisher up inside the importer: that would make an import a
+research run, which is the split `docs/info/isbn-ladder.md` keeps.
+
+**Measured 2026-09-02:** 7 of 7 rows the importer created carried the wrong
+value, and 0 of them were caught by any check. **Blast radius if it re-runs:**
+one wrong `publisher` per imported line, silently, in a column nothing revisits.
 
 ---
 

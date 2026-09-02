@@ -18,6 +18,85 @@
 > were extracted from this same history.
 
 
+## ✅ 2026-09-02 — the RETAILER is not the PUBLISHER: seven B&N-imported editions corrected, two real B&N imprints left alone
+
+> **Owner, 2026-09-02, verbatim:** *"fix the wandering inn publisher"* (part of
+> the ~14:00 decision batch).
+
+Landed `scripts/fix-retailer-publishers-2026-09-02.mjs`; **committed against
+production `library-catalog` 2026-09-02**, dry-run first, every from-value
+asserted. Review: **<https://library.heygabi.ai/work/229>** (and 230/231/232) —
+the printing now reads **Harper Voyager**, not the shop it was bought from;
+**<https://library.heygabi.ai/work/235>** for the *Sunrise on the Reaping* B&N
+Exclusive, whose `edition_name` deliberately still says *"B&N Exclusive
+Edition"* because that is the retailer's real name for the printing.
+
+**The seven, and what decided each** (measured 2026-09-02 — no value here was
+inferred from a memory of the book):
+
+| ed | work | ISBN | prefix registrant | now reads | attested by |
+|---|---|---|---|---|---|
+| 322 | 229 *The Wandering Inn* | 9780063516380 | `978-0-06` HarperCollins | **Harper Voyager** | [`info/serial-print-splits.md`](info/serial-print-splits.md) §2.2 |
+| 323 | 230 *No Killing Goblins* | 9780063516403 | `978-0-06` | **Harper Voyager** | §2.2 |
+| 324 | 231 *Fae and Fare* | 9780063516427 | `978-0-06` | **Harper Voyager** | §2.2 |
+| 325 | 232 *Immortal Games* | 9780063516465 | `978-0-06` | **Harper Voyager** | §2.2 |
+| 326 | 233 *Project Hail Mary* (Deluxe) | 9798217374274 | ⚠️ `979-8` — **no group structure, proves nothing** | **Ballantine Books** | the publisher's own page for that exact ISBN (penguinrandomhouse.com/books/828207) |
+| 327 | 234 *Bad B\*tch in the Kitch* | 9780593797853 | `978-0-593` Penguin Random House | **Clarkson Potter** | the publisher's own page (penguinrandomhouse.com/books/752044) |
+| 328 | 235 *Sunrise on the Reaping* | 9781546175759 | `978-1-5461` Scholastic Inc. | **Scholastic Press** | Scholastic's own product info; ⚠️ B&N's retail listing gives the coarser *"Scholastic"* |
+
+### ⚠️ The finding that makes this a hand-listed batch and not an UPDATE … LIKE
+
+**Barnes & Noble is also a real publisher, and two rows in this catalog are
+its.** `publisher LIKE '%Barnes%'` returns **nine** rows on production, and
+**511** (*The Children's Treasury of Classic Poetry*, `978-0-7607` Barnes &
+Noble Books — Open Library's own record says *"Barnes and Noble"*) and **557**
+(*Adventures of Huckleberry Finn*, `978-1-5930` **Barnes & Noble Classics**) are
+CORRECT. Both arrived from `openlibrary`, not from the shop importer. A sweep
+over the LIKE would have corrupted two true records; the script asserts both
+rows are unchanged and refuses to run if either has moved.
+
+**Nothing was guessed and nothing was left to guess** — all seven wrong rows had
+a verifiable publisher, so the "report, don't guess" bucket came out **empty**.
+
+### Scope, measured rather than assumed
+
+- **padhard holds ZERO** editions whose publisher mentions Barnes & Noble
+  (queried on the friend D1, 2026-09-02), so this is a main-instance batch and
+  the script **refuses `--friend`** rather than asserting seven absent rows.
+- The `change_log` carries **7 rows** under batch `fix-retailer-publishers-2026-09-02`,
+  `entity='edition'`, `field='publisher'`, `changed_by NULL`, `changed_how 'human'`
+  — R12: a hand fill is never `'auto'`.
+
+### What it deliberately did NOT do
+
+`edition_name` (*"B&N Exclusive Edition"*, *"Deluxe Edition"*) is the shop's and
+publisher's own words for the printing and stays. ⚠️ **`import-shop-orders.mjs`
+itself is unfixed and will write the same wrong value on its next run** — that
+is a code change with its own review and is now an open item in
+[`TODO.md`](TODO.md), kept out of a data batch for the same reason the volume
+batch kept this field out of ITS scope: a batch that sweeps in a second concern
+stops being reviewable.
+
+The item as it stood in `TODO.md`, moved whole:
+
+---
+
+☐ **`edition.publisher` reads "Barnes & Noble" on editions 322–325** — that is
+  the **retailer**, not the publisher. It is **Harper Voyager**, confirmed by
+  the `978-0-06` HarperCollins prefix on all four ISBNs and by every listing
+  read 2026-09-02. Left out of the volume batch because sweeping an unrelated
+  field in is how a correction batch stops being reviewable. ⚠️ Worth checking
+  whether the other B&N-imported works carry the same wrong publisher —
+  `import-shop-orders.mjs` created seven of them and this was never the field
+  anyone looked at.
+
+---
+
+⚠️ **NOT verified:** the corrected value rendered on a work page in a signed-in
+browser — the evidence is the post-write re-read of production D1, not pixels.
+No cover, format, year or `edition_name` was re-checked on any of the nine rows.
+
+
 ## ✅ 2026-09-02 — billing phase 3: eight money paths here can be switched off from `/admin`, and every one ships INERT
 
 Closes **KI-13**, filed the same morning. Commit `e7b3f6b`; deployed as
