@@ -60,6 +60,42 @@
  * reached the attribute may still live only as free text in
  * `edition.edition_name` — so the prose is still scanned and OR-ed in, and
  * nothing regresses until the sweep runs.
+ *
+ * ## The row LEADS with the edition, not the format word (owner, 2026-09-02)
+ *
+ * > "actually none of the edition stuff shows in the page anymore. i see we have
+ * > it on the shelf but not what each edition is. lets have the editions listed
+ * > in the on your shelf version with ebook and audio but instead of paperback
+ * > replace that with the edition info and if its signed or not"
+ *
+ * The copy-driven fix above bought "an owned book is never Wanted" at the price
+ * of edition identity: grouping by *effective format* made the headline the bare
+ * format word, and the only identity the row ever showed was `edition_name` —
+ * **NULL on 437 of 566 printings in production (measured 2026-09-02)**, so for
+ * most books the identity line rendered nothing at all.
+ *
+ * So each row now carries a `label` (the headline) and a `meta` (the secondary
+ * line), composed HERE rather than in the component, and pinned by the test:
+ *
+ *   - **A physical row whose copies resolve to a real edition leads with that
+ *     edition's identity** — its `edition_name`, else its canonical kind, else
+ *     its imprint (publisher/year) — and demotes the binding to `meta`.
+ *   - ⚠️ **"Resolves" means UNAMBIGUOUSLY.** A copy's own `edition_id` is
+ *     authoritative; an unlinked copy may borrow the work's printing of that
+ *     format **only when the work has exactly one of them**. Work 220 is why:
+ *     two owned unlinked copies, two hardcover printings ("Signed Leatherbound"
+ *     and a slipcase-set volume), and the old `claimPhysicalEditionFor` handed
+ *     the whole group the FIRST one's name — a fabricated identity, and the
+ *     wrong one for the slipcase copy. Ambiguity now renders as the format word
+ *     with no identity at all.
+ *   - **Signed is shown either way** (`ShelfRow.signed` / `ShelfCopy.signed`) on
+ *     an owned physical row — the owner asked for "if its signed or not", and a
+ *     badge that only ever lights cannot answer "or not". ⚠️ It reports the
+ *     RECORD, not the object: `is_signed` is `NOT NULL DEFAULT 0` (migration
+ *     0430), so `false` means *no copy is marked signed*, which is what the
+ *     rendered title says. The other three attributes stay light-when-set chips.
+ *   - **Ebook, audiobook, wanted and neutral rows are UNCHANGED** — their
+ *     `label`/`meta` reproduce exactly what the component used to compose.
  */
 import {
   LEATHER_IMPLIES_FORMAT,
@@ -70,7 +106,7 @@ import type { WorkAudioEdition, WorkAudiobookHolding, WorkEbookHolding } from '.
 import type { CopyView } from '../components/Copies.js';
 import type { EditionView } from '../components/Editions.js';
 import type { PeerHoldingView } from '../components/PeerLibraries.js';
-import { formatLabel, isPhysicalFormat } from './formats.js';
+import { editionKindLabel, formatLabel, isPhysicalFormat } from './formats.js';
 
 /** The statuses that mean the household physically holds (or held) the book. */
 const HELD_STATUSES = ['owned', 'borrowed', 'lent'] as const;
@@ -98,6 +134,15 @@ export interface ShelfCopy {
   /** Who has it, when the server sent a name (lent/borrowed). Null otherwise. */
   personName: string | null;
   badges: SpecialEditionBadge[];
+  /**
+   * ⚠️ **The RECORD's answer, not the object's.** True when `copy.is_signed` is
+   * set (or the printing's own prose says so); false means *nobody has marked
+   * this copy signed* — `is_signed` is `NOT NULL DEFAULT 0`, so an unexamined
+   * copy and a genuinely unsigned one are indistinguishable here. Rendered as an
+   * explicit two-state because the owner asked for "if its signed or not"; the
+   * rendered title carries the caveat so the UI never over-claims.
+   */
+  signed: boolean;
 }
 
 /**
@@ -106,8 +151,41 @@ export interface ShelfCopy {
 export interface ShelfRow {
   /** Stable list key. */
   key: string;
-  /** The big format word — "Hardcover", "EPUB", "Audiobook" — or null when unknown. */
+  /**
+   * The big format word — "Hardcover", "EPUB", "Audiobook" — or null when unknown.
+   *
+   * ⚠️ This is still the FORMAT, and stays so: the emoji thumb, the row rank and
+   * every existing caller key off it. What a person READS at the top of the card
+   * is `label`, which is the format word only when no edition resolves.
+   */
   format: string | null;
+  /**
+   * The headline the card leads with (owner, 2026-09-02). The resolved edition's
+   * identity when there is one, else the format word, else null (the neutral slot
+   * and the formatless "any format" want, which the component words itself).
+   */
+  label: string | null;
+  /** Where `label` came from — so the component never renders the same fact twice. */
+  labelSource: 'edition-name' | 'edition-kind' | 'imprint' | 'format' | null;
+  /**
+   * The one composed secondary line under the headline — binding, imprint, what
+   * it collects. Composed here, not in the component, so the test can pin it.
+   */
+  meta: string | null;
+  /**
+   * How the row's edition identity was established, or null when NONE was — the
+   * three cases the owner's ask turns on. `'linked'`: a copy's own `edition_id`.
+   * `'sole-printing'`: the copy is unlinked and the work has exactly ONE physical
+   * printing of this format, so the attribution is unambiguous. Null: the format
+   * word stands alone — ⚠️ never a guess (see the header on work 220).
+   */
+  resolvedBy: 'linked' | 'sole-printing' | null;
+  /**
+   * Signed, shown either way on an OWNED physical row that has copies; null where
+   * the question does not apply (a file row, an audiobook, the neutral slot, a
+   * want). See `ShelfCopy.signed` for what `false` does and does not claim.
+   */
+  signed: boolean | null;
   /** Coarse medium, for the chip colour. */
   medium: 'physical' | 'ebook' | 'audio' | null;
   /** The vendor's own name for the printing — "BN Exclusive" — to tell two of one format apart. */
@@ -217,7 +295,50 @@ function toShelfCopy(copy: CopyView, edition: EditionView | null): ShelfCopy {
     // documents why "nobody recorded" would be a claim without evidence).
     personName: copy.person_name,
     badges: specialEditionBadges(copy, edition),
+    // ⚠️ The COLUMN only — `specialEditionBadges` gives signing no prose
+    // fallback (unlike the other three), because "Signed" in a shop's blurb
+    // describes the printing on offer, not whether THIS object was ever signed.
+    signed: !!copy.is_signed,
   };
+}
+
+/**
+ * The identity of a printing — what a person would call it if you asked "which
+ * edition is that one?" — in the order the record can actually answer:
+ *
+ *   1. `edition_name`, the vendor's own words for the printing ("BN Exclusive").
+ *   2. its canonical kind ("Collector's edition") when nobody named it.
+ *   3. its imprint — publisher and/or year ("TokyoPop · 2006"), which is the ONLY
+ *      identity 437 of 566 production printings carry (measured 2026-09-02) and
+ *      therefore the whole reason this ladder has a third rung.
+ *
+ * ⚠️ Returns null when the edition names itself in none of those ways. A null
+ * here means the row falls back to the format word — an absence is rendered as
+ * an absence, never filled in with something plausible.
+ */
+function editionIdentity(
+  edition: EditionView | null,
+): { text: string; source: 'edition-name' | 'edition-kind' | 'imprint' } | null {
+  if (!edition) return null;
+  const name = edition.edition_name?.trim();
+  if (name) return { text: name, source: 'edition-name' };
+  if (edition.edition_kind) {
+    return { text: editionKindLabel(edition.edition_kind), source: 'edition-kind' };
+  }
+  const imprint = imprintOf(edition);
+  return imprint ? { text: imprint, source: 'imprint' } : null;
+}
+
+/** "TokyoPop · 2006", "TokyoPop", "2006" — whichever of the two the row carries. */
+function imprintOf(edition: EditionView | null): string | null {
+  const publisher = edition?.publisher?.trim() || null;
+  const year = edition?.published_year != null ? String(edition.published_year) : null;
+  return [publisher, year].filter(Boolean).join(' · ') || null;
+}
+
+/** One line, ` · `-joined, or null when there is nothing to say. */
+function joinMeta(parts: (string | null)[]): string | null {
+  return parts.filter(Boolean).join(' · ') || null;
 }
 
 /**
@@ -283,10 +404,18 @@ function buildRows(
   // A physical edition of a given effective format, not already spoken for — so
   // an unlinked-copy group can borrow its name/kind/collects, and so the same
   // edition is never rendered twice (once as an Owned copy-group, once bare).
+  //
+  // ⚠️ **Only when the work has exactly ONE printing of that format.** A borrowed
+  // identity is an inference, and an inference with two candidates is a guess:
+  // work 220 holds two unlinked hardcover copies against two hardcover printings
+  // ("Signed Leatherbound …" and a slipcase-set volume), and borrowing the first
+  // labelled BOTH copies with the leatherbound's name. When the format is
+  // ambiguous the group takes no edition at all and renders as the format word.
   function claimPhysicalEditionFor(format: string): EditionView | null {
-    const e = physicalEditions.find((pe) => pe.format === format && !usedEditionIds.has(pe.id));
+    const ofFormat = physicalEditions.filter((pe) => pe.format === format);
+    const e = ofFormat.find((pe) => !usedEditionIds.has(pe.id));
     if (e) usedEditionIds.add(e.id);
-    return e ?? null;
+    return ofFormat.length === 1 ? (e ?? null) : null;
   }
 
   // Group a set of copies by their effective format. A copy that links to a real
@@ -297,6 +426,7 @@ function buildRows(
   function groupByFormat(cs: CopyView[]): {
     format: string;
     edition: EditionView | null;
+    resolvedBy: 'linked' | 'sole-printing' | null;
     copies: CopyView[];
   }[] {
     const linkedByEdition = new Map<number, CopyView[]>();
@@ -318,19 +448,24 @@ function buildRows(
       byFormat.get(fmt)!.push(c);
     }
 
-    const groups: { format: string; edition: EditionView | null; copies: CopyView[] }[] = [];
+    const groups: {
+      format: string;
+      edition: EditionView | null;
+      resolvedBy: 'linked' | 'sole-printing' | null;
+      copies: CopyView[];
+    }[] = [];
     // Linked editions in the editions array's own order, for stability.
     for (const e of editions) {
       const list = linkedByEdition.get(e.id);
       if (list) {
         usedEditionIds.add(e.id);
-        groups.push({ format: e.format, edition: e, copies: list });
+        groups.push({ format: e.format, edition: e, resolvedBy: 'linked', copies: list });
       }
     }
     for (const fmt of order) {
       const list = byFormat.get(fmt)!;
       const e = fmt === UNSPEC_PHYSICAL ? null : claimPhysicalEditionFor(fmt);
-      groups.push({ format: fmt, edition: e, copies: list });
+      groups.push({ format: fmt, edition: e, resolvedBy: e ? 'sole-printing' : null, copies: list });
     }
     return groups;
   }
@@ -339,15 +474,37 @@ function buildRows(
     prefix: string,
     format: string,
     edition: EditionView | null,
+    resolvedBy: 'linked' | 'sole-printing' | null,
     groupCopies: CopyView[],
     owned: boolean,
   ): ShelfRow {
     const sorted = sortCopies(groupCopies);
     const isUnspec = format === UNSPEC_PHYSICAL;
     const fmtLabel = edition ? formatLabel(edition.format) : isUnspec ? null : formatLabel(format);
+    // The owner's ask: lead with the EDITION where one resolves, and demote the
+    // binding to the line underneath. Where nothing resolves, the format word
+    // keeps the headline exactly as it always has — an absence is not a guess.
+    const identity = editionIdentity(edition);
+    const label = identity?.text ?? fmtLabel;
+    const labelSource = identity ? identity.source : fmtLabel ? 'format' : null;
+    const meta = joinMeta([
+      // The binding is secondary only when the edition took the headline;
+      // otherwise it IS the headline and must not be said twice.
+      identity ? fmtLabel : null,
+      // The imprint, unless it is already the headline.
+      identity?.source === 'imprint' ? null : imprintOf(edition),
+      edition?.collects ? `contains ${edition.collects}` : null,
+    ]);
     return {
       key: edition ? `${prefix}-e${edition.id}` : `${prefix}-${format}`,
       format: fmtLabel,
+      label,
+      labelSource,
+      meta,
+      resolvedBy,
+      // Signed, either way — but only for something you HOLD. A wanted row is a
+      // wish, and a wish has no object to have been signed.
+      signed: owned && sorted.length > 0 ? sorted.some((c) => !!c.is_signed) : null,
       // An unspecified group is still a physical copy in hand — colour it physical.
       medium: edition
         ? mediumOfFormat(edition.format)
@@ -368,7 +525,7 @@ function buildRows(
   // 1) OWNED rows from held copies, grouped by effective format. This is the fix:
   //    an unlinked owned copy still names its format and reads as Owned.
   for (const g of groupByFormat(held)) {
-    rows.push(physicalRow('own', g.format, g.edition, g.copies, true));
+    rows.push(physicalRow('own', g.format, g.edition, g.resolvedBy, g.copies, true));
   }
 
   // 2) Ebook files: every ebook edition is bytes you hold → Owned. (Skip any an
@@ -379,6 +536,17 @@ function buildRows(
     rows.push({
       key: `own-e${e.id}`,
       format: formatLabel(e.format),
+      // ⚠️ UNCHANGED by the 2026-09-02 ask, deliberately: the owner asked for the
+      // editions on the physical rows *"with ebook and audio"* beside them, not
+      // for the file rows to be relabelled. A file row IS its edition — "EPUB" is
+      // already the useful word — so the headline stays the format and the name
+      // stays where the component always put it, on the line below.
+      label: formatLabel(e.format),
+      labelSource: 'format',
+      meta: joinMeta([e.edition_name ?? null, e.collects ? `contains ${e.collects}` : null]),
+      // Nothing had to be RESOLVED — the row is the edition, not a copy of one.
+      resolvedBy: null,
+      signed: null,
       medium: 'ebook',
       editionName: e.edition_name ?? null,
       kind: e.edition_kind ?? null,
@@ -398,6 +566,11 @@ function buildRows(
     rows.push({
       key: 'own-ebook-pool',
       format: 'Ebook',
+      label: 'Ebook',
+      labelSource: 'format',
+      meta: null,
+      resolvedBy: null,
+      signed: null,
       medium: 'ebook',
       editionName: null,
       kind: null,
@@ -423,6 +596,11 @@ function buildRows(
     rows.push({
       key: 'own-audio',
       format: 'Audiobook',
+      label: 'Audiobook',
+      labelSource: 'format',
+      meta: null,
+      resolvedBy: null,
+      signed: null,
       medium: 'audio',
       editionName: null,
       kind: null,
@@ -446,6 +624,12 @@ function buildRows(
       rows.push({
         key: 'want-any',
         format: null,
+        // No format, no printing — the component words this slot itself.
+        label: null,
+        labelSource: null,
+        meta: null,
+        resolvedBy: null,
+        signed: null,
         medium: null,
         editionName: null,
         kind: null,
@@ -458,7 +642,7 @@ function buildRows(
       });
       continue;
     }
-    rows.push(physicalRow('want', g.format, g.edition, g.copies, false));
+    rows.push(physicalRow('want', g.format, g.edition, g.resolvedBy, g.copies, false));
   }
 
   // 6) Never empty — but never a fabricated Want. A neutral, display-only slot.
@@ -466,6 +650,11 @@ function buildRows(
     rows.push({
       key: 'neutral',
       format: null,
+      label: null,
+      labelSource: null,
+      meta: null,
+      resolvedBy: null,
+      signed: null,
       medium: null,
       editionName: null,
       kind: null,

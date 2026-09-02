@@ -2871,6 +2871,18 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
   letter-spacing: 0.05em;
   white-space: nowrap;
 }
+/* The NEGATIVE special-edition answer ("Not signed"). ⚠️ Kept beside the base
+   rule, not only in the `.book-detail` block that currently renders it: the base
+   `.special-badge` is a FILLED accent pill, so a chip saying a thing is *not*
+   true would otherwise arrive shouting the moment anything reuses the class
+   outside the book page. */
+.special-badge--off {
+  background: transparent;
+  border: 1px dashed var(--et-hairline, currentColor);
+  color: inherit;
+  font-weight: 600;
+  opacity: 0.75;
+}
 
 .shelf-hero__avail { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-top: 0.8rem; }
 .shelf-hero__avail-label { flex: none; }
@@ -3370,6 +3382,20 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
   gap: 0.4rem;
   flex-wrap: wrap;
 }
+/* The headline TEXT, now that it is an edition identity and not a format word
+   (owner 2026-09-02). ⚠️ Measured that day: 68 of the 129 named printings in
+   production run past 34 characters and the longest is 99 — at 1.4rem that is a
+   wall of display type where "Paperback" used to sit. A long identity steps DOWN
+   (the `--long` modifier the component applies) rather than being truncated:
+   cutting the identity would defeat the entire point of showing it. */
+.book-detail .bd-hold__label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.book-detail .bd-hold__label--long {
+  font-size: 1rem;
+  line-height: 1.35;
+}
 .book-detail .bd-hold__own {
   font-size: 0.68rem;
   font-weight: 700;
@@ -3398,6 +3424,19 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
   background: var(--bd-brass-wash);
   color: var(--bd-brass-ink);
   border-color: transparent;
+}
+/* ⚠️ The NEGATIVE answer — "Not signed" — which exists because the owner asked
+   for "if its signed or not" (2026-09-02), and a chip that only ever lights
+   cannot answer "or not". It has to read as an answer without competing with the
+   facts that ARE true, so it gives up the brass fill for a dashed outline: a
+   shelf of ordinary paperbacks stays plain, and the one signed book still
+   catches the eye. ⚠️ Equal specificity to `--signed` above, so it wins on
+   SOURCE ORDER — these two rules must stay in this sequence. */
+.book-detail .special-badge.special-badge--off {
+  background: transparent;
+  border: 1px dashed var(--bd-line);
+  color: var(--bd-ink-faint);
+  font-weight: 600;
 }
 .book-detail .bd-hold__meta { margin: 0.4rem 0 0; font-size: 0.8rem; color: var(--bd-ink-soft); }
 .book-detail .bd-hold__meta .mono { font-family: var(--bd-font-mono); }

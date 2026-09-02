@@ -14,6 +14,23 @@
  *
  * ⚠️ **The 493 case is pinned explicitly**: an owned copy with `edition_id:null`
  * plus an unlinked paperback edition → ONE "Owned" Paperback row, zero Wanted.
+ *
+ * ## What a row SAYS — the 2026-09-02 amendment
+ *
+ * > Owner: "actually none of the edition stuff shows in the page anymore. i see
+ * > we have it on the shelf but not what each edition is. lets have the editions
+ * > listed in the on your shelf version with ebook and audio but instead of
+ * > paperback replace that with the edition info and if its signed or not"
+ *
+ * `label` / `meta` / `signed` are now derived here too, so the words on the card
+ * are pinned by a test rather than assembled in a component no test can mount.
+ * The three cases the ask turns on each get their own test below:
+ *
+ *   1. **linked** — the copy's own `edition_id` names the printing.
+ *   2. **sole-printing** — unlinked, but the work has exactly ONE printing of
+ *      that format, so the attribution is unambiguous.
+ *   3. **unresolvable** — no link and several candidates (or none): the format
+ *      word stands alone. ⚠️ Never a borrowed name; see the work-220 test.
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
@@ -260,6 +277,226 @@ describe('deriveShelfView — copy-driven: the shelf is what you have', () => {
     assert.equal(v.rows.length, 2);
     assert.ok(v.rows.every((r) => r.owned && r.copies.length === 1));
     assert.deepEqual(v.rows.map((r) => r.editionName).sort(), ['BN Exclusive', 'Deluxe']);
+  });
+});
+
+describe('the row LEADS with the edition, and never with a guess (owner 2026-09-02)', () => {
+  it('LINKED: the copy names its printing → the edition_name is the headline, the binding drops to meta', () => {
+    const v = deriveShelfView({
+      ...NONE,
+      copies: [copy({ edition_id: 10 })],
+      editions: [
+        edition({
+          id: 10,
+          format: 'hardcover',
+          edition_name: 'BN Exclusive',
+          publisher: 'Tor Books',
+          published_year: 2010,
+          collects: 'Volumes 1-3',
+        }),
+      ],
+    });
+    const row = only(v);
+    assert.equal(row.label, 'BN Exclusive');
+    assert.equal(row.labelSource, 'edition-name');
+    assert.equal(row.resolvedBy, 'linked');
+    // The binding is still SAID — it just stopped being the headline.
+    assert.equal(row.meta, 'Hardcover · Tor Books · 2010 · contains Volumes 1-3');
+    // `format` remains the format: the emoji and the row rank key off it.
+    assert.equal(row.format, 'Hardcover');
+  });
+
+  it("an unnamed printing falls to its KIND — and the kind is not then repeated as a pill", () => {
+    const v = deriveShelfView({
+      ...NONE,
+      copies: [copy({ edition_id: 10 })],
+      editions: [edition({ id: 10, format: 'hardcover', edition_kind: 'collectors' })],
+    });
+    const row = only(v);
+    assert.equal(row.labelSource, 'edition-kind');
+    assert.equal(row.label, "Collector's edition");
+    // `kind` still travels — the component drops the pill by reading labelSource.
+    assert.equal(row.kind, 'collectors');
+  });
+
+  it('⚠️ WORK 493, the whole point of the ask: sole printing, no name → the IMPRINT leads, not "Paperback"', () => {
+    // Measured in production 2026-09-02: work 493 holds one owned unlinked copy
+    // and one paperback printing — TokyoPop, 2006, edition_name NULL. Before this
+    // change the card read "Paperback" and said nothing else at all, because the
+    // meta line only ever rendered edition_name (NULL on 437 of 566 printings).
+    const v = deriveShelfView({
+      ...NONE,
+      copies: [copy({ id: 423, status: 'owned', edition_id: null })],
+      editions: [
+        edition({ id: 639, format: 'paperback', publisher: 'TokyoPop', published_year: 2006 }),
+      ],
+    });
+    const row = only(v);
+    assert.equal(row.label, 'TokyoPop · 2006');
+    assert.equal(row.labelSource, 'imprint');
+    assert.equal(row.resolvedBy, 'sole-printing');
+    assert.equal(row.meta, 'Paperback', 'the binding survives as secondary info');
+    assert.equal(row.owned, true, 'the 2026-08-24 invariant holds: never Wanted');
+  });
+
+  it('⚠️ WORK 220 — TWO printings of one format, copies unlinked → NO borrowed identity, the format word stands', () => {
+    // The fabrication this guards. Work 220 holds two owned unlinked hardcover
+    // copies against two hardcover printings: "Signed Leatherbound …" and a
+    // slipcase-set volume. The old claim-the-first-match handed BOTH copies the
+    // leatherbound's name — wrong for the slipcase copy, and a claim the record
+    // never made. Ambiguity must render as an absence.
+    const v = deriveShelfView({
+      ...NONE,
+      copies: [
+        copy({ id: 169, status: 'owned', edition_id: null, is_signed: 1, leatherbound: 1 }),
+        copy({ id: 382, status: 'owned', edition_id: null, slipcase: 1 }),
+      ],
+      editions: [
+        edition({
+          id: 321,
+          format: 'hardcover',
+          edition_name: 'Signed Leatherbound (two-volume set)',
+          edition_kind: 'collectors',
+          publisher: 'Dragonsteel Books',
+        }),
+        edition({
+          id: 586,
+          format: 'hardcover',
+          edition_name: 'Volume of the slipcase set',
+          publisher: 'Tor Books',
+          published_year: 2022,
+        }),
+      ],
+    });
+    const row = only(v);
+    assert.equal(row.label, 'Hardcover', 'the format word, never a borrowed name');
+    assert.equal(row.labelSource, 'format');
+    assert.equal(row.resolvedBy, null);
+    assert.equal(row.meta, null, 'no imprint, no name — nothing resolved to say it about');
+    assert.equal(row.editionName, null);
+    // ⚠️ And no badge leaks in from the un-attributable printing's prose either.
+    assert.deepEqual(row.badges.map((b) => b.key).sort(), ['leather', 'signed', 'slipcase']);
+    // The per-copy answer is the only honest one here, and it is intact.
+    assert.equal(row.copies[0]!.signed, true);
+    assert.equal(row.copies[1]!.signed, false);
+  });
+
+  it('a copy with NO editions at all keeps the format word and says nothing more', () => {
+    const v = deriveShelfView({ ...NONE, copies: [copy({ leatherbound: 1 })] });
+    const row = only(v);
+    assert.equal(row.label, 'Hardcover');
+    assert.equal(row.labelSource, 'format');
+    assert.equal(row.resolvedBy, null);
+    assert.equal(row.meta, null);
+  });
+
+  it('⚠️ an edition that names itself in NO way at all → the format word, not an empty headline', () => {
+    const v = deriveShelfView({
+      ...NONE,
+      copies: [copy({ edition_id: 10 })],
+      editions: [edition({ id: 10, format: 'paperback' })], // no name, kind, publisher or year
+    });
+    const row = only(v);
+    assert.equal(row.label, 'Paperback');
+    assert.equal(row.labelSource, 'format');
+    // It DID resolve — we simply have nothing to call it.
+    assert.equal(row.resolvedBy, 'linked');
+    assert.equal(row.meta, null);
+  });
+
+  it('an imprint of ONLY a publisher, or ONLY a year, still leads', () => {
+    const pub = only(
+      deriveShelfView({
+        ...NONE,
+        copies: [copy({ edition_id: 10 })],
+        editions: [edition({ id: 10, format: 'paperback', publisher: 'Tor Books' })],
+      }),
+    );
+    assert.equal(pub.label, 'Tor Books');
+    const yr = only(
+      deriveShelfView({
+        ...NONE,
+        copies: [copy({ edition_id: 10 })],
+        editions: [edition({ id: 10, format: 'paperback', published_year: 1998 })],
+      }),
+    );
+    assert.equal(yr.label, '1998');
+  });
+
+  it('⚠️ EBOOK and AUDIO rows are UNCHANGED — the ask was about the physical rows', () => {
+    const v = deriveShelfView({
+      ...NONE,
+      editions: [edition({ id: 78, format: 'ebook_epub', edition_name: 'Kindle', collects: 'Vol 1-2' })],
+      audiobookHolding: { title: 'X', staleAt: null } as never,
+      audioEditionCount: 1,
+    });
+    const ebook = v.rows.find((r) => r.medium === 'ebook')!;
+    assert.equal(ebook.label, 'EPUB', 'the file row still leads with its format');
+    assert.equal(ebook.meta, 'Kindle · contains Vol 1-2', 'exactly what the component used to compose');
+    assert.equal(ebook.signed, null, 'a file cannot be signed');
+    const audio = v.rows.find((r) => r.medium === 'audio')!;
+    assert.equal(audio.label, 'Audiobook');
+    assert.equal(audio.signed, null);
+  });
+
+  it('⚠️ a WANTED row is unchanged, and is never asked whether it is signed', () => {
+    const v = deriveShelfView({
+      ...NONE,
+      copies: [copy({ status: 'wanted', edition_id: 77 })],
+      editions: [edition({ id: 77, format: 'paperback', edition_name: 'Deluxe' })],
+    });
+    const row = only(v);
+    assert.equal(row.owned, false);
+    assert.equal(row.signed, null, 'a wish has no object to have been signed');
+    assert.equal(row.label, 'Deluxe');
+  });
+
+  it('the neutral slot answers nothing — no label, no meta, no signed claim', () => {
+    const row = only(deriveShelfView({ ...NONE }));
+    assert.equal(row.neutral, true);
+    assert.equal(row.label, null);
+    assert.equal(row.meta, null);
+    assert.equal(row.signed, null);
+  });
+});
+
+describe('signed is answered EITHER WAY on what you hold (owner: "and if its signed or not")', () => {
+  it('an owned physical row with an unsigned copy says FALSE, not null — the negative is an answer', () => {
+    const v = deriveShelfView({ ...NONE, copies: [copy({ status: 'owned' })] });
+    const row = only(v);
+    assert.equal(row.signed, false, 'a badge that only ever lights cannot answer "or not"');
+    assert.equal(row.copies[0]!.signed, false);
+  });
+
+  it('a signed copy says TRUE at both levels', () => {
+    const v = deriveShelfView({ ...NONE, copies: [copy({ is_signed: 1 })] });
+    const row = only(v);
+    assert.equal(row.signed, true);
+    assert.equal(row.copies[0]!.signed, true);
+  });
+
+  it('the ROW is signed when ANY of its copies is, and the copies still disagree individually', () => {
+    const v = deriveShelfView({
+      ...NONE,
+      copies: [copy({ id: 1, is_signed: 0 }), copy({ id: 2, is_signed: 1 })],
+      editions: [edition({ id: 77, format: 'paperback' })],
+    });
+    const row = only(v);
+    assert.equal(row.signed, true);
+    assert.deepEqual(row.copies.map((c) => c.signed).sort(), [false, true]);
+  });
+
+  it('⚠️ signing takes NO prose fallback — a shop calling the printing "Signed" is not a signature on YOUR copy', () => {
+    // The other three attributes still read the prose (0430 back-compat); signing
+    // deliberately does not, so `signed:false` cannot be flipped by a blurb.
+    const v = deriveShelfView({
+      ...NONE,
+      copies: [copy({ edition_id: 10 })],
+      editions: [edition({ id: 10, format: 'hardcover', edition_name: 'Signed Leatherbound' })],
+    });
+    const row = only(v);
+    assert.equal(row.signed, false);
+    assert.ok(row.badges.some((b) => b.key === 'leather'), 'leather DOES read the prose');
   });
 });
 

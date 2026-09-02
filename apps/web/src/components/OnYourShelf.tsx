@@ -35,6 +35,44 @@ function rowCatalogHref(row: ShelfRow, title: string): string | null {
 }
 
 /**
+ * Where a shelf headline stops being a word and becomes a sentence, and so steps
+ * down a size. Measured against production 2026-09-02: of the 129 printings that
+ * carry an `edition_name`, the mean is 47 characters and 68 run past this — so
+ * the long case is the MAJORITY of named editions, not an edge case.
+ */
+const LONG_LABEL = 34;
+
+/**
+ * Signed, shown EITHER WAY (owner 2026-09-02: *"and if its signed or not"*).
+ *
+ * ⚠️ A badge that only ever lights cannot answer "or not" — the reader cannot
+ * tell an unsigned copy from one nobody has looked at. So an owned physical row
+ * says which it is, and the negative wears a quiet dashed pill so a shelf of
+ * ordinary paperbacks is not covered in decoration.
+ *
+ * ⚠️ **It reports the RECORD.** `copy.is_signed` is `NOT NULL DEFAULT 0`
+ * (migration 0430), so "Not signed" means *nothing has marked this copy signed*,
+ * which is what the tooltip says rather than claiming the object is unsigned.
+ *
+ * Local to this file on purpose — the same call `Copies.tsx` makes about its own
+ * `SPECIAL_TOGGLES`: a second caller is the moment it moves somewhere shared.
+ */
+function SignedChip({ signed }: { signed: boolean }) {
+  return (
+    <span
+      className={`special-badge special-badge--signed${signed ? '' : ' special-badge--off'}`}
+      title={
+        signed
+          ? 'Recorded as a signed copy'
+          : 'Nothing on this copy is marked signed — the record says so, which is not the same as having checked the book'
+      }
+    >
+      {signed ? '✍ Signed' : 'Not signed'}
+    </span>
+  );
+}
+
+/**
  * The little emoji the mockup renders on each shelf thumbnail (owner: "the on
  * your shelf with the rendering and little emojis"). Chosen by the row's coarse
  * medium first, then the physical format word, so an Audiobook is 🎧, an ebook
@@ -69,6 +107,22 @@ function rowEmoji(row: ShelfRow): string {
  * copy of the same format is a nested line, not a rival list. A book with
  * genuinely nothing shows one neutral "not on your shelf" slot — never a
  * fabricated Wanted. See `deriveShelfView` for the whole model.
+ *
+ * ## What the row LEADS with (owner, 2026-09-02)
+ *
+ * > "actually none of the edition stuff shows in the page anymore. i see we have
+ * > it on the shelf but not what each edition is. lets have the editions listed
+ * > in the on your shelf version with ebook and audio but instead of paperback
+ * > replace that with the edition info and if its signed or not"
+ *
+ * A physical row now leads with the **edition** (`row.label`) and drops the
+ * binding to the line below (`row.meta`) — but ⚠️ **only where a printing
+ * actually resolves**; where none does, the format word keeps the headline. Both
+ * strings are composed in `deriveShelfView`, so this component chooses no words
+ * of its own and the test can pin what a row says. Signed is answered **either
+ * way** on an owned physical row (`SignedChip`); the other three 0430 attributes
+ * stay badges that light only when set. Ebook, audiobook and wanted rows are
+ * untouched.
  *
  * ⚠️ **A SUMMARY, not a second source of truth.** The full editable record still
  * lives where it always did — `Editions` for the printings and `Copies` for what
@@ -117,6 +171,10 @@ export function OnYourShelf({
       <ul className="plain shelf-rows">
         {rows.map((row) => {
           const catalogHref = rowCatalogHref(row, title);
+          // Signed is rendered by `SignedChip` as a two-state answer, so the
+          // positive badge the derivation also produces would say it twice.
+          const badges =
+            row.signed == null ? row.badges : row.badges.filter((b) => b.key !== 'signed');
           // The card body is the same whether or not the row links; only its
           // wrapper differs (an <a> to the sibling catalog, or a plain <div>).
           const cardInner = (
@@ -126,7 +184,25 @@ export function OnYourShelf({
               </div>
               <div className="bd-hold__main">
                 <div className="bd-hold__fmt">
-                  {row.format ?? (row.neutral ? 'Not on your shelf' : 'Any format')}
+                  {/* ⚠️ The EDITION leads, not the format word (owner 2026-09-02:
+                      "instead of paperback replace that with the edition info").
+                      `label` is the format word again wherever no printing
+                      resolves, so an unattributable copy still names its binding
+                      rather than being labelled with a guess.
+
+                      ⚠️ It steps DOWN in size when it is long rather than being
+                      cut. Measured in production 2026-09-02: 68 of the 129 named
+                      printings run past 34 characters and the longest is 99 —
+                      a shop's own words for a printing are a sentence, not a
+                      word. Truncating the identity would defeat the whole point
+                      of putting it here. */}
+                  <span
+                    className={`bd-hold__label${
+                      (row.label?.length ?? 0) > LONG_LABEL ? ' bd-hold__label--long' : ''
+                    }`}
+                  >
+                    {row.label ?? (row.neutral ? 'Not on your shelf' : 'Any format')}
+                  </span>
                   {/* Recordings held, for an Audiobook row (e.g. two narrations). */}
                   {row.count != null && row.count > 1 && (
                     <span className="shelf-row__count"> ×{row.count}</span>
@@ -150,7 +226,9 @@ export function OnYourShelf({
                       {row.owned ? 'Owned' : 'Wanted'}
                     </span>
                   )}
-                  {row.kind && (
+                  {/* The kind pill, unless the kind IS the headline — a printing
+                      nobody named leads with "Collector's edition" itself. */}
+                  {row.kind && row.labelSource !== 'edition-kind' && (
                     <span className="bd-hold__kind">{editionKindLabel(row.kind)}</span>
                   )}
                   {/* An open-in-new-tab affordance, only on a row that links. */}
@@ -161,9 +239,13 @@ export function OnYourShelf({
                   )}
                 </div>
 
-                {row.badges.length > 0 && (
+                {(badges.length > 0 || row.signed != null) && (
                   <div className="bd-hold__badges">
-                    {row.badges.map((b) => (
+                    {/* Signed first: it is the one the owner asked to be
+                        answerable at a glance, and the one that is shown even
+                        when the answer is no. */}
+                    {row.signed != null && <SignedChip signed={row.signed} />}
+                    {badges.map((b) => (
                       <span
                         key={b.key}
                         className={`special-badge special-badge--${b.key}`}
@@ -176,25 +258,23 @@ export function OnYourShelf({
                   </div>
                 )}
 
-                {/* The vendor's own name for the printing, and what it binds —
-                    the two things that tell one format's two printings apart. */}
-                {(row.editionName || row.collects) && (
-                  <p className="bd-hold__meta">
-                    {[row.editionName, row.collects ? `contains ${row.collects}` : null]
-                      .filter(Boolean)
-                      .join(' · ')}
-                  </p>
-                )}
+                {/* The secondary line — the binding the headline gave up, the
+                    imprint, what it collects. ⚠️ Composed in `deriveShelfView`,
+                    not here, so one test pins what a row SAYS as well as what it
+                    is (and so the headline can never repeat a fact below it). */}
+                {row.meta && <p className="bd-hold__meta">{row.meta}</p>}
 
                 {/* Copies nest UNDER the edition. One copy: its facts inline, no
                     second bullet. More than one of the same printing: a short
-                    list, the only case where a copy earns its own line. */}
+                    list, the only case where a copy earns its own line — and the
+                    one place a PER-COPY signed answer is needed, since the row's
+                    own chip speaks for the group. */}
                 {row.copies.length === 1 && <CopyFacts copy={row.copies[0]!} />}
                 {row.copies.length > 1 && (
                   <ul className="plain shelf-row__copies">
                     {row.copies.map((c) => (
                       <li key={c.id}>
-                        <CopyFacts copy={c} withStatus />
+                        <CopyFacts copy={c} withStatus showSigned={row.signed != null} />
                       </li>
                     ))}
                   </ul>
@@ -277,7 +357,22 @@ export function OnYourShelf({
  * apart, so it says nothing rather than "nobody has it" — the same rule
  * `Copies.tsx` documents at length.
  */
-function CopyFacts({ copy, withStatus }: { copy: ShelfCopy; withStatus?: boolean }) {
+function CopyFacts({
+  copy,
+  withStatus,
+  showSigned,
+}: {
+  copy: ShelfCopy;
+  withStatus?: boolean;
+  /**
+   * Answer signed for THIS copy, either way (owner 2026-09-02). Set only on an
+   * owned physical row's multi-copy list — the case where the row's own chip
+   * describes the group and cannot say which of the two is the signed one. Work
+   * 220 is exactly that shape: a signed leatherbound and a slipcase volume,
+   * nested under one Hardcover row.
+   */
+  showSigned?: boolean;
+}) {
   const person =
     copy.personName && copy.status === 'lent'
       ? `Lent to ${copy.personName}`
@@ -299,7 +394,10 @@ function CopyFacts({ copy, withStatus }: { copy: ShelfCopy; withStatus?: boolean
   // Per-copy badges appear only in the multi-copy list (`withStatus`), where they
   // say WHICH copy is signed; the single-copy case already shows them on the row
   // above, so repeating them here would be noise.
-  const showBadges = withStatus && copy.badges.length > 0;
+  // Signed is rendered as its own two-state chip when asked for, so it comes out
+  // of the positive-only list to avoid saying it twice.
+  const badges = showSigned ? copy.badges.filter((b) => b.key !== 'signed') : copy.badges;
+  const showBadges = !!withStatus && (badges.length > 0 || !!showSigned);
   if (parts.length === 0 && !showBadges) return null;
 
   return (
@@ -307,7 +405,8 @@ function CopyFacts({ copy, withStatus }: { copy: ShelfCopy; withStatus?: boolean
       {parts.join(' · ')}
       {showBadges && (
         <span className="shelf-row__copy-badges">
-          {copy.badges.map((b) => (
+          {showSigned && <SignedChip signed={copy.signed} />}
+          {badges.map((b) => (
             <span key={b.key} className="special-badge" title={b.title}>
               {b.label}
             </span>
