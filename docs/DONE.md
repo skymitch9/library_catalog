@@ -79,6 +79,13 @@ typecheck clean · vite build clean · **2210 tests pass / 0 fail**. The
 `cover-storage` capability read is asked **once for the whole list**, not once
 per printing.
 
+**Deployed to both instances 2026-09-02 ~21:51 Phoenix** in the same
+`deploy:both` as the shelf merge — **main** `2ee0da31-c2c2-4e0a-9065-767c629fd0b2`
+at `614759f` · **friend** `3abcb1de-de22-4ab4-af00-1daa72c6a039` at `027b7f8`
+([`deploys.log`](deploys.log)). ⚠️ **Shipped bytes checked:** both hosts serve
+`assets/index-Cb684OTN.js` containing the `editions/` cover paths and
+`assets/index-ByXDL2KR.css` containing `.edition-cover`.
+
 ⚠️ **NOT verified:** no cover was actually set on a real printing — the edit box
 sits behind estate SSO and no session was driven, so neither door was exercised
 from a browser.
@@ -204,6 +211,22 @@ book and has no format section to file under.
 
 typecheck clean · vite build clean · **2201 tests pass / 0 fail** (2200 baseline;
 24 `other-versions` tests removed, 25 added).
+
+**Deployed to both instances 2026-09-02 ~21:51 Phoenix** (`npm run deploy:both`,
+migrate-before-deploy: both D1s answered *"No migrations to apply!"* first):
+**main** `2ee0da31-c2c2-4e0a-9065-767c629fd0b2` at `614759f` · **friend**
+`3abcb1de-de22-4ab4-af00-1daa72c6a039` at `027b7f8`, both in
+[`deploys.log`](deploys.log).
+
+⚠️ **The SHIPPED bundle was checked, not the route.** `library.heygabi.ai` and
+`padhard.heygabi.ai` both serve `assets/index-Cb684OTN.js` containing
+`shelf-section`, `May be yours`, `bd-hold--available` and `Matched by
+containment`, and `assets/index-ByXDL2KR.css` containing `bd-hold--available`,
+`bd-own--available` and `shelf-section__head`. 🔴 **And the negative, which is
+the one that proves the merge:** the string **`Other versions available` is
+ABSENT from the shipped bundle** — the panel is not hidden behind a flag, it is
+not in the code that ships. `You own` (the count line) is present, so the merge
+kept it.
 
 ⚠️ **NOT verified:** the merged page rendered in a browser. The work page sits
 behind estate SSO and no session was driven — the evidence is the derivation
