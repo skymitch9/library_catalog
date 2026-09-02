@@ -172,36 +172,16 @@ the printing's own name — no deploy, no migration.
 more than one printing of the same format. Not all of them have unlinked copies;
 that narrowing has NOT been measured.
 
-## ☐ SHIPPED-NOT-DEPLOYED: the donor alias rung is on `main` and NOT yet on either Worker (2026-08-26)
-
-The #348 build ([`DONE.md`](DONE.md)) landed in two halves and they have
-different states — exactly the distinction the verification rule asks be tracked
-per item:
-
-| Half | State |
-|---|---|
-| The audiobook link (`isEditionSet` + `backfill:audiobooks --commit`) | ✅ **LIVE on both instances.** A DATA change, no deploy needed. Verified by query: works #4 and #348 each return a live `audiobook_holding` row |
-| The donor alias rung (`routes/donor.ts`, `lib/details-sweep.ts`) | ⚠️ **committed and tested, NOT deployed.** Worker code; takes effect on the next `npm run deploy:both` |
-
-Deliberately not deployed by the session that wrote it: another agent was
-working the TBR route in its own worktree and may deploy both instances, and two
-concurrent deploys are how the deploy-guard's *"live commit is not in the tree
-being shipped"* refusal gets hit. **Nothing is broken by the wait** — the sweep
-simply keeps missing the cross-instance matches it has always missed. Fold it
-into the next deploy, then tick this and add the line to `deploys.log`.
-
-✅ **DEPLOYED 2026-08-27 ~10:59 Phoenix (17:59Z)**, folded into the TBR format-checkbox
-deploy exactly as this section asked: `dd290cd`, main
-`61f07f4a-2144-46d4-919d-1623fdcd4aba` / friend
-`aa8ea08a-0008-4a57-a271-a8d4d4b2bd32`, both lines in
-[`deploys.log`](deploys.log).
-
-⚠️ **DEPLOYED is not VERIFIED, and this item stays OPEN for that reason.** The
-session that deployed it was building the wheel's format boxes and measured
-**only** that: it did not exercise `routes/donor.ts` or `lib/details-sweep.ts`
-against either live Worker, so nobody has yet watched the alias rung match a
-cross-instance near-miss in production. **Whoever verifies it closes this and
-moves the section whole to [`DONE.md`](DONE.md).**
+> ✂️ **2026-09-02:** *"SHIPPED-NOT-DEPLOYED: the donor alias rung is on `main`
+> and NOT yet on either Worker"* moved WHOLE to [`DONE.md`](DONE.md). The
+> headline claim is **false and has been since 2026-08-27**: measured against
+> Cloudflare (not read off the log), main serves version
+> `2ee0da31-c2c2-4e0a-9065-767c629fd0b2` and friend
+> `3abcb1de-de22-4ab4-af00-1daa72c6a039` at 100%, and `603d2a2` — the commit
+> that wrote the rung — is an ancestor of both. ⚠️ Its residual *"deployed is
+> not verified"* thread came with it and is **not closed**: see that entry for
+> why no probe from outside can settle it (the route answers **404 to
+> everything without `DONOR_TOKEN`, by design**).
 
 > ✂️ **2026-09-02:** *"A research run must SAY what the free ladder found and
 > skipped"* moved WHOLE to [`DONE.md`](DONE.md) — `result_json.free` is

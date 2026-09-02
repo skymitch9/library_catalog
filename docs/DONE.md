@@ -18,6 +18,78 @@
 > were extracted from this same history.
 
 
+## ✅ 2026-09-02 — the donor alias rung IS live on both Workers (the item's own headline was six days stale)
+
+Moved here whole from [`TODO.md`](TODO.md). ⚠️ **Nothing was deployed to close
+this** — the claim was simply out of date, which is the silent staleness the
+docs standard exists to kill: a section titled *SHIPPED-NOT-DEPLOYED* carried,
+in its own body, the deploy that contradicted its title. The item as it stood:
+
+> ## ☐ SHIPPED-NOT-DEPLOYED: the donor alias rung is on `main` and NOT yet on either Worker (2026-08-26)
+>
+> The #348 build (`DONE.md`) landed in two halves and they have
+> different states — exactly the distinction the verification rule asks be tracked
+> per item:
+>
+> | Half | State |
+> |---|---|
+> | The audiobook link (`isEditionSet` + `backfill:audiobooks --commit`) | ✅ **LIVE on both instances.** A DATA change, no deploy needed. Verified by query: works #4 and #348 each return a live `audiobook_holding` row |
+> | The donor alias rung (`routes/donor.ts`, `lib/details-sweep.ts`) | ⚠️ **committed and tested, NOT deployed.** Worker code; takes effect on the next `npm run deploy:both` |
+>
+> Deliberately not deployed by the session that wrote it: another agent was
+> working the TBR route in its own worktree and may deploy both instances, and two
+> concurrent deploys are how the deploy-guard's *"live commit is not in the tree
+> being shipped"* refusal gets hit. **Nothing is broken by the wait** — the sweep
+> simply keeps missing the cross-instance matches it has always missed. Fold it
+> into the next deploy, then tick this and add the line to `deploys.log`.
+>
+> ✅ **DEPLOYED 2026-08-27 ~10:59 Phoenix (17:59Z)**, folded into the TBR format-checkbox
+> deploy exactly as this section asked: `dd290cd`, main
+> `61f07f4a-2144-46d4-919d-1623fdcd4aba` / friend
+> `aa8ea08a-0008-4a57-a271-a8d4d4b2bd32`, both lines in
+> `deploys.log`.
+>
+> ⚠️ **DEPLOYED is not VERIFIED, and this item stays OPEN for that reason.** The
+> session that deployed it was building the wheel's format boxes and measured
+> **only** that: it did not exercise `routes/donor.ts` or `lib/details-sweep.ts`
+> against either live Worker, so nobody has yet watched the alias rung match a
+> cross-instance near-miss in production. **Whoever verifies it closes this and
+> moves the section whole to `DONE.md`.**
+
+### The deploy evidence — measured against Cloudflare, not read off the log
+
+| Question | Answer, 2026-09-02 |
+|---|---|
+| Which commit wrote the rung? | `603d2a2` (2026-08-26 15:42 −0700) — *"matcher: two recordings of one book are an EDITION SET…; donor asks both sides' aliases"*, touching `routes/donor.ts`, `lib/details-sweep.ts` and their tests |
+| Is it in the deploy the item names? | `git merge-base --is-ancestor 603d2a2 dd290cd` → **yes** |
+| Is it in what is live TODAY? | `git merge-base --is-ancestor 603d2a2 HEAD` → **yes** |
+| What is actually serving? | `wrangler deployments list`: **main** `2ee0da31-c2c2-4e0a-9065-767c629fd0b2` at **100%**, **friend** `3abcb1de-de22-4ab4-af00-1daa72c6a039` at **100%** — the exact version ids [`deploys.log`](deploys.log) records for `614759f` / `027b7f8`, 2026-09-02 21:51Z |
+
+So the rung has been live on **both** instances since 2026-08-27 17:58/17:59Z,
+and has been re-shipped by every deploy since (six on each instance).
+
+### ⚠️ The residual thread is REAL and is NOT closed by this move
+
+Nobody has watched the alias rung match a cross-instance near-miss in
+production, and this entry does not claim otherwise. What is new is **why that
+cannot be settled the cheap way**, which the open item did not say:
+
+🔴 **`/api/donor` answers 404 to everything that is not the one legitimate
+caller** — unset token, absent header, wrong value alike — *deliberately*, and
+its header explains the choice (*"a mismatch is an attacker or a
+misconfiguration, and neither is owed a hint that the door exists"*). So the
+**401-vs-404 probe that settled OR-1's `GET /api/members` cannot work here**:
+on this route a deployed rung and an absent route are byte-identical from
+outside. Exercising it needs `DONOR_TOKEN`, i.e. the friend instance's own
+sweep running against main — a live sweep, not a probe.
+
+**What would settle it, for whoever picks it up:** run a details sweep on
+padhard for a work whose main-side twin is reachable only through an alias
+(the #348 / #4 *Isles of the Emberdark* pair is the worked example) and read
+the run's recorded source — the donor rung names itself. Cheaper still: watch
+`npm run tail` while that sweep runs.
+
+
 ## ✅ 2026-09-02 — the audiobook deep link searches the VERBATIM title, and the one dead link is closed
 
 Moved here whole from [`TODO.md`](TODO.md). The item as it stood:
