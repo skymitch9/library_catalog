@@ -32,6 +32,37 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
+## ☐ OWNER: "On your shelf" must say WHICH EDITION each row is, and whether it is signed (2026-09-02)
+
+> **Owner, 2026-09-02, verbatim:** *"actually none of the edition stuff shows in
+> the page anymore. i see we have it on the shelf but not what each edition is.
+> lets have the editions listed in the on your shelf version with ebook and
+> audio but instead of paperback replace that with the edition info and if its
+> signed or not"*
+
+**What this amends.** The 2026-08-24 copy-driven shelf ([`DONE.md`](DONE.md))
+fixed *"an owned book must never read as Wanted"* by grouping owned copies by
+their **effective format** — and in doing so made the row headline the bare
+format word (*"Paperback — Owned"*). The edition identity fell out of the
+glance: on 493 the headline is *"Paperback"* and the printing (TokyoPop, 2006)
+is nowhere on the row, because `edition_name` is NULL there and the meta line
+only ever rendered `edition_name`/`collects`. **Measured 2026-09-02 in prod:
+566 editions, only 129 carry an `edition_name` — so for 77% of printings the
+old meta line renders nothing at all.** That is the owner's *"none of the
+edition stuff shows"*.
+
+**The change.**
+- Ebook / Audiobook rows unchanged.
+- A physical **Owned** row whose copies resolve to a **real** edition leads with
+  the EDITION identity, binding demoted to secondary info.
+- Per copy, signed is shown **either way** (*"and if its signed or not"*); the
+  other three 0430 columns (sprayed edges, leatherbound, slipcase) stay chips
+  that light only when set.
+- ⚠️ **A copy that resolves to NO edition keeps the format word.** Absence
+  renders as the format, never as a guess.
+- Wanted rows unchanged; the copy-driven invariants hold (the shelf is what you
+  HOLD; never empty without the neutral slot; availability stays peers-only).
+
 ## ☐ SHIPPED-NOT-DEPLOYED: the donor alias rung is on `main` and NOT yet on either Worker (2026-08-26)
 
 The #348 build ([`DONE.md`](DONE.md)) landed in two halves and they have
