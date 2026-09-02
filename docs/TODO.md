@@ -57,6 +57,40 @@ working. Re-check with `npm test` and look at whether
 
 ---
 
+## ⚠️ FINDING: the work page now shows the audiobook link TWICE — two surfaces, one question (2026-09-02)
+
+Measured **in a real browser, signed in**, on <https://library.heygabi.ai/work/232>.
+Both of these render, both painted, both linking to the same place:
+
+| Panel | What it says |
+|---|---|
+| **On your shelf** | `🎧 Audiobook  OWNED  ↗` → `audiobooks.heygabi.ai/#q=Fae+and+Fare` |
+| **Other versions available** | `Audiobook — Fae and Fare (2)` · *Pirateaba* · *Matched by exact title (100% title match).* → the same URL |
+
+⚠️ **This is the estate's own "one fact, one home applies to SURFACES too" rule,
+and it is the hard-to-catch shape of it** — two panels each showing one link
+look fine in isolation, because nobody sees them side by side until they do.
+
+**Left as a finding rather than fixed, deliberately.** *"On your shelf"* landed
+the SAME DAY (see [`DONE.md`](DONE.md), *"leads with the EDITION"*) and which of
+the two should own the audiobook link is a design call with an owner, not a
+tidy-up. Note that they are not redundant in content: *Other versions* carries
+the **provenance sentence** (`Matched by exact title (100%)`) that migration
+0010's shown-never-hidden rule exists for, and *On your shelf* carries the
+**ownership state**. Whoever consolidates must keep the provenance, and must not
+leave a fallback to the losing surface — a fallback is how two sources survive.
+
+☐ **Decide which panel owns it**, then delete the other's audiobook row.
+
+☐ **Smaller, same page:** the link is `#q=<cleaned title>`, a token-substring
+  search, so *"The Wandering Inn"* drops **16 books** into the search box rather
+  than landing on one. Fine for *Fae and Fare*; poor for a title that is also
+  its series name. `audiobookDetailUrl` in `apps/web/src/lib/audiobook-site.ts`
+  is the one place that would change, and its header explains why a hash search
+  was the only option (the sibling site has no per-book URL).
+
+---
+
 ## ☐ Cross-catalog links: the one decision this build deliberately did NOT take (2026-09-02)
 
 The build is done and in [`DONE.md`](DONE.md); this is the single open thread.

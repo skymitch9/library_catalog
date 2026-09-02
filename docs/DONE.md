@@ -79,9 +79,16 @@ That file was left untouched — another writer's work in a shared tree — and
 ⚠️ **it currently blocks `npm run deploy:both`, whose `predeploy` runs the
 suite.** Not caused by this work, and not this work's to fix.
 
-**Not verified:** nothing was clicked in a browser; the work page was never seen
-signed in; and `check:cross-links` has never been run against a database that
-FAILS it — the unknown-id and unresolved paths are unit-tested only.
+✅ **Verified in a real browser, signed in, 2026-09-02:** works **229, 230, 231
+and 232** each render an audiobook link to the right recording — so all four of
+the owner's acceptance links are live in this direction. ⚠️ That same check
+found the link renders **TWICE** (*On your shelf* and *Other versions
+available*); recorded as a finding in [`TODO.md`](TODO.md), not fixed here.
+
+**Still not verified:** `check:cross-links` has never been run against a
+database that FAILS it — the unknown-id and unresolved paths are unit-tested
+only, so neither error message has been read in anger; and nothing was checked
+on padhard, by design.
 
 ## ✅ 2026-09-02 — "On your shelf" leads with the EDITION, and answers signed either way — SHIPPED both instances
 
