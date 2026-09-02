@@ -89,6 +89,10 @@ import { execute, lit, parseFlags, query } from './lib/d1.mjs';
 import { normaliseTitle } from '../packages/core/src/titles.ts';
 import { AUDIOBOOK_CSV, audiobookIndex, loadAudiobooks } from './lib/audiobooks.mjs';
 import { canonicalSeries } from './lib/series-canon.mjs';
+// Reported, never written — see the block near the end of this file, and that
+// module's header for why the CHECK constraint on `matched_via` makes writing a
+// curated row a migration rather than an edit.
+import { checkCuratedLinks, loadCuratedOverrides } from './lib/cross-catalog-overrides.mjs';
 
 const flags = parseFlags();
 
@@ -478,6 +482,56 @@ for (const m of multiEdition.sort((a, b) => a.work.title.localeCompare(b.work.ti
     ];
     console.log(`    "${e.row.rawTitle}"  —  ${bits.join(' · ')}`);
   }
+}
+console.log('');
+
+// ---------------------------------------------------------------------------
+// The hand-reviewed cross-catalog joins — reported, never written
+// ---------------------------------------------------------------------------
+//
+// ⚠️ This sweep does NOT write curated rows and cannot: `matched_via` is
+// `CHECK (matched_via IN ('exact','alias','containment'))` (migration 0390,
+// inherited from 0010), so a 'curated' value needs a table rebuild plus its
+// view, on two production databases. Migration 0110 already settled the shape
+// that decision should take when somebody makes it — an owner-confirmed link
+// got its OWN TABLE rather than a new enum value.
+//
+// What this DOES is say out loud whether the reviewed pairs still resolve. The
+// four the owner named (2026-09-02) reach their audiobooks only because two
+// `work_alias` rows exist — delete either and two of his four acceptance links
+// vanish with nothing failing anywhere. One line per run is what makes that
+// visible in the pipeline log instead of on the page, months later.
+//
+// ⚠️ NEVER THROWS. This script is pipeline STEP 11 (`_run_sibling_link`), which
+// is required to produce exactly one named line on every path and to leave the
+// holdings sweep unaffected by anything the overrides file does. A file that is
+// missing, malformed or contradicted is a REPORT, not a failure — the thing
+// that fails on it is `npm run check:cross-links`, run deliberately.
+try {
+  const curated = loadCuratedOverrides();
+  if (curated.length === 0) {
+    console.log('curated cross-links    none on file');
+  } else {
+    // Undo `editionKey` above. It joins on a NUL so no work id + audio title
+    // pair can ever collide with another; the split must use the SAME escape,
+    // never a literal byte -- a stray NUL in this file makes git call it
+    // binary and every future diff of this script unreadable.
+    const holdingRows = [...liveEditions].map((k) => {
+      const cut = k.indexOf('\u0000');
+      return { work_id: Number(k.slice(0, cut)), audio_key: k.slice(cut + 1), stale_at: null };
+    });
+    const { unknownWorkId, unresolved, resolved } = checkCuratedLinks(curated, works, holdingRows);
+    console.log(
+      `curated cross-links    ${resolved.length} resolved, ${unresolved.length} unresolved, ` +
+        `${unknownWorkId.length} unknown work id(s)`,
+    );
+    for (const o of [...unresolved, ...unknownWorkId]) {
+      console.log(`  ⚠️  work ${o.libraryWorkId} <-> "${o.audiobookTitle}" — run npm run check:cross-links`);
+    }
+  }
+} catch (e) {
+  // Named, not swallowed: "could not check" must never read as "all clear".
+  console.log(`curated cross-links    NOT CHECKED — ${e.message}`);
 }
 console.log('');
 

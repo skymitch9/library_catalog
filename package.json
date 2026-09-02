@@ -54,6 +54,7 @@
     "backfill:series": "tsx scripts/backfill-series.mjs",
     "backfill:series-volumes": "tsx scripts/backfill-series-volumes.mjs",
     "backfill:audiobooks": "tsx scripts/backfill-audiobook-holdings.mjs",
+    "check:cross-links": "tsx scripts/check-cross-catalog-overrides.mjs",
     "backfill:ebooks": "tsx scripts/backfill-ebook-holdings.mjs",
     "backfill:openlibrary-ids": "tsx scripts/backfill-openlibrary-ids.mjs",
     "backfill:missing-covers": "tsx scripts/backfill-missing-covers.mjs",
