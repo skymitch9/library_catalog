@@ -427,6 +427,17 @@ typecheck clean · **2218 tests pass / 0 fail** (2210 before; +8 — five on the
 helper's preference and fallbacks, three on the shelf row including the
 two-recording case).
 
+**Deployed to both instances 2026-09-02 ~16:10 Phoenix (23:10Z)** — **main**
+`ef8f6894-c0e8-47f7-b637-2597cb70451c` at `92a3add` · **friend**
+`f9daa79a-201a-4bef-94b1-a7ee6c74794d` at `f9e4e19` ([`deploys.log`](deploys.log)).
+
+⚠️ **Shipped bytes checked**, not just the deploy's own report: both hosts
+serve `assets/index-BTMKoh3U.js`, and that file on `library.heygabi.ai`
+contains the two-argument builder with its fallback —
+`function Xc(t,e){const n=(e??"").trim()||t,…}` — and **both** call sites,
+`Xc(n.title,n.rawTitle)` (the TBR chip) and
+`Xc(E.title,E.rawTitle??E.audioKey??null)` (the shelf row).
+
 ⚠️ **NOT verified:** nobody has clicked the new link in a browser against the
 live audiobook site. The 14/886/17 figures are a **replay of that site's
 matcher over the HTML it ships**, which is the right instrument for the query
