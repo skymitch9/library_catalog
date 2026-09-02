@@ -38,6 +38,7 @@ import { Shelf } from '../components/Shelf.js';
 import { WorkList } from '../components/WorkList.js';
 import { mediumLabel } from '../lib/formats.js';
 import { loadPrefs, savePrefs } from '../lib/prefs.js';
+import { useListTopOnPageChange } from '../lib/use-page-top.js';
 import { syncReadStatesFromRatings, type ReadSyncResult } from '../lib/read-sync.js';
 import { ON_THE_WAY, statusLabel } from '../lib/statuses.js';
 import {
@@ -365,18 +366,19 @@ export function CollectionPage({
     setSelected(new Set());
   }, []);
 
-  // Scroll to the top when the page changes, and move focus to the list
-  // region so a keyboard user lands where the new content starts rather than
-  // staying mid-page. The ref sits on the results wrapper; the heading is
-  // implicit (the pager above the list is the first focusable landmark).
-  const listTopRef = useRef<HTMLDivElement>(null);
-  const prevPageRef = useRef(page);
-  useEffect(() => {
-    if (prevPageRef.current === page) return;
-    prevPageRef.current = page;
-    window.scrollTo({ top: 0, behavior: 'instant' });
-    listTopRef.current?.focus();
-  }, [page]);
+  // Scroll to the top when the page changes, and move focus to the list region
+  // so a keyboard user lands where the new content starts rather than staying
+  // mid-page. The ref sits on the results wrapper; the heading is implicit (the
+  // pager above the list is the first focusable landmark).
+  //
+  // ⚠️ **This used to be written out here, and it was subtly wrong**: it called
+  // `focus()` with no options, and `focus()` scrolls the element into view by
+  // default — so the `scrollTo({ top: 0 })` on the line above it was undone
+  // before the browser painted, and the viewport settled at the results
+  // container instead of the top of the page. `lib/page-top.ts` carries the
+  // whole story; the point of the hook is that the next paginated surface
+  // cannot reintroduce the same ordering trap.
+  const listTopRef = useListTopOnPageChange<HTMLDivElement>(page);
 
   const canEdit = me.capabilities.includes('editCatalog');
   // ⚠️ `ebookOnly` counts as filtered, which is what hides the strip once "See
