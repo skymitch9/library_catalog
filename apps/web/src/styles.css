@@ -2165,6 +2165,47 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
 .scan-mode--on .muted { color: var(--et-accent-fg); opacity: 0.8; }
 
 /*
+ * --- the scan-time format toggle ------------------------------------------
+ *
+ * One choice for the whole sweep, sitting under the tabs: "what am I holding a
+ * box of?". Deliberately NOT a fifth `.scan-mode` card — those are the four
+ * ways IN, and a fifth panel of equal weight beside them would read as a fifth
+ * way in rather than as a setting for the one you already picked. It is the
+ * `.cog__modes` segmented shape instead, which is this app's existing spelling
+ * of "pick exactly one of a short list", and a third the height.
+ *
+ * Tokens only: a filled segment reads as the one you are on, exactly as the
+ * theme cog's does, so it inherits every theme's selected treatment for free.
+ */
+.scan-format {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+.scan-format__label { font-size: 0.8rem; color: var(--et-muted); }
+.scan-format__opts { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+.scan-format__opts button {
+  min-height: 36px;
+  padding: 0 0.6rem;
+  border-radius: var(--et-radius);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--et-muted);
+}
+.scan-format__opts button[aria-pressed='true'] {
+  background: var(--et-accent);
+  border-color: var(--et-accent);
+  color: var(--et-accent-fg);
+}
+/* The same 44px rule this file already applies to `.chip` on touch, for the
+   same reason: a segmented control is the easiest thing here to mis-tap. */
+@media (pointer: coarse) {
+  .scan-format__opts button { min-height: 44px; }
+}
+
+/*
  * "x2" — more than one copy on the shelf.
  *
  * Neutral rather than warn: unlike `.mark--needs` and `.mark--watch`, owning a

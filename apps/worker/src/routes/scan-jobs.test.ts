@@ -253,4 +253,32 @@ describe('a resolved scan line carries what the lookup borrowed (F4)', () => {
   it('a blank line starts with no description', () => {
     assert.equal(blankLine(1, 'barcode', '9780765350374').description, null);
   });
+
+  // ── the SAME absence, one field later ────────────────────────────────────
+  //
+  // ⚠️ `BookCandidate.format` was declared when the ladder was written and set
+  // to `null` by every single rung until 2026-09-02 — a field that existed and
+  // carried nothing, which is F4 exactly. Open Library's `physical_format` now
+  // fills it, and these pin the line that turns it into the scan row's second
+  // opinion about the binding (Kiro's scan-time format toggle).
+
+  it('⚠️ carries the BINDING the lookup read — the toggle confirmation', () => {
+    const line = applyCandidate(
+      blankLine(1, 'barcode', '9780765350374'),
+      candidate({ format: 'hardcover' }),
+      'Elantris',
+    );
+    assert.equal(line.researchFormat, 'hardcover');
+  });
+
+  it('⚠️ records NULL, never undefined, when the lookup read no binding', () => {
+    // `undefined` reads as "this job predates the field" to every consumer —
+    // a different fact from "we asked and the record does not say".
+    const line = applyCandidate(blankLine(1, 'barcode', '9780765350374'), candidate(), 'Elantris');
+    assert.equal(line.researchFormat, null);
+  });
+
+  it('a blank line starts with no binding opinion', () => {
+    assert.equal(blankLine(1, 'barcode', '9780765350374').researchFormat, null);
+  });
 });

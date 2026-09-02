@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { PHOTO_LONG_EDGE, SHELF_LONG_EDGE, type ScanJob } from '@lc/core';
+import { PHOTO_LONG_EDGE, SHELF_LONG_EDGE, type EditionFormat, type ScanJob } from '@lc/core';
 import { api } from '../api.js';
 import { describeError } from '../lib/errors.js';
 import {
@@ -11,6 +11,13 @@ import {
   openRearCamera,
 } from '../lib/camera.js';
 import { preloadDecoder, startScanLoop } from '../lib/scanner.js';
+import { formatLabel } from '../lib/formats.js';
+import {
+  DEFAULT_SCAN_FORMAT,
+  SCAN_FORMATS,
+  loadScanFormat,
+  saveScanFormat,
+} from '../lib/scan-format.js';
 import { AddWork } from '../components/AddWork.js';
 import { ScanLines } from '../components/ScanLines.js';
 import { addPath, replaceUrl, scansPath, Link, type AddMode } from '../router.js';
@@ -131,6 +138,23 @@ export function ScanPage({
   canSpend: boolean;
 }) {
   const [mode, setMode] = useState<AddMode>(initialMode);
+  /*
+   * ⚠️ The binding every row of this sweep will write — Kiro's scan-time
+   * toggle (`docs/TODO.md`, built 2026-09-02). ONE choice for the whole sweep,
+   * not one per book: this screen's entire standing complaint is too many taps,
+   * and somebody emptying a box of paperbacks is doing one thing.
+   *
+   * ⚠️ Lazy initialiser, not `useState(loadScanFormat())`. The eager form calls
+   * localStorage on EVERY render and throws away the result — cheap here, but
+   * it is the same accessor a private-mode browser throws on, and this file's
+   * camera effects have already taught the codebase what a per-render side
+   * effect costs.
+   *
+   * It defaults to `paperback` and REMEMBERS itself between visits — see
+   * `lib/scan-format.ts` for what "auto-open persistence" was read as and, more
+   * usefully, the three bigger things it was read as NOT meaning.
+   */
+  const [scanFormat, setScanFormat] = useState<EditionFormat>(() => loadScanFormat());
   const [job, setJob] = useState<ScanJob | null>(null);
   const [loading, setLoading] = useState(initialJobId !== null);
 
@@ -431,6 +455,55 @@ export function ScanPage({
     </div>
   );
 
+  /*
+   * ⚠️ **The guess became a choice**, and this control is the whole of it.
+   *
+   * `lib/catalog-add.ts` has written `format: 'paperback'` on every scanned
+   * edition since the feature existed, with a comment admitting the guess was
+   * "wrong often enough to be reported from the shelf" and defensible only
+   * because the Editions panel could correct it afterwards. That comment ends
+   * *"if this ever stops being a one-tap correction, ask at scan time instead"*
+   * — this is asking at scan time, at a cost of zero taps per book.
+   *
+   * ⚠️ **Not rendered on the `type` tab.** That tab is `AddWork`, which has its
+   * own fields and does not go through `addLineToCatalog` at all; a control
+   * there would sit above a form it cannot reach.
+   *
+   * ⚠️ The sentence under it is not decoration. A person needs to know this
+   * applies to the books they are ABOUT to add and not retroactively to the
+   * ones already in the list, or the honest reading of a mid-sweep change is
+   * ambiguous — and `line.addedWorkId` makes an added row unreachable anyway.
+   */
+  const formatToggle = (
+    <div className="scan-format">
+      <span className="scan-format__label" id="scan-format-label">
+        Adding as
+      </span>
+      <div className="scan-format__opts" role="group" aria-labelledby="scan-format-label">
+        {SCAN_FORMATS.map((f) => (
+          <button
+            key={f}
+            aria-pressed={scanFormat === f}
+            onClick={() => {
+              setScanFormat(f);
+              // Written on the tap, not on unmount: a phone that locks
+              // mid-sweep is the case this whole screen is built around, and an
+              // unmount handler is exactly what that does not run.
+              saveScanFormat(f);
+            }}
+          >
+            {formatLabel(f)}
+          </button>
+        ))}
+      </div>
+      <span className="muted small">
+        {scanFormat === DEFAULT_SCAN_FORMAT
+          ? 'Applies to books you add next. Any row can disagree, and each book’s page can fix it.'
+          : 'Applies to books you add next — remembered for next time too.'}
+      </span>
+    </div>
+  );
+
   const header = (
     <>
       <div className="row-tight">
@@ -441,6 +514,7 @@ export function ScanPage({
       </div>
       <h2>Add a book</h2>
       {tabs}
+      {mode !== 'type' && formatToggle}
     </>
   );
 
@@ -617,6 +691,7 @@ export function ScanPage({
           <ScanLines
             job={job}
             onJob={setJob}
+            format={scanFormat}
             empty={
               mode === 'scan'
                 ? 'Point the camera at the barcode on the back. The five-digit price code beside it is skipped automatically.'

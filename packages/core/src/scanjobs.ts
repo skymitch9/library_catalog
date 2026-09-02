@@ -33,7 +33,7 @@
  * wrong book; a spine read is weaker evidence than an ISBN, not stronger.
  */
 
-import type { ScanMode, ScanStatus } from './constants.js';
+import type { EditionFormat, ScanMode, ScanStatus } from './constants.js';
 
 /**
  * The marker written into `scan_job.photo_key`.
@@ -215,6 +215,27 @@ export interface ScanLine {
    */
   description?: string | null;
   /**
+   * The binding the lookup reported, when it reported one it could read.
+   *
+   * ⚠️ **A CONFIRMATION, never a decision.** The add writes the format the
+   * person chose on the scan-time toggle; this is the second opinion shown
+   * beside it, and the row only says anything at all when the two DISAGREE.
+   * `applyCandidate` carries it, `unresolve` clears it, and nothing in the add
+   * path reads it — the person taps to accept, or ignores it and their own
+   * choice stands.
+   *
+   * ⚠️ **`null` is the ordinary case and is not a failure.**
+   * `physicalFormatFrom` in `@lc/isbn` declines every binding it cannot read
+   * unambiguously, and Open Library omits `physical_format` on most records, so
+   * most rows will never raise this. Silence means *nobody disagreed*, which is
+   * a different fact from *nobody looked* — `lookedUp` is what says that.
+   *
+   * ⚠️ Optional on the wire, like `overlap`, `description` and `lookedUp`: jobs
+   * written before this field existed have no key for it, and `undefined` reads
+   * correctly as "nothing was said about the binding".
+   */
+  researchFormat?: EditionFormat | null;
+  /**
    * How close the resolved title is to what was read, 0..1. Null when nothing
    * resolved, and **carried rather than enforced**: below
    * `MIN_SPINE_SIMILARITY` the review screen shows the match and declines to
@@ -298,6 +319,10 @@ export function blankLine(
     publishedYear: null,
     coverUrl: null,
     description: null,
+    // ⚠️ `null`, not omitted, for the reason `description` is: on a line this
+    // build minted, `undefined` would read as "this job predates the field"
+    // rather than "nobody has said anything about the binding".
+    researchFormat: null,
     similarity: null,
     relookedUpAs: null,
     lookedUp: false,

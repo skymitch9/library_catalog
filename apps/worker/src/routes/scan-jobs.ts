@@ -268,6 +268,17 @@ export function applyCandidate(
     // ladder later (F4). `??` not `||`: a rung that answered "no blurb" says
     // null, and that is a different fact from a rung that cannot say.
     description: candidate.description ?? null,
+    // ⚠️ Carried for exactly the F4 reason above, one field later: `format` has
+    // been declared on `BookCandidate` since the ladder was written and was
+    // hard-`null` in every rung until 2026-09-02, so it too was a field that
+    // existed and carried nothing. Open Library's `physical_format` now fills
+    // it, and this line is what turns it into the scan row's second opinion.
+    //
+    // ⚠️ It is a CONFIRMATION, never a decision — nothing in the add path reads
+    // it. `?? null` for the same reason as `description`: a rung that cannot
+    // speak about bindings and a binding it read and could not map are both
+    // "nothing to say here", and neither may become an assertion.
+    researchFormat: candidate.format ?? null,
     similarity: titleSimilarity(normaliseTitle(candidate.title), normaliseTitle(searchedFor)),
   };
 }
@@ -301,6 +312,11 @@ function unresolve(line: ScanLine): ScanLine {
     publishedYear: null,
     coverUrl: null,
     description: null,
+    // The old resolution's opinion about the binding, and a new question makes
+    // it exactly as stale as the title it came with. Leaving it would have the
+    // row disagree with the toggle on the authority of a book it is no longer
+    // about.
+    researchFormat: null,
     similarity: null,
   };
 }

@@ -3,11 +3,13 @@ import {
   proposedAuthors,
   proposedTitle,
   workCreateFrom,
+  type EditionFormat,
   type PreorderAnswer,
   type RescanAnswer,
   type ScanLine,
 } from '@lc/core';
 import { api } from '../api.js';
+import { DEFAULT_SCAN_FORMAT } from './scan-format.js';
 import { arrivedPatch } from './statuses.js';
 import { preorderQuestionFor, type PreorderQuestion } from './preorders.js';
 import {
@@ -143,6 +145,17 @@ export async function addLineToCatalog(
      * what guessing any of them costs.
      */
     rescan?: RescanAnswer;
+    /**
+     * ⚠️ The binding to write on any edition this add creates — the scan-time
+     * toggle's value (Kiro's ask, `docs/TODO.md`, built 2026-09-02).
+     *
+     * Optional and defaulting to `paperback`, so every caller that predates the
+     * toggle keeps exactly the behaviour it had. It is a PERSON'S assertion
+     * about the object in their hands, which is why it beats the lookup's
+     * opinion by default — `line.researchFormat` is shown beside it on the row
+     * and is only ever applied by somebody tapping it.
+     */
+    format?: EditionFormat;
   },
 ): Promise<AddOutcome> {
   /*
@@ -213,6 +226,10 @@ export async function addLineToCatalog(
   // prevent, and it is exactly why authorless is a flagged, temporary state.
   const existing = await api.matchWork(title, authors);
   const rescan = opts?.rescan;
+  // ⚠️ Resolved ONCE, here, and passed down — never re-read per branch. Four
+  // branches below can create an edition and they must all write the same
+  // binding; a second `opts?.format ?? …` in one of them is how they drift.
+  const format = opts?.format ?? DEFAULT_SCAN_FORMAT;
 
   /*
    * ⚠️ **A rescan is a question, not a second copy** — asked HERE, after the
@@ -249,7 +266,7 @@ export async function addLineToCatalog(
       // there now.
       throw new Error('The book this question was about has changed — press Add again.');
     }
-    return applyRescanAnswer(existing.work, line, line.isbn13, rescan, answer);
+    return applyRescanAnswer(existing.work, line, line.isbn13, rescan, answer, format);
   }
 
   /** Attaching to the matched work, or creating one despite the match? */
@@ -324,7 +341,9 @@ export async function addLineToCatalog(
    */
   let editionId: number | null = null;
   if (line.isbn13) {
-    editionId = (await api.createEdition(editionFromLine(work.id, line, line.isbn13))).edition.id;
+    editionId = (
+      await api.createEdition(editionFromLine(work.id, line, line.isbn13, format))
+    ).edition.id;
   }
 
   // A copy, because a person scanning a barcode or photographing a shelf is
@@ -359,13 +378,32 @@ async function flipIfArrived(answer: PreorderAnswer | undefined): Promise<boolea
   return true;
 }
 
-/** The edition a barcode line earns, in one spelling. `paperback` is the
- *  documented guess — see the comment above the call in the main path. */
-function editionFromLine(workId: number, line: ScanLine, isbn13: string) {
+/**
+ * The edition a barcode line earns, in one spelling.
+ *
+ * ⚠️ **`format` is now a PARAMETER, and that is the whole of Kiro's ask.** It
+ * used to be the string `'paperback'` written here, five call sites deep, with a
+ * comment saying the guess was defensible only because it was correctable
+ * later. It is now the choice the person made on the scan-time toggle before
+ * they started, defaulting to `paperback` when a caller does not say — so every
+ * existing caller and every existing test keeps the behaviour it had.
+ *
+ * ⚠️ It defaults **here** as well as at the toggle, deliberately: five call
+ * sites in this file reach this function, and a required parameter would have
+ * turned "somebody forgot to thread it through" into a compile error today and
+ * an `undefined` in a schema tomorrow. `DEFAULT_SCAN_FORMAT` is the one place
+ * the word `paperback` is written.
+ */
+function editionFromLine(
+  workId: number,
+  line: ScanLine,
+  isbn13: string,
+  format: EditionFormat = DEFAULT_SCAN_FORMAT,
+) {
   return {
     workId,
     isbn13,
-    format: 'paperback',
+    format,
     publisher: line.publisher ?? null,
     publishedYear: line.publishedYear ?? null,
     coverUrl: line.coverUrl ?? null,
@@ -389,6 +427,14 @@ async function applyRescanAnswer(
   isbn13: string,
   rescan: Exclude<RescanAnswer, { kind: 'different-book' }>,
   answer: PreorderAnswer | undefined,
+  /**
+   * The scan-time toggle's binding, carried in rather than re-derived. Every
+   * branch below that CREATES an edition writes it; the branches that fill an
+   * ISBN onto a row somebody already recorded leave that row's own format
+   * alone, because a person chose it and a toggle is not a reason to overwrite
+   * a recorded value.
+   */
+  format: EditionFormat,
 ): Promise<AddOutcome> {
   const added = (summary: string | null, preorderArrived = false): AddOutcome => ({
     status: 'added',
@@ -444,7 +490,9 @@ async function applyRescanAnswer(
     // and the copy linked. Still no new copy.
     let editionId: number;
     try {
-      editionId = (await api.createEdition(editionFromLine(work.id, line, isbn13))).edition.id;
+      editionId = (
+        await api.createEdition(editionFromLine(work.id, line, isbn13, format))
+      ).edition.id;
     } catch (err) {
       const taken = isbnTakenFrom(err);
       if (taken) return conflict(null, taken.holder);
@@ -481,7 +529,9 @@ async function applyRescanAnswer(
     if (editionId === null) {
       // Spine-added book, no printing row: the second copy brings one.
       try {
-        editionId = (await api.createEdition(editionFromLine(work.id, line, isbn13))).edition.id;
+        editionId = (
+        await api.createEdition(editionFromLine(work.id, line, isbn13, format))
+      ).edition.id;
       } catch (err) {
         const taken = isbnTakenFrom(err);
         if (taken) return conflict(null, taken.holder);
@@ -508,7 +558,9 @@ async function applyRescanAnswer(
   /* "A different printing I own" — the #341 two-hardcovers case. */
   let editionId: number;
   try {
-    editionId = (await api.createEdition(editionFromLine(work.id, line, isbn13))).edition.id;
+    editionId = (
+      await api.createEdition(editionFromLine(work.id, line, isbn13, format))
+    ).edition.id;
   } catch (err) {
     const taken = isbnTakenFrom(err);
     if (taken) {

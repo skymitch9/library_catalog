@@ -180,6 +180,64 @@ interface OlBook {
   url?: string;
   cover?: { small?: string; medium?: string; large?: string };
   identifiers?: { isbn_13?: string[]; openlibrary?: string[] };
+  /**
+   * The binding, in Open Library's own free text — `"Paperback"`,
+   * `"Hardcover"`, `"Mass Market Paperback"`, `"Hardback"`, and a long tail of
+   * everything else a librarian ever typed. Absent on most records.
+   *
+   * ⚠️ Read as of 2026-09-02, for the scan-time format toggle. Until then
+   * `BookCandidate.format` was declared and set to `null` by every rung — the
+   * field existed and carried nothing, the same shape of absence F4 found in
+   * `description`. See {@link physicalFormatFrom} for what is and is not mapped.
+   */
+  physical_format?: string;
+}
+
+/**
+ * Open Library's binding text → one of ours, or `null` for "do not guess".
+ *
+ * ## ⚠️ THE REFUSALS ARE THE POINT, NOT THE MATCHES
+ *
+ * This exists to CONFIRM a person's one-tap choice at scan time, so a wrong
+ * answer is worse than no answer: a confirmation that is sometimes nonsense
+ * trains somebody to stop reading it, which is the whole feature. So it maps
+ * only bindings whose meaning is unambiguous, and returns `null` for everything
+ * else — `"Kindle Edition"`, `"Audio CD"`, `"Board book"`, `"Leather Bound"`,
+ * `"Library Binding"`, `"Unknown Binding"` and the empty string all decline.
+ *
+ * ⚠️ **`ebook_kindle` is deliberately NOT mapped**, though it is a real
+ * `EDITION_FORMATS` value. This function is reached from a **barcode scan of a
+ * physical object in somebody's hands**; answering *"this is a Kindle edition"*
+ * there is exactly the confident-and-wrong failure the ladder's own measured
+ * lesson warns about (three of ten typed ISBNs resolved to a different book).
+ *
+ * ⚠️ **`leatherbound` is not a format here** — it is a boolean on a COPY
+ * (migration 0430), and `leather ⊂ hardcover` in the data. Mapping the string to
+ * `hardcover` would be defensible and is still declined, because this output is
+ * shown to a person as *"Open Library says X"*, and saying "hardcover" about a
+ * record that said "Leather Bound" is putting words in the source's mouth.
+ *
+ * ⚠️ **Order is load-bearing.** `"Mass Market Paperback"` contains
+ * `"paperback"`, so mass market is tested first; the other order reads every
+ * mass market printing as an ordinary paperback.
+ */
+export function physicalFormatFrom(raw: string | null | undefined): EditionFormat | null {
+  if (!raw) return null;
+  // ⚠️ Fold every non-alphanumeric run to one space BEFORE matching. The field
+  // is free text typed by librarians, and `Mass-Market`, `Mass_Market` and
+  // `Mass  Market Paperback` are all the same binding; matching the raw string
+  // reads two of those three as an ordinary paperback.
+  const s = raw.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  if (s.includes('mass market')) return 'mass_market';
+  // ⚠️ `hardback` as well as `hardcover`: both spellings appear in real records
+  // and they name the same object. `library binding` and `leather` are NOT here.
+  if (s.includes('hardcover') || s.includes('hardback') || s.includes('hard cover')) {
+    return 'hardcover';
+  }
+  if (s.includes('paperback') || s.includes('softcover') || s.includes('soft cover')) {
+    return 'paperback';
+  }
+  return null;
 }
 
 /** "August 31st 2010" and "2005" both appear in real responses. Take the year. */
@@ -248,7 +306,11 @@ export async function lookupOpenLibraryByIsbn(
       // (OL…W). Left null rather than storing the wrong kind of id in a column
       // whose whole purpose is to be the stable work identifier later.
       openlibraryWorkId: null,
-      format: null,
+      // ⚠️ Read rather than hard-null since 2026-09-02. It is a PROPOSAL shown
+      // beside the person's own one-tap choice at scan time, never a value this
+      // rung writes — `physicalFormatFrom` returns null for anything it cannot
+      // read unambiguously, which is most records.
+      format: physicalFormatFrom(rec.physical_format),
       source: 'openlibrary',
       sourceUrl: rec.url ?? `https://openlibrary.org/isbn/${isbn13}`,
     },

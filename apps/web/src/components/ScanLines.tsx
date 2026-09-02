@@ -12,11 +12,14 @@ import {
   type RescanAnswer,
   type ScanJob,
   type ScanLine,
+  type EditionFormat,
   type ScanStatus,
 } from '@lc/core';
 import { api } from '../api.js';
 import { describeError } from '../lib/errors.js';
 import { addLineToCatalog } from '../lib/catalog-add.js';
+import { formatLabel } from '../lib/formats.js';
+import { formatDisagreement } from '../lib/scan-format.js';
 import type { PreorderQuestion } from '../lib/preorders.js';
 import type { IsbnConflict, RescanQuestion } from '../lib/rescans.js';
 import { Link, workPath } from '../router.js';
@@ -138,6 +141,7 @@ function LineRow({
   jobId,
   onJob,
   awaiting,
+  format,
 }: {
   line: ScanLine;
   index: number;
@@ -145,6 +149,8 @@ function LineRow({
   onJob: (job: ScanJob) => void;
   /** The automatic pass owns this line right now. Its buttons would race it. */
   awaiting: boolean;
+  /** The sweep's binding, from the scan-time toggle. `paperback` by default. */
+  format: EditionFormat;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -187,6 +193,19 @@ function LineRow({
    * (which would refuse for the missing author it was deliberately skipping).
    */
   const [authorless, setAuthorless] = useState(false);
+  /**
+   * This row's binding, when the person took the lookup's word over the
+   * sweep's toggle.
+   *
+   * ⚠️ Row state for exactly the reason `preorder` and `rescanQ` are row state:
+   * a sweep can hold two books whose lookups disagree in different directions,
+   * and a single shared value would answer for whichever row was tapped last.
+   *
+   * ⚠️ `null` is NOT "paperback" — it is "nobody overrode the sweep", so a
+   * change to the toggle mid-sweep still reaches this row. Collapsing the two
+   * would silently pin every row somebody had ever looked at.
+   */
+  const [rowFormat, setRowFormat] = useState<EditionFormat | null>(null);
 
   async function run(what: string, fn: () => Promise<void>) {
     setBusy(what);
@@ -218,7 +237,15 @@ function LineRow({
     run('add', async () => {
       setAuthorless(withoutAuthor);
       if (rescan) setRescanAnswer(rescan);
-      const outcome = await addLineToCatalog(line, answer, { withoutAuthor, rescan });
+      const outcome = await addLineToCatalog(line, answer, {
+        withoutAuthor,
+        rescan,
+        // ⚠️ The row's override if there is one, else the sweep's toggle. Read
+        // at call time rather than captured, so a toggle changed between the
+        // prompt and its answer is honoured — both `add` calls of an answered
+        // question must write the same binding.
+        format: rowFormat ?? format,
+      });
       if (outcome.status === 'ask-rescan') {
         // Nothing was written. The rescan question comes FIRST — it decides
         // which rows exist at all; the pre-order question is asked afterwards
@@ -286,6 +313,13 @@ function LineRow({
 
   const settled = line.addedWorkId !== null || line.dismissed;
   const owned = line.state === 'owned';
+  /*
+   * ⚠️ **Null when the two AGREE, and null when the lookup said nothing** —
+   * both of which are silence, and both of which are the ordinary case. See
+   * `lib/scan-format.ts`; the decision lives there rather than here so the row
+   * and any future surface asking the same question cannot drift.
+   */
+  const disagreement = formatDisagreement(rowFormat ?? format, line.researchFormat);
   /*
    * ⚠️ **An overlap is a second REASON to raise the duplicate prompt, not a
    * second prompt.**
@@ -408,6 +442,57 @@ function LineRow({
                 <Link to={workPath(o.workId)}>Open {o.title}</Link>
               </div>
             ))}
+          </div>
+        )}
+
+        {/*
+          ⚠️ **THE LOOKUP'S SECOND OPINION ABOUT THE BINDING** — Kiro's "GABI
+          research confirmation" (`docs/TODO.md`, built 2026-09-02).
+
+          It renders ONLY when the free lookup read a binding AND that binding
+          disagrees with what this row is about to write. Silence is the
+          ordinary case and it means *nobody disagreed*; a confirmation that
+          fired on every row would be a banner people learn to scroll past,
+          which is the opposite of a confirmation.
+
+          ⚠️ Gated on `line.isbn13` because that is the only case where an
+          edition — and therefore a `format` column — is written at all. A spine
+          row with no ISBN adds the work and the copy and leaves the printing to
+          whoever scans its barcode, so telling somebody their binding is wrong
+          there would be a correction to a value that is never stored.
+
+          ⚠️ It changes NOTHING on its own. One tap moves this row; ignoring it
+          leaves the person's own choice standing, which is right — they are
+          holding the object and Open Library is not.
+        */}
+        {!settled && line.isbn13 && disagreement && (
+          <div className="stack" style={{ gap: '0.15rem', marginTop: '0.25rem' }}>
+            <div>
+              <span className="mark mark--gap" style={{ position: 'static' }}>
+                the lookup says {formatLabel(disagreement)}
+              </span>
+            </div>
+            <div className="muted small">
+              You are adding this as {formatLabel(rowFormat ?? format)}. Open Library records
+              this printing as {formatLabel(disagreement)} — you are the one holding it, so
+              take whichever is right.
+            </div>
+            <div className="row-tight">
+              <button onClick={() => setRowFormat(disagreement)} disabled={busy !== null}>
+                Use {formatLabel(disagreement)}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Said only when this row has left the sweep's choice behind, so the
+            ordinary row stays silent about a setting it is simply obeying. */}
+        {!settled && line.isbn13 && rowFormat !== null && rowFormat !== format && (
+          <div className="muted small">
+            Adding this one as {formatLabel(rowFormat)}.{' '}
+            <button className="chip" onClick={() => setRowFormat(null)} disabled={busy !== null}>
+              Use {formatLabel(format)} again
+            </button>
           </div>
         )}
 
@@ -591,11 +676,21 @@ export function ScanLines({
   job,
   onJob,
   empty,
+  format,
 }: {
   job: ScanJob;
   onJob: (job: ScanJob) => void;
   /** What to say when the sweep has found nothing yet. Differs per tab. */
   empty: string;
+  /**
+   * The binding this sweep writes, from the scan-time toggle above the list.
+   *
+   * ⚠️ Passed down rather than read from storage here, so there is exactly ONE
+   * live value on the screen. A component reading its own `loadScanFormat()`
+   * would show a stale binding the moment somebody moved the toggle, and the
+   * row's job is to say what the Add button is about to do.
+   */
+  format: EditionFormat;
 }) {
   const [error, setError] = useState<string | null>(null);
   const progress = lookupProgress(job.lines);
@@ -725,6 +820,7 @@ export function ScanLines({
               jobId={job.id}
               onJob={onJob}
               awaiting={working && needsLookup(line)}
+              format={format}
             />
           ))}
       </ul>
