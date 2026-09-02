@@ -5,6 +5,7 @@ import {
   type AutoApplied,
   type DetailField,
   type FieldGapCount,
+  type FreeLadderView,
   type Me,
   type NeedsDetails,
   type QueueResponse,
@@ -12,6 +13,14 @@ import {
   type RunView,
 } from '../api.js';
 import { describeError } from '../lib/errors.js';
+import {
+  freeLadderAsked,
+  freeLadderFilled,
+  freeLadderSkips,
+  hasFreeLadderRecord,
+  paidAskSentence,
+  sourceLabel,
+} from '../lib/free-ladder-view.js';
 import { residueSentence } from '../lib/details-residue.js';
 import {
   askedByRun,
@@ -899,6 +908,7 @@ function QueueRow({
         )}
 
         {run && !active && <RunSources sources={run.sources} />}
+        {run && !active && <RunFreeLadder free={run.free} />}
 
         <div className="controls">
           <button onClick={onToggle}>
@@ -940,29 +950,6 @@ const KIND_LABEL: Record<string, string> = {
 };
 
 /**
- * The rungs, in words. Kept here rather than shared with the Worker's own
- * `RUNG_LABEL`: these strings are what a person reads on this page, and the
- * Worker's copy is what goes into a run's stored sentence. They are allowed to
- * be worded differently for their two audiences; what must not drift is the
- * KEY, and an unrecognised key falls through to itself rather than vanishing.
- *
- * ⚠️ **Keep this in step with `FreeRung` in `apps/worker/src/lib/free-details.ts`
- * whenever a rung is added.** The fall-through means a missed key renders as the
- * bare identifier (`wikidata`) rather than the name — not broken, but visibly
- * unfinished, which is how `wikidata` was found missing when `hardcover` was
- * added on 2026-08-25.
- */
-const SOURCE_LABEL: Record<string, string> = {
-  audiobook: 'the audiobook catalogue',
-  index: 'the estate index',
-  openlibrary: 'Open Library',
-  googlebooks: 'Google Books',
-  hardcover: 'Hardcover',
-  wikidata: 'Wikidata',
-  llm: 'a paid lookup',
-};
-
-/**
  * Who answered what — the line that makes "the free checks ran first" visible.
  *
  * ⚠️ **Rendered only when there is something to render, and never defaulted.**
@@ -980,10 +967,66 @@ function RunSources({ sources }: { sources: Record<string, string> }) {
       {entries
         .map(
           ([field, rung]) =>
-            `${DETAIL_FIELD_LABEL[field as DetailField] ?? field} — ${SOURCE_LABEL[rung] ?? rung}`,
+            `${DETAIL_FIELD_LABEL[field as DetailField] ?? field} — ${sourceLabel(rung)}`,
         )
         .join(' · ')}
     </div>
+  );
+}
+
+/**
+ * ⚠️ **Why a run cost what it did — the free ladder, before the money.**
+ *
+ * > *"tell me why padhard library wasn't resolved by the free lookup with
+ * > series and description?"* — the owner, 2026-08-26, after a paid run on
+ * > padhard #578.
+ *
+ * `RunSources` above says **who answered**. That is not the same question, and
+ * it could not answer his: run 738's stored result was 261 bytes naming
+ * `sources: llm`, so the free rungs — which had run — left no trace at all, and
+ * the answer had to be reconstructed from code and tables by hand.
+ *
+ * This block is folded away behind a `<summary>` rather than printed inline,
+ * because it is four to six lines per run on a page that lists many runs. The
+ * summary line itself carries the one-sentence version, so nothing has to be
+ * opened to see whether a run was free.
+ *
+ * ⚠️ **Renders NOTHING when `free` is null**, which is every run recorded
+ * before 2026-09-02. That absence means *nobody wrote it down*, and drawing an
+ * empty ladder for it would be inventing a measurement — the same rule
+ * `RunSources` follows for an empty `sources` map, and the reason this feature
+ * was deliberately shipped without a backfill.
+ */
+function RunFreeLadder({ free }: { free: FreeLadderView | null }) {
+  if (!hasFreeLadderRecord(free)) return null;
+
+  const asked = freeLadderAsked(free);
+  const skips = freeLadderSkips(free);
+  const filled = freeLadderFilled(free);
+  const paid = paidAskSentence(free);
+  if (!asked && skips.length === 0 && !filled && !paid) return null;
+
+  return (
+    <details className="run-free">
+      <summary className="muted small">{filled ?? paid ?? 'What the free checks did'}</summary>
+      <div className="stack">
+        {asked && <div className="muted small">{asked}</div>}
+        {skips.length > 0 && (
+          <ul className="stack">
+            {/* ⚠️ Verbatim. Each line already says whether a rung could not be
+                asked or was asked and knew nothing — the distinction the whole
+                ladder is built on — and re-wording them here would be a second
+                place for that to be got wrong. */}
+            {skips.map((s, i) => (
+              <li key={i} className="muted small">
+                {s}
+              </li>
+            ))}
+          </ul>
+        )}
+        {paid && <div className="muted small">{paid}</div>}
+      </div>
+    </details>
   );
 }
 

@@ -1394,6 +1394,94 @@ describe('the ladder', () => {
 // ⚠️ The property the owner asked for: nothing is bought when nothing is left
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// ⚠️ `askedRungs` — WHICH RUNGS WERE TRIED (2026-09-02)
+// ---------------------------------------------------------------------------
+//
+// > *"tell me why padhard library wasn't resolved by the free lookup with
+// > series and description?"* — the owner, 2026-08-26.
+//
+// `sources` records who ANSWERED. Nothing recorded who was ASKED, so a run that
+// stopped at rung 1 and a run whose six rungs all knew nothing left the same
+// trace, and the owner's question was unanswerable from the page.
+//
+// ⚠️ The distinction under test is the one the covers sweep already got wrong
+// once (`covers-and-series.md` §0): a rung BELOW the answer was never reached
+// and must never be read as a rung that found nothing.
+describe('askedRungs — the ladder records who it actually asked', () => {
+  it('stops at the rung that answered, and records only the rungs it reached', async () => {
+    const { db } = stubDb({
+      holding: { title: 'Blackflame', series: 'Cradle', index_display: '3' },
+    });
+    const out = await freeDetailsFor(env(db), 514, ['series', 'seriesIndex'], { throttle: false });
+
+    assert.deepEqual(out.askedRungs, ['audiobook']);
+    assert.deepEqual(out.stillOpen, []);
+  });
+
+  it('⚠️ THE ELANTRIS SHAPE: a rung that fell through is recorded as ASKED', async () => {
+    // Rung 1 finds a row whose series is NULL. It was asked and it could not
+    // answer — which is a completely different sentence from "not reached", and
+    // both must be readable off the same list.
+    const fetchStub = stubFetch({
+      '/editions.json': { entries: [{ key: '/books/OL1M', series: ['Elantris'] }] },
+    });
+    const { db } = stubDb({
+      work: { openlibrary_work_id: 'OL27448W' },
+      holding: { title: 'Elantris', series: null, index_display: null },
+    });
+
+    const out = await freeDetailsFor(env(db), 514, ['series'], {
+      throttle: false,
+      fetchImpl: fetchStub.impl,
+    });
+
+    assert.deepEqual(
+      out.askedRungs,
+      ['audiobook', 'index', 'openlibrary'],
+      'rung 1 fell through, rung 2 was asked and skipped for want of a credential, rung 3 answered',
+    );
+    assert.ok(
+      !out.askedRungs.includes('googlebooks'),
+      'Google Books sits below the rung that answered and was never reached',
+    );
+    assert.equal(out.sources.series, 'openlibrary');
+  });
+
+  it('records every rung when none of them can close the field', async () => {
+    // Nothing linked, no OL key, no ISBN, no keys for the paid-token rungs: the
+    // ladder walks the whole way down and comes back with nothing. That is the
+    // padhard #578 shape, and the six names are the answer to "what was tried".
+    const { db } = stubDb({ holding: null });
+    const out = await freeDetailsFor(env(db), 514, ['series', 'seriesIndex'], { throttle: false });
+
+    assert.deepEqual(out.askedRungs, [
+      'audiobook',
+      'index',
+      'openlibrary',
+      'googlebooks',
+      'hardcover',
+      'wikidata',
+    ]);
+    assert.ok(
+      out.skipped.length >= out.askedRungs.length,
+      'every rung that could not answer must have said why, in its own line — ' +
+        `got ${JSON.stringify(out.skipped)}`,
+    );
+  });
+
+  it('records nothing when no rung was reachable at all', async () => {
+    // `firstPublished` is refused by the whole ladder by design, so the pass
+    // returns before a single rung is asked. An EMPTY list is the honest record
+    // of that, and it is not the same as no record.
+    const { db } = stubDb();
+    const out = await freeDetailsFor(env(db), 514, ['firstPublished'], { throttle: false });
+
+    assert.deepEqual(out.askedRungs, []);
+    assert.ok(out.skipped.some((s) => s.includes('firstPublished')));
+  });
+});
+
 describe('runDetailsResearch — the paid call is skipped when the free rungs close everything', () => {
   it('makes NO network call at all, and says so in the run record', async () => {
     const finished: Record<string, unknown>[] = [];
@@ -1481,6 +1569,26 @@ describe('runDetailsResearch — the paid call is skipped when the free rungs cl
         run?.inputTokens,
         null,
         'no tokens were spent, so none are recorded — the spend total must not move',
+      );
+      // ⚠️ **The free ladder's own account of itself is persisted** (2026-09-02).
+      // `sources` above says who ANSWERED; this says who was ASKED, and only the
+      // second can explain a bill. padhard run 738 had the first and not the
+      // second, which is why *"why did this cost money?"* had to be answered by
+      // reading code.
+      assert.match(
+        String(finished[0]?.resultJson),
+        /"free":\{"rungs":\["audiobook"\]/,
+        'the rungs actually asked must be persisted with the run',
+      );
+      assert.ok(
+        !String(finished[0]?.resultJson).includes('openlibrary'),
+        'rung 1 closed everything, so no rung below it may be recorded as asked — ' +
+          '"not reached" and "found nothing" are different facts',
+      );
+      assert.match(
+        String(finished[0]?.resultJson),
+        /"stillOpen":\[\]/,
+        'nothing was handed to the paid rung, and the record has to say so',
       );
     } finally {
       globalThis.fetch = realFetch;

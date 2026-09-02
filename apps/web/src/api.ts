@@ -1141,10 +1141,40 @@ export interface RunView {
    * free. The page shows the line only when there is something in it.
    */
   sources: Record<string, string>;
+  /**
+   * What the FREE ladder did, before any money was spent — see
+   * `FreeLadderRecord` in `apps/worker/src/lib/research-run.ts` for the shape,
+   * and `lib/free-ladder-view.ts` for the sentences it becomes.
+   *
+   * ⚠️ **`null` means nobody wrote it down**, which is every run made before
+   * 2026-09-02, and it renders as nothing at all. `{ rungs: [], … }` is the
+   * different and equally real answer *the ladder ran and had nothing to
+   * report*. Collapsing the two would turn a gap in the record into a claim
+   * about the rungs — the mistake `sources` already has a paragraph about.
+   */
+  free: FreeLadderView | null;
   model: string | null;
   effort: string | null;
   startedAt: string | null;
   finishedAt: string | null;
+}
+
+/**
+ * The stored free-ladder record, exactly as it comes off `result_json`.
+ *
+ * ⚠️ Every array is optional on purpose. This is JSON written by a Worker that
+ * may be older than the page reading it, and an absent array means *this run
+ * did not record that* — never *it was empty*.
+ */
+export interface FreeLadderView {
+  /** The rungs actually invoked, in ladder order. */
+  rungs?: string[];
+  /** The ladder's own named skip lines, verbatim. */
+  skipped?: string[];
+  /** One sentence per value a free rung wrote. */
+  applied?: string[];
+  /** The fields handed on to the paid rung — what the money was spent on. */
+  stillOpen?: string[];
 }
 
 export interface GapVerdictRow {

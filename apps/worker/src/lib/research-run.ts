@@ -166,10 +166,58 @@ export interface RunView {
    * the queue can now tell a free answer from a bought one.
    */
   sources: Record<string, string>;
+  /**
+   * What the FREE ladder did, before any money was spent.
+   *
+   * ⚠️ **`null` means nobody wrote it down, and it must render as that** — the
+   * same rule `sources` follows and for the same reason. Every run before
+   * 2026-09-02 is in that state; showing it as "the free rungs found nothing"
+   * would invent a measurement. See `ResearchRun['result'].free` in `@lc/db`
+   * for the shape and the incident (padhard run 738) that added it.
+   */
+  free: FreeLadderRecord | null;
   model: string | null;
   effort: string | null;
   startedAt: string | null;
   finishedAt: string | null;
+}
+
+/**
+ * The free ladder's own account of itself, as it is stored and as the queue
+ * reads it back.
+ *
+ * ⚠️ **Every array is optional and every reader must treat an absent one as
+ * "not recorded", never as "empty".** This is JSON off disk written by a
+ * possibly older Worker; a `free` object from a run made before `rungs` existed
+ * would otherwise read as a run that asked nothing at all.
+ */
+export interface FreeLadderRecord {
+  rungs?: string[];
+  skipped?: string[];
+  applied?: string[];
+  stillOpen?: string[];
+}
+
+/**
+ * Fold the ladder's outcome into the shape the run record stores.
+ *
+ * ⚠️ **Written on every finished run, including the ones where the ladder said
+ * nothing.** A run whose four arrays are all empty is a real and informative
+ * answer — *the ladder ran and had nothing to report* — and it is exactly the
+ * shape that must not be confused with a run that predates this record
+ * entirely. The two look identical if this returns `undefined` when it is
+ * empty, so it never does; `rungs: []` is a measurement.
+ *
+ * `sources` is deliberately NOT duplicated in here. It is already a top-level
+ * key of the same object and one fact gets one home.
+ */
+function freeLadderRecord(free: FreeDetailsOutcome): FreeLadderRecord {
+  return {
+    rungs: [...free.askedRungs],
+    skipped: [...free.skipped],
+    applied: [...free.applied],
+    stillOpen: [...free.stillOpen],
+  };
 }
 
 export function toRunView(run: ResearchRun): RunView {
@@ -186,6 +234,9 @@ export function toRunView(run: ResearchRun): RunView {
     applied: run.result?.applied ?? 0,
     detail: run.result?.detail ?? null,
     sources: run.result?.sources ?? {},
+    // ⚠️ `?? null`, never `?? {}`. An empty object would be a run that recorded
+    // a ladder which reported nothing; `null` is a run that recorded no ladder.
+    free: run.result?.free ?? null,
     model: run.model,
     effort: run.effort,
     startedAt: run.startedAt,
@@ -468,6 +519,7 @@ export async function runDetailsResearch(
           proposed: free.applied.length,
           applied: free.applied.length,
           sources: free.sources as Record<string, string>,
+          free: freeLadderRecord(free),
           detail: describeFreeOnlyRun(free),
         },
       });
@@ -507,6 +559,7 @@ export async function runDetailsResearch(
           proposed: 0,
           applied: free.applied.length,
           sources: free.sources as Record<string, string>,
+          free: freeLadderRecord(free),
           // The free rungs still did their work, and saying only "could not be
           // identified" would hide a series that was just written in.
           detail: joinSentences(
@@ -569,6 +622,14 @@ export async function runDetailsResearch(
         proposed: saved,
         applied: report.applied.length + free.applied.length,
         sources,
+        // ⚠️ **The case the whole record exists for.** This is the branch that
+        // spent money, and it is the branch that could not say why: run 738's
+        // `result_json` named `sources: llm` and nothing else, so the owner's
+        // *"why wasn't padhard resolved by the free lookup?"* had to be
+        // answered by reading code. `free.stillOpen` IS the list the paid rung
+        // was asked for, and `free.skipped` is the reason each free rung did
+        // not close it.
+        free: freeLadderRecord(free),
         detail: joinSentences(
           free.applied,
           describeRun(

@@ -223,6 +223,21 @@ export interface FreeDetailsOutcome {
   skipped: string[];
   /** Of the fields it was given, the ones still outstanding afterwards. */
   stillOpen: DetailField[];
+  /**
+   * The rungs this pass actually INVOKED, in ladder order.
+   *
+   * ⚠️ **"Not asked" and "asked and silent" are different facts, and `skipped`
+   * can only ever carry the second.** The loop `break`s the moment every field
+   * is closed, so a rung below the answer is never called and never writes a
+   * skip line — it simply is not mentioned. Reading that absence as "it knew
+   * nothing" would be the covers sweep's *"no cover anywhere"* mistake in a new
+   * place (`covers-and-series.md` §0); reading it as "it was not reached" is the
+   * truth, and it is the sentence that answers *why did this run cost money?*
+   *
+   * A run that closes everything on rung 1 therefore records ONE rung here, and
+   * that short list is the evidence — not an omission.
+   */
+  askedRungs: FreeRung[];
 }
 
 export interface FreeDetailsOptions {
@@ -1245,6 +1260,7 @@ export async function freeDetailsFor(
     applied: [],
     skipped: [],
     stillOpen: [...fields],
+    askedRungs: [],
   };
 
   for (const field of fields) {
@@ -1290,6 +1306,11 @@ export async function freeDetailsFor(
   // catches what the title-parse rungs above miss.
   for (const rung of FREE_LADDER_RUNGS) {
     if (open.size === 0) break;
+    // ⚠️ Stamped BEFORE the call and outside the try, so a rung that throws is
+    // still recorded as having been reached. "We asked and it fell over" and
+    // "we never got to it" are different answers to *why did this cost money?*,
+    // and the catch below writes only the first of them.
+    outcome.askedRungs.push(rung.rung);
     let answers: FieldAnswer[];
     try {
       answers = await rung.ask(ctx, open, outcome.skipped, throttle);

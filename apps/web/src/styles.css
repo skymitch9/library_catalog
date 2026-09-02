@@ -3585,3 +3585,15 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
 }
 .audio-link__cand-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .audio-link__eq { font-weight: 600; }
+
+/* --- why a lookup cost what it did: the free ladder, per run --------------
+ *
+ * Folded away because it is four to six lines PER RUN on a page that lists
+ * many. The summary line carries the one-sentence version, so nothing has to
+ * be opened to see whether a run was free — see `RunFreeLadder`.
+ */
+.run-free > summary { cursor: pointer; }
+.run-free[open] > summary { margin-bottom: 0.3rem; }
+.run-free > summary:focus-visible { outline: 2px solid var(--et-accent); outline-offset: 2px; }
+.run-free ul { margin: 0; padding-left: 1.1rem; }
+.run-free li { list-style: disc; }

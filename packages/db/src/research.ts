@@ -96,6 +96,38 @@ export interface ResearchRun {
     proposed?: number;
     applied?: number;
     sources?: Record<string, string>;
+    /**
+     * What the FREE ladder did before any money was spent, added 2026-09-02.
+     *
+     * ⚠️ **`sources` says who answered; this says who was ASKED.** They are
+     * different questions and only the second one can explain a bill. Run 738
+     * on padhard #578 is the case that forced this: its whole `result_json` was
+     * 261 bytes reading `sources: llm`, so *"why did this cost money?"* was
+     * unanswerable from the page and had to be reconstructed by hand from the
+     * code and the tables. The free rungs HAD run; nothing recorded it.
+     *
+     * | key | is |
+     * |---|---|
+     * | `rungs` | the rungs actually invoked, in ladder order. ⚠️ A rung BELOW the one that answered is absent because it was never reached, **not** because it knew nothing |
+     * | `skipped` | the ladder's own named skip lines, verbatim — each already says whether a rung could not be asked or was asked and was silent |
+     * | `applied` | one sentence per value the free rungs wrote |
+     * | `stillOpen` | the fields handed on to the paid rung. This is the list the money was spent on |
+     *
+     * **No migration**, for the same reason `sources` needed none: the whole
+     * object is `result_json`, a TEXT column whose reader tolerates anything.
+     * ⚠️ Absent on every run recorded before 2026-09-02, and that absence is
+     * the truth about them — nobody wrote the ladder down. It must never be
+     * rendered as "the free rungs found nothing".
+     *
+     * Typed as plain strings deliberately: this is JSON read back off disk and
+     * `@lc/db` cannot enforce a union it did not write.
+     */
+    free?: {
+      rungs?: string[];
+      skipped?: string[];
+      applied?: string[];
+      stillOpen?: string[];
+    };
   } | null;
   inputTitle: string | null;
   /**
