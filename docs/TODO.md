@@ -32,36 +32,31 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
-## ☐ OWNER: "On your shelf" must say WHICH EDITION each row is, and whether it is signed (2026-09-02)
+## ☐ DATA: link the unlinked copies on the multi-printing works, so the shelf can name them (2026-09-02)
 
-> **Owner, 2026-09-02, verbatim:** *"actually none of the edition stuff shows in
-> the page anymore. i see we have it on the shelf but not what each edition is.
-> lets have the editions listed in the on your shelf version with ebook and
-> audio but instead of paperback replace that with the edition info and if its
-> signed or not"*
+Fallout of the shelf change above, and a **data** task, not a code one. Where a
+work has **two printings of one format** and its copies carry no `edition_id`,
+the shelf can no longer name the edition — correctly, because with two
+candidates a borrowed name is a guess (that was the work-220 fabrication the
+change removed). Such a row renders the format word plus its per-copy chips.
 
-**What this amends.** The 2026-08-24 copy-driven shelf ([`DONE.md`](DONE.md))
-fixed *"an owned book must never read as Wanted"* by grouping owned copies by
-their **effective format** — and in doing so made the row headline the bare
-format word (*"Paperback — Owned"*). The edition identity fell out of the
-glance: on 493 the headline is *"Paperback"* and the printing (TokyoPop, 2006)
-is nowhere on the row, because `edition_name` is NULL there and the meta line
-only ever rendered `edition_name`/`collects`. **Measured 2026-09-02 in prod:
-566 editions, only 129 carry an `edition_name` — so for 77% of printings the
-old meta line renders nothing at all.** That is the owner's *"none of the
-edition stuff shows"*.
+**Work 220 (*Words of Radiance*) is the worked example.** Two owned copies —
+one `is_signed`+`leatherbound`, one `slipcase` — against two hardcover
+printings: Dragonsteel's *"Signed Leatherbound (two-volume set…)"* and Tor's
+*"Volume of the slipcase set"*. The attribution is obvious **to a human** and
+the copy flags all but spell it out, but ⚠️ **inferring it in code would be
+exactly the guess the invariant forbids** — matching special-edition prose to
+copy booleans is a heuristic, and a wrong match is a fabricated identity on the
+owner's own shelf. So it is a person's call, one work at a time.
 
-**The change.**
-- Ebook / Audiobook rows unchanged.
-- A physical **Owned** row whose copies resolve to a **real** edition leads with
-  the EDITION identity, binding demoted to secondary info.
-- Per copy, signed is shown **either way** (*"and if its signed or not"*); the
-  other three 0430 columns (sprayed edges, leatherbound, slipcase) stay chips
-  that light only when set.
-- ⚠️ **A copy that resolves to NO edition keeps the format word.** Absence
-  renders as the format, never as a guess.
-- Wanted rows unchanged; the copy-driven invariants hold (the shelf is what you
-  HOLD; never empty without the neutral slot; availability stays peers-only).
+**How:** the edit box's **Editions & copies** tab, *"Which printing do I own?"*
+on each copy (`Copies.tsx`). Setting `copy.edition_id` immediately upgrades the
+row from `resolvedBy: null` to `'linked'` and the headline from *"Hardcover"* to
+the printing's own name — no deploy, no migration.
+
+**Scope, measured 2026-09-02:** **22** (work, format) pairs in production hold
+more than one printing of the same format. Not all of them have unlinked copies;
+that narrowing has NOT been measured.
 
 ## ☐ SHIPPED-NOT-DEPLOYED: the donor alias rung is on `main` and NOT yet on either Worker (2026-08-26)
 

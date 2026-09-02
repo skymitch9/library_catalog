@@ -18,6 +18,138 @@
 > were extracted from this same history.
 
 
+## ✅ 2026-09-02 — "On your shelf" leads with the EDITION, and answers signed either way — SHIPPED both instances
+
+Landed `bc6bcbb`, deployed both instances 2026-09-02 ~11:13 Phoenix (18:13Z):
+**main** `d04be887-93a7-4f57-af5a-6cbcdea9b6e4` · **friend**
+`a4886402-bf27-4af9-b9fa-4e5bcf48ac8a`, both lines in
+[`deploys.log`](deploys.log). Review: **https://library.heygabi.ai/work/493**
+(the sole-printing case) and **https://library.heygabi.ai/work/220** (*Words of
+Radiance* — the ambiguous case, a signed leatherbound beside a slipcase copy).
+
+The item as it stood in `TODO.md`, moved whole:
+
+---
+
+## ☐ OWNER: "On your shelf" must say WHICH EDITION each row is, and whether it is signed (2026-09-02)
+
+> **Owner, 2026-09-02, verbatim:** *"actually none of the edition stuff shows in
+> the page anymore. i see we have it on the shelf but not what each edition is.
+> lets have the editions listed in the on your shelf version with ebook and
+> audio but instead of paperback replace that with the edition info and if its
+> signed or not"*
+
+**What this amends.** The 2026-08-24 copy-driven shelf ([`DONE.md`](DONE.md))
+fixed *"an owned book must never read as Wanted"* by grouping owned copies by
+their **effective format** — and in doing so made the row headline the bare
+format word (*"Paperback — Owned"*). The edition identity fell out of the
+glance: on 493 the headline is *"Paperback"* and the printing (TokyoPop, 2006)
+is nowhere on the row, because `edition_name` is NULL there and the meta line
+only ever rendered `edition_name`/`collects`. **Measured 2026-09-02 in prod:
+566 editions, only 129 carry an `edition_name` — so for 77% of printings the
+old meta line renders nothing at all.** That is the owner's *"none of the
+edition stuff shows"*.
+
+**The change.**
+- Ebook / Audiobook rows unchanged.
+- A physical **Owned** row whose copies resolve to a **real** edition leads with
+  the EDITION identity, binding demoted to secondary info.
+- Per copy, signed is shown **either way** (*"and if its signed or not"*); the
+  other three 0430 columns (sprayed edges, leatherbound, slipcase) stay chips
+  that light only when set.
+- ⚠️ **A copy that resolves to NO edition keeps the format word.** Absence
+  renders as the format, never as a guess.
+- Wanted rows unchanged; the copy-driven invariants hold (the shelf is what you
+  HOLD; never empty without the neutral slot; availability stays peers-only).
+
+---
+
+### What shipped
+
+`deriveShelfView` now composes the **words** as well as the rows — `label`,
+`meta`, `labelSource`, `resolvedBy`, `signed` — so what a card SAYS is pinned by
+a test instead of assembled in a component no harness in this repo can mount.
+`OnYourShelf.tsx` renders those strings and chooses none of its own.
+
+**The identity ladder**, in the order the record can actually answer: the
+printing's `edition_name` → its canonical kind (*"Collector's edition"*) → its
+**imprint** (publisher · year). ⚠️ The imprint rung is not a nicety — it is the
+only identity **437 of 566** production printings carry, and without it the
+change would have been invisible on three books in four.
+
+**The three resolution cases, measured against the REAL production rows** (the
+derivation was run over them, not reasoned about):
+
+| Case | Example | Headline | Second line |
+|---|---|---|---|
+| `linked` — the copy names its printing | (unit test) | the edition's own name | `Hardcover · Tor Books · 2010 · contains Volumes 1-3` |
+| `sole-printing` — unlinked, ONE printing of that format | **493**, one owned copy, TokyoPop 2006, no name | **`TokyoPop · 2006`** (was `Paperback`) | `Paperback` |
+| unresolvable — no link, several candidates | **220**, two owned copies, two hardcover printings | `Hardcover` | *(nothing)* |
+
+**Signed is answered either way** on an owned physical row, because a badge that
+only ever lights cannot answer *"or not"*. The negative wears a quiet dashed
+pill so a shelf of ordinary paperbacks is not covered in decoration.
+⚠️ **It reports the RECORD and says so in its tooltip**: `is_signed` is `NOT
+NULL DEFAULT 0` (migration 0430), so `false` means *nothing has marked this copy
+signed*, which is not the same as having checked the book. Signing alone takes
+**no** edition-prose fallback — a shop calling its printing *"Signed"* is not a
+signature on your copy — while the other three keep the 0430 back-compat parse.
+
+### The fabrication this removed
+
+⚠️ **`claimPhysicalEditionFor` was handing unlinked copy groups the FIRST
+printing that matched their format.** With two candidates that is a guess, and
+on work 220 it was the wrong one: two owned unlinked hardcover copies (one
+signed leatherbound, one slipcase) against two hardcover printings, and the card
+carried *"Signed Leatherbound (two-volume set…)"* over a group containing the
+slipcase copy. The claim is now taken **only where the work has exactly one
+printing of that format**; ambiguity renders as the format word with no identity
+and no borrowed badges. The per-copy chips carry the honest answer instead —
+copy 169 *Signed · Leatherbound*, copy 382 *Not signed · Slipcase*.
+
+The follow-up is DATA, and it is in [`TODO.md`](TODO.md): 22 (work, format)
+pairs in production hold more than one printing of a format, and linking those
+copies via *"Which printing do I own?"* upgrades each row to `linked` with no
+deploy.
+
+### The long-headline problem, and why it is not truncation
+
+**Measured 2026-09-02:** of the 129 named printings the mean name is **47
+characters**, **68 run past 34**, and the longest is **99**. A shop's own words
+for a printing are a sentence, not a word, and at the headline's 1.4rem display
+size that is a wall of type where *"Paperback"* used to sit. A long identity
+therefore **steps down a size** rather than being cut — truncating the identity
+would defeat the entire point of showing it.
+
+### Pins
+
+⚠️ **Neither pin needed changing, and neither was weakened.**
+`work-detail-contract` derives its required-field list from the `detail.<field>`
+reads in `deriveWorkView`, and this change adds none — every field it needs
+(`edition_name`, `edition_kind`, `collects`, `publisher`, `published_year`, and
+the four 0430 copy booleans) was **already on the wire** in `EDITION_COLS` /
+`COPY_COLS`. `work-page-render` exercises `deriveWorkView`, which the shelf does
+not go through. `shelf-view.test.ts` gained **14** cases: the three resolution
+cases, the work-220 anti-fabrication guard, the signed two-state at row and copy
+level, and explicit *"unchanged"* pins on the ebook, audio, wanted and neutral
+rows.
+
+### Verified
+
+typecheck clean · vite build clean · **2153 tests pass / 0 fail** (2139 baseline
++ 14 new) · the derivation run against the real production rows for 493 and 220
+· **the SHIPPED bundle checked, not the route**: `library.heygabi.ai` and
+`padhard.heygabi.ai` both serve `assets/index-Bqnluxsy.js` containing
+`bd-hold__label`, `sole-printing` and the "Not signed" chip, and
+`index-OzuofJcF.css` containing `special-badge--off`.
+
+⚠️ **NOT verified: the authenticated page rendered in a browser.** The work page
+sits behind estate SSO and no session was driven; the evidence is the derivation
+over real rows plus the deployed bytes, not pixels. Light/dark contrast of the
+new dashed `--off` chip was **not** measured across the six theme/mode pairs the
+2026-08-24 reskin measured — it inherits `--bd-line` / `--bd-ink-faint`, both
+already in use on this page, but that is inference, not a measurement.
+
 ## 2026-09-02 — The Wandering Inn — series and volumes rectified (split print run)
 
 Landed `8cb9bf6` (research + script) and the production correction batch
