@@ -6,7 +6,7 @@
  * refuse looks fine until it is pressed, and one withheld from a person who
  * may use it looks like the feature simply not existing. `buildNoteRows` is
  * split out of the component for exactly this reason — the same split
- * `buildVersionEntries` uses in `OtherVersions.tsx`.
+ * `deriveShelfView` uses under `OnYourShelf.tsx`.
  *
  * ⚠️ **It imports the leaf, NOT the component**, and that was measured rather
  * than assumed: the first draft imported `ContentNotes.tsx` and crashed at

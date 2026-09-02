@@ -1,6 +1,6 @@
 /* @jsxRuntime automatic @jsxImportSource react */
 // ⚠️ The pragma is for `npm test`, not the app build — same story as
-// `OtherVersions.tsx`: tsx runs the test files from the repo root where no
+// `OnYourShelf.tsx`: tsx runs the test files from the repo root where no
 // tsconfig sets `jsx`, so without it the JSX compiles to `React.createElement`
 // and throws under `apps/web/test/ebook-shadow.test.ts`.
 import { ebookAgreement, type EbookAgreement } from '@lc/core';
@@ -22,7 +22,7 @@ import type { WorkEbookHolding } from '../api.js';
  * Render rules, in the house style:
  *
  *   • 'neither' (no ebook either way — most of the catalog) renders NOTHING.
- *     Same rule as `universe: null` and `OtherVersions` with no holding.
+ *     Same rule as `universe: null` and a shelf with no audio row at all.
  *   • 'both' renders the quiet confirmation — muted, one line, because
  *     agreement is the expected case and must not shout.
  *   • Either disagreement renders as a notice, in words, with the fix named —

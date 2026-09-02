@@ -1,38 +1,26 @@
 /* @jsxRuntime automatic @jsxImportSource react */
 // ⚠️ The pragma is for `npm test`, not the app build — same story as
-// `OtherVersions.tsx` and `RungMedia.tsx`: the test runner compiles from the
+// `RungMedia.tsx` and `ContentNotes.tsx`: the test runner compiles from the
 // repo root where no tsconfig sets `jsx`. Vite and tsc use the automatic runtime
 // already, so the shipped bundle is byte-identical.
 import type { WorkAudioEdition, WorkAudiobookHolding, WorkEbookHolding } from '../api.js';
 import type { CopyView } from './Copies.js';
 import type { EditionView } from './Editions.js';
 import type { PeerHoldingView } from './PeerLibraries.js';
+import { Cover } from './Cover.js';
 import { editionKindLabel } from '../lib/formats.js';
 import { STATUS_LABEL } from '../lib/statuses.js';
 import { deriveShelfView, type ShelfCopy, type ShelfRow } from '../lib/shelf-view.js';
-import { audiobookDetailUrl } from '../lib/audiobook-site.js';
-import { ebookShelfUrl } from '../lib/ebook-site.js';
 
 /**
- * The catalog a row opens in a NEW TAB, when it is one you actually OWN in a
- * medium that has its own sibling site (owner 2026-08-24). Only owned audio/ebook
- * rows link — a wanted or peer row has no file of yours to open:
+ * ⚠️ `rowCatalogHref` is GONE, and its absence is the point.
  *
- *   - Owned **audio** → the audiobook site's title search (`audiobookDetailUrl`),
- *     which lands on the book by putting it alone in the search box.
- *   - Owned **ebook** → the ebook shelf's title search (`ebookShelfUrl`), which
- *     lands on the book the same way. ⚠️ By TITLE, not the manifest anchor: this
- *     catalog cannot compute that anchor and must not mirror it — see
- *     `ebook-site.ts`.
- *
- * Returns null for every other row, which then renders as a plain (non-link) card.
+ * It used to decide here which rows open a sibling catalog. Since the
+ * 2026-09-02 merge the derivation carries `row.href`, because an AUDIO row now
+ * links whether or not it is owned — a stale match is still worth following —
+ * and because a per-recording row must search for the RECORDING's title, which
+ * this component never had. One place decides; see `shelf-view.ts`.
  */
-function rowCatalogHref(row: ShelfRow, title: string): string | null {
-  if (!row.owned) return null;
-  if (row.medium === 'audio') return audiobookDetailUrl(title);
-  if (row.medium === 'ebook') return ebookShelfUrl(title);
-  return null;
-}
 
 /**
  * Where a shelf headline stops being a word and becomes a sentence, and so steps
@@ -124,13 +112,34 @@ function rowEmoji(row: ShelfRow): string {
  * stay badges that light only when set. Ebook, audiobook and wanted rows are
  * untouched.
  *
+ * ## THE list, in per-format sections (owner, 2026-09-02)
+ *
+ * > "on your shelf should be the main with other editions available under their
+ * > given section. so if its a second physical there should be 2 under physical."
+ *
+ * The **"Other versions available"** panel is gone from the work page and its
+ * contents live here, under **Physical / Ebook / Audio** headings. Three things
+ * this component now renders that it did not:
+ *
+ *   1. **`available` rows** — a printing you neither own nor want, lighter and
+ *      labelled, ⚠️ never mistakable for a holding: no Owned pill, no signed
+ *      chip, a dashed ground, and a state pill that says which of *"Available"*
+ *      or *"May be yours"* the catalog can honestly claim.
+ *   2. **`row.notes`** — the narrator, the series-spelling disagreement, and
+ *      ⚠️ the **provenance sentence** migration 0010 requires be shown and never
+ *      hidden. It is the half of the retired panel that was NOT redundant, and
+ *      losing it in the merge was the one failure to avoid.
+ *   3. **`row.coverUrl`** — the printing's own jacket where it has one (owner:
+ *      *"add being able to set the covers for the alternate editions too"*), or
+ *      the audiobook catalog's. Absent, the emoji thumb stands exactly as before
+ *      — the work cover is NOT borrowed onto a printing.
+ *
  * ⚠️ **A SUMMARY, not a second source of truth.** The full editable record still
  * lives where it always did — `Editions` for the printings and `Copies` for what
- * you hold, now under the edit box's ONE merged **Editions & copies** tab, plus
- * `OtherVersions` for the audiobook, `EbookShadow` for the pool, `PeerLibraries`
- * for peers. This panel is the glance; those are the record. All of it derives
- * from `deriveShelfView`, so the shelf here and the tabs below it cannot come to
- * disagree about what is held.
+ * you hold, under the edit box's ONE merged **Editions & copies** tab, plus
+ * `EbookShadow` for the pool and `PeerLibraries` for peers. This panel is the
+ * glance; those are the record. All of it derives from `deriveShelfView`, so the
+ * shelf here and the tabs below it cannot come to disagree about what is held.
  */
 export function OnYourShelf({
   title,
@@ -141,8 +150,9 @@ export function OnYourShelf({
   audioEditionCount,
   ebookHolding,
   peerHoldings,
+  ourSeries = null,
 }: {
-  /** The work's title — the search token for the owned-audio catalog link. */
+  /** The work's title — the search token for a sibling-catalog link. */
   title: string;
   copies: CopyView[];
   editions: EditionView[];
@@ -151,8 +161,15 @@ export function OnYourShelf({
   audioEditionCount: number | undefined;
   ebookHolding: WorkEbookHolding | null;
   peerHoldings: PeerHoldingView[];
+  /**
+   * This work's OWN series spelling — came across with the "Other versions
+   * available" merge (owner 2026-09-02). An audio row says the two catalogs
+   * disagree only when they actually do.
+   */
+  ourSeries?: string | null;
 }) {
-  const { rows, availability } = deriveShelfView({
+  const { sections, audioCountLine, availability } = deriveShelfView({
+    title,
     copies,
     editions,
     audiobookHolding,
@@ -160,6 +177,7 @@ export function OnYourShelf({
     audioEditionCount,
     ebookHolding,
     peerHoldings,
+    ourSeries,
   });
 
   const hasAvailability = availability.peers.length > 0;
@@ -168,152 +186,26 @@ export function OnYourShelf({
     <section className="panel shelf">
       <h3>On your shelf</h3>
 
-      <ul className="plain shelf-rows">
-        {rows.map((row) => {
-          const catalogHref = rowCatalogHref(row, title);
-          // Signed is rendered by `SignedChip` as a two-state answer, so the
-          // positive badge the derivation also produces would say it twice.
-          const badges =
-            row.signed == null ? row.badges : row.badges.filter((b) => b.key !== 'signed');
-          // The card body is the same whether or not the row links; only its
-          // wrapper differs (an <a> to the sibling catalog, or a plain <div>).
-          const cardInner = (
-            <>
-              <div className="bd-hold__thumb" aria-hidden="true">
-                {rowEmoji(row)}
-              </div>
-              <div className="bd-hold__main">
-                <div className="bd-hold__fmt">
-                  {/* ⚠️ The EDITION leads, not the format word (owner 2026-09-02:
-                      "instead of paperback replace that with the edition info").
-                      `label` is the format word again wherever no printing
-                      resolves, so an unattributable copy still names its binding
-                      rather than being labelled with a guess.
-
-                      ⚠️ It steps DOWN in size when it is long rather than being
-                      cut. Measured in production 2026-09-02: 68 of the 129 named
-                      printings run past 34 characters and the longest is 99 —
-                      a shop's own words for a printing are a sentence, not a
-                      word. Truncating the identity would defeat the whole point
-                      of putting it here. */}
-                  <span
-                    className={`bd-hold__label${
-                      (row.label?.length ?? 0) > LONG_LABEL ? ' bd-hold__label--long' : ''
-                    }`}
-                  >
-                    {row.label ?? (row.neutral ? 'Not on your shelf' : 'Any format')}
-                  </span>
-                  {/* Recordings held, for an Audiobook row (e.g. two narrations). */}
-                  {row.count != null && row.count > 1 && (
-                    <span className="shelf-row__count"> ×{row.count}</span>
-                  )}
-                  {row.neutral ? (
-                    <span
-                      className="bd-hold__own bd-own--neutral"
-                      title="You do not own or want this yet — nothing is recorded on your shelf"
-                    >
-                      Not on your shelf
-                    </span>
-                  ) : (
-                    <span
-                      className={`bd-hold__own bd-own--${row.owned ? 'owned' : 'wanted'}`}
-                      title={
-                        row.owned
-                          ? 'A copy is on your shelf, or it is a file you hold'
-                          : 'A wishlist copy wants this; you have no copy of it yet'
-                      }
-                    >
-                      {row.owned ? 'Owned' : 'Wanted'}
-                    </span>
-                  )}
-                  {/* The kind pill, unless the kind IS the headline — a printing
-                      nobody named leads with "Collector's edition" itself. */}
-                  {row.kind && row.labelSource !== 'edition-kind' && (
-                    <span className="bd-hold__kind">{editionKindLabel(row.kind)}</span>
-                  )}
-                  {/* An open-in-new-tab affordance, only on a row that links. */}
-                  {catalogHref && (
-                    <span className="bd-hold__open" aria-hidden="true">
-                      ↗
-                    </span>
-                  )}
-                </div>
-
-                {(badges.length > 0 || row.signed != null) && (
-                  <div className="bd-hold__badges">
-                    {/* Signed first: it is the one the owner asked to be
-                        answerable at a glance, and the one that is shown even
-                        when the answer is no. */}
-                    {row.signed != null && <SignedChip signed={row.signed} />}
-                    {badges.map((b) => (
-                      <span
-                        key={b.key}
-                        className={`special-badge special-badge--${b.key}`}
-                        title={b.title}
-                      >
-                        {b.key === 'signed' ? '✍ ' : ''}
-                        {b.label}
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                {/* The secondary line — the binding the headline gave up, the
-                    imprint, what it collects. ⚠️ Composed in `deriveShelfView`,
-                    not here, so one test pins what a row SAYS as well as what it
-                    is (and so the headline can never repeat a fact below it). */}
-                {row.meta && <p className="bd-hold__meta">{row.meta}</p>}
-
-                {/* Copies nest UNDER the edition. One copy: its facts inline, no
-                    second bullet. More than one of the same printing: a short
-                    list, the only case where a copy earns its own line — and the
-                    one place a PER-COPY signed answer is needed, since the row's
-                    own chip speaks for the group. */}
-                {row.copies.length === 1 && <CopyFacts copy={row.copies[0]!} />}
-                {row.copies.length > 1 && (
-                  <ul className="plain shelf-row__copies">
-                    {row.copies.map((c) => (
-                      <li key={c.id}>
-                        <CopyFacts copy={c} withStatus showSigned={row.signed != null} />
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </>
-          );
-          const cardClass = `bd-hold${
-            row.neutral ? ' bd-hold--neutral' : row.owned ? '' : ' bd-hold--wanted'
-          }${catalogHref ? ' bd-hold--link' : ''}`;
-          return (
-            <li key={row.key}>
-              {/* Each held/wanted format is a teal-wash holding card with its own
-                  emoji thumb and the format word big in Fraunces — the mockup's
-                  "On your shelf" rendering. The neutral "nothing yet" slot and a
-                  wanted row wear quieter grounds so the eye lands on what is
-                  actually owned. An OWNED audio/ebook row is a link to its sibling
-                  catalog, opened in a new tab (owner 2026-08-24). */}
-              {catalogHref ? (
-                <a
-                  className={cardClass}
-                  href={catalogHref}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title={
-                    row.medium === 'audio'
-                      ? 'Open this book on the audiobook catalog (new tab)'
-                      : 'Open this book on the ebook shelf (new tab)'
-                  }
-                >
-                  {cardInner}
-                </a>
-              ) : (
-                <div className={cardClass}>{cardInner}</div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+      {/* One section per medium — the owner's "under their given section". A
+          heading over a single card is deliberate: the point of the sections is
+          that "is there a second physical?" is answerable without reading. */}
+      {sections.map((section) => (
+        <div className="shelf-section" key={section.key}>
+          {section.title && <h4 className="shelf-section__head">{section.title}</h4>}
+          {/* The owner's 2026-08-23 ask, SAY THE NUMBER — it followed the
+              audiobook rows here from the panel that used to carry it. */}
+          {section.key === 'audio' && audioCountLine && (
+            <p className="muted small">{audioCountLine}</p>
+          )}
+          <ul className="plain shelf-rows">
+            {section.rows.map((row) => (
+              <li key={row.key}>
+                <ShelfCard row={row} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
 
       {/* ⚠️ "Also available" is now PEERS ONLY. Your own audiobook/ebook holdings
           became Owned shelf rows above (owner model) — only OTHER people's
@@ -344,6 +236,167 @@ export function OnYourShelf({
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * One card on the shelf — a holding, a wish, or a version that merely exists.
+ *
+ * Extracted from the render when the sections landed (2026-09-02): the same
+ * markup now appears under three headings instead of once in a flat list, and a
+ * card that is copy-pasted per section is a card that will drift per section.
+ *
+ * ⚠️ **An `available` card must never read as a holding.** Three things keep
+ * them apart, and they are belt, braces and a third thing on purpose: a
+ * different ground (`bd-hold--available`, a dashed rule), a state pill that says
+ * *"Available"* or *"May be yours"* rather than *"Owned"*, and **no signed
+ * chip** — signing is a fact about an object, and there is no object here.
+ */
+function ShelfCard({ row }: { row: ShelfRow }) {
+  // Signed is rendered by `SignedChip` as a two-state answer, so the positive
+  // badge the derivation also produces would say it twice.
+  const badges = row.signed == null ? row.badges : row.badges.filter((b) => b.key !== 'signed');
+  // The card body is the same whether or not the row links; only its wrapper
+  // differs (an <a> to the sibling catalog, or a plain <div>).
+  const cardInner = (
+    <>
+      {/* The row's OWN cover where it has one — a printing's jacket (owner
+          2026-09-02) or the audiobook catalog's. ⚠️ Falls back to the emoji
+          thumb, NEVER to the work cover: showing the work's art on a specific
+          printing would claim that is what that printing looks like. */}
+      {row.coverUrl ? (
+        <div className="bd-hold__thumb bd-hold__thumb--art">
+          <Cover src={row.coverUrl} title={row.label ?? ''} size="row" />
+        </div>
+      ) : (
+        <div className="bd-hold__thumb" aria-hidden="true">
+          {rowEmoji(row)}
+        </div>
+      )}
+      <div className="bd-hold__main">
+        <div className="bd-hold__fmt">
+          {/* ⚠️ The EDITION leads, not the format word (owner 2026-09-02:
+              "instead of paperback replace that with the edition info").
+              `label` is the format word again wherever no printing resolves, so
+              an unattributable copy still names its binding rather than being
+              labelled with a guess.
+
+              ⚠️ It steps DOWN in size when it is long rather than being cut.
+              Measured in production 2026-09-02: 68 of the 129 named printings
+              run past 34 characters and the longest is 99 — a shop's own words
+              for a printing are a sentence, not a word. Truncating the identity
+              would defeat the whole point of putting it here. */}
+          <span
+            className={`bd-hold__label${
+              (row.label?.length ?? 0) > LONG_LABEL ? ' bd-hold__label--long' : ''
+            }`}
+          >
+            {row.label ?? (row.neutral ? 'Not on your shelf' : 'Any format')}
+          </span>
+          {/* Recordings held, for an Audiobook row (e.g. two narrations). */}
+          {row.count != null && row.count > 1 && (
+            <span className="shelf-row__count"> ×{row.count}</span>
+          )}
+          {/* ⚠️ The word and its tooltip are BOTH composed in `deriveShelfView`
+              — including the "Available" vs "May be yours" choice, which is a
+              claim about ownership and therefore belongs where the evidence is,
+              not in a component. */}
+          <span className={`bd-hold__own bd-own--${row.state}`} title={row.stateTitle}>
+            {row.stateLabel}
+          </span>
+          {/* The kind pill, unless the kind IS the headline — a printing nobody
+              named leads with "Collector's edition" itself. */}
+          {row.kind && row.labelSource !== 'edition-kind' && (
+            <span className="bd-hold__kind">{editionKindLabel(row.kind)}</span>
+          )}
+          {/* An open-in-new-tab affordance, only on a row that links. */}
+          {row.href && (
+            <span className="bd-hold__open" aria-hidden="true">
+              ↗
+            </span>
+          )}
+        </div>
+
+        {(badges.length > 0 || row.signed != null) && (
+          <div className="bd-hold__badges">
+            {/* Signed first: it is the one the owner asked to be answerable at a
+                glance, and the one that is shown even when the answer is no. */}
+            {row.signed != null && <SignedChip signed={row.signed} />}
+            {badges.map((b) => (
+              <span key={b.key} className={`special-badge special-badge--${b.key}`} title={b.title}>
+                {b.key === 'signed' ? '✍ ' : ''}
+                {b.label}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* The secondary line — the binding the headline gave up, the imprint,
+            what it collects. ⚠️ Composed in `deriveShelfView`, not here, so one
+            test pins what a row SAYS as well as what it is (and so the headline
+            can never repeat a fact below it). */}
+        {row.meta && <p className="bd-hold__meta">{row.meta}</p>}
+
+        {/* ⚠️ The sentences that came across in the "Other versions available"
+            merge — narrator, the series-spelling disagreement, the PROVENANCE
+            (migration 0010: shown, never hidden), the staleness caveat. Muted
+            but full size: a hedge in smaller print pretending to be a footnote
+            is a hedge nobody reads. */}
+        {row.notes.map((note) => (
+          <p className="muted small bd-hold__note" key={note}>
+            {note}
+          </p>
+        ))}
+
+        {/* Copies nest UNDER the edition. One copy: its facts inline, no second
+            bullet. More than one of the same printing: a short list, the only
+            case where a copy earns its own line — and the one place a PER-COPY
+            signed answer is needed, since the row's own chip speaks for the
+            group. */}
+        {row.copies.length === 1 && <CopyFacts copy={row.copies[0]!} />}
+        {row.copies.length > 1 && (
+          <ul className="plain shelf-row__copies">
+            {row.copies.map((c) => (
+              <li key={c.id}>
+                <CopyFacts copy={c} withStatus showSigned={row.signed != null} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </>
+  );
+
+  const cardClass = `bd-hold${
+    row.state === 'owned'
+      ? ''
+      : row.state === 'wanted'
+        ? ' bd-hold--wanted'
+        : row.state === 'available'
+          ? ' bd-hold--available'
+          : ' bd-hold--neutral'
+  }${row.href ? ' bd-hold--link' : ''}`;
+
+  // Each held format is a teal-wash holding card with its own thumb and the
+  // identity big in Fraunces — the mockup's "On your shelf" rendering. Wanted,
+  // available and neutral rows wear quieter grounds so the eye lands on what is
+  // actually owned. A row with a sibling catalog behind it opens in a new tab.
+  return row.href ? (
+    <a
+      className={cardClass}
+      href={row.href}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={
+        row.medium === 'audio'
+          ? 'Open this book on the audiobook catalog (new tab)'
+          : 'Open this book on the ebook shelf (new tab)'
+      }
+    >
+      {cardInner}
+    </a>
+  ) : (
+    <div className={cardClass}>{cardInner}</div>
   );
 }
 

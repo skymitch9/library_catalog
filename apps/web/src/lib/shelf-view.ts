@@ -96,6 +96,67 @@
  *     rendered title says. The other three attributes stay light-when-set chips.
  *   - **Ebook, audiobook, wanted and neutral rows are UNCHANGED** — their
  *     `label`/`meta` reproduce exactly what the component used to compose.
+ *
+ * ## "On your shelf" is now THE list, in per-format SECTIONS (owner, 2026-09-02)
+ *
+ * > "on your shelf should be the main with other editions available under their
+ * > given section. so if its a second physical there should be 2 under physical.
+ * > we should also add being able to set the covers for the alternate editions
+ * > too."
+ *
+ * The separate **"Other versions available"** panel is gone. Everything it
+ * carried files into this derivation, and the rows group into three sections by
+ * medium — **Physical / Ebook / Audio** — which is what *"under physical"*
+ * names. `sections` is a grouping OF `rows`, not a second list: the same row
+ * objects appear in both, so nothing can come to disagree.
+ *
+ * ⚠️ **This deliberately amends the 2026-08-24 invariant "an edition you neither
+ * own nor want is not a row at all."** That rule existed to stop a printing you
+ * do not own being fabricated into a **Wanted**, and that half is untouched — an
+ * unowned printing is never Wanted. It is now shown, under its format, in a
+ * third state the shelf did not have:
+ *
+ *   | `state` | means | pill |
+ *   |---|---|---|
+ *   | `owned` | you hold a copy, or it is a file/recording you have | Owned |
+ *   | `wanted` | a wishlist copy wants it | Wanted |
+ *   | `available` | this version exists; nothing of yours is it | Available / May be yours |
+ *   | `neutral` | the never-empty placeholder | Not on your shelf |
+ *
+ * ⚠️ **"Available" is a claim, and where it cannot be made honestly it is not
+ * made.** An unlinked owned copy of format F could BE any unclaimed printing of
+ * F — `copy.edition_id` is null across nearly the whole catalog — so labelling
+ * such a printing "Available" would assert non-ownership on no evidence, which
+ * is the work-220 fabrication pointing the other way. Those rows say **"May be
+ * yours"** instead and name the reason. An unlinked copy of *unknown* physical
+ * format (`UNSPEC_PHYSICAL`) could be any physical printing, so it softens every
+ * physical format the same way. Linking the copy in *Editions & copies* is what
+ * turns "May be yours" into a real answer — the DATA follow-up in `TODO.md`.
+ *
+ * ## The audiobook cross-link renders ONCE, here, in the Audio section
+ *
+ * ⚠️ It used to paint **twice** — measured in a browser on
+ * <https://library.heygabi.ai/work/232>, once as this shelf's Owned "Audiobook"
+ * row and once as an "Other versions available" entry, both linking to the same
+ * search. That is the estate's "one fact, one home applies to SURFACES too"
+ * rule, in its hard-to-catch shape.
+ *
+ * The merge keeps **both** halves of what the two panels knew, because they were
+ * not redundant in content:
+ *
+ *   - the **ownership state** the shelf carried, and
+ *   - ⚠️ the **provenance sentence** the other panel carried — *"Matched by
+ *     containment — a partial title match, worth a second look (87% title
+ *     match)."* Migration 0010's rule is that `matched_via` is **shown, never
+ *     hidden**: it is the whole reason a wrong match gets noticed instead of
+ *     quietly believed. It rides on `ShelfRow.notes`, beside the narrator, the
+ *     series-spelling disagreement and the staleness caveat.
+ *
+ * ⚠️ **A stale audio row is `available`, not `owned`.** `staleAt` means the
+ * sibling catalog no longer confirms the match, so claiming it as a holding
+ * would be a dead claim — but hiding it looks identical to "never matched",
+ * which loses the fact that it WAS true once. It shows, lighter, with the
+ * caveat sentence. Same rule the retired panel followed.
  */
 import {
   LEATHER_IMPLIES_FORMAT,
@@ -106,6 +167,8 @@ import type { WorkAudioEdition, WorkAudiobookHolding, WorkEbookHolding } from '.
 import type { CopyView } from '../components/Copies.js';
 import type { EditionView } from '../components/Editions.js';
 import type { PeerHoldingView } from '../components/PeerLibraries.js';
+import { audiobookDetailUrl, resolveAudiobookCover } from './audiobook-site.js';
+import { ebookShelfUrl } from './ebook-site.js';
 import { editionKindLabel, formatLabel, isPhysicalFormat } from './formats.js';
 
 /** The statuses that mean the household physically holds (or held) the book. */
@@ -176,10 +239,53 @@ export interface ShelfRow {
    * How the row's edition identity was established, or null when NONE was — the
    * three cases the owner's ask turns on. `'linked'`: a copy's own `edition_id`.
    * `'sole-printing'`: the copy is unlinked and the work has exactly ONE physical
-   * printing of this format, so the attribution is unambiguous. Null: the format
-   * word stands alone — ⚠️ never a guess (see the header on work 220).
+   * printing of this format, so the attribution is unambiguous. `'edition'`: the
+   * row **is** the printing (an `available` row, or a file row), so there was
+   * nothing to attribute. Null: the format word stands alone — ⚠️ never a guess
+   * (see the header on work 220).
    */
-  resolvedBy: 'linked' | 'sole-printing' | null;
+  resolvedBy: 'linked' | 'sole-printing' | 'edition' | null;
+  /**
+   * What this row IS to you (owner 2026-09-02). ⚠️ `owned` and `neutral` below
+   * are the same facts as booleans and are kept because every caller and pin
+   * reads them; `state` is the one that distinguishes the new third case.
+   */
+  state: 'owned' | 'wanted' | 'available' | 'neutral';
+  /**
+   * The pill's word and its tooltip — composed HERE, like `label`/`meta`, so the
+   * component chooses none of its own and a test pins what a row claims. ⚠️ The
+   * `available` case has TWO wordings and the difference is not cosmetic: see
+   * the "Available is a claim" note in the file header.
+   */
+  stateLabel: string;
+  stateTitle: string;
+  /**
+   * Where the row opens, when it is a version living in a sibling catalog — the
+   * audiobook site's title search, or the ebook shelf's. Null for everything the
+   * catalog holds itself.
+   *
+   * ⚠️ An audio row links **whether or not it is owned**: a stale match is still
+   * worth following to see what the other catalog now says about it.
+   */
+  href: string | null;
+  /**
+   * The row's OWN cover, when it has one — an edition's `cover_url` (owner
+   * 2026-09-02: *"add being able to set the covers for the alternate editions
+   * too"*), or the audiobook catalog's jacket for an audio row. ⚠️ Null means
+   * *this row has no cover of its own*, and the component falls back to the work
+   * cover — an absence, never a borrowed claim about the printing.
+   */
+  coverUrl: string | null;
+  /**
+   * Sentences that belong to this row and nothing else — the recording's
+   * narrator, the two catalogs spelling a series differently, the **provenance**
+   * of a cross-catalog match, the staleness caveat.
+   *
+   * ⚠️ Provenance is the load-bearing one. Migration 0010's rule is that
+   * `matched_via` is shown and never hidden, and this list is where it survived
+   * the merge that deleted the panel it used to live in.
+   */
+  notes: string[];
   /**
    * Signed, shown either way on an OWNED physical row that has copies; null where
    * the question does not apply (a file row, an audiobook, the neutral slot, a
@@ -219,9 +325,40 @@ export interface ShelfAvailability {
   peers: PeerHoldingView[];
 }
 
-export interface ShelfView {
-  /** ⚠️ ALWAYS at least one row — the shelf is never empty (owner model). */
+/**
+ * One heading on the shelf and the rows under it (owner 2026-09-02: *"other
+ * editions available under their given section … if its a second physical there
+ * should be 2 under physical"*).
+ *
+ * ⚠️ **A grouping of `rows`, never a second list.** The row objects are the same
+ * objects, so a fact cannot appear differently in the two — the estate's "one
+ * fact, one home" rule applied to a shape rather than a page.
+ */
+export interface ShelfSection {
+  key: 'physical' | 'ebook' | 'audio' | 'other';
+  /**
+   * The heading, or null for the `other` bucket — the formatless "any format"
+   * want and the neutral placeholder, which name themselves and would look
+   * absurd under a heading called "Other".
+   */
+  title: string | null;
   rows: ShelfRow[];
+}
+
+export interface ShelfView {
+  /**
+   * ⚠️ ALWAYS at least one row — the shelf is never empty (owner model). Flat and
+   * in the pre-2026-09-02 order, so every existing caller and pin still reads it.
+   */
+  rows: ShelfRow[];
+  /** The same rows, under their format headings. Empty sections are omitted. */
+  sections: ShelfSection[];
+  /**
+   * *"You own 2 audiobooks of this book."* — or null. The owner's 2026-08-23 ask
+   * ("SAY THE NUMBER"), which came across with the panel merge. See
+   * `audioCountLine`.
+   */
+  audioCountLine: string | null;
   availability: ShelfAvailability;
 }
 
@@ -342,6 +479,52 @@ function joinMeta(parts: (string | null)[]): string | null {
 }
 
 /**
+ * The pill's word and its tooltip for each state — the words the component used
+ * to hold, moved here so one test pins what a row CLAIMS.
+ *
+ * ⚠️ `available` has two wordings and choosing between them is the whole
+ * anti-fabrication rule of the 2026-09-02 merge. *"Available"* asserts you do
+ * not own this printing. That assertion is only safe when nothing on your shelf
+ * could BE it; where an unlinked copy could, the row says *"May be yours"* and
+ * points at the one action that settles it. See the file header.
+ */
+function stateWords(
+  state: ShelfRow['state'],
+  couldBeYours = false,
+): { stateLabel: string; stateTitle: string } {
+  switch (state) {
+    case 'owned':
+      return {
+        stateLabel: 'Owned',
+        stateTitle: 'A copy is on your shelf, or it is a file you hold',
+      };
+    case 'wanted':
+      return {
+        stateLabel: 'Wanted',
+        stateTitle: 'A wishlist copy wants this; you have no copy of it yet',
+      };
+    case 'available':
+      return couldBeYours
+        ? {
+            stateLabel: 'May be yours',
+            stateTitle:
+              'This printing exists and nothing on your shelf is linked to it — but you hold an ' +
+              'unlinked copy it could be, so the catalog will not claim either way. Say which ' +
+              'printing you own under Editions & copies and this row answers properly.',
+          }
+        : {
+            stateLabel: 'Available',
+            stateTitle: 'This version of the book exists — you have no copy of it',
+          };
+    case 'neutral':
+      return {
+        stateLabel: 'Not on your shelf',
+        stateTitle: 'You do not own or want this yet — nothing is recorded on your shelf',
+      };
+  }
+}
+
+/**
  * The *effective* format a copy names, when its edition link is missing — the
  * heart of the copy-driven fix.
  *
@@ -377,9 +560,14 @@ function effectiveFormat(
  * shelf is the first thing a person looks for.
  */
 function rowRank(r: ShelfRow): number {
-  const state = r.neutral ? 200 : r.owned ? 0 : 100;
+  const state = r.neutral ? 300 : r.owned ? 0 : r.state === 'wanted' ? 100 : 200;
   const med = r.medium === 'physical' ? 0 : r.medium === 'ebook' ? 1 : r.medium === 'audio' ? 2 : 3;
   return state + med;
+}
+
+/** Rank WITHIN one section: what you hold, then what you want, then what merely exists. */
+function stateRank(r: ShelfRow): number {
+  return r.state === 'owned' ? 0 : r.state === 'wanted' ? 1 : r.state === 'available' ? 2 : 3;
 }
 
 function buildRows(
@@ -387,7 +575,10 @@ function buildRows(
   editions: EditionView[],
   ebookHolding: WorkEbookHolding | null,
   audiobookHolding: WorkAudiobookHolding | null,
+  audioEditions: WorkAudioEdition[],
   audioCount: number,
+  title: string | null,
+  ourSeries: string | null,
 ): ShelfRow[] {
   const editionById = new Map<number, EditionView>(editions.map((e) => [e.id, e]));
   const physicalEditions = editions.filter((e) => isPhysicalFormat(e.format));
@@ -411,11 +602,18 @@ function buildRows(
   // ("Signed Leatherbound …" and a slipcase-set volume), and borrowing the first
   // labelled BOTH copies with the leatherbound's name. When the format is
   // ambiguous the group takes no edition at all and renders as the format word.
+  //
+  // ⚠️ The ambiguous case marks NOTHING used — corrected 2026-09-02. It used to
+  // add the first candidate to `usedEditionIds` and then return null, which was
+  // invisible while an unclaimed printing rendered no row at all. Now that one
+  // does (step 6), that stray mark would silently swallow exactly one of work
+  // 220's two hardcover printings.
   function claimPhysicalEditionFor(format: string): EditionView | null {
     const ofFormat = physicalEditions.filter((pe) => pe.format === format);
+    if (ofFormat.length !== 1) return null;
     const e = ofFormat.find((pe) => !usedEditionIds.has(pe.id));
     if (e) usedEditionIds.add(e.id);
-    return ofFormat.length === 1 ? (e ?? null) : null;
+    return e ?? null;
   }
 
   // Group a set of copies by their effective format. A copy that links to a real
@@ -502,6 +700,13 @@ function buildRows(
       labelSource,
       meta,
       resolvedBy,
+      state: owned ? 'owned' : 'wanted',
+      ...stateWords(owned ? 'owned' : 'wanted'),
+      href: null,
+      // The printing's OWN cover when it has one — never the work's, which the
+      // component supplies as the fallback. An absence stays an absence.
+      coverUrl: edition?.cover_url ?? null,
+      notes: [],
       // Signed, either way — but only for something you HOLD. A wanted row is a
       // wish, and a wish has no object to have been signed.
       signed: owned && sorted.length > 0 ? sorted.some((c) => !!c.is_signed) : null,
@@ -519,6 +724,126 @@ function buildRows(
       count: null,
       badges: mergeBadges(sorted, edition),
       copies: sorted.map((c) => toShelfCopy(c, edition)),
+    };
+  }
+
+  /**
+   * A printing this shelf holds no copy of and no wish for — the owner's *"other
+   * editions available under their given section"*.
+   *
+   * ⚠️ `couldBeYours` is not decoration; see `stateWords` and the file header.
+   * It is true when an unlinked held copy could be a copy of THIS printing, and
+   * it is the difference between the shelf asserting something it cannot know
+   * and the shelf saying so.
+   */
+  function availableEditionRow(edition: EditionView, couldBeYours: boolean): ShelfRow {
+    const fmtLabel = formatLabel(edition.format);
+    const identity = editionIdentity(edition);
+    return {
+      key: `avail-e${edition.id}`,
+      format: fmtLabel,
+      label: identity?.text ?? fmtLabel,
+      labelSource: identity ? identity.source : 'format',
+      meta: joinMeta([
+        identity ? fmtLabel : null,
+        identity?.source === 'imprint' ? null : imprintOf(edition),
+        edition.collects ? `contains ${edition.collects}` : null,
+      ]),
+      // Nothing had to be attributed — the row IS the printing.
+      resolvedBy: 'edition',
+      state: 'available',
+      ...stateWords('available', couldBeYours),
+      href: null,
+      coverUrl: edition.cover_url ?? null,
+      notes: [],
+      // ⚠️ Null, not false. Signing is a fact about an OBJECT and there is no
+      // object here; "Not signed" over a printing nobody holds would be an
+      // answer to a question that was not asked.
+      signed: null,
+      medium: mediumOfFormat(edition.format),
+      editionName: edition.edition_name ?? null,
+      kind: edition.edition_kind ?? null,
+      collects: edition.collects ?? null,
+      owned: false,
+      neutral: false,
+      count: null,
+      // The printing's own prose only — there are no copies to read booleans off.
+      badges: mergeBadges([], edition),
+      copies: [],
+    };
+  }
+
+  /**
+   * One recording in the sibling audiobook catalog — the rows that used to be
+   * the "Other versions available" panel.
+   *
+   * ⚠️ Everything that panel said survives here: the narrator (the fact that
+   * tells two recordings of one book apart), the series-spelling disagreement,
+   * the authors, the **provenance sentence**, and the staleness caveat. It also
+   * keeps that panel's link, because a stale row is still worth following.
+   */
+  function audioRow(
+    key: string,
+    rec: {
+      title: string;
+      authors: string | null;
+      series: string | null;
+      indexDisplay: string | null;
+      coverHref: string | null;
+      matchedVia: string;
+      titleSimilarity: number | null;
+      staleAt: string | null;
+      narrator?: string | null;
+    },
+    count: number | null,
+  ): ShelfRow {
+    const live = rec.staleAt == null;
+    const notes: string[] = [];
+    if (rec.narrator) notes.push(`Read by ${rec.narrator}`);
+    // Only worth a line when the two catalogs actually disagree — saying it
+    // unconditionally would turn the ordinary case into noise.
+    if (rec.series && rec.series !== ourSeries) {
+      notes.push(
+        `Filed there under “${rec.series}”${ourSeries ? `, not “${ourSeries}”` : ''} — the two catalogs spell this series differently.`,
+      );
+    }
+    if (rec.authors) notes.push(rec.authors);
+    // ⚠️ Provenance, in words, never hidden — migration 0010's rule, carried
+    // through the merge that deleted the panel it used to live on.
+    notes.push(matchProvenance(rec));
+    if (!live) {
+      notes.push('May be out of date — the audiobook catalog no longer confirms this match.');
+    }
+    return {
+      key,
+      format: 'Audiobook',
+      label: 'Audiobook',
+      labelSource: 'format',
+      // The sibling catalog's own title, said only when it is not simply the
+      // title already at the top of this page.
+      meta: joinMeta([
+        title && rec.title === title ? null : rec.title,
+        rec.indexDisplay ? `(${rec.indexDisplay})` : null,
+      ]),
+      resolvedBy: null,
+      state: live ? 'owned' : 'available',
+      // ⚠️ A stale row is not "available" in the ordinary sense and its note says
+      // so in the next breath; `couldBeYours` would be the wrong softening — the
+      // question is not which copy is yours, it is whether the match still holds.
+      ...stateWords(live ? 'owned' : 'available'),
+      href: audiobookDetailUrl(rec.title),
+      coverUrl: resolveAudiobookCover(rec.coverHref),
+      notes,
+      signed: null,
+      medium: 'audio',
+      editionName: null,
+      kind: null,
+      collects: null,
+      owned: live,
+      neutral: false,
+      count: count != null && count > 1 ? count : null,
+      badges: [],
+      copies: [],
     };
   }
 
@@ -545,7 +870,12 @@ function buildRows(
       labelSource: 'format',
       meta: joinMeta([e.edition_name ?? null, e.collects ? `contains ${e.collects}` : null]),
       // Nothing had to be RESOLVED — the row is the edition, not a copy of one.
-      resolvedBy: null,
+      resolvedBy: 'edition',
+      state: 'owned',
+      ...stateWords('owned'),
+      href: title ? ebookShelfUrl(title) : null,
+      coverUrl: e.cover_url ?? null,
+      notes: [],
       signed: null,
       medium: 'ebook',
       editionName: e.edition_name ?? null,
@@ -570,6 +900,11 @@ function buildRows(
       labelSource: 'format',
       meta: null,
       resolvedBy: null,
+      state: 'owned',
+      ...stateWords('owned'),
+      href: title ? ebookShelfUrl(title) : null,
+      coverUrl: null,
+      notes: [],
       signed: null,
       medium: 'ebook',
       editionName: null,
@@ -583,34 +918,24 @@ function buildRows(
     });
   }
 
-  // 4) Audiobook: a held recording (sibling library) is an Owned "Audiobook" row,
-  //    carrying the recording count. No edition table backs it — audio is not an
-  //    edition of anything in this database.
-  //    ⚠️ LIVE holdings only. `audiobookHolding` arrives UNfiltered on `staleAt`
-  //    (the OtherVersions drawer wants stale rows so it can say "may be out of
-  //    date") — but a stale match means the sibling catalog no longer confirms
-  //    the audiobook, so a top-line "Owned on audio" glance would be a dead
-  //    claim linking to a search that finds nothing. Match the series ladder,
-  //    which is already live-only.
-  if (audiobookHolding != null && audiobookHolding.staleAt == null) {
-    rows.push({
-      key: 'own-audio',
-      format: 'Audiobook',
-      label: 'Audiobook',
-      labelSource: 'format',
-      meta: null,
-      resolvedBy: null,
-      signed: null,
-      medium: 'audio',
-      editionName: null,
-      kind: null,
-      collects: null,
-      owned: true,
-      neutral: false,
-      count: audioCount > 1 ? audioCount : null,
-      badges: [],
-      copies: [],
-    });
+  // 4) AUDIO — the section that absorbed "Other versions available" (owner
+  //    2026-09-02). No edition table backs it: audio is not an edition of
+  //    anything in this database, it is the sibling catalog's row.
+  //
+  //    ⚠️ The list REPLACES the single row only when it genuinely says more —
+  //    `buildVersionEntries`' rule, kept verbatim through the merge. `holding` IS
+  //    `audioEditions[0]` (both ordered series-first) and five other callers
+  //    trust it, so a one-recording book renders from the holding and never
+  //    depends on a field an older cached API response may not carry.
+  //
+  //    ⚠️ A STALE row still renders — as `available`, with the caveat sentence,
+  //    never as a holding. The old shelf hid it (a dead "Owned on audio" claim
+  //    was worse than nothing) and the old panel showed it with a note; the
+  //    merged row does both halves at once, which is what neither surface could.
+  if (audioEditions.length > 1) {
+    for (const e of audioEditions) rows.push(audioRow(`audio:${e.audioKey}`, e, null));
+  } else if (audiobookHolding != null) {
+    rows.push(audioRow('own-audio', audiobookHolding, audioCount));
   }
 
   // 5) WANTED rows — genuinely wanted items only. A wish copy that links to an
@@ -629,6 +954,11 @@ function buildRows(
         labelSource: null,
         meta: null,
         resolvedBy: null,
+        state: 'wanted',
+        ...stateWords('wanted'),
+        href: null,
+        coverUrl: null,
+        notes: [],
         signed: null,
         medium: null,
         editionName: null,
@@ -645,7 +975,40 @@ function buildRows(
     rows.push(physicalRow('want', g.format, g.edition, g.resolvedBy, g.copies, false));
   }
 
-  // 6) Never empty — but never a fabricated Want. A neutral, display-only slot.
+  // 6) AVAILABLE — the printings this book has that your shelf accounts for
+  //    NEITHER as a holding nor as a wish. Owner 2026-09-02: "other editions
+  //    available under their given section. so if its a second physical there
+  //    should be 2 under physical."
+  //
+  //    ⚠️ Runs LAST, after every claim above, so a printing an owned or wanted
+  //    row already stands for is never rendered twice.
+  //
+  //    ⚠️ Only PHYSICAL printings reach here. An ebook edition is bytes you hold
+  //    — step 2's invariant, untouched — so it is always Owned and never falls
+  //    into this bucket.
+  //
+  //    `couldBeYours`: an unlinked held copy of this format could BE this
+  //    printing, so the row must not assert you lack it. An unlinked copy of
+  //    UNKNOWN physical format (`UNSPEC_PHYSICAL`) could be any physical
+  //    printing, so it softens every format at once. See `stateWords`.
+  const unresolvedHeldFormats = new Set(
+    rows
+      .filter((r) => r.owned && r.medium === 'physical' && r.resolvedBy === null && r.copies.length)
+      .map((r) => r.format ?? UNSPEC_PHYSICAL),
+  );
+  const anyUnattributableCopy = unresolvedHeldFormats.has(UNSPEC_PHYSICAL);
+  for (const e of physicalEditions) {
+    if (usedEditionIds.has(e.id)) continue;
+    usedEditionIds.add(e.id);
+    rows.push(
+      availableEditionRow(
+        e,
+        anyUnattributableCopy || unresolvedHeldFormats.has(formatLabel(e.format)),
+      ),
+    );
+  }
+
+  // 7) Never empty — but never a fabricated Want. A neutral, display-only slot.
   if (rows.length === 0) {
     rows.push({
       key: 'neutral',
@@ -654,6 +1017,11 @@ function buildRows(
       labelSource: null,
       meta: null,
       resolvedBy: null,
+      state: 'neutral',
+      ...stateWords('neutral'),
+      href: null,
+      coverUrl: null,
+      notes: [],
       signed: null,
       medium: null,
       editionName: null,
@@ -670,7 +1038,89 @@ function buildRows(
   return rows.sort((a, b) => rowRank(a) - rowRank(b));
 }
 
+/** The three headings, in the order a person looks for them. */
+const SECTION_ORDER: { key: ShelfSection['key']; title: string | null }[] = [
+  { key: 'physical', title: 'Physical' },
+  { key: 'ebook', title: 'Ebook' },
+  { key: 'audio', title: 'Audio' },
+  // The formatless "any format" want and the never-empty placeholder. They name
+  // themselves; a heading over them would be inventing a category.
+  { key: 'other', title: null },
+];
+
+/**
+ * The rows, under their headings — the owner's *"under their given section"*.
+ *
+ * ⚠️ A VIEW of `rows`, holding the same objects. An empty section is omitted
+ * rather than rendered as a heading over nothing.
+ */
+function groupIntoSections(rows: ShelfRow[]): ShelfSection[] {
+  return SECTION_ORDER.map(({ key, title }) => ({
+    key,
+    title,
+    rows: rows
+      .filter((r) => (r.medium ?? 'other') === key)
+      .sort((a, b) => stateRank(a) - stateRank(b)),
+  })).filter((s) => s.rows.length > 0);
+}
+
+/**
+ * The match's provenance as a sentence, honest about how sure it is.
+ *
+ * ⚠️ Moved here from `OtherVersions.tsx` when that panel was merged into the
+ * shelf (owner 2026-09-02). It is the sentence migration 0010 requires be shown
+ * and never hidden — 'containment' in particular is a partial-title guess and
+ * says so in words, muted but not in smaller print pretending to be a footnote.
+ *
+ * Exported so `apps/web/test/shelf-view.test.ts` can pin the four wordings
+ * directly, which is what `other-versions.test.ts` used to do.
+ */
+export function matchProvenance(holding: {
+  matchedVia: string;
+  titleSimilarity: number | null;
+}): string {
+  const pct =
+    holding.titleSimilarity != null
+      ? ` (${Math.round(holding.titleSimilarity * 100)}% title match)`
+      : '';
+  if (holding.matchedVia === 'exact') return `Matched by exact title${pct}.`;
+  if (holding.matchedVia === 'alias') return `Matched by alternate title${pct}.`;
+  if (holding.matchedVia === 'containment') {
+    return `Matched by containment — a partial title match, worth a second look${pct}.`;
+  }
+  // Reached from `audiobook_series_link` — the owner confirmed these two series
+  // are the same, and this rung matched on series + volume number, not on title.
+  if (holding.matchedVia === 'series_link') {
+    return 'Matched to the audiobook series you confirmed — by series and volume number.';
+  }
+  return `Matched via ${holding.matchedVia}${pct}.`;
+}
+
+/**
+ * *"You own 2 audiobooks of this book."* — or nothing at all.
+ *
+ * Owner's decision, 2026-08-23: *"have it say 2 on the physical and ebook
+ * libraries; on audiobook have them be different since they're different files
+ * being served."* This is the physical library's half of it, moved here from
+ * `OtherVersions.tsx` with that panel's merge into the shelf.
+ *
+ * ⚠️ **Silent below two, on purpose.** *"You own 1 audiobook of this book"* adds
+ * nothing to a section already showing exactly that one audiobook.
+ *
+ * ⚠️ **The number is the SERVER's count, never `audioEditions.length`.** They are
+ * different questions: the array carries **stale** rows so each can be shown with
+ * a caveat, while this line claims the household **owns** them and counts only
+ * what the sibling catalog still confirms (`stale_at IS NULL`). One live
+ * recording and one withdrawn one is **two rows and no count line** — the honest
+ * pair of answers rather than a contradiction.
+ */
+export function audioCountLine(count: number | undefined): string | null {
+  if (count == null || count < 2) return null;
+  return `You own ${count} audiobooks of this book.`;
+}
+
 export function deriveShelfView({
+  title = null,
   copies,
   editions,
   audiobookHolding,
@@ -678,7 +1128,14 @@ export function deriveShelfView({
   audioEditionCount,
   ebookHolding,
   peerHoldings,
+  ourSeries = null,
 }: {
+  /**
+   * The work's title — the search token for a sibling-catalog link, and the
+   * thing an audio row's own title is compared against before it is repeated.
+   * Optional so a test can build rows without it; the page always passes it.
+   */
+  title?: string | null;
   copies: CopyView[];
   editions: EditionView[];
   audiobookHolding: WorkAudiobookHolding | null;
@@ -686,6 +1143,8 @@ export function deriveShelfView({
   audioEditionCount: number | undefined;
   ebookHolding: WorkEbookHolding | null;
   peerHoldings: PeerHoldingView[];
+  /** This work's OWN series spelling, shown on an audio row only when the two disagree. */
+  ourSeries?: string | null;
 }): ShelfView {
   // Audio: the count the SERVER measured, never `editions.length` (a stale
   // edition still shows a row but is not "owned"). Falls back to 1 when a holding
@@ -697,7 +1156,21 @@ export function deriveShelfView({
         ? Math.max(1, audioEditions.filter((e) => !e.staleAt).length || 1)
         : 0;
 
-  const rows = buildRows(copies, editions, ebookHolding, audiobookHolding, audioCount);
+  const rows = buildRows(
+    copies,
+    editions,
+    ebookHolding,
+    audiobookHolding,
+    audioEditions,
+    audioCount,
+    title,
+    ourSeries,
+  );
 
-  return { rows, availability: { peers: peerHoldings } };
+  return {
+    rows,
+    sections: groupIntoSections(rows),
+    audioCountLine: audioCountLine(audioEditionCount),
+    availability: { peers: peerHoldings },
+  };
 }

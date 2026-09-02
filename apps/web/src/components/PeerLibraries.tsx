@@ -2,8 +2,11 @@
  * "In other libraries" — shows which peer catalogs also hold this book.
  *
  * Renders nothing when no peers hold it (the common case). When one or more
- * do, renders a compact section linking to each peer's copy. Same structural
- * pattern as `OtherVersions` (which shows the audiobook catalog holding).
+ * do, renders a compact section linking to each peer's copy. ⚠️ It is the one
+ * "elsewhere" surface the 2026-09-02 shelf merge did NOT absorb, and that is
+ * deliberate: another household's library is not an edition of this book, so it
+ * has no format section to file under. The audiobook holding it used to sit
+ * beside (`OtherVersions`) is now a row in the shelf's Audio section.
  *
  * Data comes from the `peer_holding` table (migration 0370), populated by
  * the peer push mechanism (`lib/peer-push.ts`).

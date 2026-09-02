@@ -1,6 +1,6 @@
 /**
  * Render conditions for the ebook holding shadow (`EbookShadow.tsx`), pinned
- * without a DOM — the `other-versions.test.ts` pattern.
+ * without a DOM — the `shelf-view.test.ts` pattern.
  *
  *   - the ordinary physical-only book renders NOTHING — no empty panel;
  *   - agreement renders the quiet line, disagreement renders a notice with

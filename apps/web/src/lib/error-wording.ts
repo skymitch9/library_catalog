@@ -6,8 +6,8 @@
  * which reads `import.meta.env` — a Vite-only global that is `undefined` under
  * `tsx`, so importing `describeError` in a test crashes at module load with
  * *"Cannot read properties of undefined (reading 'VITE_FIREBASE_API_KEY')"*
- * before a single assertion runs. (That is why `other-versions.test.ts` imports
- * only a *type* from `api.ts`: type imports are erased.) The decision worth
+ * before a single assertion runs. (That is why `shelf-view.test.ts` imports only
+ * *types* from `api.ts`: type imports are erased.) The decision worth
  * pinning is this one, so it lives where a test can reach it.
  */
 

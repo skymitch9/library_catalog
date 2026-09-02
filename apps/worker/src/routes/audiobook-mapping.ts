@@ -36,8 +36,10 @@ import { crossCatalogFormatLabels } from '../lib/format-labels.js';
  * itself calls the book, cached here the last time the matcher ran (see
  * migration 0010's header). It is deliberately NOT this catalog's own
  * `work.title`: the audiobook pipeline's join has to compare against its OWN
- * strings, and the two titles are documented to differ (`OtherVersions.tsx`'s
- * `seriesDiffers` note is the series-column version of the same fact).
+ * strings, and the two titles are documented to differ (the
+ * `seriesDiffers` note in `apps/web/src/lib/shelf-view.ts` — moved there from
+ * `OtherVersions.tsx` with the 2026-09-02 shelf merge — is the series-column
+ * version of the same fact).
  *
  * ⚠️ **`foldedTitle` was added 2026-08-14.** A byte-exact join on
  * `audiobookTitle` alone reached only 37 of ~90 mapped pairs: the cached

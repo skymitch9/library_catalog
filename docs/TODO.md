@@ -93,37 +93,23 @@ that double cover is deliberate and pinned upstream — a path under two switche
 is refused if EITHER denies.
 
 
-## ⚠️ FINDING: the work page now shows the audiobook link TWICE — two surfaces, one question (2026-09-02)
+## ☐ The audiobook deep link is a SEARCH, and on a series-named title it finds 16 books (2026-09-02)
 
-Measured **in a real browser, signed in**, on <https://library.heygabi.ai/work/232>.
-Both of these render, both painted, both linking to the same place:
+✂️ The rest of this item — *"the work page shows the audiobook link TWICE"* —
+moved WHOLE to [`DONE.md`](DONE.md): the owner ruled that **the shelf owns it**,
+"Other versions available" was deleted, and the provenance sentence came across
+with it. This bullet was the second half and is untouched by that merge.
 
-| Panel | What it says |
-|---|---|
-| **On your shelf** | `🎧 Audiobook  OWNED  ↗` → `audiobooks.heygabi.ai/#q=Fae+and+Fare` |
-| **Other versions available** | `Audiobook — Fae and Fare (2)` · *Pirateaba* · *Matched by exact title (100% title match).* → the same URL |
+☐ The link is `#q=<cleaned title>`, a token-substring search, so *"The Wandering
+  Inn"* drops **16 books** into the search box rather than landing on one. Fine
+  for *Fae and Fare*; poor for a title that is also its series name.
+  `audiobookDetailUrl` in `apps/web/src/lib/audiobook-site.ts` is the one place
+  that would change, and its header explains why a hash search was the only
+  option (the sibling site has no per-book URL).
 
-⚠️ **This is the estate's own "one fact, one home applies to SURFACES too" rule,
-and it is the hard-to-catch shape of it** — two panels each showing one link
-look fine in isolation, because nobody sees them side by side until they do.
-
-**Left as a finding rather than fixed, deliberately.** *"On your shelf"* landed
-the SAME DAY (see [`DONE.md`](DONE.md), *"leads with the EDITION"*) and which of
-the two should own the audiobook link is a design call with an owner, not a
-tidy-up. Note that they are not redundant in content: *Other versions* carries
-the **provenance sentence** (`Matched by exact title (100%)`) that migration
-0010's shown-never-hidden rule exists for, and *On your shelf* carries the
-**ownership state**. Whoever consolidates must keep the provenance, and must not
-leave a fallback to the losing surface — a fallback is how two sources survive.
-
-☐ **Decide which panel owns it**, then delete the other's audiobook row.
-
-☐ **Smaller, same page:** the link is `#q=<cleaned title>`, a token-substring
-  search, so *"The Wandering Inn"* drops **16 books** into the search box rather
-  than landing on one. Fine for *Fae and Fare*; poor for a title that is also
-  its series name. `audiobookDetailUrl` in `apps/web/src/lib/audiobook-site.ts`
-  is the one place that would change, and its header explains why a hash search
-  was the only option (the sibling site has no per-book URL).
+⚠️ **It is now more visible, not less:** the shelf's Audio section is on the main
+page rather than inside the collapsed Record Control drawer, so the poor landing
+is one click from every work page with an audiobook.
 
 ---
 

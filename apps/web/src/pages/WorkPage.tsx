@@ -8,7 +8,6 @@ import { DeleteWork } from '../components/DeleteWork.js';
 import { DriveLinks } from '../components/DriveLinks.js';
 import { EditBox } from '../components/EditBox.js';
 import { OnYourShelf } from '../components/OnYourShelf.js';
-import { OtherVersions } from '../components/OtherVersions.js';
 import { PeerLibraries } from '../components/PeerLibraries.js';
 import { Reviews } from '../components/Reviews.js';
 import { Tbr } from '../components/Tbr.js';
@@ -351,10 +350,11 @@ export function WorkPage({
           a rating implies a read state. Its browser-side write path is unchanged. */}
       <Reviews workId={workId} me={me} onReadStateDerived={load} />
 
-      {/* 3 — ON YOUR SHELF: one hero holding (format big + special-edition
-          badges) and the availability row (also on audio? as an ebook? at a
-          peer?). A summary of the detailed panels in the More cluster below;
-          `deriveShelfView` feeds both so they cannot disagree. */}
+      {/* 3 — ON YOUR SHELF: ⚠️ since 2026-09-02 this is THE list of versions,
+          not a summary of one. Per-format sections (Physical / Ebook / Audio),
+          each carrying what you HOLD, what you WANT, and the other printings
+          that merely exist — plus the audiobook cross-link, which now renders
+          here and nowhere else. `deriveShelfView` composes every word. */}
       <OnYourShelf
         title={work.title}
         copies={copies}
@@ -364,6 +364,7 @@ export function WorkPage({
         audioEditionCount={audioEditionCount}
         ebookHolding={ebookHolding}
         peerHoldings={peerHoldings}
+        ourSeries={work.series}
       />
 
       {/* 4 — YOUR READING. */}
@@ -416,14 +417,14 @@ export function WorkPage({
             top (owner 2026-08-24) as a record-control action. */}
         <Watches workId={workId} watches={watches} canEdit={canEdit} onChanged={load} />
 
-        {/* The audiobook detail — narrator, provenance, staleness — the rows the
-            "Also on audio" chip summarises. */}
-        <OtherVersions
-          holding={audiobookHolding}
-          editions={audioEditions}
-          audioEditionCount={audioEditionCount}
-          ourSeries={work.series}
-        />
+        {/* ⚠️ `OtherVersions` used to sit here, and it is GONE — merged into
+            "On your shelf" above (owner 2026-09-02: "on your shelf should be the
+            main with other editions available under their given section"). It
+            was painting the audiobook link a SECOND time, measured in a browser
+            on /work/232. Everything it said — narrator, provenance, staleness,
+            the "you own 2 audiobooks" line — is on the shelf's Audio section
+            now. ⚠️ Deliberately NO fallback to it: a fallback is how two sources
+            survive. */}
 
         <PeerLibraries holdings={peerHoldings} />
 

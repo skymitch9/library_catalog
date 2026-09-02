@@ -18,6 +18,167 @@
 > were extracted from this same history.
 
 
+## ✅ 2026-09-02 — "On your shelf" becomes THE list: per-format sections, and the audiobook link stops painting twice
+
+> **Owner, 2026-09-02 ~14:00, verbatim:** *"on your shelf should be the main with
+> other editions available under their given section. so if its a second physical
+> there should be 2 under physical."*
+
+Review: **<https://library.heygabi.ai/work/229>** (*The Wandering Inn* — one owned
+paperback beside its Harper Voyager printing) and **<https://library.heygabi.ai/work/232>**
+(*Immortal Games* — the page where the double paint was **measured in a browser**;
+the audiobook link now appears **once**, under **Audio**). Also
+**<https://library.heygabi.ai/work/220>** (*Words of Radiance* — the ambiguous
+case: one owned Hardcover row plus **two** printings, both saying *"May be
+yours"*, neither claiming he lacks it).
+
+### What shipped
+
+**"Other versions available" is deleted**, not hidden — `OtherVersions.tsx` and
+`other-versions.test.ts` are gone from the tree, and there is ⚠️ **no fallback to
+it**, because a fallback is how two sources survive. Its contents are shelf rows
+now, and `deriveShelfView` groups every row into **Physical / Ebook / Audio**
+sections (`ShelfView.sections`, a grouping OF `rows` holding the same objects —
+one fact, one home, applied to a shape).
+
+**The third row state.** ⚠️ This deliberately amends the 2026-08-24 invariant
+*"an edition you neither own nor want is not a row at all."* That rule existed to
+stop an unowned printing being fabricated into a **Wanted**, and that half is
+untouched and pinned. The printing is now shown, in `state: 'available'`.
+
+| state | pill | what it claims |
+|---|---|---|
+| `owned` | Owned | you hold a copy, or it is a file/recording you have |
+| `wanted` | Wanted | a wishlist copy wants it |
+| `available` | **Available** | this printing exists and you have no copy of it |
+| `available` | **May be yours** | it exists, and the catalog will not say whether it is yours |
+| `neutral` | Not on your shelf | the never-empty placeholder |
+
+### ⚠️ The honesty problem the merge had to solve, and the answer
+
+*"Available"* is **a claim** — it asserts you do not own that printing. `copy.edition_id`
+is null across nearly the whole catalog, so an unlinked owned copy of a format
+**could be** any unclaimed printing of that format. Labelling those "Available"
+would be the work-220 fabrication pointing the other way: a confident statement
+the record cannot support.
+
+So the derivation asks whether an unresolved held copy could be this printing,
+and where it could, the row reads **"May be yours"** and its tooltip names the one
+action that settles it — *"Say which printing you own under Editions & copies."*
+An unlinked copy of *unknown* physical format softens every physical format at
+once. This doubles as the nudge toward the DATA follow-up already in
+[`TODO.md`](TODO.md) (22 (work, format) pairs hold more than one printing).
+
+⚠️ **A latent bug surfaced doing this and is fixed:** `claimPhysicalEditionFor`
+added the first candidate to `usedEditionIds` and *then* returned null in the
+ambiguous case. Invisible while unclaimed printings rendered nothing — and it
+would have silently swallowed exactly one of work 220's two hardcover printings.
+
+### The double paint, closed
+
+Measured in a browser, signed in, on `/work/232`: the audiobook link rendered in
+**both** "On your shelf" and "Other versions available". The merge keeps both
+halves of what the two panels knew, because they were **not** redundant:
+
+- the **ownership state** the shelf carried, and
+- ⚠️ the **provenance sentence** the other panel carried. Migration 0010's rule is
+  that `matched_via` is **shown, never hidden** — it is why a wrong match gets
+  noticed instead of quietly believed. It rides on `ShelfRow.notes` beside the
+  narrator, the series-spelling disagreement and the staleness caveat, and
+  `matchProvenance` moved into `shelf-view.ts` with its four wordings pinned.
+
+⚠️ **A stale audio row is `available`, not `owned`** — and it is **shown**. The old
+shelf hid it (a dead "Owned on audio" claim was worse than nothing); the old panel
+showed it with a caveat. Hiding it looks identical to *"never matched at all"*,
+which loses the fact that it WAS true once. The merged row does both halves,
+which is what neither surface could — and it still LINKS, because a withdrawn
+match is worth following.
+
+**Two recordings are now two rows** (they were one "Audiobook ×2" row plus a
+panel), so the ×N comes off them; the *"You own 2 audiobooks of this book."*
+sentence rides above the Audio section instead, `audioCountLine` moved across
+intact — still silent below two, still the **server's** count and never
+`audioEditions.length`.
+
+### Every standing invariant, still standing
+
+Never fabricate edition identity (work 220 renders the format word and no
+borrowed name — pinned) · never an empty shelf without the neutral slot · wanted
+rows are wishlist copies ONLY · the copy chips (signed either way, the three 0430
+badges) unchanged · `availability` stays peers-only. **`PeerLibraries` was
+deliberately NOT absorbed**: another household's library is not an edition of this
+book and has no format section to file under.
+
+### Pins, updated deliberately
+
+- `shelf-view.test.ts`: two tests **amended with the owner's words cited** — *"a
+  physical edition you neither own nor want is NOT a row"* becomes the
+  `available` row (and still asserts it is never `wanted`), and *"a stale
+  audiobook holding is NOT an Owned row"* keeps its half and gains the shown-with-
+  caveat half. Every `other-versions.test.ts` pin moved here rather than being
+  dropped.
+- `work-detail-contract.test.ts` gains a pin **one level below the 2026-08-24
+  outage**: `EDITION_COLS` must still select `cover_url`, `edition_name`,
+  `edition_kind`, `collects`, `publisher`, `published_year`. Dropping a COLUMN
+  would blank the feature with no error anywhere, and there is no live-D1 harness
+  here, so the pin is on the SELECT.
+- `work-page-render.test.ts`'s header no longer points at a deleted file.
+
+### Verified
+
+typecheck clean · vite build clean · **2201 tests pass / 0 fail** (2200 baseline;
+24 `other-versions` tests removed, 25 added).
+
+⚠️ **NOT verified:** the merged page rendered in a browser. The work page sits
+behind estate SSO and no session was driven — the evidence is the derivation
+under test plus a clean build, not pixels. The new `bd-hold--available` dashed
+ground and `bd-own--available` pill were **not** measured across the six
+theme/mode pairs; they inherit `--bd-line` / `--bd-ink-faint`, both already in
+use on this page, but that is inference.
+
+The finding as it stood in `TODO.md`, moved whole:
+
+---
+
+## ⚠️ FINDING: the work page now shows the audiobook link TWICE — two surfaces, one question (2026-09-02)
+
+Measured **in a real browser, signed in**, on <https://library.heygabi.ai/work/232>.
+Both of these render, both painted, both linking to the same place:
+
+| Panel | What it says |
+|---|---|
+| **On your shelf** | `🎧 Audiobook  OWNED  ↗` → `audiobooks.heygabi.ai/#q=Fae+and+Fare` |
+| **Other versions available** | `Audiobook — Fae and Fare (2)` · *Pirateaba* · *Matched by exact title (100% title match).* → the same URL |
+
+⚠️ **This is the estate's own "one fact, one home applies to SURFACES too" rule,
+and it is the hard-to-catch shape of it** — two panels each showing one link
+look fine in isolation, because nobody sees them side by side until they do.
+
+**Left as a finding rather than fixed, deliberately.** *"On your shelf"* landed
+the SAME DAY (see [`DONE.md`](DONE.md), *"leads with the EDITION"*) and which of
+the two should own the audiobook link is a design call with an owner, not a
+tidy-up. Note that they are not redundant in content: *Other versions* carries
+the **provenance sentence** (`Matched by exact title (100%)`) that migration
+0010's shown-never-hidden rule exists for, and *On your shelf* carries the
+**ownership state**. Whoever consolidates must keep the provenance, and must not
+leave a fallback to the losing surface — a fallback is how two sources survive.
+
+☐ **Decide which panel owns it**, then delete the other's audiobook row.
+
+☐ **Smaller, same page:** the link is `#q=<cleaned title>`, a token-substring
+  search, so *"The Wandering Inn"* drops **16 books** into the search box rather
+  than landing on one. Fine for *Fae and Fare*; poor for a title that is also
+  its series name. `audiobookDetailUrl` in `apps/web/src/lib/audiobook-site.ts`
+  is the one place that would change, and its header explains why a hash search
+  was the only option (the sibling site has no per-book URL).
+
+---
+
+⚠️ **The owner decided the first bullet and it is done: the SHELF owns it.** The
+second bullet is NOT done and is back on [`TODO.md`](TODO.md) as its own item —
+it is a change to `audiobookDetailUrl`, untouched by this merge.
+
+
 ## ✅ 2026-09-02 — the RETAILER is not the PUBLISHER: seven B&N-imported editions corrected, two real B&N imprints left alone
 
 > **Owner, 2026-09-02, verbatim:** *"fix the wandering inn publisher"* (part of

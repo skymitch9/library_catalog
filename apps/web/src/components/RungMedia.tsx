@@ -1,6 +1,6 @@
 /* @jsxRuntime automatic @jsxImportSource react */
 // ⚠️ The pragma is for `npm test`, not the app build. The full explanation is at
-// the top of `OtherVersions.tsx`, which needed it first and for the same reason:
+// the top of `OnYourShelf.tsx`, which carries it for the same reason:
 // the test runner compiles from the repo root, where no tsconfig sets `jsx`.
 // Vite and tsc both already use the automatic runtime, so the shipped bundle is
 // byte-identical.

@@ -116,6 +116,41 @@ describe('work-detail contract — the worker response carries every field the p
     assert.ok(Object.prototype.hasOwnProperty.call(response, 'ebookHolding'));
   });
 
+  /**
+   * ⚠️ One level DOWN from the outage this file was written for, and added for
+   * the same reason (owner 2026-09-02: *"we should also add being able to set
+   * the covers for the alternate editions too"*).
+   *
+   * `editions` being present is no longer enough: the shelf reads
+   * `edition.cover_url` off each row to paint a printing's own jacket, and its
+   * identity ladder reads `edition_name` / `edition_kind` / `publisher` /
+   * `published_year`. Dropping one of those COLUMNS from `EDITION_COLS` would
+   * blank the feature with no error anywhere — the 2026-08-24 failure shape at
+   * column granularity. There is no live-D1 harness in this repo, so the pin is
+   * on the SELECT itself, which is the one place a column can be lost.
+   */
+  it('⚠️ EDITION_COLS still selects cover_url — the per-edition covers depend on it', () => {
+    const editionsSrc = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../../../../packages/db/src/editions.ts'),
+      'utf8',
+    );
+    const cols = editionsSrc.match(/const EDITION_COLS = `([\s\S]*?)`/)?.[1] ?? '';
+    assert.ok(cols, 'EDITION_COLS must still be a template literal this test can read');
+    for (const col of [
+      'cover_url',
+      'edition_name',
+      'edition_kind',
+      'collects',
+      'publisher',
+      'published_year',
+    ]) {
+      assert.ok(
+        new RegExp(`\\b${col}\\b`).test(cols),
+        `EDITION_COLS must select ${col} — the shelf's edition identity and cover read it`,
+      );
+    }
+  });
+
   it('the route builds its response THROUGH the builder — no inline literal to drift', () => {
     // If a future refactor inlines c.json({...}) again, the builder (and this
     // test) stop protecting the route. Pin that the handler still routes through it.

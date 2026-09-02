@@ -66,6 +66,21 @@ export interface EditionView {
   publisher: string | null;
   published_year: number | null;
   pages: number | null;
+  /**
+   * This printing's OWN jacket — owner 2026-09-02: *"we should also add being
+   * able to set the covers for the alternate editions too."*
+   *
+   * ⚠️ **Not new storage.** `edition.cover_url` has existed since migration
+   * `0001` and `EDITION_COLS` has always selected it; what was missing was any
+   * way to SET it and anywhere that READ it. So this ask needs no migration —
+   * measured, not assumed (`migrations/0001_init.sql` line 214).
+   *
+   * ⚠️ Null means *this printing has no cover of its own*, and every reader falls
+   * back to the work cover. It is never filled in from the work: a borrowed
+   * jacket on a specific printing is the same class of fabrication as a borrowed
+   * edition name (see `shelf-view.ts` on work 220).
+   */
+  cover_url?: string | null;
   source: string;
   source_url: string | null;
 }

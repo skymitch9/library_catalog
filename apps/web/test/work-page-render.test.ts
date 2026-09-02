@@ -1,6 +1,6 @@
 /**
  * Render smoke-test for the work page (`WorkPage.tsx`), driven through the
- * firebase-free leaf `deriveWorkView` — the `other-versions.test.ts` /
+ * firebase-free leaf `deriveWorkView` — the `shelf-view.test.ts` /
  * `note-rows.ts` pattern this repo uses because `WorkPage.tsx` reaches
  * `firebase.ts`, which reads `import.meta.env` at module scope and so cannot be
  * imported under the node test runner. There is no jsdom or vitest in this
@@ -14,8 +14,12 @@
  * cleanly rather than throw the whole page blank.
  *
  * What this does NOT cover: the child components (`Copies`, `EbookShadow`,
- * `OtherVersions`, …) each render their own arrays and have their own tests
- * (`ebook-shadow.test.ts`, `other-versions.test.ts`). A full DOM mount of the
+ * `OnYourShelf`, …) each render their own arrays and have their own tests
+ * (`ebook-shadow.test.ts`, `shelf-view.test.ts`). ⚠️ `OtherVersions` was named
+ * here and is GONE — merged into the shelf 2026-09-02 (owner: *"on your shelf
+ * should be the main with other editions available under their given
+ * section"*), with `other-versions.test.ts` moving its pins into
+ * `shelf-view.test.ts` rather than leaving a second home. A full DOM mount of the
  * whole tree is not possible in this harness (no jsdom/vitest; firebase import
  * at module scope). This pins the page's OWN render decision — the outage locus.
  */

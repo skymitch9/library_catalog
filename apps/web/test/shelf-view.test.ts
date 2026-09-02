@@ -1,6 +1,6 @@
 /**
  * Pins `deriveShelfView` — the COPY-DRIVEN "On your shelf" derivation. The
- * `other-versions.test.ts` pattern: a pure function, no DOM, real-shaped inputs.
+ * house pattern: a pure function, no DOM, real-shaped inputs.
  *
  * ## The owner model this pins (2026-08-24, corrected): the shelf is WHAT YOU HAVE
  *
@@ -37,7 +37,13 @@ import { describe, it } from 'node:test';
 
 import type { CopyView } from '../src/components/Copies.ts';
 import type { EditionView } from '../src/components/Editions.ts';
-import { deriveShelfView, specialEditionBadges } from '../src/lib/shelf-view.ts';
+import {
+  audioCountLine,
+  deriveShelfView,
+  matchProvenance,
+  specialEditionBadges,
+} from '../src/lib/shelf-view.ts';
+import { audiobookDetailUrl, resolveAudiobookCover } from '../src/lib/audiobook-site.ts';
 
 function copy(over: Partial<CopyView> = {}): CopyView {
   return {
@@ -216,21 +222,59 @@ describe('deriveShelfView — copy-driven: the shelf is what you have', () => {
     assert.equal(row.owned, true);
   });
 
-  it('⚠️ a physical edition you neither own nor want is NOT a row → neutral slot', () => {
+  it('⚠️ AMENDED 2026-09-02: a physical edition you neither own nor want is an AVAILABLE row, never a Wanted one', () => {
+    // > Owner: "on your shelf should be the main with other editions available
+    // > under their given section."
+    //
+    // The 2026-08-24 rule was "an edition you neither own nor want is not a row
+    // at all", and it existed to stop such a printing being fabricated into a
+    // **Wanted**. That half is untouched and pinned below; what changed is that
+    // the printing is now SHOWN, in a third state.
     const v = deriveShelfView({ ...NONE, editions: [edition({ id: 2, format: 'hardcover' })] });
     const row = only(v);
-    assert.equal(row.neutral, true, 'not fabricated as Wanted');
-    assert.equal(row.owned, false);
+    assert.equal(row.state, 'available');
+    assert.equal(row.owned, false, 'it is not claimed as a holding');
+    assert.equal(row.neutral, false, 'and it is not the placeholder either');
+    assert.notEqual(row.state, 'wanted', '⚠️ the 2026-08-24 anti-fabrication rule holds');
+    assert.equal(row.stateLabel, 'Available');
+    assert.equal(row.copies.length, 0);
+    // ⚠️ Signing is a fact about an OBJECT and there is no object here.
+    assert.equal(row.signed, null);
+    assert.equal(row.format, 'Hardcover');
   });
 
-  it('an owned file + an un-owned physical printing → only the file shows, no phantom Wanted', () => {
+  it('⚠️ "Available" is only claimed when nothing of yours could BE it — otherwise "May be yours"', () => {
+    // An unlinked owned copy of this format could be a copy of this very
+    // printing (`copy.edition_id` is null across nearly the whole catalog), so
+    // asserting you do NOT own it would be the work-220 fabrication pointing the
+    // other way. Two hardcover printings, two unlinked owned copies: both rows
+    // soften, and neither claims anything.
+    const v = deriveShelfView({
+      ...NONE,
+      copies: [copy({ id: 1, status: 'owned' }), copy({ id: 2, status: 'owned' })],
+      editions: [
+        edition({ id: 10, format: 'hardcover', edition_name: 'Signed Leatherbound' }),
+        edition({ id: 11, format: 'hardcover', edition_name: 'Slipcase volume' }),
+      ],
+    });
+    const available = v.rows.filter((r) => r.state === 'available');
+    assert.equal(available.length, 2, 'both printings show — this is the "2 under physical" ask');
+    assert.ok(available.every((r) => r.stateLabel === 'May be yours'));
+    assert.ok(available.every((r) => r.stateTitle.includes('Editions & copies')));
+  });
+
+  it('an owned file + an un-owned physical printing → the file is Owned and the printing is Available', () => {
     const v = deriveShelfView({
       ...NONE,
       editions: [edition({ id: 1, format: 'ebook_epub' }), edition({ id: 2, format: 'hardcover' })],
     });
-    const row = only(v);
-    assert.equal(row.format, 'EPUB');
-    assert.equal(row.owned, true);
+    assert.equal(v.rows.length, 2);
+    const file = v.rows.find((r) => r.format === 'EPUB')!;
+    const print = v.rows.find((r) => r.format === 'Hardcover')!;
+    assert.equal(file.owned, true, 'an ebook edition is bytes you hold — step 2, unchanged');
+    assert.equal(print.state, 'available');
+    // ⚠️ Nothing you hold is physical, so "Available" is safe to claim outright.
+    assert.equal(print.stateLabel, 'Available');
   });
 
   it('⚠️ NEVER empty, and NEVER a fabricated Want: nothing at all → one neutral slot', () => {
@@ -368,7 +412,10 @@ describe('the row LEADS with the edition, and never with a guess (owner 2026-09-
         }),
       ],
     });
-    const row = only(v);
+    // ⚠️ Since 2026-09-02 the two printings ALSO render, as their own rows —
+    // that is the owner's "if its a second physical there should be 2 under
+    // physical". The HOLDING row is still exactly what it was.
+    const row = v.rows.find((r) => r.owned)!;
     assert.equal(row.label, 'Hardcover', 'the format word, never a borrowed name');
     assert.equal(row.labelSource, 'format');
     assert.equal(row.resolvedBy, null);
@@ -379,6 +426,20 @@ describe('the row LEADS with the edition, and never with a guess (owner 2026-09-
     // The per-copy answer is the only honest one here, and it is intact.
     assert.equal(row.copies[0]!.signed, true);
     assert.equal(row.copies[1]!.signed, false);
+
+    // ⚠️ Both printings survive to their own rows. The old `claimPhysicalEditionFor`
+    // marked one of them "used" on its way to returning null, which was
+    // invisible while unclaimed printings rendered nothing — it would have
+    // swallowed exactly one of these two.
+    const available = v.rows.filter((r) => r.state === 'available');
+    assert.deepEqual(
+      available.map((r) => r.label).sort(),
+      ['Signed Leatherbound (two-volume set)', 'Volume of the slipcase set'],
+    );
+    // Neither claims he lacks it — he owns two unlinked hardcovers.
+    assert.ok(available.every((r) => r.stateLabel === 'May be yours'));
+    // And neither borrows the OWNED row's signed answer.
+    assert.ok(available.every((r) => r.signed === null));
   });
 
   it('a copy with NO editions at all keeps the format word and says nothing more', () => {
@@ -569,14 +630,35 @@ describe('deriveShelfView — leather ⊂ hardcover in a row', () => {
 
 describe('deriveShelfView — availability (peers only) and audio count', () => {
   it('audio count comes from the server field, not editions.length', () => {
+    // ONE recording: the holding renders it, and the ×N rides on the row.
     const v = deriveShelfView({
       ...NONE,
-      audiobookHolding: { title: 'X' } as never,
-      audioEditions: [{ staleAt: null } as never, { staleAt: null } as never],
+      audiobookHolding: { title: 'X', matchedVia: 'exact', titleSimilarity: 1 } as never,
+      audioEditions: [],
       audioEditionCount: 2,
     });
     const audio = v.rows.find((r) => r.medium === 'audio')!;
     assert.equal(audio.count, 2);
+  });
+
+  it('⚠️ AMENDED 2026-09-02: TWO recordings are two rows, and the ×N comes off them', () => {
+    // Before the merge the shelf showed one "Audiobook ×2" row and the retired
+    // panel showed the two recordings; now the Audio section shows both rows, so
+    // a count badge on each would be counting the list the reader is looking at.
+    // The sentence above the section still says the number (`audioCountLine`).
+    const v = deriveShelfView({
+      ...NONE,
+      audiobookHolding: { title: 'X', matchedVia: 'exact', titleSimilarity: 1 } as never,
+      audioEditions: [
+        { audioKey: 'a', title: 'X', matchedVia: 'exact', titleSimilarity: 1, staleAt: null } as never,
+        { audioKey: 'b', title: 'X — full cast', matchedVia: 'exact', titleSimilarity: 1, staleAt: null } as never,
+      ],
+      audioEditionCount: 2,
+    });
+    const audio = v.rows.filter((r) => r.medium === 'audio');
+    assert.equal(audio.length, 2);
+    assert.ok(audio.every((r) => r.count === null));
+    assert.equal(v.audioCountLine, 'You own 2 audiobooks of this book.');
   });
 
   it('a stale ebook holding is NOT an Owned row; a live one is', () => {
@@ -587,14 +669,38 @@ describe('deriveShelfView — availability (peers only) and audio count', () => 
     assert.equal(live.rows.some((r) => r.medium === 'ebook' && r.owned), true);
   });
 
-  it('a stale audiobook holding is NOT an Owned row; a live one is', () => {
-    // The sibling catalog no longer confirms the match — a top-line "Owned on
-    // audio" glance would be a dead claim. The OtherVersions drawer still shows
-    // it with a "may be out of date" note; the shelf glance must not.
-    const stale = deriveShelfView({ ...NONE, audiobookHolding: { title: 'X', staleAt: '2026-01-01' } as never });
-    assert.equal(stale.rows.some((r) => r.medium === 'audio'), false);
-    assert.equal(stale.rows[0]!.neutral, true);
-    const live = deriveShelfView({ ...NONE, audiobookHolding: { title: 'X', staleAt: null } as never });
+  it('⚠️ AMENDED 2026-09-02: a stale audiobook holding is still NOT Owned — it is AVAILABLE, with the caveat', () => {
+    // The sibling catalog no longer confirms the match, so "Owned on audio"
+    // would be a dead claim — that half is unchanged and is what this test was
+    // written for. What changed is the other half: the row is no longer HIDDEN,
+    // because hiding it looks identical to "never matched at all" and loses the
+    // fact that it WAS true once. That was the retired panel's rule, and the
+    // merge had to keep it rather than pick one of the two behaviours.
+    const stale = deriveShelfView({
+      ...NONE,
+      audiobookHolding: {
+        title: 'X',
+        staleAt: '2026-01-01',
+        matchedVia: 'exact',
+        titleSimilarity: 1,
+      } as never,
+    });
+    const row = stale.rows.find((r) => r.medium === 'audio')!;
+    assert.ok(row, 'shown, never hidden');
+    assert.equal(row.owned, false, '⚠️ never claimed as a holding');
+    assert.equal(row.state, 'available');
+    assert.ok(
+      row.notes.includes('May be out of date — the audiobook catalog no longer confirms this match.'),
+      'the caveat sentence survived the merge',
+    );
+    // ⚠️ And it still LINKS: a withdrawn match is worth following to see what
+    // the other catalog now says.
+    assert.ok(row.href);
+
+    const live = deriveShelfView({
+      ...NONE,
+      audiobookHolding: { title: 'X', staleAt: null, matchedVia: 'exact', titleSimilarity: 1 } as never,
+    });
     assert.equal(live.rows.some((r) => r.medium === 'audio' && r.owned), true);
   });
 
@@ -607,5 +713,291 @@ describe('deriveShelfView — availability (peers only) and audio count', () => 
     // A peer holding it does not put anything on YOUR shelf → neutral slot.
     assert.equal(v.rows.length, 1);
     assert.equal(v.rows[0]!.neutral, true);
+  });
+});
+
+/**
+ * ## The "Other versions available" merge (owner, 2026-09-02)
+ *
+ * > "on your shelf should be the main with other editions available under their
+ * > given section. so if its a second physical there should be 2 under physical."
+ *
+ * The panel is gone from the work page and its contents are shelf rows. These
+ * are the pins `apps/web/test/other-versions.test.ts` used to hold, moved here
+ * with it — ⚠️ **that file was deleted, not left as a second home.** What they
+ * guard is unchanged: a format label always present, the ONE deep-link helper,
+ * the ONE cover helper, the sibling's own volume display, a stale row shown with
+ * a caveat, the 1-vs-2 count line, and — the load-bearing one — the
+ * **provenance sentence** migration 0010 requires be shown and never hidden.
+ */
+function audioHolding(over: Record<string, unknown> = {}) {
+  return {
+    title: 'Harry Potter and the Chamber of Secrets',
+    authors: 'J.K. Rowling',
+    series: 'Harry Potter',
+    indexDisplay: 'Book 2',
+    coverHref: 'covers/J.k. Rowling/Harry Potter and the Chamber of Secrets.jpg',
+    matchedVia: 'exact',
+    titleSimilarity: 1,
+    staleAt: null,
+    ...over,
+  } as never;
+}
+
+function audioEdition(over: Record<string, unknown> = {}) {
+  return {
+    audioKey: 'Elantris',
+    title: 'Elantris',
+    authors: 'Brandon Sanderson',
+    series: null,
+    indexDisplay: null,
+    narrator: 'James Konicek, Danny Gavigan, Lily Beacon',
+    coverHref: 'covers/Brandon Sanderson/Elantris - Graphic Audio.png',
+    matchedVia: 'exact',
+    titleSimilarity: 1,
+    staleAt: null,
+    ...over,
+  } as never;
+}
+
+const tenthAnniversary = audioEdition({
+  audioKey: 'Elantris - Tenth Anniversary Special Edition',
+  title: 'Elantris - Tenth Anniversary Special Edition',
+  series: 'Elantris',
+  indexDisplay: '1',
+  narrator: 'Jack Garrett',
+  matchedVia: 'containment',
+  titleSimilarity: 0.19,
+});
+
+describe('the audiobook cross-link renders ONCE, in the Audio section (the double-paint fix)', () => {
+  it('⚠️ ONE audio row, not two — it painted twice on /work/232 before this merge', () => {
+    const v = deriveShelfView({
+      ...NONE,
+      title: 'Fae and Fare',
+      audiobookHolding: audioHolding({ title: 'Fae and Fare', indexDisplay: '2' }),
+      audioEditionCount: 1,
+    });
+    assert.equal(v.rows.filter((r) => r.medium === 'audio').length, 1);
+    const audio = v.sections.find((s) => s.key === 'audio')!;
+    assert.equal(audio.rows.length, 1, 'the Audio section owns it, and nothing else does');
+  });
+
+  it('⚠️ the PROVENANCE sentence survives the merge — migration 0010: shown, never hidden', () => {
+    const v = deriveShelfView({
+      ...NONE,
+      audiobookHolding: audioHolding({ matchedVia: 'containment', titleSimilarity: 0.87 }),
+    });
+    const audio = v.rows.find((r) => r.medium === 'audio')!;
+    assert.ok(
+      audio.notes.includes(
+        'Matched by containment — a partial title match, worth a second look (87% title match).',
+      ),
+    );
+  });
+
+  it('every provenance wording, unchanged from the retired panel', () => {
+    assert.equal(
+      matchProvenance({ matchedVia: 'exact', titleSimilarity: 1 }),
+      'Matched by exact title (100% title match).',
+    );
+    assert.equal(
+      matchProvenance({ matchedVia: 'alias', titleSimilarity: null }),
+      'Matched by alternate title.',
+    );
+    assert.equal(
+      matchProvenance({ matchedVia: 'series_link', titleSimilarity: null }),
+      'Matched to the audiobook series you confirmed — by series and volume number.',
+    );
+    assert.equal(matchProvenance({ matchedVia: 'wat', titleSimilarity: null }), 'Matched via wat.');
+  });
+
+  it('the format label is ALWAYS present (owner 2026-08-14: "always say the form the media is in")', () => {
+    const v = deriveShelfView({ ...NONE, audiobookHolding: audioHolding() });
+    const audio = v.rows.find((r) => r.medium === 'audio')!;
+    assert.equal(audio.label, 'Audiobook');
+    assert.equal(audio.format, 'Audiobook');
+  });
+
+  it('links via the ONE deep-link helper, with the SIBLING catalog own title', () => {
+    const v = deriveShelfView({ ...NONE, title: 'Ours', audiobookHolding: audioHolding() });
+    const audio = v.rows.find((r) => r.medium === 'audio')!;
+    assert.equal(audio.href, audiobookDetailUrl('Harry Potter and the Chamber of Secrets'));
+  });
+
+  it('resolves the cover via the ONE bucket helper, and null stays null', () => {
+    const withCover = deriveShelfView({ ...NONE, audiobookHolding: audioHolding() });
+    assert.equal(
+      withCover.rows.find((r) => r.medium === 'audio')!.coverUrl,
+      resolveAudiobookCover('covers/J.k. Rowling/Harry Potter and the Chamber of Secrets.jpg'),
+    );
+    const none = deriveShelfView({ ...NONE, audiobookHolding: audioHolding({ coverHref: null }) });
+    assert.equal(none.rows.find((r) => r.medium === 'audio')!.coverUrl, null);
+  });
+
+  it('says the sibling title and volume — but not when it is simply this book title', () => {
+    const differs = deriveShelfView({ ...NONE, title: 'Ours', audiobookHolding: audioHolding() });
+    assert.equal(
+      differs.rows.find((r) => r.medium === 'audio')!.meta,
+      'Harry Potter and the Chamber of Secrets · (Book 2)',
+    );
+    const same = deriveShelfView({
+      ...NONE,
+      title: 'Harry Potter and the Chamber of Secrets',
+      audiobookHolding: audioHolding({ indexDisplay: null }),
+    });
+    assert.equal(same.rows.find((r) => r.medium === 'audio')!.meta, null, 'not said twice');
+  });
+
+  it('the narrator and the series disagreement ride on the row, and only when true', () => {
+    const v = deriveShelfView({
+      ...NONE,
+      ourSeries: 'Elantris',
+      audiobookHolding: audioHolding(),
+      audioEditions: [tenthAnniversary, audioEdition()],
+      audioEditionCount: 2,
+    });
+    const rows = v.rows.filter((r) => r.medium === 'audio');
+    assert.equal(rows.length, 2, 'the list takes over only when it says more — two recordings');
+    const tenth = rows.find((r) => r.key.endsWith('Tenth Anniversary Special Edition'))!;
+    assert.ok(tenth.notes.includes('Read by Jack Garrett'));
+    // Its series matches ours, so no disagreement line.
+    assert.ok(!tenth.notes.some((n) => n.startsWith('Filed there under')));
+    const fullCast = rows.find((r) => r.key === 'audio:Elantris')!;
+    assert.ok(fullCast.notes.some((n) => n.startsWith('Read by James Konicek')));
+    // The full-cast row has NO series over there and ours is 'Elantris' — an
+    // absence is not a disagreement.
+    assert.ok(!fullCast.notes.some((n) => n.startsWith('Filed there under')));
+  });
+
+  it('⚠️ ONE edition changes nothing — the single HOLDING still renders it', () => {
+    // The list only takes over when it says more than the holding already does,
+    // so an API response predating `audioEditions` cannot blank the section.
+    const v = deriveShelfView({
+      ...NONE,
+      audiobookHolding: audioHolding(),
+      audioEditions: [audioEdition()],
+      audioEditionCount: 1,
+    });
+    const rows = v.rows.filter((r) => r.medium === 'audio');
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]!.key, 'own-audio');
+  });
+
+  it('⚠️ two rows and NO count line when one of them is stale', () => {
+    // The pair that proves the number is not `audioEditions.length`: the list
+    // shows a withdrawn match with its caveat, and the count refuses to call it
+    // a book the household owns.
+    const v = deriveShelfView({
+      ...NONE,
+      audiobookHolding: audioHolding(),
+      audioEditions: [tenthAnniversary, audioEdition({ staleAt: '2026-08-23 04:00:00' })],
+      audioEditionCount: 1,
+    });
+    assert.equal(v.rows.filter((r) => r.medium === 'audio').length, 2);
+    assert.equal(v.audioCountLine, null);
+  });
+
+  it('audioCountLine — silent at 0, 1 and absent; says the number at 2 and 3', () => {
+    assert.equal(audioCountLine(0), null);
+    assert.equal(audioCountLine(1), null);
+    assert.equal(audioCountLine(undefined), null);
+    assert.equal(audioCountLine(2), 'You own 2 audiobooks of this book.');
+    assert.equal(audioCountLine(3), 'You own 3 audiobooks of this book.');
+  });
+
+  it('no audiobook anywhere → no audio row and no Audio section', () => {
+    const v = deriveShelfView({ ...NONE, copies: [copy()] });
+    assert.equal(
+      v.rows.some((r) => r.medium === 'audio'),
+      false,
+    );
+    assert.equal(
+      v.sections.some((s) => s.key === 'audio'),
+      false,
+    );
+  });
+});
+
+describe('sections — "under their given section" (owner 2026-09-02)', () => {
+  it('groups the SAME row objects by medium, in Physical → Ebook → Audio order', () => {
+    const v = deriveShelfView({
+      ...NONE,
+      title: 'X',
+      copies: [copy({ id: 1, status: 'owned', edition_id: 77 })],
+      editions: [
+        edition({ id: 77, format: 'paperback' }),
+        edition({ id: 78, format: 'ebook_epub' }),
+      ],
+      audiobookHolding: audioHolding({ title: 'X' }),
+    });
+    assert.deepEqual(
+      v.sections.map((s) => s.key),
+      ['physical', 'ebook', 'audio'],
+    );
+    assert.deepEqual(
+      v.sections.map((s) => s.title),
+      ['Physical', 'Ebook', 'Audio'],
+    );
+    // ⚠️ The same objects, not copies — one fact, one home, applied to a shape.
+    const flat = v.sections.flatMap((s) => s.rows);
+    assert.equal(flat.length, v.rows.length);
+    assert.ok(flat.every((r) => v.rows.includes(r)));
+  });
+
+  it('⚠️ TWO under Physical — the owner worked example', () => {
+    // One owned paperback (linked, so it resolves and nothing is ambiguous) and
+    // a hardcover printing nobody owns: two rows, one section.
+    const v = deriveShelfView({
+      ...NONE,
+      copies: [copy({ id: 1, status: 'owned', edition_id: 77 })],
+      editions: [
+        edition({ id: 77, format: 'paperback', publisher: 'Tor', published_year: 2001 }),
+        edition({ id: 78, format: 'hardcover', edition_name: 'First edition' }),
+      ],
+    });
+    const physical = v.sections.find((s) => s.key === 'physical')!;
+    assert.equal(physical.rows.length, 2);
+    // Owned leads its section; what merely exists comes after.
+    assert.deepEqual(
+      physical.rows.map((r) => r.state),
+      ['owned', 'available'],
+    );
+    assert.equal(physical.rows[1]!.label, 'First edition');
+    // ⚠️ The owned copy is LINKED, so nothing of his could be the hardcover.
+    assert.equal(physical.rows[1]!.stateLabel, 'Available');
+  });
+
+  it('empty sections are omitted, and the neutral slot gets no heading', () => {
+    const v = deriveShelfView({ ...NONE });
+    assert.equal(v.sections.length, 1);
+    assert.equal(v.sections[0]!.key, 'other');
+    assert.equal(v.sections[0]!.title, null);
+    assert.equal(v.sections[0]!.rows[0]!.neutral, true);
+  });
+});
+
+describe('a printing own cover (owner 2026-09-02: "set the covers for the alternate editions too")', () => {
+  it('an edition with a cover carries it onto its row; without one it is null', () => {
+    const v = deriveShelfView({
+      ...NONE,
+      copies: [copy({ edition_id: 10 })],
+      editions: [edition({ id: 10, format: 'hardcover', cover_url: 'https://x/y.jpg' })],
+    });
+    assert.equal(only(v).coverUrl, 'https://x/y.jpg');
+    const bare = deriveShelfView({
+      ...NONE,
+      copies: [copy({ edition_id: 10 })],
+      editions: [edition({ id: 10, format: 'hardcover' })],
+    });
+    assert.equal(only(bare).coverUrl, null, '⚠️ an absence, never the work cover borrowed');
+  });
+
+  it('an AVAILABLE printing shows its own cover too', () => {
+    const v = deriveShelfView({
+      ...NONE,
+      editions: [edition({ id: 2, format: 'hardcover', cover_url: 'https://x/alt.jpg' })],
+    });
+    assert.equal(only(v).coverUrl, 'https://x/alt.jpg');
   });
 });

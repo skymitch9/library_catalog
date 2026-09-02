@@ -1,5 +1,5 @@
 /* @jsxRuntime automatic @jsxImportSource react */
-// ⚠️ The pragma is for `npm test`, not the app build — see OtherVersions.tsx,
+// ⚠️ The pragma is for `npm test`, not the app build — see OnYourShelf.tsx,
 // which carries the same line and the same reason: tsx/esbuild runs the test
 // files from the repo root, where no tsconfig sets `jsx`.
 import { useEffect, useState } from 'react';
@@ -190,7 +190,9 @@ export function ContentNotes({ workId, me }: { workId: number; me: Me }) {
         <>
           {/* ⚠️ Published first, and labelled with WHOSE list it is and which
               title it was found under. Provenance shown, never hidden — the
-              rule `OtherVersions` states — and it matters more here, because
+              rule migration 0010 states and `shelf-view.ts` now carries (it came
+              across when "Other versions available" merged into the shelf,
+              2026-09-02) — and it matters more here, because
               the audiobook catalog matches some books by containment and the
               entry may be the series' base volume rather than this one. */}
           {published?.warnings.length ? (
