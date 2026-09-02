@@ -55,7 +55,7 @@ only because of the dev bypass. In the browser they are fetch-and-Blob, not
 while working perfectly in local dev.
 
 ⚠️ `backfill:covers --remote --commit` writes URLs that only resolve after
-`npm run deploy`. Do the two together — see `docs/HANDOFF.md`.
+`npm run deploy`. Do the two together — see [`deploy.md`](deploy.md).
 
 ⚠️ `backfill:openlibrary-ids` needs **no** deploy and **no** migration — the
 column has existed since migration 0001 and nothing serves it yet. Read its

@@ -113,8 +113,9 @@ export const EDITION_FORMATS = [
   'paperback',
   'mass_market',
   // The five ebook file formats. Added for the Calibre-Web Automated pipeline,
-  // which was built and run on 2026-08-09 and is currently PAUSED — see the
-  // "ebook pipeline" section of docs/HANDOFF.md, and the removed
+  // which was built and run on 2026-08-09 and is currently PAUSED — see
+  // docs/info/decisions.md §5 "The ebook pipeline is PAUSED, not removed", the
+  // revert instructions in docs/DONE.md, and the removed
   // docs/EBOOK_PIPELINE.md in git history.
   //
   // Kept rather than reverted because the 81 works it catalogued are still in
@@ -146,7 +147,8 @@ export const PHYSICAL_FORMATS: readonly EditionFormat[] = [
  * Which shelf a printing lives on — a thing you can hold, or a thing you cannot.
  *
  * ⚠️ Deliberately two values and not three. **There is no `audio` medium**, and
- * there must not be one: open question 5 in `docs/HANDOFF.md` settles it, and
+ * there must not be one: `docs/info/decisions.md` §1 settles it (the retired
+ * handoff's open question 5, moved there whole), and
  * `EDITION_FORMATS` above says why. Audiobooks are not editions of anything in
  * this database; they are rows in the sibling catalog, cached into
  * `audiobook_holding` (migration 0010) and joined by `work_id`. A third medium

@@ -230,8 +230,8 @@ CREATE TABLE pledge_item (
   -- audiobook together** (Space Knight 5 and 6, Tamer Bk 11, Fires of December).
   -- The audiobook line can NEVER be matched to an `edition` — `EDITION_FORMATS`
   -- has no audiobook value and deliberately never will (audio lives in
-  -- `audiobook_catalog` and meets this app through `work_key`; HANDOFF.md open
-  -- question 5 settles it as **No**). Without this column that line sits in the
+  -- `audiobook_catalog` and meets this app through `work_key`;
+  -- docs/info/decisions.md §1 settles it as **No**). Without this column that line sits in the
   -- audit's "no printing" queue forever, and a queue that can never empty is a
   -- queue nobody reads.
   --

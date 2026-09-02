@@ -1,6 +1,45 @@
+# 📦 RETIRED — the old `docs/HANDOFF.md`, archived whole on 2026-09-02
+
+> 🔴 **DO NOT READ THIS FOR ANYTHING CURRENT. Nothing below is maintained.**
+> Every figure here has an age and most are weeks old; a stale figure is not
+> evidence.
+>
+> **What replaced it, by question:**
+>
+> | If you want to know… | Read |
+> |---|---|
+> | What is happening now / what is blocked | [`../TODO.md`](../TODO.md) |
+> | The map of the whole doc tree | [`../README.md`](../README.md) |
+> | Is this a bug or deliberate? | [`../KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) |
+> | Was this solved before, and why that way? | [`../DONE.md`](../DONE.md) |
+> | How to deploy / roll back / reach it | [`../access/README.md`](../access/README.md) |
+> | Why a call was made that way | [`../info/decisions.md`](../info/decisions.md) |
+> | A trap that keeps biting | [`../info/gotchas.md`](../info/gotchas.md) |
+>
+> **Why it was retired** — the whole record is in [`../DONE.md`](../DONE.md).
+> The estate docs standard allows exactly one living doc for *"what is
+> happening now"*, and this was a second one. `CLAUDE.md`'s first line told
+> every session to read it **first**, so when it went stale it did not merely
+> fail to help — it misled about what production contained. ⚠️ **That happened
+> twice**: the 2026-08-10 handoff was replaced on 2026-08-16 for exactly this,
+> and the replacement below was still leading with 2026-08-23 figures on
+> 2026-09-02.
+>
+> ⚠️ **Five facts that SOURCE files, a test and two migrations cited from here
+> were MOVED, not deleted.** They live in
+> [`../info/decisions.md`](../info/decisions.md) under *"Settled by the retired
+> handoff"*: open question 5 (there is no `audio` medium), the dropped
+> `alsoInAudio` flag, *"D1 is the only copy of this data"*, *"read the lines,
+> not the totals"*, and the paused ebook pipeline. Every citation was
+> repointed there in the same commit that retired this file.
+
+---
+
+## The file as it stood, unedited below this line
+
 # Handoff — library_catalog
 
-> **Audience:** Claude sessions. **Status:** TRACKED.
+> **Audience:** Claude sessions. **Status:** 📦 ARCHIVED 2026-09-02 (was TRACKED).
 > **Rewritten 2026-08-16**, replacing a 2026-08-10 handoff that had become
 > actively wrong. Every figure below was measured on **2026-08-16**; the old
 > one is archived whole in [`DONE.md`](DONE.md), with a table of exactly which

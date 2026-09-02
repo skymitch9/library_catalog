@@ -346,7 +346,8 @@ game catalog and are wrong here.
 
 > **Paused 2026-08-09:** the ebook pipeline and its `EBOOK_INGEST_TOKEN` secret
 > were removed. `/api/ingest/*` no longer exists — a request to it is an ordinary
-> 404, not a disabled feature. Expected to return; see `docs/HANDOFF.md`.
+> 404, not a disabled feature. Expected to return; see
+> `docs/info/decisions.md` §5 and the revert instructions in `docs/DONE.md`.
 
 | Symptom | First check |
 |---|---|

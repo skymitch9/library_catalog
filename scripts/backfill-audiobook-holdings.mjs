@@ -24,8 +24,8 @@
  * The same reason `backfill:series-volumes` is a script, stated in the header of
  * `apps/worker/src/routes/series.ts`: the only source is
  * `audiobook_catalog/site/catalog.csv`, a **file on disk beside this repo**,
- * which a Worker cannot read and a script can. `docs/HANDOFF.md` records that an
- * `alsoInAudio` flag was dropped from the scan screen for exactly this — the
+ * which a Worker cannot read and a script can. `docs/info/decisions.md` §2
+ * records that an `alsoInAudio` flag was dropped from the scan screen for this — the
  * Worker holds no audiobook data, so the field would have answered `false` for
  * every book in the house. This is that flag, arrived at from the other side: a
  * script does the reading, the database carries the verdict, and the Worker

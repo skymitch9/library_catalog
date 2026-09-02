@@ -106,7 +106,7 @@ It fails loudly, which is the one good thing about it. `upsertCampaign` in
 An **audiobook** reward line can never be matched to an `edition`.
 `EDITION_FORMATS` has no audiobook value and deliberately never will — audio
 lives in `audiobook_catalog` and meets this app through `work_key`
-(`HANDOFF.md` open question 5 settles it as **No**). Without a verdict that line
+([`decisions.md`](decisions.md) §1 settles it as **No**). Without a verdict that line
 sits in the audit's "no printing" queue on every run forever, and **a queue that
 cannot empty is a queue nobody reads**.
 
@@ -161,7 +161,7 @@ resolving it to `physical` is how the ebook goes missing.
 | `unknown` | nothing could classify it. Go and look at the campaign page. |
 | `unmatched` | matched to a book, not a printing. Expected on a first run. Excludes verdicted lines. |
 
-`docs/HANDOFF.md` records the general version of this twice already —
+[`decisions.md`](decisions.md) §4 records the general version —
 *"860/860 matched looked perfect"* and the keys were unusable. **Read the lines,
 not the totals.**
 

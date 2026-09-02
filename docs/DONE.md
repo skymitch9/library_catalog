@@ -18,6 +18,108 @@
 > were extracted from this same history.
 
 
+## ✅ 2026-09-02 — `docs/HANDOFF.md` is RETIRED: five facts rehomed, 31 references repaired, husk archived
+
+Moved here whole from [`TODO.md`](TODO.md). The item as it stood:
+
+> ## ☐ Retire `docs/HANDOFF.md` — a competing living doc the standard forbids
+>
+> The estate docs standard says nothing sits at the top of `docs/` but the seven
+> named pieces, and that a second place "current state" lives must be retired.
+> `HANDOFF.md` is that second place: **`CLAUDE.md` line 3 tells every session to
+> read it FIRST**, so when it is stale it does not merely fail to help — it
+> actively misleads about what production contains. Its own header says so, having
+> already been rewritten once for exactly that.
+>
+> ⚠️ **It was made TRUE on 2026-08-23, not retired.** That was deliberate: it is
+> still the first thing sessions are told to read, so leaving it wrong for the
+> duration of a migration was the worse option.
+>
+> **Why this is a migration and not a `git mv`: 18 inbound references, and some are
+> in SOURCE.** Repair them in the same commit — the standard is explicit, and a
+> retired doc that still answers questions is worse than a deleted one.
+>
+> | Where | What it references |
+> |---|---|
+> | `CLAUDE.md:3` | "Read `docs/HANDOFF.md` first" — ⚠️ **the load-bearing one** |
+> | `docs/README.md:45` | the map's "Current state / how to pick up" row |
+> | `packages/core/src/constants.ts:117,149` · `packages/core/test/core.test.ts:1405` · `packages/db/src/export.ts:6` | ⚠️ **source + a test**, citing *"open question 5"* and the ebook-pipeline section |
+> | `docs/access/cloudflare.md:349` · `docs/access/README.md:57` | operational pointers |
+> | `docs/info/` — `completeness-wishlist-relations.md:24,536` · `covers-and-series.md:14` · `crowdfunding-and-accessories.md:109,164` · `openlibrary-ids.md:9` · `series-formats-and-audiobooks.md:120,128` | pending-command and open-question pointers |
+>
+> ⚠️ **Do the content move BEFORE the link repair, or the links have nowhere to
+> point.** *"Open question 5"* (audiobooks are not an `edition`) is cited by a test
+> as settled design — that is `info/decisions.md` content, not handoff content, and
+> until it moves the citation cannot be repaired honestly. Same for the
+> pending-command pointers in `info/`: those commands were run long ago, so most of
+> those lines should simply be deleted rather than re-pointed.
+>
+> **Order:** durable content out to `info/decisions.md` → the few genuinely open
+> items into this file → husk to `archive/` with a dated banner naming what
+> replaced it → `grep -rn HANDOFF` across the WHOLE repo until it returns only the
+> archive copy and `DONE.md`'s history → last, `CLAUDE.md:3` repointed at
+> [`TODO.md`](TODO.md).
+
+### What was done, in the order the item demanded
+
+**1. Content out FIRST**, because a citation cannot be repaired until the fact
+it cites has an address. Five facts that **source files, a test and two
+migrations** were citing moved to [`info/decisions.md`](info/decisions.md)
+§*"Settled by the retired handoff"* — verbatim, not summarised:
+
+| # | The fact | Who was citing it |
+|---|---|---|
+| 1 | **Open question 5** — `edition.format` must never gain an audiobook value; there is no `audio` medium | `constants.ts`, `core.test.ts`, migrations `0010` **and** `0020`, two `info/` docs |
+| 2 | **No `alsoInAudio` flag** on the scan screen — the Worker holds no audiobook data | `backfill-audiobook-holdings.mjs`, `series-formats-and-audiobooks.md` |
+| 3 | **"D1 is the only copy of this data"** — the standing risk the export screen answers | `packages/db/src/export.ts`, `ExportPage.tsx` |
+| 4 | **"Read the lines, not the totals"** — 860/860 matched and every key unusable | `import-crowdfunding.mjs`, `crowdfunding-and-accessories.md` |
+| 5 | **The ebook pipeline is PAUSED, not removed** — why `EDITION_FORMATS` keeps five unused values | `constants.ts`, `README.md`, `access/cloudflare.md` |
+
+**2. Every reference repaired in the SAME commit**, then **3.** the husk moved
+to [`archive/HANDOFF.md`](archive/HANDOFF.md) under a banner that says it is
+retired, names what replaced it question by question, and points at where the
+five facts went. ⚠️ **A retired doc that does not SAY it is retired is worse
+than one that was deleted** — it keeps answering questions with stale facts.
+
+### 🔴 The item's own count was WRONG, and the difference is the interesting part
+
+It said **18 inbound references**. The repo holds **31** outside `archive/` and
+`DONE.md`'s history. The ones it missed are exactly those a docs-only sweep
+would never look at:
+
+- `README.md` ×2 — the repo's front door, twice
+- `migrations/0010_audiobook_holding.sql` ×2 and `migrations/0020_crowdfunding.sql` ×1 — ⚠️ **comment-only edits to APPLIED migrations.** Safe: D1 tracks applied migrations **by filename**, so no checksum is disturbed and nothing re-runs. No SQL was touched
+- `apps/web/src/pages/ExportPage.tsx`, `scripts/backfill-audiobook-holdings.mjs`, `scripts/import-crowdfunding.mjs`
+- `scripts/check-clean.mjs:45` — the guard's own **error message** told a stuck operator to read `docs/HANDOFF.md` for the `-F`-not-`-m` rule. It now names `docs/info/decisions.md`, which has held that rule all along
+
+⚠️ **The lesson generalises: an inventory taken by reading `docs/` finds the
+doc references and misses the code.** `grep -rn` across the WHOLE repo is the
+instrument — which the item's own closing line said, and is how these were
+found.
+
+### Two references deliberately LEFT
+
+[`archive/FABLE5.md`](archive/FABLE5.md) and this file still say "HANDOFF" in
+their history. Both are **archives**, both describe the past correctly, and
+`DONE.md` is append-only by rule. Rewriting history to hide a retired filename
+is the opposite of what an archive is for.
+
+### Verified
+
+`grep -rn HANDOFF` across the repo returns **zero live pointers**: what is
+left is the husk, the two archives (`archive/FABLE5.md`, this file), and
+**eight deliberate tombstones** — lines in `CLAUDE.md`, `docs/README.md`,
+`TODO.md`, `info/decisions.md` and three `info/` docs that say the file is
+retired and where it went. ⚠️ **A tombstone is the opposite of a live
+reference**: a reader who arrives with the old name in hand is told, once, that
+it no longer answers. Not one file still sends anyone there for current state.
+**2218 tests pass / 0 fail**;
+typecheck clean — the test citing open question 5 was edited and still passes.
+
+⚠️ **NOT verified:** no link checker was run, so each repaired *relative* link
+is asserted from the file tree rather than from a tool following it.
+
+
 ## ✅ 2026-09-02 — the donor alias rung IS live on both Workers (the item's own headline was six days stale)
 
 Moved here whole from [`TODO.md`](TODO.md). ⚠️ **Nothing was deployed to close

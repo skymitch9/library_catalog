@@ -6,6 +6,10 @@
 > and were **not** re-taken on that date.
 > ⚠️ The duplicate-finder entry below was **added 2026-08-23** and its claims
 > were measured that day; nothing else in this file was re-checked then.
+> ⚠️ **2026-09-02:** the section *"Settled by the retired handoff"* was added
+> when `docs/HANDOFF.md` was retired — five facts that SOURCE files, a test and
+> two migrations cited by pointing at that file. They were **moved, not
+> re-derived**, and carry the dates they were measured on, not today's.
 
 Why things are the way they are — including things deliberately **not** built,
 which are the easiest to accidentally "fix" later. Also the honest list of
@@ -236,6 +240,83 @@ wrong spelling would have passed while protecting nothing.
   two-novella volume, neither novella Cosmere. Belongs in `edition.collects`.
 - ⚠️ **A universe flag belongs on the WORK, never the edition** — an omnibus can
   collect works from different universes.
+
+---
+
+## Settled by the retired handoff — the five facts SOURCE files cite — moved 2026-09-02
+
+⚠️ **These are here because `docs/HANDOFF.md` was retired**
+([`../archive/HANDOFF.md`](../archive/HANDOFF.md)) and **source files, a test
+and two migrations cited it as the record of a settled decision.** A citation
+pointing at a doc that no longer answers is worse than no citation, so each
+fact was moved to a findable home first and every citation was repointed at
+*this section* in the same commit. The wording is the original's; only the
+address changed.
+
+### 1. 🔴 There is no `audio` medium, and `edition.format` must never gain one
+
+**The old handoff's "open question 5", answered `No`, verbatim:**
+
+> *Should `edition.format` gain an audiobook value once the shared index lands?*
+> **No.** `PLATFORM.md` §2.2 says nothing merges; audiobooks stay read-only in
+> their own catalog and meet this one through `work_key`. Recorded because it
+> will be asked.
+
+⚠️ **It has been asked, twice, which is why it earns a heading.** Audiobooks
+are rows in the sibling catalog, cached into `audiobook_holding` (migration
+0010) / `audiobook_edition_holding` (0390) and joined by `work_id`. A third
+`EDITION_MEDIA` value here is the first step toward `edition.format =
+'audiobook'`, which is the merge that catalog's owner has already refused.
+
+**Cited by:** `packages/core/src/constants.ts` (`EDITION_MEDIA`),
+`packages/core/test/core.test.ts` (the test that pins it),
+`migrations/0010_audiobook_holding.sql`, `migrations/0020_crowdfunding.sql`,
+[`crowdfunding-and-accessories.md`](crowdfunding-and-accessories.md) and
+[`series-formats-and-audiobooks.md`](series-formats-and-audiobooks.md).
+
+### 2. No `alsoInAudio` flag on the scan screen
+
+> **No `alsoInAudio`.** The Worker holds no audiobook data, so the field would
+> have answered `false` for every book in the house. Waiting on the shared index.
+
+The wait ended from the other side rather than by adding the flag:
+`scripts/backfill-audiobook-holdings.mjs` is that answer arrived at
+differently — a **script** does the reading (the only source is
+`audiobook_catalog/site/catalog.csv`, a file on disk that a Worker cannot
+open), the database carries the verdict, and the Worker only ever reads a
+table.
+
+### 3. ⚠️ D1 is the only copy of this data — the standing risk, and its answer
+
+Named as the standing risk since the first deploy. What was built for it is the
+**export screen** — `packages/db/src/export.ts` and
+`apps/web/src/pages/ExportPage.tsx`: one request, every row of every table that
+holds a decision, in a shape you could rebuild from. ⚠️ **It is not a backup
+schedule** — nobody is scheduled to press it. The estate-level rebuild story is
+[`../access/RECOVERY.md`](../access/RECOVERY.md); this line stays because both
+of those files' headers cite it as their reason to exist.
+
+### 4. Read the LINES, not the totals
+
+> **Reading the backfill's dry run caught a defect the counts hid.** 860/860
+> matched looked perfect; the keys it would have written were *"court of mist
+> and fury part 1 of 2 dramatized adaptation …"*, which no paperback could
+> match. Fixed by using the `series` column.
+
+⚠️ The general form — *a total reading 100% is not evidence the rows are
+right* — is why `scripts/import-crowdfunding.mjs` prints a per-line table
+before it writes anything instead of reporting a match count.
+
+### 5. The ebook pipeline is PAUSED, not removed
+
+Built and run 2026-08-09, paused the same day; the **81 works it catalogued are
+kept**, which is why `EDITION_FORMATS` still carries the five `ebook_*` values
+and the `ebook_kindle` licence value. ⚠️ Unused values in an enum cost nothing;
+a migration that has to be undone costs a table rebuild. `/api/ingest/*` and
+its `EBOOK_INGEST_TOKEN` went with it, so a request there is an **ordinary 404,
+not a disabled feature**. The revert instructions and the whole design are in
+[`../DONE.md`](../DONE.md) under *"The ebook pipeline — paused, and how to
+bring it back"*.
 
 ---
 

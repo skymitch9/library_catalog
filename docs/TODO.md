@@ -335,43 +335,14 @@ this repo, so `createCopy` /
 test, not a live-D1 test.
 
 
-## ☐ Retire `docs/HANDOFF.md` — a competing living doc the standard forbids
-
-The estate docs standard says nothing sits at the top of `docs/` but the seven
-named pieces, and that a second place "current state" lives must be retired.
-`HANDOFF.md` is that second place: **`CLAUDE.md` line 3 tells every session to
-read it FIRST**, so when it is stale it does not merely fail to help — it
-actively misleads about what production contains. Its own header says so, having
-already been rewritten once for exactly that.
-
-⚠️ **It was made TRUE on 2026-08-23, not retired.** That was deliberate: it is
-still the first thing sessions are told to read, so leaving it wrong for the
-duration of a migration was the worse option.
-
-**Why this is a migration and not a `git mv`: 18 inbound references, and some are
-in SOURCE.** Repair them in the same commit — the standard is explicit, and a
-retired doc that still answers questions is worse than a deleted one.
-
-| Where | What it references |
-|---|---|
-| `CLAUDE.md:3` | "Read `docs/HANDOFF.md` first" — ⚠️ **the load-bearing one** |
-| `docs/README.md:45` | the map's "Current state / how to pick up" row |
-| `packages/core/src/constants.ts:117,149` · `packages/core/test/core.test.ts:1405` · `packages/db/src/export.ts:6` | ⚠️ **source + a test**, citing *"open question 5"* and the ebook-pipeline section |
-| `docs/access/cloudflare.md:349` · `docs/access/README.md:57` | operational pointers |
-| `docs/info/` — `completeness-wishlist-relations.md:24,536` · `covers-and-series.md:14` · `crowdfunding-and-accessories.md:109,164` · `openlibrary-ids.md:9` · `series-formats-and-audiobooks.md:120,128` | pending-command and open-question pointers |
-
-⚠️ **Do the content move BEFORE the link repair, or the links have nowhere to
-point.** *"Open question 5"* (audiobooks are not an `edition`) is cited by a test
-as settled design — that is `info/decisions.md` content, not handoff content, and
-until it moves the citation cannot be repaired honestly. Same for the
-pending-command pointers in `info/`: those commands were run long ago, so most of
-those lines should simply be deleted rather than re-pointed.
-
-**Order:** durable content out to `info/decisions.md` → the few genuinely open
-items into this file → husk to `archive/` with a dated banner naming what
-replaced it → `grep -rn HANDOFF` across the WHOLE repo until it returns only the
-archive copy and `DONE.md`'s history → last, `CLAUDE.md:3` repointed at
-[`TODO.md`](TODO.md).
+> ✂️ **2026-09-02:** *"Retire `docs/HANDOFF.md` — a competing living doc the
+> standard forbids"* moved WHOLE to [`DONE.md`](DONE.md) — done in one commit:
+> five cited facts to [`info/decisions.md`](info/decisions.md), **31** inbound
+> references repaired (the item's table said 18 and undercounted — it missed
+> `README.md`, two migrations, `ExportPage.tsx`, two `scripts/` headers and
+> `check-clean.mjs`), husk to [`archive/HANDOFF.md`](archive/HANDOFF.md) with a
+> dated banner. `grep -rn HANDOFF` now returns **no live pointer** — only the
+> husk, the two archives, and eight tombstones that say it is retired.
 
 
 > ✂️ **2026-09-02:** *"Format fix — scan-time toggle + GABI confirmation

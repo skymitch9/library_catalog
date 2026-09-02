@@ -10,7 +10,8 @@ inherits.
 > **Status:** live at **https://library-catalog.bgc-worker.workers.dev** —
 > deployed, Google sign-in verified in production, 81 works in the catalog.
 > Phases 0–2 done; phase 3 (ebooks) paused. See
-> [`docs/HANDOFF.md`](docs/HANDOFF.md).
+> [`docs/TODO.md`](docs/TODO.md) for what is active and
+> [`docs/README.md`](docs/README.md) for the map.
 
 ## Quick start
 
@@ -31,7 +32,9 @@ npm run typecheck      # all five workspaces
 > repo honest about what it currently does. **The ebooks it catalogued are still
 > here** — 81 works — and `edition.format` still carries the ebook values, so
 > resuming is additive rather than a migration. The pipeline itself is one
-> `git revert` away; see `docs/HANDOFF.md`.
+> `git revert` away; the instructions are in `docs/DONE.md` under *"The ebook
+> pipeline — paused, and how to bring it back"*, and the standing decision is
+> `docs/info/decisions.md` §5.
 
 ## What is different from the Board Game Catalog
 

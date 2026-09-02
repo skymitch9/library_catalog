@@ -1403,7 +1403,8 @@ describe('edition medium — the shelf a printing lives on', () => {
   });
 
   it('⚠️ has no audio medium, and must not grow one', () => {
-    // HANDOFF.md open question 5, and PLATFORM.md §2.2: audiobooks stay in the
+    // docs/info/decisions.md §1 (the retired handoff's open question 5) and
+    // PLATFORM.md §2.2: audiobooks stay in the
     // sibling catalog and meet this one through work_key, never by merging. A
     // third value here is the first step towards edition.format = 'audiobook'.
     // The series page shows audio as a third chip; it does not store one.

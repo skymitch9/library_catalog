@@ -7,7 +7,7 @@
 -- this repo. Every backfill in `scripts/` reads it directly. **The Worker
 -- cannot.** It is a Cloudflare Worker: no filesystem, no sibling repo, and the
 -- CSV is not an asset it ships. That is not an oversight to be worked around —
--- it is why `docs/HANDOFF.md` records that `alsoInAudio` was deliberately
+-- it is why `docs/info/decisions.md` §2 records that `alsoInAudio` was deliberately
 -- dropped from the scan review screen. A field the Worker cannot answer would
 -- have answered `false` for every book in the house, which is worse than absent.
 --
@@ -21,7 +21,7 @@
 --
 -- ## ⚠️ This is NOT an edition
 --
--- Open question 5 of `docs/HANDOFF.md` asks whether `edition.format` should gain
+-- `docs/info/decisions.md` §1 asks whether `edition.format` should gain
 -- an audiobook value and answers **no**. `PLATFORM.md` §2.2: nothing merges. An
 -- audiobook is not a printing of a work we hold — it is a different object, in a
 -- different catalog, that happens to be the same book. Hence a separate table

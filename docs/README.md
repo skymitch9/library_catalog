@@ -42,7 +42,7 @@ graph TD
 |---|---|
 | **What is active right now** | [`TODO.md`](TODO.md) — its 🧰 Tech debt section is the "later" pile |
 | **Is this a bug or deliberate?** | [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) |
-| **Current state / how to pick up** | [`HANDOFF.md`](HANDOFF.md) |
+| **Current state / how to pick up** | [`TODO.md`](TODO.md) — ⚠️ `HANDOFF.md` was **retired 2026-09-02**; husk in [`archive/`](archive/HANDOFF.md) |
 | **How do I deploy / roll back** | [`access/deploy.md`](access/deploy.md) · [`access/rollback-points.md`](access/rollback-points.md) |
 | **🔴 Rebuild from nothing** | [`access/RECOVERY.md`](access/RECOVERY.md) |
 | **The data model, routing, covers, series** | [`info/README.md`](info/README.md) |

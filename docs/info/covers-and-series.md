@@ -26,8 +26,9 @@
 > filled. Its per-entry sources are in that file, one `source` array each.
 >
 > **Not verified:** none of these backfills has been run against production.
-> ⚠️ This line used to send you to `docs/HANDOFF.md` for "the exact pending
+> ⚠️ This line used to send you to a handoff doc for "the exact pending
 > commands". Those were run long ago — see §0 and §5 for the current ones.
+> (That doc was retired 2026-09-02; husk in [`../archive/HANDOFF.md`](../archive/HANDOFF.md).)
 
 The owner's verdict on 2026-08-10 was *"library looks awful, no covers load, no
 series, no sorting by author"*. All three had the same root cause and it was not

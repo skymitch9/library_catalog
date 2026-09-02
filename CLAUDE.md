@@ -1,7 +1,11 @@
 # library_catalog — working rules
 
-Read `docs/HANDOFF.md` first; it holds current state. This file is only the
-things that will bite you in the first ten minutes.
+Read `docs/README.md` (the map) and then `docs/TODO.md` first; between them
+they hold current state. This file is only the things that will bite you in
+the first ten minutes.
+⚠️ **`docs/HANDOFF.md` is RETIRED** (2026-09-02) — it was a second place
+"current state" lived and it went stale twice. The husk is
+`docs/archive/HANDOFF.md`; do not read it for anything current.
 
 ## Read these before changing anything load-bearing
 

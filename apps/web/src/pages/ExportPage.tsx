@@ -5,8 +5,9 @@ import { describeError } from '../lib/errors.js';
 /**
  * Take the catalog away with you.
  *
- * `docs/HANDOFF.md` has named "D1 is the only copy of this data" as the standing
- * risk since the first deploy, and this screen is the whole answer to it.
+ * `docs/info/decisions.md` §3 names "D1 is the only copy of this data" as the
+ * standing risk, as it has been since the first deploy, and this screen is the
+ * whole answer to it.
  *
  * ## Why a screen and not two links
  *

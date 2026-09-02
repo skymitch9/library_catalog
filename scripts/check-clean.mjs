@@ -42,7 +42,7 @@ console.error(
     'leaving nothing to roll back to. Commit first:',
     '',
     '  git add -A',
-    '  git commit -F <message-file>      # -F, not -m: see docs/HANDOFF.md',
+    '  git commit -F <message-file>      # -F, not -m: docs/info/decisions.md',
     '',
     'Or, if you genuinely mean to deploy an uncommitted tree:',
     '',

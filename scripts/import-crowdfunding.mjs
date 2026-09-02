@@ -27,7 +27,7 @@
  * | **unclassified** | nothing could say what it was. Go and look at the campaign page. |
  * | **no printing** | matched to a book, not to an `edition`. Expected on a first run; see below. |
  *
- * `docs/HANDOFF.md` records the general version of this lesson twice already:
+ * `docs/info/decisions.md` §4 records the general version of this lesson:
  * *"860/860 matched looked perfect"* and the keys it would have written were
  * unusable. **Read the lines, not the totals.**
  *

@@ -5,8 +5,12 @@
 > against the production database** on that date — 116 works, ~300 live calls to
 > openlibrary.org. Nothing here is an estimate.
 >
-> **Not verified:** nothing has been written to production. The run was
-> `--remote` without `--commit`. See `docs/HANDOFF.md` for the pending command.
+> **Not verified:** nothing had been written to production when this was
+> written — the run was `--remote` without `--commit`.
+> ⚠️ **2026-09-02:** the pointer to `docs/HANDOFF.md` "for the pending command"
+> is gone with that file. The command is `npm run backfill:openlibrary-ids --
+> --remote --commit` and it is documented where it is run from,
+> [`../access/README.md`](../access/README.md).
 
 `work.openlibrary_work_id` was **0 of 116**, and that one empty column was the
 named blocker in two places: `migrations/0003_series_completeness.sql` lists

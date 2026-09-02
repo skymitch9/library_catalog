@@ -3,8 +3,9 @@ import { UNKNOWN_AUTHOR } from '@lc/core';
 /**
  * Take the whole catalog away with you.
  *
- * `docs/HANDOFF.md` has said since the first deploy that D1 is the only copy of
- * this data and there is no backup story. This is the backup story: one request,
+ * `docs/info/decisions.md` §3 records, as it has since the first deploy, that
+ * D1 is the only copy of this data and there is no backup story. This is the
+ * backup story: one request,
  * every row of every table that holds a decision, in a shape you could rebuild
  * from.
  *

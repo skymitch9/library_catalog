@@ -130,16 +130,18 @@ catalog to a series called "owned" and silently return nothing.
 `audiobook_catalog/site/catalog.csv` is 1,075 curated rows on disk beside this
 repo. Every script in `scripts/` reads it directly. **A Cloudflare Worker
 cannot** — no filesystem, no sibling repo, and the CSV is not a shipped asset.
-`HANDOFF.md` records that an `alsoInAudio` flag was dropped from the scan screen
-for exactly this: it would have answered `false` for every book in the house.
+[`decisions.md`](decisions.md) §2 records that an `alsoInAudio` flag was dropped
+from the scan screen for exactly this: it would have answered `false` for every
+book in the house.
 
 `audiobook_holding` is that flag, arrived at from the other side. A script does
 the reading, the project's ONE matcher decides, the verdict lands in a table the
 Worker can read. **It is a cache of another catalog's rows, never a source of
 truth**; deleting every row loses nothing that one script run cannot rebuild.
 
-⚠️ It is deliberately **not** an `edition`. Open question 5 of `HANDOFF.md` and
-`PLATFORM.md` §2.2 both say nothing merges. Consequences that are the point, not
+⚠️ It is deliberately **not** an `edition`. [`decisions.md`](decisions.md) §1
+(the retired handoff's open question 5) and `PLATFORM.md` §2.2 both say nothing
+merges. Consequences that are the point, not
 side effects: `copy` cannot reference one, so nothing can lend or price an
 audiobook; and the collection's format filter cannot reach it, so "any format"
 keeps meaning "any format of a book in *this* catalog".

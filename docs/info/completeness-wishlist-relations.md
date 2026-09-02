@@ -20,9 +20,12 @@
 > hand-added test rows) and against `audiobook_catalog/site/catalog.csv`
 > (1,075 rows). Nothing here is an estimate.
 >
-> **Not verified:** none of this has run against production. Migrations 0003 and
-> 0004 are applied **locally only**. See `docs/HANDOFF.md` for the pending
-> commands.
+> **Not verified:** none of this had run against production when this file was
+> written, and migrations 0003 and 0004 were applied **locally only**.
+> ⚠️ **2026-09-02:** the line that sent you to `docs/HANDOFF.md` "for the pending
+> commands" is gone with that file — those commands were run long ago and every
+> migration answers *"No migrations to apply!"* on both instances. Re-measure
+> before trusting any figure below; it has an age.
 
 Three features built on `feature/completeness-wishlist-relations`, bringing this
 app closer to the Board Game Catalog's feature set. They share one theme, which
@@ -533,7 +536,7 @@ API answered with pre-fix results and looked like a logic bug. No backticks in
 SQL comments.
 
 **The assets watcher dies on OneDrive, and the failure has two faces.**
-`HANDOFF.md` records `GET /` returning 404. It also fails a subtler way: the
+The loud face is `GET /` returning **404**. It also fails a subtler way: the
 worker keeps 200ing but serves **index.html for every hashed asset**, so
 `/assets/index-*.js` comes back as 1.2kB of HTML and the page renders a blank
 body with no console error at all. Check
