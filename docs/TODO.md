@@ -32,6 +32,28 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
+## ☐ CROSS-REPO: the LIBRARY half of the owner's 2026-09-02 ~14:00 batch is DONE — the platform file still says otherwise
+
+⚠️ **Recorded here because `catalog-platform/docs/TODO.md` was read-only to the
+session that did the work**, and a finished item that only one repo knows about
+is exactly the silent staleness the docs standard exists to kill.
+
+That file's section **"OWNER DECISION BATCH 2026-09-02 ~14:00"**, item 1
+(*LIBRARY follow-up agent*), lists three things. **All three landed 2026-09-02**
+and each has its own entry in [`DONE.md`](DONE.md):
+
+| | Item | Where it landed |
+|---|---|---|
+| (a) | Harper Voyager publisher batch + the B&N-import sweep | committed to production D1; 7 rows corrected, 2 true B&N imprints left alone |
+| (b) | Work-page merge — "On your shelf" becomes THE list | `783526b`, deployed both instances |
+| (c) | Per-edition covers | `614759f`, deployed both instances |
+
+☐ **Someone with write access to that tree ticks item 1** and moves it whole per
+the standard. Items 2–4 of that batch (the AUDIOBOOK agent, the paused
+other-computer work, Emberdark) are **untouched** and still open — this is only
+the library half.
+
+
 ## ☐ Billing phase 3 landed INERT — two things remain (2026-09-02)
 
 The build is on both instances (`e7b3f6b`, versions `77a9f67c` / `37b83f8b`) and
