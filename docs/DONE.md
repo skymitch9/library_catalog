@@ -80,11 +80,18 @@ typecheck clean · vite build clean · **2210 tests pass / 0 fail**. The
 per printing.
 
 ⚠️ **NOT verified:** no cover was actually set on a real printing — the edit box
-sits behind estate SSO and no session was driven, and this Worker still has **no
-`COVERS` bucket bound**, so the upload door answers 501 by design and the UI
-hides it (`docs/access/cloudflare.md` §7.1 has the commands). The **link** door
-needs no bucket and is the one that works today; it too was not exercised
-against a live URL from a browser.
+sits behind estate SSO and no session was driven, so neither door was exercised
+from a browser.
+
+⚠️ **And a stale fact was caught on the way, which is why this paragraph reads
+differently from its first draft.** Both `covers.ts` and
+[`info/covers-and-series.md`](info/covers-and-series.md) said *"there is no
+`COVERS` binding on this Worker"* and this entry repeated it. **It is false.**
+Measured 2026-09-02 against `apps/worker/wrangler.toml` and the deploy that
+applied it: **main binds `library-covers`, padhard binds `library-2nd-covers`**,
+and the friend deploy printed `env.COVERS (library-2nd-covers)` in its own
+binding list. Both stale claims are corrected in place. **The upload door works
+on both instances**; the 501 path is the fallback, not the normal state.
 
 
 ## ✅ 2026-09-02 — "On your shelf" becomes THE list: per-format sections, and the audiobook link stops painting twice

@@ -311,13 +311,20 @@ export const coverRoutes = new Hono<AppBindings>()
   /**
    * Upload a file and serve it ourselves.
    *
-   * ## ⚠️ This route is complete and inert
+   * ## ⚠️ CORRECTED 2026-09-02 — this route is LIVE, not inert
    *
-   * There is no `COVERS` binding on this Worker, deliberately left for the owner
-   * to add — see the long note in `env.ts` for why a covers bucket is not the
-   * photo bucket that must never exist. Until it is added this answers **501
-   * with a sentence naming what is missing**, and the UI hides the control. It
-   * does not degrade into storing bytes in D1.
+   * This block said *"there is no `COVERS` binding on this Worker"* and had said
+   * so since it was written. **Both instances bind one**, measured 2026-09-02
+   * against `apps/worker/wrangler.toml` and the deploy that applied it:
+   * `library-covers` on main, `library-2nd-covers` on padhard (the friend
+   * deploy's own binding list printed `env.COVERS (library-2nd-covers)`).
+   *
+   * The 501 path below is still real and still correct — it is what a Worker
+   * with the binding missing answers, with a sentence naming what is absent, and
+   * the UI hides the control rather than offering one that can only fail. It is
+   * a fallback now, not the normal state. See the long note in `env.ts` for why a
+   * covers bucket is not the photo bucket that must never exist. It does not
+   * degrade into storing bytes in D1 either way.
    *
    * ## What is checked, and in what order
    *

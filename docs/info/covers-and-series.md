@@ -466,11 +466,17 @@ browser declared. Both share `MIN_COVER_BYTES`, which now lives in `@lc/core` so
 the 43-byte Open Library placeholder cannot be refused down one path and stored
 down the other.
 
-⚠️ **The upload route is complete and inert.** There is no `COVERS` binding on
-this Worker; it answers 501 with a sentence naming what is missing, and the UI
-hides the control. `docs/access/cloudflare.md` §7.1 has the exact commands — and
-§7 explains why a *covers* bucket is not the *scan-photo* bucket that must never
-exist.
+⚠️ **CORRECTED 2026-09-02 — the upload route is LIVE, not inert.** This
+paragraph said *"there is no `COVERS` binding on this Worker"* and that has not
+been true for some time: **both instances bind a bucket**, measured 2026-09-02
+against `apps/worker/wrangler.toml` and the deploy that applied it —
+`library-covers` on main, `library-2nd-covers` on padhard (whose deploy printed
+`env.COVERS (library-2nd-covers)` in its own binding list). The 501-with-a-
+sentence path is still real and still what a Worker missing the binding answers,
+with the UI hiding the control rather than offering one that can only fail — it
+is the fallback now, not the normal state. `docs/access/cloudflare.md` §7.1 has
+the commands, and §7 explains why a *covers* bucket is not the *scan-photo*
+bucket that must never exist.
 
 ⚠️ **An uploaded object's name hashes the FILE CONTENTS**, deliberately the
 opposite of §2's committed `apps/web/public/covers/` names, which hash the work
