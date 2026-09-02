@@ -1461,6 +1461,47 @@ export const api = {
     return (await res.json()) as { work: WorkSummary; key: string; bytes: number };
   },
 
+  /* -- a PRINTING's own cover (owner 2026-09-02) --------------------------- */
+
+  /**
+   * *"we should also add being able to set the covers for the alternate editions
+   * too."* — the same three doors as a work's cover, through the same checks and
+   * the same bucket. ⚠️ There is deliberately **no** `setEditionCoverStatus`: the
+   * stand-in mark answers a WORK-level question (five books sharing one marketing
+   * photograph) and nothing counts editions on a "cover needed" list.
+   */
+  setEditionCover: (editionId: number, url: string) =>
+    request<{ edition: unknown; bytes: number }>(`/api/editions/${editionId}/cover`, {
+      method: 'PUT',
+      body: JSON.stringify({ url }),
+    }),
+
+  /** Clears the column; the row falls back to the work cover. The R2 object stays. */
+  removeEditionCover: (editionId: number) =>
+    request<{ edition: unknown }>(`/api/editions/${editionId}/cover`, { method: 'DELETE' }),
+
+  /** ⚠️ Builds its own fetch, for the multipart-boundary reason `uploadCover` states. */
+  uploadEditionCover: async (editionId: number, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    const token = await getIdToken();
+    const res = await fetch(`/api/editions/${editionId}/cover`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as { error?: string; detail?: unknown } | null;
+      throw new ApiError(
+        res.status,
+        body?.detail,
+        typeof body?.detail === 'string' ? body.detail : (body?.error ?? `HTTP ${res.status}`),
+        body,
+      );
+    }
+    return (await res.json()) as { edition: unknown; key: string; bytes: number };
+  },
+
   /* -- watches ------------------------------------------------------------ */
 
   /** Everything still open, across the catalog. */

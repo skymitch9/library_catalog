@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
+  MAX_COVER_BYTES,
   EDITION_FORMATS,
   EDITION_KINDS,
   PHYSICAL_FORMATS,
@@ -8,6 +9,7 @@ import {
   stripNoBarcodeNote,
 } from '@lc/core';
 import { api } from '../api.js';
+import { Cover } from './Cover.js';
 import { describeError } from '../lib/errors.js';
 import { editionKindLabel, formatLabel } from '../lib/formats.js';
 
@@ -126,6 +128,156 @@ function ConfirmButton({
   );
 }
 
+/**
+ * One printing's own jacket — set it, replace it, take it off.
+ *
+ * > **Owner, 2026-09-02:** *"we should also add being able to set the covers for
+ * > the alternate editions too."*
+ *
+ * ⚠️ **The same pipeline as a work's cover, not a second one.** A link is
+ * FETCHED by the Worker before the column moves (`verifyCoverUrl`); a file is
+ * checked against its own magic bytes and lands in the same R2 bucket under the
+ * same content-addressed key. `docs/info/covers-and-series.md` gives the reason
+ * the checking is not optional: **nothing in this system ever revisits a cover
+ * column**, so a bad value is permanent in a way a blank is not.
+ *
+ * ⚠️ **No "this is a stand-in" toggle here, deliberately.** That mark answers a
+ * WORK-level question — five books sharing one marketing photograph — and
+ * nothing counts editions on a "cover needed" list. A printing's cover is its
+ * jacket or it is absent, and absent falls back to the work's cover everywhere
+ * it renders. Inventing a state nothing consumes is how a column starts lying.
+ */
+function EditionCover({
+  edition,
+  storage,
+  onChanged,
+  onClose,
+}: {
+  edition: EditionView;
+  storage: { enabled: boolean; reason?: string } | null;
+  onChanged: () => void;
+  onClose: () => void;
+}) {
+  const [url, setUrl] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<string | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  async function run(what: () => Promise<unknown>, done: string) {
+    setBusy(true);
+    setSaid(null);
+    try {
+      await what();
+      setSaid(done);
+      onChanged();
+    } catch (err) {
+      setSaid(describeError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const link = () => {
+    const trimmed = url.trim();
+    if (!trimmed) {
+      setSaid('Paste a link to the image file itself — not to the page it is on.');
+      return;
+    }
+    return run(async () => {
+      await api.setEditionCover(edition.id, trimmed);
+      setUrl('');
+      onClose();
+    }, 'Cover set for this printing.');
+  };
+
+  const upload = (file: File) => {
+    // Refused here as well as on the server, so a phone on a slow connection is
+    // not asked to send six megabytes before being told no.
+    if (file.size > MAX_COVER_BYTES) {
+      setSaid(
+        `${(file.size / (1024 * 1024)).toFixed(1)}MB is over the ${MAX_COVER_BYTES / (1024 * 1024)}MB limit. Crop or shrink it first.`,
+      );
+      return;
+    }
+    return run(async () => {
+      await api.uploadEditionCover(edition.id, file);
+      onClose();
+    }, 'Cover uploaded for this printing.');
+  };
+
+  return (
+    <div className="stack edition-cover">
+      <p className="muted small">
+        {edition.cover_url
+          ? 'This printing has its own cover. Replacing it changes only this printing.'
+          : 'This printing has no cover of its own, so it shows the book’s cover. Set one to tell it apart.'}
+      </p>
+      <label className="field">
+        <span className="field__label">Link to an image</span>
+        <input
+          type="url"
+          inputMode="url"
+          value={url}
+          onChange={(ev) => setUrl(ev.target.value)}
+          placeholder="https://…/cover.jpg"
+          disabled={busy}
+        />
+      </label>
+      <p className="muted small">
+        The link to the image <b>file</b>, not the page it sits on. It is fetched and checked before
+        anything is saved, so a dead link is refused rather than stored.
+      </p>
+      <div className="row-tight">
+        <button className="primary" onClick={link} disabled={busy}>
+          {busy ? 'Checking…' : 'Use this link'}
+        </button>
+        {edition.cover_url && (
+          <button
+            className="chip danger"
+            disabled={busy}
+            onClick={() => run(() => api.removeEditionCover(edition.id), 'Cover removed from this printing.')}
+          >
+            Remove
+          </button>
+        )}
+      </div>
+
+      {/* ⚠️ Offered only when there is somewhere to put the bytes. A button that
+          can only 501 is worse than no button — the same call `CoverPanel`
+          makes, off the same one `cover-storage` read. */}
+      {storage?.enabled ? (
+        <>
+          <input
+            ref={fileInput}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+            disabled={busy}
+            onChange={(ev) => {
+              const file = ev.target.files?.[0];
+              // Cleared so choosing the same file twice fires again — a retry
+              // after a failure otherwise does nothing at all.
+              ev.target.value = '';
+              if (file) void upload(file);
+            }}
+          />
+          <p className="muted small">
+            JPEG, PNG, WebP, GIF or AVIF, up to {MAX_COVER_BYTES / (1024 * 1024)}MB. The file is
+            checked by its own contents, not by what it claims to be.
+          </p>
+        </>
+      ) : (
+        storage && (
+          <p className="muted small">
+            {storage.reason ?? 'Uploading a file is not switched on for this deployment. A link works.'}
+          </p>
+        )
+      )}
+
+      {said && <p className="muted small">{said}</p>}
+    </div>
+  );
+}
+
 export function Editions({
   workId,
   editions,
@@ -141,6 +293,24 @@ export function Editions({
   const [addingNew, setAddingNew] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** Which row's cover control is open. One at a time — they are a drawer, not a column. */
+  const [coverFor, setCoverFor] = useState<number | null>(null);
+  /**
+   * Whether this deployment can accept an uploaded file at all.
+   *
+   * ⚠️ Asked ONCE for the whole list, not once per printing: the answer is a
+   * property of the Worker, identical for every row, and a book with six
+   * printings would otherwise make six identical requests. Only a caller who
+   * could act on the answer asks (`canEdit`), the same rule `CoverPanel` follows.
+   */
+  const [storage, setStorage] = useState<{ enabled: boolean; reason?: string } | null>(null);
+  useEffect(() => {
+    if (!canEdit) return;
+    api
+      .coverStorage()
+      .then((s) => setStorage(s))
+      .catch(() => setStorage({ enabled: false }));
+  }, [canEdit]);
 
   async function remove(id: number) {
     setBusyId(id);
@@ -179,6 +349,13 @@ export function Editions({
             ) : (
               <li key={e.id}>
                 <div className="copy">
+                  {/* ⚠️ Only when the PRINTING has one of its own. The work's
+                      cover is deliberately NOT borrowed here: this list exists
+                      to tell two printings apart, and giving them both the same
+                      jacket would be the one thing it must not do. */}
+                  {e.cover_url && (
+                    <Cover src={e.cover_url} title={formatLabel(e.format)} size="row" />
+                  )}
                   <div className="copy__text">
                     {/* ⚠️ The canonical kind and the vendor's own words, side by
                         side and both shown. The owner asked for exactly this:
@@ -230,6 +407,21 @@ export function Editions({
                       >
                         Edit
                       </button>
+                      {/* Owner 2026-09-02: "we should also add being able to set
+                          the covers for the alternate editions too." Its own
+                          control rather than a field in the edit form, because
+                          the value is VERIFIED server-side and an upload is a
+                          multipart request — neither fits a form that saves
+                          fifteen columns in one PATCH. Same call `CoverPanel`
+                          makes at the work level. */}
+                      <button
+                        className="chip"
+                        disabled={busyId === e.id}
+                        aria-expanded={coverFor === e.id}
+                        onClick={() => setCoverFor(coverFor === e.id ? null : e.id)}
+                      >
+                        {coverFor === e.id ? 'Close cover' : e.cover_url ? 'Cover ✓' : 'Cover'}
+                      </button>
                       <ConfirmButton
                         label="Delete"
                         confirmLabel={busyId === e.id ? 'Deleting…' : 'Really delete?'}
@@ -239,6 +431,14 @@ export function Editions({
                     </div>
                   )}
                 </div>
+                {canEdit && coverFor === e.id && (
+                  <EditionCover
+                    edition={e}
+                    storage={storage}
+                    onChanged={onChanged}
+                    onClose={() => setCoverFor(null)}
+                  />
+                )}
               </li>
             ),
           )}

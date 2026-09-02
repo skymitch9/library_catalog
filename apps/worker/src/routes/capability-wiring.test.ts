@@ -257,6 +257,13 @@ const WIRED: Wired[] = [
   { routes: coverRoutes, method: 'PATCH', path: '/works/1/cover-status', capability: 'editCatalog' },
   { routes: coverRoutes, method: 'POST', path: '/works/1/cover', capability: 'editCatalog' },
   { routes: coverRoutes, method: 'DELETE', path: '/works/1/cover', capability: 'editCatalog' },
+  // A PRINTING's own cover (owner 2026-09-02: "set the covers for the alternate
+  // editions too"). The same gate as the work-level three: setting a cover is a
+  // catalog edit, and none of these spends money — so `editCatalog`, not
+  // `runResearch`.
+  { routes: coverRoutes, method: 'PUT', path: '/editions/1/cover', capability: 'editCatalog' },
+  { routes: coverRoutes, method: 'POST', path: '/editions/1/cover', capability: 'editCatalog' },
+  { routes: coverRoutes, method: 'DELETE', path: '/editions/1/cover', capability: 'editCatalog' },
 
   // ── crowdfunding.ts (/api/crowdfunding) — blanket `.use('*')`, READS INCLUDED ──
   // ⚠️ The blanket is the whole gate here: no route below carries its own

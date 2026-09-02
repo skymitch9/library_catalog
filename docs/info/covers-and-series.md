@@ -480,6 +480,51 @@ a different URL.
 
 ---
 
+## 2.6 A PRINTING's own cover — `edition.cover_url` (2026-09-02)
+
+> **Owner, 2026-09-02:** *"we should also add being able to set the covers for
+> the alternate editions too."*
+
+⚠️ **This needed no migration.** `edition.cover_url` has existed since
+`migrations/0001_init.sql` (line 214) and `EDITION_COLS` has always selected it.
+What was missing was any way to **set** it and anywhere that **read** it.
+Measured against the schema, not assumed.
+
+| Door | Route | Needs R2 |
+|---|---|---|
+| Link an image somebody else hosts | `PUT /api/editions/:id/cover` | no |
+| Upload one we serve | `POST /api/editions/:id/cover` | **yes** |
+| Take it off | `DELETE /api/editions/:id/cover` | no |
+
+⚠️ **The same pipeline as §2.5, not a second one** — the same `verifyCoverUrl`
+fetch before the column moves, the same `checkCoverUpload` magic-byte read, the
+same `MIN_COVER_BYTES` floor, the same bucket, the same content-addressed
+`coverObjectKey`. The object key carries the work key **and the edition id**, so
+a bucket listing tells one printing's jacket from another's.
+
+**Where it shows.** The **Editions** list (in the edit box's *Editions & copies*
+tab) puts the jacket on its row; the work page's shelf paints it on that
+printing's card. ⚠️ **Absent, the WORK cover is used and the printing's own is
+left null** — the work cover is never copied down onto a printing. A borrowed
+jacket on a specific printing is the same class of fabrication as a borrowed
+edition name.
+
+**Two things deliberately NOT built:**
+
+- ⚠️ **No `cover_status` for an edition.** The stand-in mark answers a
+  work-level question (§2.5 — five books sharing one marketing photograph), and
+  nothing counts editions on a "cover needed" list. A printing's cover is its
+  jacket or it is absent; inventing a third state nothing consumes is how a
+  column starts lying.
+- ⚠️ **`PATCH /api/editions/:id` still accepts `coverUrl` UNVERIFIED.** It always
+  has (`updateEditionSchema` is a partial of the create schema) and it does not
+  fetch the URL first. The UI does not use it for covers, but an importer can.
+  Closing it is an enforcement change on a live write path with importers behind
+  it — shadow-first, never as a side effect of a feature — so it is named here
+  rather than quietly tightened.
+
+---
+
 ## 3. Series — `npm run backfill:series`
 
 | Rung | Source | Works |

@@ -6,7 +6,7 @@ import {
   setCoverSchema,
   setCoverStatusSchema,
 } from '@lc/core';
-import { getWork, listCoverCandidates, updateWork } from '@lc/db';
+import { getEdition, getWork, listCoverCandidates, updateEdition, updateWork } from '@lc/db';
 import { verifyCoverUrl } from '@lc/isbn';
 import { COVER_CENTS_EACH, findCover } from '@lc/research';
 import type { AppBindings, Env } from '../env.js';
@@ -23,6 +23,12 @@ import { BILLING_FEATURES, billingRefusal } from '../lib/billing-gate.js';
  * | `PUT /works/:id/cover` | point at an image somebody else hosts | no |
  * | `PATCH /works/:id/cover-status` | say the cover already there is a stand-in | no |
  * | `POST /works/:id/cover` | upload a file we then serve | **yes** |
+ *
+ * Since 2026-09-02 an **edition** has the same three doors (`PUT` / `POST` /
+ * `DELETE /editions/:id/cover`), through the same checks and the same bucket —
+ * owner: *"we should also add being able to set the covers for the alternate
+ * editions too."* See the block above those routes for what is deliberately
+ * different: no `cover_status`.
  *
  * ## ⚠️ Nothing is stored unverified, down any of the three paths
  *
@@ -410,4 +416,160 @@ export const coverRoutes = new Hono<AppBindings>()
     const work = await updateWork(c.env.DB, id, { coverUrl: null, coverStatus: null }, { userId: c.get('user').id, how: 'human' });
     if (!work) return c.json({ error: 'not_found' }, 404);
     return c.json({ work });
+  })
+
+  /**
+   * ## A PRINTING's own cover — owner 2026-09-02
+   *
+   * > "we should also add being able to set the covers for the alternate
+   * > editions too."
+   *
+   * The same three doors as a work's cover, deliberately: **link** an image
+   * somebody else hosts (`PUT`), **upload** one we serve (`POST`), **take it
+   * off** (`DELETE`). ⚠️ There is **no second image pipeline** — the same
+   * `verifyCoverUrl`, the same `checkCoverUpload` magic-byte read, the same
+   * `MIN_COVER_BYTES` floor, the same `COVERS` bucket and the same
+   * content-addressed `coverObjectKey`. Anything else would be a second set of
+   * rules for the same class of value.
+   *
+   * ## ⚠️ No `cover_status` here, and that is not an omission
+   *
+   * `cover_status` answers *"is the image on this book the right one?"*, and its
+   * whole reason for existing is the five Percy Jackson works that share one
+   * marketing photograph — a WORK-level problem. A printing's cover is either
+   * that printing's jacket or it is absent; there is no stand-in case, no
+   * "cover needed" list counting editions, and `coverNeeded` reads the work.
+   * Adding the column here would be inventing a state nothing consumes.
+   *
+   * ## ⚠️ The unverified door that still exists, said out loud
+   *
+   * `PATCH /editions/:id` accepts `coverUrl` (it always has — `updateEditionSchema`
+   * is a partial of the create schema) and does **not** fetch the URL first. The
+   * UI does not use it for covers and these routes do the checking, but an
+   * importer can still write an unverified value. Closing it is an enforcement
+   * change on a live write path with importers behind it, which this estate rolls
+   * out shadow-first and never as a side effect of a feature — so it is named
+   * here rather than quietly tightened.
+   */
+  .put('/editions/:id/cover', requireCapability('editCatalog'), async (c) => {
+    const id = Number(c.req.param('id'));
+    if (!Number.isInteger(id) || id <= 0) return c.json({ error: 'bad_request' }, 400);
+
+    const parsed = setCoverSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues }, 400);
+
+    const edition = await getEdition(c.env.DB, id);
+    if (!edition) return c.json({ error: 'not_found' }, 404);
+
+    const check = await verifyCoverUrl(parsed.data.url, {
+      userAgent: 'library_catalog (private household catalog)',
+    });
+    if (!check.ok) {
+      return c.json(
+        {
+          error: 'not_an_image',
+          detail: `That link did not give back a usable image — ${check.reason}. Nothing was saved.`,
+        },
+        422,
+      );
+    }
+
+    const updated = await updateEdition(
+      c.env.DB,
+      id,
+      { coverUrl: parsed.data.url },
+      { userId: c.get('user').id, how: 'human' },
+    );
+    return c.json({ edition: updated, bytes: check.bytes });
+  })
+
+  /**
+   * Upload a printing's jacket and serve it ourselves.
+   *
+   * ⚠️ The object key carries the WORK key **and the edition id**, so a bucket
+   * listing can tell one printing's jacket from another's and from the work's.
+   * The digest still names the content, so the immutable cache header is as safe
+   * here as it is for a work cover.
+   */
+  .post('/editions/:id/cover', requireCapability('editCatalog'), async (c) => {
+    const id = Number(c.req.param('id'));
+    if (!Number.isInteger(id) || id <= 0) return c.json({ error: 'bad_request' }, 400);
+
+    const store = storage(c.env);
+    if (!store) return c.json({ error: 'cover_storage_unconfigured', detail: NO_STORAGE }, 501);
+
+    const edition = await getEdition(c.env.DB, id);
+    if (!edition) return c.json({ error: 'not_found' }, 404);
+    const work = await getWork(c.env.DB, edition.work_id);
+    if (!work) return c.json({ error: 'not_found' }, 404);
+
+    const declaredLength = Number(c.req.header('content-length') ?? '0');
+    if (declaredLength > MAX_COVER_BYTES * 1.1) {
+      return c.json(
+        { error: 'too_large', detail: `That file is larger than the ${MAX_COVER_BYTES / (1024 * 1024)}MB limit.` },
+        413,
+      );
+    }
+
+    let file: unknown;
+    try {
+      const form = await c.req.formData();
+      file = form.get('file');
+    } catch {
+      return c.json({ error: 'bad_request', detail: 'Expected a multipart form with a `file` part.' }, 400);
+    }
+    if (!(file instanceof File)) {
+      return c.json({ error: 'bad_request', detail: 'No file was attached.' }, 400);
+    }
+
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const check = checkCoverUpload(bytes, file.type);
+    if (!check.ok || !check.contentType) {
+      return c.json({ error: 'not_an_image', detail: check.reason }, 422);
+    }
+
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+    const key = coverObjectKey(`${work.workKey} edition ${id}`, hex, check.contentType);
+
+    await store.bucket.put(key, bytes, {
+      httpMetadata: {
+        contentType: check.contentType,
+        cacheControl: 'public, max-age=31536000, immutable',
+      },
+    });
+
+    const updated = await updateEdition(
+      c.env.DB,
+      id,
+      { coverUrl: `${store.baseUrl}/${key}` },
+      { userId: c.get('user').id, how: 'human' },
+    );
+
+    return c.json({ edition: updated, key, bytes: check.bytes }, 201);
+  })
+
+  /**
+   * Take a printing's cover off.
+   *
+   * ⚠️ Clears the column and leaves the R2 object, exactly as the work-level
+   * DELETE does and for the same two reasons: the previous cover is the cheapest
+   * undo there is, and the objects are content-addressed, so two rows that
+   * legitimately share an image do not have one delete it from under the other.
+   *
+   * The row then falls back to the WORK's cover everywhere it renders — an
+   * absence, which is the honest state, not a claim that this printing looks
+   * like the work's jacket.
+   */
+  .delete('/editions/:id/cover', requireCapability('editCatalog'), async (c) => {
+    const id = Number(c.req.param('id'));
+    if (!Number.isInteger(id) || id <= 0) return c.json({ error: 'bad_request' }, 400);
+    const edition = await updateEdition(
+      c.env.DB,
+      id,
+      { coverUrl: null },
+      { userId: c.get('user').id, how: 'human' },
+    );
+    if (!edition) return c.json({ error: 'not_found' }, 404);
+    return c.json({ edition });
   });

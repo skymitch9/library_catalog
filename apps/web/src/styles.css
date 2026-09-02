@@ -1751,6 +1751,14 @@ ol.ladder > li::before {
 .copy__text { display: flex; flex-direction: column; flex: 1; min-width: 12rem; }
 .copy__text strong { font-weight: 600; }
 .copy__actions { display: flex; align-items: flex-end; gap: 0.4rem; }
+/* Setting a PRINTING's own cover (owner 2026-09-02). A drawer under the row it
+   belongs to, indented and ruled so it reads as part of that printing rather
+   than as a new section — one is open at a time. */
+.edition-cover {
+  margin: 0.5rem 0 0.75rem 0.75rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--et-panel-border);
+}
 .copy__actions select { min-height: 36px; max-width: 10rem; }
 
 /*

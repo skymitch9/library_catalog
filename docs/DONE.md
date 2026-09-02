@@ -18,6 +18,75 @@
 > were extracted from this same history.
 
 
+## ✅ 2026-09-02 — a PRINTING can have its own cover, and it needed no migration
+
+> **Owner, 2026-09-02 ~14:00, verbatim:** *"we should also add being able to set
+> the covers for the alternate editions too."*
+
+Review: **<https://library.heygabi.ai/work/220>** → **✎ Edit this book** →
+**Editions & copies** → any printing's new **Cover** button. Set one on the
+*"Signed Leatherbound (two-volume set)"* row and the shelf card above it wears
+that jacket while the other printing keeps the book's.
+
+### ⚠️ No migration — measured, not assumed
+
+`edition.cover_url` has existed since `migrations/0001_init.sql` **line 214**,
+and `EDITION_COLS` in `packages/db/src/editions.ts` has always selected it.
+`updateEdition` already diffs it into `change_log`. What was missing was any way
+to **set** it and anywhere that **read** it — so this ask is additive code over
+storage that was already there, on both instances, with nothing to apply.
+
+### The three doors, and they are the SAME pipeline
+
+| Door | Route | Needs R2 |
+|---|---|---|
+| Link an image somebody else hosts | `PUT /api/editions/:id/cover` | no |
+| Upload one we serve | `POST /api/editions/:id/cover` | **yes** |
+| Take it off | `DELETE /api/editions/:id/cover` | no |
+
+⚠️ **Not a second image pipeline** — the same `verifyCoverUrl` fetch before the
+column moves, the same `checkCoverUpload` magic-byte read, the same
+`MIN_COVER_BYTES` floor, the same `COVERS` bucket, the same content-addressed
+`coverObjectKey`. The key carries the work key **and the edition id**, so a
+bucket listing tells one printing's jacket from another's. All three are
+`editCatalog` and pinned in `capability-wiring.test.ts`.
+
+### Display: shown where it exists, absent where it does not
+
+The **Editions** list puts the jacket on its row, and the work page's shelf
+paints it on that printing's card (`ShelfRow.coverUrl`). ⚠️ **Absent, the row
+falls back to the emoji thumb / the work cover and the column stays null** — the
+work's art is never copied down onto a printing. A borrowed jacket on a specific
+printing is the same class of fabrication as the borrowed edition name the
+2026-09-02 shelf change removed.
+
+### Two things deliberately NOT built
+
+- ⚠️ **No `cover_status` for an edition.** The stand-in mark answers a WORK-level
+  question — five books sharing one marketing photograph — and nothing counts
+  editions on a "cover needed" list. Inventing a state nothing consumes is how a
+  column starts lying.
+- ⚠️ **`PATCH /api/editions/:id` still accepts `coverUrl` UNVERIFIED**, as it
+  always has. The UI does not use it for covers, but an importer can. Closing it
+  is an enforcement change on a live write path with importers behind it —
+  shadow-first, never as a side effect of a feature — so it is **named** in
+  [`info/covers-and-series.md`](info/covers-and-series.md) §2.6 and in the route
+  header rather than quietly tightened.
+
+### Verified
+
+typecheck clean · vite build clean · **2210 tests pass / 0 fail**. The
+`cover-storage` capability read is asked **once for the whole list**, not once
+per printing.
+
+⚠️ **NOT verified:** no cover was actually set on a real printing — the edit box
+sits behind estate SSO and no session was driven, and this Worker still has **no
+`COVERS` bucket bound**, so the upload door answers 501 by design and the UI
+hides it (`docs/access/cloudflare.md` §7.1 has the commands). The **link** door
+needs no bucket and is the one that works today; it too was not exercised
+against a live URL from a browser.
+
+
 ## ✅ 2026-09-02 — "On your shelf" becomes THE list: per-format sections, and the audiobook link stops painting twice
 
 > **Owner, 2026-09-02 ~14:00, verbatim:** *"on your shelf should be the main with
