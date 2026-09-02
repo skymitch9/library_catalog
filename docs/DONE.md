@@ -18,6 +18,259 @@
 > were extracted from this same history.
 
 
+## 2026-09-02 — The GABI PANEL gets the full Discord personality — one GABI, two doors
+
+Shipped `0a736d8`. Owner decision, verbatim:
+
+> *"library panel should match gabi in discord no matter what. same experience
+> different entry point"*
+
+Her Discord surface gained the `full` edge posture on 2026-09-01
+(`catalog-platform/apps/discord-worker/src/gabi-prompt.ts`, `GABI_EDGE_FULL`);
+the panel did not have it, so **one person met two different GABIs depending on
+which door they came through** — the estate's whole "one GABI" claim failing at
+the seam. The edge licence, the make-it-personal section, the NEVER SOUND
+PREWRITTEN rules and the floor are now in the panel's own prompt.
+
+### ⚠️ Where the canonical prompt lives, now stated in both files
+
+`packages/research/src/gabi.ts` → `GABI_SYSTEM` **is** the estate's canonical
+GABI prompt, and catalog-platform's copy has always said so in its header
+(*"the canonical system prompt lives in library_catalog … option (a) — copied
+text with a comment pointing at the canonical source"*) while this side said
+nothing. It says it now, so a session editing the personality here knows there
+is a second file to match. **There is still no sync script** and this change did
+not add one; that mechanism is unchanged and is recorded in the Discord file.
+
+### ⚠️ Three things were ADAPTED, and each had to be
+
+| Discord says | Here, because |
+|---|---|
+| *"the ceiling in your voice note is unchanged"* | **There is no voice note here.** `personality.ts`'s eleven tropes and their PG-13 register clause are a Discord-only mechanism, so the ceiling is stated **in full inside the block**. ⚠️ A straight port would have shipped a licence pointing at a limit that does not exist on this surface, and deleting the sentence instead would have shipped a licence with **no** limit |
+| *"every reply opened `Hey @name —`"* | The panel has no mentions. The **measurement is kept** — it is the evidence for the rule — and the rule is written in terms of openers |
+| *"in a channel … never quote it where the rest of the household can read it"* | The panel is one-to-one, so nothing said there is public. What **is** public is what she WRITES: a description, a note, a change-log line. The privacy rule is re-aimed at the writes, which is the only public surface this door has |
+
+**One thing was ADDED, and this surface requires it.** Discord's GABI cannot
+write, so its floor never had to say what a register does to a confirm lane.
+This one can, so the floor says it outright: *"THE REGISTER NEVER TOUCHES A
+WRITE … a confident joke is not an approval."*
+
+### ⚠️ The dial defaults to `full`, and its parse INVERTS Discord's
+
+Discord's `edgeMode` fails **closed** — anything that is not exactly `full`
+reads as `standard`. `GABI_EDGE` here fails **open**: only the exact string
+`"standard"` turns her down, and absent, empty or a typo all read as `full`.
+
+That is the owner's *"no matter what"*, and it is the one deliberate divergence
+between the two files. A missing var, a fresh instance or a fat-fingered value
+lands on the posture he asked for rather than silently shipping the quiet bot;
+turning her down becomes a deliberate act rather than an omission. ⚠️ It is also
+the reason `/api/health` now reports the **resolved** value beside `panel`:
+with a fail-open parse, *"I set it to standard"* and *"she is on standard"* are
+two different claims and only the health line settles the second.
+
+⚠️ **`standard` still returns a prompt BYTE-IDENTICAL to the one that shipped
+before this landed** — `edgeBlock('standard')` returns `undefined` (not an empty
+string, which would leave a stray newline) and nothing is appended anywhere.
+Softening her is one var flip and a deploy, not an archaeology dig.
+
+⚠️ **It does not raise the register ceiling and it touches no rule.** PG-13 is
+still the ceiling. The auto lane's three conditions, the confirm lane, *"every
+claim about a current value comes from get_book"* and *"an absence from the
+catalogue is a statement about the CATALOGUE"* are all unchanged — the block is
+APPENDED, so those are read first and the floor is read last.
+
+### Verified
+
+Tests **2115 pass / 0 fail** (2099 before); typecheck clean.
+`apps/worker/src/lib/gabi-edge.test.ts` (+16) pins the four things that can
+break silently, since a prompt block has no runtime: `standard`'s byte-identity,
+the floor being the **last** section, the fail-open parse, and each clause a
+later "wordy" trim could delete — the PG-13 ceiling, the real-material rule, the
+anti-formula section and the never-touch-a-write clause. Substrings rather than
+a whole-block hash, deliberately: a hash fails on every wording tweak and gets
+silenced by deletion; a named clause fails only when that clause goes.
+
+⚠️ **NOT verified: nobody has held a conversation with her at this volume on
+either instance.** The prompt is proven to be composed and shipped; how she
+actually SOUNDS is unmeasured here, and the anti-formula rules exist precisely
+because the first evening at full volume on Discord produced a formula. The
+acceptance test is a real conversation on
+<https://library.heygabi.ai> (speech-bubble icon, top bar) — and the honest
+thing to watch for is not whether she is funny but whether two consecutive
+replies open the same way.
+
+
+## 2026-09-02 — Kiro's format fix: the scan-time toggle + the lookup's confirmation (moved whole from TODO.md)
+
+Shipped `57d8211`. The ask as it stood in `TODO.md`, cut and pasted:
+
+> ## ☐ Format fix — scan-time toggle + GABI confirmation (Kiro, queued 2026-08-22)
+>
+> Kiro's wording, recovered from the damaged work log: *"scan-time toggle (default
+> PB, one-tap to change) + GABI research confirmation with auto-open
+> persistence"*.
+>
+> A scanned book defaults to **paperback** and takes one tap to correct, with
+> GABI's research confirming the format and the choice persisting so the panel
+> re-opens where it was left. ⚠️ Recorded here verbatim because the detail is
+> Kiro's, not mine — **confirm the intent with Kiro or the owner before
+> building**, particularly what "auto-open persistence" should persist across.
+
+### ⚠️ IT WAS THE CODE'S OWN REQUEST, WRITTEN DOWN MONTHS EARLIER
+
+`apps/web/src/lib/catalog-add.ts` has written `format: 'paperback'` on every
+scanned edition since the feature existed, and the comment above that line
+already argued its own replacement:
+
+> *"`paperback` here is a guess, and it is wrong often enough to be reported
+> from the shelf. A barcode proves a printing exists and does not say which one;
+> a hardcover scanned off its own barcode lands here as a paperback. That is
+> still the right default … but it is only defensible because it is now
+> correctable. **If this ever stops being a one-tap correction, ask at scan time
+> instead.**"*
+
+Kiro's queued ask is that sentence cashed in. The guess is now a CHOICE, at a
+cost of **zero taps per book**.
+
+### What shipped
+
+**ONE CHOICE PER SWEEP, not one per book.** An *"Adding as"* segmented control
+under the tabs on `/add`; every row that sweep adds inherits it. Deliberately
+NOT a fifth `.scan-mode` card — those are the four ways *in*, and a fifth panel
+of equal weight beside them reads as a fifth way in rather than as a setting for
+the one you already picked. It is the `.cog__modes` shape, this app's existing
+spelling of *"pick exactly one of a short list"*, at a third the height. Hidden
+on the **Type a title** tab, which is `AddWork` and never reaches
+`addLineToCatalog` at all.
+
+**`paperback` is still the default and must stay it** — a compatibility
+promise, not a preference. `editionFromLine`'s `format` became a parameter
+defaulting to `DEFAULT_SCAN_FORMAT`, so every caller and test that predates the
+toggle is byte-for-byte unchanged.
+
+**The confirmation spends NOTHING**, and that is the conservative reading of
+*"GABI research confirmation"*. Open Library's `physical_format` is now parsed —
+⚠️ **it never was**: `BookCandidate.format` was declared when the ladder was
+written and hard-`null` in every rung, the same shape of absence F4 found in
+`description` — carried onto the line by `applyCandidate`, and cleared by
+`unresolve`. No paid call: nothing about a binding is worth ~2¢ a book on a
+screen whose whole discipline is that money is one deliberate tap with a price
+printed under it.
+
+**The row speaks only when the two DISAGREE**, and only when an edition is
+actually written (`line.isbn13`). Silence is the ordinary case and means
+*nobody disagreed*; a confirmation that fires on every row is a banner people
+learn to scroll past, which is the opposite of a confirmation. One tap moves
+that row and nothing else; ignoring it leaves the person's own choice standing —
+**they are holding the object and Open Library is not**.
+
+**`physicalFormatFrom` refuses far more than it maps, and the refusals are the
+feature.** `"Kindle Edition"`, `"Audio CD"`, `"Leather Bound"`, `"Library
+Binding"`, `"Unknown Binding"` and `"Board book"` all decline rather than guess.
+⚠️ `ebook_kindle` is a real `EDITION_FORMATS` value and is still refused: this
+function is reached from a barcode scan of an object in somebody's hands, and
+*"this is a Kindle edition"* there is the confident-and-wrong failure the
+ladder's own measured lesson warns about. ⚠️ `"Leather Bound"` → `hardcover`
+would be defensible (leather ⊂ hardcover, migration 0430) and is declined too:
+the output is shown as *"the lookup says X"*, and saying hardcover about a
+record that said Leather Bound is putting words in the source's mouth.
+⚠️ Mass market is tested BEFORE paperback (the string contains it) and
+non-alphanumerics fold to spaces first, or `"Mass-Market"` reads as an ordinary
+paperback.
+
+### ⚠️ The three readings taken where Kiro's wording was ambiguous
+
+His entry said to confirm the intent before building and named
+*"auto-open persistence"* as the unclear part. Nobody was available to ask, so
+each was read **conservatively** and each is **vetoable**:
+
+| Ambiguity | Read as | What was deliberately NOT built |
+|---|---|---|
+| *"auto-open persistence"* | the **toggle** remembers itself, per browser, across visits (`localStorage`, validated on read, mirroring `lib/prefs.ts`) | a `scan_job` column (a migration, and the choice is about the person's current activity, not a job's history); cross-device sync (no per-person settings store exists — `prefs.ts` and `tbr-picker-prefs.ts` are both per-browser and say so); auto-opening the tab itself (already done by `?mode=`) |
+| *"GABI research confirmation"* | the binding the **free** ladder already fetched on the same request | a paid model call per row |
+| *"one-tap to change"* | one choice for the whole sweep, plus a one-tap per-row override when the lookup disagrees | a per-row format picker on every row — this screen's standing complaint is too many taps |
+
+### Verified
+
+Tests **2139 pass / 0 fail** (2115 before this, 2099 that morning); typecheck
+clean; `npm run build` clean. New: `packages/isbn/test/physical-format.test.ts`
+(the mapper, and mostly its refusals), `apps/web/test/scan-format.test.ts` (the
+default, the validated read, the no-storage-at-all degradation, and that the
+confirmation is SILENT when the two agree), plus three cases added to
+`scan-jobs.test.ts`'s F4 contract block so a field added to the borrow without a
+home on the line still fails there.
+
+**No migration.** `researchFormat` rides the `scan_job.enriched` JSON and is
+optional on the wire, so a job written before today reads correctly as *"nothing
+was said about the binding"*.
+
+⚠️ **NOT verified:** anything against a live instance — no barcode has been
+scanned through the deployed toggle, and **no real Open Library record carrying
+`physical_format` has been through the mapper over the network.** The mapper is
+covered by the strings its own tests name, which are real values from that field
+but were not fetched during this build. The first live scan of a hardcover is
+the acceptance test.
+
+
+## 2026-09-02 — OR-1 is LIVE on both instances, and its "NOT verified" line is superseded (measurement, not new work)
+
+⚠️ **A SUPERSEDING entry, not an edit.** This file is append-only, so the
+2026-08-23/24 OR-1 entry below keeps its own words — including *"NOT verified:
+anything on either live instance. No deploy, no migrate, no `--remote` call."*
+That sentence was true when it was written and is **false now**, and the rule
+for that is a new entry saying so rather than a correction nobody can date.
+
+**Measured 2026-09-02 ~17:25 Phoenix**, three ways, no writes:
+
+| Question | Instrument | Answer |
+|---|---|---|
+| Is migration `0400_copy_person` applied? | `wrangler d1 migrations list --remote` | **"No migrations to apply!"** on `library-catalog` **and** `library-catalog-2nd`. Applied on both |
+| Did a deploy carry the code? | `git merge-base --is-ancestor feature/lent-to-person d026ca0` | **yes** — the branch merged into `main` on 2026-08-24 00:32, and `main` has deployed four times since (through `d026ca0`, today 17:07Z, `deploys.log`) |
+| Is the member picker's endpoint really there? | `curl -D -` on both hosts | `GET /api/members` → **401**, not 404, on `library.heygabi.ai` **and** `padhard.heygabi.ai`. A 404 is what an undeployed route answers; a 401 is the auth middleware, which only runs on a route that exists |
+
+⚠️ **`401` is the right instrument here and `200` would not have been
+available.** The endpoint is `editCatalog`-gated by design and this check held
+no credential; the fact being established is *presence*, and presence is exactly
+what the difference between 401 and 404 settles. It proves nothing about what
+the route RETURNS.
+
+### 🔴 What is STILL not verified — unchanged, and it is the interesting half
+
+**Nobody has exercised the three CALLER CLASSES against a live instance.** The
+redaction rule (`apps/worker/src/lib/copy-person.ts`) is covered by unit tests
+only, for the reason the original entry gave: `wrangler dev`'s bypass signs in
+as a single owner, so the *member* and *stranger* classes cannot be reached
+locally. So these three sentences are proven in tests and never in production:
+
+1. an editor sees the person's name;
+2. the linked member sees their own row on their own page;
+3. everybody else sees the status word and **both fields as `null`**.
+
+That needs a signed-in human on each side and nothing else. **His standing
+answers, so whoever does it knows what "right" looks like:** the link is a
+**live join** (the card shows the member's CURRENT display name, not a
+snapshot), visibility is **owner + the linked person** — ⚠️ *not* owner-only —
+and **sold keeps the row** with its person and date, hidden from the default
+collection by `NOT_ONLY_SOLD` and brought back by picking **Sold** in the Copies
+filter.
+
+**Review link:** <https://library.heygabi.ai/works/493> → **Editions & copies** —
+set a copy to *Lent*, type a name, and check the estate-member autocomplete
+offers the roster; then <https://padhard.heygabi.ai/tbr> for the *"Books with
+you"* block, which renders nothing at all when nothing is recorded against you.
+
+### ⚠️ And a docs bug this measurement found
+
+`TODO.md` still carried the **whole OR-1 section**, ten days after the entry
+below said *"Moved here whole from `TODO.md`"*. The cut half of cut-and-paste
+never happened, so one ask had two homes and the one a session reads first
+(`TODO.md`, the startup file) was the one that said it was unbuilt and listed
+three questions the owner had already answered. Replaced with a dated pointer
+in the same commit as this entry — the duplicate, not the archive, is the copy
+that goes.
+
+
 ## 2026-09-02 — A research run now SAYS which free rungs it tried, and why each fell through (moved whole from TODO.md)
 
 Shipped `9bfea39`. `research_run.result_json` gains a **`free`** key — no

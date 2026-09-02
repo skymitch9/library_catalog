@@ -254,17 +254,13 @@ archive copy and `DONE.md`'s history → last, `CLAUDE.md:3` repointed at
 [`TODO.md`](TODO.md).
 
 
-## ☐ Format fix — scan-time toggle + GABI confirmation (Kiro, queued 2026-08-22)
-
-Kiro's wording, recovered from the damaged work log: *"scan-time toggle (default
-PB, one-tap to change) + GABI research confirmation with auto-open
-persistence"*.
-
-A scanned book defaults to **paperback** and takes one tap to correct, with
-GABI's research confirming the format and the choice persisting so the panel
-re-opens where it was left. ⚠️ Recorded here verbatim because the detail is
-Kiro's, not mine — **confirm the intent with Kiro or the owner before
-building**, particularly what "auto-open persistence" should persist across.
+> ✂️ **2026-09-02:** *"Format fix — scan-time toggle + GABI confirmation
+> (Kiro, queued 2026-08-22)"* moved WHOLE to [`DONE.md`](DONE.md) — built and
+> shipped `57d8211`. The toggle is on `/add`; the confirmation is free (Open
+> Library's `physical_format`, never a paid rung); no migration.
+> ⚠️ Its entry names three readings taken CONSERVATIVELY where Kiro's wording
+> was ambiguous — read them there before assuming what "auto-open persistence"
+> was taken to mean.
 
 ## ☐ OWNER FEATURE REQUESTS — written by him directly into this file, 2026-08-23
 
@@ -274,31 +270,33 @@ building**, particularly what "auto-open persistence" should persist across.
 > questions named rather than guessed. ⚠️ **His original text was lost once
 > already** — see the encoding incident in [`info/gotchas.md`](info/gotchas.md).
 
-### OR-1. Record WHO has the book — lent out, borrowed, sold
+### ~~OR-1~~ ✅ SHIPPED 2026-08-23/24 AND LIVE ON BOTH INSTANCES — the whole record is in [`DONE.md`](DONE.md)
 
-> *"optional Ability to enter a user when a book is in lent out, borrowed, or
-> sold status. also the ability to assign the status to a different member of
-> the catalog for record keeping … if i loaned out a book to Samantha I should
-> be able to put her name in a text box that matches the theme and saves. if
-> Samantha is a user in the estate i should be able to autofill to her user
-> profile so its linked to her."*
-
-**Two levels, and the second is the interesting one.** A free-text name that
-saves and matches the theme is the floor; the ask above it is that an estate
-member **autofills and links to her profile**, so the record points at a person
-rather than at a string.
-
-⚠️ **`copy.lent_to` already exists** and is already rendered (`Copies.tsx`
-shows *"Lent to …"*). So the floor is partly built — check what it does today
-before designing. What is NOT there is the link to an estate identity.
-
-**Future half, stated by him and deliberately not scoped yet:** *"a way to view
-books that are assigned to you in your status page window."*
-
-**Ask him before building:**
-1. Does a linked person's name change on the card if they later change their display name — i.e. is it a live join or a snapshot?
-2. Should the borrower see it, or only the owner?
-3. Sold — does the row stay in the catalogue at all, or leave a tombstone?
+> ✂️ **2026-09-02:** this section was a **stale duplicate**. `DONE.md`'s own
+> OR-1 entry opens *"Moved here whole from `TODO.md`"* — and then the copy here
+> was never cut, so one ask had two homes for ten days and the one people read
+> first was the one that said it was unbuilt. Removed rather than badged, per
+> the done-items-get-moved-not-badged rule; the ask, his three answers, and the
+> design are all in [`DONE.md`](DONE.md), unedited.
+>
+> `copy.person_user_id` + `copy.person_name` (migration `0400`), the
+> `editCatalog`-gated `GET /api/members` autocomplete, the one redaction rule in
+> `apps/worker/src/lib/copy-person.ts`, sold-as-tombstone via `NOT_ONLY_SOLD`,
+> and *"Books with you"* on the TBR page. **Measured 2026-09-02:** migrations
+> list answers *"No migrations to apply!"* on **both** `library-catalog` and
+> `library-catalog-2nd`, and `GET /api/members` answers **401** (not 404) on
+> `library.heygabi.ai` **and** `padhard.heygabi.ai` — the route exists on both,
+> which is what settles that the deploy carried it.
+>
+> ⚠️ **What is still NOT verified is the same thing DONE.md's entry named:
+> nobody has exercised the three CALLER CLASSES against a live instance.** The
+> redaction is unit-tested only, because `wrangler dev`'s bypass signs in as a
+> single owner — so "an editor sees the name", "the linked person sees their own
+> row" and "everybody else sees only the status word" have been proven in tests
+> and never in production. That needs a signed-in human on each side, and it is
+> the one thing left. **His standing answers, for whoever does it:** live join
+> (the card shows the member's CURRENT display name), owner **+ the linked
+> person** (not owner-only), and sold keeps the row.
 
 ### OR-2. Find duplicates — copy the board-game filter, don't redesign it
 
