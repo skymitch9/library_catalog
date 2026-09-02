@@ -18,6 +18,105 @@
 > were extracted from this same history.
 
 
+## 2026-09-02 — The Wandering Inn — series and volumes rectified (split print run)
+
+Landed `8cb9bf6` (research + script) and the production correction batch
+`fix-wandering-inn-volumes-2026-09-02`. **Data-only — nothing was deployed,
+because no code changed.** The entry as it stood in `TODO.md`, moved whole:
+
+---
+
+Owner, 2026-08-20: *"wandering inn needs to have its series and volumes
+rectified because the author split the physical books."*
+
+**What is wrong:** the author published the physical books as SPLITS of the
+original volumes, so one source volume maps to several printed books. Whatever
+the catalogue currently holds treats those as if the numbering still lined up,
+so the series order and the volume numbers disagree with the objects on the
+shelf.
+
+⚠️ **THIS IS DATA/MACHINERY DRIFT, NOT A DESIGN QUESTION.** Volume semantics
+were settled 2026-08-19 and are recorded in
+[`info/volume-numbers.md`](info/volume-numbers.md): series + sort = complete,
+display optional, findings auto-apply. **Do not reopen that design to fix this
+title** — a one-off mapping problem is exactly the shape that tempts a
+re-litigation, and the settled rules already cover it.
+
+☑ **Establish the real mapping first**, from the publisher's own numbering —
+  which printed book covers which part of which source volume. Write it down
+  before touching a record; guessing the split is how a fix has to be redone.
+☑ Decide how a split book is IDENTIFIED so sort order stays stable and two
+  printed books never collide on one volume number.
+☑ Apply through the normal corrections path, not by hand-editing rows.
+
+**Not verified — look before assuming:** how many volumes are affected, what
+the catalogue holds for this series today, whether the same title in
+`audiobook_catalog` has the same problem (the audio releases follow their own
+numbering and may already differ), and whether any other serial-turned-print
+series has the same split (this will not be the only one).
+
+---
+
+### What it turned out to be
+
+**Four works, 229–232**, all Harper Voyager paperbacks, all four ISBNs already
+in `edition`. The mapping is in
+[`info/serial-print-splits.md`](info/serial-print-splits.md) with its sources;
+the short version is that the print line follows the ebook/audiobook **Book**
+numbering and splits Books 1 and 2 into two paperbacks each, while Books 3–19
+are one each.
+
+| Work | Printed as | sort was → is | display was → is |
+|---|---|---|---|
+| #229 *The Wandering Inn* | Book 1, Part 1 | `1.1` → **`1`** | `Book 1, Part 1` (unchanged) |
+| #230 *No Killing Goblins* | Book 1, Part 2 | NULL → **`1.5`** | NULL → **`Book 1, Part 2`** |
+| #231 *Fae and Fare* | Book 2, Part 1 | NULL → **`2`** | NULL → **`Book 2, Part 1`** |
+| #232 *Immortal Games* | Book 2, Part 2 | `4` → **`2.5`** | `4` → **`Book 2, Part 2`** |
+
+Plus two stale `gap_verdict(seriesIndex='unknown')` rows on #230 and #231,
+deleted: the number is now known and stored, and `GAP_VERDICTS` is explicit
+that a found value goes in its column and a verdict row beside it would be a
+second copy of the same fact.
+
+⚠️ **The bug was arithmetic, and it was on the page.** #232's `4` was the print
+line's own sequential position (Amazon calls it *"Book 4 of 21"*), and it was
+the only integer any of the four held — so `seriesCompleteness` scanned 1→4 and
+reported **three `earlier` gaps**, the strongest evidence class there is, in a
+series where the household owns every printed book released. Measured after:
+**0 gaps**. That sequential numbering is also permanently wrong going forward —
+it would put *Flowers of Esthelm* at 5 and collide with Book 5 *The Last Light*.
+
+⚠️ **The mapping was already in the database.** All four `work.subtitle` values
+— written by `apply-bn-details.mjs` on 2026-08-11 — read *"Book One, Part One
+of The Wandering Inn Series"* and so on. The web research corroborated a fact
+the row had held for three weeks. The correction script asserts the mapping
+against those subtitles, so a mis-typed edit cannot file a book under the wrong
+part. Same lesson *Twelve Months* taught in `volume-numbers.md` §9: **look at
+what the row already holds before proposing a lookup.**
+
+**The four "not verified" questions, answered:** four works affected; the
+catalogue held the state in the table above; `audiobook_holding` has **no row**
+for any of the four so there was nothing to reconcile from this side (the other
+repo was not opened — recorded as still-not-verified); and **no second split
+series exists in either instance** — searched both `library-catalog` and
+`library-catalog-2nd` for `Part One`/`Part Two`/`Part 1`/`Part 2` in
+`work.subtitle`, `work.title` and `series_index_display`, and only these four
+matched.
+
+**Left for the owner, deliberately** (both in `TODO.md`): `multi_volume_printing`
+on the four, because R6 is human-only and mechanically guarded; and
+`edition.publisher` reading *"Barnes & Noble"* (the retailer) where it should
+read *"Harper Voyager"* — a real but different defect, kept out so the batch
+stayed reviewable.
+
+**Verification:** 2139/2139 tests pass (baseline unchanged — no code changed).
+⚠️ **The rendered page was NOT seen**: `/api/series/:name` 401s without an owner
+session, so the arithmetic was verified by running `seriesCompleteness` on the
+production rows directly. Review:
+<https://library.heygabi.ai/series/The%20Wandering%20Inn>.
+
+---
+
 ## 2026-09-02 — The GABI PANEL gets the full Discord personality — one GABI, two doors
 
 Shipped `0a736d8`. Owner decision, verbatim:

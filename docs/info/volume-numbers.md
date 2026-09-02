@@ -270,6 +270,14 @@ Owner, asked one at a time and answered *"Yes 17.5 is fine, 3.5 is fine"*:
 no number should propose the `.5` and ask, not research it — the answer is a
 decision about this catalog's ordering, and no source can settle it.
 
+⚠️ **R9 also covers a printed book that is the SECOND HALF of a numbered one**
+— a serial whose print line splits one Book into two paperbacks. Part 1 takes
+the integer, Part 2 takes `N.5`, and the mapping that decides which is which is
+a research question with an answer, not a convention. Worked case, with the
+publisher's sources and the `completeness.ts` measurement that rules out the
+obvious `N.1` / `N.2` alternative: [`serial-print-splits.md`](serial-print-splits.md)
+(*The Wandering Inn*, 2026-09-02). **No rule here changed to accommodate it.**
+
 ### R10 — "standalone" is an ANSWER, recorded as a verdict, never a digit
 
 *Tusk Love* is the Critical Role tie-in novel; **"Critical Role" is a shelf

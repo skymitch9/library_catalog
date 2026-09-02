@@ -1080,36 +1080,34 @@ script reads. It closes with a photograph and the cover UI, or not at all.
 
 ---
 
-## ☐ The Wandering Inn — series and volumes need rectifying (split print run)
+## ☐ The Wandering Inn — the two things the volume fix deliberately left
 
-Owner, 2026-08-20: *"wandering inn needs to have its series and volumes
-rectified because the author split the physical books."*
+The volume mapping itself is **done** — moved whole to
+[`DONE.md`](DONE.md) 2026-09-02, mapping and sources in
+[`info/serial-print-splits.md`](info/serial-print-splits.md). These two were
+kept out of that correction batch on purpose, and both need the owner.
 
-**What is wrong:** the author published the physical books as SPLITS of the
-original volumes, so one source volume maps to several printed books. Whatever
-the catalogue currently holds treats those as if the numbering still lined up,
-so the series order and the volume numbers disagree with the objects on the
-shelf.
+☐ **`work.multi_volume_printing` on works 229–232 — OWNER'S CHECKBOX.**
+  R6 (`info/volume-numbers.md` §3a) is **human-only and mechanically guarded**;
+  no script, finding or sweep may write it, and a correction script setting it
+  would be the exact bypass the guard exists to prevent. It may well belong on
+  all four — *The Wandering Inn* Books 1 and 2 are each one reading position
+  printed as two paperbacks. ⚠️ But the shape is not quite R6's worked example:
+  R6 was written for **one work** printed as two physical books (the two-volume
+  leatherbound *Words of Radiance*), and here there are **two works**, one
+  physical book each, sharing a position. Whether the flag means *"this work
+  spans volumes"* or *"this position does"* is a judgement, not a lookup —
+  hence the ask. `serial-print-splits.md` §3.3 has the full argument.
+  **Four ticks in the book edit panel, or one word.**
 
-⚠️ **THIS IS DATA/MACHINERY DRIFT, NOT A DESIGN QUESTION.** Volume semantics
-were settled 2026-08-19 and are recorded in
-[`info/volume-numbers.md`](info/volume-numbers.md): series + sort = complete,
-display optional, findings auto-apply. **Do not reopen that design to fix this
-title** — a one-off mapping problem is exactly the shape that tempts a
-re-litigation, and the settled rules already cover it.
-
-☐ **Establish the real mapping first**, from the publisher's own numbering —
-  which printed book covers which part of which source volume. Write it down
-  before touching a record; guessing the split is how a fix has to be redone.
-☐ Decide how a split book is IDENTIFIED so sort order stays stable and two
-  printed books never collide on one volume number.
-☐ Apply through the normal corrections path, not by hand-editing rows.
-
-**Not verified — look before assuming:** how many volumes are affected, what
-the catalogue holds for this series today, whether the same title in
-`audiobook_catalog` has the same problem (the audio releases follow their own
-numbering and may already differ), and whether any other serial-turned-print
-series has the same split (this will not be the only one).
+☐ **`edition.publisher` reads "Barnes & Noble" on editions 322–325** — that is
+  the **retailer**, not the publisher. It is **Harper Voyager**, confirmed by
+  the `978-0-06` HarperCollins prefix on all four ISBNs and by every listing
+  read 2026-09-02. Left out of the volume batch because sweeping an unrelated
+  field in is how a correction batch stops being reviewable. ⚠️ Worth checking
+  whether the other B&N-imported works carry the same wrong publisher —
+  `import-shop-orders.mjs` created seven of them and this was never the field
+  anyone looked at.
 
 ---
 

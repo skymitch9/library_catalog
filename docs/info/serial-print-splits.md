@@ -144,11 +144,27 @@ four works occupies an integer position. The consequences:
   as `unnumbered`.
 - ⚠️ **But the moment any source attests Book 3**, `highestKnown` becomes 3, the
   scan runs from floor 1, and positions **1 and 2 are not in `ownedSet`** — so
-  the series page claims the household is missing the two books it owns four
-  copies of. A latent version of the exact bug §5 describes.
+  the series page lists the two books the household owns four copies of as
+  missing. A latent version of the bug §5 describes, one step milder: with
+  `lowestOwned` null they come out as evidence `implied` rather than `earlier`,
+  so they are rendered as a claim rather than as arithmetic. Still wrong, still
+  on the page.
 
 Under `1 / 1.5 / 2 / 2.5`, positions 1 and 2 are held, the scan finds no hole,
 and Book 3 arriving at `3` continues the line cleanly.
+
+**Measured 2026-09-02**, by running `seriesCompleteness` from `@lc/core` against
+the real production rows with a Book 3 attestation added:
+
+| Scheme | gaps reported |
+|---|---|
+| `1.1 / 1.2 / 2.1 / 2.2` + Book 3 attested | **3** — `1:implied`, `2:implied`, `3:attested` |
+| `1 / 1.5 / 2 / 2.5` + Book 3 attested | **1** — `3:attested`, which is the truth |
+
+⚠️ One honest cost of the chosen scheme: `unnumbered` reads **2**, because
+`1.5` and `2.5` are off the integer line and `isPosition` counts only integers.
+That is the same treatment R9's `12.5` *Side Jobs* already gets, and it is a
+count of "positions not on the line", not a claim that anything lacks a number.
 
 ### 3.2 Why not the print line's own sequential numbering (1, 2, 3, 4)
 
@@ -217,6 +233,18 @@ a bad source.
 After the correction, positions 1 and 2 are both held, `highestKnown` is 2, and
 the scan produces nothing.
 
+**Measured 2026-09-02**, `seriesCompleteness` run against the actual production
+rows before and after:
+
+| | `owned` | `lowestOwned` | `highestOwned` | `gaps` | `certainGaps` |
+|---|---|---|---|---|---|
+| before (`1.1`, NULL, NULL, `4`) | 2 | 4 | 4 | **3** — `1:earlier`, `2:earlier`, `3:earlier` | **3** |
+| after (`1`, `1.5`, `2`, `2.5`) | 4 | 1 | 2 | **0** | **0** |
+
+⚠️ **Not verified: the rendered page.** `GET /api/series/The Wandering Inn`
+returns 401 to an unauthenticated caller, so this is the function the page calls,
+run on the rows the page reads — not the pixels. See §7.
+
 ---
 
 ## 6. Left for the owner, deliberately
@@ -226,3 +254,28 @@ the scan produces nothing.
 | **`work.multi_volume_printing`** on #229–#232 | R6 is human-only and mechanically guarded; §3.3 has the argument and the two readings of what the flag would mean. One checkbox each in the book edit panel, or one word from the owner. |
 | **`edition.publisher` = "Barnes & Noble"** on editions 322–325 | The retailer, not the publisher; it is **Harper Voyager**, confirmed by the `978-0-06` prefix on all four ISBNs and by every listing in §2.2. Real, but a *different* defect from the volume mapping, and widening a correction batch to sweep it in is how a batch stops being reviewable. Logged in `TODO.md`. |
 | **Books 3–19** | The household owns none of them. §3's scheme says what their numbers will be when they arrive; nothing is pre-created, because a catalog row for a book nobody owns is a wish, not a fact. |
+
+---
+
+## 7. What was NOT verified
+
+- ⚠️ **The rendered series page.** `/api/series/:name` requires an authenticated
+  owner session and returned **401** to this session, so nothing here was read
+  through the product. The arithmetic in §5 is `seriesCompleteness` from
+  `@lc/core` invoked directly on the production rows — the right function on the
+  right data, but not the pixels. **The owner should open
+  <https://library.heygabi.ai/series/The%20Wandering%20Inn> and confirm.**
+- **Which chapters each printed Part actually covers.** §2.1's Volume→Book
+  chapter spans come from the wiki; the Book→Part split point inside Books 1 and
+  2 is stated by nobody consulted, and nothing in this catalog needs it.
+- **The audiobook catalog's own numbering for this series.** The TODO asked
+  whether `audiobook_catalog` has the same problem. Not checked — this repo's
+  `audiobook_holding` has **no row** for any of the four works, so there was
+  nothing to reconcile from this side, but that is not the same as having looked
+  at the other repo.
+- **Publication dates.** The three retailer listings give 2026-09-22, 2026-10-20
+  and 2026-11-10 for Books 1 Part 2 through 2 Part 2. Recorded here as context
+  only; `work.first_published` was not touched and still reads `2026` for three
+  of the four.
+- **`edition.pages`** disagrees between sources for *Fae and Fare* (our row says
+  848, one listing said 688, another 848). Not touched, not resolved.
