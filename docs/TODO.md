@@ -83,10 +83,79 @@ BE YOURS meta word. His answer was a spec, not a pick — **15:33, verbatim:**
 every multi-copy list). Tests in `apps/web/test/shelf-view.test.ts`. Sized as
 a web-only build (derivation + component + tests) — Opus, ~150k.
 
-☐ build → ☐ tests → ☐ deploy PAIR from a clean tree → ☐ owner review on
-/work/263 (three hardcover copies: collectors sprayed+signed, plain standard,
-standard signed lent-out — exactly his example) and a padhard work with two
-formats.
+☑ build → ☑ tests → ☐ deploy PAIR from a clean tree → ☐ owner review on
+/work/263 and a padhard work with two formats.
+
+### ✅ BUILT 2026-09-03 — commit `0d794f0`, ⚠️ **NOT DEPLOYED** (the conductor ships the pair)
+
+**What landed** — all of it in the DERIVATION, so a test pins what the shelf
+SAYS and the component chooses no words:
+
+- **`ShelfView.sections` is GONE**, replaced by `tabs` + `looseRows`. Removed
+  rather than left beside the new grouping: two groupings of one list is two
+  things to keep in step, and only one is rendered.
+- **Tabs are per FORMAT, in his order** — Hardcover · Paperback · *(any other
+  physical format he did not name, e.g. Mass market)* · *Physical* (a copy whose
+  binding cannot be attributed at all) · Audio · Ebook. A format with nothing on
+  it gets no tab. ⚠️ The default tab is the first with something **owned**, so a
+  book whose only hardcover is a *"May be yours"* printing opens on the format it
+  actually has.
+- **One line per owned copy:** the printing's name, ` — `, then only what
+  distinguishes THAT copy — badges, then *Signed*, then a status that is not "on
+  the shelf" (*"Lent out to Sam"*, one phrase), then the location. Nothing
+  distinctive → the name alone.
+- **Round 1's split is lifted from the PRINTING to the FORMAT**: a badge every
+  copy under the tab carries is said once on the header (*"Hardcover · all
+  signed"*) and appears on no line. ⚠️ It takes **two** copies for that to mean
+  anything — a lone copy keeps its own facts on its line, because *"all signed"*
+  over one book is a claim about a set of one.
+- ⚠️ ***"On the shelf"* and *"Not signed"* are never printed** — the absence is
+  the plain case, which is what he asked for. That **narrows the 2026-09-02 "say
+  it either way" rule to the hover**: `line.title` still answers signing both
+  ways and carries the condition his example dropped. ☐ Confirm on review that
+  losing the visible *"Not signed"* is what he wants.
+- **Untouched:** MAY BE YOURS, the wishes, the audiobook recordings (cover +
+  the migration-0010 provenance sentence) and the ebook files keep the cards
+  they had, inside their tab. The neutral slot and the formatless *"any format"*
+  want belong to no format and sit beside the tabs.
+- The tab strip **is** the edit box's strip — `.shelf-tabs` was added to every
+  existing `.edit-box__tabs` rule, never given a look of its own.
+
+**Measured at the commit:** `npm test` **2297 pass / 0 fail** (2282 before);
+`npm run typecheck` and `npm run build` clean. Nineteen cases added; ⚠️ **three
+were AMENDED rather than added** because they pinned `sections` (two in
+`shelf-view.test.ts`, one in `audio-match-review.test.ts`), all marked and all
+saying what they used to claim.
+
+🔴 **HIS EXAMPLE WILL NOT RENDER ON /work/263 YET, and it is not a bug.**
+Measured against production MAIN at the build: work 263's **three copies all
+have `edition_id: null`** against **three hardcover printings** (378 *"V1
+Limited Edition hardcover…"* `collectors`, 379 *"V1 Limited Edition Standard
+hardcover…"*, 660 *"Standard Hardcover"*). Nothing attributes a copy to a
+printing, so the work-220 anti-fabrication rule holds and the lines read:
+
+> Hardcover
+> Hardcover — Sprayed edges
+> Hardcover
+> Hardcover — Lent out
+
+The three printings still show under the same tab as *MAY BE YOURS* cards.
+☐ **The data follow-up is what turns that into his *"Collectors edition /
+Standard edition"*** — link each copy to its printing under *✎ Edit this book →
+Editions & copies*. Until then the shelf says what the record says.
+
+⚠️ **NOT VERIFIED:** nothing has been seen on a live page — no deploy has
+happened. The component itself has **no test** (there is no jsdom in this
+harness): the tab strip, the default selection and the arrow-key handling were
+exercised once by a throwaway `react-dom/server` render, which produced
+*"Collectors edition — Sprayed edges · Signed"*, *"Standard edition"* and
+*"Standard edition — Signed · Lent out"* exactly, and was then deleted.
+
+☐ **Review after the deploy:** <https://library.heygabi.ai/work/263> (the tab
+strip, and the three lines above) and — for two tabs each with a NAMED line, the
+shape his example describes — padhard <https://padhard.heygabi.ai/work/642>
+*The Ashes and the Star-Cursed King*, which holds one linked paperback and one
+linked hardcover (measured on `library-catalog-2nd`, 2026-09-03).
 
 ## ☐ Audio-verdict residue (from part B, shipped 15:32 — the section is in [`DONE.md`](DONE.md))
 

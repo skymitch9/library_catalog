@@ -1,7 +1,11 @@
 # Gotchas — library_catalog   (Information Reference)
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
-> Last verified: **2026-08-17** — the SDK-`Error.message` entry was verified
+> Last verified: **2026-09-03** — the `ShelfCopy.badges` entry at the top was
+> **added** that day and measured against `shelf-view.ts` at commit `0d794f0`.
+> ⚠️ **Nothing else here was re-checked then**; every other entry still carries
+> the age stated next.
+> Previously **2026-08-17** — the SDK-`Error.message` entry was verified
 > that day against the installed SDK (`@anthropic-ai/sdk` 0.116.0) and against
 > the two live D1 rows it describes. The **other** findings still carry their
 > own dates and were **not** re-checked; they were extracted verbatim from
@@ -16,6 +20,38 @@ reproduced whole, with its original reasoning intact.
 ⚠️ Some of these also appear in the repo's `CLAUDE.md` (the first-ten-minutes
 sheet). That is deliberate duplication of the *headline* only; the full
 reasoning lives here.
+
+### "I read `ShelfCopy.badges` to find out what is true of that copy" — it is the LEFTOVERS, and `signed` is in neither list — found 2026-09-03
+
+**Symptom.** You want a copy's special-edition attributes on the shelf, reach for
+`copy.badges`, and get an empty array for a copy that is demonstrably signed and
+leatherbound. Or you write *"is this copy signed?"* as `copy.badges.some(b => b.key === 'signed')`
+and it answers **false on a signed copy**.
+
+**Why.** Since round 1 of the 2026-09-03 *"double information"* ask
+(`apps/web/src/lib/shelf-view.ts`, `splitBadges`) the two badge lists are not
+"the card's" and "the copy's" in the sense of one being a superset. They are a
+**partition by who SAYS it**:
+
+| list | holds |
+|---|---|
+| `ShelfRow.badges` | the printing's own prose badges + every badge **all** its copies share |
+| `ShelfCopy.badges` | only what is **left** for that copy — so a single-copy row's list is **always empty** |
+
+⚠️ **And `signed` is deliberately absent from BOTH**, whichever way the copies
+fall: it is rendered as a two-state CHIP rather than a light-when-set badge, so
+it is dropped from whichever list the chip is about to speak for. The answer
+lives on `ShelfRow.signed` (the group's, null when they disagree),
+`ShelfRow.signedVaries`, and `ShelfCopy.signed` (the copy's own boolean).
+
+**What to do.** To get everything true of ONE copy, put it back together:
+`row.badges ∪ copy.badges`, plus `signed` when `copy.signed`. That is exactly
+what `copyBadges` in the same file does for the format-tab lines, and it is the
+one place to copy from — do not re-derive it from `CopyView` columns, because
+that silently loses the edition's prose badges (the migration-0430 back-compat
+for rows the sweep never reached).
+
+---
 
 ### 🔴 "The work id checks out on both instances" — WORK IDS ARE PER-INSTANCE, and they collide with DIFFERENT BOOKS — found 2026-09-02
 
