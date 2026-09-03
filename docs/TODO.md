@@ -32,7 +32,7 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
-## ☐ PADHARD: "Signed" typed into the edition name → standard edition + the signed button ✅ **APPLIED 2026-09-03 14:19 Phoenix**, and edition parity with the main catalog ☐ **still open** (owner ask 2026-09-03 ~13:00)
+## ☐ "Signed" typed into the edition name → the signed button ✅ **APPLIED TO BOTH INSTANCES 2026-09-03** (padhard 14:19, MAIN 14:33 Phoenix — different modes, see below), ☐ **6 rows to link by hand** and ☐ edition parity with the main catalog still open (owner ask 2026-09-03 ~13:00)
 
 **Owner, verbatim (Discord/session, 2026-09-03):** *"Side project, Diva marked books as
 signed manually in edition, sweep those and apply the button. Also diva's catalog
@@ -133,7 +133,7 @@ record of them, and any one of them is restorable by hand):
 | #632 | The Ashes and the Star-Cursed King | "Signed special" (+ `edition_kind='collectors'`) |
 | #633 | Songbird and the Heart of Stone | "Signed special" (+ `edition_kind='collectors'`) |
 
-### 🔴 MAIN matched **20** rows — dry-run only, deliberately NOT committed
+### ✅ MAIN matched **20** rows — the word STRIPPED and the copies flagged, applied 2026-09-03 14:33 Phoenix
 
 The expectation in the plan above was 0. It is 20, and **committing them would
 be wrong**: unlike Diva's bare "Signed", these names are real vendor prose, which
@@ -143,10 +143,116 @@ signed extras", "Collector's Edition Trilogy — Book 1 Signed & Numbered",
 "Signed Leatherbound (two-volume set: …)", and two bare "Signed" rows
 (*Something* #620/#621, *Uncapped* #622/#623).
 
-Main's dry run: 20 matched, 20 names + 3 kinds would clear, 0 formats defaulted,
-15 copies would be linked+flagged, **5 need the owner**. ☐ **Owner decision:**
-should the signed flag be applied to main's copies *without* clearing those
-names? That is a different sweep (copy half only) and is not built.
+Main's dry run in the DEFAULT mode: 20 matched, 20 names + 3 kinds would clear, 0
+formats defaulted, 15 copies would be linked+flagged, **5 need the owner**. That
+run was never committed, and the reason it was not is the whole of this section.
+
+✅ **Owner answered 2026-09-03 14:26 Phoenix:** *"I think remove signed from the
+name keep the rest, mark them all signed"*.
+
+#### What was built — `--strip-word`, a second MODE of the same script
+
+Commit `e23a432`, on `scripts/sweep-signed-editions.mjs` (**not** a second
+script — one canonical sweep, two modes). `stripSignedWord()` removes the WORD
+(case-insensitive, word-boundary) and keeps the rest; `edition_kind` is
+**untouched** in this mode; `format` keeps the same hardcover/paperback rule;
+*"mark them all signed"* is read literally — **every** copy of the work is
+flagged, linked or not — while LINKING stays as conservative as it was.
+21 new unit tests (**2255 pass / 0 fail** whole repo, up from 2234), including
+the six before/after pairs the owner checked.
+
+Two asymmetries in the name mapping, each pinned by a real name:
+
+| Rule | Because |
+|---|---|
+| a connector glued to the word's **right** goes with it | "Book 1 Signed **&** Numbered" → "Book 1 Numbered" — the `&` joined *Signed* to *Numbered*, and one of them is gone |
+| a connector on its **left** stays | "hardcover**,** signed extras" → "hardcover, extras" — the comma joins *hardcover* to an item that still exists |
+| the remainder is capitalised only when the word was at the **start** | "Signed special" → "**S**pecial" — the only case where deleting a word promotes a lower-case one into first position |
+| a dangling connector at either end is trimmed | "After light edition**/** signed" → "After light edition" |
+
+⚠️ **The one thing it will not do:** `"signed"` inside another word ("cosigned").
+The SQL's `instr` matches it, the word-boundary strip does not, so such a row is
+printed under *word not found* and **left alone rather than mangled**. There are
+none on either instance (measured 2026-09-03) — but a future one would sit in
+the match set forever rather than being silently rewritten, which is the right
+way round.
+
+#### Applied to MAIN — the numbers, and the before → after table
+
+`node scripts/sweep-signed-editions.mjs --remote --strip-word --commit`,
+**36 statements**, 2026-09-03 14:33 Phoenix.
+
+| | |
+|---|---|
+| editions matched | **20** |
+| names rewritten (word removed, rest kept) | **16** |
+| names emptied to NULL (were only "Signed") | **4** |
+| names left alone (not a word) | **0** |
+| kinds cleared | **0** — never, in this mode |
+| formats defaulted to paperback | **0** (all 20 were already hardcover/paperback) |
+| copies flagged | **1** |
+| copies **linked + flagged** in one UPDATE | **15** |
+| rows to link by hand | **5** |
+
+⚠️ **This table is now the ONLY record of the old names** — the column was
+overwritten, so any one of these is restorable only from here:
+
+| Edition | Work | Before | After |
+|---|---|---|---|
+| #316 | Dungeon Crawler Carl: Crocodile | "Campaign-only exclusive hardcover, signed extras" | "Campaign-only exclusive hardcover, extras" |
+| #319 | The Primal Hunter | "Collector's Edition Trilogy — Book 1 Signed & Numbered" | "Collector's Edition Trilogy — Book 1 Numbered" |
+| #321 | Words of Radiance | "Signed Leatherbound (two-volume set: Vol 1 ISBN 9781938570308, Vol 2 ISBN 9781938570315)" | "Leatherbound (two-volume set: Vol 1 ISBN 9781938570308, Vol 2 ISBN 9781938570315)" |
+| #336–#341 | Tamer: King of Dinosaurs Books 1–6 | "Kickstarter signed paperback" | "Kickstarter paperback" |
+| #349 | Monster Empire Book 1 | "Kickstarter signed paperback" | "Kickstarter paperback" |
+| #351–#355 | Tamer: King of Dinosaurs Books 7–11 | "Kickstarter signed paperback" | "Kickstarter paperback" |
+| #358 | Monster Empire Book 2 | "Kickstarter signed paperback" | "Kickstarter paperback" |
+| #620 | Something (paperback) | "Signed" | NULL |
+| #621 | Something (hardcover) | "Signed" | NULL |
+| #622 | Uncapped (hardcover) | "Signed" | NULL |
+| #623 | Uncapped (paperback) | "Signed" | NULL |
+
+**Verified after the write, not assumed:**
+
+- re-running the dry run reports **0 editions matched, 0 statements** — the same
+  command anyone can re-run;
+- `SELECT COUNT(*) FROM copy WHERE is_signed=1` on `library-catalog`:
+  **25 before → 41 after**, exactly the 16 this wrote (15 linked+flagged + 1
+  flagged) and nothing else;
+- `SELECT id, edition_name, edition_kind, format FROM edition WHERE id IN
+  (316,319,321,336,620,621,622,623)`: the apostrophe in *Collector's* and the em
+  dash both survived intact, and **#316/#319/#321 still carry
+  `edition_kind='collectors'`** — the proof that this mode leaves the kind alone.
+
+Review it: [work 220 *Words of Radiance*](https://library.heygabi.ai/work/220),
+[work 478 *Something*](https://library.heygabi.ai/work/478),
+[work 32 *Uncapped*](https://library.heygabi.ai/work/32) — and any Tamer volume,
+e.g. [work 243 *Tamer: King of Dinosaurs Book 1*](https://library.heygabi.ai/work/243)
+(edition #336), where the Editions panel should now read "Kickstarter paperback"
+with copy #123's **Mark signed** toggle lit.
+
+**padhard in the same mode: 0 editions matched, 0 statements** — as expected, the
+full sweep already cleared every one of her names on 2026-09-03 14:19. Run and
+reported rather than assumed.
+
+☐ **FIVE ROWS TO LINK BY HAND (MAIN).** ⚠️ Every copy involved **is already
+flagged signed**; what is missing is only which *printing* it belongs to, which
+is not derivable from the database:
+
+| Work | Editions | Why it was not guessed |
+|---|---|---|
+| #220 *Words of Radiance* | #321 | the work has **2 unlinked copies (#169, #382)** — both flagged signed, neither linked. Pick the leatherbound one: `UPDATE copy SET edition_id = 321 WHERE id = <the one>;` |
+| #478 *Something* | #620 (paperback) **and** #621 (hardcover) | **two signed editions, one unlinked copy #407.** The copy is flagged; which printing he owns is the question. `UPDATE copy SET edition_id = <620 or 621> WHERE id = 407;` |
+| #32 *Uncapped* | #622 (hardcover), #623 (paperback) | ⚠️ **the work has NO copy row at all** — nothing to flag, and a copy is never invented. Add the copy in the UI first, then mark it signed. |
+
+**Still open — "diva's catalog doesn't have editions like mine" — MEASURED
+2026-09-03 14:20, it is the THEME:** both hosts serve the same bundle
+(`assets/index-BTMKoh3U.js`), the same eight tabs and the same controls. In the
+owner's browser `library.heygabi.ai` runs his chosen *cyberpunk/dark* (uppercase
+headings) while `padhard.heygabi.ai` falls to its per-host default *hearts/dark*
+(`DEFAULT_THEME = "hearts"` in `[env.friend.vars]`, no theme stored for that
+host). Same tab, different clothes. Second visible difference is data: her
+printing came from a barcode scan (the "recorded as a paperback until someone
+says otherwise" note); his is a hand-recorded box set. Reported to the owner.
 
 ⚠️ **What MAIN found that the friend data did not** — and it is now guarded in
 code: *Something* has **two** signed editions (#620 paperback, #621 hardcover)
