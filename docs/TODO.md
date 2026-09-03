@@ -59,7 +59,7 @@ not the copies differ, and the "Not signed" negative (owner rule 2026-09-02:
 say it either way) is therefore printed once per copy plus once for the
 group.
 
-**Proposed rule (one decision for the owner, not yet answered):** a fact is
+**Rule — ✅ owner approved 2026-09-03 ~14:50 Phoenix (*"Yes I'm okay with that rule"*):** a fact is
 printed ONCE — on the card when every copy agrees, on the copies (and only
 there) when they differ. So the screenshot's card becomes *card: "Not
 signed"* (all three agree) + *copy 1: "Sprayed edges"* (only it has them),
@@ -124,6 +124,23 @@ the hardcover and paperback if available default to paperback if unknown"* — t
 
 Diva = Samantha Hardman = the `[env.friend]` instance `padhard.heygabi.ai`, D1
 `library-catalog-2nd` ([`access/second-instance.md`](access/second-instance.md)).
+
+✅ **Follow-up APPLIED 2026-09-03 14:58 Phoenix — owner: *"For books that lost
+signed and became null make them standard edition"*.** Every edition the sweep
+left with `edition_name IS NULL` now reads **`'Standard edition'`** (a data
+write, not a display rule — the other ~440/~500 unnamed editions per instance
+were not asked about and are untouched). Both instances, by explicit id list:
+
+| | MAIN | padhard |
+|---|---|---|
+| rows named | **4** (#620/#621 *Something*, #622/#623 *Uncapped* — the four that were only "Signed"; the 16 that kept their other words were not touched) | **63** — recovered as *unnamed edition with a linked `is_signed=1` copy* (62) + work #136 *Mate*'s edition #135 (the one whose copy is still the owner's to pick); 63 = the sweep's 63 exactly |
+| `edition_kind` | still NULL on all | still NULL on all 63 |
+| rendered proof | not checked | <https://padhard.heygabi.ai/work/561> reads *Standard edition · OWNED · ✍ Signed · Paperback* (14:59) |
+
+⚠️ `updated_at` was bumped by this write; the 14:19/14:33 sweeps had NOT bumped
+it (measured — the padhard copies still carry their 08-22…08-28 stamps), which
+is why the padhard set had to be recovered from the signed-copy join rather
+than from a timestamp.
 
 **Measured 2026-09-03 ~13:05 Phoenix on her D1 (read-only `d1 execute`):**
 
