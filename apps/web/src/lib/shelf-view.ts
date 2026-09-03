@@ -124,7 +124,7 @@
  *   - **Ebook, audiobook, wanted and neutral rows are UNCHANGED** — their
  *     `label`/`meta` reproduce exactly what the component used to compose.
  *
- * ## "On your shelf" is now THE list, in per-format SECTIONS (owner, 2026-09-02)
+ * ## "On your shelf" is now THE list, in per-format TABS (owner, 2026-09-02 → 03)
  *
  * > "on your shelf should be the main with other editions available under their
  * > given section. so if its a second physical there should be 2 under physical.
@@ -132,10 +132,35 @@
  * > too."
  *
  * The separate **"Other versions available"** panel is gone. Everything it
- * carried files into this derivation, and the rows group into three sections by
- * medium — **Physical / Ebook / Audio** — which is what *"under physical"*
- * names. `sections` is a grouping OF `rows`, not a second list: the same row
- * objects appear in both, so nothing can come to disagree.
+ * carried files into this derivation, and the rows group by format — which is
+ * what *"under physical"* named.
+ *
+ * ⚠️ **The grouping became TABS on 2026-09-03 (round 2).** Owner, 15:18, of the
+ * round-1 card: *"Better but still duplicate, the hard cover section has info
+ * and the stuff underneath has information"*, and then, at 15:33, the shape he
+ * wants, verbatim:
+ *
+ * > "I want to see hardcover paperback cover audio ebook as the tabs and the
+ * > editions owned of each under
+ * > So paperback with standard under it. So very similar to A with minor
+ * > changes. Keep what makes them different took.
+ * > So hardcover
+ * > Collectors edition - sprayed edges signed
+ * > Standard edition
+ * > Standard edition - signed - lent out"
+ *
+ * So the three MEDIUM sections (Physical / Ebook / Audio) became FORMAT tabs —
+ * **Hardcover · Paperback · Audio · Ebook** — and under a tab there is **one
+ * line per owned copy**: the printing's name, then only what distinguishes that
+ * copy. `tabs` is a grouping OF `rows`, not a second list — the same row objects
+ * are behind both, so nothing can come to disagree. See `buildTabs`.
+ *
+ * ⚠️ *"cover"* in his tab list is read as a slip between *hardcover* and
+ * *paperback*; there is deliberately no fifth tab of that name. A format he did
+ * NOT name (Mass market, or a physical copy whose binding cannot be attributed)
+ * still earns its own tab when something of it is owned — the shelf is what you
+ * HAVE, and a tab set that silently drops a holding is worse than one with five
+ * words in it.
  *
  * ⚠️ **This deliberately amends the 2026-08-24 invariant "an edition you neither
  * own nor want is not a row at all."** That rule existed to stop a printing you
@@ -197,6 +222,7 @@ import type { PeerHoldingView } from '../components/PeerLibraries.js';
 import { audiobookDetailUrl, resolveAudiobookCover } from './audiobook-site.js';
 import { ebookShelfUrl } from './ebook-site.js';
 import { editionKindLabel, formatLabel, isPhysicalFormat } from './formats.js';
+import { statusLabel } from './statuses.js';
 
 /** The statuses that mean the household physically holds (or held) the book. */
 const HELD_STATUSES = ['owned', 'borrowed', 'lent'] as const;
@@ -213,6 +239,19 @@ export interface SpecialEditionBadge {
   label: string;
   title: string;
 }
+
+/**
+ * ⚠️ ONE definition of the signed badge. It is minted in two places — from a
+ * copy's `is_signed` column (`specialEditionBadges`) and, on a shelf tab's copy
+ * line, put back after the card/copy split has taken it out (`copyBadges`) — and
+ * two object literals of the same badge is how a word comes to be spelled two
+ * ways on one page.
+ */
+const SIGNED_BADGE: SpecialEditionBadge = {
+  key: 'signed',
+  label: 'Signed',
+  title: 'A signed copy',
+};
 
 /** One held (or wanted) copy, nested under the edition/format it is a copy of. */
 export interface ShelfCopy {
@@ -383,22 +422,81 @@ export interface ShelfAvailability {
 }
 
 /**
- * One heading on the shelf and the rows under it (owner 2026-09-02: *"other
- * editions available under their given section … if its a second physical there
- * should be 2 under physical"*).
+ * ONE OWNED COPY, as the one line the owner asked for (2026-09-03, round 2):
  *
- * ⚠️ **A grouping of `rows`, never a second list.** The row objects are the same
- * objects, so a fact cannot appear differently in the two — the estate's "one
- * fact, one home" rule applied to a shape rather than a page.
+ * > "So hardcover / Collectors edition - sprayed edges signed / Standard edition
+ * > / Standard edition - signed - lent out"
+ *
+ * The printing's name, and then **only what distinguishes that copy from the
+ * others under the same tab**. A copy with nothing distinctive is its name
+ * alone. ⚠️ *"On the shelf"* and *"Not signed"* are never printed: the absence
+ * of the word IS the plain case, which is exactly the *"double information"* the
+ * two rounds of this ask exist to remove.
  */
-export interface ShelfSection {
-  key: 'physical' | 'ebook' | 'audio' | 'other';
+export interface ShelfCopyLine {
+  /** Stable list key. */
+  key: string;
+  /** The copy this line is about. */
+  copyId: number;
   /**
-   * The heading, or null for the `other` bucket — the formatless "any format"
-   * want and the neutral placeholder, which name themselves and would look
-   * absurd under a heading called "Other".
+   * What to call the printing this copy is of.
+   *
+   * ⚠️ **Round 1's headline, verbatim — no new label was invented.** It is the
+   * row's own `label`: `edition_name` → the canonical kind → the imprint → the
+   * format word, and the component's *"Any format"* where even the binding is
+   * unknown. So a copy nobody has linked to a printing still reads *"Hardcover"*
+   * rather than borrowing a name the record never made (work 220), and the
+   * owner's *"Collectors edition"* appears exactly when the copy says which
+   * printing it is.
    */
-  title: string | null;
+  name: string;
+  /** What distinguishes THIS copy, in reading order. Empty when nothing does. */
+  facts: string[];
+  /** `name`, or `name — fact · fact`. Composed here so a test pins what it SAYS. */
+  text: string;
+  /**
+   * Everything the line leaves out, for the hover: the facts the header took,
+   * the signed record **either way** (owner 2026-09-02 — the negative stays
+   * reachable even though it stopped being printed), the status, and the
+   * condition, which the owner's own example dropped from the line.
+   */
+  title: string;
+  /** The printing's own jacket where it has one. ⚠️ Null is an absence, never the work cover. */
+  coverUrl: string | null;
+}
+
+/**
+ * One FORMAT TAB on the shelf and everything under it (owner 2026-09-03: *"I
+ * want to see hardcover paperback cover audio ebook as the tabs and the editions
+ * owned of each under"*).
+ *
+ * ⚠️ **A grouping of `rows`, never a second list.** `rows` here holds the same
+ * objects as `ShelfView.rows`, so a fact cannot appear differently in the two —
+ * the estate's "one fact, one home" rule applied to a shape rather than a page.
+ */
+export interface ShelfTab {
+  /** Stable key — `hardcover`, `paperback`, `audio`, `ebook`, `mass market`, `physical`. */
+  key: string;
+  /** The word on the tab — "Hardcover", "Audio". */
+  label: string;
+  /**
+   * The heading INSIDE the panel: the label, plus the facts every owned copy
+   * under this tab shares (*"Hardcover · all signed"*). ⚠️ This is round 1's
+   * rule lifted from the edition group to the FORMAT group — a fact true of
+   * every copy is said once, here, and appears on no line.
+   */
+  header: string;
+  /** True when something under this tab is a holding — this is what picks the default tab. */
+  owned: boolean;
+  /** One line per owned copy, in the rows' own order. */
+  lines: ShelfCopyLine[];
+  /**
+   * The rows under this tab that are still CARDS: the audiobook recordings (they
+   * carry a cover and the provenance sentence migration 0010 requires be shown),
+   * the ebook files you hold with no copy row, the wishes, and the *"May be
+   * yours"* printings — ⚠️ deliberately untouched by round 2, which is about how
+   * OWNED copies read.
+   */
   rows: ShelfRow[];
 }
 
@@ -408,8 +506,18 @@ export interface ShelfView {
    * in the pre-2026-09-02 order, so every existing caller and pin still reads it.
    */
   rows: ShelfRow[];
-  /** The same rows, under their format headings. Empty sections are omitted. */
-  sections: ShelfSection[];
+  /**
+   * The same rows, under their format tabs, in the owner's order. A format with
+   * nothing on it gets no tab at all.
+   */
+  tabs: ShelfTab[];
+  /**
+   * The rows that belong under NO format — the formatless *"any format"* want and
+   * the never-empty *"not on your shelf"* placeholder. ⚠️ They name themselves,
+   * so they are shown beside the tabs rather than filed under a tab called
+   * "Other", which would be inventing a category to hold two special cases.
+   */
+  looseRows: ShelfRow[];
   /**
    * *"You own 2 audiobooks of this book."* — or null. The owner's 2026-08-23 ask
    * ("SAY THE NUMBER"), which came across with the panel merge. See
@@ -440,7 +548,7 @@ export function specialEditionBadges(
 
   const badges: SpecialEditionBadge[] = [];
   if (copy?.is_signed) {
-    badges.push({ key: 'signed', label: 'Signed', title: 'A signed copy' });
+    badges.push(SIGNED_BADGE);
   }
   if (copy?.sprayed_edges || prose.sprayedEdges) {
     badges.push({ key: 'sprayed', label: 'Sprayed edges', title: 'Coloured/sprayed page edges' });
@@ -1220,30 +1328,245 @@ function buildRows(
   return rows.sort((a, b) => rowRank(a) - rowRank(b));
 }
 
-/** The three headings, in the order a person looks for them. */
-const SECTION_ORDER: { key: ShelfSection['key']; title: string | null }[] = [
-  { key: 'physical', title: 'Physical' },
-  { key: 'ebook', title: 'Ebook' },
-  { key: 'audio', title: 'Audio' },
-  // The formatless "any format" want and the never-empty placeholder. They name
-  // themselves; a heading over them would be inventing a category.
-  { key: 'other', title: null },
-];
+/**
+ * The order the facts read in on a copy line, and it is the OWNER'S order, taken
+ * from his own example rather than from the badge list:
+ *
+ * > "Collectors edition - sprayed edges signed" … "Standard edition - signed -
+ * > lent out"
+ *
+ * ⚠️ **Signed comes LAST of the badges**, which is the one place this departs
+ * from `specialEditionBadges`' ordering (where it is first, because the card's
+ * two-state chip leads). Written the owner's way, a copy reads *"Sprayed edges ·
+ * Signed"* and *"Signed · Lent out"* — both of his lines, exactly.
+ */
+const BADGE_LINE_ORDER = ['sprayed', 'leather', 'slipcase', 'signed'];
 
 /**
- * The rows, under their headings — the owner's *"under their given section"*.
+ * How a badge every copy shares is said ONCE on the tab's header line — *"all
+ * signed"*, the owner's own example (*"Hardcover · all signed"*).
  *
- * ⚠️ A VIEW of `rows`, holding the same objects. An empty section is omitted
- * rather than rendered as a heading over nothing.
+ * ⚠️ It is a phrase per badge and not `all ${label}`, because English does not
+ * cooperate: *"all slipcase"* is not a sentence. The fallback is there so a
+ * badge added later prints something rather than nothing.
  */
-function groupIntoSections(rows: ShelfRow[]): ShelfSection[] {
-  return SECTION_ORDER.map(({ key, title }) => ({
+const SHARED_BADGE_PHRASE: Record<string, string> = {
+  signed: 'all signed',
+  sprayed: 'all sprayed edges',
+  leather: 'all leatherbound',
+  slipcase: 'all in slipcases',
+};
+
+function sharedBadgePhrase(badge: SpecialEditionBadge): string {
+  return SHARED_BADGE_PHRASE[badge.key] ?? `all ${badge.label.toLowerCase()}`;
+}
+
+function badgeLineRank(badge: SpecialEditionBadge): number {
+  const i = BADGE_LINE_ORDER.indexOf(badge.key);
+  return i < 0 ? BADGE_LINE_ORDER.length : i;
+}
+
+/**
+ * ⚠️ **Every badge true of ONE copy, put back together from the two lists round
+ * 1 split it into.** `ShelfRow.badges` is what the card says (the printing's
+ * prose plus what every copy of that printing shares) and `ShelfCopy.badges` is
+ * what is left for that copy, so their union is that copy's whole truth — and
+ * `signed`, which both lists deliberately drop because a two-state CHIP was
+ * about to speak for it, comes back off `ShelfCopy.signed`.
+ *
+ * It is reassembled rather than carried as a third list on the type: three badge
+ * lists on one copy is three chances for them to disagree, and the two that
+ * exist are each defined by what they are FOR. The tab's split (below) is a
+ * different question asked of the same facts — *does every copy of this FORMAT
+ * share it* rather than *every copy of this PRINTING* — so it needs the facts,
+ * not either answer.
+ */
+function copyBadges(row: ShelfRow, copy: ShelfCopy): SpecialEditionBadge[] {
+  const byKey = new Map<string, SpecialEditionBadge>();
+  for (const b of row.badges) byKey.set(b.key, b);
+  for (const b of copy.badges) byKey.set(b.key, b);
+  if (copy.signed) byKey.set(SIGNED_BADGE.key, SIGNED_BADGE);
+  return [...byKey.values()].sort((a, b) => badgeLineRank(a) - badgeLineRank(b));
+}
+
+/**
+ * The copy's status as one phrase, with the person when the server sent a name —
+ * *"Lent out to Sam"*, *"Borrowed from Sam"*.
+ *
+ * ⚠️ One phrase, not the status and the person as two facts. `CopyFacts` said
+ * *"Lent out · Lent to Sam"* and that is the word "lent" twice on one line, in a
+ * panel whose whole ask is that a fact is said once. A redacted or unrecorded
+ * person both arrive null and the phrase is then the bare status — never
+ * "nobody has it", which would be a claim on no evidence (`Copies.tsx`).
+ */
+function statusPhrase(copy: ShelfCopy): string {
+  const label = statusLabel(copy.status);
+  if (!copy.personName) return label;
+  if (copy.status === 'borrowed') return `${label} from ${copy.personName}`;
+  if (copy.status === 'lent' || copy.status === 'sold') return `${label} to ${copy.personName}`;
+  return label;
+}
+
+/**
+ * One owned copy's line. `shared` is the set of badge keys every copy under the
+ * tab carries — those were said once on the header and must not be said again
+ * here.
+ *
+ * ⚠️ **Never *"On the shelf"*.** A copy that is simply where it should be says
+ * nothing about its status; the word only appears for a copy that is somewhere
+ * else. Same rule as *"Not signed"*, and it is the owner's: his plain copy is
+ * *"Standard edition"* and nothing more.
+ */
+function copyLine(
+  row: ShelfRow,
+  copy: ShelfCopy,
+  badges: SpecialEditionBadge[],
+  shared: Set<string>,
+): ShelfCopyLine {
+  // Round 1's headline, verbatim — see `ShelfCopyLine.name`. The `?? 'Any
+  // format'` is the component's own fallback for a row that names no format at
+  // all, kept here so the line is never subject-less.
+  const name = row.label ?? 'Any format';
+  const facts = [
+    ...badges.filter((b) => !shared.has(b.key)).map((b) => b.label),
+    copy.status === 'owned' ? null : statusPhrase(copy),
+    copy.location,
+  ].filter(Boolean) as string[];
+  return {
+    key: `copy-${copy.id}`,
+    copyId: copy.id,
+    name,
+    facts,
+    text: facts.length ? `${name} — ${facts.join(' · ')}` : name,
+    // The whole record, for the hover: everything above plus what the line drops
+    // on purpose — the shared badges, the signed answer either way, the plain
+    // status, and the condition.
+    title: [
+      name,
+      ...badges.filter((b) => b.key !== SIGNED_BADGE.key).map((b) => b.label),
+      copy.signed ? 'Signed' : 'Not signed',
+      statusPhrase(copy),
+      copy.location,
+      copy.condition ? `Condition: ${copy.condition}` : null,
+    ]
+      .filter(Boolean)
+      .join(' · '),
+    coverUrl: row.coverUrl,
+  };
+}
+
+/**
+ * Which tab a row belongs under, and where that tab sits.
+ *
+ * ⚠️ **The taxonomy is deliberately MIXED, because the owner's is** — *"hardcover
+ * paperback cover audio ebook"*. Hardcover and Paperback are physical FORMATS;
+ * Audio and Ebook are MEDIA. Nobody asks for the EPUB tab and the MOBI tab.
+ *
+ * A physical format he did not name gets its own tab rather than being folded
+ * into one of his, so a mass-market copy is still on the shelf; a physical copy
+ * whose binding cannot be attributed at all (`UNSPEC_PHYSICAL`, work 220's
+ * shape) files under the coarse word **Physical**, which is the heading the
+ * shelf already used for it before the tabs.
+ *
+ * Returns null for a row that belongs under no format — `looseRows`.
+ */
+function tabOf(row: ShelfRow): { key: string; label: string; rank: number } | null {
+  if (row.medium === 'audio') return { key: 'audio', label: 'Audio', rank: 40 };
+  if (row.medium === 'ebook') return { key: 'ebook', label: 'Ebook', rank: 50 };
+  if (row.medium !== 'physical') return null;
+  const fmt = row.format;
+  if (!fmt) return { key: 'physical', label: 'Physical', rank: 30 };
+  if (fmt === 'Hardcover') return { key: 'hardcover', label: fmt, rank: 0 };
+  if (fmt === 'Paperback') return { key: 'paperback', label: fmt, rank: 10 };
+  return { key: fmt.toLowerCase(), label: fmt, rank: 20 };
+}
+
+/**
+ * One tab: its header, its copy lines, and the rows that stay cards.
+ *
+ * ⚠️ **The shared/differing split is round 1's, lifted one level up.** Round 1
+ * asked *"do all the copies of this PRINTING agree?"*; a tab holds every copy of
+ * a FORMAT, which may be several printings, so it asks the same question of the
+ * wider set. A fact every copy under the tab carries is said once on the header;
+ * anything else is on the copy that has it.
+ *
+ * ⚠️ **It takes TWO copies for the split to mean anything.** With one copy there
+ * is nothing to share with, and *"Hardcover · all signed"* over a single book is
+ * a claim about a set of one — so a lone copy's line carries all of its own
+ * facts and the header is just the format word. That is also the case the owner
+ * will see on most books, and it has to read as one clean line (his *"So
+ * paperback with standard under it"*).
+ *
+ * ⚠️ **Only BADGES lift.** Status and location stay on the copy, always: they
+ * are what you scan the list FOR, and *"all lent out"* on a header hides which
+ * copy is where — the fact is about the object, not about the format.
+ */
+function makeTab(key: string, label: string, rows: ShelfRow[]): ShelfTab {
+  // Only a HOLDING becomes lines. A wish, a "May be yours" printing, an
+  // audiobook and an ebook file keep the card they already had.
+  const held = rows.filter((r) => r.owned && r.copies.length > 0);
+  const entries = held.flatMap((row) =>
+    row.copies.map((copy) => ({ row, copy, badges: copyBadges(row, copy) })),
+  );
+
+  const shared = new Set<string>();
+  if (entries.length > 1) {
+    for (const b of entries[0]!.badges) {
+      if (entries.every((e) => e.badges.some((x) => x.key === b.key))) shared.add(b.key);
+    }
+  }
+  const sharedPhrases = (entries[0]?.badges ?? [])
+    .filter((b) => shared.has(b.key))
+    .map(sharedBadgePhrase);
+
+  return {
     key,
-    title,
-    rows: rows
-      .filter((r) => (r.medium ?? 'other') === key)
-      .sort((a, b) => stateRank(a) - stateRank(b)),
-  })).filter((s) => s.rows.length > 0);
+    label,
+    header: [label, ...sharedPhrases].join(' · '),
+    owned: rows.some((r) => r.owned),
+    lines: entries.map((e) => copyLine(e.row, e.copy, e.badges, shared)),
+    rows: rows.filter((r) => !(r.owned && r.copies.length > 0)),
+  };
+}
+
+/**
+ * The rows, under their format tabs — the owner's *"hardcover paperback cover
+ * audio ebook as the tabs and the editions owned of each under"*.
+ *
+ * ⚠️ A VIEW of `rows`, holding the same objects. A tab with nothing in it is not
+ * built at all, so the strip only ever offers formats this book actually has.
+ * Within a tab the rows keep the state order the shelf already used: what you
+ * hold, then what you want, then what merely exists.
+ */
+function buildTabs(rows: ShelfRow[]): { tabs: ShelfTab[]; looseRows: ShelfRow[] } {
+  const looseRows: ShelfRow[] = [];
+  const order: string[] = [];
+  const buckets = new Map<string, { label: string; rank: number; rows: ShelfRow[] }>();
+
+  for (const row of rows) {
+    const t = tabOf(row);
+    if (!t) {
+      looseRows.push(row);
+      continue;
+    }
+    let bucket = buckets.get(t.key);
+    if (!bucket) {
+      bucket = { label: t.label, rank: t.rank, rows: [] };
+      buckets.set(t.key, bucket);
+      order.push(t.key);
+    }
+    bucket.rows.push(row);
+  }
+
+  const tabs = [...buckets.entries()]
+    // The owner's order first, then — for a format he did not name — the order
+    // the rows themselves arrived in, so nothing jumps about between renders.
+    .sort(([ak, a], [bk, b]) => a.rank - b.rank || order.indexOf(ak) - order.indexOf(bk))
+    .map(([tabKey, bucket]) =>
+      makeTab(tabKey, bucket.label, [...bucket.rows].sort((a, b) => stateRank(a) - stateRank(b))),
+    );
+
+  return { tabs, looseRows };
 }
 
 /**
@@ -1380,9 +1703,12 @@ export function deriveShelfView({
     ourSeries,
   );
 
+  const { tabs, looseRows } = buildTabs(rows);
+
   return {
     rows,
-    sections: groupIntoSections(rows),
+    tabs,
+    looseRows,
     audioCountLine: audioCountLine(audioEditionCount),
     availability: { peers: peerHoldings },
   };

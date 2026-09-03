@@ -112,10 +112,14 @@ describe('a REJECTED recording leaves the shelf — migration 0450', () => {
       audioEditionCount: 0,
     });
     assert.equal(audioRows(v).length, 0);
+    // ⚠️ AMENDED 2026-09-03 (SHELF round 2): the shelf's mediums became format
+    // TABS, so what this asks is now "no Audio TAB" rather than "no Audio
+    // section". The claim is unchanged — an empty bucket is not built at all,
+    // never rendered as a heading (or a tab) over nothing.
     assert.equal(
-      v.sections.find((s) => s.key === 'audio'),
+      v.tabs.find((t) => t.key === 'audio'),
       undefined,
-      'an empty section is omitted, not rendered as a heading over nothing',
+      'an empty tab is omitted, not offered as a tab over nothing',
     );
   });
 

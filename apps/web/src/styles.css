@@ -2896,7 +2896,13 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
 .shelf-hero__avail-label { flex: none; }
 
 /* --- The one edit box: Overview + tabs ------------------------------------ */
-.edit-box__tabs {
+/* ⚠️ `.shelf-tabs` rides on EVERY edit-box tab rule, here and in the
+   `.book-detail` block below, rather than getting a look of its own. The shelf's
+   format tabs (owner 2026-09-03: "hardcover paperback cover audio ebook as the
+   tabs") are the same control doing the same job three panels further up the
+   page; two tab treatments on one page is two things to keep in step. */
+.edit-box__tabs,
+.shelf-tabs {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
@@ -2944,8 +2950,10 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
 
   /* The edit-box tab strip already wraps (never clips); give each tab the 44px
      touch height so the active one is always aimable on a phone. */
-  .edit-box__tabs { gap: 0.35rem; }
-  .edit-box__tabs .chip { min-height: 44px; }
+  .edit-box__tabs,
+  .shelf-tabs { gap: 0.35rem; }
+  .edit-box__tabs .chip,
+  .shelf-tabs .chip { min-height: 44px; }
 
   /* Every form inside the edit box goes single-column and full-width. A select
      capped at 14rem (a filter-bar width) or 10rem (a copy action) is wrong when
@@ -3352,16 +3360,48 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
   border: 1px dashed var(--bd-line);
   padding: calc(1rem - 1px);
 }
-/* Section headings — "Physical", "Ebook", "Audio". Quiet on purpose: they
-   organise the list, they do not compete with the identities inside it. */
-.book-detail .shelf-section + .shelf-section { margin-top: 1.25rem; }
-.book-detail .shelf-section__head {
+/* The tab panel's own heading — "Hardcover", "Hardcover · all signed". Quiet on
+   purpose: it organises the list and carries the facts every copy shares, it
+   does not compete with the identities inside it.
+   ⚠️ It replaced the "Physical / Ebook / Audio" section heads when the shelf
+   became format TABS (owner 2026-09-03); `.shelf-section*` is gone rather than
+   left behind, so there is no stale look waiting to be re-used by accident. */
+.book-detail .shelf-tab__head {
   margin: 0 0 0.5rem;
   font-size: 0.72rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.09em;
   color: var(--bd-ink-faint);
+}
+.book-detail .shelf-tab:focus-visible { outline: 2.5px solid var(--bd-teal); outline-offset: 4px; }
+/* ONE LINE PER OWNED COPY — "Collectors edition — Sprayed edges · Signed".
+   A list, not a stack of cards: the whole point of round 2 is that three copies
+   of one book read as three lines you can take in at once. */
+.book-detail .shelf-lines { margin: 0 0 0.6rem; display: flex; flex-direction: column; gap: 0.3rem; }
+.book-detail .shelf-lines > li { padding: 0; border: 0; }
+.book-detail .shelf-line {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  font-size: 0.95rem;
+  color: var(--bd-ink);
+}
+.book-detail .shelf-line__name { font-weight: 600; }
+/* What makes this copy different, and only that — muted, so a glance down the
+   list reads the printings first and the differences second. */
+.book-detail .shelf-line__facts { color: var(--bd-ink-soft); font-size: 0.85rem; }
+/* The printing's OWN jacket, where it has one. ⚠️ Absent, there is no thumb at
+   all — the work cover is never borrowed onto a printing. */
+.book-detail .shelf-line__thumb { width: 26px; height: 35px; flex: none; }
+.book-detail .shelf-line__thumb img,
+.book-detail .shelf-line__thumb .cover--blank {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 4px;
 }
 /* The sentences that came across from "Other versions available" — narrator,
    provenance, staleness. Full size, muted: a hedge in smaller print pretending
@@ -3565,13 +3605,15 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
 
 /* ---- the one edit box: mockup tabs + fields ------------------------------ */
 .book-detail .edit-box.panel { padding-top: 1.1rem; }
-.book-detail .edit-box__tabs {
+.book-detail .edit-box__tabs,
+.book-detail .shelf-tabs {
   gap: 0.25rem;
   border-bottom: 1px solid var(--bd-line);
   padding-bottom: 0;
   margin-bottom: 1.1rem;
 }
-.book-detail .edit-box__tabs .chip {
+.book-detail .edit-box__tabs .chip,
+.book-detail .shelf-tabs .chip {
   border: 0;
   border-bottom: 2px solid transparent;
   border-radius: 9px 9px 0 0;
@@ -3582,13 +3624,15 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
   padding: 0.55rem 0.8rem;
   margin-bottom: -1px;
 }
-.book-detail .edit-box__tabs .chip.primary {
+.book-detail .edit-box__tabs .chip.primary,
+.book-detail .shelf-tabs .chip.primary {
   background: var(--bd-sunk);
   color: var(--bd-brass);
   border-bottom-color: var(--bd-brass);
   text-shadow: var(--et-glow-title, none);
 }
-.book-detail .edit-box__tabs .chip.primary:hover { background: var(--bd-sunk); }
+.book-detail .edit-box__tabs .chip.primary:hover,
+.book-detail .shelf-tabs .chip.primary:hover { background: var(--bd-sunk); }
 .book-detail .edit-box .panel {
   box-shadow: none;
   background: var(--bd-surface);

@@ -3,6 +3,7 @@
 // `RungMedia.tsx` and `ContentNotes.tsx`: the test runner compiles from the
 // repo root where no tsconfig sets `jsx`. Vite and tsc use the automatic runtime
 // already, so the shipped bundle is byte-identical.
+import { useRef, useState, type KeyboardEvent } from 'react';
 import type { WorkAudioEdition, WorkAudiobookHolding, WorkEbookHolding } from '../api.js';
 import type { CopyView } from './Copies.js';
 import type { EditionView } from './Editions.js';
@@ -10,7 +11,13 @@ import type { PeerHoldingView } from './PeerLibraries.js';
 import { Cover } from './Cover.js';
 import { editionKindLabel } from '../lib/formats.js';
 import { STATUS_LABEL } from '../lib/statuses.js';
-import { deriveShelfView, type ShelfCopy, type ShelfRow } from '../lib/shelf-view.js';
+import {
+  deriveShelfView,
+  type ShelfCopy,
+  type ShelfCopyLine,
+  type ShelfRow,
+  type ShelfTab,
+} from '../lib/shelf-view.js';
 
 /**
  * ⚠️ `rowCatalogHref` is GONE, and its absence is the point.
@@ -127,14 +134,27 @@ function rowEmoji(row: ShelfRow): string {
  * `copy.badges` for each copy, and `row.signed` / `row.signedVaries` for which
  * level the signed chip belongs to. See `shelf-view.ts`.
  *
- * ## THE list, in per-format sections (owner, 2026-09-02)
+ * ## THE list, in per-format TABS (owner, 2026-09-02, reshaped 2026-09-03)
  *
  * > "on your shelf should be the main with other editions available under their
  * > given section. so if its a second physical there should be 2 under physical."
  *
  * The **"Other versions available"** panel is gone from the work page and its
- * contents live here, under **Physical / Ebook / Audio** headings. Three things
- * this component now renders that it did not:
+ * contents live here. ⚠️ **Round 2 (2026-09-03) turned the three medium headings
+ * into FORMAT TABS**, after the owner looked at round 1 and said *"Better but
+ * still duplicate, the hard cover section has info and the stuff underneath has
+ * information"*:
+ *
+ * > "I want to see hardcover paperback cover audio ebook as the tabs and the
+ * > editions owned of each under … So hardcover / Collectors edition - sprayed
+ * > edges signed / Standard edition / Standard edition - signed - lent out"
+ *
+ * So under a tab an OWNED copy is **one line** — `tab.lines`, every word of it
+ * composed in `deriveShelfView` — and everything else keeps the card it had. The
+ * tab strip is the edit box's strip: the same `.chip` treatment through one
+ * shared rule in `styles.css`, never a second tab look.
+ *
+ * Three things this component renders that it did not before the merge:
  *
  *   1. **`available` rows** — a printing you neither own nor want, lighter and
  *      labelled, ⚠️ never mistakable for a holding: no Owned pill, no signed
@@ -183,7 +203,7 @@ export function OnYourShelf({
    */
   ourSeries?: string | null;
 }) {
-  const { sections, audioCountLine, availability } = deriveShelfView({
+  const { tabs, looseRows, audioCountLine, availability } = deriveShelfView({
     title,
     copies,
     editions,
@@ -201,26 +221,22 @@ export function OnYourShelf({
     <section className="panel shelf">
       <h3>On your shelf</h3>
 
-      {/* One section per medium — the owner's "under their given section". A
-          heading over a single card is deliberate: the point of the sections is
-          that "is there a second physical?" is answerable without reading. */}
-      {sections.map((section) => (
-        <div className="shelf-section" key={section.key}>
-          {section.title && <h4 className="shelf-section__head">{section.title}</h4>}
-          {/* The owner's 2026-08-23 ask, SAY THE NUMBER — it followed the
-              audiobook rows here from the panel that used to carry it. */}
-          {section.key === 'audio' && audioCountLine && (
-            <p className="muted small">{audioCountLine}</p>
-          )}
-          <ul className="plain shelf-rows">
-            {section.rows.map((row) => (
-              <li key={row.key}>
-                <ShelfCard row={row} />
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
+      <ShelfTabs tabs={tabs} audioCountLine={audioCountLine} />
+
+      {/* ⚠️ The rows that belong under NO format — the formatless "any format"
+          want and the never-empty "not on your shelf" slot. They sit beside the
+          tabs rather than inside one, because they name themselves and a tab
+          called "Other" would be a category invented to hold two edge cases.
+          When there are no tabs at all, this is the whole shelf. */}
+      {looseRows.length > 0 && (
+        <ul className="plain shelf-rows">
+          {looseRows.map((row) => (
+            <li key={row.key}>
+              <ShelfCard row={row} />
+            </li>
+          ))}
+        </ul>
+      )}
 
       {/* ⚠️ "Also available" is now PEERS ONLY. Your own audiobook/ebook holdings
           became Owned shelf rows above (owner model) — only OTHER people's
@@ -251,6 +267,165 @@ export function OnYourShelf({
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * The format tab strip and the panel under it — the owner's *"hardcover
+ * paperback cover audio ebook as the tabs and the editions owned of each
+ * under"* (2026-09-03).
+ *
+ * ⚠️ **It chooses no words and does no grouping.** Which tabs exist, their
+ * order, the header line and every copy line are `deriveShelfView`'s, so one
+ * test pins what the shelf SAYS. This is the tab strip, the keyboard, and
+ * nothing else.
+ *
+ * ⚠️ **The selection is plain state and is NOT persisted** — no localStorage, no
+ * URL. A tab is where you are in one glance at one book, not a preference.
+ *
+ * ⚠️ **`picked` is a wish, not the answer.** The tab set changes when the page
+ * reloads its data (a copy is added, a recording is rejected), and a `picked`
+ * key that no longer exists must not blank the panel — so the render always
+ * resolves through `tabs` and falls back to the default. That is why there is no
+ * `useEffect` here resetting state: there is nothing to reset.
+ */
+function ShelfTabs({
+  tabs,
+  audioCountLine,
+}: {
+  tabs: ShelfTab[];
+  /** *"You own 2 audiobooks of this book."* — the owner's 2026-08-23 SAY THE NUMBER ask. */
+  audioCountLine: string | null;
+}) {
+  const [picked, setPicked] = useState<string | null>(null);
+  const buttons = useRef<(HTMLButtonElement | null)[]>([]);
+
+  if (tabs.length === 0) return null;
+
+  // The first tab that holds something you OWN, else simply the first. A book
+  // whose only hardcover is a "May be yours" printing should open on the format
+  // it actually has, not on the one it might.
+  const fallback = tabs.find((t) => t.owned) ?? tabs[0]!;
+  const active = tabs.find((t) => t.key === picked) ?? fallback;
+  const index = tabs.indexOf(active);
+
+  function move(to: number) {
+    const next = tabs[(to + tabs.length) % tabs.length]!;
+    setPicked(next.key);
+    buttons.current[tabs.indexOf(next)]?.focus();
+  }
+
+  // Arrows move the tab (and the focus with it); Home/End jump to the ends.
+  // Enter and Space need no handler — these are real <button>s and fire their
+  // own onClick, which is the whole reason they are buttons and not divs.
+  function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    const k = e.key;
+    if (k === 'ArrowRight' || k === 'ArrowDown') move(index + 1);
+    else if (k === 'ArrowLeft' || k === 'ArrowUp') move(index - 1);
+    else if (k === 'Home') move(0);
+    else if (k === 'End') move(tabs.length - 1);
+    else return;
+    e.preventDefault();
+  }
+
+  return (
+    <>
+      <div
+        className="shelf-tabs"
+        role="tablist"
+        aria-label="Formats on your shelf"
+        onKeyDown={onKeyDown}
+      >
+        {tabs.map((t, i) => (
+          <button
+            key={t.key}
+            id={`shelf-tab-${t.key}`}
+            ref={(el) => {
+              buttons.current[i] = el;
+            }}
+            type="button"
+            role="tab"
+            aria-selected={t === active}
+            aria-controls={`shelf-panel-${t.key}`}
+            /* Roving tabindex: one stop for the whole strip, then the arrows.
+               A strip of six tabs that costs six tab stops to walk past is the
+               thing this pattern exists to avoid. */
+            tabIndex={t === active ? 0 : -1}
+            className={`chip${t === active ? ' primary' : ''}`}
+            onClick={() => setPicked(t.key)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div
+        className="shelf-tab"
+        id={`shelf-panel-${active.key}`}
+        role="tabpanel"
+        aria-labelledby={`shelf-tab-${active.key}`}
+        tabIndex={0}
+      >
+        {/* ⚠️ The header carries the facts EVERY copy under this tab shares —
+            "Hardcover · all signed" — and they appear on no line below. Round
+            1's rule, lifted from the printing to the format. */}
+        <h4 className="shelf-tab__head">{active.header}</h4>
+
+        {active.key === 'audio' && audioCountLine && <p className="muted small">{audioCountLine}</p>}
+
+        {/* ONE LINE PER OWNED COPY. `text` is composed in the derivation; the
+            spans exist only so the name can carry the weight and the facts can
+            go muted. `title` holds what the line drops on purpose — the shared
+            facts, the signed record either way, the condition. */}
+        {active.lines.length > 0 && (
+          <ul className="plain shelf-lines">
+            {active.lines.map((line) => (
+              <li key={line.key}>
+                <CopyLine line={line} />
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {/* Everything that is not an owned copy keeps the card it had — the
+            audiobook recordings with their covers and provenance, the ebook
+            files, the wishes, and MAY BE YOURS. ⚠️ Untouched by round 2. */}
+        {active.rows.length > 0 && (
+          <ul className="plain shelf-rows">
+            {active.rows.map((row) => (
+              <li key={row.key}>
+                <ShelfCard row={row} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </>
+  );
+}
+
+/**
+ * One owned copy, as one line: *"Collectors edition — Sprayed edges · Signed"*.
+ *
+ * ⚠️ **The jacket is shown only when the PRINTING has one of its own.** Absent,
+ * there is no thumb at all — the work cover is never borrowed onto a printing,
+ * the same rule the cards follow.
+ */
+function CopyLine({ line }: { line: ShelfCopyLine }) {
+  return (
+    // ⚠️ A <div>, not a <p>: `Cover`'s no-jacket fallback is a <div>, and a block
+    // inside a paragraph is invalid markup the browser silently reshapes.
+    <div className="shelf-line" title={line.title}>
+      {line.coverUrl && (
+        <span className="shelf-line__thumb">
+          <Cover src={line.coverUrl} title={line.name} size="row" />
+        </span>
+      )}
+      <span className="shelf-line__name">{line.name}</span>
+      {line.facts.length > 0 && (
+        <span className="shelf-line__facts"> — {line.facts.join(' · ')}</span>
+      )}
+    </div>
   );
 }
 
