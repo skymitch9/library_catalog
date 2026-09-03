@@ -18,6 +18,165 @@
 > were extracted from this same history.
 
 
+## ✅ 2026-09-03 — SHELF part B: the hedged `audio?` matches became a verdict (0450), shipped to both instances
+
+Moved here **whole** from [`TODO.md`](TODO.md) — the section as it stood at
+the deploy, banner and all. One item from it stays OPEN in `TODO.md`: the
+`/bookid-index` and TBR audio bridges do not filter `rejected` (see the
+"deliberately NOT changed" list below).
+
+**Shipped 2026-09-03 15:32 Phoenix**, commit `2879e52` (code `c6dbb90`;
+`96e3b23` is the MAIN half's `deploys.log` line). Deploy PAIR from a clean
+tree, both from the same build (`assets/index-D2jMaltT.js`, verified served
+live on both hosts at 15:33):
+
+| | Version id | `deploys.log` line |
+|---|---|---|
+| **main** | `6304c527-8a7c-4293-bba9-74671413669f` | `2026-09-03T22:32:05.207Z  2879e525…  unknown  6304c527-…` |
+| **friend** (padhard) | `1b3d39b4-b0db-46e7-8443-2e57efcff373` | `2026-09-03T22:32:22.202Z  96e3b234…  unknown  1b3d39b4-…  env=friend` |
+
+**Verified live (15:33):** <https://library.heygabi.ai/work/347> — the Audio
+row reads *"Matched on a partial title (80% title match) — confirm it in ✎
+Edit this book."* and the page contains no `audio?`. **NOT verified:** the
+✎ Edit → Audio tab's buttons were not pressed (no verdict has been written
+end-to-end against a real D1 yet); and on **padhard** neither series with
+`fold` rows (DCC ×8, HWFWM ×12 in `audiobook_series_holding`) renders any
+audio chip at all — both pages say *"Held: 1 in print. None of them are in
+the audiobook catalog"* — so where padhard's 27 hedged rows were showing was
+not found and the new wording was not seen there. That is a question for the
+series page, not for this feature, and is logged in `TODO.md`.
+
+The (`unknown`) holder in the log lines: the deploy ran from the conductor's
+shell, which had no holder name set — the commit ids are the authority.
+
+---
+
+### (as it stood in TODO.md) SHELF: the hedged `audio?` matches — owner ask, 2026-09-03 ~14:37 Phoenix — ✅ **APPROVED 15:03 AND BUILT** (`c6dbb90`), migration 0450 ✅ **applied to BOTH**, ⚠️ **NOT YET DEPLOYED** — the conductor deploys the pair
+
+Lands on BOTH instances through the shared components (global rule
+2026-09-03: one codebase, deploy PAIR).
+
+> ✅ **Part A of this section — "the multi-copy card says every badge twice" —
+> SHIPPED 2026-09-03 15:04 Phoenix and moved WHOLE to
+> [`DONE.md`](DONE.md).** Commit `dcbb79f`, deployed to both instances:
+> **main** `cfccc183-fd3c-418e-a7cf-a78c3ad5d3a5` · **friend**
+> `d6a24afe-4693-4861-8b5f-0298ab76715f`. What is left below is part B.
+>
+> ⚠️ **Part B was approved at 15:03 (*"Yes do it"*) and BUILT the same
+> afternoon — see the "APPROVED AND BUILT" block at the foot of this section.
+> It is NOT in the deploy above**: `dcbb79f` shipped before `c6dbb90` existed,
+> so both live instances are still running the hedged chips.
+
+### B. "A lot of books asking if this is the right audio"
+
+Owner, 2026-09-03 ~14:37 Phoenix, verbatim:
+
+> "Also I see a lot of books asking if this is the right audio, can we make
+> all of those question ones show the audio even if not sure and then we can
+> confirm if it's right in the edit menu later? Any dramatic misses ping me
+> about"
+
+**What the "question" is (measured 14:40):** the `?` hedge on the AUDIO chip
+of a series-ladder rung, `apps/web/src/components/RungMedia.tsx` — `audio?`
+(`audioToken`, `:78`; `Media`, `:139`) for a work-level `containment` match
+(migration 0010 `audiobook_holding.matched_via`) and `GapMedia` `:181` for a
+series-level `fold` match (0090 `audiobook_series_holding.series_matched_via`);
+`mediumPhrase` says *"possibly on audio"* for the same rows (`:207`). The
+WORK page already shows the audio as **Owned** with its cover — only the
+*"Matched by containment — … worth a second look"* provenance sentence hedges
+there.
+
+| | MAIN | padhard |
+|---|---|---|
+| work-level `containment`, live | **8** (all 0.80–0.82 — 7 are *Harry Potter … (Full-Cast Edition)*, plus *Space Knight Book 1 → "Space Knight"*) | 0 |
+| work-level `containment`, stale | 1 — ⚠️ **work #72 *Tamer Book 11* → "Tamer: King of Dinosaurs"** (the series-title-only recording; the one real miss, already stale so shown lighter) | 0 |
+| series-level `fold`, live | 6 (Arcane Pathfinder ×4, Legion vol 4 = the *Many Lives* omnibus, Twilight vol 1 = the Tenth-Anniversary dual edition) | **27** (DCC ×8, He Who Fights with Monsters ×12, + 7 singles — every series name identical on both sides) |
+| series links already confirmed (0110 `audiobook_series_link`) | 8 | 1 |
+
+So "a lot" is padhard's series pages (DCC and HWFWM carry `audio?` on every
+rung). None of the 41 hedged rows is a dramatic miss on inspection; the only
+wrong one (#72) is already stale.
+
+**Plan (to confirm with the owner, one decision):** (1) DISPLAY — the chip
+drops the `?` and *"possibly on audio"* becomes *"on audio"*; the hedge
+survives only in the tooltip and in the work page's provenance sentence,
+which is reworded from a question into a pointer (*"Matched on a partial
+title — confirm it in ✎ Edit this book"*). (2) CONFIRM — a small **Audio**
+tab in `EditBox` listing the matched recording(s) with *"Yes, this is it"* /
+*"Not this one"*. ⚠️ Persisting the verdict is a NEW TABLE, not a fourth
+`matched_via` value — migration 0110 already explains why (the sync upsert
+overwrites `matched_via` on every run and would erase a confirmation). A
+rejected match is hidden from the shelf and ladder and its row kept (0003:
+mark, never delete). Series-level `fold` already has its confirm mechanism
+(0110, on the series page) — the tab should link to it rather than build a
+second one. Migration PAIR + deploy PAIR. Sized as a multi-layer build
+(migration + worker route + web tab + tests) — Opus, ≥150k, clean tree first.
+
+#### ✅ APPROVED AND BUILT 2026-09-03 — ⚠️ **NOT YET DEPLOYED**
+
+**Owner, 15:03 Phoenix, to the two-part plan above, verbatim: *"Yes do it"*.**
+
+Built the same afternoon — commit `c6dbb90` on `main`, pushed. ⚠️ **The
+conductor deploys the PAIR** (`npm run deploy` + `npm run deploy:friend`) once
+part A's shelf-badge work has landed too. Nothing below has been seen on a live
+page.
+
+**Migration `0450_audiobook_match_review.sql` — ✅ APPLIED TO BOTH INSTANCES
+2026-09-03** (`npm run db:migrate` → `library-catalog` ✅; `npm run
+db:migrate:friend` → `library-catalog-2nd` ✅ — additive, so safe ahead of the
+deploy). Table `audiobook_match_review (work_id, audio_key, verdict, decided_at,
+decided_by)`, PK `(work_id, audio_key)`, verdict `'confirmed' | 'rejected'`.
+
+What landed:
+
+- **Display** — `audioToken` returns `'audio'` for a containment match (the
+  COUNT stays in the signature); `Media` / `GapMedia` render no `?`;
+  `mediumPhrase` says *"on audio"* for both tokens (the `'audio?'` branches are
+  KEPT, so an old token cannot print raw text); `matchProvenance` →
+  *"Matched on a partial title (81% title match) — confirm it in ✎ Edit this
+  book."*
+- **Confirm** — `POST /api/works/:id/audio-review` (`editCatalog`, mirroring
+  `POST /api/series/:name/audio-link`), and a new **Audio** tab in `EditBox`
+  listing every recording on record — stale and rejected included, because that
+  is where a verdict is taken back — with *"Yes, this is it"* / *"Not this
+  one"*, a worded refusal for a reader without the role, and a line pointing at
+  the series page for series-level matches.
+- **What `rejected` hides**, reader by reader, and what it deliberately does
+  not: the table lives in
+  [`info/series-formats-and-audiobooks.md` §4.9](info/series-formats-and-audiobooks.md).
+  That is its home — do not restate it here.
+
+⚠️ **Two things were deliberately NOT changed:**
+
+1. `completeness.ts`'s *"N possibly on audio"* and `gapAudioLabel`'s `fold`
+   caption still hedge in words, because those rungs are still counted as
+   **MISSING** by the arithmetic and that file warns against a caption
+   disagreeing with the count. Unhedging them is a change to the COUNT, and it
+   was not asked for. (§4.9.3.)
+2. ☐ **OPEN** — `routes/reviews.ts` `/bookid-index` and `packages/db/src/tbr.ts`'s
+   audio bridge do NOT filter rejected recordings. They are identity bridges into
+   another catalog's documents; filtering them would silently move existing
+   reviews / TBR entries and nobody has measured what that touches.
+
+☐ **After the deploy, look at these three:**
+
+- MAIN, a series whose rungs used to show `audio?`:
+  <https://library.heygabi.ai/series/Harry%20Potter> — the audio chips read a
+  flat **AUDIO**, and hovering one says *"matched on a partial title; confirm it
+  in ✎ Edit this book"*.
+- padhard, the instance that made it "a lot":
+  <https://padhard.heygabi.ai/series/Dungeon%20Crawler%20Carl> — the gap rungs'
+  chips lose their `?` too. The caption under them still explains the series
+  fold, and the control that settles THAT is on the same page (0110).
+- MAIN, a containment match on a work page:
+  <https://library.heygabi.ai/work/347> — the Audio row's sentence should read
+  *"Matched on a partial title (…% title match) — confirm it in ✎ Edit this
+  book."*, and **✎ Edit this book → Audio** should offer the two buttons.
+
+Measured at the commit: `npm test` **2282 pass / 0 fail** (2261 before);
+`npm run build` green; `npm run typecheck` clean.
+
+
 ## ✅ 2026-09-03 — SHELF: "double information" on a multi-copy card — a fact is now printed ONCE, shipped to both instances
 
 Moved here **whole** from [`TODO.md`](TODO.md) (it was part **A** of the

@@ -32,130 +32,81 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
-## ☐ SHELF: the hedged `audio?` matches — owner ask, 2026-09-03 ~14:37 Phoenix — ✅ **APPROVED 15:03 AND BUILT** (`c6dbb90`), migration 0450 ✅ **applied to BOTH**, ⚠️ **NOT YET DEPLOYED** — the conductor deploys the pair
+## ☐ SHELF round 2: "Better but still duplicate" → format tabs with the editions under each — owner ask 2026-09-03 15:18, spec 15:33 Phoenix
 
 Lands on BOTH instances through the shared components (global rule
-2026-09-03: one codebase, deploy PAIR).
+2026-09-03: one codebase, deploy PAIR). Review page: <https://library.heygabi.ai/work/263>.
 
-> ✅ **Part A of this section — "the multi-copy card says every badge twice" —
-> SHIPPED 2026-09-03 15:04 Phoenix and moved WHOLE to
-> [`DONE.md`](DONE.md).** Commit `dcbb79f`, deployed to both instances:
-> **main** `cfccc183-fd3c-418e-a7cf-a78c3ad5d3a5` · **friend**
-> `d6a24afe-4693-4861-8b5f-0298ab76715f`. What is left below is part B.
->
-> ⚠️ **Part B was approved at 15:03 (*"Yes do it"*) and BUILT the same
-> afternoon — see the "APPROVED AND BUILT" block at the foot of this section.
-> It is NOT in the deploy above**: `dcbb79f` shipped before `c6dbb90` existed,
-> so both live instances are still running the hedged chips.
+Owner, 15:18, after reviewing /work/263 with round 1 (`dcbb79f`) live, verbatim:
 
-### B. "A lot of books asking if this is the right audio"
+> "Better but still duplicate, the hard cover section has info and the stuff
+> underneath has information"
 
-Owner, 2026-09-03 ~14:37 Phoenix, verbatim:
+The card he reviewed read: *Hardcover · OWNED · Not signed* / *On the shelf ·
+Sprayed edges* / *On the shelf* / *Lent out · good*, then three MAY BE YOURS
+edition cards whose meta line repeats "Hardcover" under a name that already
+says hardcover. Asked (one question, 15:20) whether the duplicate was the
+copy lines' *"On the shelf"* (already what the OWNED pill means) or the MAY
+BE YOURS meta word. His answer was a spec, not a pick — **15:33, verbatim:**
 
-> "Also I see a lot of books asking if this is the right audio, can we make
-> all of those question ones show the audio even if not sure and then we can
-> confirm if it's right in the edit menu later? Any dramatic misses ping me
-> about"
+> "I want to see hardcover paperback cover audio ebook as the tabs and the
+> editions owned of each under
+> So paperback with standard under it. So very similar to A with minor
+> changes. Keep what makes them different took.
+> So hardcover
+> Collectors edition - sprayed edges signed
+> Standard edition
+> Standard edition - signed - lent out"
 
-**What the "question" is (measured 14:40):** the `?` hedge on the AUDIO chip
-of a series-ladder rung, `apps/web/src/components/RungMedia.tsx` — `audio?`
-(`audioToken`, `:78`; `Media`, `:139`) for a work-level `containment` match
-(migration 0010 `audiobook_holding.matched_via`) and `GapMedia` `:181` for a
-series-level `fold` match (0090 `audiobook_series_holding.series_matched_via`);
-`mediumPhrase` says *"possibly on audio"* for the same rows (`:207`). The
-WORK page already shows the audio as **Owned** with its cover — only the
-*"Matched by containment — … worth a second look"* provenance sentence hedges
-there.
+**Read as:**
 
-| | MAIN | padhard |
-|---|---|---|
-| work-level `containment`, live | **8** (all 0.80–0.82 — 7 are *Harry Potter … (Full-Cast Edition)*, plus *Space Knight Book 1 → "Space Knight"*) | 0 |
-| work-level `containment`, stale | 1 — ⚠️ **work #72 *Tamer Book 11* → "Tamer: King of Dinosaurs"** (the series-title-only recording; the one real miss, already stale so shown lighter) | 0 |
-| series-level `fold`, live | 6 (Arcane Pathfinder ×4, Legion vol 4 = the *Many Lives* omnibus, Twilight vol 1 = the Tenth-Anniversary dual edition) | **27** (DCC ×8, He Who Fights with Monsters ×12, + 7 singles — every series name identical on both sides) |
-| series links already confirmed (0110 `audiobook_series_link`) | 8 | 1 |
+- The shelf is grouped by **format tabs** — Hardcover · Paperback · Audio ·
+  Ebook (his list also says "cover"; taken as a slip between "hardcover" and
+  "paperback" unless he says otherwise — ☐ confirm on review, not before).
+  A format with nothing owned shows no tab.
+- Under a tab, **one line per owned copy**: the edition name, then only the
+  facts that distinguish THAT copy — ` - sprayed edges signed`,
+  ` - signed - lent out`. A copy with nothing distinctive is its edition name
+  alone (*"Standard edition"*). No *"On the shelf"* line, no *"Not signed"*:
+  the absence of a word is the plain case.
+- "Very similar to A with minor changes" = round 1's derivation stays (a fact
+  printed once: shared facts on the group, differing facts on the copy); what
+  changes is the SHAPE — tabs per format instead of a card per edition, and
+  the copy line becomes *edition — differences* instead of *status · facts*.
+- MAY BE YOURS stays as it is unless it duplicates the tab word; the format
+  tab already says "Hardcover", so a candidate's meta line need not.
 
-So "a lot" is padhard's series pages (DCC and HWFWM carry `audio?` on every
-rung). None of the 41 hedged rows is a dramatic miss on inspection; the only
-wrong one (#72) is already stale.
+**Where it lives:** `apps/web/src/lib/shelf-view.ts` (`deriveShelfView`,
+`physicalRow`, `splitBadges`, `ShelfRow`/`ShelfCopy`) and
+`apps/web/src/components/OnYourShelf.tsx` (`ShelfCard`, `CopyFacts` — the
+*"On the shelf"* word is added by `CopyFacts` whenever `withStatus`, i.e. on
+every multi-copy list). Tests in `apps/web/test/shelf-view.test.ts`. Sized as
+a web-only build (derivation + component + tests) — Opus, ~150k.
 
-**Plan (to confirm with the owner, one decision):** (1) DISPLAY — the chip
-drops the `?` and *"possibly on audio"* becomes *"on audio"*; the hedge
-survives only in the tooltip and in the work page's provenance sentence,
-which is reworded from a question into a pointer (*"Matched on a partial
-title — confirm it in ✎ Edit this book"*). (2) CONFIRM — a small **Audio**
-tab in `EditBox` listing the matched recording(s) with *"Yes, this is it"* /
-*"Not this one"*. ⚠️ Persisting the verdict is a NEW TABLE, not a fourth
-`matched_via` value — migration 0110 already explains why (the sync upsert
-overwrites `matched_via` on every run and would erase a confirmation). A
-rejected match is hidden from the shelf and ladder and its row kept (0003:
-mark, never delete). Series-level `fold` already has its confirm mechanism
-(0110, on the series page) — the tab should link to it rather than build a
-second one. Migration PAIR + deploy PAIR. Sized as a multi-layer build
-(migration + worker route + web tab + tests) — Opus, ≥150k, clean tree first.
+☐ build → ☐ tests → ☐ deploy PAIR from a clean tree → ☐ owner review on
+/work/263 (three hardcover copies: collectors sprayed+signed, plain standard,
+standard signed lent-out — exactly his example) and a padhard work with two
+formats.
 
-#### ✅ APPROVED AND BUILT 2026-09-03 — ⚠️ **NOT YET DEPLOYED**
+## ☐ Audio-verdict residue (from part B, shipped 15:32 — the section is in [`DONE.md`](DONE.md))
 
-**Owner, 15:03 Phoenix, to the two-part plan above, verbatim: *"Yes do it"*.**
+- ☐ **OPEN** — `routes/reviews.ts` `/bookid-index` and `packages/db/src/tbr.ts`'s
+  audio bridge do NOT filter `rejected` recordings. They are identity bridges
+  into another catalog's documents; filtering them would silently move existing
+  reviews / TBR entries and nobody has measured what that touches. Measure
+  first (how many review/TBR rows key on a containment-matched recording on
+  each instance), then decide.
+- ☐ **Owner:** press *"Yes, this is it"* once on <https://library.heygabi.ai/work/347>
+  (✎ Edit this book → Audio) — the route has never written a verdict against a
+  real D1; the first press is the end-to-end proof.
+- ☐ **padhard's 27 `fold` rows render nowhere found (15:35):**
+  <https://padhard.heygabi.ai/series/He%20Who%20Fights%20with%20Monsters> (12
+  fold rows) and the DCC page (8) both say *"Held: 1 in print. None of them are
+  in the audiobook catalog"* with no audio chip on any rung. Either the fold
+  rows attach to gap rungs that a one-book ladder with no known length never
+  draws, or the series page is not reading them. Find where the owner saw
+  "a lot" before assuming the 27 are visible anywhere.
 
-Built the same afternoon — commit `c6dbb90` on `main`, pushed. ⚠️ **The
-conductor deploys the PAIR** (`npm run deploy` + `npm run deploy:friend`) once
-part A's shelf-badge work has landed too. Nothing below has been seen on a live
-page.
-
-**Migration `0450_audiobook_match_review.sql` — ✅ APPLIED TO BOTH INSTANCES
-2026-09-03** (`npm run db:migrate` → `library-catalog` ✅; `npm run
-db:migrate:friend` → `library-catalog-2nd` ✅ — additive, so safe ahead of the
-deploy). Table `audiobook_match_review (work_id, audio_key, verdict, decided_at,
-decided_by)`, PK `(work_id, audio_key)`, verdict `'confirmed' | 'rejected'`.
-
-What landed:
-
-- **Display** — `audioToken` returns `'audio'` for a containment match (the
-  COUNT stays in the signature); `Media` / `GapMedia` render no `?`;
-  `mediumPhrase` says *"on audio"* for both tokens (the `'audio?'` branches are
-  KEPT, so an old token cannot print raw text); `matchProvenance` →
-  *"Matched on a partial title (81% title match) — confirm it in ✎ Edit this
-  book."*
-- **Confirm** — `POST /api/works/:id/audio-review` (`editCatalog`, mirroring
-  `POST /api/series/:name/audio-link`), and a new **Audio** tab in `EditBox`
-  listing every recording on record — stale and rejected included, because that
-  is where a verdict is taken back — with *"Yes, this is it"* / *"Not this
-  one"*, a worded refusal for a reader without the role, and a line pointing at
-  the series page for series-level matches.
-- **What `rejected` hides**, reader by reader, and what it deliberately does
-  not: the table lives in
-  [`info/series-formats-and-audiobooks.md` §4.9](info/series-formats-and-audiobooks.md).
-  That is its home — do not restate it here.
-
-⚠️ **Two things were deliberately NOT changed:**
-
-1. `completeness.ts`'s *"N possibly on audio"* and `gapAudioLabel`'s `fold`
-   caption still hedge in words, because those rungs are still counted as
-   **MISSING** by the arithmetic and that file warns against a caption
-   disagreeing with the count. Unhedging them is a change to the COUNT, and it
-   was not asked for. (§4.9.3.)
-2. ☐ **OPEN** — `routes/reviews.ts` `/bookid-index` and `packages/db/src/tbr.ts`'s
-   audio bridge do NOT filter rejected recordings. They are identity bridges into
-   another catalog's documents; filtering them would silently move existing
-   reviews / TBR entries and nobody has measured what that touches.
-
-☐ **After the deploy, look at these three:**
-
-- MAIN, a series whose rungs used to show `audio?`:
-  <https://library.heygabi.ai/series/Harry%20Potter> — the audio chips read a
-  flat **AUDIO**, and hovering one says *"matched on a partial title; confirm it
-  in ✎ Edit this book"*.
-- padhard, the instance that made it "a lot":
-  <https://padhard.heygabi.ai/series/Dungeon%20Crawler%20Carl> — the gap rungs'
-  chips lose their `?` too. The caption under them still explains the series
-  fold, and the control that settles THAT is on the same page (0110).
-- MAIN, a containment match on a work page:
-  <https://library.heygabi.ai/work/347> — the Audio row's sentence should read
-  *"Matched on a partial title (…% title match) — confirm it in ✎ Edit this
-  book."*, and **✎ Edit this book → Audio** should offer the two buttons.
-
-Measured at the commit: `npm test` **2282 pass / 0 fail** (2261 before);
-`npm run build` green; `npm run typecheck` clean.
 
 ## ☐ "Signed" typed into the edition name → the signed button ✅ **APPLIED TO BOTH INSTANCES 2026-09-03** (padhard 14:19, MAIN 14:33 Phoenix — different modes, see below), ☐ **6 rows to link by hand** and ☐ edition parity with the main catalog still open (owner ask 2026-09-03 ~13:00)
 
