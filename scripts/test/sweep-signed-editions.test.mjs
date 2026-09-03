@@ -24,6 +24,7 @@ import {
   parseCopyList,
   planRow,
   resolveCopyCollisions,
+  stripSignedWord,
 } from '../sweep-signed-editions.mjs';
 
 /** An edition row with the padhard shape unless overridden. */
@@ -170,6 +171,163 @@ describe('resolveCopyCollisions — two editions cannot take one copy', () => {
     assert.deepEqual(settled[0].flagCopyIds, [7]);
     assert.equal(settled[0].needsOwner, null);
     assert.match(settled[1].needsOwner, /no copy row/);
+  });
+});
+
+/**
+ * `--strip-word`, the MAIN mode. The owner looked at main's 20 real vendor names
+ * and said *"I think remove signed from the name keep the rest, mark them all
+ * signed"* (2026-09-03 14:26 Phoenix) — so the mapping below is not a guess, it
+ * is the spec, pair by pair, and every one of these strings is a name that
+ * actually exists in `library-catalog` or was written out by the owner.
+ */
+describe('stripSignedWord — the owner-checked before → after pairs', () => {
+  const CASES = [
+    // The 15-row bulk of MAIN: the word sits mid-name and only the word goes.
+    ['Kickstarter signed paperback', 'Kickstarter paperback'],
+    // ⚠️ The comma is KEPT: it joins "hardcover" to an item that still exists.
+    ['Campaign-only exclusive hardcover, signed extras', 'Campaign-only exclusive hardcover, extras'],
+    // ⚠️ The "&" is DROPPED: it joined *Signed* to *Numbered*, and one is gone.
+    [
+      "Collector's Edition Trilogy — Book 1 Signed & Numbered",
+      "Collector's Edition Trilogy — Book 1 Numbered",
+    ],
+    // Everything after the word survives verbatim, punctuation and all.
+    [
+      'Signed Leatherbound (two-volume set: books 1-2)',
+      'Leatherbound (two-volume set: books 1-2)',
+    ],
+    // Nothing survives → NULL, which is migration 0050's "ordinary printing".
+    ['Signed', null],
+    // ⚠️ Capitalised, because deleting a leading word promotes the next one.
+    ['Signed special', 'Special'],
+  ];
+
+  for (const [before, after] of CASES) {
+    it(`"${before}" → ${after === null ? 'NULL' : `"${after}"`}`, () => {
+      assert.equal(stripSignedWord(before), after);
+    });
+  }
+
+  it('padhard\'s multi-word names, had this mode existed then', () => {
+    assert.equal(stripSignedWord('Signed deluxe edition'), 'Deluxe edition');
+    // The dangling "/" left behind at the end is trimmed, not kept.
+    assert.equal(stripSignedWord('After light edition/ signed'), 'After light edition');
+  });
+
+  it('case and whitespace do not change the answer', () => {
+    assert.equal(stripSignedWord('SIGNED paperback'), 'Paperback');
+    assert.equal(stripSignedWord('  signed  '), null);
+    assert.equal(stripSignedWord('Kickstarter  SIGNED  paperback'), 'Kickstarter paperback');
+  });
+
+  it('⚠️ "signed" inside another word is NOT the word — the name comes back untouched', () => {
+    // `instr(lower(name), 'signed')` matches these; the sweep must not mangle them.
+    for (const name of ['Cosigned edition', 'Unsigned proof', 'Consigned copy']) {
+      assert.equal(stripSignedWord(name), name);
+    }
+  });
+
+  it('drops the connector on either side rather than leaving it dangling', () => {
+    assert.equal(stripSignedWord('Signed & Numbered'), 'Numbered');
+    assert.equal(stripSignedWord('Signed and numbered'), 'Numbered');
+    assert.equal(stripSignedWord('Numbered & signed'), 'Numbered');
+    assert.equal(stripSignedWord('Signed/numbered'), 'Numbered');
+    assert.equal(stripSignedWord('Deluxe, signed'), 'Deluxe');
+  });
+
+  it('null in, null out', () => {
+    assert.equal(stripSignedWord(null), null);
+    assert.equal(stripSignedWord(undefined), null);
+  });
+});
+
+describe('planRow --strip-word — keep the name, keep the kind, flag every copy', () => {
+  const strip = (over) => planRow(row(over), { stripWord: true });
+
+  it('rewrites the name and NEVER touches edition_kind', () => {
+    const p = strip({
+      edition_name: 'Kickstarter signed paperback',
+      edition_kind: 'collectors',
+      linked: [{ id: 7, is_signed: 0 }],
+    });
+    assert.equal(p.renameName, true);
+    assert.equal(p.newName, 'Kickstarter paperback');
+    assert.equal(p.clearName, false);
+    assert.equal(p.clearKind, false, 'edition_kind is untouched in this mode');
+  });
+
+  it('a bare "Signed" still empties the name to NULL', () => {
+    const p = strip({ linked: [{ id: 7, is_signed: 0 }] });
+    assert.equal(p.renameName, true);
+    assert.equal(p.newName, null);
+  });
+
+  it('⚠️ "mark them all signed": an UNLINKED copy is flagged even when a linked one exists', () => {
+    const p = strip({
+      linked: [{ id: 7, is_signed: 0 }],
+      unlinked: [{ id: 8, is_signed: 0 }, { id: 9, is_signed: 0 }],
+    });
+    assert.deepEqual(p.flagCopyIds, [7, 8, 9]);
+    // …but the ambiguous ones are NOT linked, and that is an outstanding task.
+    assert.equal(p.linkCopyId, null);
+    assert.match(p.needsOwner, /flagged signed but NOT linked/);
+    assert.match(p.needsOwner, /#8, #9/);
+  });
+
+  it('the one unambiguous case still links: no linked copy, exactly one unlinked', () => {
+    const p = strip({ unlinked: [{ id: 42, is_signed: 0 }] });
+    assert.equal(p.linkCopyId, 42);
+    // ⚠️ It stays in flagCopyIds on purpose — the caller drops it when it builds
+    // the single link+flag statement, and resolveCopyCollisions may put it back.
+    assert.deepEqual(p.flagCopyIds, [42]);
+    assert.equal(p.needsOwner, null);
+  });
+
+  it('⚠️ a collision withholds the LINK but the copy is still flagged signed', () => {
+    // MAIN's real case: *Something* #620/#621 both claim copy #407.
+    const settled = resolveCopyCollisions([
+      strip({ edition_id: 620, format: 'paperback', unlinked: [{ id: 407, is_signed: 0 }] }),
+      strip({ edition_id: 621, format: 'hardcover', unlinked: [{ id: 407, is_signed: 0 }] }),
+    ]);
+    for (const plan of settled) {
+      assert.equal(plan.linkCopyId, null);
+      assert.deepEqual(plan.flagCopyIds, [407], 'the flag survives the collision');
+      assert.match(plan.needsOwner, /all claim its one unlinked copy #407/);
+      assert.match(plan.needsOwner, /flagged signed anyway/);
+    }
+  });
+
+  it('already-flagged copies are not re-flagged — a re-run writes nothing', () => {
+    const p = strip({ linked: [{ id: 7, is_signed: 1 }], unlinked: [] });
+    assert.deepEqual(p.flagCopyIds, []);
+    assert.equal(p.linkCopyId, null);
+    assert.equal(p.needsOwner, null);
+  });
+
+  it('no copy at all is still handed over, and no copy is invented', () => {
+    const p = strip({ linked: [], unlinked: [] });
+    assert.deepEqual(p.flagCopyIds, []);
+    assert.match(p.needsOwner, /no copy row/);
+  });
+
+  it('the format rule is unchanged: keep hardcover/paperback, default the rest', () => {
+    assert.equal(strip({ format: 'hardcover' }).newFormat, 'hardcover');
+    assert.equal(strip({ format: 'mass_market' }).newFormat, DEFAULT_FORMAT);
+    assert.equal(strip({ format: 'mass_market' }).defaultFormat, true);
+  });
+
+  it('⚠️ "signed" inside another word: nothing is written, and the row is reported', () => {
+    const p = strip({ edition_name: 'Cosigned edition', linked: [{ id: 7, is_signed: 0 }] });
+    assert.equal(p.renameName, false);
+    assert.equal(p.wordNotFound, true);
+  });
+
+  it('the DEFAULT mode is untouched by the new argument', () => {
+    const p = planRow(row({ edition_name: 'Kickstarter signed paperback', linked: [{ id: 7, is_signed: 0 }] }));
+    assert.equal(p.clearName, true);
+    assert.equal(p.newName, undefined);
+    assert.equal(p.losesWords, true);
   });
 });
 

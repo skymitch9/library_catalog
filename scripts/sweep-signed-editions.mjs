@@ -63,17 +63,47 @@
  *   node scripts/sweep-signed-editions.mjs --remote --friend  # dry run, padhard
  *   node scripts/sweep-signed-editions.mjs --remote --friend --commit   # APPLY
  *
+ * ## `--strip-word` — the SECOND mode, and why there are two
+ *
+ * The default above deletes the whole name, which is right for padhard, where
+ * every name was the bare word. **MAIN is different**: its 20 matching names are
+ * real vendor prose that migration 0050 says `edition_name` exists to keep
+ * byte-for-byte — "Kickstarter signed paperback", "Collector's Edition Trilogy —
+ * Book 1 Signed & Numbered". Clearing those destroys the *Kickstarter*, not just
+ * the *signed*.
+ *
+ * **Owner, verbatim (2026-09-03 14:26 Phoenix):** *"I think remove signed from
+ * the name keep the rest, mark them all signed."* So:
+ *
+ *   * `edition_name` — the WORD "signed" is removed and the remainder kept
+ *     (`stripSignedWord`); a name that was only "Signed" becomes NULL;
+ *   * `edition_kind` — **untouched**. Nothing in "remove signed from the name"
+ *     asks for a collector's edition to stop being one;
+ *   * `format` — the same keep-hardcover/paperback rule as the default mode;
+ *   * copies — *"mark them all signed"* is read literally: **every** copy of the
+ *     work is flagged, linked to the edition or not. A copy is still only
+ *     LINKED to the edition where that is unambiguous (one unlinked copy, one
+ *     signed-named edition); the ambiguous ones are flagged and listed for a
+ *     human to link later, never guessed.
+ *
+ *   node scripts/sweep-signed-editions.mjs --remote --strip-word            # dry run, MAIN
+ *   node scripts/sweep-signed-editions.mjs --remote --strip-word --commit   # APPLY
+ *
  * ⚠️ **DRY RUN is the default** — it prints what it WOULD change and writes
  * nothing. `--commit` applies. `--friend` requires `--remote`; `scripts/lib/d1.mjs`
  * refuses the pair's absence because both instances bind `DB`, so a local
  * `--friend` run would rewrite MAIN while reporting about padhard.
  *
  * Idempotent by construction: the match is on `edition_name` containing
- * "signed", and the sweep sets that column to NULL, so a second run matches
- * nothing.
+ * "signed", and both modes remove that word from the column — the default by
+ * clearing it, `--strip-word` by deleting the word — so a second run matches
+ * nothing. ⚠️ The one exception is a name where "signed" is not a WORD
+ * ("cosigned"): the SQL's `instr` matches it, the word-boundary strip does not,
+ * so it is printed as *word not found* and left alone rather than mangled. None
+ * exist on either instance (measured 2026-09-03).
  */
 
-import { execute, parseFlags, query } from './lib/d1.mjs';
+import { execute, lit, parseFlags, query } from './lib/d1.mjs';
 
 /**
  * The formats the owner said to keep. Everything else — including `mass_market`
@@ -92,14 +122,77 @@ export function nameSaysSigned(name) {
 }
 
 /**
+ * The connectors that join two things in an edition name. When one of the two
+ * is the word we just deleted, the connector has nothing left to join.
+ *
+ * ⚠️ Only a connector glued to the word's RIGHT is swallowed with it, and the
+ * asymmetry is what makes the two owner-checked mappings both come out right:
+ *
+ *   * "Book 1 Signed **&** Numbered" → the `&` joined *Signed* to *Numbered*,
+ *     so it goes: → "Book 1 Numbered".
+ *   * "hardcover**,** signed extras" → the comma joins *hardcover* to the item
+ *     *signed extras*, which still exists after the word goes, so the comma
+ *     stays: → "hardcover, extras".
+ *
+ * A connector left DANGLING at either end afterwards ("After light edition/")
+ * is trimmed by the cleanup pass instead, which needs no such judgement.
+ */
+const CONNECTOR = String.raw`(?:[&/,;]|and\b)`;
+
+/**
+ * Remove the WORD "signed" from an edition name and keep the rest — the
+ * `--strip-word` mapping, pure and unit-tested against the owner's own examples.
+ *
+ * Returns the new name, or `null` when nothing survives ("Signed" → NULL).
+ *
+ * ⚠️ Word-boundary, case-insensitive: "cosigned" and "unsigned" are NOT the
+ * word and come back unchanged (the caller reports those rather than writing
+ * them). The remainder is capitalised only when the deleted word was at the
+ * START, because that is the only case where the deletion promotes a lower-case
+ * word into first position: "Signed special" → "Special", not "special".
+ */
+export function stripSignedWord(name) {
+  if (name === null || name === undefined) return null;
+
+  // The word, plus a connector glued to its right, plus the space either side.
+  let out = String(name).replace(
+    new RegExp(String.raw`\bsigned\b\s*` + CONNECTOR + String.raw`?\s*`, 'gi'),
+    ' ',
+  );
+
+  out = out.replace(/\s+/g, ' ').replace(/\s+([,;])/g, '$1');
+
+  // Whatever the deletion left dangling at either end. Looped, because removing
+  // a trailing "&" can expose a trailing comma behind it.
+  let previous;
+  do {
+    previous = out;
+    out = out
+      .replace(new RegExp(String.raw`^\s*` + CONNECTOR + String.raw`\s*`, 'i'), '')
+      .replace(new RegExp(String.raw`\s*(?:[&/,;]|\band)\s*$`, 'i'), '')
+      .trim();
+  } while (out !== previous);
+
+  if (out === '') return null;
+  // Only a deletion at the start can leave a lower-case word leading the name.
+  if (/^\s*signed\b/i.test(String(name))) return out[0].toUpperCase() + out.slice(1);
+  return out;
+}
+
+/**
  * The changes one edition row implies — a PURE function, so the whole decision
  * is testable with no database (`scripts/test/sweep-signed-editions.test.mjs`).
  *
  * `row` carries the edition's own columns plus `linked` (copies pointing at this
  * edition) and `unlinked` (the WORK's copies with no edition), each an array of
  * `{ id, is_signed }`.
+ *
+ * `stripWord` selects the second mode (see the file header): keep the name minus
+ * the word, leave `edition_kind` alone, and flag EVERY copy of the work.
  */
-export function planRow(row) {
+export function planRow(row, { stripWord = false } = {}) {
+  if (stripWord) return planRowStripWord(row);
+
   const linked = row.linked ?? [];
   const unlinked = row.unlinked ?? [];
 
@@ -131,11 +224,72 @@ export function planRow(row) {
   }
 
   return {
+    stripWord: false,
     clearName,
     clearKind,
     defaultFormat,
     newFormat: defaultFormat ? DEFAULT_FORMAT : row.format,
     losesWords,
+    flagCopyIds,
+    linkCopyId,
+    needsOwner,
+  };
+}
+
+/**
+ * `--strip-word`: keep the name minus the word, keep the kind, flag every copy.
+ *
+ * ⚠️ **`flagCopyIds` means something WIDER here than in the default mode**, and
+ * the difference is the owner's *"mark them all signed"*: it is every unflagged
+ * copy of the WORK — linked to this edition or sitting with `edition_id IS
+ * NULL` — not just the ones already pointing at the edition. Linking stays as
+ * conservative as it ever was; only the flag is generous. A row whose copies
+ * are flagged but not linked is still listed for the owner, because "link it by
+ * hand later" is a real outstanding task, not a silent success.
+ *
+ * ⚠️ `linkCopyId` is left INSIDE `flagCopyIds`; the caller drops it when it
+ * builds statements, because the link and the flag travel as one UPDATE. That
+ * is deliberate: `resolveCopyCollisions` can null `linkCopyId` afterwards, and
+ * the copy must still end up flagged when it does.
+ */
+function planRowStripWord(row) {
+  const linked = row.linked ?? [];
+  const unlinked = row.unlinked ?? [];
+  const all = [...linked, ...unlinked];
+
+  const hasName = row.edition_name !== null && row.edition_name !== undefined;
+  const newName = hasName ? stripSignedWord(row.edition_name) : null;
+  const renameName = hasName && newName !== row.edition_name;
+
+  const defaultFormat = !KEEP_FORMATS.includes(row.format);
+
+  // Unambiguous means the same thing it always did: no copy is already linked,
+  // and the work has exactly one that could be. The cross-row half of
+  // "unambiguous" — one signed-named edition — is resolveCopyCollisions'.
+  const linkCopyId = linked.length === 0 && unlinked.length === 1 ? unlinked[0].id : null;
+  const flagCopyIds = all.filter((c) => Number(c.is_signed) !== 1).map((c) => c.id);
+
+  let needsOwner = null;
+  if (all.length === 0) {
+    needsOwner = 'no copy row on this work at all — nothing to flag (a copy is never invented)';
+  } else if (unlinked.length > 0 && linkCopyId === null) {
+    needsOwner =
+      `${unlinked.length} unlinked cop${unlinked.length === 1 ? 'y' : 'ies'} flagged signed but NOT ` +
+      `linked to this edition — link by hand later (copies ${unlinked.map((c) => `#${c.id}`).join(', ')})`;
+  }
+
+  return {
+    stripWord: true,
+    clearName: false,
+    /** ⚠️ NEVER true in this mode — "remove signed from the name" says nothing about the kind. */
+    clearKind: false,
+    renameName,
+    newName,
+    /** `instr` matched but the word boundary did not ("cosigned") — reported, never written. */
+    wordNotFound: hasName && !renameName,
+    defaultFormat,
+    newFormat: defaultFormat ? DEFAULT_FORMAT : row.format,
+    losesWords: false,
     flagCopyIds,
     linkCopyId,
     needsOwner,
@@ -167,9 +321,14 @@ export function resolveCopyCollisions(plans) {
     return {
       ...plan,
       linkCopyId: null,
+      // ⚠️ In --strip-word the copy is still FLAGGED (it stays in flagCopyIds);
+      // only the link is withheld. Saying so is the difference between "left
+      // for you" and "left undone".
       needsOwner:
         `${n} signed editions of this work all claim its one unlinked copy #${plan.linkCopyId} — ` +
-        'one copy cannot belong to two printings, and which one she owns is not in the database',
+        (plan.stripWord
+          ? 'the copy is flagged signed anyway, but which printing it is cannot be derived — link it by hand'
+          : 'one copy cannot belong to two printings, and which one she owns is not in the database'),
     };
   });
 }
@@ -188,6 +347,9 @@ export function parseCopyList(concatenated) {
 
 function main() {
   const { commit, remote, friend } = parseFlags();
+  // Not in parseFlags: that helper is shared by every backfill in scripts/, and
+  // a flag only this sweep understands does not belong in the common parser.
+  const stripWord = process.argv.slice(2).includes('--strip-word');
 
   // ⚠️ `instr(...) > 0` rather than `LIKE '%signed%'`, and not for SQL reasons:
   // d1.mjs sends reads through wrangler's `--command`, which on Windows goes via
@@ -210,7 +372,10 @@ function main() {
   const statements = [];
   const losesWords = [];
   const needsOwner = [];
+  const renames = [];
+  const wordNotFound = [];
   let namesCleared = 0;
+  let namesRewritten = 0;
   let kindsCleared = 0;
   let formatsDefaulted = 0;
   let copiesFlagged = 0;
@@ -223,7 +388,7 @@ function main() {
     linked: parseCopyList(raw.linked_copies),
     unlinked: parseCopyList(raw.unlinked_copies),
   }));
-  const plans = resolveCopyCollisions(planned.map((row) => planRow(row)));
+  const plans = resolveCopyCollisions(planned.map((row) => planRow(row, { stripWord })));
 
   for (const [i, row] of planned.entries()) {
     const plan = plans[i];
@@ -233,6 +398,13 @@ function main() {
       sets.push('edition_name = NULL');
       namesCleared += 1;
     }
+    if (plan.renameName) {
+      sets.push(`edition_name = ${lit(plan.newName)}`);
+      if (plan.newName === null) namesCleared += 1;
+      else namesRewritten += 1;
+      renames.push({ ...row, to: plan.newName });
+    }
+    if (plan.wordNotFound) wordNotFound.push(row);
     if (plan.clearKind) {
       sets.push('edition_kind = NULL');
       kindsCleared += 1;
@@ -245,36 +417,64 @@ function main() {
       statements.push(`UPDATE edition SET ${sets.join(', ')} WHERE id = ${row.edition_id};`);
     }
 
-    let copyAction;
-    if (plan.flagCopyIds.length > 0) {
-      copiesFlagged += plan.flagCopyIds.length;
-      for (const id of plan.flagCopyIds) {
-        statements.push(`UPDATE copy SET is_signed = 1 WHERE id = ${id};`);
-      }
-      copyAction = `flag linked cop${plan.flagCopyIds.length === 1 ? 'y' : 'ies'} ${plan.flagCopyIds
-        .map((id) => `#${id}`)
-        .join(', ')}`;
-    } else if (plan.linkCopyId != null) {
+    // ⚠️ The link statement carries its own `is_signed = 1`, so that copy must
+    // not also get a bare flag statement — it would be a redundant write, and
+    // the counters would double-count it.
+    const flagOnly = plan.flagCopyIds.filter((id) => id !== plan.linkCopyId);
+    const copyActions = [];
+
+    if (plan.linkCopyId != null) {
       copiesLinkedAndFlagged += 1;
       // One statement on purpose: the link and the flag must travel together.
       statements.push(
         `UPDATE copy SET edition_id = ${row.edition_id}, is_signed = 1 WHERE id = ${plan.linkCopyId};`,
       );
-      copyAction = `link + flag copy #${plan.linkCopyId}`;
-    } else if (plan.needsOwner) {
-      needsOwner.push({ ...row, why: plan.needsOwner });
-      copyAction = '⚠️ NEEDS THE OWNER';
-    } else {
-      copyAction = 'already signed — no copy write';
+      copyActions.push(`link + flag copy #${plan.linkCopyId}`);
     }
+    if (flagOnly.length > 0) {
+      copiesFlagged += flagOnly.length;
+      for (const id of flagOnly) {
+        statements.push(`UPDATE copy SET is_signed = 1 WHERE id = ${id};`);
+      }
+      copyActions.push(
+        `flag cop${flagOnly.length === 1 ? 'y' : 'ies'} ${flagOnly.map((id) => `#${id}`).join(', ')}`,
+      );
+    }
+    if (plan.needsOwner) {
+      needsOwner.push({ ...row, why: plan.needsOwner });
+      copyActions.push('⚠️ NEEDS THE OWNER');
+    }
+    if (copyActions.length === 0) copyActions.push('already signed — no copy write');
 
     if (plan.losesWords) losesWords.push(row);
 
     const formatNote = plan.defaultFormat ? `${row.format} -> ${DEFAULT_FORMAT}` : row.format;
+    const nameNote = plan.renameName
+      ? `"${row.edition_name}" -> ${plan.newName === null ? 'NULL' : `"${plan.newName}"`}`
+      : `"${row.edition_name}"`;
     console.log(
       `edition #${row.edition_id} · ${row.work_title ?? '?'} · ` +
-        `"${row.edition_name}" · ${formatNote} · ${copyAction}`,
+        `${nameNote} · ${formatNote} · ${copyActions.join(' · ')}`,
     );
+  }
+
+  if (renames.length > 0) {
+    console.log('');
+    console.log('NAME CHANGES — before → after (this listing is the only record of the old names):');
+    for (const row of renames) {
+      console.log(
+        `  edition #${row.edition_id} · ${row.work_title ?? '?'} · ` +
+          `"${row.edition_name}" → ${row.to === null ? 'NULL' : `"${row.to}"`}`,
+      );
+    }
+  }
+
+  if (wordNotFound.length > 0) {
+    console.log('');
+    console.log('⚠️ "signed" IS NOT A WORD IN THESE NAMES — matched by instr, left alone:');
+    for (const row of wordNotFound) {
+      console.log(`  edition #${row.edition_id} · ${row.work_title ?? '?'} · "${row.edition_name}"`);
+    }
   }
 
   if (losesWords.length > 0) {
@@ -288,7 +488,11 @@ function main() {
 
   if (needsOwner.length > 0) {
     console.log('');
-    console.log('⚠️ NEEDS THE OWNER — the edition is normalised, but no copy is flagged:');
+    console.log(
+      stripWord
+        ? '⚠️ LINK BY HAND LATER — the copies ARE flagged signed, but which printing they are is not in the database:'
+        : '⚠️ NEEDS THE OWNER — the edition is normalised, but no copy is flagged:',
+    );
     for (const row of needsOwner) {
       console.log(`  work #${row.work_id} "${row.work_title ?? '?'}" (edition #${row.edition_id}, ` +
         `was "${row.edition_name}") — ${row.why}`);
@@ -301,14 +505,21 @@ function main() {
       ? 'MAIN (library-catalog)'
       : 'LOCAL';
   console.log('');
-  console.log(`Target: ${target}`);
+  console.log(`Target: ${target}   Mode: ${stripWord ? '--strip-word (keep the rest of the name)' : 'default (clear the whole name)'}`);
   console.log(`  editions matched .............. ${rows.length}`);
-  console.log(`  names cleared ................. ${namesCleared}`);
-  console.log(`  kinds cleared ................. ${kindsCleared}`);
+  if (stripWord) {
+    console.log(`  names rewritten ............... ${namesRewritten}`);
+    console.log(`  names emptied to NULL ......... ${namesCleared}`);
+    console.log(`  names left alone (not a word) . ${wordNotFound.length}`);
+    console.log(`  kinds cleared ................. ${kindsCleared}  (never, in this mode)`);
+  } else {
+    console.log(`  names cleared ................. ${namesCleared}`);
+    console.log(`  kinds cleared ................. ${kindsCleared}`);
+  }
   console.log(`  formats defaulted to paperback  ${formatsDefaulted}`);
-  console.log(`  copies flagged (already linked) ${copiesFlagged}`);
+  console.log(`  copies flagged ................ ${copiesFlagged}`);
   console.log(`  copies linked + flagged ....... ${copiesLinkedAndFlagged}`);
-  console.log(`  rows needing the owner ........ ${needsOwner.length}`);
+  console.log(`  rows to link by hand .......... ${needsOwner.length}`);
   console.log(`  statements .................... ${statements.length}`);
 
   if (!commit) {
