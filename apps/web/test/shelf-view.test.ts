@@ -31,6 +31,18 @@
  *      that format, so the attribution is unambiguous.
  *   3. **unresolvable** — no link and several candidates (or none): the format
  *      word stands alone. ⚠️ Never a borrowed name; see the work-220 test.
+ *
+ * ## A fact is printed ONCE — the 2026-09-03 amendment
+ *
+ * > Owner, of a three-copy card that printed *Not signed* four times: "This has
+ * > double information, let's normalize this."
+ *
+ * `ShelfRow.badges` / `ShelfRow.signed` are what the CARD prints and
+ * `ShelfCopy.badges` is what that COPY prints — two disjoint lists, decided
+ * here, not filtered in the component. ⚠️ **Two tests below were AMENDED rather
+ * than added**, because they pinned the behaviour the owner called double
+ * information: the row-is-signed-if-ANY test, and work 220's union of badges.
+ * Both are marked, and both say what they used to claim.
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
@@ -422,8 +434,17 @@ describe('the row LEADS with the edition, and never with a guess (owner 2026-09-
     assert.equal(row.meta, null, 'no imprint, no name — nothing resolved to say it about');
     assert.equal(row.editionName, null);
     // ⚠️ And no badge leaks in from the un-attributable printing's prose either.
-    assert.deepEqual(row.badges.map((b) => b.key).sort(), ['leather', 'signed', 'slipcase']);
+    // ⚠️ AMENDED 2026-09-03: the card used to carry the UNION of the two copies'
+    // attributes — leather, signed and slipcase — while each copy carried its
+    // own underneath, so every one of the three was printed twice. The two
+    // copies share NOTHING, so the card now claims nothing and each copy says
+    // exactly what is true of it.
+    assert.deepEqual(row.badges, [], 'nothing is true of both copies');
+    assert.deepEqual(row.copies[0]!.badges.map((b) => b.key), ['leather']);
+    assert.deepEqual(row.copies[1]!.badges.map((b) => b.key), ['slipcase']);
     // The per-copy answer is the only honest one here, and it is intact.
+    assert.equal(row.signed, null, 'no group answer — copy 169 is signed and 382 is not');
+    assert.equal(row.signedVaries, true);
     assert.equal(row.copies[0]!.signed, true);
     assert.equal(row.copies[1]!.signed, false);
 
@@ -536,15 +557,25 @@ describe('signed is answered EITHER WAY on what you hold (owner: "and if its sig
     assert.equal(row.copies[0]!.signed, true);
   });
 
-  it('the ROW is signed when ANY of its copies is, and the copies still disagree individually', () => {
+  it('⚠️ AMENDED 2026-09-03: copies that DISAGREE give the row NO answer — each copy answers for itself', () => {
+    // This test used to assert `row.signed === true` — "at least one of these is
+    // signed" — on a card whose copies then each answered again underneath.
+    // Owner: "This has double information, let's normalize this." A row-level
+    // claim that is false of one of its own copies is not a summary, it is a
+    // fourth voice; the honest card says nothing and lets the copies speak.
     const v = deriveShelfView({
       ...NONE,
       copies: [copy({ id: 1, is_signed: 0 }), copy({ id: 2, is_signed: 1 })],
       editions: [edition({ id: 77, format: 'paperback' })],
     });
     const row = only(v);
-    assert.equal(row.signed, true);
+    assert.equal(row.signed, null, 'no single answer is true of both copies');
+    assert.equal(row.signedVaries, true, 'so each copy carries its own chip');
     assert.deepEqual(row.copies.map((c) => c.signed).sort(), [false, true]);
+    // ⚠️ And the badge does not sneak the same fact back onto the card.
+    assert.equal(row.badges.some((b) => b.key === 'signed'), false);
+    // Nor onto the signed copy's own line, where its chip is about to say it.
+    assert.ok(row.copies.every((c) => !c.badges.some((b) => b.key === 'signed')));
   });
 
   it('⚠️ signing takes NO prose fallback — a shop calling the printing "Signed" is not a signature on YOUR copy', () => {
@@ -558,6 +589,141 @@ describe('signed is answered EITHER WAY on what you hold (owner: "and if its sig
     const row = only(v);
     assert.equal(row.signed, false);
     assert.ok(row.badges.some((b) => b.key === 'leather'), 'leather DOES read the prose');
+  });
+});
+
+/**
+ * ## A fact is printed ONCE (owner, 2026-09-03)
+ *
+ * > "This has double information, let's normalize this."
+ *
+ * Said with a screenshot of a **Hardcover · OWNED** card holding three copies:
+ * the card line read *"Not signed · Sprayed edges"* and the three copy lines
+ * read *"On the shelf · Not signed · Sprayed edges"*, *"On the shelf · Not
+ * signed"*, *"Lent out · good · Not signed"*. Four *Not signed*s and two
+ * *Sprayed edges* for two facts.
+ *
+ * The approved rule: **on the card when every copy agrees, on the copies (and
+ * only there) when they differ.** These pin it at the level that decides it —
+ * `ShelfRow.badges` is what the CARD prints and `ShelfCopy.badges` is what that
+ * COPY prints, so the component filters nothing and a test can pin what a row
+ * says rather than what it happens to hold.
+ */
+describe('a fact is printed ONCE — card when the copies agree, copies when they differ', () => {
+  it("⚠️ THE OWNER'S SCREENSHOT: three copies, all unsigned, one with sprayed edges", () => {
+    const v = deriveShelfView({
+      ...NONE,
+      copies: [
+        copy({ id: 1, status: 'owned', edition_id: 10, sprayed_edges: 1 }),
+        copy({ id: 2, status: 'owned', edition_id: 10 }),
+        copy({ id: 3, status: 'lent', edition_id: 10, condition: 'good' }),
+      ],
+      editions: [edition({ id: 10, format: 'hardcover' })],
+    });
+    const row = only(v);
+    // The card answers signing, because all three copies say the same thing.
+    assert.equal(row.signed, false, 'all three agree, so the card says it — once');
+    assert.equal(row.signedVaries, false, 'and no copy repeats it');
+    // ⚠️ The card claims NO badge: sprayed edges are true of one copy of three.
+    assert.deepEqual(row.badges, [], 'a badge one copy carries is not a fact about the card');
+    assert.deepEqual(row.copies.map((c) => c.badges.map((b) => b.key)), [
+      ['sprayed'],
+      [],
+      [],
+    ]);
+    // The copies still each know their own signed answer; the component simply
+    // does not ask for it while the card has answered.
+    assert.deepEqual(row.copies.map((c) => c.signed), [false, false, false]);
+  });
+
+  it('two copies, one signed one not → NO card chip, and each copy carries its own', () => {
+    const v = deriveShelfView({
+      ...NONE,
+      copies: [
+        copy({ id: 1, status: 'owned', edition_id: 10, is_signed: 1 }),
+        copy({ id: 2, status: 'owned', edition_id: 10 }),
+      ],
+      editions: [edition({ id: 10, format: 'hardcover' })],
+    });
+    const row = only(v);
+    assert.equal(row.signed, null, '⚠️ no honest single answer, so the card gives none');
+    assert.equal(row.signedVaries, true, 'the copies are asked instead');
+    assert.deepEqual(row.copies.map((c) => c.signed), [true, false]);
+    // ⚠️ Not as a badge on either level — `SignedChip` is the one that speaks.
+    assert.equal(row.badges.some((b) => b.key === 'signed'), false);
+    assert.ok(row.copies.every((c) => c.badges.length === 0));
+  });
+
+  it('two copies that BOTH agree → the card carries both facts and the copies carry nothing', () => {
+    const v = deriveShelfView({
+      ...NONE,
+      copies: [
+        copy({ id: 1, status: 'owned', edition_id: 10, is_signed: 1, slipcase: 1 }),
+        copy({ id: 2, status: 'owned', edition_id: 10, is_signed: 1, slipcase: 1 }),
+      ],
+      editions: [edition({ id: 10, format: 'hardcover' })],
+    });
+    const row = only(v);
+    assert.equal(row.signed, true, 'both are signed, so the card says so');
+    assert.equal(row.signedVaries, false);
+    assert.deepEqual(row.badges.map((b) => b.key), ['slipcase'], 'shared, so it lives on the card');
+    // ⚠️ `signed` is NOT also a badge — `SignedChip` already said it.
+    assert.equal(row.badges.some((b) => b.key === 'signed'), false);
+    assert.ok(row.copies.every((c) => c.badges.length === 0), 'nothing is left for a copy to add');
+  });
+
+  it('a SINGLE copy is unchanged — the card says everything, the copy repeats none of it', () => {
+    const v = deriveShelfView({
+      ...NONE,
+      copies: [copy({ id: 1, status: 'owned', edition_id: 10, is_signed: 1, sprayed_edges: 1 })],
+      editions: [edition({ id: 10, format: 'hardcover' })],
+    });
+    const row = only(v);
+    assert.equal(row.signed, true, 'one copy always agrees with itself');
+    assert.equal(row.signedVaries, false);
+    assert.deepEqual(row.badges.map((b) => b.key), ['sprayed']);
+    assert.deepEqual(row.copies[0]!.badges, [], 'the card above already said it');
+    assert.equal(row.copies[0]!.signed, true, 'the record is still there to read');
+  });
+
+  it("⚠️ an EDITION's prose badge stays on the card even when the copies differ", () => {
+    // The 0430 back-compat: an un-swept printing carries its attributes in the
+    // shop's own words. That describes the PRINTING, so it is equally true of
+    // every copy of it and there is no one copy to pin it on — this rule must
+    // not lose it. The copies here disagree about everything they own.
+    const v = deriveShelfView({
+      ...NONE,
+      copies: [
+        copy({ id: 1, status: 'owned', edition_id: 10, sprayed_edges: 1 }),
+        copy({ id: 2, status: 'owned', edition_id: 10 }),
+      ],
+      editions: [edition({ id: 10, format: 'hardcover', edition_name: 'Leatherbound deluxe' })],
+    });
+    const row = only(v);
+    assert.ok(
+      row.badges.some((b) => b.key === 'leather'),
+      'the printing is leatherbound; both copies of it are',
+    );
+    assert.equal(row.badges.some((b) => b.key === 'sprayed'), false, 'one copy only');
+    assert.deepEqual(row.copies.map((c) => c.badges.map((b) => b.key)), [['sprayed'], []]);
+    // ⚠️ And the prose badge is not ALSO repeated on the copies.
+    assert.ok(row.copies.every((c) => !c.badges.some((b) => b.key === 'leather')));
+  });
+
+  it('⚠️ a WANTED row keeps its invariant: badges split, but signing is never asked', () => {
+    const v = deriveShelfView({
+      ...NONE,
+      copies: [
+        copy({ id: 1, status: 'wanted', edition_id: 77, sprayed_edges: 1 }),
+        copy({ id: 2, status: 'wanted', edition_id: 77 }),
+      ],
+      editions: [edition({ id: 77, format: 'paperback' })],
+    });
+    const row = only(v);
+    assert.equal(row.signed, null, 'a wish has no object to have been signed');
+    assert.equal(row.signedVaries, false, '⚠️ and no per-copy chip appears on a wish either');
+    assert.deepEqual(row.badges, []);
+    assert.deepEqual(row.copies.map((c) => c.badges.map((b) => b.key)), [['sprayed'], []]);
   });
 });
 

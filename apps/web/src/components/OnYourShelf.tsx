@@ -42,6 +42,11 @@ const LONG_LABEL = 34;
  * (migration 0430), so "Not signed" means *nothing has marked this copy signed*,
  * which is what the tooltip says rather than claiming the object is unsigned.
  *
+ * ⚠️ **It appears ONCE per card** (owner 2026-09-03). Either the card wears it,
+ * because every copy gives the same answer, or each copy wears its own, because
+ * they do not. `deriveShelfView` decides which — `row.signed` vs
+ * `row.signedVaries` — and never sets both.
+ *
  * Local to this file on purpose — the same call `Copies.tsx` makes about its own
  * `SPECIAL_TOGGLES`: a second caller is the moment it moves somewhere shared.
  */
@@ -111,6 +116,16 @@ function rowEmoji(row: ShelfRow): string {
  * way** on an owned physical row (`SignedChip`); the other three 0430 attributes
  * stay badges that light only when set. Ebook, audiobook and wanted rows are
  * untouched.
+ *
+ * ## Each fact appears ONCE on a card (owner, 2026-09-03)
+ *
+ * > "This has double information, let's normalize this."
+ *
+ * Said of a three-copy Hardcover card that printed *Not signed* four times and
+ * *Sprayed edges* twice. **The component filters nothing to fix this** — the
+ * derivation now hands it two disjoint lists, `row.badges` for the card and
+ * `copy.badges` for each copy, and `row.signed` / `row.signedVaries` for which
+ * level the signed chip belongs to. See `shelf-view.ts`.
  *
  * ## THE list, in per-format sections (owner, 2026-09-02)
  *
@@ -253,9 +268,14 @@ export function OnYourShelf({
  * chip** — signing is a fact about an object, and there is no object here.
  */
 function ShelfCard({ row }: { row: ShelfRow }) {
-  // Signed is rendered by `SignedChip` as a two-state answer, so the positive
-  // badge the derivation also produces would say it twice.
-  const badges = row.signed == null ? row.badges : row.badges.filter((b) => b.key !== 'signed');
+  // ⚠️ `row.badges` is rendered VERBATIM — it is already exactly what the card
+  // should print. Until 2026-09-03 this line filtered the positive `signed`
+  // badge back out, because the derivation handed the component the union of
+  // every copy's attributes and left it to sort out what to hide. It no longer
+  // does: `deriveShelfView` splits the badges into the card's and each copy's
+  // (owner: "This has double information, let's normalize this"), and drops
+  // `signed` from whichever list `SignedChip` is about to speak for. A second
+  // filter here would be a second place the rule lives.
   // The card body is the same whether or not the row links; only its wrapper
   // differs (an <a> to the sibling catalog, or a plain <div>).
   const cardInner = (
@@ -317,12 +337,17 @@ function ShelfCard({ row }: { row: ShelfRow }) {
           )}
         </div>
 
-        {(badges.length > 0 || row.signed != null) && (
+        {(row.badges.length > 0 || row.signed != null) && (
           <div className="bd-hold__badges">
             {/* Signed first: it is the one the owner asked to be answerable at a
-                glance, and the one that is shown even when the answer is no. */}
+                glance, and the one that is shown even when the answer is no.
+                ⚠️ Null here is now TWO different things — the question does not
+                apply (a file, an audiobook, a wish), or the copies disagree and
+                each says so on its own line (`row.signedVaries`). Both mean the
+                card has no honest single answer, which is why one test is
+                enough. */}
             {row.signed != null && <SignedChip signed={row.signed} />}
-            {badges.map((b) => (
+            {row.badges.map((b) => (
               <span key={b.key} className={`special-badge special-badge--${b.key}`} title={b.title}>
                 {b.key === 'signed' ? '✍ ' : ''}
                 {b.label}
@@ -350,15 +375,19 @@ function ShelfCard({ row }: { row: ShelfRow }) {
 
         {/* Copies nest UNDER the edition. One copy: its facts inline, no second
             bullet. More than one of the same printing: a short list, the only
-            case where a copy earns its own line — and the one place a PER-COPY
-            signed answer is needed, since the row's own chip speaks for the
-            group. */}
+            case where a copy earns its own line.
+            ⚠️ `showSigned` is `row.signedVaries`, NOT "the row answered" —
+            corrected 2026-09-03. It used to be `row.signed != null`, which
+            printed the signed answer on every copy of a row that had just
+            printed it once for the group ("double information"). The chip
+            belongs to whichever level can answer honestly: the card when the
+            copies agree, each copy when they do not. */}
         {row.copies.length === 1 && <CopyFacts copy={row.copies[0]!} />}
         {row.copies.length > 1 && (
           <ul className="plain shelf-row__copies">
             {row.copies.map((c) => (
               <li key={c.id}>
-                <CopyFacts copy={c} withStatus showSigned={row.signed != null} />
+                <CopyFacts copy={c} withStatus showSigned={row.signedVaries} />
               </li>
             ))}
           </ul>
@@ -418,11 +447,12 @@ function CopyFacts({
   copy: ShelfCopy;
   withStatus?: boolean;
   /**
-   * Answer signed for THIS copy, either way (owner 2026-09-02). Set only on an
-   * owned physical row's multi-copy list — the case where the row's own chip
-   * describes the group and cannot say which of the two is the signed one. Work
-   * 220 is exactly that shape: a signed leatherbound and a slipcase volume,
-   * nested under one Hardcover row.
+   * Answer signed for THIS copy, either way (owner 2026-09-02) — but ⚠️ **only
+   * where the copies DISAGREE** (owner 2026-09-03, `row.signedVaries`). Where
+   * they agree the card's own chip has already answered for all of them, and
+   * repeating it per copy is the "double information" this narrowed. Work 220 is
+   * the shape it is still for: a signed leatherbound and a slipcase volume under
+   * one Hardcover row, where no single answer is true of both.
    */
   showSigned?: boolean;
 }) {
@@ -444,13 +474,14 @@ function CopyFacts({
     copy.condition,
   ].filter(Boolean);
 
-  // Per-copy badges appear only in the multi-copy list (`withStatus`), where they
-  // say WHICH copy is signed; the single-copy case already shows them on the row
-  // above, so repeating them here would be noise.
-  // Signed is rendered as its own two-state chip when asked for, so it comes out
-  // of the positive-only list to avoid saying it twice.
-  const badges = showSigned ? copy.badges.filter((b) => b.key !== 'signed') : copy.badges;
-  const showBadges = !!withStatus && (badges.length > 0 || !!showSigned);
+  // ⚠️ `copy.badges` is rendered VERBATIM — since 2026-09-03 the derivation has
+  // already reduced it to what THIS copy alone should print: the badges the
+  // group does not share, minus `signed` where the chip below is about to say
+  // it. This used to be the copy's whole attribute list with a filter here, and
+  // a badge the card was also showing appeared on both.
+  // Still gated on `withStatus` — the single-copy case has an empty list anyway
+  // (one copy always agrees with itself), and the row above says it all.
+  const showBadges = !!withStatus && (copy.badges.length > 0 || !!showSigned);
   if (parts.length === 0 && !showBadges) return null;
 
   return (
@@ -459,7 +490,7 @@ function CopyFacts({
       {showBadges && (
         <span className="shelf-row__copy-badges">
           {showSigned && <SignedChip signed={copy.signed} />}
-          {badges.map((b) => (
+          {copy.badges.map((b) => (
             <span key={b.key} className="special-badge" title={b.title}>
               {b.label}
             </span>

@@ -61,6 +61,33 @@
  * `edition.edition_name` — so the prose is still scanned and OR-ed in, and
  * nothing regresses until the sweep runs.
  *
+ * ## ⚠️ A fact is printed ONCE (owner, 2026-09-03)
+ *
+ * > "This has double information, let's normalize this."
+ *
+ * Said of a **Hardcover · OWNED** card carrying three copies, whose card line
+ * read *"Not signed · Sprayed edges"* over three copy lines reading *"On the
+ * shelf · Not signed · Sprayed edges"*, *"On the shelf · Not signed"* and *"Lent
+ * out · good · Not signed"*. Every fact on that card was said two to four times,
+ * because the row carried the **union** of its copies' attributes and each copy
+ * then carried its own as well.
+ *
+ * The rule, approved the same day: **on the card when every copy agrees, on the
+ * copies (and only there) when they differ.** So that card becomes *card: "Not
+ * signed"* (all three agree), *copy 1: "On the shelf · Sprayed edges"*, *copy 2:
+ * "On the shelf"*, *copy 3: "Lent out · good"*. Signing moves UP because the
+ * copies agree; the sprayed edges move DOWN to the one copy that has them.
+ *
+ * ⚠️ **Decided HERE, not by filtering at render time** — `ShelfRow.badges` is
+ * what the card should print and `ShelfCopy.badges` is what that copy should
+ * print, so a test pins what a row SAYS. `splitBadges` does the halving;
+ * `ShelfRow.signed` (the group answer, now null when they disagree) and
+ * `ShelfRow.signedVaries` do the same job for the two-state signed chip.
+ *
+ * ⚠️ **An edition's PROSE badge stays on the card.** It describes the printing,
+ * so it is equally true of every copy of it and there is no one copy to pin it
+ * on — the un-swept-row back-compat above must not be lost to this rule.
+ *
  * ## The row LEADS with the edition, not the format word (owner, 2026-09-02)
  *
  * > "actually none of the edition stuff shows in the page anymore. i see we have
@@ -196,6 +223,15 @@ export interface ShelfCopy {
   condition: string | null;
   /** Who has it, when the server sent a name (lent/borrowed). Null otherwise. */
   personName: string | null;
+  /**
+   * ⚠️ **Only what THIS copy should print** — the badges that are true of it and
+   * are NOT already printed on the card above it (owner 2026-09-03: *"This has
+   * double information, let's normalize this."*). A badge every copy shares is
+   * the card's to say; a badge only some copies carry belongs here and nowhere
+   * else. So a single-copy row's list is always empty — the card said it all —
+   * and the three-copy card in the owner's screenshot puts *Sprayed edges* on
+   * the one copy that has them. See `splitBadges`.
+   */
   badges: SpecialEditionBadge[];
   /**
    * ⚠️ **The RECORD's answer, not the object's.** True when `copy.is_signed` is
@@ -287,11 +323,25 @@ export interface ShelfRow {
    */
   notes: string[];
   /**
-   * Signed, shown either way on an OWNED physical row that has copies; null where
-   * the question does not apply (a file row, an audiobook, the neutral slot, a
-   * want). See `ShelfCopy.signed` for what `false` does and does not claim.
+   * The GROUP's signed answer, shown either way on an OWNED physical row whose
+   * copies AGREE; null where the question does not apply (a file row, an
+   * audiobook, the neutral slot, a want) **and — since 2026-09-03 — where the
+   * copies DISAGREE**, because there is then no one answer for the card to give
+   * and `signedVaries` hands the question down to the copies. See
+   * `ShelfCopy.signed` for what `false` does and does not claim.
    */
   signed: boolean | null;
+  /**
+   * ⚠️ **The copies disagree about signing, so each one answers for itself**
+   * (owner 2026-09-03: *"This has double information, let's normalize this."*).
+   *
+   * `signed` and this field are two halves of ONE answer and are never both
+   * "on": all copies agreeing puts the chip on the card (`signed` non-null,
+   * this false); copies differing puts a chip on every copy (this true, `signed`
+   * null). It is false wherever signing does not apply at all, so a component
+   * can read it without first asking whether the row is an owned physical one.
+   */
+  signedVaries: boolean;
   /** Coarse medium, for the chip colour. */
   medium: 'physical' | 'ebook' | 'audio' | null;
   /** The vendor's own name for the printing — "BN Exclusive" — to tell two of one format apart. */
@@ -309,7 +359,14 @@ export interface ShelfRow {
   neutral: boolean;
   /** Recordings held, for an Audiobook row (the sibling-library count). Null otherwise. */
   count: number | null;
-  /** Special-edition badges for the row (union across its copies + prose). */
+  /**
+   * ⚠️ **Only what the CARD should print** — changed 2026-09-03. It used to be
+   * the plain UNION across the copies plus the printing's prose, which is what
+   * printed *Sprayed edges* on a card AND on the one copy that has them. It is
+   * now the badges EVERY copy shares (plus the edition's own prose badges, which
+   * belong to the printing and so to all of them); a badge only some copies
+   * carry has moved down to `ShelfCopy.badges`. See `splitBadges`.
+   */
   badges: SpecialEditionBadge[];
   /** The held/wanted copies of this format. Empty for a file row or the neutral slot. */
   copies: ShelfCopy[];
@@ -421,7 +478,62 @@ function mergeBadges(copies: CopyView[], edition: EditionView | null): SpecialEd
   return [...byKey.values()];
 }
 
-function toShelfCopy(copy: CopyView, edition: EditionView | null): ShelfCopy {
+/**
+ * ⚠️ **A fact is printed ONCE — on the card when every copy agrees, on the
+ * copies (and only there) when they differ.** Owner, 2026-09-03, with a
+ * screenshot of a three-copy Hardcover card reading *"Not signed · Sprayed
+ * edges"* over three copy lines that each said *"Not signed"* again and one of
+ * which said *"Sprayed edges"* again:
+ *
+ * > "This has double information, let's normalize this."
+ *
+ * So the group's badges split in two rather than being rendered twice:
+ *
+ *   - **`card`** — the printing's own PROSE badges (they describe the edition,
+ *     so they are true of every copy of it and there is no copy to pin them on),
+ *     plus every badge each and every copy carries.
+ *   - **`perCopy`** — for each copy, in the same order, only what is left: the
+ *     badges that copy has and the group does not share. Empty for a single-copy
+ *     row, because one copy always "agrees" with itself and the card says it all.
+ *
+ * ⚠️ **The shared set is computed BEFORE `signed` is taken out of the card
+ * list.** Signing is rendered as a two-state chip rather than a badge, so it is
+ * dropped from whichever list the chip is about to speak for — and dropping it
+ * from `card` must not push it back down onto the copies, which is exactly the
+ * double-print this function exists to remove.
+ *
+ * The card list keeps `mergeBadges`' ordering so a badge does not move about the
+ * row depending on which copy happened to carry it.
+ */
+function splitBadges(
+  copies: CopyView[],
+  edition: EditionView | null,
+): { card: SpecialEditionBadge[]; perCopy: SpecialEditionBadge[][]; sharedKeys: Set<string> } {
+  // ⚠️ The copy's own COLUMNS only. The printing's prose is handled once, below,
+  // as an edition-level fact — reading it per copy is what let one printing's
+  // blurb light the same badge on the card and on all of its copies.
+  const own = copies.map((c) => specialEditionBadges(c, null));
+  const sharedKeys = new Set(specialEditionBadges(null, edition).map((b) => b.key));
+  for (const b of own[0] ?? []) {
+    if (own.every((list) => list.some((x) => x.key === b.key))) sharedKeys.add(b.key);
+  }
+  return {
+    card: mergeBadges(copies, edition).filter((b) => sharedKeys.has(b.key)),
+    perCopy: own.map((list) => list.filter((b) => !sharedKeys.has(b.key))),
+    sharedKeys,
+  };
+}
+
+function toShelfCopy(
+  copy: CopyView,
+  /**
+   * ⚠️ What this copy alone should print — `splitBadges`' share, REQUIRED. It
+   * was `specialEditionBadges(copy, edition)` until 2026-09-03; a default that
+   * reproduced the old union would be a silent way back to printing a fact
+   * twice, so the caller must say which list it means.
+   */
+  badges: SpecialEditionBadge[],
+): ShelfCopy {
   return {
     id: copy.id,
     status: copy.status,
@@ -431,7 +543,7 @@ function toShelfCopy(copy: CopyView, edition: EditionView | null): ShelfCopy {
     // arrives null and the row simply carries the status word (`Copies.tsx`
     // documents why "nobody recorded" would be a claim without evidence).
     personName: copy.person_name,
-    badges: specialEditionBadges(copy, edition),
+    badges,
     // ⚠️ The COLUMN only — `specialEditionBadges` gives signing no prose
     // fallback (unlike the other three), because "Signed" in a shop's blurb
     // describes the printing on offer, not whether THIS object was ever signed.
@@ -693,6 +805,15 @@ function buildRows(
       identity?.source === 'imprint' ? null : imprintOf(edition),
       edition?.collects ? `contains ${edition.collects}` : null,
     ]);
+    // ⚠️ Print each fact ONCE (owner 2026-09-03). The card carries what every
+    // copy agrees on; anything the copies disagree about lives on the copies.
+    const signedValues = sorted.map((c) => !!c.is_signed);
+    const signedAgree = signedValues.every((v) => v === signedValues[0]);
+    // Signed is a two-state CHIP, not a light-when-set badge, so it comes out of
+    // whichever badge list the chip is about to speak for.
+    const signedOnCard = owned && signedValues.length > 0 && signedAgree;
+    const signedVaries = owned && signedValues.length > 1 && !signedAgree;
+    const split = splitBadges(sorted, edition);
     return {
       key: edition ? `${prefix}-e${edition.id}` : `${prefix}-${format}`,
       format: fmtLabel,
@@ -707,9 +828,12 @@ function buildRows(
       // component supplies as the fallback. An absence stays an absence.
       coverUrl: edition?.cover_url ?? null,
       notes: [],
-      // Signed, either way — but only for something you HOLD. A wanted row is a
-      // wish, and a wish has no object to have been signed.
-      signed: owned && sorted.length > 0 ? sorted.some((c) => !!c.is_signed) : null,
+      // Signed, either way — but only for something you HOLD (a wanted row is a
+      // wish, and a wish has no object to have been signed), and only when the
+      // copies AGREE. ⚠️ It used to be `.some()`, which answered "at least one of
+      // these is signed" on a card whose copies then each answered again.
+      signed: signedOnCard ? signedValues[0]! : null,
+      signedVaries,
       // An unspecified group is still a physical copy in hand — colour it physical.
       medium: edition
         ? mediumOfFormat(edition.format)
@@ -722,8 +846,15 @@ function buildRows(
       owned,
       neutral: false,
       count: null,
-      badges: mergeBadges(sorted, edition),
-      copies: sorted.map((c) => toShelfCopy(c, edition)),
+      badges: signedOnCard ? split.card.filter((b) => b.key !== 'signed') : split.card,
+      copies: sorted.map((c, i) =>
+        toShelfCopy(
+          c,
+          // The copy's own chip answers signing when the copies differ, so the
+          // badge would say it twice on that copy's own line.
+          signedVaries ? split.perCopy[i]!.filter((b) => b.key !== 'signed') : split.perCopy[i]!,
+        ),
+      ),
     };
   }
 
@@ -760,6 +891,9 @@ function buildRows(
       // object here; "Not signed" over a printing nobody holds would be an
       // answer to a question that was not asked.
       signed: null,
+      // No copies, so nothing can disagree; the prose badges above are the
+      // printing's own and the card is the only place they could go.
+      signedVaries: false,
       medium: mediumOfFormat(edition.format),
       editionName: edition.edition_name ?? null,
       kind: edition.edition_kind ?? null,
@@ -846,6 +980,7 @@ function buildRows(
       coverUrl: resolveAudiobookCover(rec.coverHref),
       notes,
       signed: null,
+      signedVaries: false,
       medium: 'audio',
       editionName: null,
       kind: null,
@@ -888,6 +1023,7 @@ function buildRows(
       coverUrl: e.cover_url ?? null,
       notes: [],
       signed: null,
+      signedVaries: false,
       medium: 'ebook',
       editionName: e.edition_name ?? null,
       kind: e.edition_kind ?? null,
@@ -917,6 +1053,7 @@ function buildRows(
       coverUrl: null,
       notes: [],
       signed: null,
+      signedVaries: false,
       medium: 'ebook',
       editionName: null,
       kind: null,
@@ -957,6 +1094,11 @@ function buildRows(
     if (g.format === UNSPEC_PHYSICAL && g.edition === null) {
       // A pure "want this book" with no format at all.
       const sorted = sortCopies(g.copies);
+      // The 2026-09-03 once-only rule reaches here too: two wished copies that
+      // differ on a badge say it on the copy, not on the card. ⚠️ A wish is
+      // still never asked whether it is SIGNED — no object, no signature — so
+      // `signed`/`signedVaries` stay null/false whatever the wish rows carry.
+      const split = splitBadges(sorted, null);
       rows.push({
         key: 'want-any',
         format: null,
@@ -971,6 +1113,7 @@ function buildRows(
         coverUrl: null,
         notes: [],
         signed: null,
+        signedVaries: false,
         medium: null,
         editionName: null,
         kind: null,
@@ -978,8 +1121,8 @@ function buildRows(
         owned: false,
         neutral: false,
         count: null,
-        badges: mergeBadges(sorted, null),
-        copies: sorted.map((c) => toShelfCopy(c, null)),
+        badges: split.card,
+        copies: sorted.map((c, i) => toShelfCopy(c, split.perCopy[i]!)),
       });
       continue;
     }
@@ -1034,6 +1177,7 @@ function buildRows(
       coverUrl: null,
       notes: [],
       signed: null,
+      signedVaries: false,
       medium: null,
       editionName: null,
       kind: null,
