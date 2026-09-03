@@ -683,7 +683,22 @@ export interface WorkAudiobookHolding {
   titleSimilarity: number | null;
   /** Non-null means the sibling catalog no longer agrees. */
   staleAt: string | null;
+  /** The owner's standing verdict on this recording — migration 0450. See
+   *  `AudioMatchVerdict`. */
+  review?: AudioMatchVerdict | null;
 }
+
+/**
+ * "Yes, this is it" / "Not this one" — the owner's answer about ONE recording,
+ * migration 0450 (his ask of 2026-09-03).
+ *
+ * ⚠️ **`null` / absent means UN-REVIEWED, never rejected.** It is the answer for
+ * almost every recording in both catalogs, and a reader that treated absence as
+ * a negative would empty the Audio section of the whole shelf. `undefined` is
+ * additionally what a response cached before this field existed carries — read
+ * identically, the same reading `audioEditionCount` documents above.
+ */
+export type AudioMatchVerdict = 'confirmed' | 'rejected';
 
 /**
  * One audiobook edition of a work — an entry of `GET /api/works/:id`'s
@@ -711,6 +726,10 @@ export interface WorkAudioEdition {
   titleSimilarity: number | null;
   /** Non-null means the sibling catalog no longer confirms this edition. */
   staleAt: string | null;
+  /** The owner's standing verdict on this recording — migration 0450. Carried
+   *  on every row (never filtered server-side) so the edit box can show a
+   *  rejected recording and let the decision be taken back. */
+  review?: AudioMatchVerdict | null;
 }
 
 /**
@@ -1800,6 +1819,26 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+
+  /**
+   * "Yes, this is it" / "Not this one" about ONE audiobook recording of ONE
+   * book — migration 0450, the work-level counterpart of `confirmAudioSeries`.
+   *
+   * ⚠️ `audioKey` is the recording's verbatim title exactly as the page showed
+   * it (`WorkAudioEdition.audioKey`, or `WorkAudiobookHolding.rawTitle` falling
+   * back to `title`). Sent back rather than derived so the server can refuse a
+   * key no cache row carries — the same guard `confirmAudioSeries` applies.
+   *
+   * ⚠️ An UPSERT. Changing your mind is this same call; there is no "unreview".
+   */
+  reviewAudioMatch: (
+    workId: number,
+    body: { audioKey: string; verdict: AudioMatchVerdict },
+  ) =>
+    request<{ reviews: { audioKey: string; verdict: AudioMatchVerdict; decidedAt: string }[] }>(
+      `/api/works/${workId}/audio-review`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
 
   /** Withdraw it. Every rung it was holding up is missing again. */
   unconfirmAudioSeries: (name: string) =>

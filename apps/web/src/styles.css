@@ -3730,6 +3730,31 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
 .audio-link__cand-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .audio-link__eq { font-weight: 600; }
 
+/* --- the edit box's Audio tab: is this the right recording? (0450) --------
+ *
+ * One row per recording on record, cover beside the words. Same border and
+ * radius as `.audio-link__cand` above — they are two controls asking the same
+ * kind of question at two grains, and looking different would suggest they do
+ * different kinds of thing.
+ */
+.audio-review__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--bd-line, var(--et-border, #ddd));
+  border-radius: 10px;
+  background: var(--bd-sunk, transparent);
+  margin-top: 0.5rem;
+}
+.audio-review__cover {
+  width: 56px;
+  height: auto;
+  flex: 0 0 auto;
+  border: 1px solid var(--bd-line, var(--et-hairline, #ddd));
+  border-radius: 4px;
+}
+
 /* --- why a lookup cost what it did: the free ladder, per run --------------
  *
  * Folded away because it is four to six lines PER RUN on a page that lists

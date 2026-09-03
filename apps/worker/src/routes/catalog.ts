@@ -12,6 +12,7 @@ import {
   createEditionSchema,
   createWorkSchema,
   groupDuplicates,
+  reviewAudioMatchSchema,
   reviewsSeenSchema,
   setReadStateSchema,
   updateCopySchema,
@@ -50,6 +51,8 @@ import {
   listWatchesForWork,
   listWishlist,
   recordReviewsSeen,
+  setAudioMatchReview,
+  listAudioMatchReviews,
   setReadState,
   updateCopy,
   updateEdition,
@@ -786,6 +789,52 @@ export const catalogRoutes = new Hono<AppBindings>()
 
     const ok = await recordReviewsSeen(c.env.DB, id, parsed.data.count);
     return ok ? c.json({ ok: true }) : c.json({ error: 'not_found' }, 404);
+  })
+
+  /**
+   * "Yes, this is it" / "Not this one" — the owner's verdict on ONE audiobook
+   * recording matched to this book. Migration 0450; the owner's ask of
+   * 2026-09-03, approved 15:03 (*"Yes do it"*).
+   *
+   * ⚠️ **`editCatalog`, the same gate every other edit-box write carries** —
+   * `EditBox` renders its panels behind `me.capabilities.includes('editCatalog')`
+   * and `POST /api/series/:name/audio-link`, the series-level twin of this
+   * route, is gated identically. A verdict is an assertion about the world
+   * (0110's distinction: it CAN be false), so it sits with the writes and not
+   * with `read`.
+   *
+   * ⚠️ Mirrors `audio-link` in shape as well as in gate: the body carries the
+   * identity the page was SHOWN (`audioKey`, their verbatim title), the store
+   * refuses a key no cache row carries, and that refusal is a worded 404 rather
+   * than a silent success — there is genuinely nothing there to review.
+   *
+   * Answers with every standing verdict for the work, so the caller re-renders
+   * from the server's answer rather than from what it hoped it wrote.
+   */
+  .post('/works/:id/audio-review', requireCapability('editCatalog'), async (c) => {
+    const id = Number(c.req.param('id'));
+    if (!Number.isInteger(id)) return c.json({ error: 'bad_request' }, 400);
+
+    const parsed = reviewAudioMatchSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues }, 400);
+
+    const ok = await setAudioMatchReview(
+      c.env.DB,
+      id,
+      parsed.data.audioKey,
+      parsed.data.verdict,
+      String(c.get('user').id),
+    );
+    if (!ok) {
+      return c.json(
+        {
+          error: 'not_found',
+          detail: 'no audiobook recording on this book with that title',
+        },
+        404,
+      );
+    }
+    return c.json({ reviews: await listAudioMatchReviews(c.env.DB, id) });
   })
 
   /**

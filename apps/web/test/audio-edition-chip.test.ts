@@ -114,15 +114,21 @@ describe('audioToken — the count belongs in the signature', () => {
     // Measured 2026-08-23: every matched work in this catalog holds exactly one
     // recording, so this is the token almost every rung will ever produce.
     assert.equal(audioToken(audiobook()), 'audio');
-    assert.equal(audioToken(audiobook({ matchedVia: 'containment' })), 'audio?');
+    // ⚠️ **The hedge left the TOKEN on 2026-09-03** — owner ask, approved 15:03
+    // (*"make all of those question ones show the audio even if not sure and
+    // then we can confirm if it's right in the edit menu later"*). It did not
+    // disappear: it is in the chip's tooltip, in the work page's provenance
+    // sentence, and settled for good in the edit box's Audio tab (0450). A
+    // containment rung now signs exactly as an exact one does.
+    assert.equal(audioToken(audiobook({ matchedVia: 'containment' })), 'audio');
   });
 
-  it('two recordings make a DIFFERENT token, hedge preserved', () => {
+  it('two recordings make a DIFFERENT token — the COUNT is what must survive', () => {
     assert.equal(audioToken(audiobook({ editionCount: 2 })), 'audio×2');
     assert.equal(
       audioToken(audiobook({ editionCount: 2, matchedVia: 'containment' })),
-      'audio?×2',
-      'the hedge must survive the count — an uncertain match twice over is still uncertain',
+      'audio×2',
+      'the count is the half of this token the suppression trap eats — it stays',
     );
   });
 });
@@ -162,8 +168,18 @@ describe('signatureOf / signatureShared — the suppression trap', () => {
     assert.equal(mediumPhrase('physical'), 'in print');
     assert.equal(mediumPhrase('ebook'), 'as ebooks');
     assert.equal(mediumPhrase('audio'), 'on audio');
-    assert.equal(mediumPhrase('audio?'), 'possibly on audio');
-    assert.equal(mediumPhrase('audio?×2'), 'possibly on audio (2 recordings each)');
+  });
+
+  /*
+   * ⚠️ The retired vocabulary, still answered. `audioToken` stopped emitting
+   * `'audio?'` on 2026-09-03, but the branches are KEPT rather than deleted:
+   * `mediumPhrase` is exported and takes a plain string, so a caller holding an
+   * old token must get the current WORDS rather than falling through to
+   * `mediumLabel` and printing a literal "audio?" mid-sentence.
+   */
+  it('the retired hedged tokens read as the plain ones, never as raw text', () => {
+    assert.equal(mediumPhrase('audio?'), 'on audio');
+    assert.equal(mediumPhrase('audio?×2'), 'on audio (2 recordings each)');
   });
 });
 
@@ -183,12 +199,30 @@ describe('Media — the chip itself', () => {
     );
   });
 
-  it('keeps the containment hedge beside the number', () => {
-    const text = chipText(
-      Media({ entry: rung({ audiobook: audiobook({ editionCount: 2, matchedVia: 'containment' }) }) }),
-    );
-    assert.ok(text.includes('?'), 'two uncertain matches are still uncertain');
-    assert.ok(text.some((t) => t.trim() === '2'));
+  /*
+   * ⚠️ **The chip no longer wears a `?`, and the tooltip is where the doubt
+   * went** — owner ask 2026-09-03, approved 15:03. The number must survive that
+   * change untouched, which is the half this file has always been about.
+   *
+   * ⚠️ The hedge is still SAID (migration 0010: shown, never hidden) — it is in
+   * the `title` asserted below, and it now names the control that settles it.
+   */
+  it('shows NO hedge mark, keeps the number, and moves the doubt to the tooltip', () => {
+    const entry = rung({
+      audiobook: audiobook({ editionCount: 2, matchedVia: 'containment' }),
+    });
+    const text = chipText(Media({ entry }));
+    assert.ok(!text.includes('?'), 'the `?` came off the chip on 2026-09-03');
+    assert.ok(text.some((t) => t.trim() === '2'), 'the count is untouched by that change');
+
+    const tip = audioTooltip(Media({ entry }));
+    assert.ok(tip?.includes('partial title'), tip ?? 'no tooltip');
+    assert.ok(tip?.includes('Edit this book'), tip ?? 'no tooltip');
+  });
+
+  it('an EXACT match says nothing about partial titles', () => {
+    const tip = audioTooltip(Media({ entry: rung() }));
+    assert.ok(!tip?.includes('partial title'), tip ?? 'no tooltip');
   });
 
   it('the tooltip says how many, and where to see WHICH', () => {

@@ -936,6 +936,10 @@ function buildRows(
        *  `audiobookDetailUrl` for what this buys, measured. */
       rawTitle?: string | null;
       audioKey?: string | null;
+      /** The owner's standing verdict — migration 0450. Only `'confirmed'`
+       *  reaches this function with any effect: it rewords the provenance
+       *  sentence. A `'rejected'` recording never becomes a row at all. */
+      review?: 'confirmed' | 'rejected' | null;
     },
     count: number | null,
   ): ShelfRow {
@@ -1080,10 +1084,33 @@ function buildRows(
   //    never as a holding. The old shelf hid it (a dead "Owned on audio" claim
   //    was worse than nothing) and the old panel showed it with a note; the
   //    merged row does both halves at once, which is what neither surface could.
-  if (audioEditions.length > 1) {
-    for (const e of audioEditions) rows.push(audioRow(`audio:${e.audioKey}`, e, null));
-  } else if (audiobookHolding != null) {
+  //
+  //    ⚠️ **A REJECTED row does NOT render, and that is a different call from
+  //    the stale one** (migration 0450). Stale means the OTHER catalog stopped
+  //    confirming a match that was once true, which is a fact worth showing
+  //    with a caveat. Rejected means the owner has looked at this recording and
+  //    said it is not this book — there is nothing left to caveat, and a row
+  //    under the heading "Audio" is itself the claim. The cache row survives
+  //    (0003: mark, never delete) and the edit box's Audio tab still lists it
+  //    with its verdict, which is where the decision is taken back.
+  //
+  //    ⚠️ Filtered HERE rather than server-side on purpose: one payload feeds
+  //    both the shelf and the edit box, and the edit box needs the rejected row.
+  const shownEditions = audioEditions.filter((e) => e.review !== 'rejected');
+  if (shownEditions.length > 1) {
+    for (const e of shownEditions) rows.push(audioRow(`audio:${e.audioKey}`, e, null));
+  } else if (audiobookHolding != null && audiobookHolding.review !== 'rejected') {
+    // ⚠️ Still the HOLDING and not `shownEditions[0]`: five other callers trust
+    // `audiobookHolding` to be the row the view picked, and a one-recording book
+    // must not start depending on a field an older cached response may not
+    // carry. When the holding IS the rejected one, the section is empty — which
+    // is the correct answer, not a fall-through to a second-best recording.
     rows.push(audioRow('own-audio', audiobookHolding, audioCount));
+  } else if (shownEditions.length === 1 && audiobookHolding?.review === 'rejected') {
+    // The one shape the branch above cannot serve: two recordings on record, the
+    // primary one rejected, one survivor. Render the survivor rather than an
+    // empty Audio section over a book the household demonstrably owns on audio.
+    rows.push(audioRow(`audio:${shownEditions[0]!.audioKey}`, shownEditions[0]!, null));
   }
 
   // 5) WANTED rows — genuinely wanted items only. A wish copy that links to an
@@ -1233,15 +1260,38 @@ function groupIntoSections(rows: ShelfRow[]): ShelfSection[] {
 export function matchProvenance(holding: {
   matchedVia: string;
   titleSimilarity: number | null;
+  /** The owner's standing verdict on this recording — migration 0450. */
+  review?: 'confirmed' | 'rejected' | null;
 }): string {
   const pct =
     holding.titleSimilarity != null
       ? ` (${Math.round(holding.titleSimilarity * 100)}% title match)`
       : '';
+  /*
+   * ⚠️ A settled match says who settled it, and it is checked FIRST because the
+   * answer supersedes the guess that prompted it. Migration 0450, and the rule
+   * migration 0110 states for the series-level twin: the app must not launder a
+   * person's word into evidence, so this sentence says "you" and never dresses
+   * itself up as a title match.
+   *
+   * There is deliberately no `'rejected'` branch. A rejected recording is not
+   * rendered on the shelf at all (see `buildRows`); the edit box, the one
+   * surface that still lists it, prints its own words for the verdict.
+   */
+  if (holding.review === 'confirmed') return 'Confirmed by you as the right recording.';
   if (holding.matchedVia === 'exact') return `Matched by exact title${pct}.`;
   if (holding.matchedVia === 'alias') return `Matched by alternate title${pct}.`;
   if (holding.matchedVia === 'containment') {
-    return `Matched by containment — a partial title match, worth a second look${pct}.`;
+    /*
+     * ⚠️ **A pointer, not a question** — owner ask 2026-09-03, approved 15:03.
+     * It used to end *"worth a second look"*, which asked something of the
+     * reader and gave them nowhere to answer it. Same doubt, same rung, but the
+     * sentence now names the control that settles it once and for all.
+     *
+     * ⚠️ Migration 0010's rule is intact: the provenance is still SHOWN, and it
+     * still says the match was partial. Rewording is allowed; removing is not.
+     */
+    return `Matched on a partial title${pct} — confirm it in ✎ Edit this book.`;
   }
   // Reached from `audiobook_series_link` — the owner confirmed these two series
   // are the same, and this rung matched on series + volume number, not on title.
@@ -1304,11 +1354,19 @@ export function deriveShelfView({
   // Audio: the count the SERVER measured, never `editions.length` (a stale
   // edition still shows a row but is not "owned"). Falls back to 1 when a holding
   // exists but the count field does not.
+  //
+  // ⚠️ The fallback also drops REJECTED recordings (migration 0450), matching
+  // what `audioEditionCountSql` now does server-side. Both halves have to agree
+  // or the badge and the row would count different things — the exact drift the
+  // "one definition" rule on that fragment exists to prevent.
   const audioCount =
     audioEditionCount != null
       ? audioEditionCount
       : audiobookHolding
-        ? Math.max(1, audioEditions.filter((e) => !e.staleAt).length || 1)
+        ? Math.max(
+            1,
+            audioEditions.filter((e) => !e.staleAt && e.review !== 'rejected').length || 1,
+          )
         : 0;
 
   const rows = buildRows(

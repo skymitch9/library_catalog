@@ -58,8 +58,24 @@ function fixture(): DatabaseSync {
           FROM audiobook_edition_holding
       )
      WHERE edition_rank = 1;
+    -- Migration 0450 — the fragment consults it now, and a fixture without it
+    -- fails loudly rather than quietly, which is the right failure but not the
+    -- point of the file: what runs here has to be what ships.
+    CREATE TABLE audiobook_match_review (
+      work_id   INTEGER NOT NULL REFERENCES work(id),
+      audio_key TEXT NOT NULL,
+      verdict   TEXT NOT NULL CHECK (verdict IN ('confirmed', 'rejected')),
+      PRIMARY KEY (work_id, audio_key)
+    );
   `);
   return db;
+}
+
+/** "Not this one" — one verdict, migration 0450, keyed on the recording. */
+function reject(db: DatabaseSync, workId: number, audioKey: string): void {
+  db.prepare(
+    "INSERT INTO audiobook_match_review (work_id, audio_key, verdict) VALUES (?, ?, 'rejected')",
+  ).run(workId, audioKey);
 }
 
 function addWork(db: DatabaseSync, id: number, title: string): void {
@@ -144,6 +160,42 @@ describe('audioEditionCountSql', () => {
       1,
       'a stale edition is history, not a recording the household holds',
     );
+  });
+
+  /*
+   * ⚠️ Migration 0450, and the second reason this number is not
+   * `listAudioEditions.length`. A stale row is the OTHER catalog withdrawing a
+   * match; a rejected row is the OWNER saying it was never this book. Both are
+   * still on record, both are still rendered somewhere with words attached, and
+   * neither is a recording the household holds — so neither is in the count.
+   *
+   * ⚠️ Only the literal 'rejected' filters. 'confirmed' is words, and an absent
+   * row (every recording in both catalogs today) must count normally, or the
+   * badge would read 0 everywhere.
+   */
+  it('EXCLUDES a recording the owner rejected — 0450', () => {
+    const db = fixture();
+    addWork(db, 514, 'Elantris');
+    addEdition(db, 514, 'Elantris', { narrator: 'full cast' });
+    addEdition(db, 514, 'Elantris - Tenth Anniversary Special Edition', {
+      narrator: 'Jack Garrett',
+    });
+    assert.equal(countForWork(db, 514), 2);
+
+    reject(db, 514, 'Elantris - Tenth Anniversary Special Edition');
+    assert.equal(countForWork(db, 514), 1, 'a match judged wrong is not a book we hold');
+  });
+
+  it('a CONFIRMED verdict does not change the count — it is words only', () => {
+    const db = fixture();
+    addWork(db, 5, 'Onyx Storm');
+    addEdition(db, 5, 'Onyx Storm - Empyrean, Book 3');
+    db.prepare(
+      "INSERT INTO audiobook_match_review (work_id, audio_key, verdict)" +
+        " VALUES (5, 'Onyx Storm - Empyrean, Book 3', 'confirmed')",
+    ).run();
+
+    assert.equal(countForWork(db, 5), 1);
   });
 
   it('is 0, not 1, when every edition is stale', () => {

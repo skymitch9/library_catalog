@@ -45,7 +45,20 @@ function fixture(): DatabaseSync {
     CREATE TABLE audiobook_holding (
       work_id INTEGER PRIMARY KEY REFERENCES work(id),
       title TEXT NOT NULL,
+      -- Migration 0340, and nullable exactly as it ships. The clause derives the
+      -- recording key as COALESCE(raw_title, title) — migration 0390's own
+      -- derivation, and what notRejectedSql requires against this VIEW.
+      raw_title TEXT,
       stale_at TEXT
+    );
+    -- Migration 0450. Present because the audiobook clause consults it now, and
+    -- a missing table would 500 the whole collection query — the trap migrations
+    -- 0003, 0005 and 0010 each sprang in turn.
+    CREATE TABLE audiobook_match_review (
+      work_id   INTEGER NOT NULL REFERENCES work(id),
+      audio_key TEXT NOT NULL,
+      verdict   TEXT NOT NULL CHECK (verdict IN ('confirmed', 'rejected')),
+      PRIMARY KEY (work_id, audio_key)
     );
   `);
   return db;
@@ -61,11 +74,19 @@ function addCopy(db: DatabaseSync, workId: number, leatherbound = 0): void {
   db.prepare('INSERT INTO copy (work_id, leatherbound) VALUES (?, ?)').run(workId, leatherbound);
 }
 function addAudio(db: DatabaseSync, workId: number, staleAt: string | null): void {
+  // `raw_title` deliberately NULL — the pre-0340 shape, so the COALESCE fallback
+  // in the clause is what the rejection test below actually exercises.
   db.prepare('INSERT INTO audiobook_holding (work_id, title, stale_at) VALUES (?, ?, ?)').run(
     workId,
     'X',
     staleAt,
   );
+}
+/** "Not this one" — migration 0450, keyed on the recording's verbatim title. */
+function rejectAudio(db: DatabaseSync, workId: number, audioKey: string): void {
+  db.prepare(
+    "INSERT INTO audiobook_match_review (work_id, audio_key, verdict) VALUES (?, ?, 'rejected')",
+  ).run(workId, audioKey);
 }
 
 /** The titles a chosen set of types would show — the worker's OR of their clauses. */
@@ -137,6 +158,41 @@ describe('BINDING_CLAUSE — the multi-type format selector', () => {
     addWork(db, 2, 'Returned');
     addAudio(db, 2, '2026-08-01T00:00:00Z');
     assert.deepEqual(visible(db, ['audiobook']), ['Live']);
+  });
+
+  /*
+   * ⚠️ Migration 0450, and it is the same shape as the stale case above one rung
+   * further in: a match the OWNER has judged wrong must not put a book on the
+   * audiobook shelf. The filter answers "show me what I have on audio", and a
+   * recording already said not to be this book is not one of them.
+   *
+   * ⚠️ Un-reviewed is NOT rejected. "Untouched" here is the ordinary state of
+   * every row in both catalogs, and a clause that filtered on the absence of a
+   * verdict would empty the shelf — which is why this asserts BOTH books.
+   */
+  it('⚠️ audiobook skips a match the owner REJECTED, and keeps an un-reviewed one', () => {
+    const db = fixture();
+    addWork(db, 1, 'Untouched');
+    addAudio(db, 1, null);
+    addWork(db, 2, 'Wrong book');
+    addAudio(db, 2, null);
+    assert.deepEqual(visible(db, ['audiobook']), ['Untouched', 'Wrong book']);
+
+    // Keyed on `COALESCE(raw_title, title)` — `raw_title` is NULL on the fixture
+    // rows, so this is the fallback path, which is the one every pre-0340 row in
+    // production is still on.
+    rejectAudio(db, 2, 'X');
+    assert.deepEqual(visible(db, ['audiobook']), ['Untouched']);
+  });
+
+  it('a CONFIRMED verdict changes nothing about what shows — it is words only', () => {
+    const db = fixture();
+    addWork(db, 1, 'Confirmed');
+    addAudio(db, 1, null);
+    db.prepare(
+      "INSERT INTO audiobook_match_review (work_id, audio_key, verdict) VALUES (1, 'X', 'confirmed')",
+    ).run();
+    assert.deepEqual(visible(db, ['audiobook']), ['Confirmed']);
   });
 
   it('several types OR together — a book of ANY chosen type shows', () => {

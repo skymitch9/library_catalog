@@ -39,16 +39,25 @@ import { formatLabel, mediumLabel } from '../lib/formats.js';
  */
 export function signatureOf(entry: SeriesLadderEntry): string {
   /*
-   * ⚠️ An uncertain audiobook match must NOT read as a certain one.
+   * ⚠️ **HISTORY, kept because the mechanism it describes is still live.**
    *
-   * The per-rung chip already hedges a containment match with a `?`, but that
-   * chip is suppressed when every rung agrees — and folding `matchedVia` away
-   * here made every rung agree. The result was the flat claim this whole
-   * feature was built to avoid: `/series/Tamer: King of Dinosaurs` read "All 5
-   * held as ebooks and on audio" when in truth all five had matched the SAME
-   * generic series-level row by containment, and book 11 probably has no
-   * audiobook at all. Found in a browser; nothing else would have caught it,
-   * because both the chip and the sentence are individually correct.
+   * This token used to carry the hedge, and the reason was a real bug: the
+   * chips are suppressed when every rung agrees, so folding `matchedVia` away
+   * here made every rung agree and `/series/Tamer: King of Dinosaurs` read
+   * "All 5 held as ebooks and on audio" when all five had matched the SAME
+   * generic series-level row by containment. Found in a browser; nothing else
+   * would have caught it, because both the chip and the sentence were
+   * individually correct.
+   *
+   * ⚠️ **The hedge came OUT of the vocabulary on 2026-09-03** (owner: *"make
+   * all of those question ones show the audio even if not sure … we can confirm
+   * if it's right in the edit menu later"*, approved 15:03) — see `audioToken`.
+   * The suppression mechanism this comment warns about is unchanged, so the
+   * lesson holds for the NEXT thing anyone is tempted to fold away here: a
+   * distinction dropped from the signature is a distinction that disappears
+   * from the page the moment a series is uniform, silently, and only in a
+   * browser. The *Tamer* row itself is stale today and is shown lighter for
+   * that reason.
    */
   const audio = entry.audiobook == null ? [] : [audioToken(entry.audiobook)];
   return [...entry.media, ...audio].join('+');
@@ -72,10 +81,25 @@ export function signatureOf(entry: SeriesLadderEntry): string {
  * still one rung held on audio, and this token must never make it two.
  */
 export function audioToken(audiobook: AudiobookRef): string {
-  // The hedge comes first so the existing vocabulary ('audio', 'audio?') is
-  // unchanged for every book in the catalog that owns one recording — which,
-  // measured 2026-08-23, is every one of them.
-  const base = audiobook.matchedVia === 'containment' ? 'audio?' : 'audio';
+  /*
+   * ⚠️ **A containment match now reads `audio`, not `audio?`** — owner ask
+   * 2026-09-03, approved 15:03 (*"can we make all of those question ones show
+   * the audio even if not sure and then we can confirm if it's right in the
+   * edit menu later"*).
+   *
+   * ⚠️ **The hedge did not disappear, it MOVED**, and migration 0010's rule
+   * ("shown, never hidden") is what makes that distinction load-bearing. It now
+   * lives in the chip's tooltip, in the work page's provenance sentence, and —
+   * the part that makes the change honest — in a place where it can be SETTLED:
+   * the edit box's Audio tab writes a verdict to `audiobook_match_review`
+   * (migration 0450). A hedge nobody can act on is a question the app asks
+   * forever; measured the same day, all 8 of MAIN's containment matches were
+   * right and the one wrong match was already stale.
+   *
+   * The COUNT stays in the signature for the reason the header gives — nothing
+   * about that changed.
+   */
+  const base = 'audio';
   return audiobook.editionCount > 1 ? `${base}×${audiobook.editionCount}` : base;
 }
 
@@ -121,7 +145,13 @@ export function Media({ entry }: { entry: SeriesLadderEntry }) {
           title={
             `In the audiobook catalog as "${audio.title}"` +
             (audio.viaAlias ? `, matched through the alias "${audio.viaAlias}"` : '') +
-            (audio.matchedVia === 'containment' ? ' — matched on a partial title' : '') +
+            // ⚠️ The hedge, in the ONE place it still lives on a ladder — and it
+            // now names the way out. Owner 2026-09-03: the chip shows the audio
+            // flatly, and the doubt is settled in the edit box (migration 0450)
+            // rather than printed on every rung for ever.
+            (audio.matchedVia === 'containment'
+              ? ' — matched on a partial title; confirm it in ✎ Edit this book'
+              : '') +
             // ⚠️ The tooltip cannot name the recordings: the ladder loads one
             // row per work (the `audiobook_holding` view), and the titles and
             // narrators live in `audioEditions`, which only the WORK PAGE asks
@@ -133,10 +163,13 @@ export function Media({ entry }: { entry: SeriesLadderEntry }) {
           }
         >
           {mediumLabel('audio')}
-          {/* A containment match is a weaker claim than an exact one and says so.
-              `matching.ts` opens with three wrong matches the sibling project
-              shipped, and containment is the rung that produced them. */}
-          {audio.matchedVia === 'containment' && '?'}
+          {/* ⚠️ No `?` since 2026-09-03. A containment match IS a weaker claim
+              than an exact one — `matching.ts` opens with three wrong matches
+              the sibling project shipped, and containment is the rung that
+              produced them — but the owner asked for the recording to be shown
+              anyway and the doubt to be settled once, in the edit box
+              (migration 0450), rather than re-asked on every rung for ever.
+              The weakness is still SAID: it is in this chip's `title` above. */}
           {/* The owner's ask, 2026-08-23: the NUMBER, not a bare mark. Silent at
               one, which is every book in the catalog today — a "1" on every
               chip is the label nobody reads. ⚠️ It reads as a count of
@@ -160,9 +193,14 @@ export function Media({ entry }: { entry: SeriesLadderEntry }) {
  * migration 0010's `audiobook_holding` — one title matched against one work,
  * hedged as `'containment'`. This reads `gap.audio.matchedVia` off migration
  * 0090/0110's series-level match — a rung with no work at all, hedged as
- * `'fold'`. Both hedges render the same `?`, because that is the one thing a
- * glance needs; `gapAudioLabel` below is where the two are told apart in
- * words.
+ * `'fold'`. `gapAudioLabel` is where the two are told apart in words.
+ *
+ * ⚠️ **Neither renders a `?` any more** (owner, 2026-09-03). The tooltip still
+ * says what connects the two catalogs, and the caption under the rung still
+ * hedges in words — but a `fold` rung's doubt is settled on the SERIES page
+ * (migration 0110's "Same series — I own these"), not here and not in the book's
+ * edit box, because a gap rung has no work to hang a per-recording verdict on.
+ * That is why this half of the change touches display only.
  */
 export function GapMedia({ gap }: { gap: SeriesGap }) {
   if (!gap.audio) return null;
@@ -173,12 +211,11 @@ export function GapMedia({ gap }: { gap: SeriesGap }) {
         className="fmt fmt--audio"
         title={
           hedged
-            ? `Filed under "${gap.audio.audiobookSeries}" in the audiobook catalog — only the series name connects the two catalogs`
+            ? `Filed under "${gap.audio.audiobookSeries}" in the audiobook catalog — only the series name connects the two catalogs; confirm it on this series' page`
             : `You own this on audio, as "${gap.audio.title}"`
         }
       >
         {mediumLabel('audio')}
-        {hedged && '?'}
       </span>
     </span>
   );
@@ -201,12 +238,16 @@ export const PHYSICAL = new Set(['hardcover', 'paperback', 'mass_market']);
 export function mediumPhrase(medium: string): string {
   if (medium === 'physical') return 'in print';
   if (medium === 'ebook') return 'as ebooks';
-  if (medium === 'audio') return 'on audio';
-  // The hedged form. A containment match is a guess at which audiobook row a
-  // volume means, and the sentence has to say so rather than round it up.
-  if (medium === 'audio?') return 'possibly on audio';
+  // ⚠️ ONE wording for both tokens since 2026-09-03. `audioToken` no longer
+  // emits `'audio?'`, but the branch is KEPT rather than deleted: `mediumPhrase`
+  // is exported and takes a plain string, so a caller holding an old token must
+  // get the current words rather than falling through to `mediumLabel` and
+  // printing "audio?" in the middle of a sentence. The hedge did not vanish —
+  // it moved to the chip tooltip and to the edit box's Audio tab, where it can
+  // actually be settled (migration 0450).
+  if (medium === 'audio' || medium === 'audio?') return 'on audio';
   /*
-   * The counted forms — `audioToken`'s `audio×2` / `audio?×2`.
+   * The counted forms — `audioToken`'s `audio×2` (and the retired `audio?×2`).
    *
    * ⚠️ Reached only when EVERY held rung carries the same count, which is the
    * one case the summary line replaces the chips. "All 3 held as ebooks and on
@@ -214,10 +255,9 @@ export function mediumPhrase(medium: string): string {
    * every rung at once, and dropping that word turns a per-volume fact into a
    * series total that would contradict the ladder above it.
    */
-  const counted = /^(audio\??)×(\d+)$/.exec(medium);
+  const counted = /^audio\??×(\d+)$/.exec(medium);
   if (counted) {
-    const hedge = counted[1] === 'audio?' ? 'possibly on audio' : 'on audio';
-    return `${hedge} (${counted[2]} recordings each)`;
+    return `on audio (${counted[1]} recordings each)`;
   }
   return mediumLabel(medium);
 }

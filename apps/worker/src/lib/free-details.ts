@@ -463,6 +463,20 @@ async function askAudiobook(
     return [];
   }
 
+  // ⚠️ Migration 0450. A recording the owner has judged NOT to be this book
+  // cannot be believed about this book's series or volume — the same rung-1
+  // trust the *Elantris* case in the header is about, withdrawn by hand. Said
+  // out loud rather than skipped silently, exactly like the NULL-series
+  // fall-through below: every rung this ladder declines to use says why. The
+  // cache row survives (0003) and the verdict is reversible in the edit box.
+  if (holding.review === 'rejected') {
+    skipped.push(
+      'the audiobook catalogue: its linked recording is one you marked as not this book, ' +
+        'so nothing it says about the series was used',
+    );
+    return [];
+  }
+
   const label = readSeriesLabel(holding.series, true);
   if (!label) {
     skipped.push(

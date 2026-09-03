@@ -245,6 +245,11 @@ const WIRED: Wired[] = [
   { routes: catalogRoutes, method: 'PATCH', path: '/editions/1', capability: 'editCatalog' },
   { routes: catalogRoutes, method: 'DELETE', path: '/editions/1', capability: 'editCatalog' },
   { routes: catalogRoutes, method: 'PUT', path: '/works/1/reading', capability: 'trackReading' },
+  // ⚠️ `editCatalog`, matching every other edit-box write and matching the
+  // series-level twin (`POST /api/series/:name/audio-link`). A verdict about
+  // which recording a book is CAN be false (migration 0110's distinction), so
+  // it sits with the writes and never with `read`. Migration 0450.
+  { routes: catalogRoutes, method: 'POST', path: '/works/1/audio-review', capability: 'editCatalog' },
 
   // ── covers.ts (/api) ──
   // `read` and not `editCatalog`: it reports a property of the DEPLOYMENT.

@@ -803,6 +803,53 @@ interface AudiobookHoldingRow {
   matched_via: string;
   title_similarity: number | null;
   stale_at: string | null;
+  review: string | null;
+}
+
+/**
+ * What a person can say about one recording matched to one book — migration
+ * 0450, the work-level twin of `audiobook_series_link`'s series-level answer.
+ *
+ * ⚠️ No `'pending'`. A row's existence IS "somebody looked", so absence is the
+ * un-reviewed state and a third value would give that state two spellings. Same
+ * reasoning as `reviewFindingSchema`'s missing `'pending'`.
+ */
+export type AudioMatchVerdict = 'confirmed' | 'rejected';
+
+/** Narrow a stored `verdict` string, so a garbled row reads as un-reviewed
+ *  rather than as a rejection nobody made. */
+function toVerdict(value: string | null | undefined): AudioMatchVerdict | null {
+  return value === 'confirmed' || value === 'rejected' ? value : null;
+}
+
+/**
+ * **"…and the owner has not rejected this recording"**, as a SQL predicate —
+ * migration 0450, and the ONE spelling of that condition in this codebase.
+ *
+ * ⚠️ **A fragment and not a query, for the same reason `audioEditionCountSql`
+ * is one**: several statements need the condition in several shapes (against
+ * the `audiobook_holding` VIEW, against `audiobook_edition_holding`, inside a
+ * ladder join), and a second hand-typed `NOT EXISTS` is exactly how two
+ * surfaces come to disagree about whether a book is on audio.
+ *
+ * ⚠️ **`NOT EXISTS`, so an un-reviewed recording passes.** Absence of a row is
+ * the ordinary case for every recording in both catalogs today; only the
+ * literal verdict `'rejected'` filters anything out.
+ *
+ * @param workIdExpr a SQL expression naming the work (`'a.work_id'`, `'?1'`).
+ * @param audioKeyExpr a SQL expression giving the recording's verbatim title.
+ *   ⚠️ On the `audiobook_holding` VIEW this must be `COALESCE(x.raw_title,
+ *   x.title)` — the view exposes no `audio_key`, and 0390's own copy statement
+ *   derives the key exactly that way.
+ * ⚠️ Both are interpolated verbatim, so they come from this codebase and never
+ * from a request. Every value the row carries stays bound.
+ */
+export function notRejectedSql(workIdExpr: string, audioKeyExpr: string): string {
+  return (
+    `NOT EXISTS (SELECT 1 FROM audiobook_match_review amr` +
+    ` WHERE amr.work_id = ${workIdExpr} AND amr.audio_key = ${audioKeyExpr}` +
+    ` AND amr.verdict = 'rejected')`
+  );
 }
 
 /**
@@ -848,6 +895,20 @@ export interface AudiobookHolding {
   /** Marked, never deleted. Non-null means the sibling catalog no longer
    *  agrees; render the section with a "may be out of date" note, not nothing. */
   staleAt: string | null;
+  /**
+   * The owner's standing verdict on this recording — migration 0450, `null`
+   * where nobody has looked.
+   *
+   * ⚠️ **`null` is "un-reviewed", never "rejected".** It is the answer for
+   * almost every row in both catalogs, and a reader that read it as a negative
+   * would hide the whole shelf's audio. Only the literal `'rejected'` hides.
+   *
+   * ⚠️ Always `null` on the series-link fallback
+   * (`deriveAudiobookHoldingFromSeriesLink`): that rung carries no verbatim
+   * recording title to key a verdict on, and its confirmation lives in
+   * `audiobook_series_link` instead — two mechanisms, two grains.
+   */
+  review: AudioMatchVerdict | null;
 }
 
 /**
@@ -866,10 +927,18 @@ export async function getAudiobookHolding(
 ): Promise<AudiobookHolding | null> {
   const row = await db
     .prepare(
-      `SELECT title, raw_title, authors, series, index_display, cover_href, matched_via,
-              title_similarity, stale_at
-         FROM audiobook_holding
-        WHERE work_id = ?`,
+      // ⚠️ The verdict is JOINED, not filtered on — migration 0450. A rejected
+      // recording must still reach the edit box (that is where the decision is
+      // taken back), so the hiding happens on the DISPLAY surfaces that would
+      // otherwise claim ownership. `COALESCE(raw_title, title)` is the view's
+      // recording key; 0390's own copy statement derives it the same way.
+      `SELECT h.title, h.raw_title, h.authors, h.series, h.index_display, h.cover_href,
+              h.matched_via, h.title_similarity, h.stale_at, amr.verdict AS review
+         FROM audiobook_holding h
+         LEFT JOIN audiobook_match_review amr
+                ON amr.work_id = h.work_id
+               AND amr.audio_key = COALESCE(h.raw_title, h.title)
+        WHERE h.work_id = ?`,
     )
     .bind(workId)
     .first<AudiobookHoldingRow>();
@@ -884,6 +953,7 @@ export async function getAudiobookHolding(
     matchedVia: row.matched_via,
     titleSimilarity: row.title_similarity,
     staleAt: row.stale_at,
+    review: toVerdict(row.review),
   };
 }
 
@@ -966,6 +1036,11 @@ export async function deriveAudiobookHoldingFromSeriesLink(
     matchedVia: SERIES_LINK_MATCHED_VIA,
     titleSimilarity: null,
     staleAt: null,
+    // ⚠️ Never a verdict — migration 0450 keys on the recording's verbatim
+    // title, and a series-holding rung has none. This rung's confirmation is
+    // `audiobook_series_link` (0110), taken on the series page; the work page's
+    // Audio tab links there rather than growing a second control for it.
+    review: null,
   };
 }
 
@@ -1005,6 +1080,10 @@ export interface AudiobookEdition {
   titleSimilarity: number | null;
   /** Marked, never deleted. Non-null means the sibling catalog no longer agrees. */
   staleAt: string | null;
+  /** The owner's standing verdict on THIS recording — migration 0450. `null` is
+   *  un-reviewed, which is the ordinary answer; only `'rejected'` hides
+   *  anything. Carried on every row so the edit box can show and undo it. */
+  review: AudioMatchVerdict | null;
 }
 
 interface AudiobookEditionRow {
@@ -1018,6 +1097,7 @@ interface AudiobookEditionRow {
   matched_via: string;
   title_similarity: number | null;
   stale_at: string | null;
+  review: string | null;
 }
 
 /**
@@ -1043,11 +1123,18 @@ export async function listAudioEditions(
 ): Promise<AudiobookEdition[]> {
   const { results } = await db
     .prepare(
-      `SELECT audio_key, title, authors, series, index_display, narrator, cover_href,
-              matched_via, title_similarity, stale_at
-         FROM audiobook_edition_holding
-        WHERE work_id = ?
-        ORDER BY (series IS NULL), (index_display IS NULL), audio_key`,
+      // ⚠️ Like `stale_at`, the verdict is CARRIED and never filtered on here —
+      // migration 0450. This list is what the edit box's Audio tab renders, and
+      // a rejected recording has to appear there or the decision cannot be
+      // taken back. The display surfaces do the hiding.
+      `SELECT e.audio_key, e.title, e.authors, e.series, e.index_display, e.narrator,
+              e.cover_href, e.matched_via, e.title_similarity, e.stale_at,
+              amr.verdict AS review
+         FROM audiobook_edition_holding e
+         LEFT JOIN audiobook_match_review amr
+                ON amr.work_id = e.work_id AND amr.audio_key = e.audio_key
+        WHERE e.work_id = ?
+        ORDER BY (e.series IS NULL), (e.index_display IS NULL), e.audio_key`,
     )
     .bind(workId)
     .all<AudiobookEditionRow>();
@@ -1063,7 +1150,94 @@ export async function listAudioEditions(
     matchedVia: row.matched_via,
     titleSimilarity: row.title_similarity,
     staleAt: row.stale_at,
+    review: toVerdict(row.review),
   }));
+}
+
+interface AudioMatchReviewRow {
+  work_id: number;
+  audio_key: string;
+  verdict: string;
+  decided_at: string;
+}
+
+/**
+ * Record "yes, this is it" / "not this one" for ONE recording of ONE work —
+ * migration 0450.
+ *
+ * ⚠️ **Guarded against a key no live row carries**, exactly as
+ * `confirmAudioSeries` guards its mapping and for the same reason: without it
+ * this endpoint would accept any pair of strings and store a verdict about a
+ * recording that does not exist, silently hiding nothing or confirming nothing.
+ * Returning `false` rather than throwing lets the route answer a worded 404 —
+ * the honest reply is "there is nothing here to review".
+ *
+ * ⚠️ **A stale row is still reviewable.** A recording the sibling catalog has
+ * withdrawn is exactly the kind a person wants to say "not this one" about —
+ * work #72's *Tamer* mismatch is stale and is the catalog's one genuine miss —
+ * and refusing it would make the answer depend on a grade nobody can see.
+ *
+ * An UPSERT: changing your mind is this same request, and there is exactly one
+ * standing verdict per (work, recording). Rows are never deleted (0003's rule);
+ * "I looked and said no" must stay distinguishable from "nobody looked".
+ */
+export async function setAudioMatchReview(
+  db: D1Database,
+  workId: number,
+  audioKey: string,
+  verdict: AudioMatchVerdict,
+  decidedBy: string | null,
+): Promise<boolean> {
+  const row = await db
+    .prepare(
+      `SELECT 1 AS ok FROM audiobook_edition_holding
+        WHERE work_id = ?1 AND audio_key = ?2
+        LIMIT 1`,
+    )
+    .bind(workId, audioKey)
+    .first<{ ok: number }>();
+  if (!row) return false;
+
+  await db
+    .prepare(
+      `INSERT INTO audiobook_match_review (work_id, audio_key, verdict, decided_by)
+       VALUES (?1, ?2, ?3, ?4)
+       ON CONFLICT(work_id, audio_key) DO UPDATE SET
+         verdict    = ?3,
+         decided_by = ?4,
+         decided_at = datetime('now')`,
+    )
+    .bind(workId, audioKey, verdict, decidedBy)
+    .run();
+  return true;
+}
+
+/**
+ * Every standing verdict for one work — migration 0450.
+ *
+ * Kept beside `listAudioEditions` rather than folded into it because the two
+ * answer different questions and one caller (the review route's reply) wants
+ * the verdicts alone, with no cache row required: a recording whose cache row
+ * was rewritten under a new key still has its old verdict on record, and this
+ * is where that is visible.
+ */
+export async function listAudioMatchReviews(
+  db: D1Database,
+  workId: number,
+): Promise<{ audioKey: string; verdict: AudioMatchVerdict; decidedAt: string }[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT work_id, audio_key, verdict, decided_at
+         FROM audiobook_match_review
+        WHERE work_id = ?
+        ORDER BY audio_key`,
+    )
+    .bind(workId)
+    .all<AudioMatchReviewRow>();
+  return (results ?? []).flatMap((row) => {
+    const verdict = toVerdict(row.verdict);
+    return verdict ? [{ audioKey: row.audio_key, verdict, decidedAt: row.decided_at }] : [];
+  });
 }
 
 /**
@@ -1105,7 +1279,13 @@ export function audioEditionCountSql(workIdExpr: string): string {
   // statements, and `audiobook_holding a` is already taken in `series.ts`.
   return (
     `(SELECT COUNT(*) FROM audiobook_edition_holding aeh` +
-    ` WHERE aeh.work_id = ${workIdExpr} AND aeh.stale_at IS NULL)`
+    ` WHERE aeh.work_id = ${workIdExpr} AND aeh.stale_at IS NULL` +
+    // ⚠️ Migration 0450. This number is a claim of OWNERSHIP — "you own 2
+    // audiobooks of this book" — and a recording the owner has said is not this
+    // book cannot be one of them. Same rule as `stale_at IS NULL` one line up,
+    // and it applies here for the same reason it does not apply to
+    // `listAudioEditions`: that list is the record, this is the claim.
+    ` AND ${notRejectedSql('aeh.work_id', 'aeh.audio_key')})`
   );
 }
 
@@ -1631,8 +1811,15 @@ export const BINDING_CLAUSE: Record<string, string> = {
                     WHERE e.work_id = w.id AND e.format NOT IN (${PHYSICAL_LITERALS}))`,
   // The sibling audiobook catalog's cached holding — a live (non-stale) row.
   // `audiobook_holding` is a read-only cache in this D1 (migration 0010).
+  //
+  // ⚠️ A recording the owner has REJECTED (migration 0450) does not put a book
+  // on the audiobook shelf: this filter answers "show me what I have on audio",
+  // and a match already judged wrong is not one. The view exposes no
+  // `audio_key`, so the key is `COALESCE(raw_title, title)` — 0390's own
+  // derivation, and `notRejectedSql`'s documented requirement.
   audiobook: `EXISTS (SELECT 1 FROM audiobook_holding a
-                        WHERE a.work_id = w.id AND a.stale_at IS NULL)`,
+                        WHERE a.work_id = w.id AND a.stale_at IS NULL
+                          AND ${notRejectedSql('a.work_id', 'COALESCE(a.raw_title, a.title)')})`,
 };
 
 /**

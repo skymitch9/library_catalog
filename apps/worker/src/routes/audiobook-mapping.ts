@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { normaliseTitle } from '@lc/core';
+import { notRejectedSql } from '@lc/db';
 import type { AppBindings } from '../env.js';
 import { crossCatalogFormatLabels } from '../lib/format-labels.js';
 
@@ -123,11 +124,19 @@ export const audiobookMappingRoutes = new Hono<AppBindings>()
 
   .get('/', async (c) => {
     const { results } = await c.env.DB.prepare(
+      // ⚠️ **Rejected matches are withheld too** — migration 0450, and the
+      // header's staleness argument applies word for word: this is "an
+      // unattended join deciding what to write into another catalog's data
+      // file", and a match the owner has personally judged wrong is a stronger
+      // reason to withhold than a stale one is. The verdict is keyed on the
+      // recording's verbatim title, which the VIEW gives as
+      // `COALESCE(raw_title, title)` (migration 0390's own derivation).
       `SELECT w.id AS workId, ah.title AS audiobookTitle,
               (SELECT group_concat(DISTINCT e.format) FROM edition e WHERE e.work_id = w.id) AS rawFormats
          FROM audiobook_holding ah
          JOIN work w ON w.id = ah.work_id
         WHERE ah.stale_at IS NULL
+          AND ${notRejectedSql('ah.work_id', 'COALESCE(ah.raw_title, ah.title)')}
         ORDER BY w.id`,
     ).all<MappingRow>();
 

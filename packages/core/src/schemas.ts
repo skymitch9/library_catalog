@@ -804,6 +804,34 @@ export const confirmAudioSeriesSchema = z.object({
 });
 export type ConfirmAudioSeries = z.infer<typeof confirmAudioSeriesSchema>;
 
+/**
+ * "Yes, this is it" / "Not this one" about ONE audiobook recording of ONE book
+ * — migration 0450, the owner's ask of 2026-09-03 (*"we can confirm if it's
+ * right in the edit menu later"*).
+ *
+ * ⚠️ `audioKey` is the sibling catalog's **verbatim** title, taken from the
+ * recording the page just showed (`audiobook_edition_holding.audio_key`). Sent
+ * back rather than derived server-side for the same reason
+ * `confirmAudioSeriesSchema.audiobookSeries` is: it lets the server refuse a
+ * key no live row carries, so a verdict can never be stored about a recording
+ * nobody was shown.
+ *
+ * ⚠️ **Not `.trim()`ed**, unlike every string beside it. This is an IDENTITY,
+ * matched byte-for-byte against the cache and against the audiobook site's own
+ * `bookId`; folding whitespace would key the verdict on a string the cache does
+ * not hold. The 500-char ceiling is generous on purpose — real titles carry
+ * series decoration ("Onyx Storm - Empyrean, Book 3").
+ *
+ * ⚠️ No `'pending'`, matching `reviewFindingSchema` and 0450's own CHECK:
+ * absence of a row already means "nobody has looked", and a third value would
+ * give that state two spellings.
+ */
+export const reviewAudioMatchSchema = z.object({
+  audioKey: z.string().min(1).max(500),
+  verdict: z.enum(['confirmed', 'rejected']),
+});
+export type ReviewAudioMatch = z.infer<typeof reviewAudioMatchSchema>;
+
 // ---------------------------------------------------------------------------
 // Research and gap verdicts
 // ---------------------------------------------------------------------------

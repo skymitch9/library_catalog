@@ -333,6 +333,12 @@ export function WorkPage({
             editions={editions}
             copies={copies}
             ebookHolding={ebookHolding}
+            // ⚠️ The FULL lists — stale AND rejected rows included. The Audio
+            // tab (migration 0450) is the one surface that must show a rejected
+            // recording, because it is where the verdict is taken back; the
+            // shelf below filters them and this deliberately does not.
+            audiobookHolding={audiobookHolding}
+            audioEditions={audioEditions}
             onChanged={load}
             onOpen={onOpen}
           />

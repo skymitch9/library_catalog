@@ -17,7 +17,7 @@ import {
 // ⚠️ The count of audiobook recordings has ONE definition and it lives there.
 // See `audioEditionCountSql`'s header for why it is a fragment, and why it is
 // not the same number as `listAudioEditions(...).length`.
-import { audioEditionCountSql } from './works.js';
+import { audioEditionCountSql, notRejectedSql } from './works.js';
 
 /**
  * Series, and what is missing from them.
@@ -468,13 +468,22 @@ async function loadAll(
       // here, so the ladder chip and the work page cannot come to disagree about
       // one number. The view above already picks one whole row per work; this
       // asks the TABLE underneath it how many there were.
+      //
+      // ⚠️ Migration 0450: a recording the owner has REJECTED gives the rung no
+      // audio chip at all. The chip is a flat claim — since 2026-09-03 it no
+      // longer even wears the `?` — so leaving a judged-wrong match on the
+      // ladder would be the app asserting exactly what it was told is false.
+      // The cache row stays (0003) and the edit box still lists it, which is
+      // where the verdict can be taken back.
       db
         .prepare(
           `SELECT a.work_id, a.title, a.series, a.index_display, a.matched_via, a.via_alias,
                   ${audioEditionCountSql('a.work_id')} AS edition_count
              FROM audiobook_holding a
              JOIN work w ON w.id = a.work_id
-            WHERE w.series IS NOT NULL AND a.stale_at IS NULL ${joinScope}`,
+            WHERE w.series IS NOT NULL AND a.stale_at IS NULL
+              AND ${notRejectedSql('a.work_id', 'COALESCE(a.raw_title, a.title)')}
+              ${joinScope}`,
         )
         .bind(...(onlySeries ? [onlySeries] : []))
         .all<AudioRow>(),

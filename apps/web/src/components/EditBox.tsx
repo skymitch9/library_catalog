@@ -4,8 +4,10 @@ import type { CoverFindResult, Me } from '../api.js';
 import type { WorkEbookHolding } from '../api.js';
 import { describeError } from '../lib/errors.js';
 import type { WorkDetail } from '../lib/work-view.js';
+import type { WorkAudioEdition, WorkAudiobookHolding } from '../api.js';
 import { Accessories } from './Accessories.js';
 import { Aliases } from './Aliases.js';
+import { AudioMatchReview } from './AudioMatchReview.js';
 import { AudioSeriesLink } from './AudioSeriesLink.js';
 import { Copies } from './Copies.js';
 import { CoverPanel } from './CoverPanel.js';
@@ -46,6 +48,12 @@ const TABS = [
   'Title & author',
   'Details',
   'Editions & copies',
+  // ⚠️ Its own tab rather than a section under "Editions & copies" — an
+  // audiobook is NOT an edition of anything in this database (migration 0010's
+  // header, and `decisions.md` §1 answering that question with a flat no), and
+  // filing it there would be the app quietly contradicting its own schema.
+  // Added 2026-09-03 for the owner's "confirm if it's right in the edit menu".
+  'Audio',
   'Extras',
   'Related & aliases',
   'Look it up',
@@ -59,6 +67,8 @@ export function EditBox({
   editions,
   copies,
   ebookHolding,
+  audiobookHolding,
+  audioEditions,
   onChanged,
   onOpen,
   onRequestCovers,
@@ -69,6 +79,13 @@ export function EditBox({
   editions: EditionView[];
   copies: CopyView[];
   ebookHolding: WorkEbookHolding | null;
+  /** The recording the `audiobook_holding` view picked, or the series-link
+   *  fallback, or null. Optional so a caller that predates the Audio tab
+   *  compiles; the work page always passes both. */
+  audiobookHolding?: WorkAudiobookHolding | null;
+  /** Every recording on record, stale and rejected ones included — the Audio
+   *  tab is where those are seen and undone (migration 0450). */
+  audioEditions?: WorkAudioEdition[];
   onChanged: () => void;
   onOpen: (id: number) => void;
   /** Opens the "request more covers" scaffold (Stage 3). */
@@ -147,6 +164,25 @@ export function EditBox({
               canEdit={canEdit}
               canSuggest={me.capabilities.includes('suggestWishlist')}
               canListMembers={me.capabilities.includes('editCatalog')}
+              onChanged={onChanged}
+            />
+          </div>
+        )}
+
+        {/* ⚠️ Is this the right recording? — migration 0450, the owner's ask of
+            2026-09-03. The series ladder's chips stopped hedging that day; this
+            is where the doubt they used to print goes to be settled. The
+            SERIES-level equivalence stays under Details beside the series field
+            (and on the series page), because it is keyed on the series and folds
+            across every book in it — two grains, two controls, no duplicate. */}
+        {show('Audio') && (
+          <div className="edit-box__section">
+            <AudioMatchReview
+              workId={workId}
+              holding={audiobookHolding ?? null}
+              editions={audioEditions ?? []}
+              series={work.series}
+              canEdit={canEdit}
               onChanged={onChanged}
             />
           </div>

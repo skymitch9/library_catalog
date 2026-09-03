@@ -955,9 +955,13 @@ describe('the audiobook cross-link renders ONCE, in the Audio section (the doubl
       audiobookHolding: audioHolding({ matchedVia: 'containment', titleSimilarity: 0.87 }),
     });
     const audio = v.rows.find((r) => r.medium === 'audio')!;
+    // ⚠️ REWORDED 2026-09-03 (owner ask, approved 15:03), not removed. It used
+    // to end "worth a second look", which asked something of the reader and
+    // offered nowhere to answer it; the doubt is the same, and the sentence now
+    // names the control that settles it (migration 0450's Audio tab).
     assert.ok(
       audio.notes.includes(
-        'Matched by containment — a partial title match, worth a second look (87% title match).',
+        'Matched on a partial title (87% title match) — confirm it in ✎ Edit this book.',
       ),
     );
   });
