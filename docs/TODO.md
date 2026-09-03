@@ -83,10 +83,26 @@ BE YOURS meta word. His answer was a spec, not a pick — **15:33, verbatim:**
 every multi-copy list). Tests in `apps/web/test/shelf-view.test.ts`. Sized as
 a web-only build (derivation + component + tests) — Opus, ~150k.
 
-☑ build → ☑ tests → ☐ deploy PAIR from a clean tree → ☐ owner review on
+☑ build → ☑ tests → ☑ deploy PAIR from a clean tree → ☐ owner review on
 /work/263 and a padhard work with two formats.
 
-### ✅ BUILT 2026-09-03 — commit `0d794f0`, ⚠️ **NOT DEPLOYED** (the conductor ships the pair)
+### ✅ BUILT 2026-09-03 — commit `0d794f0` — ✅ **DEPLOYED TO BOTH 15:58 Phoenix**
+
+Deploy pair from the clean tree at `9b17f8b`, both from one build
+(`assets/index-CEt3kbie.js`, served on both hosts at 15:59): **main**
+`9ad44ecb-1659-4314-b46a-d6f2efda8cee` · **friend** `8e618f0a-1e98-4c54-8754-17124366ee1a`
+(`deploys.log` lines `2026-09-03T22:57…`, holder `unknown` — the conductor's
+shell had no holder name). **Seen live (15:59):** MAIN /work/263 → tabs
+*Hardcover · Audio*, lines *Hardcover — Sprayed edges / Hardcover / Hardcover —
+Lent out*, no *"On the shelf"*, no *"Not signed"* anywhere on the page — the
+unlinked-copy rendering predicted below, exactly. padhard /work/642 → tabs
+*Hardcover · Paperback · Audio*, line *Standard edition — Signed*. Tab
+switching and the keyboard were NOT exercised live.
+
+⚠️ Also measured on /work/263: neither the sprayed-edges copy nor the lent-out
+copy is `is_signed` in the data, so his example's *"signed"* words will not
+appear even after linking — ☐ ask whether those copies ARE signed (a data fix,
+his call) or the example was illustrative.
 
 **What landed** — all of it in the DERIVATION, so a test pins what the shelf
 SAYS and the component chooses no words:
