@@ -1,7 +1,16 @@
 # Series pages — formats, alternate printings, audiobooks — Information Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
-> Last verified: **2026-08-26** for **§4.7 and §4.8** — measured against the
+> Last verified: **2026-09-03** for the **NEW §4.9** only — migration 0450 was
+> written and applied `--remote` to BOTH D1s that day (`library-catalog` and
+> `library-catalog-2nd`, both ✅), and the counts it quotes were measured against
+> both live databases that afternoon. ⚠️ **NOT verified that day: anything
+> rendered.** The code is committed and **NOT deployed**, so no live page has
+> been seen with the `?` off the chips or with the Audio tab on it.
+> ⚠️ Nothing else here was re-checked on 2026-09-03. §4.4's `AUDIO?` sentence
+> was corrected in place because it became false; that correction and §4.9 are
+> the only edits.
+> Last verified before that: **2026-08-26** for **§4.7 and §4.8** — measured against the
 > LIVE `catalog.csv` and BOTH production D1s that day (the backfill was run
 > `--remote` on each, dry then `--commit`; the cross-instance table is a
 > simulation over both catalogs' real works and aliases, not a live donor call).
@@ -202,8 +211,11 @@ shape, a `- MM` suffix this catalog adds and the audiobook catalog does not:
 
 ⚠️ The five *Tamer* rows all match the **same** audiobook row — the series' base
 title. That is a real weakness of containment and it is visible rather than
-hidden: the chip renders `AUDIO?` with a tooltip saying the match was partial.
-Read the dry run's containment list before every `--commit`.
+hidden. ⚠️ **AMENDED 2026-09-03: the chip no longer renders `AUDIO?`.** It reads
+a flat `AUDIO`, and the partial-title fact lives in the tooltip, in the work
+page's provenance sentence, and — the part that makes the change honest — in a
+verdict the owner can record. See **§4.9**. Read the dry run's containment list
+before every `--commit`; nothing about that changed.
 
 ---
 
@@ -408,6 +420,114 @@ without the owner** — the subtitle says book two while BOTH rows record
 candidates are in `docs/TODO.md` for confirmation; the durable fix for a pair he
 confirms is **one `work_alias` row**, which this rung then matches for free — the
 same mechanism the 2026-08-25 near-miss audit used, at one INSERT and no code.
+
+---
+
+### 4.9 The `?` came off the chips, and the answer went in the edit box — 2026-09-03
+
+**Owner, ~14:37 Phoenix, verbatim:**
+
+> "Also I see a lot of books asking if this is the right audio, can we make all
+>  of those question ones show the audio even if not sure and then we can confirm
+>  if it's right in the edit menu later? Any dramatic misses ping me about"
+
+Approved as the two-part change below at **15:03** — *"Yes do it"*.
+
+#### What "a lot" actually was — measured 14:40, both live D1s
+
+| | MAIN | padhard |
+|---|---|---|
+| work-level `containment`, live | **8** (all 0.80–0.82: seven *Harry Potter … (Full-Cast Edition)*, plus *Space Knight Book 1* → "Space Knight") | 0 |
+| work-level `containment`, stale | 1 — ⚠️ work **#72** *Tamer Book 11* → "Tamer: King of Dinosaurs", the §4.4 shape, and the ONE genuine miss. Already stale, so already shown lighter | 0 |
+| series-level `fold`, live | 6 | **27** (DCC ×8, He Who Fights with Monsters ×12, + 7 singles) |
+| series links already confirmed (0110) | 8 | 1 |
+
+⚠️ **So "a lot" was padhard's SERIES pages, not the work-level matches** — and
+the two halves have different mechanisms. Nothing in this section changes the
+series-level one; §4.9.3 says why.
+
+#### 4.9.1 Display — the hedge moved, it did not vanish
+
+`audioToken` returns `'audio'` for a containment match, so a hedged rung signs
+exactly as a certain one does; `Media` and `GapMedia` render no `?`;
+`mediumPhrase` says *"on audio"* for both tokens; and `matchProvenance`'s
+containment sentence became **"Matched on a partial title (81% title match) —
+confirm it in ✎ Edit this book."**
+
+⚠️ **Migration 0010's rule is intact.** Provenance is still SHOWN — reworded
+into a pointer, never removed. The doubt now lives in three places that can act
+on it (the chip tooltip, that sentence, the Audio tab) instead of one that
+could not (a `?` nobody could answer).
+
+⚠️ The retired `'audio?'` branches in `mediumPhrase` are **kept, not deleted**:
+it is exported and takes a plain string, so an old token must produce the
+current words rather than falling through to a literal "audio?" mid-sentence.
+
+#### 4.9.2 Confirm — migration 0450, `audiobook_match_review`
+
+`(work_id, audio_key, verdict, decided_at, decided_by)`, PK `(work_id,
+audio_key)`, verdict `'confirmed' | 'rejected'`.
+
+⚠️ **A table and not a fourth `matched_via` value**, for migration 0110's reason
+one grain finer: `backfill-audiobook-holdings.mjs` upserts `matched_via =
+excluded.matched_via` three times a day, so a verdict kept there survives
+exactly until the next run. **A script-owned column cannot hold a human
+decision.**
+
+`audio_key` is the sibling catalog's **verbatim** title —
+`audiobook_edition_holding.audio_key` = 0340's `raw_title`, falling back to
+`title` where that is NULL, exactly as 0390's own copy statement derives it.
+⚠️ A verdict recorded against the fallback key stops matching once a backfill
+run fills in the real `raw_title`; the row survives and the recording simply
+reads un-reviewed again. That is deliberate — the alternative, keying on
+`work_id` alone, cannot tell the two *Elantris* recordings apart, which is the
+whole reason 0390 exists.
+
+Rows are never deleted (0003); re-deciding is an UPSERT.
+
+**Write path:** `POST /api/works/:id/audio-review`, `editCatalog` — the same
+gate every other edit-box write carries, and the same one the series-level twin
+`POST /api/series/:name/audio-link` uses. Guarded against a key no cache row
+carries, and that refusal is a worded 404.
+
+**What a `rejected` verdict hides, and where the decision was made:**
+
+| Reader | Filtered? | Why |
+|---|---|---|
+| shelf Audio rows (`shelf-view.ts`) | **yes** | done in the WEB, not server-side: one payload feeds both the shelf and the edit box, and the tab needs the rejected row |
+| series ladder audio chip (`packages/db/src/series.ts`) | **yes** | the chip is now a flat claim — leaving it would assert what the owner said is false |
+| `audioEditionCountSql` | **yes** | it is a claim of OWNERSHIP; a judged-wrong match is not a book we hold |
+| `BINDING_CLAUSE.audiobook` (collection filter) | **yes** | "show me what I have on audio" |
+| `free-details.ts` rung 1 | **yes** | it must not believe a rejected recording's series/volume — and it says so out loud in `skipped[]` |
+| `routes/audiobook-mapping.ts` (machine export) | **yes** | its own header: *"better to answer nothing than to propagate a fact this catalog has already flagged as doubtful"* — applies harder to a match a person judged wrong than to a stale one |
+| `getAudiobookHolding` / `listAudioEditions` | **no** | they CARRY the verdict. The edit box is where it is taken back, so it must see the row |
+| `workDeletionReport`'s cache count | **no** | that dialog is about what CASCADE removes, and a rejected row is still removed |
+| `reviews.ts` `/bookid-index`, `packages/db/src/tbr.ts` bridge | **no — open** | identity bridges into another catalog's documents. Arguably they should be filtered too; not changed here because it would silently move existing reviews/TBR entries and nobody has measured what it touches. ⚠️ Left as a known follow-up rather than done half-checked |
+
+A `confirmed` verdict changes **words only**: the provenance sentence becomes
+*"Confirmed by you as the right recording."* and the tooltip drops its hedge. It
+cannot add a holding, raise a count or close a gap — like 0110, it only ever
+annotates something already there.
+
+#### 4.9.3 ⚠️ Two grains, two controls — and why the series half was left alone
+
+| | grain | confirmed where |
+|---|---|---|
+| `audiobook_series_link` (0110) | one SERIES | `/series/<name>` — "Same series — I own these" |
+| `audiobook_match_review` (0450) | one RECORDING of one WORK | the book's edit box → **Audio** tab |
+
+A `fold` rung has **no `work_id`** — it is a volume this catalog does not hold —
+so nothing in 0450 can reach it, and nothing in 0450 can move `maybeOnAudio`.
+The Audio tab therefore **links** to the series page rather than growing a
+second control.
+
+⚠️ **`completeness.ts`'s *"N possibly on audio"* and `gapAudioLabel`'s fold
+caption were deliberately NOT reworded**, even though the chip above them lost
+its `?`. Those rungs are still counted as **MISSING** by the arithmetic, and
+that file's own header warns that a rung the arithmetic has stopped calling
+missing beside a caption that still hedges is one screen contradicting itself —
+the inverse holds just as hard. Unhedging the words there is a change to the
+COUNT, not to the wording, and it was not asked for.
 
 ---
 

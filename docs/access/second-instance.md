@@ -1,7 +1,12 @@
 # Second Library Instance (friend) — Access Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED — no secret values here.
-> Last verified: **2026-09-03** — ONLY the two signed-editions sweep rows in the
+> Last verified: **2026-09-03 (second entry that day)** — ONLY the "Migrate her
+> D1" row: migration `0450_audiobook_match_review.sql` was applied `--remote` to
+> BOTH databases that afternoon (`library-catalog` ✅, then `library-catalog-2nd`
+> ✅). ⚠️ The code that reads that table is committed and **NOT deployed** to
+> either instance; the migration is additive and safe ahead of it.
+> Also verified 2026-09-03 — ONLY the two signed-editions sweep rows in the
 > Commands table below. Both were run against her D1 that day: the default mode
 > at 14:19 (dry run, then `--commit`, then a re-run proving 0 matched) and
 > `--strip-word` at 14:31 (dry run only — **0 matched on hers**, which is why
@@ -138,7 +143,7 @@ hand**, which is the staleness STEP 11 exists to prevent, one instance over.
 | Do | Command |
 |---|---|
 | Deploy her instance | `npm run deploy:friend` (carries check-clean + deploy-guard + deploy-done exactly like the main deploy; `DEPLOY_HOLDER=<you>` as usual) |
-| Migrate her D1 | `npm run db:migrate:friend` — shared `migrations/` dir, same files as main. **Migrate before deploy.** ⚠️ Silence from migrate is a failed migration — expect the checkbox table |
+| Migrate her D1 | `npm run db:migrate:friend` — shared `migrations/` dir, same files as main. **Migrate before deploy.** ⚠️ Silence from migrate is a failed migration — expect the checkbox table. **Latest applied to BOTH: `0450_audiobook_match_review.sql`, 2026-09-03** (main ✅ then hers ✅; additive — a new table only — so it was applied AHEAD of its deploy on purpose, and the pre-0450 code running against it is unaffected) |
 | List her migrations | `npx wrangler d1 migrations list library-catalog-2nd --remote --env friend --config apps/worker/wrangler.toml` |
 | One secret | `npm run secret:friend -- NAME` |
 | List her secrets | `npm run secret:list:friend` |
