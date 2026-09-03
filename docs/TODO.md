@@ -32,6 +32,86 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
+## ☐ SHELF: "double information" on a multi-copy card, and the hedged `audio?` matches — two owner asks, 2026-09-03 ~14:30 Phoenix (NOT started; decisions pending)
+
+Both land on BOTH instances through the shared components (global rule
+2026-09-03: one codebase, deploy PAIR).
+
+### A. The multi-copy card says every badge twice
+
+Owner, with a screenshot of `library.heygabi.ai` → *On your shelf* → PHYSICAL,
+a **Hardcover · OWNED** card whose card-level line reads *"Not signed ·
+Sprayed edges"* and whose three nested copy rows read *"On the shelf · Not
+signed · Sprayed edges"*, *"On the shelf · Not signed"*, *"Lent out · good ·
+Not signed"*, followed by two *MAY BE YOURS* edition cards:
+
+> "This has double information, let's normalize this."
+
+**Where it comes from (measured in code, not assumed):**
+`apps/web/src/components/OnYourShelf.tsx` renders the row-level chip +
+badges at `:320-332` (`row.signed` = the group answer, `row.badges` = the
+UNION across copies + prose, `lib/shelf-view.ts:313/411`), and then, for a
+multi-copy row only, `CopyFacts … withStatus showSigned` at `:361`, which
+repeats `SignedChip` per copy (`:461`) plus that copy's own badges
+(`:462-466`). The comment at `:351-355` says the per-copy line exists to say
+*WHICH* copy is signed — but it prints the answer on every copy whether or
+not the copies differ, and the "Not signed" negative (owner rule 2026-09-02:
+say it either way) is therefore printed once per copy plus once for the
+group.
+
+**Proposed rule (one decision for the owner, not yet answered):** a fact is
+printed ONCE — on the card when every copy agrees, on the copies (and only
+there) when they differ. So the screenshot's card becomes *card: "Not
+signed"* (all three agree) + *copy 1: "Sprayed edges"* (only it has them),
+copies 2–3 carry status/condition only. `deriveShelfView` already has both
+halves; the change is a small derivation (`badgesAgree`/`signedAgree`) +
+the two render sites + tests in `shelf-view.test.ts`.
+
+### B. "A lot of books asking if this is the right audio"
+
+Owner, 2026-09-03 ~14:37 Phoenix, verbatim:
+
+> "Also I see a lot of books asking if this is the right audio, can we make
+> all of those question ones show the audio even if not sure and then we can
+> confirm if it's right in the edit menu later? Any dramatic misses ping me
+> about"
+
+**What the "question" is (measured 14:40):** the `?` hedge on the AUDIO chip
+of a series-ladder rung, `apps/web/src/components/RungMedia.tsx` — `audio?`
+(`audioToken`, `:78`; `Media`, `:139`) for a work-level `containment` match
+(migration 0010 `audiobook_holding.matched_via`) and `GapMedia` `:181` for a
+series-level `fold` match (0090 `audiobook_series_holding.series_matched_via`);
+`mediumPhrase` says *"possibly on audio"* for the same rows (`:207`). The
+WORK page already shows the audio as **Owned** with its cover — only the
+*"Matched by containment — … worth a second look"* provenance sentence hedges
+there.
+
+| | MAIN | padhard |
+|---|---|---|
+| work-level `containment`, live | **8** (all 0.80–0.82 — 7 are *Harry Potter … (Full-Cast Edition)*, plus *Space Knight Book 1 → "Space Knight"*) | 0 |
+| work-level `containment`, stale | 1 — ⚠️ **work #72 *Tamer Book 11* → "Tamer: King of Dinosaurs"** (the series-title-only recording; the one real miss, already stale so shown lighter) | 0 |
+| series-level `fold`, live | 6 (Arcane Pathfinder ×4, Legion vol 4 = the *Many Lives* omnibus, Twilight vol 1 = the Tenth-Anniversary dual edition) | **27** (DCC ×8, He Who Fights with Monsters ×12, + 7 singles — every series name identical on both sides) |
+| series links already confirmed (0110 `audiobook_series_link`) | 8 | 1 |
+
+So "a lot" is padhard's series pages (DCC and HWFWM carry `audio?` on every
+rung). None of the 41 hedged rows is a dramatic miss on inspection; the only
+wrong one (#72) is already stale.
+
+**Plan (to confirm with the owner, one decision):** (1) DISPLAY — the chip
+drops the `?` and *"possibly on audio"* becomes *"on audio"*; the hedge
+survives only in the tooltip and in the work page's provenance sentence,
+which is reworded from a question into a pointer (*"Matched on a partial
+title — confirm it in ✎ Edit this book"*). (2) CONFIRM — a small **Audio**
+tab in `EditBox` listing the matched recording(s) with *"Yes, this is it"* /
+*"Not this one"*. ⚠️ Persisting the verdict is a NEW TABLE, not a fourth
+`matched_via` value — migration 0110 already explains why (the sync upsert
+overwrites `matched_via` on every run and would erase a confirmation). A
+rejected match is hidden from the shelf and ladder and its row kept (0003:
+mark, never delete). Series-level `fold` already has its confirm mechanism
+(0110, on the series page) — the tab should link to it rather than build a
+second one. Migration PAIR + deploy PAIR. Sized as a multi-layer build
+(migration + worker route + web tab + tests) — Opus, ≥150k, clean tree first.
+
 ## ☐ "Signed" typed into the edition name → the signed button ✅ **APPLIED TO BOTH INSTANCES 2026-09-03** (padhard 14:19, MAIN 14:33 Phoenix — different modes, see below), ☐ **6 rows to link by hand** and ☐ edition parity with the main catalog still open (owner ask 2026-09-03 ~13:00)
 
 **Owner, verbatim (Discord/session, 2026-09-03):** *"Side project, Diva marked books as
