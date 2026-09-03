@@ -32,6 +32,140 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
+## ☐ PADHARD: "Signed" typed into the edition name → standard edition + the signed button ✅ **APPLIED 2026-09-03 14:19 Phoenix**, and edition parity with the main catalog ☐ **still open** (owner ask 2026-09-03 ~13:00)
+
+**Owner, verbatim (Discord/session, 2026-09-03):** *"Side project, Diva marked books as
+signed manually in edition, sweep those and apply the button. Also diva's catalog
+doesn't have editions like mine. Global rule apply all catalog changes to both
+catalogs. Make shared global components and templates so they stay in sync"* — then
+*"Make them all standard edition and signed instead of signed in the edition. Keep
+the hardcover and paperback if available default to paperback if unknown"* — then
+*"You're looking for padhard library not library"*.
+
+Diva = Samantha Hardman = the `[env.friend]` instance `padhard.heygabi.ai`, D1
+`library-catalog-2nd` ([`access/second-instance.md`](access/second-instance.md)).
+
+**Measured 2026-09-03 ~13:05 Phoenix on her D1 (read-only `d1 execute`):**
+
+| Fact | Number |
+|---|---|
+| editions with `signed` in `edition_name` | **63** (47 paperback, 16 hardcover; 59 named exactly "Signed", 4 with more words: "Signed special" ×2 — already `edition_kind='collectors'` — "Signed deluxe edition", "After light edition/ signed") |
+| of those, `edition_kind` set | 2 (the "Signed special" pair) |
+| copies with `is_signed=1` on the whole instance | **4** |
+| signed-named editions with NO copy linked | **55** — the work's copy sits with `edition_id NULL` (54 works have exactly ONE such copy, 1 work has several) |
+| copies with no edition at all | 557 of 677 (main instance: 437 of 448 — same shape, so "link the copy" is not what "editions like mine" means) |
+| works with no edition row | 15 (main: 0) |
+| last migration | `0440_billing_cache.sql` — same as main |
+
+⚠️ The signed button is `copy.is_signed` (`Copies.tsx` "Mark signed", migration
+0001; 0430 explains why signed is a COPY fact). An edition row cannot be "signed";
+the sweep therefore has to **link the work's unlinked copy to the edition and flag
+the copy**, which is the same mechanism as the "link the unlinked copies" heading
+below.
+
+**Plan as specified by the owner (each row with `signed` in the name):**
+1. `edition.edition_name → NULL`, `edition.edition_kind → NULL` — that IS "standard
+   edition" in this schema (0050: NULL = ordinary printing, no badge). The 4
+   multi-word names lose their other words too ("make them ALL standard") — listed
+   above so he can veto any.
+2. `edition.format` kept as is (all 63 are already hardcover or paperback); any row
+   that were neither would default to `paperback`.
+3. The copy: if the edition has a linked copy, `is_signed=1`; if not, link the
+   work's sole `edition_id NULL` copy to it and set `is_signed=1`. The one
+   many-copies work is reported, not guessed.
+4. Dry-run by default, `--commit` to write, `--friend` for her D1 — the existing
+   sweep idiom (`scripts/sweep-special-editions.mjs`). Run on BOTH instances (main
+   is expected to match 0 rows; say so with the number).
+
+### ✅ The sweep half — BUILT AND APPLIED to padhard, 2026-09-03 14:19 Phoenix
+
+`scripts/sweep-signed-editions.mjs` (+ `scripts/test/sweep-signed-editions.test.mjs`,
+16 unit tests on the pure `planRow` / `resolveCopyCollisions`; full suite **2234
+pass / 0 fail**). Dry run is the default, `--commit` writes, `--friend` requires
+`--remote`. Commit `a4153bc`.
+
+**Applied on padhard — the dry run reproduced the measured table above exactly,
+then `--commit` wrote 122 statements:**
+
+| | |
+|---|---|
+| editions matched | **63** |
+| names cleared → NULL | **63** |
+| kinds cleared → NULL | **2** (the "Signed special" pair) |
+| formats defaulted to paperback | **0** (all 63 were already hardcover/paperback, as measured) |
+| copies flagged (already linked) | **5** |
+| copies **linked + flagged** in one UPDATE | **54** |
+| rows needing the owner | **1** |
+| statements written | **122** |
+
+**Verified after the write, not assumed:**
+
+- re-running the dry run reports **0 editions matched** — idempotent, and the
+  proof is the same command anyone can re-run;
+- `SELECT COUNT(*) FROM copy WHERE is_signed=1` on `library-catalog-2nd` =
+  **63** — exactly the 4 that pre-existed plus the 59 this wrote (5 + 54);
+- spot-checked copies #489 / #562 / #606: each now carries its edition_id AND
+  `is_signed=1`.
+
+Review it: <https://padhard.heygabi.ai/> — e.g.
+[work 561 *Level Me Up*](https://padhard.heygabi.ai/work/561),
+[work 488 *Destroyers of the Light*](https://padhard.heygabi.ai/work/488),
+[work 604 *Everything's Better with Lisa*](https://padhard.heygabi.ai/work/604).
+The Editions panel now shows a plain printing with no name; the signed fact is
+the lit **Mark signed** toggle on the copy.
+
+**☐ ONE ROW NEEDS THE OWNER (padhard).** Its edition was normalised like the
+rest, but no copy was flagged, because which copy is signed is not in the
+database:
+
+| Work | Was | Why it was not guessed |
+|---|---|---|
+| work **#136 "Mate"** (edition #135) | `edition_name = 'Signed'` | the work has **2 unlinked copies (#131, #320)** and neither is linked to the edition. Ask Diva which one she got signed, then `UPDATE copy SET edition_id = 135, is_signed = 1 WHERE id = <the one>;` |
+
+**The 4 multi-word names, as applied** (the owner said "make them ALL standard",
+so the extra words were deleted — listed here because that is the only remaining
+record of them, and any one of them is restorable by hand):
+
+| Edition | Work | Name deleted |
+|---|---|---|
+| #423 | A Kiss of Daggers | "Signed deluxe edition" |
+| #503 | When I Picture You | "After light edition/ signed" |
+| #632 | The Ashes and the Star-Cursed King | "Signed special" (+ `edition_kind='collectors'`) |
+| #633 | Songbird and the Heart of Stone | "Signed special" (+ `edition_kind='collectors'`) |
+
+### 🔴 MAIN matched **20** rows — dry-run only, deliberately NOT committed
+
+The expectation in the plan above was 0. It is 20, and **committing them would
+be wrong**: unlike Diva's bare "Signed", these names are real vendor prose, which
+migration 0050 says `edition_name` exists to keep byte-for-byte —
+**"Kickstarter signed paperback" ×15**, "Campaign-only exclusive hardcover,
+signed extras", "Collector's Edition Trilogy — Book 1 Signed & Numbered",
+"Signed Leatherbound (two-volume set: …)", and two bare "Signed" rows
+(*Something* #620/#621, *Uncapped* #622/#623).
+
+Main's dry run: 20 matched, 20 names + 3 kinds would clear, 0 formats defaulted,
+15 copies would be linked+flagged, **5 need the owner**. ☐ **Owner decision:**
+should the signed flag be applied to main's copies *without* clearing those
+names? That is a different sweep (copy half only) and is not built.
+
+⚠️ **What MAIN found that the friend data did not** — and it is now guarded in
+code: *Something* has **two** signed editions (#620 paperback, #621 hardcover)
+and **one** unlinked copy #407. A per-row plan would have linked #407 to #620
+and then re-linked it to #621 — last write silently wins, report claims two.
+`resolveCopyCollisions` sends both claimants to the owner instead.
+Padhard has no such collision (checked).
+
+**Still open — "diva's catalog doesn't have editions like mine":** both instances
+run the same build (every deploy in `deploys.log` lands as a pair) and the same
+migrations, so this is a DATA or a rendered-UI difference, not a missing feature.
+Needs one owner answer: what he sees on his that he does not see on hers.
+
+**Global rule (written to `~/.claude/CLAUDE.md` 2026-09-03):** every catalog change
+lands on BOTH instances — one build, deploy pair, migration pair, sweeps run with
+`--friend` too; posture vars mirrored unless a difference is deliberate and
+documented in `second-instance.md`.
+
+
 ## ☐ CROSS-REPO: the LIBRARY half of the owner's 2026-09-02 ~14:00 batch is DONE — the platform file still says otherwise
 
 ⚠️ **Recorded here because `catalog-platform/docs/TODO.md` was read-only to the

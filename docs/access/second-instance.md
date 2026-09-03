@@ -1,7 +1,12 @@
 # Second Library Instance (friend) — Access Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED — no secret values here.
-> Last verified: **2026-08-25** — her secret NAMES were re-read **twice** that
+> Last verified: **2026-09-03** — ONLY the new signed-editions sweep row in the
+> Commands table below, which was run against her D1 that day (dry run, then
+> `--commit`, then a re-run proving 0 matched). ⚠️ **Nothing else on this page
+> was re-measured on 2026-09-03**; everything below still carries its
+> 2026-08-25 (or older, where noted) measurement.
+> Last verified before that: **2026-08-25** — her secret NAMES were re-read **twice** that
 > day (`npm run secret:list:friend`: seven in the morning, **nine** after the
 > owner set her two machine-route tokens by hand), the "one command for BOTH
 > instances" work landed, and the pipelines learned to target her.
@@ -138,6 +143,7 @@ hand**, which is the staleness STEP 11 exists to prevent, one instance over.
 | Bulk secrets | `npm run secrets:push:friend` — **since 2026-08-25 this WORKS**, and pushes only `SHARED_SECRETS` from the MAIN `.dev.vars`. ⚠️ There is still **no `.dev.vars.friend`** and there must not be one (credentials catalog F-6); the safety now comes from the list, not from the missing file. Per-instance keys (`ANTHROPIC_API_KEY`, every `ESTATE_APP_TOKEN_*`, `INDEX_PUSH_TOKEN`) are **refused** with a sentence saying what to run instead |
 | Tail her logs | `npm run tail:friend --workspace @lc/worker` (or `npx wrangler tail --env friend --config apps/worker/wrangler.toml`) |
 | Query her D1 | `npx wrangler d1 execute library-catalog-2nd --remote --env friend --config apps/worker/wrangler.toml --command "..."` |
+| Sweep "Signed" out of her edition NAMES onto the copies | `node scripts/sweep-signed-editions.mjs --remote --friend` (dry run) → `--commit`. **Applied to her once, 2026-09-03**: 63 editions normalised, 59 copies flagged, 1 row left for the owner (`docs/TODO.md`). ⚠️ **Do NOT run `--commit` on MAIN** — it matches 20 rows there whose names are real vendor prose ("Kickstarter signed paperback"), which migration 0050 says `edition_name` exists to keep |
 
 ## How the guards stay two-instance-safe
 
