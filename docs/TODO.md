@@ -32,40 +32,17 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
-## ☐ SHELF: "double information" on a multi-copy card, and the hedged `audio?` matches — two owner asks, 2026-09-03 ~14:30 Phoenix (NOT started; decisions pending)
+## ☐ SHELF: the hedged `audio?` matches — owner ask, 2026-09-03 ~14:37 Phoenix (NOT started; one decision pending)
 
-Both land on BOTH instances through the shared components (global rule
+Lands on BOTH instances through the shared components (global rule
 2026-09-03: one codebase, deploy PAIR).
 
-### A. The multi-copy card says every badge twice
-
-Owner, with a screenshot of `library.heygabi.ai` → *On your shelf* → PHYSICAL,
-a **Hardcover · OWNED** card whose card-level line reads *"Not signed ·
-Sprayed edges"* and whose three nested copy rows read *"On the shelf · Not
-signed · Sprayed edges"*, *"On the shelf · Not signed"*, *"Lent out · good ·
-Not signed"*, followed by two *MAY BE YOURS* edition cards:
-
-> "This has double information, let's normalize this."
-
-**Where it comes from (measured in code, not assumed):**
-`apps/web/src/components/OnYourShelf.tsx` renders the row-level chip +
-badges at `:320-332` (`row.signed` = the group answer, `row.badges` = the
-UNION across copies + prose, `lib/shelf-view.ts:313/411`), and then, for a
-multi-copy row only, `CopyFacts … withStatus showSigned` at `:361`, which
-repeats `SignedChip` per copy (`:461`) plus that copy's own badges
-(`:462-466`). The comment at `:351-355` says the per-copy line exists to say
-*WHICH* copy is signed — but it prints the answer on every copy whether or
-not the copies differ, and the "Not signed" negative (owner rule 2026-09-02:
-say it either way) is therefore printed once per copy plus once for the
-group.
-
-**Rule — ✅ owner approved 2026-09-03 ~14:50 Phoenix (*"Yes I'm okay with that rule"*):** a fact is
-printed ONCE — on the card when every copy agrees, on the copies (and only
-there) when they differ. So the screenshot's card becomes *card: "Not
-signed"* (all three agree) + *copy 1: "Sprayed edges"* (only it has them),
-copies 2–3 carry status/condition only. `deriveShelfView` already has both
-halves; the change is a small derivation (`badgesAgree`/`signedAgree`) +
-the two render sites + tests in `shelf-view.test.ts`.
+> ✅ **Part A of this section — "the multi-copy card says every badge twice" —
+> SHIPPED 2026-09-03 15:04 Phoenix and moved WHOLE to
+> [`DONE.md`](DONE.md).** Commit `dcbb79f`, deployed to both instances:
+> **main** `cfccc183-fd3c-418e-a7cf-a78c3ad5d3a5` · **friend**
+> `d6a24afe-4693-4861-8b5f-0298ab76715f`. What is left below is part B, which
+> is a separate, still-unapproved ask.
 
 ### B. "A lot of books asking if this is the right audio"
 

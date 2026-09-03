@@ -18,6 +18,94 @@
 > were extracted from this same history.
 
 
+## ✅ 2026-09-03 — SHELF: "double information" on a multi-copy card — a fact is now printed ONCE, shipped to both instances
+
+Moved here **whole** from [`TODO.md`](TODO.md) (it was part **A** of the
+two-ask section added earlier that day; **part B — the hedged `audio?`
+matches — stays in `TODO.md`**, a separate and still-unapproved ask).
+
+**Shipped 2026-09-03 15:04 Phoenix**, commit `dcbb79f` (+ `a312441`, the
+friend half's `deploys.log` line). Deploy PAIR, both from the same build
+(`assets/index-BJZYM8MU.js`, verified served live on both hosts at 15:07):
+
+| | Version id | `deploys.log` line |
+|---|---|---|
+| **main** | `cfccc183-fd3c-418e-a7cf-a78c3ad5d3a5` | `2026-09-03T22:09:55.975Z  dcbb79f8…  claude-fable-5  cfccc183-…` |
+| **friend** (padhard) | `d6a24afe-4693-4861-8b5f-0298ab76715f` | `2026-09-03T22:10:14.642Z  2defe347…  claude-fable-5  d6a24afe-…  env=friend` |
+
+**What was built** — the rule is applied in the DERIVATION
+(`apps/web/src/lib/shelf-view.ts`), not by filtering at render time, so a test
+pins what a row SAYS:
+
+- `splitBadges` halves a group's special-edition badges. `ShelfRow.badges` is
+  now **what the CARD prints** — the printing's own PROSE badges (they describe
+  the edition, so they are true of every copy of it and there is no one copy to
+  pin them on) plus the badges every copy shares. It used to be the plain
+  union. `ShelfCopy.badges` is **what THAT copy prints** — what is left once the
+  shared set is removed, so a single-copy row's list is empty.
+- `ShelfRow.signed` stays the group answer but is **null when the copies
+  disagree**; it was `.some()`, i.e. *"at least one of these is signed"*, on a
+  card whose copies then each answered again. New `ShelfRow.signedVaries` says
+  the copies disagree so each wears its own chip. The two are never both on.
+- ⚠️ The shared set is computed BEFORE `signed` is taken out of the card list —
+  signing is a two-state chip, not a light-when-set badge, so it is dropped from
+  whichever list the chip is about to speak for, and dropping it from the card
+  must not push it back down onto the copies.
+- `OnYourShelf.tsx` filters nothing now — it renders `row.badges` and
+  `copy.badges` verbatim, and `showSigned` is `row.signedVaries` rather than
+  *"the row answered"*. The comments at the five sites the ask named were
+  rewritten; several of them described the old behaviour and would have lied.
+- Unchanged and pinned: `available`/`wanted`/audio/ebook rows are never asked
+  whether they are signed, an edition's prose badge survives the split, and a
+  single-copy row looks exactly as it did.
+
+**Tests: 2261 pass / 0 fail** (baseline 2255). Six cases added; ⚠️ **two
+existing tests were AMENDED rather than added**, because they pinned the very
+behaviour the owner called double information — *the row is signed when ANY
+copy is*, and work 220's union of badges. Both are marked in the file and both
+say what they used to claim. `npm run typecheck` and `npm run build` clean.
+
+**Review links** — MAIN <https://library.heygabi.ai/work/263> (*Dungeon Crawler
+Carl*) is **the screenshot itself**: three unlinked hardcover copies, all
+unsigned, one with sprayed edges, one lent in good condition. padhard
+<https://padhard.heygabi.ai/work/136> (*Mate*) is the other half of the rule:
+two held copies that **disagree** about signing, so the card gives no answer
+and each copy carries its own chip.
+
+### The ask, verbatim
+
+Owner, with a screenshot of `library.heygabi.ai` → *On your shelf* → PHYSICAL,
+a **Hardcover · OWNED** card whose card-level line reads *"Not signed ·
+Sprayed edges"* and whose three nested copy rows read *"On the shelf · Not
+signed · Sprayed edges"*, *"On the shelf · Not signed"*, *"Lent out · good ·
+Not signed"*, followed by two *MAY BE YOURS* edition cards:
+
+> "This has double information, let's normalize this."
+
+**Where it came from (measured in code, not assumed):**
+`apps/web/src/components/OnYourShelf.tsx` rendered the row-level chip +
+badges at `:320-332` (`row.signed` = the group answer, `row.badges` = the
+UNION across copies + prose, `lib/shelf-view.ts:313/411`), and then, for a
+multi-copy row only, `CopyFacts … withStatus showSigned` at `:361`, which
+repeated `SignedChip` per copy (`:461`) plus that copy's own badges
+(`:462-466`). The comment at `:351-355` said the per-copy line exists to say
+*WHICH* copy is signed — but it printed the answer on every copy whether or
+not the copies differ, and the "Not signed" negative (owner rule 2026-09-02:
+say it either way) was therefore printed once per copy plus once for the
+group.
+
+**Rule — ✅ owner approved 2026-09-03 ~14:50 Phoenix (*"Yes I'm okay with that rule"*):** a fact is
+printed ONCE — on the card when every copy agrees, on the copies (and only
+there) when they differ. So the screenshot's card becomes *card: "Not
+signed"* (all three agree) + *copy 1: "Sprayed edges"* (only it has them),
+copies 2–3 carry status/condition only. `deriveShelfView` already has both
+halves; the change is a small derivation (`badgesAgree`/`signedAgree`) +
+the two render sites + tests in `shelf-view.test.ts`.
+
+⚠️ **Not verified:** nobody has looked at either review link with their own
+eyes — the live check was the served bundle hash, not rendered pixels.
+
+
 ## ✅ 2026-09-02 — the two 2026-08-24 "LANDED FOR REVIEW" branches: both merged, both deployed, both moved here
 
 Moved here whole from [`TODO.md`](TODO.md), **two items in one entry because
