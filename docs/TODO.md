@@ -32,6 +32,88 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
+## ☐ SHELF round 3: "still 3 lists" → ONE list per format tab, the iconed edition cards only, copy facts as chips on them — owner ask 2026-09-03 17:21 Phoenix
+
+Lands on BOTH instances through the shared components (global rule
+2026-09-03: one codebase, deploy PAIR). Review page: <https://library.heygabi.ai/work/263>.
+
+Owner, 17:21, after reviewing /work/263 with round 2 (`0d794f0`, deployed
+15:58) live, with a screenshot of the Hardcover tab, verbatim:
+
+> "Closer but still 3 list, the book icons below should be all that remains.
+> Add the hard cover, sprayed edges lent out tabs to the iconed ones below"
+
+What he was looking at: the Hardcover tab held (1) the tab header line,
+(2) the three copy lines *"Hardcover — Sprayed edges"* / *"Hardcover"* /
+*"Hardcover — Lent out (…)"*, and (3) the three MAY BE YOURS edition cards
+with the book icon (*"V1 Limited Edition hardcover"*, *"V1 Limited Edition
+Standard hardcover"*, *"Standard Hardcover"*). Three lists; he wants one.
+
+**Read as:**
+
+- Under a format tab there is exactly ONE list: the **iconed edition cards**.
+  The copy-line list (round 2's `looseRows`/tab rows as separate text lines)
+  goes away.
+- What made each copy distinct (round 2's line facts — *Sprayed edges*,
+  *Signed*, *Lent out (to whom)*, condition, location…) moves ONTO the card
+  as **chips**, the same visual the format/kind badges already use. "Add the
+  … tabs to the iconed ones" = his word for those chips/badges.
+- A copy LINKED to an edition decorates that edition's card. A copy with no
+  edition (all three on /work/263 today — see the DATA section below) still
+  has to render as an iconed card, titled by its format word, with its chips.
+  The MAY BE YOURS candidates stay as cards with the pill; the two kinds of
+  card must not read as two lists — same component, same row.
+- A fact printed once, still: what every copy under the tab shares stays on
+  the tab header (round 1/2 derivation); the chips carry only the differences.
+  "On the shelf" / "Not signed" are never printed (settled in round 2).
+
+**Where it lives:** `apps/web/src/lib/shelf-view.ts` (`deriveShelfView`,
+tabs/looseRows) and `apps/web/src/components/OnYourShelf.tsx` (tab panels;
+the MAY BE YOURS cards are rendered from the same component). Tests in
+`apps/web/test/shelf-view.test.ts` (38 `edition_name` mentions — the
+fixtures exist). Web-only build — Opus, ~150–250k together with the edition
+note below.
+
+☐ build → ☐ tests → ☐ deploy PAIR from a clean tree → ☐ owner review on
+/work/263 (three hardcover copies → three cards, chips *Sprayed edges* /
+*Lent out*) and a padhard work with two formats.
+
+## ☐ EDITION NOTE: move the "no barcode printed on this copy (owner-verified)" text out of the edition NAME into a note on the edit page — owner ask 2026-09-03 17:22 Phoenix
+
+Owner, verbatim: *"Also remove the no bar code part from the title and put
+it into a note in the edit page of the edition entries"*.
+
+**Measured 17:30 Phoenix** (`SELECT … FROM edition WHERE edition_name LIKE
+'%owner-verified%'`) — **MAIN 9 rows, padhard 1 row**:
+
+| Instance | id | work | format | `edition_name` today |
+|---|---|---|---|---|
+| MAIN | 307–311 | 224–228 | hardcover | `Illumicrate Exclusive - no ISBN printed on this edition (owner-verified)` |
+| MAIN | 378 | 263 | hardcover | `V1 Limited Edition hardcover — No barcode printed on this copy (owner-verified)` |
+| MAIN | 379 | 263 | hardcover | `V1 Limited Edition Standard hardcover — No barcode printed on this copy (owner-verified)` |
+| MAIN | 450 | 7 | paperback | `No barcode printed on this copy (owner-verified)` — the WHOLE name |
+| MAIN | 470 | 33 | paperback | `No barcode printed on this copy (owner-verified)` — the WHOLE name |
+| padhard | 426 | 433 | hardcover | `Allural — No barcode printed on this copy (owner-verified)` |
+
+`edition` has **no note column** (columns: id, work_id, isbn13, isbn10,
+asin, format, edition_name, publisher, published_year, pages, language,
+cover_url, source, source_url, cwa_book_id, created_at, updated_at,
+edition_kind, collects). So this is a MIGRATION (`migrations/0460_…`, last
+is `0450_audiobook_match_review.sql`), a schema/route change
+(`updateEditionSchema` in `@lc/core`, `updateEdition` in `packages/db`,
+`PATCH /api/editions/:id` in `apps/worker/src/routes/catalog.ts`), an edit-page
+field (`apps/web/src/components/Editions.tsx`), and a **data sweep on both
+instances** that splits the suffix off (` — No barcode…` / ` - no ISBN…`)
+into the note. The two whole-name rows (#450, #470) get the name
+*"Standard edition"* — today's precedent for a plain paperback with no
+distinguishing name (say so on review; ☐ owner may rename).
+
+☐ migration 0460 → ☐ schema + route + db → ☐ edit-page note field (shown
+and editable per edition entry) → ☐ sweep script with `--dry-run` and
+`--friend` → ☐ migrate PAIR → ☐ sweep on BOTH (report both counts: MAIN 9,
+padhard 1 expected) → ☐ deploy PAIR → ☐ live proof on /work/263 (names
+clean, note visible on ✎ Edit → editions) and padhard /work/433.
+
 ## ☐ SHELF round 2: "Better but still duplicate" → format tabs with the editions under each — owner ask 2026-09-03 15:18, spec 15:33 Phoenix
 
 Lands on BOTH instances through the shared components (global rule
