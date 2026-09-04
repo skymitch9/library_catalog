@@ -176,9 +176,20 @@ page becomes the primary door, matching the games.
 
 Both instances through the shared components. Web-only. Opus, ~150–200k.
 
-☑ **build** (Opus, `c82eae7` + `1702768`) → ☑ **tests** → ☐ **deploy
-PAIR** → ☐ owner adds one book from https://library.heygabi.ai/wishlist on his
-phone (the only real test of the camera tabs).
+☑ **build** (Opus, `c82eae7` + `1702768`) → ☑ **tests** → ☑ **deploy
+PAIR** 10:06 Phoenix (MAIN `005a4e48…` at `eb1d7f1`, padhard `6d6e74de…` at
+`accc96b8`, both lines in `deploys.log`; both hosts serving
+`assets/index-BcUnvzMK.js` — padhard served the old bundle for ~20 s of edge
+cache first) → ☑ **live proof** 10:08 on the signed-in tab:
+<https://library.heygabi.ai/wishlist> *+ Add something* → *Add to the
+wishlist* with Type a title / Barcode / One book and the line "Books you add
+here go on your wishlist — a want, not a copy you own"; `/add` still shows
+four tabs + the *Adding to · Shelf | Wishlist* switch → ☐ owner adds one book
+from https://library.heygabi.ai/wishlist on his phone (the only real test of
+the camera tabs). **NOT verified:** the camera tabs themselves (no camera on
+this machine), rendered pixels, padhard signed-in, and a cosmetic risk — the
+panel is a card inside the wishlist page's card (card-in-a-card) until
+someone looks.
 
 ### ✅ BUILT 2026-09-04 — web-only, one scanner behind two doors
 
