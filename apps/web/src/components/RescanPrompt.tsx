@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   EDITION_FORMATS,
   PHYSICAL_FORMATS,
-  appendNoBarcodeNote,
+  NO_BARCODE_NOTE,
   newPrintingNeedsName,
   printingQuestionText,
   rescanQuestionText,
@@ -204,6 +204,15 @@ export interface PrintingOption {
 export interface NewPrintingDetails {
   format: string;
   editionName: string | null;
+  /**
+   * A remark about the printing — migration 0460, and since 2026-09-03 this is
+   * where the "no barcode" tick lands.
+   *
+   * ⚠️ It used to be appended to `editionName` because `edition` had no notes
+   * column. Owner, that afternoon: *"remove the no bar code part from the
+   * title"*. The name is the shop's words; this is what somebody checked.
+   */
+  note: string | null;
   publisher: string | null;
   publishedYear: number | null;
 }
@@ -367,9 +376,13 @@ function NewPrintingForm({
     const trimmed = name.trim() === '' ? null : name.trim();
     onCreate({
       format,
-      // The tick is the observed fact; it travels in the name because
-      // `edition` has no notes column. One spelling, from @lc/core.
-      editionName: noBarcode && physical ? appendNoBarcodeNote(trimmed) : trimmed,
+      editionName: trimmed,
+      // ⚠️ The tick is the observed fact and it travels in `note` — migration
+      // 0460, owner 2026-09-03: "remove the no bar code part from the title".
+      // It used to be appended to the NAME, for want of a column. Still the one
+      // spelling from @lc/core, so the rows the owner verified at the shelf and
+      // the rows this writes grep identically.
+      note: noBarcode && physical ? NO_BARCODE_NOTE : null,
       publisher: publisher.trim() === '' ? null : publisher.trim(),
       publishedYear: year.trim() === '' ? null : Number(year),
     });

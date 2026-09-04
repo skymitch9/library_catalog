@@ -141,6 +141,12 @@ describe('work-detail contract — the worker response carries every field the p
       'edition_name',
       'edition_kind',
       'collects',
+      // ⚠️ Migration 0460, added 2026-09-03 with the same reasoning one row up:
+      // the edit page's Editions panel shows and edits `note`, and the
+      // no-barcode tick round-trips through it. Dropped from the SELECT, the
+      // field would render empty and every save would silently clear a remark
+      // somebody verified at the shelf — no error anywhere.
+      'note',
       'publisher',
       'published_year',
     ]) {

@@ -251,6 +251,9 @@ export function Copies({
         workId,
         format: details.format,
         editionName: details.editionName,
+        // Migration 0460 — the "no barcode" observation, which used to ride
+        // inside `editionName` and now has a column of its own.
+        note: details.note,
         publisher: details.publisher,
         publishedYear: details.publishedYear,
         source: 'manual',
@@ -748,6 +751,7 @@ function AddCopy({
               workId,
               format: answer.details.format,
               editionName: answer.details.editionName,
+              note: answer.details.note,
               publisher: answer.details.publisher,
               publishedYear: answer.details.publishedYear,
               source: 'manual',

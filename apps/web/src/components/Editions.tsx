@@ -62,6 +62,23 @@ export interface EditionView {
    * could read it.
    */
   collects?: string | null;
+  /**
+   * A remark about the printing, in your own words — migration 0460.
+   *
+   * > **Owner, 2026-09-03:** *"Also remove the no bar code part from the title
+   * > and put it into a note in the edit page of the edition entries"*.
+   *
+   * ⚠️ **This is where *"No barcode printed on this copy (owner-verified)"*
+   * lives now.** It used to be appended to `edition_name`, which put an
+   * observation somebody made into the field that holds what the SHOP called
+   * the printing — and so into every headline that names it, right across the
+   * shelf. The tick at the foot of the form still writes the one spelling
+   * `@lc/core` owns; it writes it here.
+   *
+   * ⚠️ Shown on the edit page and NOT in a shelf card's title, deliberately: a
+   * card's headline is the printing's identity, and this is not that.
+   */
+  note?: string | null;
   isbn13: string | null;
   isbn10?: string | null;
   asin: string | null;
@@ -388,6 +405,13 @@ export function Editions({
                         `ebook_epub` with no publisher — so burying it between a
                         page count and a year is how it stops being read. */}
                     {e.collects && <span className="muted small">Contains {e.collects}</span>}
+                    {/* ⚠️ The note gets its own line, like `collects` and for
+                        the same reason: it is a remark about the object, not
+                        another word in the identity run above it. Migration
+                        0460 — owner, 2026-09-03: "remove the no bar code part
+                        from the title and put it into a note in the edit page
+                        of the edition entries". This IS that place. */}
+                    {e.note && <span className="muted small edition-note">📝 {e.note}</span>}
                     <span className="muted small">
                       {e.isbn13 && <>ISBN {e.isbn13} </>}
                       {e.isbn10 && !e.isbn13 && <>ISBN {e.isbn10} </>}
@@ -525,6 +549,7 @@ function EditionForm({
     editionName: edition?.edition_name ?? '',
     editionKind: edition?.edition_kind ?? '',
     collects: edition?.collects ?? '',
+    note: edition?.note ?? '',
     publisher: edition?.publisher ?? '',
     publishedYear: edition?.published_year?.toString() ?? '',
     pages: edition?.pages?.toString() ?? '',
@@ -562,6 +587,10 @@ function EditionForm({
         // tell it from a field this form never mentioned.
         editionKind: text(form.editionKind),
         collects: text(form.collects),
+        // Migration 0460. '' clears it, like every other free-text field here —
+        // and clearing a note is a real answer ("that remark is not true any
+        // more"), not an absence, so it travels as an explicit null.
+        note: text(form.note),
         publisher: text(form.publisher),
         publishedYear: num(form.publishedYear),
         pages: num(form.pages),
@@ -739,32 +768,60 @@ function EditionForm({
       </div>
 
       {/*
+        ⚠️ **A remark about the PRINTING — migration 0460.** Owner, 2026-09-03:
+        *"Also remove the no bar code part from the title and put it into a note
+        in the edit page of the edition entries"*. This is that place, and it is
+        the fourth axis beside the three above: `Edition` is what the shop called
+        it, `Printing` is which bucket it is in, `Contains` is what is inside the
+        covers, and this is what somebody CHECKED about the object.
+
+        A textarea rather than an input, because a note is a sentence and the box
+        should look like it accepts one; two rows is the whole of that signal.
+      */}
+      <label className="field">
+        <span className="field__label">Note</span>
+        <textarea
+          rows={2}
+          value={form.note}
+          onChange={(e) => set('note', e.target.value)}
+          placeholder="“No barcode printed on this copy (owner-verified)”, “spine slightly faded”"
+        />
+      </label>
+
+      {/*
         ⚠️ "No barcode on the object" recorded as an OBSERVED fact — 0040's
         distinction, one row over: a blank isbn13 means nobody has looked, and
         this note means somebody looked and there is nothing to scan. The
         crowdfunded printings this shelf is full of frequently carry none, and
         without the note every blank reads as an unanswered question that
-        future passes keep re-asking. The tick writes into the edition name
-        (`edition` has no notes column) in the ONE spelling `@lc/core` owns,
-        matching the rows the owner already verified at the shelf — so the
-        checkbox state IS the name text, visible above, never a hidden flag
-        travelling apart from its value.
+        future passes keep re-asking.
+
+        ⚠️ **The tick writes into `note`, not into the name — changed 2026-09-03
+        with migration 0460.** It used to append to `edition_name` because
+        `edition` had no notes column, which put an observation into the field
+        that holds what the SHOP called the printing, and so into every headline
+        that names it (owner: *"remove the no bar code part from the title"*).
+        The spelling is still the ONE `@lc/core` owns, so the rows the owner
+        verified at the shelf and the rows this tick writes still grep
+        identically — and the checkbox state IS the note text, visible in the box
+        above, never a hidden flag travelling apart from its value.
+
         Offered only while it can be true: a physical format with no ISBN-13
         typed. Ticked rows keep showing it even mid-edit of the ISBN field so
         unticking stays possible.
       */}
       {(PHYSICAL_FORMATS as readonly string[]).includes(form.format) &&
-        (form.isbn13.trim() === '' || hasNoBarcodeNote(form.editionName)) && (
+        (form.isbn13.trim() === '' || hasNoBarcodeNote(form.note)) && (
           <label className="row-tight">
             <input
               type="checkbox"
-              checked={hasNoBarcodeNote(form.editionName)}
+              checked={hasNoBarcodeNote(form.note)}
               onChange={(e) =>
                 set(
-                  'editionName',
+                  'note',
                   e.target.checked
-                    ? appendNoBarcodeNote(form.editionName.trim() === '' ? null : form.editionName)
-                    : (stripNoBarcodeNote(form.editionName) ?? ''),
+                    ? appendNoBarcodeNote(form.note.trim() === '' ? null : form.note)
+                    : (stripNoBarcodeNote(form.note) ?? ''),
                 )
               }
             />

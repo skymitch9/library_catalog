@@ -53,6 +53,16 @@ export interface EditionRow {
    * are not rows — see migration 0060.
    */
   collects: string | null;
+  /**
+   * A remark ABOUT the printing — migration 0460, and the home
+   * *"No barcode printed on this copy (owner-verified)"* should always have had.
+   *
+   * ⚠️ **NULL is an ABSENCE here**, not a claim: nobody wrote a note. That is
+   * the opposite of `edition_kind` two fields up, where NULL is the positive
+   * statement "ordinary printing" — the two nulls in this row mean different
+   * things and nothing may treat them alike.
+   */
+  note: string | null;
   publisher: string | null;
   published_year: number | null;
   pages: number | null;
@@ -64,8 +74,8 @@ export interface EditionRow {
 }
 
 const EDITION_COLS = `id, work_id, isbn13, isbn10, asin, format, edition_name, edition_kind,
-                      collects, publisher, published_year, pages, language, cover_url, source,
-                      source_url, cwa_book_id`;
+                      collects, note, publisher, published_year, pages, language, cover_url,
+                      source, source_url, cwa_book_id`;
 
 export async function createEdition(
   db: D1Database,
@@ -75,9 +85,9 @@ export async function createEdition(
   const insert = db
     .prepare(
       `INSERT INTO edition (work_id, isbn13, isbn10, asin, format, edition_name, edition_kind,
-                            collects, publisher, published_year, pages, language, cover_url,
+                            collects, note, publisher, published_year, pages, language, cover_url,
                             source, source_url, cwa_book_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        RETURNING ${EDITION_COLS}`,
     )
     .bind(
@@ -89,6 +99,7 @@ export async function createEdition(
       input.editionName ?? null,
       input.editionKind ?? null,
       input.collects ?? null,
+      input.note ?? null,
       input.publisher ?? null,
       input.publishedYear ?? null,
       input.pages ?? null,
@@ -116,6 +127,7 @@ export async function createEdition(
       editionName: input.editionName ?? null,
       editionKind: input.editionKind ?? null,
       collects: input.collects ?? null,
+      note: input.note ?? null,
       publisher: input.publisher ?? null,
       publishedYear: input.publishedYear ?? null,
       pages: input.pages ?? null,
@@ -254,6 +266,12 @@ export async function updateEdition(
     // between the covers and survives being renamed or re-filed — see
     // migration 0060 for why it is neither a name nor a kind.
     collects: pick(patch.collects, current.collects),
+    // Independent of all three above, and of the ISBN it usually talks about.
+    // Migration 0460: this is a remark about the printing ("No barcode printed
+    // on this copy (owner-verified)"), and clearing it must not be a side
+    // effect of typing an ISBN — an observation somebody made stays until
+    // somebody unmakes it.
+    note: pick(patch.note, current.note),
     publisher: pick(patch.publisher, current.publisher),
     publishedYear: pick(patch.publishedYear, current.published_year),
     pages: pick(patch.pages, current.pages),
@@ -279,6 +297,7 @@ export async function updateEdition(
   consider('editionName', current.edition_name, next.editionName);
   consider('editionKind', current.edition_kind, next.editionKind);
   consider('collects', current.collects, next.collects);
+  consider('note', current.note, next.note);
   consider('publisher', current.publisher, next.publisher);
   consider('publishedYear', current.published_year, next.publishedYear);
   consider('pages', current.pages, next.pages);
@@ -292,8 +311,8 @@ export async function updateEdition(
     .prepare(
       `UPDATE edition SET
          isbn13 = ?, isbn10 = ?, asin = ?, format = ?, edition_name = ?, edition_kind = ?,
-         collects = ?, publisher = ?, published_year = ?, pages = ?, language = ?, cover_url = ?,
-         source = ?, source_url = ?, cwa_book_id = ?, updated_at = datetime('now')
+         collects = ?, note = ?, publisher = ?, published_year = ?, pages = ?, language = ?,
+         cover_url = ?, source = ?, source_url = ?, cwa_book_id = ?, updated_at = datetime('now')
        WHERE id = ?
        RETURNING ${EDITION_COLS}`,
     )
@@ -305,6 +324,7 @@ export async function updateEdition(
       next.editionName,
       next.editionKind,
       next.collects,
+      next.note,
       next.publisher,
       next.publishedYear,
       next.pages,

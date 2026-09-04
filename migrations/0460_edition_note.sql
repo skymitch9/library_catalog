@@ -1,0 +1,54 @@
+-- A NOTE on a printing — the place "No barcode printed on this copy
+-- (owner-verified)" should have been living all along.
+--
+-- ## The ask, verbatim (owner, 2026-09-03 17:22 Phoenix)
+--
+--   "Also remove the no bar code part from the title and put it into a note in
+--    the edit page of the edition entries"
+--
+-- Said of /work/263, whose shelf cards read *"V1 Limited Edition hardcover — No
+-- barcode printed on this copy (owner-verified)"*. The observation is true and
+-- worth keeping; it is not what the shop called the printing, and
+-- `edition_name` is defined (migration 0050) as exactly that — the vendor's own
+-- words, kept byte-for-byte. A sentence about what somebody CHECKED had been
+-- riding in the identity field because there was nowhere else to put it, and it
+-- then appeared in every headline that names the printing.
+--
+-- ## Why a column and not a tidier convention
+--
+-- `@lc/core`'s `appendNoBarcodeNote` / `stripNoBarcodeNote` are that
+-- convention, and they say so in their own header: *"It lives in `edition_name`
+-- because `edition` has no notes column"*. They work — the spelling is one
+-- string, the tick round-trips — and they are still the wrong shape, for the
+-- reason this schema keeps re-learning: a fact stored inside another field's
+-- prose cannot be filtered, counted, cleared or shown separately, and it takes
+-- the other field's meaning with it. `copy.notes` has existed since 0001 for
+-- exactly this kind of remark about an OBJECT; this is its twin one table over,
+-- for a remark about the PRINTING.
+--
+-- ⚠️ **NULL means nobody wrote a note**, and that is an absence rather than a
+-- statement — unlike `edition_kind`, where NULL is the positive claim
+-- "ordinary printing" (0050). Nothing may read a null here as an answer.
+--
+-- ## Measured before it was written (2026-09-03 17:30 Phoenix, both instances)
+--
+--   SELECT id, work_id, format, edition_name FROM edition
+--    WHERE edition_name LIKE '%owner-verified%';
+--
+--   | instance | rows | shape |
+--   |---|---|---|
+--   | MAIN (library-catalog)      | 9 | 5 × `Illumicrate Exclusive - no ISBN printed on this edition (owner-verified)`, 2 × `… hardcover — No barcode printed on this copy (owner-verified)`, and 2 whose WHOLE name is the phrase (#450, #470) |
+--   | padhard (library-catalog-2nd) | 1 | #426 `Allural — No barcode printed on this copy (owner-verified)` |
+--
+-- `scripts/split-edition-note.mjs` is the sweep that moves them: the prefix
+-- stays the name, the phrase becomes the note, and the two rows that are
+-- NOTHING BUT the phrase are named *"Standard edition"* — today's precedent for
+-- a plain printing with no distinguishing name (`sweep-signed-editions.mjs`,
+-- applied to 4 MAIN and 63 padhard rows the same afternoon).
+--
+-- ⚠️ **The migration is safe to run before the sweep and before the deploy.** A
+-- new nullable column changes no existing read: `EDITION_COLS` selects it,
+-- every consumer treats a missing note as no note, and nothing keys on it.
+-- Migrate-before-deploy, as always — new code must never meet an old schema.
+
+ALTER TABLE edition ADD COLUMN note TEXT;

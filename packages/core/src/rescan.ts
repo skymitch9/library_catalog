@@ -299,10 +299,23 @@ export function printingQuestionText(): string {
  * (Dungeon Born PB and Unmapped PB, 2026-08-13): checked against production —
  * `edition_name = 'No barcode printed on this copy (owner-verified)'` — so
  * every recording of this fact greps identically and no future pass re-asks a
- * settled row. It lives in `edition_name` because `edition` has no notes
- * column (that lives on `copy`), the same reasoning as the slipcase ISBNs and
- * `appendSharedIsbnNote` above. The distinction is 0040's: NULL means nobody
- * looked; this note means somebody looked and there is nothing to scan.
+ * settled row. The distinction is 0040's: NULL means nobody looked; this note
+ * means somebody looked and there is nothing to scan.
+ *
+ * ⚠️ **IT LIVES IN `edition.note` SINCE MIGRATION 0460 (2026-09-03)**, not in
+ * `edition_name`. This header used to say the opposite — *"It lives in
+ * `edition_name` because `edition` has no notes column"* — and that want of a
+ * column is exactly what the owner saw on the shelf: *"Also remove the no bar
+ * code part from the title and put it into a note in the edit page of the
+ * edition entries"*. `edition_name` holds what the SHOP called the printing and
+ * is the headline every shelf card leads with; an observation somebody made
+ * about an object is not that.
+ *
+ * ⚠️ **The three helpers below still take and return a plain string**, which is
+ * deliberate: they are text operations on whichever field carries the note, and
+ * the callers (`Editions.tsx`'s tick, `RescanPrompt.tsx`) now hand them `note`.
+ * `scripts/split-edition-note.mjs` is the sweep that moves the rows written
+ * before 0460 out of the name.
  */
 export const NO_BARCODE_NOTE = 'No barcode printed on this copy (owner-verified)';
 

@@ -330,6 +330,36 @@ export const createEditionSchema = z.object({
    * volumes, which is the opposite case.
    */
   collects: optionalText,
+  /**
+   * A remark ABOUT the printing, in a person's own words — migration 0460.
+   *
+   * > **Owner, 2026-09-03:** *"Also remove the no bar code part from the title
+   * > and put it into a note in the edit page of the edition entries"*.
+   *
+   * ⚠️ **A fourth axis, and the one that had nowhere to live.** `editionName` is
+   * what the SHOP called the printing (0050, kept byte-for-byte), `editionKind`
+   * is which bucket it falls in, `collects` is what is printed inside it — and
+   * *"No barcode printed on this copy (owner-verified)"* is none of those. It is
+   * something somebody CHECKED, and until this column it rode inside the name
+   * (`appendNoBarcodeNote`, whose own header said why: *"`edition` has no notes
+   * column"*), where it appeared in every headline that names the printing.
+   *
+   * ⚠️ **Not a distinguishing mark.** `blankSiblingOf` deliberately does not
+   * count it: two printings of one format that differ only in somebody's remark
+   * are still two rows nobody can tell apart, and a note is not what tells them
+   * apart. Trimmed, empty → null, like every other free-text field here.
+   *
+   * The cap is generous but real — a sentence or two about an object. An
+   * unbounded column is how a paste of a whole listing page ends up in a field
+   * the edit page renders.
+   */
+  note: z
+    .string()
+    .trim()
+    .max(500, 'a note about a printing is a sentence or two, not an essay')
+    .transform((s) => (s === '' ? null : s))
+    .nullable()
+    .optional(),
   publisher: optionalText,
   publishedYear: z.number().int().min(1).max(2200).nullable().optional(),
   pages: z.number().int().positive().nullable().optional(),
