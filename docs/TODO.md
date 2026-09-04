@@ -176,7 +176,7 @@ page becomes the primary door, matching the games.
 
 Both instances through the shared components. Web-only. Opus, ~150–200k.
 
-☑ **build** (Opus, `c82eae7` + the commit below) → ☑ **tests** → ☐ **deploy
+☑ **build** (Opus, `c82eae7` + `1702768`) → ☑ **tests** → ☐ **deploy
 PAIR** → ☐ owner adds one book from https://library.heygabi.ai/wishlist on his
 phone (the only real test of the camera tabs).
 
@@ -185,7 +185,7 @@ phone (the only real test of the camera tabs).
 | Commit | What |
 |---|---|
 | `c82eae7` | The extraction: `AddBookPanel` out of `ScanPage`, `/add` unchanged in behaviour |
-| *(this commit)* | The wishlist door on top of it: **+ Add something** on `/wishlist` |
+| `1702768` | The wishlist door on top of it: **+ Add something** on `/wishlist` |
 
 **Files touched** (all under `apps/web/`; no worker, no `packages/`, no
 migration — the copy-create route already took `status`, and this feature adds
