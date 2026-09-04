@@ -58,9 +58,30 @@ Lands on BOTH instances through the shared components (global rule
 2026-09-03: deploy PAIR). Opus build, ~100–150k if the route already
 accepts `status`, ~150–200k if the worker needs a change.
 
-☐ owner: confirm build priority (he said "we should", not "do it now") →
-☐ build → ☐ deploy PAIR → ☐ owner scans one book to the wishlist from his
-phone (the only real test — the scanner needs a camera).
+☑ **owner 09:14: "Yes build it. We currently can't add to wishlist at
+all."** — that second sentence WIDENS it. Measured 09:20: the wishlist
+add exists but is buried — `Copies.tsx:491` *Want this* (gated
+`suggestWishlist`) renders only inside **✎ Edit → Editions & copies**, and
+`AddWork.tsx:260` *"want it — put it on the wishlist"* only in the scan
+page's manual-add mode. The barcode path (`lib/catalog-add.ts:617`
+`api.createCopy({ workId, status: 'owned', … })`) is owned-only — the route
+already takes `status`, so this is **web-only**. From a phone none of it
+is findable; "can't at all" is the honest reading. So the build is TWO
+surfaces, one form:
+
+1. **Scanner target switch** *Shelf / Wishlist* on `pages/ScanPage.tsx`,
+   remembered for the session (`sessionStorage`), threaded through
+   `catalog-add.ts` so the created copy is `status='wanted'`; ScanLines'
+   *Add* reads *Add to wishlist*; the pre-order question is skipped on the
+   wishlist path (a want is not an arrival); the manual-add `AddWork`
+   intent defaults from the switch.
+2. **A first-class *Want this* on the work page** — outside ✎ Edit,
+   beside/under ON YOUR SHELF, gated `suggestWishlist`, opening the SAME
+   `AddCopy` (intent `'wanted'`) — no second form.
+
+☐ build (Opus, dispatched 09:2x) → ☐ tests → ☐ deploy PAIR from a clean
+tree → ☐ owner scans one book to the wishlist from his phone (the only real
+test — the scanner needs a camera) and finds *Want this* on a work page.
 
 ## ☐ DATA /work/525: copy off the shelf, onto the wishlist — owner ask 2026-09-04 ~09:00 Phoenix
 
