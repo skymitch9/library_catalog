@@ -18,6 +18,28 @@
 > were extracted from this same history.
 
 
+## ✅ 2026-09-04 — ONE SCAN MENU: all scanning through the same menu, with the wishlist-or-catalog choice on it — owner ask 2026-09-04 10:55 Phoenix
+
+Owner, from his phone, verbatim: *"I want to have all scanning be the same
+menu and then have the option to add to wishlist or add to catalog. No need
+to go to a different route."*
+
+**Where this catalog already stands** (both instances, live 10:08): the
+scanner (`/add`) carries the *Adding to · Shelf | Wishlist* switch, and the
+wishlist page's *+ Add something* opens the SAME `AddBookPanel` in place —
+no route change — pinned to wishlist. So "same menu" and "the option on it"
+are met; what is open is whether the wishlist page keeps its door at all.
+
+**The one question (asked 10:55, one item):** keep the wishlist page's
+*+ Add something* as a second entrance to the one scanner (same panel,
+opens in place, Wishlist pre-selected), or remove it so the scanner page is
+the ONLY place anything is scanned. ☑ **owner, 11:02 Phoenix: "Keep it."**
+→ ☑ this catalog needs no change — both instances already are the one
+scanner (`AddBookPanel`) behind two entrances with the option on it (live
+10:08). ☑ the games catalog's half is scoped in
+`Board_Game_Catalog/docs/TODO.md` SCAN TARGET: replace its separate
+`WishlistScan` stack with the one scanner, pinned to wishlist.
+
 ## ✅ 2026-09-04 — SCANNER → WISHLIST, the WISHLIST DOOR, and /work/525 — closed by the owner from his phone
 
 Owner, 10:40 Phoenix, verbatim: *"I checked 1 and saw it worked"* — "1" being

@@ -32,25 +32,6 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
-## ☐ ONE SCAN MENU: all scanning through the same menu, with the wishlist-or-catalog choice on it — owner ask 2026-09-04 10:55 Phoenix
-
-Owner, from his phone, verbatim: *"I want to have all scanning be the same
-menu and then have the option to add to wishlist or add to catalog. No need
-to go to a different route."*
-
-**Where this catalog already stands** (both instances, live 10:08): the
-scanner (`/add`) carries the *Adding to · Shelf | Wishlist* switch, and the
-wishlist page's *+ Add something* opens the SAME `AddBookPanel` in place —
-no route change — pinned to wishlist. So "same menu" and "the option on it"
-are met; what is open is whether the wishlist page keeps its door at all.
-
-**The one question (asked 10:55, one item):** keep the wishlist page's
-*+ Add something* as a second entrance to the one scanner (same panel,
-opens in place, Wishlist pre-selected), or remove it so the scanner page is
-the ONLY place anything is scanned. ☐ owner's answer → ☐ act on BOTH
-catalogs (the games' `WishlistScan` is a genuinely separate scan stack and
-goes either way — see `Board_Game_Catalog/docs/TODO.md` SCAN TARGET).
-
 ## ☐ SHELF round 3: "still 3 lists" → ONE list per format tab, the iconed edition cards only, copy facts as chips on them — owner ask 2026-09-03 17:21 Phoenix
 
 Lands on BOTH instances through the shared components (global rule
