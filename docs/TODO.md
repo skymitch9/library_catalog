@@ -176,8 +176,83 @@ page becomes the primary door, matching the games.
 
 Both instances through the shared components. Web-only. Opus, ~150–200k.
 
-☐ build → ☐ tests → ☐ deploy PAIR → ☐ owner adds one book from
-https://library.heygabi.ai/wishlist on his phone.
+☑ **build** (Opus, `c82eae7` + the commit below) → ☑ **tests** → ☐ **deploy
+PAIR** → ☐ owner adds one book from https://library.heygabi.ai/wishlist on his
+phone (the only real test of the camera tabs).
+
+### ✅ BUILT 2026-09-04 — web-only, one scanner behind two doors
+
+| Commit | What |
+|---|---|
+| `c82eae7` | The extraction: `AddBookPanel` out of `ScanPage`, `/add` unchanged in behaviour |
+| *(this commit)* | The wishlist door on top of it: **+ Add something** on `/wishlist` |
+
+**Files touched** (all under `apps/web/`; no worker, no `packages/`, no
+migration — the copy-create route already took `status`, and this feature adds
+no route of its own):
+
+* NEW `src/components/AddBookPanel.tsx` — the tab strip and everything under it:
+  the camera loop, the barcode/photo endpoints, the duplicate prompt, the format
+  toggle, `ScanLines` and `AddWork`. Props `{ target, modes, blocked,
+  initialMode, initialJobId, onNav, onAdded, onFinished, onCancel, underTabs }`.
+* NEW `src/lib/add-modes.ts` + `test/add-modes.test.ts` (19 assertions) — the
+  tab catalogue as pure data, `/add`'s hide-the-paid-tabs rule, the wishlist
+  door's three-in-order, and the sentence a blocked tab gets. ⚠️ It imports the
+  `AddMode` **type** only, so a `node:test` process never loads `router.tsx` —
+  the same trap `lib/wants.ts` records about `api.js` → `lib/firebase.ts`.
+* NEW `src/components/WishlistAdd.tsx` — the door itself: which tabs, in which
+  order, pinned to which target, and what closing means. No scan logic of its
+  own.
+* `src/pages/ScanPage.tsx` (now the way back, the sweeps link and the Shelf |
+  Wishlist switch), `src/components/ScanLines.tsx` (optional `onAdded`),
+  `src/pages/WishlistPage.tsx`.
+
+**What is SHARED and what is NOT.** Shared: the tabs, the camera, both photo
+endpoints, the barcode loop and its duplicate prompt, the format toggle,
+`ScanLines`, `AddWork`, and — the bar the brief set — **one `addLineToCatalog`
+and one `copyStatusFor` call site**, both still in `lib/catalog-add.ts`
+(`grep -rn "copyStatusFor" apps/web/src` finds no second one). Not shared, on
+purpose: the target (a switch on `/add`, pinned on the door), which tabs are
+offered, whether the URL is kept in step (`onNav`, `/add` only), and what a
+typed save means.
+
+**What was DECIDED where the brief left room:**
+
+| Question | Decision and why |
+|---|---|
+| Where the tabs live | `AddBookPanel`, a component both doors render — not a copied stack. `ScanPage` went 843 → ~190 lines and kept every string. |
+| `underTabs` a node or a function? | **A function of the tab.** `/add`'s switch says *"Scanned books go on your wishlist"* on three tabs and *"Books you add…"* on the typing one, and the tab is now the panel's state; a plain node would have quietly dropped that. |
+| A blocked tab: hidden or disabled? | **The two doors differ, and it is written down** (`lib/add-modes.ts`). `/add` hides its two PAID tabs — a spending decision, and a free tab always remains. The wishlist door DISABLES with a sentence: behind `suggestWishlist`, which a member holds, the missing tabs are an ACCESS question, and somebody whose phone shows one tab where another shows three is owed the reason. Same call the Shelf\|Wishlist switch made this morning. |
+| Which capability gates which tab | Read off the ROUTES, not guessed: `POST /scan-jobs/barcode` → `scanBarcode`; `/single` → `scanPhoto`; the typing tab's two writes (`POST /works`, `POST /copies` with a wishlist status) → **`suggestWishlist`**, which is the door's own gate. So **typing is never blocked**, which is exactly why it is the default. |
+| The shelf-photo tab on the door | **Not offered.** A wishlist is not bulk intake — photographing a shelf means "record every one of these", a sentence about books you have. The sibling leaves out its own slow paid rung for the same reason. |
+| The format toggle on the door | **Kept.** A want that attaches to a book we already hold writes no edition, but the format is still recorded as the `wanted as …` note on the copy (`recordArrival`); dropping the control would silently throw that away. |
+| What a typed save does | **Shuts the door and refreshes the list.** `AddWork` does not clear itself, and `POST /api/works` deliberately does not dedupe (migration 0001) — a second Save would mint a second work. A scanned row leaves the sweep standing, because a sweep is several books by definition. |
+| How the list refreshes | `ScanLines` gained an optional `onAdded`, called **last and only on the write path** — a caller that refetched on an `ask-preorder` or `already-wanted` return would be reporting a change that did not happen. It carries no payload: "something landed, re-read your list". |
+| The notice's wording | `addedLabel({ target: 'wishlist', … })` — literally the words the row inside the panel says, so one event is not reported two ways by two surfaces a few pixels apart. |
+| Empty-state copy | Says what puts a book HERE — *"A book lands here when one of its copies is **wanted** — add one here, press **Want this** on a book's page, or take one of the gaps a series offers against its missing volumes"* — with the **+ Add something** button under it, per the sibling's *"the page's own door, not a link to /scan"*. |
+| `/add` | Untouched in behaviour: same four tabs, same order, same hiding rule, same DOM order (tabs → switch → format toggle → body), same `replaceUrl` contract, and only a typed save leaves the screen. |
+
+**Verified 2026-09-04, by running them:** `npm run typecheck` — all nine
+workspaces clean. `npm test` — **2350 pass / 0 fail** (was 2331; the 19 new
+ones). `npm run build -w apps/web` — `✓ built in 2.86s`,
+`dist/assets/index-BcUnvzMK.js`.
+
+⚠️ **NOT verified — tell the owner rather than letting him assume:**
+
+* **Anything RENDERED.** No jsdom in this app and none was added, so every
+  component here is compiled and type-checked, never mounted. The door, its
+  three tabs, the disabled tabs' sentences, the new empty state and the panel
+  around the typed form have not been looked at in a browser. ⚠️ The one
+  cosmetic risk known in advance: `AddWork` draws its own `.panel` inside the
+  door's `.panel`, so the typing tab is a card inside a card.
+* **The camera tabs.** Barcode and one-book need a real camera; none was
+  opened. Everything about a wanted copy reaching D1 from this door is reasoned
+  from the shared code path, not measured.
+* **Deployed anywhere.** Nothing has shipped; the PAIR above is open.
+* **The second instance specifically.** Nothing instance-specific is in the
+  change — no posture var, no `[env.friend]` branch — so it lands through the
+  shared components, but that is read off the diff, not checked against
+  `padhard`.
 
 ## ☐ DATA /work/525: copy off the shelf, onto the wishlist — owner ask 2026-09-04 ~09:00 Phoenix
 

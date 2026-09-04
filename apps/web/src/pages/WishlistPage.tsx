@@ -3,7 +3,9 @@ import { api, type Me, type WishlistRow } from '../api.js';
 import { describeError } from '../lib/errors.js';
 import { Arrivals } from '../components/Arrivals.js';
 import { Cover } from '../components/Cover.js';
+import { WishlistAdd } from '../components/WishlistAdd.js';
 import { formatLabel } from '../lib/formats.js';
+import { addedLabel } from '../lib/scan-target.js';
 import { ON_THE_WAY, arrivedPatch, statusLabel } from '../lib/statuses.js';
 
 /**
@@ -28,6 +30,16 @@ import { ON_THE_WAY, arrivedPatch, statusLabel } from '../lib/statuses.js';
  * Buying the book changes the row's status; it does not replace the row. The
  * wish records when it was wanted, from whom, and for how much, and a
  * delete-and-recreate throws all of that away — see `updateCopy` in `@lc/db`.
+ *
+ * ## ⚠️ The page has its OWN DOOR since 2026-09-04
+ *
+ * The owner, told that the sibling board-game catalog adds to its wishlist from
+ * its wishlist page rather than from a switch on its scanner: *"We should mimic
+ * that shape so keep reusable components"*. So **+ Add something** opens
+ * `WishlistAdd` here — the same tabs, camera and forms `/add` renders, with the
+ * target pinned to `wishlist`. Nothing navigates: sending somebody to the
+ * scanner to record a book they do not have yet is the wrong direction, which
+ * is the finding the sibling's own page writes down in those words.
  */
 export function WishlistPage({
   me,
@@ -40,15 +52,24 @@ export function WishlistPage({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
   /**
-   * What a batch arrival did — said on the page, never inside the panel.
+   * The page's one "that worked" line — a batch arrival, or a book just added.
    *
    * ⚠️ Both outcomes live here, and the failure one is the reason why. The panel
    * renders nothing once no copies are on the way, so a note it owned would be
    * destroyed by the very reload that follows a batch. Measured: with five of six
    * saved and the sixth deleted underneath, the panel unmounted and the warning
-   * went with it — the one case where saying nothing is worst.
+   * went with it — the one case where saying nothing is worst. The add door has
+   * the same shape: a typed save shuts it, so a note it owned would go with it.
    */
   const [note, setNote] = useState<{ text: string; tone: 'good' | 'bad' } | null>(null);
+  /**
+   * The add door, shut until asked for — see `components/WishlistAdd.tsx`.
+   *
+   * ⚠️ State on the page rather than inside the button, because the empty state
+   * and the header both open the same one panel. Two `WishlistAdd`s alive at
+   * once would be two cameras asking for the same device.
+   */
+  const [adding, setAdding] = useState(false);
 
   // `manageWishlist`, not `editCatalog` — these buttons (arrived/pre-ordered/
   // off-the-list) PATCH or DELETE an existing wishlist copy, which is exactly
@@ -56,6 +77,13 @@ export function WishlistPage({
   // Asking for a NEW book ("Want this", elsewhere) is the looser
   // `suggestWishlist` (member+) and does not gate anything on this page.
   const canEdit = me.capabilities.includes('manageWishlist');
+  // The looser half of the same 2026-08-16 split: asking for a book is
+  // `suggestWishlist` (member+), so the add door opens for people who may not
+  // touch the rows already on the list. ⚠️ Hidden when absent rather than
+  // disabled — a `guest` has `read` and not this, and for them there is no
+  // "ask" to explain. Its TABS are the ones that explain themselves; see
+  // `lib/add-modes.ts` for why those two go opposite ways.
+  const canSuggest = me.capabilities.includes('suggestWishlist');
 
   const load = useCallback(() => {
     setError(null);
@@ -103,7 +131,36 @@ export function WishlistPage({
 
   return (
     <main>
-      <h2 className="page-title">Wishlist</h2>
+      <div className="row-tight">
+        <h2 className="page-title">Wishlist</h2>
+        {/* ⚠️ The only primary button on the screen, and it is at the top. The
+            owner came to a wishlist page, could not find a way to add anything,
+            and had to ask — twice, in two catalogs — so this is not a control
+            to tuck behind a menu. It is repeated in the empty state below,
+            because an empty page is exactly where somebody is looking for it. */}
+        {canSuggest && !adding && (
+          <button className="primary" onClick={() => setAdding(true)}>
+            + Add something
+          </button>
+        )}
+      </div>
+
+      {canSuggest && adding && (
+        <WishlistAdd
+          me={me}
+          onAdded={() => {
+            /* ⚠️ The same words the row inside the panel says (`addedLabel`
+               with this door's pinned target), so one event is not reported two
+               ways by two surfaces a few pixels apart. */
+            setNote({
+              text: `${addedLabel({ target: 'wishlist', arrived: false, summary: null, owned: false })}.`,
+              tone: 'good',
+            });
+            load();
+          }}
+          onClose={() => setAdding(false)}
+        />
+      )}
 
       {note && (
         <p className={note.tone === 'good' ? 'notice notice--good' : 'notice notice--bad'}>
@@ -128,10 +185,28 @@ export function WishlistPage({
       />
 
       {rows.length === 0 ? (
-        <p className="muted">
-          Nothing on the list. A book page has a <em>Want this</em> button, and a series with
-          gaps in it offers one against each missing volume.
-        </p>
+        <>
+          {/* ⚠️ Says what puts a book HERE, not just that nothing is here. A
+              row on this page is a copy whose status is `wanted` — the fact the
+              page's header comment opens with — and an empty state that does
+              not say so leaves somebody guessing at what they are looking at.
+              Same sense as the sibling catalog's, in this repo's nouns. */}
+          <p className="muted">
+            Nothing on the list. A book lands here when one of its copies is{' '}
+            <em>wanted</em> — add one here, press <em>Want this</em> on a book&rsquo;s page, or
+            take one of the gaps a series offers against its missing volumes.
+          </p>
+          {/* The page's own door, not a link to `/add`. Sending somebody to the
+              scanner to record a book they do not have yet is the wrong
+              direction — that screen is for books in your hands. */}
+          {canSuggest && !adding && (
+            <p>
+              <button className="primary" onClick={() => setAdding(true)}>
+                + Add something
+              </button>
+            </p>
+          )}
+        </>
       ) : (
         <>
           {/* ⚠️ Counted apart, even though the page lists them together.
