@@ -32,6 +32,55 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
+## ☐ SCANNER → WISHLIST: let a scan land a book on the wishlist instead of the shelf — owner ask 2026-09-04 ~09:00 Phoenix
+
+Owner (from his phone, out of town), verbatim: *"I didn't see how to scan a
+book to add wishlist. We should add this feature to the scanner."* Said
+while asking for /work/525 to be moved off the shelf (see the DATA section
+just below — that copy is the case in point: scanned in a shop, wanted, not
+owned).
+
+**Read as:** the scan flow (barcode → edition match → "add copy") always
+creates an **owned** copy today. It needs a target switch — *Shelf* /
+*Wishlist* — so the same scan can create the copy with `status='wanted'`
+(`WISHLIST_STATUSES = ['wanted','preordered']`,
+`packages/core/src/constants.ts:283`). The switch should be visible at scan
+time (a toggle on the scanner screen, remembered for the session so a
+shop-visit of ten scans does not need ten taps), and the wishlist page
+should show the new row immediately.
+
+**Where it lives (to confirm before build):** scanner UI under
+`apps/web/src/components/` (the RescanPrompt / scan-to-copy path touched by
+the edition-note work — `RescanPrompt.tsx`, `Copies.tsx`), the copy-create
+route in `apps/worker/src/routes/` (accepts `status`? — check the create
+schema in `@lc/core`; if it already takes `status`, this is web-only).
+Lands on BOTH instances through the shared components (global rule
+2026-09-03: deploy PAIR). Opus build, ~100–150k if the route already
+accepts `status`, ~150–200k if the worker needs a change.
+
+☐ owner: confirm build priority (he said "we should", not "do it now") →
+☐ build → ☐ deploy PAIR → ☐ owner scans one book to the wishlist from his
+phone (the only real test — the scanner needs a camera).
+
+## ☐ DATA /work/525: copy off the shelf, onto the wishlist — owner ask 2026-09-04 ~09:00 Phoenix
+
+Owner, verbatim: *"https://library.heygabi.ai/work/525 I want this on wish
+list instead of owned."*
+
+Measured 09:05: work 525 = *The Castle of 1,000 Doors* (Kenny Gould),
+copy **464**, edition 678 (paperback, Spiderhead Press 2023), `status='owned'`.
+
+☑ **09:09 Phoenix, MAIN only:** `UPDATE copy SET status='wanted',
+updated_at=datetime('now') WHERE id=464 AND work_id=525 AND status='owned'`
+→ changes=1. Direct D1 write, same route as /work/263 (the owner asked
+for the data change, not for a screen; no code involved). No other column
+touched — location/lent_to/condition were all NULL.
+☑ live: <https://library.heygabi.ai/work/525> ON YOUR SHELF shows the
+paperback card with the **WANTED** status chip (bundle `index-D8DRuBYK.js`).
+☐ NOT verified: the Wishlist page listing it (needs sign-in) — owner to
+glance at it. He will want the scanner feature above so the next one of
+these needs no D1 write.
+
 ## ☐ DATA /work/263: link the three copies to their printings, names minus "hardcover", two collector's — owner ask 2026-09-03 18:29 Phoenix
 
 Owner, with a screenshot of the round-3 Hardcover tab (three OWNED cards
