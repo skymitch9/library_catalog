@@ -13,8 +13,8 @@ import { editionKindLabel } from '../lib/formats.js';
 import { STATUS_LABEL } from '../lib/statuses.js';
 import {
   deriveShelfView,
+  type ShelfCardView,
   type ShelfCopy,
-  type ShelfCopyLine,
   type ShelfRow,
   type ShelfTab,
 } from '../lib/shelf-view.js';
@@ -38,39 +38,21 @@ import {
 const LONG_LABEL = 34;
 
 /**
- * Signed, shown EITHER WAY (owner 2026-09-02: *"and if its signed or not"*).
+ * ⚠️ **`SignedChip` is GONE — deleted in round 3 (2026-09-03), and the absence
+ * is deliberate.** It rendered signing either way, including a dashed *"Not
+ * signed"* pill, which round 2 had already stopped printing anywhere a person
+ * could see: the tab header said what every copy shared, the copy lines said
+ * only the differences, and *"the absence of the word IS the plain case"* is the
+ * owner's own rule from the same afternoon. With round 3 turning every owned
+ * copy into a card of its own, the last place a two-state chip could have lived
+ * became a card whose chips are only what DISTINGUISHES it — so a positive
+ * *"Signed"* is an ordinary badge chip (`SIGNED_BADGE`, minted once in
+ * `shelf-view.ts`) and there is no negative to render at all.
  *
- * ⚠️ A badge that only ever lights cannot answer "or not" — the reader cannot
- * tell an unsigned copy from one nobody has looked at. So an owned physical row
- * says which it is, and the negative wears a quiet dashed pill so a shelf of
- * ordinary paperbacks is not covered in decoration.
- *
- * ⚠️ **It reports the RECORD.** `copy.is_signed` is `NOT NULL DEFAULT 0`
- * (migration 0430), so "Not signed" means *nothing has marked this copy signed*,
- * which is what the tooltip says rather than claiming the object is unsigned.
- *
- * ⚠️ **It appears ONCE per card** (owner 2026-09-03). Either the card wears it,
- * because every copy gives the same answer, or each copy wears its own, because
- * they do not. `deriveShelfView` decides which — `row.signed` vs
- * `row.signedVaries` — and never sets both.
- *
- * Local to this file on purpose — the same call `Copies.tsx` makes about its own
- * `SPECIAL_TOGGLES`: a second caller is the moment it moves somewhere shared.
+ * The negative is not lost, only unprinted: the card's `title` still answers
+ * signing both ways, which is where round 2 narrowed the 2026-09-02 *"say it
+ * either way"* rule to.
  */
-function SignedChip({ signed }: { signed: boolean }) {
-  return (
-    <span
-      className={`special-badge special-badge--signed${signed ? '' : ' special-badge--off'}`}
-      title={
-        signed
-          ? 'Recorded as a signed copy'
-          : 'Nothing on this copy is marked signed — the record says so, which is not the same as having checked the book'
-      }
-    >
-      {signed ? '✍ Signed' : 'Not signed'}
-    </span>
-  );
-}
 
 /**
  * The little emoji the mockup renders on each shelf thumbnail (owner: "the on
@@ -149,10 +131,17 @@ function rowEmoji(row: ShelfRow): string {
  * > editions owned of each under … So hardcover / Collectors edition - sprayed
  * > edges signed / Standard edition / Standard edition - signed - lent out"
  *
- * So under a tab an OWNED copy is **one line** — `tab.lines`, every word of it
- * composed in `deriveShelfView` — and everything else keeps the card it had. The
- * tab strip is the edit box's strip: the same `.chip` treatment through one
- * shared rule in `styles.css`, never a second tab look.
+ * ⚠️ **Round 3 (2026-09-03 17:21) then collapsed the two lists into one.** Of
+ * round 2 live, he said:
+ *
+ * > "Closer but still 3 list, the book icons below should be all that remains.
+ * > Add the hard cover, sprayed edges lent out tabs to the iconed ones below"
+ *
+ * So a tab renders exactly one list — `tab.cards` — where an owned COPY is a
+ * card like any other and its distinguishing facts ride on it as chips (his
+ * *"tabs"*). `tab.lines` and `tab.rows` are gone from the derivation, not hidden
+ * behind a flag. The tab strip is the edit box's strip: the same `.chip`
+ * treatment through one shared rule in `styles.css`, never a second tab look.
  *
  * Three things this component renders that it did not before the merge:
  *
@@ -203,7 +192,7 @@ export function OnYourShelf({
    */
   ourSeries?: string | null;
 }) {
-  const { tabs, looseRows, audioCountLine, availability } = deriveShelfView({
+  const { tabs, looseCards, audioCountLine, availability } = deriveShelfView({
     title,
     copies,
     editions,
@@ -228,11 +217,11 @@ export function OnYourShelf({
           tabs rather than inside one, because they name themselves and a tab
           called "Other" would be a category invented to hold two edge cases.
           When there are no tabs at all, this is the whole shelf. */}
-      {looseRows.length > 0 && (
+      {looseCards.length > 0 && (
         <ul className="plain shelf-rows">
-          {looseRows.map((row) => (
-            <li key={row.key}>
-              <ShelfCard row={row} />
+          {looseCards.map((card) => (
+            <li key={card.key}>
+              <ShelfCard card={card} />
             </li>
           ))}
         </ul>
@@ -373,28 +362,16 @@ function ShelfTabs({
 
         {active.key === 'audio' && audioCountLine && <p className="muted small">{audioCountLine}</p>}
 
-        {/* ONE LINE PER OWNED COPY. `text` is composed in the derivation; the
-            spans exist only so the name can carry the weight and the facts can
-            go muted. `title` holds what the line drops on purpose — the shared
-            facts, the signed record either way, the condition. */}
-        {active.lines.length > 0 && (
-          <ul className="plain shelf-lines">
-            {active.lines.map((line) => (
-              <li key={line.key}>
-                <CopyLine line={line} />
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {/* Everything that is not an owned copy keeps the card it had — the
-            audiobook recordings with their covers and provenance, the ebook
-            files, the wishes, and MAY BE YOURS. ⚠️ Untouched by round 2. */}
-        {active.rows.length > 0 && (
+        {/* ⚠️ ONE LIST — owner, round 3: "the book icons below should be all
+            that remains". One card per owned copy, then the recordings, files,
+            wishes and MAY BE YOURS printings, all the same card. There is no
+            second list here and there must not be one: two lists under one tab
+            is the "still 3 list" he rejected. */}
+        {active.cards.length > 0 && (
           <ul className="plain shelf-rows">
-            {active.rows.map((row) => (
-              <li key={row.key}>
-                <ShelfCard row={row} />
+            {active.cards.map((card) => (
+              <li key={card.key}>
+                <ShelfCard card={card} />
               </li>
             ))}
           </ul>
@@ -405,52 +382,29 @@ function ShelfTabs({
 }
 
 /**
- * One owned copy, as one line: *"Collectors edition — Sprayed edges · Signed"*.
- *
- * ⚠️ **The jacket is shown only when the PRINTING has one of its own.** Absent,
- * there is no thumb at all — the work cover is never borrowed onto a printing,
- * the same rule the cards follow.
- */
-function CopyLine({ line }: { line: ShelfCopyLine }) {
-  return (
-    // ⚠️ A <div>, not a <p>: `Cover`'s no-jacket fallback is a <div>, and a block
-    // inside a paragraph is invalid markup the browser silently reshapes.
-    <div className="shelf-line" title={line.title}>
-      {line.coverUrl && (
-        <span className="shelf-line__thumb">
-          <Cover src={line.coverUrl} title={line.name} size="row" />
-        </span>
-      )}
-      <span className="shelf-line__name">{line.name}</span>
-      {line.facts.length > 0 && (
-        <span className="shelf-line__facts"> — {line.facts.join(' · ')}</span>
-      )}
-    </div>
-  );
-}
-
-/**
- * One card on the shelf — a holding, a wish, or a version that merely exists.
+ * One card on the shelf — ⚠️ after round 3 (2026-09-03) that is **one owned
+ * COPY**, or a whole row that is not a copy you hold (a wish, a printing that
+ * merely exists, an ebook file, an audiobook recording).
  *
  * Extracted from the render when the sections landed (2026-09-02): the same
- * markup now appears under three headings instead of once in a flat list, and a
- * card that is copy-pasted per section is a card that will drift per section.
+ * markup now appears under every tab instead of once in a flat list, and a card
+ * that is copy-pasted per section is a card that will drift per section.
  *
- * ⚠️ **An `available` card must never read as a holding.** Three things keep
- * them apart, and they are belt, braces and a third thing on purpose: a
- * different ground (`bd-hold--available`, a dashed rule), a state pill that says
- * *"Available"* or *"May be yours"* rather than *"Owned"*, and **no signed
- * chip** — signing is a fact about an object, and there is no object here.
+ * ⚠️ **It renders `card.chips` VERBATIM and composes nothing.** The derivation
+ * decides what distinguishes this card — the badges the tab header did not take,
+ * the status when the object is not on the shelf, the location, a condition
+ * worth saying — so one test pins what the shelf SAYS. The component picks the
+ * colour and nothing else.
+ *
+ * ⚠️ **An `available` card must never read as a holding.** Two things keep them
+ * apart and they are belt and braces on purpose: a different ground
+ * (`bd-hold--available`, a dashed rule) and a state pill that says *"Available"*
+ * or *"May be yours"* rather than *"Owned"*. ⚠️ The third — "no signed chip" —
+ * is now structural rather than a rule to remember: a printing nobody holds has
+ * no copy, so it has no copy chips at all.
  */
-function ShelfCard({ row }: { row: ShelfRow }) {
-  // ⚠️ `row.badges` is rendered VERBATIM — it is already exactly what the card
-  // should print. Until 2026-09-03 this line filtered the positive `signed`
-  // badge back out, because the derivation handed the component the union of
-  // every copy's attributes and left it to sort out what to hide. It no longer
-  // does: `deriveShelfView` splits the badges into the card's and each copy's
-  // (owner: "This has double information, let's normalize this"), and drops
-  // `signed` from whichever list `SignedChip` is about to speak for. A second
-  // filter here would be a second place the rule lives.
+function ShelfCard({ card }: { card: ShelfCardView }) {
+  const row = card.row;
   // The card body is the same whether or not the row links; only its wrapper
   // differs (an <a> to the sibling catalog, or a plain <div>).
   const cardInner = (
@@ -461,7 +415,7 @@ function ShelfCard({ row }: { row: ShelfRow }) {
           printing would claim that is what that printing looks like. */}
       {row.coverUrl ? (
         <div className="bd-hold__thumb bd-hold__thumb--art">
-          <Cover src={row.coverUrl} title={row.label ?? ''} size="row" />
+          <Cover src={row.coverUrl} title={card.label} size="row" />
         </div>
       ) : (
         <div className="bd-hold__thumb" aria-hidden="true">
@@ -483,10 +437,10 @@ function ShelfCard({ row }: { row: ShelfRow }) {
               would defeat the whole point of putting it here. */}
           <span
             className={`bd-hold__label${
-              (row.label?.length ?? 0) > LONG_LABEL ? ' bd-hold__label--long' : ''
+              card.label.length > LONG_LABEL ? ' bd-hold__label--long' : ''
             }`}
           >
-            {row.label ?? (row.neutral ? 'Not on your shelf' : 'Any format')}
+            {card.label}
           </span>
           {/* Recordings held, for an Audiobook row (e.g. two narrations). */}
           {row.count != null && row.count > 1 && (
@@ -512,20 +466,20 @@ function ShelfCard({ row }: { row: ShelfRow }) {
           )}
         </div>
 
-        {(row.badges.length > 0 || row.signed != null) && (
+        {/* ⚠️ THE CHIPS — the owner's *"add the hard cover, sprayed edges lent
+            out tabs to the iconed ones below"* (round 3). Every word of them is
+            the derivation's; the class is the only decision made here, and the
+            signed chip keeps the pen it has always worn. */}
+        {card.chips.length > 0 && (
           <div className="bd-hold__badges">
-            {/* Signed first: it is the one the owner asked to be answerable at a
-                glance, and the one that is shown even when the answer is no.
-                ⚠️ Null here is now TWO different things — the question does not
-                apply (a file, an audiobook, a wish), or the copies disagree and
-                each says so on its own line (`row.signedVaries`). Both mean the
-                card has no honest single answer, which is why one test is
-                enough. */}
-            {row.signed != null && <SignedChip signed={row.signed} />}
-            {row.badges.map((b) => (
-              <span key={b.key} className={`special-badge special-badge--${b.key}`} title={b.title}>
-                {b.key === 'signed' ? '✍ ' : ''}
-                {b.label}
+            {card.chips.map((chip) => (
+              <span
+                key={chip.key}
+                className={`special-badge special-badge--${chip.kind === 'badge' ? chip.key.replace(/^badge-/, '') : chip.kind}`}
+                title={chip.title}
+              >
+                {chip.key === 'badge-signed' ? '✍ ' : ''}
+                {chip.label}
               </span>
             ))}
           </div>
@@ -548,21 +502,18 @@ function ShelfCard({ row }: { row: ShelfRow }) {
           </p>
         ))}
 
-        {/* Copies nest UNDER the edition. One copy: its facts inline, no second
-            bullet. More than one of the same printing: a short list, the only
-            case where a copy earns its own line.
-            ⚠️ `showSigned` is `row.signedVaries`, NOT "the row answered" —
-            corrected 2026-09-03. It used to be `row.signed != null`, which
-            printed the signed answer on every copy of a row that had just
-            printed it once for the group ("double information"). The chip
-            belongs to whichever level can answer honestly: the card when the
-            copies agree, each copy when they do not. */}
-        {row.copies.length === 1 && <CopyFacts copy={row.copies[0]!} />}
-        {row.copies.length > 1 && (
+        {/* ⚠️ Only a WISH still nests its copies, and only because a wish is not
+            an object: round 3 gives every copy you HOLD a card of its own, so a
+            held row never reaches this branch (`card.copy` is set on those, and
+            an owned row is exploded before it gets here). Rendering both would
+            print each fact twice — the failure the whole 2026-09-03 sequence
+            exists to remove. */}
+        {card.copy === null && row.copies.length === 1 && <CopyFacts copy={row.copies[0]!} />}
+        {card.copy === null && row.copies.length > 1 && (
           <ul className="plain shelf-row__copies">
             {row.copies.map((c) => (
               <li key={c.id}>
-                <CopyFacts copy={c} withStatus showSigned={row.signedVaries} />
+                <CopyFacts copy={c} withStatus />
               </li>
             ))}
           </ul>
@@ -600,7 +551,14 @@ function ShelfCard({ row }: { row: ShelfRow }) {
       {cardInner}
     </a>
   ) : (
-    <div className={cardClass}>{cardInner}</div>
+    // ⚠️ `title` only where the derivation composed one — a copy card, whose
+    // hover carries what the chips leave out on purpose (the facts the tab
+    // header took, signing either way, the plain status, the condition).
+    // `undefined`, never `''`: an empty title attribute is a tooltip that
+    // flashes an empty box.
+    <div className={cardClass} title={card.title ?? undefined}>
+      {cardInner}
+    </div>
   );
 }
 
@@ -609,27 +567,26 @@ function ShelfCard({ row }: { row: ShelfRow }) {
  * copy), who has it, where it lives, its condition. Rendered as one muted line
  * so a copy stays visually subordinate to the edition it hangs off.
  *
+ * ⚠️ **Only a WISH reaches this since round 3.** A copy you HOLD is a card of
+ * its own now, with its facts as chips; this is what is left for a wishlist copy
+ * hanging off a Wanted card, which is not an object and cannot be one.
+ *
  * ⚠️ The person is shown only when the server sent a name (`personName`): a
  * redacted or unrecorded person both arrive null, and the panel cannot tell them
  * apart, so it says nothing rather than "nobody has it" — the same rule
  * `Copies.tsx` documents at length.
+ *
+ * ⚠️ **`showSigned` is gone with `SignedChip`.** A wish is never asked whether
+ * it is signed (no object, no signature — `deriveShelfView` keeps `signed` null
+ * and `signedVaries` false on every wanted row), so the prop could only ever
+ * have rendered the *"Not signed"* the owner asked to stop seeing.
  */
 function CopyFacts({
   copy,
   withStatus,
-  showSigned,
 }: {
   copy: ShelfCopy;
   withStatus?: boolean;
-  /**
-   * Answer signed for THIS copy, either way (owner 2026-09-02) — but ⚠️ **only
-   * where the copies DISAGREE** (owner 2026-09-03, `row.signedVaries`). Where
-   * they agree the card's own chip has already answered for all of them, and
-   * repeating it per copy is the "double information" this narrowed. Work 220 is
-   * the shape it is still for: a signed leatherbound and a slipcase volume under
-   * one Hardcover row, where no single answer is true of both.
-   */
-  showSigned?: boolean;
 }) {
   const person =
     copy.personName && copy.status === 'lent'
@@ -656,7 +613,7 @@ function CopyFacts({
   // a badge the card was also showing appeared on both.
   // Still gated on `withStatus` — the single-copy case has an empty list anyway
   // (one copy always agrees with itself), and the row above says it all.
-  const showBadges = !!withStatus && (copy.badges.length > 0 || !!showSigned);
+  const showBadges = !!withStatus && copy.badges.length > 0;
   if (parts.length === 0 && !showBadges) return null;
 
   return (
@@ -664,7 +621,6 @@ function CopyFacts({
       {parts.join(' · ')}
       {showBadges && (
         <span className="shelf-row__copy-badges">
-          {showSigned && <SignedChip signed={copy.signed} />}
           {copy.badges.map((b) => (
             <span key={b.key} className="special-badge" title={b.title}>
               {b.label}

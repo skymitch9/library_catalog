@@ -54,9 +54,20 @@
  *
  * `ShelfView.sections` (the Physical / Ebook / Audio headings of 2026-09-02) was
  * **REMOVED** and `tabs` + `looseRows` took its place; the tests that pinned it
- * are amended in place and marked. The new pins are the two blocks at the foot:
- * which tabs exist and in what order, and — the deliverable — **what each LINE
- * says**, including his three-hardcover example word for word.
+ * are amended in place and marked.
+ *
+ * ## ONE LIST PER TAB, and a copy is a CARD — the 2026-09-03 round-3 amendment
+ *
+ * > Owner, looking at round 2 live on /work/263: "Closer but still 3 list, the
+ * > book icons below should be all that remains. Add the hard cover, sprayed
+ * > edges lent out tabs to the iconed ones below"
+ *
+ * `ShelfTab.lines` and `ShelfTab.rows` were **REMOVED** in favour of one
+ * `ShelfTab.cards`, and `ShelfView.looseRows` became `looseCards`. Every pin in
+ * the two blocks at the foot was AMENDED rather than rewritten: the sentences
+ * they assert are the same sentences, read off a card's `label` + `chips`
+ * instead of a line's `text` (see `says` below), because round 3 changed the
+ * SHAPE the facts arrive in and not one word of what the shelf says.
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
@@ -68,6 +79,7 @@ import {
   deriveShelfView,
   matchProvenance,
   specialEditionBadges,
+  type ShelfCardView,
 } from '../src/lib/shelf-view.ts';
 import { audiobookDetailUrl, resolveAudiobookCover } from '../src/lib/audiobook-site.ts';
 
@@ -119,6 +131,31 @@ const NONE = {
   ebookHolding: null,
   peerHoldings: [],
 };
+
+/**
+ * What ONE CARD says, as one string — the headline, then its chips.
+ *
+ * ⚠️ It reproduces round 2's line grammar on purpose (`name — fact · fact`), so
+ * the pins below still read as the owner's own written example and a reviewer
+ * can see that round 3 moved the facts onto a card without changing a word of
+ * them. The card carries no such string itself: the chips are separate objects
+ * because the component colours them separately.
+ */
+function says(card: ShelfCardView): string {
+  return card.chips.length
+    ? `${card.label} — ${card.chips.map((c) => c.label).join(' · ')}`
+    : card.label;
+}
+
+/** The cards under a tab that ARE one of your copies — round 2's "lines". */
+function copyCards(tab: { cards: ShelfCardView[] }): ShelfCardView[] {
+  return tab.cards.filter((c) => c.copy !== null);
+}
+
+/** The cards under a tab that stand for a whole row — round 2's `tab.rows`. */
+function rowCards(tab: { cards: ShelfCardView[] }): ShelfCardView[] {
+  return tab.cards.filter((c) => c.copy === null);
+}
 
 /** The single row we expect, asserted with a helpful message when the count is off. */
 function only(v: { rows: unknown[] }): (typeof v.rows)[number] {
@@ -959,9 +996,10 @@ describe('the audiobook cross-link renders ONCE, in the Audio section (the doubl
       audioEditionCount: 1,
     });
     assert.equal(v.rows.filter((r) => r.medium === 'audio').length, 1);
-    // ⚠️ AMENDED 2026-09-03: `sections` became `tabs`. Same claim, same objects.
+    // ⚠️ AMENDED 2026-09-03 twice: `sections` became `tabs` (round 2), then
+    // `tab.rows` became `tab.cards` (round 3). Same claim, same objects.
     const audio = v.tabs.find((t) => t.key === 'audio')!;
-    assert.equal(audio.rows.length, 1, 'the Audio tab owns it, and nothing else does');
+    assert.equal(audio.cards.length, 1, 'the Audio tab owns it, and nothing else does');
   });
 
   it('⚠️ the PROVENANCE sentence survives the merge — migration 0010: shown, never hidden', () => {
@@ -1198,13 +1236,18 @@ describe('tabs — one per format, "the editions owned of each under" (owner 202
       v.tabs.map((t) => t.label),
       ['Paperback', 'Audio', 'Ebook'],
     );
-    // ⚠️ The same objects, not copies — one fact, one home, applied to a shape.
-    // Every row is either a CARD under a tab, a LINE under a tab (an owned copy
-    // group), or loose. Nothing is dropped and nothing is duplicated.
-    const carded = v.tabs.flatMap((t) => t.rows);
-    const lined = v.rows.filter((r) => r.owned && r.copies.length > 0);
-    assert.equal(carded.length + lined.length + v.looseRows.length, v.rows.length);
-    assert.ok(carded.every((r) => v.rows.includes(r)));
+    // ⚠️ AMENDED for round 3. It used to count `t.rows` + the lined rows +
+    // `looseRows`; there is ONE list now, so the pin is that every row is behind
+    // exactly one card (a held row through one card per COPY, everything else
+    // through one card each) and that a card holds the SAME row object, never a
+    // copy of it — one fact, one home, applied to a shape.
+    const cards = [...v.tabs.flatMap((t) => t.cards), ...v.looseCards];
+    const expected = v.rows.reduce(
+      (n, r) => n + (r.owned && r.copies.length > 0 ? r.copies.length : 1),
+      0,
+    );
+    assert.equal(cards.length, expected, 'every row is behind a card; a held row, one per copy');
+    assert.ok(cards.every((c) => v.rows.includes(c.row)));
   });
 
   it('⚠️ AMENDED: a second PHYSICAL is a second TAB, not a second card under one heading', () => {
@@ -1227,15 +1270,15 @@ describe('tabs — one per format, "the editions owned of each under" (owner 202
     const hardcover = v.tabs.find((t) => t.key === 'hardcover')!;
     const paperback = v.tabs.find((t) => t.key === 'paperback')!;
     assert.equal(paperback.owned, true, 'the paperback is the one he holds');
-    assert.equal(paperback.lines.length, 1);
+    assert.equal(copyCards(paperback).length, 1);
     // ⚠️ A printing he neither owns nor wants still SHOWS, as the card it always
     // was — "MAY BE YOURS" is untouched by this ask.
     assert.equal(hardcover.owned, false, 'nothing under it is a holding');
-    assert.deepEqual(hardcover.lines, [], 'and so it has no copy lines at all');
-    assert.equal(hardcover.rows.length, 1);
-    assert.equal(hardcover.rows[0]!.label, 'First edition');
+    assert.deepEqual(copyCards(hardcover), [], 'and so it has no copy of yours under it');
+    assert.equal(hardcover.cards.length, 1);
+    assert.equal(hardcover.cards[0]!.label, 'First edition');
     // ⚠️ The owned copy is LINKED, so nothing of his could be the hardcover.
-    assert.equal(hardcover.rows[0]!.stateLabel, 'Available');
+    assert.equal(hardcover.cards[0]!.row.stateLabel, 'Available');
   });
 
   it('a format with nothing at all gets NO tab', () => {
@@ -1253,8 +1296,11 @@ describe('tabs — one per format, "the editions owned of each under" (owner 202
   it('⚠️ the neutral slot belongs to no format — it is LOOSE, not a tab called "Other"', () => {
     const v = deriveShelfView({ ...NONE });
     assert.deepEqual(v.tabs, [], 'no tab strip over a book with nothing on the shelf');
-    assert.equal(v.looseRows.length, 1);
-    assert.equal(v.looseRows[0]!.neutral, true);
+    assert.equal(v.looseCards.length, 1);
+    assert.equal(v.looseCards[0]!.row.neutral, true);
+    // ⚠️ The two words the component used to compose for a row that names
+    // nothing are the derivation's since round 3 — one place chooses the words.
+    assert.equal(v.looseCards[0]!.label, 'Not on your shelf');
   });
 
   it('a formatless "any format" want is loose too, beside the tabs', () => {
@@ -1274,8 +1320,9 @@ describe('tabs — one per format, "the editions owned of each under" (owner 202
       v.tabs.map((t) => t.key),
       ['ebook'],
     );
-    assert.equal(v.looseRows.length, 1);
-    assert.equal(v.looseRows[0]!.key, 'want-any');
+    assert.equal(v.looseCards.length, 1);
+    assert.equal(v.looseCards[0]!.row.key, 'want-any');
+    assert.equal(v.looseCards[0]!.label, 'Any format');
   });
 
   it('⚠️ a MASS MARKET copy earns its own tab — the shelf never drops a holding', () => {
@@ -1290,7 +1337,7 @@ describe('tabs — one per format, "the editions owned of each under" (owner 202
       v.tabs.map((t) => t.label),
       ['Mass market'],
     );
-    assert.equal(v.tabs[0]!.lines.length, 1);
+    assert.equal(copyCards(v.tabs[0]!).length, 1);
   });
 
   it('⚠️ a physical copy whose binding cannot be attributed files under "Physical"', () => {
@@ -1312,25 +1359,36 @@ describe('tabs — one per format, "the editions owned of each under" (owner 202
 });
 
 /**
- * ## ONE LINE PER OWNED COPY — the owner's own example, verbatim (2026-09-03)
+ * ## ONE CARD PER OWNED COPY — the owner's own example, verbatim (2026-09-03)
  *
  * > "So hardcover
  * > Collectors edition - sprayed edges signed
  * > Standard edition
  * > Standard edition - signed - lent out"
  *
- * These pin what each LINE SAYS, which is the whole deliverable of round 2. The
- * line grammar: **the printing's name, then ` — `, then only what distinguishes
- * THAT copy**, joined ` · ` — the special-edition badges, then *Signed*, then a
- * status that is not "on the shelf", then the location.
+ * …and then, of round 2's rendering of exactly that:
+ *
+ * > "Closer but still 3 list, the book icons below should be all that remains.
+ * > Add the hard cover, sprayed edges lent out tabs to the iconed ones below"
+ *
+ * ⚠️ **AMENDED WHOLE for round 3, and the sentences did not change.** These
+ * pinned `line.text`; they now pin the same words read off a card — its `label`
+ * and its `chips` (`says()` above joins them the way the line used to read).
+ * What changed is the shape: an owned copy is a CARD in the tab's one list, and
+ * the facts that distinguish it are chips on it, which is what he asked for.
+ *
+ * The grammar is untouched: **the printing's name, then only what distinguishes
+ * THAT copy** — the special-edition badges (signed last of them), then a status
+ * that is not "on the shelf", then the location, then a condition that is not
+ * the plain `good`.
  *
  * ⚠️ Two words are never printed, and their absence IS the plain case: *"On the
  * shelf"* (the copy is where it should be) and *"Not signed"* (nothing marks it
  * signed). That narrows the 2026-09-02 *"say it either way"* rule to the hover,
- * where `line.title` still answers both.
+ * where `card.title` still answers both.
  */
-describe('one line per owned copy — the owner example, word for word', () => {
-  it("⚠️ THE OWNER'S THREE HARDCOVERS: exactly the three lines he wrote", () => {
+describe('one card per owned copy — the owner example, word for word', () => {
+  it("⚠️ THE OWNER'S THREE HARDCOVERS: exactly the three cards he wrote", () => {
     const v = deriveShelfView({
       ...NONE,
       copies: [
@@ -1346,16 +1404,20 @@ describe('one line per owned copy — the owner example, word for word', () => {
     const tab = v.tabs.find((t) => t.key === 'hardcover')!;
     // Nothing is true of all three, so the header is the format word alone.
     assert.equal(tab.header, 'Hardcover');
-    assert.deepEqual(tab.lines.map((l) => l.text), [
+    const cards = copyCards(tab);
+    assert.deepEqual(cards.map(says), [
       'Collectors edition — Sprayed edges · Signed',
       'Standard edition',
       'Standard edition — Signed · Lent out',
     ]);
-    // ⚠️ The condition came off the line (his example dropped it) and is still
-    // reachable — a fact moved, never lost.
-    assert.ok(tab.lines[2]!.title.includes('Condition: good'));
-    // ⚠️ And neither of the two banned words appears anywhere in the lines.
-    const all = tab.lines.map((l) => l.text).join(' | ');
+    // ⚠️ ONE card per copy, and it is the one list under the tab — no lines
+    // beside it (round 3: "the book icons below should be all that remains").
+    assert.equal(tab.cards.length, 3, 'three copies, three cards, and nothing else');
+    // ⚠️ `good` is the plain condition and gets no chip (his own example dropped
+    // it); it is still reachable on the hover — a fact moved, never lost.
+    assert.ok(cards[2]!.title!.includes('Condition: Good'));
+    // ⚠️ And neither of the two banned words appears anywhere on the cards.
+    const all = cards.map(says).join(' | ');
     assert.ok(!all.includes('On the shelf'), 'the Owned case says nothing');
     assert.ok(!all.includes('Not signed'), 'the unsigned case says nothing');
   });
@@ -1377,18 +1439,18 @@ describe('one line per owned copy — the owner example, word for word', () => {
     });
     const tab = v.tabs.find((t) => t.key === 'hardcover')!;
     assert.equal(tab.header, 'Hardcover · all signed');
-    assert.deepEqual(tab.lines.map((l) => l.text), ['Collectors edition', 'Standard edition']);
+    assert.deepEqual(copyCards(tab).map(says), ['Collectors edition', 'Standard edition']);
     assert.ok(
-      tab.lines.every((l) => !l.text.includes('Signed')),
-      '⚠️ the header said it; a line repeating it is the double information itself',
+      copyCards(tab).every((c) => !says(c).includes('Signed')),
+      '⚠️ the header said it; a chip repeating it is the double information itself',
     );
-    // The record is still on each line's hover, either way.
-    assert.ok(tab.lines.every((l) => l.title.includes('Signed')));
+    // The record is still on each card's hover, either way.
+    assert.ok(copyCards(tab).every((c) => c.title!.includes('Signed')));
   });
 
-  it('⚠️ ONE copy of ONE format reads cleanly — one tab, one line, no "all"', () => {
+  it('⚠️ ONE copy of ONE format reads cleanly — one tab, one card, no "all"', () => {
     // "So paperback with standard under it." A single copy has nothing to share
-    // WITH, so its facts stay on its line: "Paperback · all signed" over one
+    // WITH, so its facts stay on its card: "Paperback · all signed" over one
     // book would be a claim about a set of one.
     const v = deriveShelfView({
       ...NONE,
@@ -1399,7 +1461,10 @@ describe('one line per owned copy — the owner example, word for word', () => {
     const tab = v.tabs[0]!;
     assert.equal(tab.label, 'Paperback');
     assert.equal(tab.header, 'Paperback');
-    assert.deepEqual(tab.lines.map((l) => l.text), ['Standard edition — Signed']);
+    assert.deepEqual(tab.cards.map(says), ['Standard edition — Signed']);
+    // ⚠️ The signed chip is an ordinary badge chip now — one place mints the
+    // word (`SIGNED_BADGE`), and there is no negative chip to render at all.
+    assert.deepEqual(tab.cards[0]!.chips.map((c) => [c.key, c.kind]), [['badge-signed', 'badge']]);
   });
 
   it('a lent copy names the person, as ONE phrase', () => {
@@ -1413,10 +1478,13 @@ describe('one line per owned copy — the owner example, word for word', () => {
     });
     const tab = v.tabs[0]!;
     // ⚠️ "Lent out to Sam", not "Lent out · Lent to Sam" — the word "lent" once.
-    assert.deepEqual(tab.lines.map((l) => l.text), [
+    assert.deepEqual(tab.cards.map(says), [
       'Standard edition',
       'Standard edition — Lent out to Sam',
     ]);
+    // ⚠️ The status chip is the one that earns a colour — see `--status` in
+    // styles.css. The kind is decided here so the component reads no words.
+    assert.equal(tab.cards[1]!.chips[0]!.kind, 'status');
   });
 
   it('a borrowed copy says who from; a location rides on the end', () => {
@@ -1428,7 +1496,7 @@ describe('one line per owned copy — the owner example, word for word', () => {
       ],
       editions: [edition({ id: 10, format: 'hardcover', edition_name: 'Standard edition' })],
     });
-    assert.deepEqual(v.tabs[0]!.lines.map((l) => l.text), [
+    assert.deepEqual(v.tabs[0]!.cards.map(says), [
       'Standard edition — Shelf 3',
       'Standard edition — Borrowed from Kim',
     ]);
@@ -1437,9 +1505,13 @@ describe('one line per owned copy — the owner example, word for word', () => {
   it('⚠️ WORK 263 TODAY: unlinked copies keep the FORMAT word — never a borrowed name', () => {
     // The page the owner reviews. Three held copies, three hardcover printings,
     // no copy linked to one — so the printing cannot be named without inventing
-    // an attribution (work 220's rule). The lines say what the record says, and
+    // an attribution (work 220's rule). The cards say what the record says, and
     // become "Collectors edition" the moment the copies are linked under
-    // Editions & copies. The three printings still show as MAY BE YOURS cards.
+    // Editions & copies.
+    //
+    // ⚠️ ROUND 3's shape, and the one he will look at: SIX CARDS IN ONE LIST —
+    // three copies of his, titled by the format word, and the three printings
+    // that may be his. The pill is the only difference between them.
     const v = deriveShelfView({
       ...NONE,
       copies: [
@@ -1454,13 +1526,22 @@ describe('one line per owned copy — the owner example, word for word', () => {
       ],
     });
     const tab = v.tabs.find((t) => t.key === 'hardcover')!;
-    assert.deepEqual(tab.lines.map((l) => l.text), [
+    assert.equal(tab.cards.length, 6, '⚠️ ONE list of six cards, not a list of lines and a list of cards');
+    assert.deepEqual(copyCards(tab).map(says), [
       'Hardcover — Sprayed edges',
       'Hardcover',
       'Hardcover — Lent out',
     ]);
-    assert.equal(tab.rows.length, 3, 'the three printings are still MAY BE YOURS cards');
-    assert.ok(tab.rows.every((r) => r.stateLabel === 'May be yours'));
+    // ⚠️ A copy with no edition is the SAME KIND OF CARD as a candidate — titled
+    // by its format word, in the same list, differing only in the state pill.
+    assert.ok(copyCards(tab).every((c) => c.row.stateLabel === 'Owned'));
+    assert.equal(rowCards(tab).length, 3, 'the three printings are still MAY BE YOURS cards');
+    assert.ok(rowCards(tab).every((c) => c.row.stateLabel === 'May be yours'));
+    assert.deepEqual(rowCards(tab).map((c) => c.label), [
+      'Collectors edition',
+      'Standard edition',
+      'Another printing',
+    ]);
   });
 
   it('an AUDIO tab keeps its card — the cover and the provenance sentence stay', () => {
@@ -1470,18 +1551,18 @@ describe('one line per owned copy — the owner example, word for word', () => {
     });
     const tab = v.tabs.find((t) => t.key === 'audio')!;
     assert.equal(tab.header, 'Audio');
-    assert.deepEqual(tab.lines, [], 'a recording is not a copy you hold — it stays a card');
-    assert.equal(tab.rows.length, 1);
-    assert.ok(tab.rows[0]!.coverUrl, 'its jacket survived');
+    assert.deepEqual(copyCards(tab), [], 'a recording is not a copy you hold — it stays a row card');
+    assert.equal(tab.cards.length, 1);
+    assert.ok(tab.cards[0]!.row.coverUrl, 'its jacket survived');
     assert.ok(
-      tab.rows[0]!.notes.includes(
+      tab.cards[0]!.row.notes.includes(
         'Matched on a partial title (87% title match) — confirm it in ✎ Edit this book.',
       ),
       '⚠️ migration 0010: the provenance is shown, never hidden',
     );
   });
 
-  it('an EBOOK COPY gets the same line grammar; an ebook FILE keeps its card', () => {
+  it('an EBOOK COPY gets the same card grammar; an ebook FILE keeps its own card', () => {
     const v = deriveShelfView({
       ...NONE,
       copies: [copy({ id: 1, status: 'owned', edition_id: 78, is_signed: 1 })],
@@ -1491,9 +1572,9 @@ describe('one line per owned copy — the owner example, word for word', () => {
       ],
     });
     const tab = v.tabs.find((t) => t.key === 'ebook')!;
-    assert.deepEqual(tab.lines.map((l) => l.text), ['Kindle — Signed']);
-    assert.equal(tab.rows.length, 1, 'the file nobody holds a copy row for stays a card');
-    assert.equal(tab.rows[0]!.label, 'EPUB');
+    assert.deepEqual(copyCards(tab).map(says), ['Kindle — Signed']);
+    assert.equal(rowCards(tab).length, 1, 'the file nobody holds a copy row for stays a card');
+    assert.equal(rowCards(tab)[0]!.label, 'EPUB');
   });
 
   it('a WISH keeps its card — a want is not a copy on the shelf', () => {
@@ -1503,25 +1584,27 @@ describe('one line per owned copy — the owner example, word for word', () => {
       editions: [edition({ id: 10, format: 'hardcover', edition_name: 'Deluxe' })],
     });
     const tab = v.tabs.find((t) => t.key === 'hardcover')!;
-    assert.deepEqual(tab.lines, []);
-    assert.equal(tab.rows.length, 1);
-    assert.equal(tab.rows[0]!.state, 'wanted');
+    // ⚠️ A wish is NOT exploded per copy: there is no object of yours for a chip
+    // to describe, so it stays the one card it was, with its copies nested.
+    assert.deepEqual(copyCards(tab), []);
+    assert.equal(tab.cards.length, 1);
+    assert.equal(tab.cards[0]!.row.state, 'wanted');
     assert.equal(tab.owned, false);
   });
 
-  it("a printing's own jacket rides on the line, and an absence stays an absence", () => {
+  it("a printing's own jacket rides on the card, and an absence stays an absence", () => {
     const withArt = deriveShelfView({
       ...NONE,
       copies: [copy({ id: 1, status: 'owned', edition_id: 10 })],
       editions: [edition({ id: 10, format: 'hardcover', cover_url: 'https://x/y.jpg' })],
     });
-    assert.equal(withArt.tabs[0]!.lines[0]!.coverUrl, 'https://x/y.jpg');
+    assert.equal(withArt.tabs[0]!.cards[0]!.row.coverUrl, 'https://x/y.jpg');
     const bare = deriveShelfView({
       ...NONE,
       copies: [copy({ id: 1, status: 'owned', edition_id: 10 })],
       editions: [edition({ id: 10, format: 'hardcover' })],
     });
-    assert.equal(bare.tabs[0]!.lines[0]!.coverUrl, null, '⚠️ never the work cover borrowed');
+    assert.equal(bare.tabs[0]!.cards[0]!.row.coverUrl, null, '⚠️ never the work cover borrowed');
   });
 
   it('⚠️ a shared SPRAYED-EDGES lifts too, and is worded for a set', () => {
@@ -1538,8 +1621,65 @@ describe('one line per owned copy — the owner example, word for word', () => {
     });
     const tab = v.tabs[0]!;
     assert.equal(tab.header, 'Hardcover · all sprayed edges');
-    // Only ONE of them is signed, so that stays on its own line.
-    assert.deepEqual(tab.lines.map((l) => l.text), ['One', 'Two — Signed']);
+    // Only ONE of them is signed, so that stays on its own card.
+    assert.deepEqual(copyCards(tab).map(says), ['One', 'Two — Signed']);
+  });
+
+  /**
+   * ⚠️ ROUND 3's own case, and the one the spec left open: TWO COPIES OF ONE
+   * PRINTING become TWO CARDS, not one card with two chip groups.
+   *
+   * Chosen because the facts that tell them apart are facts about the OBJECTS —
+   * one is lent out, one is on the shelf — and a card per object is the only
+   * shape in which each can carry its own. Two chip groups under one heading
+   * would put two answers in one place and make the reader work out which chip
+   * belongs to which book, which is the "double information" of this whole
+   * sequence in a new costume.
+   */
+  it('⚠️ two copies of ONE printing → TWO cards, each with its own chips', () => {
+    const v = deriveShelfView({
+      ...NONE,
+      copies: [
+        copy({ id: 1, status: 'owned', edition_id: 10, location: 'Shelf 3' }),
+        copy({ id: 2, status: 'lent', edition_id: 10, person_name: 'Sam' }),
+      ],
+      editions: [edition({ id: 10, format: 'hardcover', edition_name: 'Standard edition' })],
+    });
+    const tab = v.tabs[0]!;
+    assert.equal(tab.cards.length, 2, 'one card per OBJECT, not one per printing');
+    assert.deepEqual(tab.cards.map((c) => c.copy!.id), [1, 2]);
+    assert.deepEqual(tab.cards.map(says), [
+      'Standard edition — Shelf 3',
+      'Standard edition — Lent out to Sam',
+    ]);
+    // Both cards are the same row — one fact, one home: the printing's identity,
+    // cover and meta line are said by one object, not copied per card.
+    assert.equal(tab.cards[0]!.row, tab.cards[1]!.row);
+  });
+
+  /**
+   * ⚠️ The MAY BE YOURS card is the SAME CARD as an owned one — round 3: "the
+   * book icons below should be all that remains". The state pill is the only
+   * difference, which is what the owner asked for; the candidate's own prose
+   * badges still ride on it as chips.
+   */
+  it('a candidate printing keeps its pill and its prose chips, in the same list', () => {
+    const v = deriveShelfView({
+      ...NONE,
+      copies: [copy({ id: 1, status: 'owned' })],
+      editions: [
+        edition({ id: 10, format: 'hardcover', edition_name: 'Sprayed edges deluxe' }),
+        edition({ id: 11, format: 'hardcover', edition_name: 'Plain' }),
+      ],
+    });
+    const tab = v.tabs.find((t) => t.key === 'hardcover')!;
+    const candidate = rowCards(tab).find((c) => c.label === 'Sprayed edges deluxe')!;
+    assert.equal(candidate.row.stateLabel, 'May be yours');
+    assert.deepEqual(candidate.chips.map((c) => c.label), ['Sprayed edges']);
+    // ⚠️ And it is NOT asked whether it is signed — no object, no signature, and
+    // "Not signed" is never printed anywhere.
+    assert.ok(!candidate.chips.some((c) => c.label.includes('signed')));
+    assert.equal(candidate.title, null, 'nothing extra to say — it is not a copy of yours');
   });
 });
 

@@ -150,10 +150,34 @@
  * > Standard edition - signed - lent out"
  *
  * So the three MEDIUM sections (Physical / Ebook / Audio) became FORMAT tabs —
- * **Hardcover · Paperback · Audio · Ebook** — and under a tab there is **one
- * line per owned copy**: the printing's name, then only what distinguishes that
- * copy. `tabs` is a grouping OF `rows`, not a second list — the same row objects
- * are behind both, so nothing can come to disagree. See `buildTabs`.
+ * **Hardcover · Paperback · Audio · Ebook**. `tabs` is a grouping OF `rows`, not
+ * a second list — the same row objects are behind both, so nothing can come to
+ * disagree. See `buildTabs`.
+ *
+ * ## ⚠️ ROUND 3 (owner, 2026-09-03 17:21): ONE list per tab, and it is the CARDS
+ *
+ * Round 2 put a list of copy LINES under the tab header and left the iconed
+ * cards underneath it. Looking at that on /work/263 the owner said, verbatim:
+ *
+ * > "Closer but still 3 list, the book icons below should be all that remains.
+ * > Add the hard cover, sprayed edges lent out tabs to the iconed ones below"
+ *
+ * — the header, the copy lines and the *"May be yours"* cards being the three.
+ * So:
+ *
+ *   - **`ShelfTab.lines` and `ShelfTab.rows` are GONE**, replaced by one
+ *     `ShelfTab.cards`. Deleted rather than left behind a flag: two lists of one
+ *     holding under one tab is the very thing he rejected twice.
+ *   - **One card per owned COPY**, carrying that copy's distinguishing facts as
+ *     `chips` (*"tabs"*, in his words — the badge pills the cards already use).
+ *     A row with two copies of one printing is two cards, because "lent out" is
+ *     a fact about an object and each object needs somewhere to say it.
+ *   - **A copy with no edition still gets a card**, titled by its format word —
+ *     which is all three copies on /work/263 today. It is the SAME card as a
+ *     *"May be yours"* candidate; the state pill is the difference.
+ *   - The derivation rules are untouched: a fact every copy under the tab shares
+ *     is still said once on the tab HEADER and appears on no chip, and *"On the
+ *     shelf"* / *"Not signed"* are still never printed.
  *
  * ⚠️ *"cover"* in his tab list is read as a slip between *hardcover* and
  * *paperback*; there is deliberately no fifth tab of that name. A format he did
@@ -243,7 +267,7 @@ export interface SpecialEditionBadge {
 /**
  * ⚠️ ONE definition of the signed badge. It is minted in two places — from a
  * copy's `is_signed` column (`specialEditionBadges`) and, on a shelf tab's copy
- * line, put back after the card/copy split has taken it out (`copyBadges`) — and
+ * card, put back after the card/copy split has taken it out (`copyBadges`) — and
  * two object literals of the same badge is how a word comes to be spelled two
  * ways on one page.
  */
@@ -422,47 +446,100 @@ export interface ShelfAvailability {
 }
 
 /**
- * ONE OWNED COPY, as the one line the owner asked for (2026-09-03, round 2):
+ * ONE FACT ON A CARD, as a chip — round 3 (owner, 2026-09-03 17:21), verbatim:
  *
- * > "So hardcover / Collectors edition - sprayed edges signed / Standard edition
- * > / Standard edition - signed - lent out"
+ * > "Closer but still 3 list, the book icons below should be all that remains.
+ * > Add the hard cover, sprayed edges lent out tabs to the iconed ones below"
  *
- * The printing's name, and then **only what distinguishes that copy from the
- * others under the same tab**. A copy with nothing distinctive is its name
- * alone. ⚠️ *"On the shelf"* and *"Not signed"* are never printed: the absence
- * of the word IS the plain case, which is exactly the *"double information"* the
- * two rounds of this ask exist to remove.
+ * *"tabs"* is his word for these: the same little pills the special-edition
+ * badges already use. Round 2's copy LINE (`ShelfCopyLine`, deleted with this
+ * round) said the same facts as ` — Sprayed edges · Lent out to Sam` text under
+ * a separate list; they are now chips on the copy's own card, and the card list
+ * is the only list a tab has.
+ *
+ * ⚠️ **Still only what DISTINGUISHES this copy.** A fact every copy under the
+ * tab shares was said once on the tab header and is not a chip (round 1's split,
+ * lifted to the format in round 2, unchanged here), and *"On the shelf"* /
+ * *"Not signed"* are never printed at all — the absence of the word IS the plain
+ * case.
  */
-export interface ShelfCopyLine {
+export interface ShelfChip {
+  /** Stable list key, unique within one card. */
+  key: string;
+  /** The word on the chip — "Sprayed edges", "Lent out to Sam", "Shelf A". */
+  label: string;
+  /** The hover, which may say more than the chip does. */
+  title: string;
+  /**
+   * What KIND of fact it is, so the component can colour it without reading the
+   * words. `badge` is a special-edition attribute (the 0430 columns and the
+   * printing's prose), `status` is where the object is when that is not "on the
+   * shelf", `where` is its location, `condition` is its state when that is worth
+   * saying.
+   */
+  kind: 'badge' | 'status' | 'where' | 'condition';
+}
+
+/**
+ * ONE CARD under a format tab — and after round 3 a tab has **nothing else**.
+ *
+ * Owner, 2026-09-03 17:21, looking at round 2 on /work/263, which rendered three
+ * things under the Hardcover tab (the header, three copy lines, three iconed
+ * *"May be yours"* cards):
+ *
+ * > "Closer but still 3 list, the book icons below should be all that remains.
+ * > Add the hard cover, sprayed edges lent out tabs to the iconed ones below"
+ *
+ * So one list, of the iconed cards, and each copy's distinguishing facts ride on
+ * a card as `chips`.
+ *
+ * ⚠️ **ONE CARD PER COPY, not per row.** A row holding two copies of one
+ * printing becomes two cards, because the facts that tell them apart — one lent
+ * out, one on the shelf — are facts about the OBJECTS, and a card per object is
+ * the only shape in which each can carry its own. (The alternative, two chip
+ * groups on one card, puts two answers under one heading and needs the reader to
+ * work out which chip belongs to which book.) A row with NO copies — a *"May be
+ * yours"* printing, an ebook file, an audiobook recording, a wish — is one card,
+ * exactly as it always was.
+ *
+ * ⚠️ **`row` is the SAME object as in `ShelfView.rows`**, never a copy of it, so
+ * the cards cannot come to disagree with the flat list about what is held. The
+ * card owns only what is card-shaped: the headline, the chips and the hover.
+ */
+export interface ShelfCardView {
   /** Stable list key. */
   key: string;
-  /** The copy this line is about. */
-  copyId: number;
   /**
-   * What to call the printing this copy is of.
+   * The row this card is drawn from — its cover, state pill, kind, meta line,
+   * notes, link and medium all come from here, unchanged by round 3.
+   */
+  row: ShelfRow;
+  /**
+   * The copy this card IS, when it is one of yours. Null for a card that stands
+   * for a whole row (a printing you do not own, a file, a recording, a wish).
+   */
+  copy: ShelfCopy | null;
+  /**
+   * The headline, composed HERE so the component chooses no words: the row's
+   * `label` — `edition_name` → the canonical kind → the imprint → the format
+   * word — and, where the row names nothing at all, the two words the component
+   * used to supply itself (*"Not on your shelf"* for the neutral slot, *"Any
+   * format"* for a formatless want).
    *
-   * ⚠️ **Round 1's headline, verbatim — no new label was invented.** It is the
-   * row's own `label`: `edition_name` → the canonical kind → the imprint → the
-   * format word, and the component's *"Any format"* where even the binding is
-   * unknown. So a copy nobody has linked to a printing still reads *"Hardcover"*
-   * rather than borrowing a name the record never made (work 220), and the
-   * owner's *"Collectors edition"* appears exactly when the copy says which
-   * printing it is.
+   * ⚠️ A copy nobody has linked to a printing therefore reads *"Hardcover"*
+   * rather than borrowing a name the record never made (work 220).
    */
-  name: string;
-  /** What distinguishes THIS copy, in reading order. Empty when nothing does. */
-  facts: string[];
-  /** `name`, or `name — fact · fact`. Composed here so a test pins what it SAYS. */
-  text: string;
+  label: string;
+  /** What distinguishes this card, in reading order. Empty when nothing does. */
+  chips: ShelfChip[];
   /**
-   * Everything the line leaves out, for the hover: the facts the header took,
-   * the signed record **either way** (owner 2026-09-02 — the negative stays
-   * reachable even though it stopped being printed), the status, and the
-   * condition, which the owner's own example dropped from the line.
+   * The hover, or null for a card that has nothing extra to say. On a copy card
+   * it carries everything the chips leave out on purpose: the facts the tab
+   * header took, the signed record **either way** (owner 2026-09-02 — the
+   * negative stays reachable even though it stopped being printed), the plain
+   * status, and the condition.
    */
-  title: string;
-  /** The printing's own jacket where it has one. ⚠️ Null is an absence, never the work cover. */
-  coverUrl: string | null;
+  title: string | null;
 }
 
 /**
@@ -488,16 +565,19 @@ export interface ShelfTab {
   header: string;
   /** True when something under this tab is a holding — this is what picks the default tab. */
   owned: boolean;
-  /** One line per owned copy, in the rows' own order. */
-  lines: ShelfCopyLine[];
   /**
-   * The rows under this tab that are still CARDS: the audiobook recordings (they
-   * carry a cover and the provenance sentence migration 0010 requires be shown),
-   * the ebook files you hold with no copy row, the wishes, and the *"May be
-   * yours"* printings — ⚠️ deliberately untouched by round 2, which is about how
-   * OWNED copies read.
+   * ⚠️ **THE ONE LIST under this tab** (owner, round 3: *"the book icons below
+   * should be all that remains"*). One card per owned COPY, then the rows that
+   * are not copies you hold — the audiobook recordings (which carry a cover and
+   * the provenance sentence migration 0010 requires be shown), the ebook files,
+   * the wishes, and the *"May be yours"* printings.
+   *
+   * ⚠️ **`lines` and `rows` are GONE**, and removed rather than left beside this
+   * — round 2 had a list of text lines AND a list of cards under one tab, which
+   * is the *"still 3 list"* the owner rejected. Two lists of one holding is also
+   * two things to keep in step, and only one was ever going to be rendered.
    */
-  rows: ShelfRow[];
+  cards: ShelfCardView[];
 }
 
 export interface ShelfView {
@@ -512,12 +592,17 @@ export interface ShelfView {
    */
   tabs: ShelfTab[];
   /**
-   * The rows that belong under NO format — the formatless *"any format"* want and
-   * the never-empty *"not on your shelf"* placeholder. ⚠️ They name themselves,
-   * so they are shown beside the tabs rather than filed under a tab called
-   * "Other", which would be inventing a category to hold two special cases.
+   * The cards that belong under NO format — the formatless *"any format"* want
+   * and the never-empty *"not on your shelf"* placeholder. ⚠️ They name
+   * themselves, so they are shown beside the tabs rather than filed under a tab
+   * called "Other", which would be inventing a category to hold two special
+   * cases.
+   *
+   * ⚠️ **Was `looseRows: ShelfRow[]` until round 3.** Cards, now, for the same
+   * reason the tabs carry cards: one card shape everywhere means the component
+   * renders one thing and composes no words of its own.
    */
-  looseRows: ShelfRow[];
+  looseCards: ShelfCardView[];
   /**
    * *"You own 2 audiobooks of this book."* — or null. The owner's 2026-08-23 ask
    * ("SAY THE NUMBER"), which came across with the panel merge. See
@@ -1408,51 +1493,136 @@ function statusPhrase(copy: ShelfCopy): string {
 }
 
 /**
- * One owned copy's line. `shared` is the set of badge keys every copy under the
- * tab carries — those were said once on the header and must not be said again
- * here.
+ * The condition words, and ⚠️ **which condition is the PLAIN case**.
  *
- * ⚠️ **Never *"On the shelf"*.** A copy that is simply where it should be says
- * nothing about its status; the word only appears for a copy that is somewhere
- * else. Same rule as *"Not signed"*, and it is the owner's: his plain copy is
- * *"Standard edition"* and nothing more.
+ * `'good'` is not a chip. The owner's own round-2 example dropped it — his lent
+ * copy is recorded `good` and he wrote *"Standard edition - signed - lent out"*
+ * — and it is the ordinary state of a book on a shelf, so printing it is the
+ * same noise as printing *"On the shelf"*. Anything else genuinely tells two
+ * copies apart and earns its chip. ⚠️ The hover still says the condition either
+ * way, so nothing is lost, only unprinted.
  */
-function copyLine(
+const PLAIN_CONDITION = 'good';
+const CONDITION_LABEL: Record<string, string> = {
+  new: 'New',
+  like_new: 'Like new',
+  good: 'Good',
+  fair: 'Fair',
+  poor: 'Poor',
+};
+
+function conditionLabel(condition: string): string {
+  return CONDITION_LABEL[condition] ?? condition;
+}
+
+/**
+ * The headline a card leads with — the row's own identity, and the two words the
+ * component used to supply for a row that names nothing at all.
+ */
+function cardLabel(row: ShelfRow): string {
+  return row.label ?? (row.neutral ? 'Not on your shelf' : 'Any format');
+}
+
+/**
+ * ONE OWNED COPY as a card (round 3). `shared` is the set of badge keys every
+ * copy under the tab carries — those were said once on the tab header and must
+ * not be said again here.
+ *
+ * ⚠️ **Never *"On the shelf"*, never *"Not signed"*.** A copy that is simply
+ * where it should be says nothing about its status; the word only appears for a
+ * copy that is somewhere else. The owner's plain copy is *"Standard edition"*
+ * and nothing more — the negatives stay reachable in `title`, which is where
+ * round 2 narrowed the 2026-09-02 "say it either way" rule to.
+ *
+ * The chip order is the owner's own, taken from his round-2 example rather than
+ * from the badge list: the special-edition badges (signed LAST of them — see
+ * `BADGE_LINE_ORDER`), then where the object is if that is not the shelf, then
+ * where it lives, then its condition when that is worth saying.
+ */
+function copyCard(
   row: ShelfRow,
   copy: ShelfCopy,
   badges: SpecialEditionBadge[],
   shared: Set<string>,
-): ShelfCopyLine {
-  // Round 1's headline, verbatim — see `ShelfCopyLine.name`. The `?? 'Any
-  // format'` is the component's own fallback for a row that names no format at
-  // all, kept here so the line is never subject-less.
-  const name = row.label ?? 'Any format';
-  const facts = [
-    ...badges.filter((b) => !shared.has(b.key)).map((b) => b.label),
-    copy.status === 'owned' ? null : statusPhrase(copy),
-    copy.location,
-  ].filter(Boolean) as string[];
+): ShelfCardView {
+  const chips: ShelfChip[] = badges
+    .filter((b) => !shared.has(b.key))
+    .map((b) => ({ key: `badge-${b.key}`, label: b.label, title: b.title, kind: 'badge' as const }));
+
+  if (copy.status !== 'owned') {
+    const phrase = statusPhrase(copy);
+    chips.push({ key: 'status', label: phrase, title: phrase, kind: 'status' });
+  }
+  if (copy.location) {
+    chips.push({
+      key: 'where',
+      label: copy.location,
+      title: `Kept at ${copy.location}`,
+      kind: 'where',
+    });
+  }
+  if (copy.condition && copy.condition !== PLAIN_CONDITION) {
+    chips.push({
+      key: 'condition',
+      label: conditionLabel(copy.condition),
+      title: `Condition: ${conditionLabel(copy.condition)}`,
+      kind: 'condition',
+    });
+  }
+
   return {
     key: `copy-${copy.id}`,
-    copyId: copy.id,
-    name,
-    facts,
-    text: facts.length ? `${name} — ${facts.join(' · ')}` : name,
-    // The whole record, for the hover: everything above plus what the line drops
+    row,
+    copy,
+    label: cardLabel(row),
+    chips,
+    // The whole record, for the hover: everything above plus what the chips drop
     // on purpose — the shared badges, the signed answer either way, the plain
     // status, and the condition.
     title: [
-      name,
+      cardLabel(row),
       ...badges.filter((b) => b.key !== SIGNED_BADGE.key).map((b) => b.label),
       copy.signed ? 'Signed' : 'Not signed',
       statusPhrase(copy),
       copy.location,
-      copy.condition ? `Condition: ${copy.condition}` : null,
+      copy.condition ? `Condition: ${conditionLabel(copy.condition)}` : null,
     ]
       .filter(Boolean)
       .join(' · '),
-    coverUrl: row.coverUrl,
   };
+}
+
+/**
+ * A card that stands for a whole ROW — a *"May be yours"* printing, an ebook
+ * file, an audiobook recording, a wish, the neutral slot.
+ *
+ * ⚠️ **The same card shape as a copy's**, which is the whole of round 3's ask:
+ * *"the book icons below should be all that remains"*. The only difference
+ * between an owned card and a candidate card is the state pill the row already
+ * carries.
+ *
+ * Its chips are the row's own badges — for an unowned printing that is the
+ * printing's PROSE, which describes the object on offer and belongs to no copy.
+ * ⚠️ Signing gets a chip only when the answer is YES: a printing nobody holds
+ * has no object to have been signed (`row.signed` is null there), and *"Not
+ * signed"* is never printed.
+ */
+function rowCard(row: ShelfRow): ShelfCardView {
+  const chips: ShelfChip[] = row.badges.map((b) => ({
+    key: `badge-${b.key}`,
+    label: b.label,
+    title: b.title,
+    kind: 'badge' as const,
+  }));
+  if (row.signed === true && !chips.some((c) => c.key === `badge-${SIGNED_BADGE.key}`)) {
+    chips.push({
+      key: `badge-${SIGNED_BADGE.key}`,
+      label: SIGNED_BADGE.label,
+      title: SIGNED_BADGE.title,
+      kind: 'badge',
+    });
+  }
+  return { key: row.key, row, copy: null, label: cardLabel(row), chips, title: null };
 }
 
 /**
@@ -1482,7 +1652,7 @@ function tabOf(row: ShelfRow): { key: string; label: string; rank: number } | nu
 }
 
 /**
- * One tab: its header, its copy lines, and the rows that stay cards.
+ * One tab: its header, and ⚠️ **its ONE list of cards** (round 3).
  *
  * ⚠️ **The shared/differing split is round 1's, lifted one level up.** Round 1
  * asked *"do all the copies of this PRINTING agree?"*; a tab holds every copy of
@@ -1502,8 +1672,10 @@ function tabOf(row: ShelfRow): { key: string; label: string; rank: number } | nu
  * copy is where — the fact is about the object, not about the format.
  */
 function makeTab(key: string, label: string, rows: ShelfRow[]): ShelfTab {
-  // Only a HOLDING becomes lines. A wish, a "May be yours" printing, an
-  // audiobook and an ebook file keep the card they already had.
+  // ⚠️ Only a HOLDING explodes into one card per COPY. A wish, a "May be yours"
+  // printing, an audiobook and an ebook file are one card each, exactly as
+  // before — there is no object of yours for a chip to describe, so there is
+  // nothing to split.
   const held = rows.filter((r) => r.owned && r.copies.length > 0);
   const entries = held.flatMap((row) =>
     row.copies.map((copy) => ({ row, copy, badges: copyBadges(row, copy) })),
@@ -1524,8 +1696,11 @@ function makeTab(key: string, label: string, rows: ShelfRow[]): ShelfTab {
     label,
     header: [label, ...sharedPhrases].join(' · '),
     owned: rows.some((r) => r.owned),
-    lines: entries.map((e) => copyLine(e.row, e.copy, e.badges, shared)),
-    rows: rows.filter((r) => !(r.owned && r.copies.length > 0)),
+    // ONE list: what you hold, then everything else, in the rows' own order.
+    cards: [
+      ...entries.map((e) => copyCard(e.row, e.copy, e.badges, shared)),
+      ...rows.filter((r) => !(r.owned && r.copies.length > 0)).map(rowCard),
+    ],
   };
 }
 
@@ -1538,7 +1713,7 @@ function makeTab(key: string, label: string, rows: ShelfRow[]): ShelfTab {
  * Within a tab the rows keep the state order the shelf already used: what you
  * hold, then what you want, then what merely exists.
  */
-function buildTabs(rows: ShelfRow[]): { tabs: ShelfTab[]; looseRows: ShelfRow[] } {
+function buildTabs(rows: ShelfRow[]): { tabs: ShelfTab[]; looseCards: ShelfCardView[] } {
   const looseRows: ShelfRow[] = [];
   const order: string[] = [];
   const buckets = new Map<string, { label: string; rank: number; rows: ShelfRow[] }>();
@@ -1566,7 +1741,7 @@ function buildTabs(rows: ShelfRow[]): { tabs: ShelfTab[]; looseRows: ShelfRow[] 
       makeTab(tabKey, bucket.label, [...bucket.rows].sort((a, b) => stateRank(a) - stateRank(b))),
     );
 
-  return { tabs, looseRows };
+  return { tabs, looseCards: looseRows.map(rowCard) };
 }
 
 /**
@@ -1703,12 +1878,12 @@ export function deriveShelfView({
     ourSeries,
   );
 
-  const { tabs, looseRows } = buildTabs(rows);
+  const { tabs, looseCards } = buildTabs(rows);
 
   return {
     rows,
     tabs,
-    looseRows,
+    looseCards,
     audioCountLine: audioCountLine(audioEditionCount),
     availability: { peers: peerHoldings },
   };

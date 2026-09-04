@@ -3375,34 +3375,13 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
   color: var(--bd-ink-faint);
 }
 .book-detail .shelf-tab:focus-visible { outline: 2.5px solid var(--bd-teal); outline-offset: 4px; }
-/* ONE LINE PER OWNED COPY — "Collectors edition — Sprayed edges · Signed".
-   A list, not a stack of cards: the whole point of round 2 is that three copies
-   of one book read as three lines you can take in at once. */
-.book-detail .shelf-lines { margin: 0 0 0.6rem; display: flex; flex-direction: column; gap: 0.3rem; }
-.book-detail .shelf-lines > li { padding: 0; border: 0; }
-.book-detail .shelf-line {
-  margin: 0;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  font-size: 0.95rem;
-  color: var(--bd-ink);
-}
-.book-detail .shelf-line__name { font-weight: 600; }
-/* What makes this copy different, and only that — muted, so a glance down the
-   list reads the printings first and the differences second. */
-.book-detail .shelf-line__facts { color: var(--bd-ink-soft); font-size: 0.85rem; }
-/* The printing's OWN jacket, where it has one. ⚠️ Absent, there is no thumb at
-   all — the work cover is never borrowed onto a printing. */
-.book-detail .shelf-line__thumb { width: 26px; height: 35px; flex: none; }
-.book-detail .shelf-line__thumb img,
-.book-detail .shelf-line__thumb .cover--blank {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 4px;
-}
+/* ⚠️ `.shelf-lines` / `.shelf-line*` — round 2's SECOND list under a tab, one
+   text line per owned copy — were DELETED 2026-09-03 with round 3, after the
+   owner looked at them live: "Closer but still 3 list, the book icons below
+   should be all that remains." An owned copy is now a card in the tab's one card
+   list, and what distinguished its line is a chip on it (`.special-badge`
+   below). This note stands in for the rules so nobody re-styles a second list
+   into existence by finding CSS for one. */
 /* The sentences that came across from "Other versions available" — narrator,
    provenance, staleness. Full size, muted: a hedge in smaller print pretending
    to be a footnote is a hedge nobody reads. */
@@ -3527,6 +3506,17 @@ ul.works.scan-lines > li img { border-radius: 3px; object-fit: cover; }
 .book-detail .special-badge.special-badge--signed {
   background: var(--bd-brass-wash);
   color: var(--bd-brass-ink);
+  border-color: transparent;
+}
+/* ⚠️ ROUND 3's chips (owner: "Add the hard cover, sprayed edges lent out tabs to
+   the iconed ones below"). A copy's card carries what tells it apart, and only
+   the STATUS earns a colour: "Lent out to Sam" is the one that changes where the
+   object is, and it is the one a person scans a shelf for. Where it lives and
+   what condition it is in stay the plain outline chip, so a card with three
+   chips still reads as one thing. */
+.book-detail .special-badge.special-badge--status {
+  background: var(--bd-warn-wash);
+  color: var(--bd-warn);
   border-color: transparent;
 }
 /* ⚠️ The NEGATIVE answer — "Not signed" — which exists because the owner asked
