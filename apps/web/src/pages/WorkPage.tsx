@@ -3,6 +3,7 @@ import { api, type Me } from '../api.js';
 import { describeError } from '../lib/errors.js';
 import { Changes } from '../components/Changes.js';
 import { ContentNotes } from '../components/ContentNotes.js';
+import { AddCopy, type CopyView } from '../components/Copies.js';
 import { Cover } from '../components/Cover.js';
 import { DeleteWork } from '../components/DeleteWork.js';
 import { DriveLinks } from '../components/DriveLinks.js';
@@ -12,7 +13,9 @@ import { PeerLibraries } from '../components/PeerLibraries.js';
 import { Reviews } from '../components/Reviews.js';
 import { Tbr } from '../components/Tbr.js';
 import { Watches } from '../components/Watches.js';
+import { type EditionView } from '../components/Editions.js';
 import { deriveWorkView, type WorkDetail } from '../lib/work-view.js';
+import { wantIn } from '../lib/wants.js';
 import { Link, universePath, workPath } from '../router.js';
 
 /**
@@ -373,6 +376,15 @@ export function WorkPage({
         ourSeries={work.series}
       />
 
+      {/* 3b — WANT THIS, directly under the shelf it is about. */}
+      <WantThis
+        workId={workId}
+        editions={editions}
+        copies={copies}
+        canSuggest={me.capabilities.includes('suggestWishlist')}
+        onSaved={load}
+      />
+
       {/* 4 — YOUR READING. */}
       {canTrack && (
         <section className="panel">
@@ -446,6 +458,95 @@ export function WorkPage({
         </>
       )}
     </main>
+  );
+}
+
+/**
+ * **Want this** — the wishlist add, on the front of the book page.
+ *
+ * ## ⚠️ WHY IT EXISTS, IN THE OWNER'S WORDS
+ *
+ * 2026-09-04: *"We currently can't add to wishlist at all."* Measured the same
+ * morning, and he is right in the only sense that matters: the ask existed, at
+ * `Copies.tsx:491`, inside **✎ Edit → Editions & copies** — three taps down a
+ * path whose front door says *edit this book*, which is not what somebody
+ * wanting a book thinks they are doing. From a phone it is unfindable.
+ *
+ * ## ⚠️ THE SAME FORM, NOT A SECOND ONE
+ *
+ * It opens `AddCopy` with `intent='wanted'` — the identical component the ✎ Edit
+ * button opens, exported for this. A second form would be a second place to fix
+ * the wish rules (`AddCopy.save`: a wish mints no edition, and the format goes
+ * on the copy as `wanted as …`), and two forms that drift is how a wishlist ends
+ * up with two vocabularies. The button inside ✎ Edit **stays**: it is not a
+ * duplicate surface, it is the same action reachable from where you were.
+ *
+ * ## ⚠️ HIDDEN, never a dead control
+ *
+ * A `guest` has `read` and not `suggestWishlist`, so for them the section does
+ * not render at all — this page's own convention (`RequestContentWarnings`
+ * returns null for a non-editor; the scan page hides the modes that cost money,
+ * *"hidden rather than disabled — a control that exists and refuses is worse
+ * than one that was never offered"*). A signed-out visitor never reaches this
+ * page: `App` renders the sign-in screen instead, so there is no third state to
+ * write copy for.
+ */
+function WantThis({
+  workId,
+  editions,
+  copies,
+  canSuggest,
+  onSaved,
+}: {
+  workId: number;
+  /** The full rows — `AddCopy`'s printing picker needs name, kind and ISBN. */
+  editions: EditionView[];
+  copies: CopyView[];
+  /** `suggestWishlist` — member and up. */
+  canSuggest: boolean;
+  /** The work page's `load`, so the new WANTED card appears without a refresh. */
+  onSaved: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  if (!canSuggest) return null;
+
+  /*
+   * ⚠️ Already wanted does NOT hide the button — it only takes the emphasis
+   * off it. `Copies.tsx` settled this: wanting a second form of a book is "the
+   * normal case here, not an error", and the same is true of a book already on
+   * the wishlist in paperback when what you want is the hardcover. The one
+   * place a duplicate want IS refused is the barcode scanner, where a barcode
+   * cannot express "…as well as the one I already asked for" — see
+   * `lib/wants.ts`.
+   */
+  const wanted = wantIn(copies) !== null;
+
+  return (
+    <section className="panel">
+      <div className="row-tight">
+        <button className={wanted ? '' : 'primary'} onClick={() => setOpen((v) => !v)}>
+          {open ? 'Cancel' : 'Want this'}
+        </button>
+      </div>
+      {!open && (
+        <p className="muted small">
+          {wanted
+            ? 'Already on your wishlist. Ask again if you want it in another form — a hardcover of a paperback you have asked for is a different thing.'
+            : 'Put it on the wishlist — a want, not a copy you own.'}
+        </p>
+      )}
+      {open && (
+        <AddCopy
+          workId={workId}
+          intent="wanted"
+          editions={editions}
+          onSaved={() => {
+            setOpen(false);
+            onSaved();
+          }}
+        />
+      )}
+    </section>
   );
 }
 

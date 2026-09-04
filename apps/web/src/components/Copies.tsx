@@ -672,6 +672,19 @@ function PersonField({
  * One form for both, because they differ only in the status it starts on and in
  * which fields are worth asking for. Two forms would be two places to fix the
  * "create the edition first" step below.
+ *
+ * ## ⚠️ EXPORTED since 2026-09-04, and the export is the whole point
+ *
+ * The work page's first-class *Want this* button (`WorkPage.tsx`, under ON YOUR
+ * SHELF) opens **this component**, with `intent='wanted'`. It is the same ask
+ * the button inside ✎ Edit → Editions & copies makes, reached from where a
+ * phone can actually find it — the owner, 2026-09-04: *"We currently can't add
+ * to wishlist at all."*
+ *
+ * ⚠️ There is no second form and there must not be one. A copied field list
+ * would drift from the wish rules argued inside `save` below — that a wish
+ * mints no edition, and that the chosen format is recorded on the COPY as
+ * `wanted as …` instead. Those are the rules the wishlist reads.
  */
 /** The person's answer to "which printing is this?", carried into the save. */
 type PrintingAnswer =
@@ -679,7 +692,7 @@ type PrintingAnswer =
   | { kind: 'new'; details: NewPrintingDetails }
   | { kind: 'unlinked' };
 
-function AddCopy({
+export function AddCopy({
   workId,
   intent,
   editions,
