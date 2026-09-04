@@ -142,6 +142,7 @@ function LineRow({
   index,
   jobId,
   onJob,
+  onAdded,
   awaiting,
   format,
   target,
@@ -150,6 +151,8 @@ function LineRow({
   index: number;
   jobId: number;
   onJob: (job: ScanJob) => void;
+  /** This row landed in the catalog — see the prop of the same name below. */
+  onAdded?: () => void;
   /** The automatic pass owns this line right now. Its buttons would race it. */
   awaiting: boolean;
   /** The sweep's binding, from the scan-time toggle. `paperback` by default. */
@@ -317,6 +320,13 @@ function LineRow({
       // Recorded on the line only after the catalog write succeeded. The other
       // order would mark a book added that is not in the catalog.
       onJob((await api.patchScanLine(jobId, index, { addedWorkId: outcome.added.workId })).job);
+      /*
+       * ⚠️ Told LAST, and only on the write path. The wishlist door reloads its
+       * list from this, and a page that refetched on an `ask-preorder` or an
+       * `already-wanted` return would be reporting a change that did not happen
+       * — every one of those returns above writes nothing at all.
+       */
+      onAdded?.();
     });
 
   /** Walk away from a question that has written nothing. The row's buttons return. */
@@ -761,12 +771,26 @@ function LineRow({
 export function ScanLines({
   job,
   onJob,
+  onAdded,
   empty,
   format,
   target,
 }: {
   job: ScanJob;
   onJob: (job: ScanJob) => void;
+  /**
+   * A row just wrote to the catalog.
+   *
+   * ⚠️ Optional, and `/add` passes nothing: that screen's list is the sweep
+   * itself, which `onJob` already keeps current. It exists for a caller whose
+   * OWN list has just gone stale — the wishlist door, where the row somebody
+   * just added has to appear on the page behind the panel (owner ask
+   * 2026-09-04). Deliberately carries no payload: "something landed, re-read
+   * your list" is the whole message, and handing over a work id would invite a
+   * second surface to render the row from this component's knowledge instead of
+   * from the server's.
+   */
+  onAdded?: () => void;
   /** What to say when the sweep has found nothing yet. Differs per tab. */
   empty: string;
   /**
@@ -911,6 +935,7 @@ export function ScanLines({
               index={i}
               jobId={job.id}
               onJob={onJob}
+              onAdded={onAdded}
               awaiting={working && needsLookup(line)}
               format={format}
               target={target}
