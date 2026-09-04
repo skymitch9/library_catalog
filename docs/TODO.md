@@ -150,6 +150,35 @@ ones). `npm run build -w apps/web` — `✓ built in 2.93s`,
   shared components, but that is read off the diff, not checked against
   `padhard`.
 
+## ☐ WISHLIST DOOR: mimic the board-game catalog's shape — "+ Add something" on /wishlist with type / barcode / photo tabs, built from reusable pieces — owner ask 2026-09-04 09:45 Phoenix
+
+Owner, verbatim, after being told the board-game catalog already adds to
+its wishlist from the Wishlist page itself (*+ Add something* → type a name
+/ barcode / photo, `Board_Game_Catalog/apps/web/src/components/WishlistAdd.tsx`
++ `WishlistScan.tsx`), not from a switch on the scanner:
+
+> "We should mimic that shape so keep reusable components"
+
+**Read as:** the library's `/wishlist` page gets its own door — a
+**+ Add something** button opening a form with three tabs, *Type a title* /
+*Barcode* / *One book (photo)* — that creates the copy as `wanted`
+directly. "Keep reusable components" = build it out of the pieces the scan
+page already has (camera loop, `ScanLines`, `AddWork`, the `catalog-add`
+path with the target pinned to `wishlist`), not a second scanner; the
+wishlist door and `/add` must render the same rows and write through the
+same code. The board-game files are the SHAPE reference (tab order, the
+empty-state wording, "the page's own door" rationale), not code to copy —
+different packages (`@bgc/core` vs `@lc/core`), different scan stack.
+
+**Kept:** the *Adding to · Shelf | Wishlist* switch shipped this morning on
+`/add` stays — a shop visit with a mixed basket needs it — but the wishlist
+page becomes the primary door, matching the games.
+
+Both instances through the shared components. Web-only. Opus, ~150–200k.
+
+☐ build → ☐ tests → ☐ deploy PAIR → ☐ owner adds one book from
+https://library.heygabi.ai/wishlist on his phone.
+
 ## ☐ DATA /work/525: copy off the shelf, onto the wishlist — owner ask 2026-09-04 ~09:00 Phoenix
 
 Owner, verbatim: *"https://library.heygabi.ai/work/525 I want this on wish
@@ -168,32 +197,6 @@ paperback card with the **WANTED** status chip (bundle `index-D8DRuBYK.js`).
 ☐ NOT verified: the Wishlist page listing it (needs sign-in) — owner to
 glance at it. He will want the scanner feature above so the next one of
 these needs no D1 write.
-
-## ☐ DATA /work/263: link the three copies to their printings, names minus "hardcover", two collector's — owner ask 2026-09-03 18:29 Phoenix
-
-Owner, with a screenshot of the round-3 Hardcover tab (three OWNED cards
-*Hardcover* over three MAY BE YOURS cards), verbatim:
-
-> "Okay now take the bottom 3 and replace the top 3 with those names minus
-> hardcover. Keep everything else including collectors and sprayed edges.
-> Also 2 are collectors 1 is normal"
-
-**Read as** (positional, top→bottom, which also matches provenance — copies
-174/175 are both the Kickstarter late pledge, 445 was added separately):
-
-| copy | today | → edition | new `edition_name` | `edition_kind` |
-|---|---|---|---|---|
-| #174 sprayed edges, Kickstarter | unlinked | #378 | `V1 Limited Edition` (was `… hardcover`) | collectors (already) |
-| #175 plain, Kickstarter | unlinked | #379 | `V1 Limited Edition Standard` | **collectors** (was null — "2 are collectors") |
-| #445 lent out | unlinked | #660 | `Standard edition` (was `Standard Hardcover`; literal minus-hardcover is *"Standard"* — "edition" kept for the catalog's precedent and his own 15:33 wording; ☐ rename on review if wrong) | null ("1 is normal") |
-
-Result: the three MAY BE YOURS cards disappear (all three printings are now
-held) and the OWNED cards carry the names; the sprayed-edges chip and the
-Collector's badge stay. MAIN only — padhard has no copy of this work; not a
-sweep, a single-work fix, so no `--friend` half. Written by direct D1
-`UPDATE` (no change-log rows — the route's audit trail is skipped; said here
-so nobody hunts for them). Closes the "DATA: link the unlinked copies" ask
-for THIS work only; the section below still lists the others.
 
 ## ☐ SHELF round 3: "still 3 lists" → ONE list per format tab, the iconed edition cards only, copy facts as chips on them — owner ask 2026-09-03 17:21 Phoenix
 
