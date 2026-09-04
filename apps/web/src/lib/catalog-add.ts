@@ -9,7 +9,9 @@ import {
   type ScanLine,
 } from '@lc/core';
 import { api } from '../api.js';
+import { formatLabel } from './formats.js';
 import { DEFAULT_SCAN_FORMAT } from './scan-format.js';
+import { DEFAULT_SCAN_TARGET, copyStatusFor, type ScanTarget } from './scan-target.js';
 import { arrivedPatch } from './statuses.js';
 import { preorderQuestionFor, type PreorderQuestion } from './preorders.js';
 import {
@@ -18,6 +20,7 @@ import {
   type IsbnConflict,
   type RescanQuestion,
 } from './rescans.js';
+import { wantIn, type ExistingWant } from './wants.js';
 
 /**
  * Turning one reviewed line into catalog rows.
@@ -71,7 +74,16 @@ export type AddOutcome =
    * be two catalog rows (the Realmkeeper set), and the person standing there
    * gets offered the slipcase treatment. Nothing was written.
    */
-  | { status: 'ask-isbn-taken'; conflict: IsbnConflict };
+  | { status: 'ask-isbn-taken'; conflict: IsbnConflict }
+  /**
+   * The Wishlist target, on a book somebody has already asked for. Nothing
+   * written, and **nothing to answer** — unlike the three questions above this
+   * is a statement, because there is no second answer worth offering: a second
+   * `wanted` row against one work is two rows saying the same sentence. See
+   * `lib/wants.ts` for why an owned duplicate IS offered and a wanted one is
+   * not.
+   */
+  | { status: 'already-wanted'; want: ExistingWant };
 
 /**
  * Add a reviewed line to the catalog.
@@ -119,6 +131,22 @@ export type AddOutcome =
  * `@lc/core/preorders.ts` for what each one costs when guessed — and this is the
  * same "a duplicate is a question, not a refusal" ruling applied to a second case.
  *
+ * ## ⚠️ Where the copy LANDS is `opts.target`, and two questions swap with it
+ *
+ * `shelf` (the default, and what every caller before 2026-09-04 gets) is
+ * unchanged in every respect. `wishlist` changes exactly four things, each
+ * argued at its own line below:
+ *
+ * | | on `wishlist` |
+ * |---|---|
+ * | the copy's status | `wanted` (`copyStatusFor`) |
+ * | the pre-order question | **not asked** — a want is not an arrival |
+ * | the rescan question | **not asked** — its first answer writes no copy |
+ * | an edition, when attaching to a book we hold | **not written** |
+ *
+ * and adds one outcome of its own, `already-wanted`, in the pre-order
+ * question's place.
+ *
  * ⚠️ **The question is raised before the first write, never between two of them.**
  * The early return sits after the match and before `createWork`, so a prompt
  * nobody answers leaves the catalog exactly as it was. Answering re-runs this
@@ -156,8 +184,26 @@ export async function addLineToCatalog(
      * and is only ever applied by somebody tapping it.
      */
     format?: EditionFormat;
+    /**
+     * ⚠️ **Where this scan LANDS** — the Shelf/Wishlist switch at the top of
+     * the sweep (owner ask 2026-09-04: *"I didn't see how to scan a book to add
+     * wishlist"*). See `lib/scan-target.ts`.
+     *
+     * Optional and defaulting to `shelf`, so every caller that predates the
+     * switch keeps exactly the behaviour it had — the same compatibility
+     * promise `format` makes one field above.
+     */
+    target?: ScanTarget;
   },
 ): Promise<AddOutcome> {
+  /*
+   * ⚠️ Resolved ONCE, at the top, and passed down — the rule `format` already
+   * states below. Four places in this function change behaviour on the target
+   * and they must all read the same value; a second `opts?.target ?? …` in one
+   * of them is how a path silently keeps writing `owned`.
+   */
+  const target = opts?.target ?? DEFAULT_SCAN_TARGET;
+  const wishlist = target === 'wishlist';
   /*
    * ⚠️ The duplicate case — a book we already hold, scanned again on purpose.
    *
@@ -176,7 +222,24 @@ export async function addLineToCatalog(
    * before its exact printing is known".
    */
   if (line.existingWorkId !== null) {
-    if (!answer) {
+    /*
+     * ⚠️ **The pre-order question is SKIPPED on the Wishlist target**, and one
+     * question takes its place.
+     *
+     * A want is not an arrival. `AddWork.tsx` already spells the rule out for
+     * the manual form — *"Only `owned` can be a pre-order arriving: `wanted` is
+     * a wish about a book that is already bought"* — and asking it here would
+     * offer to receive a parcel to somebody standing in a shop holding a book
+     * they have not bought. The question that IS worth asking on this target is
+     * whether they have already asked for this book; see `lib/wants.ts`.
+     *
+     * Same request budget either way: one `GET /api/works/:id`, on the one book
+     * somebody just pressed a button about, with nothing written yet.
+     */
+    if (wishlist) {
+      const want = await existingWantFor(line.existingWorkId, line.existingTitle);
+      if (want) return { status: 'already-wanted', want };
+    } else if (!answer) {
       const question = await preorderQuestionFor(line.existingWorkId, line.existingTitle);
       if (question) return { status: 'ask-preorder', question };
     }
@@ -195,6 +258,8 @@ export async function addLineToCatalog(
           line.existingWorkId,
           answer,
           line.existingEditionId ?? null,
+          target,
+          opts?.format ?? DEFAULT_SCAN_FORMAT,
         ),
         summary: null,
       },
@@ -248,8 +313,24 @@ export async function addLineToCatalog(
    *
    * Same contract as the pre-order prompt below: nothing has been written when
    * the question comes back, and answering re-runs this function from the top.
+   *
+   * ## ⚠️ NOT ASKED ON THE WISHLIST TARGET, and the reason is its first answer
+   *
+   * All four of its answers are claims about an object you HAVE — and the
+   * commonest, *"the book I already have"* (`fill`), writes the ISBN onto a
+   * printing and **deliberately creates no copy at all**. Answered by somebody
+   * standing in a shop meaning *"I want this"*, that silently records no want:
+   * the one failure this whole feature exists to remove. The other three are
+   * merely mis-worded there; that one is wrong.
+   *
+   * ⚠️ Skipping it does NOT reintroduce the duplicate printing it guards
+   * against (#139 — an Open Library hardcover minted beside the ISBN-less
+   * `manual` row describing the same object), because the wishlist path writes
+   * **no edition** when it attaches to a book the catalog already holds. See
+   * the edition write further down. A path that creates no printing cannot
+   * duplicate one.
    */
-  if (existing.work && line.isbn13 && !rescan) {
+  if (existing.work && line.isbn13 && !rescan && !wishlist) {
     const question = await rescanQuestionFor(existing.work.id, existing.work.title, line.isbn13);
     if (question) return { status: 'ask-rescan', question };
   }
@@ -266,7 +347,7 @@ export async function addLineToCatalog(
       // there now.
       throw new Error('The book this question was about has changed — press Add again.');
     }
-    return applyRescanAnswer(existing.work, line, line.isbn13, rescan, answer, format);
+    return applyRescanAnswer(existing.work, line, line.isbn13, rescan, answer, format, target);
   }
 
   /** Attaching to the matched work, or creating one despite the match? */
@@ -288,7 +369,12 @@ export async function addLineToCatalog(
    * has physical rows the rescan question above fires first, and its copy-writing
    * answers ask this same question through `applyRescanAnswer`.)
    */
-  if (attachWork && !answer) {
+  if (attachWork && wishlist) {
+    // The wishlist's own question, in the pre-order question's place — see the
+    // `existingWorkId` branch at the top of this function for why they trade.
+    const want = await existingWantFor(attachWork.id, attachWork.title);
+    if (want) return { status: 'already-wanted', want };
+  } else if (attachWork && !answer) {
     const question = await preorderQuestionFor(attachWork.id, attachWork.title);
     if (question) return { status: 'ask-preorder', question };
   }
@@ -339,8 +425,25 @@ export async function addLineToCatalog(
    * practice, permanent. If this ever stops being a one-tap correction, ask at
    * scan time instead.
    */
+  /*
+   * ⚠️ **A WANT attaching to a book we already hold writes NO edition**, and
+   * that is the load-bearing half of the wishlist path.
+   *
+   * `Copies.tsx`'s AddCopy has always said a wish mints no printing, and the
+   * barcode path needs the rule for a second reason: it is what makes the
+   * rescan question above safe to skip. The catalog's ISBN-less physical rows
+   * are ISBN-less on purpose (60+ crowdfunded and slipcase printings), and a
+   * scan that creates a printing beside one of them is #139 happening again.
+   * Nothing is created here, so nothing can collide.
+   *
+   * ⚠️ A **new** book still earns its edition, wishlist or not. There is
+   * nothing on file to duplicate, and the ISBN off the back of a book in
+   * somebody's hands is the single most reliable fact available — the argument
+   * `AddWork.tsx` records from 2026-08-13, when five hand-added books all
+   * landed with `editions = 0` and became unmatchable for good.
+   */
   let editionId: number | null = null;
-  if (line.isbn13) {
+  if (line.isbn13 && !(wishlist && attachWork)) {
     editionId = (
       await api.createEdition(editionFromLine(work.id, line, line.isbn13, format))
     ).edition.id;
@@ -351,7 +454,7 @@ export async function addLineToCatalog(
   // the ebook importer, where a file existing says nothing about a shelf.
   // Linked to the edition just created, when one was: the scan proved the
   // printing, and an unlinked copy here is a NULL somebody has to repair later.
-  const preorderArrived = await recordArrival(work.id, answer, editionId);
+  const preorderArrived = await recordArrival(work.id, answer, editionId, target, format);
 
   return {
     status: 'added',
@@ -362,6 +465,34 @@ export async function addLineToCatalog(
       summary: null,
     },
   };
+}
+
+/**
+ * Ask the catalog whether this book is already wished for — the network half of
+ * `lib/wants.ts`, kept here beside its ONE caller.
+ *
+ * ⚠️ It is not a module of its own like `preorders.ts` and `rescans.ts` because
+ * it has one caller and they each have two; and the rule it applies (`wantIn`)
+ * is in `wants.ts` precisely so it can be tested, which anything importing
+ * `api.js` cannot be — `lib/firebase.ts` reads `import.meta.env` and takes a
+ * `node:test` process down with it.
+ *
+ * `null` is the ordinary answer and means "nothing to say" — the add proceeds.
+ * Only a work that already exists can carry a want, so there is no "match the
+ * title first" step buried in here.
+ */
+async function existingWantFor(
+  workId: number,
+  fallbackTitle: string | null,
+): Promise<ExistingWant | null> {
+  /** The shape of `GET /api/works/:id` this reads. Narrower than the wire. */
+  const detail = (await api.work(workId)) as unknown as {
+    work?: { title?: string | null };
+    copies?: { status: string }[];
+  };
+  const want = wantIn(detail.copies ?? []);
+  if (!want) return null;
+  return { workId, title: detail.work?.title ?? fallbackTitle, status: want.status };
 }
 
 /**
@@ -435,6 +566,18 @@ async function applyRescanAnswer(
    * a recorded value.
    */
   format: EditionFormat,
+  /**
+   * ⚠️ Threaded rather than assumed, so no branch here can silently keep
+   * writing `owned` — the defect this whole feature is fixing one level up.
+   *
+   * ⚠️ **Unreachable as `wishlist` today**, and that is worth saying out loud:
+   * the rescan prompt is not raised on the wishlist target (see the caller), so
+   * no rescan answer can arrive with one. It is carried anyway because "a
+   * parameter nobody passes" is exactly how the old `status: 'owned'` survived
+   * five call sites — and if a rescan answer ever does reach here on a want,
+   * the copy it writes must be a want.
+   */
+  target: ScanTarget,
 ): Promise<AddOutcome> {
   const added = (summary: string | null, preorderArrived = false): AddOutcome => ({
     status: 'added',
@@ -551,7 +694,7 @@ async function applyRescanAnswer(
       }
     }
 
-    const preorderArrived = await recordArrival(work.id, answer, editionId);
+    const preorderArrived = await recordArrival(work.id, answer, editionId, target, format);
     return added(preorderArrived ? null : summary, preorderArrived);
   }
 
@@ -575,7 +718,7 @@ async function applyRescanAnswer(
     }
     throw err;
   }
-  const preorderArrived = await recordArrival(work.id, answer, editionId);
+  const preorderArrived = await recordArrival(work.id, answer, editionId, target, format);
   return added(preorderArrived ? null : 'New printing added', preorderArrived);
 }
 
@@ -609,11 +752,36 @@ async function recordArrival(
    * already names, per the warning above.
    */
   editionId: number | null,
+  /**
+   * ⚠️ **The whole of the Shelf/Wishlist switch, at the one line that writes.**
+   * `status: 'owned'` used to be a literal here — the single reason the barcode
+   * path could not add a want (owner, 2026-09-04: *"We currently can't add to
+   * wishlist at all"*). `copyStatusFor` is now the only place the mapping is
+   * written; see `lib/scan-target.ts`.
+   */
+  target: ScanTarget,
+  /** The sweep's binding, for the note a formatless want carries. */
+  format: EditionFormat,
 ): Promise<boolean> {
   if (answer?.kind === 'arrived') {
     await api.updateCopy(answer.copyId, arrivedPatch(answer.acquiredOn));
     return true;
   }
-  await api.createCopy({ workId, status: 'owned', editionId: editionId ?? undefined });
+  const status = copyStatusFor(target);
+  await api.createCopy({
+    workId,
+    status,
+    editionId: editionId ?? undefined,
+    /*
+     * ⚠️ The sweep's binding, kept on the COPY when a want has no printing to
+     * hang it on — the same `wanted as …` note `Copies.tsx`'s AddCopy writes,
+     * and the same spelling, so the wishlist reads one vocabulary whichever
+     * door the want came in through. Without it the format the person chose at
+     * the top of the sweep is silently thrown away on exactly the rows that
+     * write no edition.
+     */
+    editionNotes:
+      status === 'wanted' && editionId === null ? `wanted as ${formatLabel(format)}` : null,
+  });
   return false;
 }

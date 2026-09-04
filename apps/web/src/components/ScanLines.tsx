@@ -20,6 +20,8 @@ import { describeError } from '../lib/errors.js';
 import { addLineToCatalog } from '../lib/catalog-add.js';
 import { formatLabel } from '../lib/formats.js';
 import { formatDisagreement } from '../lib/scan-format.js';
+import { addActionLabel, addedLabel, type ScanTarget } from '../lib/scan-target.js';
+import { wantSentence, type ExistingWant } from '../lib/wants.js';
 import type { PreorderQuestion } from '../lib/preorders.js';
 import type { IsbnConflict, RescanQuestion } from '../lib/rescans.js';
 import { Link, workPath } from '../router.js';
@@ -142,6 +144,7 @@ function LineRow({
   onJob,
   awaiting,
   format,
+  target,
 }: {
   line: ScanLine;
   index: number;
@@ -151,6 +154,15 @@ function LineRow({
   awaiting: boolean;
   /** The sweep's binding, from the scan-time toggle. `paperback` by default. */
   format: EditionFormat;
+  /**
+   * Where this sweep lands — the Shelf/Wishlist switch above the list.
+   *
+   * ⚠️ Passed down rather than read from storage here, for the reason `format`
+   * is: exactly ONE live value on the screen. A row that read its own
+   * `loadScanTarget()` would keep saying "Add" after somebody moved the switch,
+   * and the row's whole job is to say what its button is about to do.
+   */
+  target: ScanTarget;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -206,6 +218,18 @@ function LineRow({
    * would silently pin every row somebody had ever looked at.
    */
   const [rowFormat, setRowFormat] = useState<EditionFormat | null>(null);
+  /**
+   * "You have already asked for this one" — raised by an Add on the Wishlist
+   * target that found a want on file and wrote nothing.
+   *
+   * ⚠️ Not a prompt, so it does NOT replace the row's buttons the way the three
+   * questions do: there is no second answer to offer. The buttons stay, which
+   * is what makes flipping the switch to Shelf and pressing again work — the
+   * ordinary next move for somebody who wanted the book yesterday and is
+   * holding it today. Cleared at the top of every `add`, so the notice is
+   * always about the press that is on screen.
+   */
+  const [alreadyWanted, setAlreadyWanted] = useState<ExistingWant | null>(null);
 
   async function run(what: string, fn: () => Promise<void>) {
     setBusy(what);
@@ -236,10 +260,15 @@ function LineRow({
   ) =>
     run('add', async () => {
       setAuthorless(withoutAuthor);
+      setAlreadyWanted(null);
       if (rescan) setRescanAnswer(rescan);
       const outcome = await addLineToCatalog(line, answer, {
         withoutAuthor,
         rescan,
+        // ⚠️ Read at call time rather than captured, for the same reason
+        // `format` is: a switch moved between a prompt and its answer must
+        // reach both `add` calls of that answered question.
+        target,
         // ⚠️ The row's override if there is one, else the sweep's toggle. Read
         // at call time rather than captured, so a toggle changed between the
         // prompt and its answer is honoured — both `add` calls of an answered
@@ -258,6 +287,16 @@ function LineRow({
         // row now shows the prompt in place of its buttons.
         setRescanQ(null);
         setPreorder(outcome.question);
+        return;
+      }
+      if (outcome.status === 'already-wanted') {
+        // Nothing was written and there is nothing to answer — the row simply
+        // says so. See `lib/wants.ts` for why a duplicate WANT is refused where
+        // a duplicate owned copy is offered.
+        setRescanQ(null);
+        setPreorder(null);
+        setConflict(null);
+        setAlreadyWanted(outcome.want);
         return;
       }
       if (outcome.status === 'ask-isbn-taken') {
@@ -382,7 +421,14 @@ function LineRow({
                 *record*, which is the opposite of what it does. */}
             {!settled && (
               <div className="muted small">
-                Scanned again — add a second owned copy if you have two, or leave it.
+                {target === 'wishlist'
+                  ? // ⚠️ Wanting a book you already own is not a contradiction —
+                    // it is how you ask for the hardcover of the paperback on
+                    // the shelf, which `Copies.tsx` calls "the normal case here,
+                    // not an error". So the sentence offers it rather than
+                    // warning about it.
+                    'Scanned again — put it on the wishlist if you want another form of it, or leave it.'
+                  : 'Scanned again — add a second owned copy if you have two, or leave it.'}
               </div>
             )}
           </>
@@ -442,6 +488,38 @@ function LineRow({
                 <Link to={workPath(o.workId)}>Open {o.title}</Link>
               </div>
             ))}
+          </div>
+        )}
+
+        {/*
+          ⚠️ **"You already asked for this one."** Nothing was written, and
+          unlike the three prompts below there is nothing to answer — so this
+          sits with the overlap note above the buttons rather than replacing
+          them. The buttons staying is the feature: flipping the switch to
+          Shelf and pressing again is the ordinary next move for somebody who
+          wanted the book last month and is holding it now.
+
+          ⚠️ A pre-order gets a different sentence from a plain want, composed
+          in `lib/wants.ts` — "already on your wishlist" over a book that is
+          bought and in the post would send somebody back to buy it twice.
+        */}
+        {alreadyWanted && !settled && (
+          <div className="stack" style={{ gap: '0.15rem', marginTop: '0.25rem' }}>
+            <div>
+              <span className="mark mark--gap" style={{ position: 'static' }}>
+                nothing added
+              </span>
+            </div>
+            <strong>{wantSentence(alreadyWanted)}</strong>
+            <div className="muted small">
+              A second want of the same book would be two rows asking for one thing. If you
+              are holding it, switch the target to Shelf above and press again.
+            </div>
+            <div className="small">
+              <Link to={workPath(alreadyWanted.workId)}>
+                Open {alreadyWanted.title ?? 'it'}
+              </Link>
+            </div>
           </div>
         )}
 
@@ -576,8 +654,12 @@ function LineRow({
                 pre-order would report the very thing the prompt was asked to
                 prevent — a second copy — and "Added" over an ISBN fill would
                 claim a row was created when the whole point was that none was.
-                `summary` is the rescan outcomes saying what they wrote. */}
-            {arrived ? 'Pre-order received' : (summary ?? (owned ? 'Copy added' : 'Added'))}
+                `summary` is the rescan outcomes saying what they wrote, and a
+                wishlist add gets its own words for the same reason — "Added"
+                over a want would claim a book is on the shelf. The precedence
+                between the four lives in `addedLabel`, so it is pinned by a
+                test rather than by an expression only a browser can read. */}
+            {addedLabel({ target, arrived, summary, owned })}
           </Link>
         ) : preorder || rescanQ || conflict ? (
           /* The prompt above is the row's only control while it is up. Leaving
@@ -628,7 +710,11 @@ function LineRow({
                 through on a screen whose entire complaint was too many taps. */}
             {owned && addable && (
               <button onClick={() => void add()} disabled={busy !== null}>
-                {busy === 'add' ? 'Adding…' : 'Add 2nd copy'}
+                {/* ⚠️ The label follows the TARGET, not the row's state.
+                    "Add 2nd copy" on a wishlist sweep would name a write the
+                    button no longer performs — a button that says what it does
+                    is the whole reason this one is a single tap. */}
+                {busy === 'add' ? 'Adding…' : addActionLabel(target, true)}
               </button>
             )}
 
@@ -642,7 +728,7 @@ function LineRow({
                 onClick={() => void add(undefined, false)}
                 disabled={busy !== null}
               >
-                {busy === 'add' ? 'Adding…' : 'Add'}
+                {busy === 'add' ? 'Adding…' : addActionLabel(target)}
               </button>
             )}
 
@@ -677,6 +763,7 @@ export function ScanLines({
   onJob,
   empty,
   format,
+  target,
 }: {
   job: ScanJob;
   onJob: (job: ScanJob) => void;
@@ -691,6 +778,11 @@ export function ScanLines({
    * row's job is to say what the Add button is about to do.
    */
   format: EditionFormat;
+  /**
+   * Where this sweep lands — Shelf or Wishlist, from the switch above the list.
+   * Same one-live-value rule as `format`; see `lib/scan-target.ts`.
+   */
+  target: ScanTarget;
 }) {
   const [error, setError] = useState<string | null>(null);
   const progress = lookupProgress(job.lines);
@@ -821,6 +913,7 @@ export function ScanLines({
               onJob={onJob}
               awaiting={working && needsLookup(line)}
               format={format}
+              target={target}
             />
           ))}
       </ul>

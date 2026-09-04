@@ -31,7 +31,25 @@ import { arrivedPatch } from '../lib/statuses.js';
  * much larger behaviour change riding in on a prompt. Answering **a different
  * copy** therefore does exactly what pressing Save did yesterday.
  */
-export function AddWork({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
+export function AddWork({
+  onClose,
+  onAdded,
+  defaultIntent = 'owned',
+}: {
+  onClose: () => void;
+  onAdded: () => void;
+  /**
+   * What the intent dropdown OPENS on — the scan page's Shelf/Wishlist switch,
+   * threaded through so the one choice made at the top of a sweep reaches the
+   * typing tab too (owner ask 2026-09-04).
+   *
+   * ⚠️ It defaults to `'owned'`, so every caller that predates the switch keeps
+   * the behaviour the block below argues for. And it defaults the dropdown
+   * rather than replacing it: *"just catalogue it — record no copy"* is a real
+   * answer a two-state switch has no way to say.
+   */
+  defaultIntent?: 'owned' | 'wanted';
+}) {
   const [title, setTitle] = useState('');
   const [authors, setAuthors] = useState('');
   const [series, setSeries] = useState('');
@@ -58,8 +76,15 @@ export function AddWork({ onClose, onAdded }: { onClose: () => void; onAdded: ()
    * ⚠️ The wanted/owned distinction is preserved by the dropdown still being
    * explicit and still offering "just catalogue it" — nothing is unsayable, the
    * common case is just no longer the one you have to remember.
+   *
+   * ⚠️ **Since 2026-09-04 the default is the CALLER's**, defaulting in turn to
+   * `'owned'`. On the scan page it is the Shelf/Wishlist switch: somebody who
+   * has said "everything I add right now is a want" and then falls back to
+   * typing a book in by hand has not changed their mind, and making them say it
+   * twice is exactly the kind of silent wrong default the paragraph above was
+   * written about.
    */
-  const [intent, setIntent] = useState<'' | 'owned' | 'wanted'>('owned');
+  const [intent, setIntent] = useState<'' | 'owned' | 'wanted'>(defaultIntent);
   /** Raised by Save, answered by the prompt, then handed back to `save`. */
   const [preorder, setPreorder] = useState<PreorderQuestion | null>(null);
   /**

@@ -565,6 +565,12 @@ function Screens({
           // so it is gated on `scanPhoto` — split from `scanBarcode` 2026-08-16
           // specifically because a barcode is free and a photo is not.
           canSpend={me.capabilities.includes('scanPhoto')}
+          // The Wishlist half of the Shelf/Wishlist target switch (owner ask
+          // 2026-09-04). ⚠️ True for everyone who reaches this route today —
+          // `editCatalog` above is a strict subset of `suggestWishlist` — and
+          // passed rather than assumed, because that is a fact about the
+          // current matrix and not a law. See the prop's comment on ScanPage.
+          canSuggest={me.capabilities.includes('suggestWishlist')}
         />
       );
     }

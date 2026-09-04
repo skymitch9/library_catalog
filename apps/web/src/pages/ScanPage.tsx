@@ -18,6 +18,16 @@ import {
   loadScanFormat,
   saveScanFormat,
 } from '../lib/scan-format.js';
+import {
+  DEFAULT_SCAN_TARGET,
+  SCAN_TARGETS,
+  TARGET_LABEL,
+  intentFor,
+  loadScanTarget,
+  saveScanTarget,
+  targetSentence,
+  type ScanTarget,
+} from '../lib/scan-target.js';
 import { AddWork } from '../components/AddWork.js';
 import { ScanLines } from '../components/ScanLines.js';
 import { addPath, replaceUrl, scansPath, Link, type AddMode } from '../router.js';
@@ -126,6 +136,7 @@ export function ScanPage({
   initialMode = 'scan',
   initialJobId = null,
   canSpend,
+  canSuggest,
 }: {
   onDone: () => void;
   /** Where leaving goes, named. Usually the collection; see `backTarget`. */
@@ -136,6 +147,19 @@ export function ScanPage({
   initialJobId?: number | null;
   /** `runResearch`. A photograph costs money; a barcode does not. */
   canSpend: boolean;
+  /**
+   * `suggestWishlist` — whether the Wishlist half of the target switch is
+   * usable.
+   *
+   * ⚠️ **In practice always true on this screen**, and the prop exists anyway.
+   * `/add` is gated on `editCatalog`, whose role set is a strict subset of
+   * `suggestWishlist`'s (`CAPABILITY_MATRIX` — contributor+ implies member+),
+   * so nobody who can reach this page lacks it. It is passed rather than
+   * assumed because that subset relation is a fact about today's matrix, not a
+   * law, and a switch that silently writes a status the server then refuses is
+   * the worst of the three ways this could fail.
+   */
+  canSuggest: boolean;
 }) {
   const [mode, setMode] = useState<AddMode>(initialMode);
   /*
@@ -155,6 +179,25 @@ export function ScanPage({
    * usefully, the three bigger things it was read as NOT meaning.
    */
   const [scanFormat, setScanFormat] = useState<EditionFormat>(() => loadScanFormat());
+  /*
+   * ⚠️ **Where this sweep LANDS** — the owner's 2026-09-04 ask, from his phone:
+   * *"I didn't see how to scan a book to add wishlist. We should add this
+   * feature to the scanner."*
+   *
+   * Same shape and same reasoning as `scanFormat` directly above — lazy
+   * initialiser, ONE choice for the whole sweep, written on the tap — with one
+   * deliberate difference: it is remembered for the SESSION, not across visits.
+   * A binding is a habit; a wishlist trip is an errand. `lib/scan-target.ts`
+   * carries the argument.
+   */
+  const [scanTarget, setScanTarget] = useState<ScanTarget>(() => loadScanTarget());
+  /*
+   * ⚠️ The MECHANICAL guard, not just a disabled button: a stored `wishlist`
+   * from an earlier session must not survive a change of role. Everything below
+   * reads this, never `scanTarget`, so there is no path on which a person
+   * without `suggestWishlist` writes a want.
+   */
+  const target: ScanTarget = canSuggest ? scanTarget : DEFAULT_SCAN_TARGET;
   const [job, setJob] = useState<ScanJob | null>(null);
   const [loading, setLoading] = useState(initialJobId !== null);
 
@@ -456,6 +499,58 @@ export function ScanPage({
   );
 
   /*
+   * ⚠️ **SHELF or WISHLIST** — the switch this whole feature is.
+   *
+   * The owner, 2026-09-04, having been unable to find any way to do it:
+   * *"Yes build it. We currently can't add to wishlist at all."*
+   *
+   * ⚠️ It renders on EVERY tab, including *Type a title*, where the format
+   * toggle deliberately does not. The reason they differ: the format toggle
+   * feeds `addLineToCatalog`, which the typing tab never calls — but the target
+   * feeds `AddWork`'s intent dropdown as well, so it reaches every way in.
+   *
+   * ⚠️ It reuses the `.scan-format` segmented shape rather than minting a
+   * second one. That shape is already this app's spelling of "pick exactly one
+   * of a short list" (`.cog__modes`, and the format toggle below), it is
+   * already 44px on touch, and a second near-identical block of CSS is two
+   * places to fix the next phone bug in.
+   *
+   * ⚠️ The refusal, when it comes, is a SENTENCE — never a dead half of a
+   * switch and never a bare status. It names what happened, what it needs and
+   * how to get it, which is the estate rule.
+   */
+  const targetSwitch = (
+    <div className="scan-format">
+      <span className="scan-format__label" id="scan-target-label">
+        Adding to
+      </span>
+      <div className="scan-format__opts" role="group" aria-labelledby="scan-target-label">
+        {SCAN_TARGETS.map((t) => (
+          <button
+            key={t}
+            aria-pressed={target === t}
+            disabled={!canSuggest && t === 'wishlist'}
+            onClick={() => {
+              setScanTarget(t);
+              // Written on the tap, for the format toggle's reason: a phone
+              // that locks mid-sweep is the case this screen is built around,
+              // and an unmount handler is exactly what that does not run.
+              saveScanTarget(t);
+            }}
+          >
+            {TARGET_LABEL[t]}
+          </button>
+        ))}
+      </div>
+      <span className="muted small">
+        {canSuggest
+          ? targetSentence(target, mode === 'type' ? 'Books you add' : 'Scanned books')
+          : 'Wishlist needs the Wishlist permission, which this account does not have — ask an owner or admin here to grant it. Books you add still go on your shelf.'}
+      </span>
+    </div>
+  );
+
+  /*
    * ⚠️ **The guess became a choice**, and this control is the whole of it.
    *
    * `lib/catalog-add.ts` has written `format: 'paperback'` on every scanned
@@ -514,6 +609,10 @@ export function ScanPage({
       </div>
       <h2>Add a book</h2>
       {tabs}
+      {/* Target first: WHERE a book lands is a bigger claim than which binding
+          it is recorded as, and it is the one somebody arrives at this screen
+          having already decided. */}
+      {targetSwitch}
       {mode !== 'type' && formatToggle}
     </>
   );
@@ -526,7 +625,14 @@ export function ScanPage({
             unchanged. `onClose` goes back to the barcode tab instead of
             unmounting, because on this screen "cancel" means "I'll scan it
             after all", not "leave". */}
-        <AddWork onClose={() => setMode('scan')} onAdded={onDone} />
+        {/* ⚠️ `defaultIntent` DEFAULTS the dropdown, it does not replace it.
+            The form can still say "just catalogue it — record no copy", which
+            a two-state switch cannot express and which is a real answer. */}
+        <AddWork
+          onClose={() => setMode('scan')}
+          onAdded={onDone}
+          defaultIntent={intentFor(target)}
+        />
       </main>
     );
   }
@@ -692,6 +798,7 @@ export function ScanPage({
             job={job}
             onJob={setJob}
             format={scanFormat}
+            target={target}
             empty={
               mode === 'scan'
                 ? 'Point the camera at the barcode on the back. The five-digit price code beside it is skipped automatically.'
