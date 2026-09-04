@@ -74,9 +74,60 @@ the MAY BE YOURS cards are rendered from the same component). Tests in
 fixtures exist). Web-only build — Opus, ~150–250k together with the edition
 note below.
 
-☐ build → ☐ tests → ☐ deploy PAIR from a clean tree → ☐ owner review on
+☑ build → ☑ tests → ☐ deploy PAIR from a clean tree → ☐ owner review on
 /work/263 (three hardcover copies → three cards, chips *Sprayed edges* /
 *Lent out*) and a padhard work with two formats.
+
+### ✅ BUILT 2026-09-03 — commit `e6ed1fd` — ☐ NOT DEPLOYED
+
+**What landed** — all of it in the DERIVATION again, so a test pins what the
+shelf SAYS and the component chooses no words:
+
+- **`ShelfTab.lines` and `ShelfTab.rows` are GONE**, replaced by one
+  `ShelfTab.cards`; `ShelfView.looseRows` became `looseCards`. Removed rather
+  than left behind a flag — two lists under one tab is what he rejected twice.
+- **ONE CARD PER OWNED COPY**, not per row (the open question in the spec).
+  A row holding two copies of one printing is **two cards**, because *"lent
+  out"* is a fact about an OBJECT and each object needs somewhere to say it; the
+  two cards hold the SAME row object, so the printing's identity, cover and meta
+  line are still said in one place. Two chip groups on one card would put two
+  answers under one heading and make the reader work out which chip is whose.
+- **Chips** (his *"tabs"*) carry the copy's differences, in his round-2 order:
+  the badges the tab header did not take (signed LAST of them), then a status
+  that is not "on the shelf" as one phrase (*"Lent out to Sam"*), then the
+  location, then **a condition that is not the plain `good`** — his own example
+  dropped `good`, and the hover still says it either way. Only the status chip
+  takes a colour (`.special-badge--status`).
+- **An unlinked copy is a card titled by its FORMAT WORD** — all three on
+  /work/263 today — and it is the SAME card as a *"May be yours"* candidate.
+  ⚠️ The state pill is the difference; the dashed `bd-hold--available` ground
+  was KEPT, because "an available card must never read as a holding" is a
+  standing anti-fabrication rule and the pill alone is a thin guard.
+- **`SignedChip` and its dashed *"Not signed"* pill are DELETED.** Round 2 had
+  already stopped printing the negative anywhere a person could see; with every
+  owned copy now a card whose chips are only what distinguishes it, a positive
+  *"Signed"* is an ordinary badge chip and there was no reachable caller left.
+  The record is still answered both ways on the card's hover.
+- Untouched: the tab set and its order, the tab-header lift (*"Hardcover · all
+  signed"*), MAY BE YOURS wording, the audio provenance sentence, ebook files,
+  wishes (a wish is NOT exploded per copy — no object, nothing to chip).
+
+**Measured at the commit:** `npm test` **2311 pass / 0 fail** (2297 before round
+3; +2 for round 3's own cases, +10 with the edition note below); `npm run
+typecheck` and `npm run build` clean. ⚠️ **Twelve pins were AMENDED rather than
+added** — the SENTENCES did not change, only the shape they arrive in, so each
+now reads the same words off `card.label` + `card.chips` (a `says()` helper
+rebuilds round 2's line grammar so his written example still reads verbatim).
+
+⚠️ **NOT VERIFIED:** nothing seen on a live page — no deploy. The component
+still has **no test** (no jsdom in this harness), so the chip markup, the tab
+strip and the keyboard are unexercised; only the derivation is pinned.
+
+☐ **Review after the deploy:** <https://library.heygabi.ai/work/263> — the
+Hardcover tab should hold **six cards in one list**: three of his (*Hardcover*,
+*Hardcover* + chip *Sprayed edges*, *Hardcover* + chip *Lent out*) and the three
+*May be yours* printings — and padhard
+<https://padhard.heygabi.ai/work/642> for two tabs each with a NAMED card.
 
 ## ☐ EDITION NOTE: move the "no barcode printed on this copy (owner-verified)" text out of the edition NAME into a note on the edit page — owner ask 2026-09-03 17:22 Phoenix
 
@@ -108,11 +159,68 @@ into the note. The two whole-name rows (#450, #470) get the name
 *"Standard edition"* — today's precedent for a plain paperback with no
 distinguishing name (say so on review; ☐ owner may rename).
 
-☐ migration 0460 → ☐ schema + route + db → ☐ edit-page note field (shown
-and editable per edition entry) → ☐ sweep script with `--dry-run` and
+☑ migration 0460 → ☑ schema + route + db → ☑ edit-page note field (shown
+and editable per edition entry) → ☑ sweep script with `--dry-run` and
 `--friend` → ☐ migrate PAIR → ☐ sweep on BOTH (report both counts: MAIN 9,
 padhard 1 expected) → ☐ deploy PAIR → ☐ live proof on /work/263 (names
 clean, note visible on ✎ Edit → editions) and padhard /work/433.
+
+### ✅ BUILT 2026-09-03 — commit `47386c8` — ☐ NOT MIGRATED, NOT SWEPT, NOT DEPLOYED
+
+- **`migrations/0460_edition_note.sql`** — `ALTER TABLE edition ADD COLUMN note
+  TEXT`. ⚠️ **Run against NO remote** — the migrate PAIR is the conductor's.
+  NULL here is an **absence** (nobody wrote a note), unlike `edition_kind`'s
+  NULL, which is the positive claim *"ordinary printing"* (0050).
+- **`@lc/core`** — `note` on the edition create/update schemas: trimmed, empty →
+  null, capped at 500 chars. ⚠️ Deliberately **not** added to `blankSiblingOf`'s
+  marks: two printings that differ only in somebody's remark are still two rows
+  nobody can tell apart.
+- **`@lc/db`** — `EditionRow.note`, `EDITION_COLS`, the INSERT, the UPDATE and
+  the change-log diff. The contract test now pins `note` in `EDITION_COLS`, for
+  the reason `cover_url` is pinned there: dropped from the SELECT it would
+  render empty and every save would silently clear a verified remark.
+- **`Editions.tsx`** — a **Note** textarea per edition entry, and a muted
+  `📝 …` line on the row when it is set. ⚠️ **The "no barcode" TICK now writes
+  `note`, not the name** — leaving it writing the name would have re-broken
+  every row the sweep fixes, on the next tick. `RescanPrompt.tsx` and the two
+  `createEdition` callers in `Copies.tsx` carry it through
+  (`NewPrintingDetails.note`). ⚠️ No new 409 risk from `blankSiblingOf`:
+  `newPrintingNeedsName` already forces a name in exactly the case the server
+  would refuse.
+- **`scripts/split-edition-note.mjs`** (+ `scripts/test/split-edition-note.test.mjs`)
+  — dry by default, `--apply` (or `--commit`) writes, `--remote` / `--friend` as
+  every other sweep. Splits at the **LAST** ` — ` / ` - ` before the marker, so a
+  name's own dash survives; a name that is NOTHING BUT the phrase becomes
+  **"Standard edition"**; an existing note is **never overwritten** (that row is
+  printed under NEEDS THE OWNER and skipped). The marker is `owner-verified`,
+  not `NO_BARCODE_NOTE` — production carries two wordings and only the
+  parenthetical is common to both.
+- **Display:** the note shows on the **edit page** only. It is deliberately NOT
+  in a shelf card's headline (that is the printing's identity) and no shelf
+  surface reads it yet — ☐ say whether he wants it as a muted line under a
+  card's meta.
+
+⚠️ **GOTCHA MEASURED WHILE BUILDING IT — belongs in
+[`info/gotchas.md`](info/gotchas.md) when someone next touches that file:** a
+`SELECT` naming a column D1 does not have comes back from `scripts/lib/d1.mjs`'s
+`query()` as an **EMPTY ARRAY, not an error**. The first dry run printed
+*"editions matched … 0"* against a MAIN catalog holding nine of them, and said
+DRY RUN as if all were well. `requireNoteColumn` now reads
+`pragma_table_info('edition')` first and refuses with an actionable message, so
+this sweep can never report a zero that means "no such column".
+
+**Measured at the commit:** `npm test` **2311 pass / 0 fail**; `npm run
+typecheck` and `npm run build` clean. **DRY-RUN PROOF against MAIN** (read-only,
+zero writes, run through the pure `planRow` because the column does not exist
+remotely yet): **all 9 rows matched and parsed** — the five Illumicrate rows →
+*"Illumicrate Exclusive"*, #378/#379 → *"V1 Limited Edition hardcover"* / *"V1
+Limited Edition Standard hardcover"*, and #450 *Dungeon Born* + #470 *Unmapped*
+→ **"Standard edition"** (whole name was the note).
+
+⚠️ **NOT VERIFIED:** no migration run anywhere, no write to any remote, nothing
+seen on a live page. **padhard's 1 row was not re-measured today** — the 17:30
+figure above stands and is now hours old. The Note field, the row's note line
+and the rewired tick have **no test** (no jsdom in this harness).
 
 ## ☐ SHELF round 2: "Better but still duplicate" → format tabs with the editions under each — owner ask 2026-09-03 15:18, spec 15:33 Phoenix
 
