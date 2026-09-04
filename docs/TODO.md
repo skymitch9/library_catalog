@@ -79,9 +79,68 @@ surfaces, one form:
    beside/under ON YOUR SHELF, gated `suggestWishlist`, opening the SAME
    `AddCopy` (intent `'wanted'`) — no second form.
 
-☐ build (Opus, dispatched 09:2x) → ☐ tests → ☐ deploy PAIR from a clean
-tree → ☐ owner scans one book to the wishlist from his phone (the only real
-test — the scanner needs a camera) and finds *Want this* on a work page.
+☑ **build** (Opus, dispatched 09:2x, landed `40a1f65` + `5ceed15`) → ☑
+**tests** → ☐ deploy PAIR from a clean tree → ☐ owner scans one book to the
+wishlist from his phone (the only real test — the scanner needs a camera) and
+finds *Want this* on a work page.
+
+### ✅ BUILT 2026-09-04 — web-only, both instances through the shared components
+
+| Commit | What |
+|---|---|
+| `40a1f65` | The scanner half: the Shelf/Wishlist switch, threaded to the write |
+| `5ceed15` | The work-page half: a first-class *Want this* under ON YOUR SHELF |
+
+**Files touched** (all under `apps/web/`; no worker, no `packages/`, no
+migration — the copy-create route already took `status`):
+
+* NEW `src/lib/scan-target.ts` — the target, its persistence, its words, and
+  `copyStatusFor`, now the ONLY place `'owned'` vs `'wanted'` is chosen on the
+  scan path.
+* NEW `src/lib/wants.ts` — the "already wanted?" rule (`wantIn`, read off
+  `WISHLIST_STATUSES`) and its two sentences. ⚠️ **No `api` import, on
+  purpose:** anything importing `api.js` pulls in `lib/firebase.ts`, whose
+  `import.meta.env` kills a `node:test` process — which is why `preorders.ts`
+  and `rescans.ts` have no tests and these do. The one fetch that needs the
+  rule sits beside its single caller in `catalog-add.ts`.
+* NEW `test/scan-target.test.ts`, `test/wants.test.ts` — 20 assertions.
+* `src/lib/catalog-add.ts`, `src/pages/ScanPage.tsx`,
+  `src/components/ScanLines.tsx`, `src/components/AddWork.tsx`, `src/App.tsx`,
+  `src/components/Copies.tsx` (now exports `AddCopy`), `src/pages/WorkPage.tsx`.
+
+**What was DECIDED where the brief left room:**
+
+| Question | Decision and why |
+|---|---|
+| Pre-order question on a want | **Skipped.** A want is not an arrival — `AddWork.tsx` already states that only `owned` can be a pre-order arriving. |
+| Rescan question on a want | **Skipped.** Its commonest answer, *"the book I already have"* (`fill`), writes the ISBN and creates **no copy at all** — answered by somebody in a shop meaning "I want this", that silently records nothing, which is the very failure this feature removes. The other three answers are merely mis-worded there; that one is wrong. |
+| …then what about #139, the duplicate printing the rescan question guards against? | **Closed a different way:** a want attaching to a book we already hold writes **no edition** — `Copies.AddCopy`'s existing wish rule. A path that mints no printing cannot mint a duplicate one. A genuinely NEW book still earns its edition: nothing on file to duplicate, and the ISBN is the most reliable fact available (`AddWork`, 2026-08-13). |
+| ISBN-taken question on a want | **Unreachable**, and left in place. It is raised only from `applyRescanAnswer`, which only runs with a rescan answer, which is never asked for on this target. `applyRescanAnswer` still takes the target anyway, so no branch inside it can silently write `owned`. |
+| A duplicate want | **Refused, in words** — a new `already-wanted` outcome: the row says so and writes nothing. A duplicate OWNED copy is still offered (some books here genuinely are owned twice); a barcode cannot express *"…as well as the one I already asked for"*, which is what makes the two cases different. Argued in `lib/wants.ts`. |
+| Where *Want this* sits | Its own `panel` in `WorkPage.tsx`, **directly under `<OnYourShelf>`** and above Your reading. `OnYourShelf` takes no `me` and no `onChanged` and is a pure derivation; putting the button inside it would have widened it for nothing. |
+| Capability copy | **Scanner:** the Wishlist half renders **disabled with a sentence** naming the permission and how to get it — a two-state switch with a missing state reads as broken. **Work page: hidden**, this page's own convention (`RequestContentWarnings`; the scan page's costed tabs — *"a control that exists and refuses is worse than one that was never offered"*). Both gate on `suggestWishlist`; on the scanner the target is ALSO forced to `shelf` in code, so no path writes a want the server would refuse. ⚠️ In practice always true on `/add`: that route needs `editCatalog`, a strict subset. |
+| Storage key | `lc_scan_target_v1`, not the sketched `lc.scanTarget` — matches `lc_scan_format_v1` / `lc_prefs_v1` / `lc_tbr_picker_v1`. **`sessionStorage`**, where the format toggle uses local: a binding is a habit, a wishlist trip is an errand. |
+| The sweep's format on a want | Kept as `wanted as <format>` in `editionNotes` on the copy when no edition is written — the same spelling `Copies.AddCopy` uses, so the wishlist reads one vocabulary whichever door a want came in through. Without it, the format chosen at the top of the sweep was silently dropped on exactly the rows that write no edition. |
+
+**Verified 2026-09-04, by running them:** `npm run typecheck` — all nine
+workspaces clean. `npm test` — **2331 pass / 0 fail** (was 2311; the 20 new
+ones). `npm run build -w apps/web` — `✓ built in 2.93s`,
+`dist/assets/index-JYV4Ylln.js`.
+
+⚠️ **NOT verified — tell the owner rather than letting him assume:**
+
+* **The live barcode path.** It needs a real camera; no scan was performed.
+  Everything about a wanted copy reaching D1 through a barcode is reasoned,
+  not measured.
+* **Anything RENDERED.** This app has no jsdom setup and none was added, so
+  every component change here is compiled and type-checked, never mounted.
+  The switch, its disabled state, the "already on your wishlist" notice and
+  the *Want this* panel have not been looked at in a browser.
+* **Deployed anywhere.** Nothing has shipped; the PAIR above is still open.
+* **The second instance specifically.** Nothing instance-specific is in the
+  change — no posture var, no `[env.friend]` branch — so it lands through the
+  shared components, but that is read off the diff, not checked against
+  `padhard`.
 
 ## ☐ DATA /work/525: copy off the shelf, onto the wishlist — owner ask 2026-09-04 ~09:00 Phoenix
 
