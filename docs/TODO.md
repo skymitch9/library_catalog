@@ -74,11 +74,26 @@ the MAY BE YOURS cards are rendered from the same component). Tests in
 fixtures exist). Web-only build — Opus, ~150–250k together with the edition
 note below.
 
-☑ build → ☑ tests → ☐ deploy PAIR from a clean tree → ☐ owner review on
+☑ build → ☑ tests → ☑ deploy PAIR from a clean tree → ☐ owner review on
 /work/263 (three hardcover copies → three cards, chips *Sprayed edges* /
 *Lent out*) and a padhard work with two formats.
 
-### ✅ BUILT 2026-09-03 — commit `e6ed1fd` — ☐ NOT DEPLOYED
+### ✅ BUILT 2026-09-03 — commit `e6ed1fd` — ✅ **DEPLOYED TO BOTH 17:57 Phoenix**
+
+| Instance | tree | version id | bundle |
+|---|---|---|---|
+| MAIN | `83bde65` | `064ec342-8a6c-431b-9421-81f16ce8ca37` | `index-D8DRuBYK.js` |
+| padhard (`env=friend`) | `a1dd409` | `7d27c891-28c9-402d-8ea4-60aa3d5b2e26` | `index-D8DRuBYK.js` |
+
+**Seen live 17:59 Phoenix** (rendered DOM read, not a status code): the
+Hardcover tab of <https://library.heygabi.ai/work/263> holds **six cards in
+one list** — *Hardcover OWNED · Sprayed edges* / *Hardcover OWNED* /
+*Hardcover OWNED · Lent out* / *V1 Limited Edition hardcover MAY BE YOURS* /
+*V1 Limited Edition Standard hardcover MAY BE YOURS* / *Standard Hardcover
+MAY BE YOURS*; no copy-line list; tabs *Hardcover · Audio*. Padhard
+<https://padhard.heygabi.ai/work/433> renders one card *Allural OWNED*
+on the same bundle. ⚠️ NOT verified: pixels (a DOM text read, no screenshot),
+the tab keyboard, padhard /work/642's two tabs.
 
 **What landed** — all of it in the DERIVATION again, so a test pins what the
 shelf SAYS and the component chooses no words:
@@ -161,11 +176,30 @@ distinguishing name (say so on review; ☐ owner may rename).
 
 ☑ migration 0460 → ☑ schema + route + db → ☑ edit-page note field (shown
 and editable per edition entry) → ☑ sweep script with `--dry-run` and
-`--friend` → ☐ migrate PAIR → ☐ sweep on BOTH (report both counts: MAIN 9,
-padhard 1 expected) → ☐ deploy PAIR → ☐ live proof on /work/263 (names
-clean, note visible on ✎ Edit → editions) and padhard /work/433.
+`--friend` → ☑ migrate PAIR → ☑ sweep on BOTH (report both counts: MAIN 9,
+padhard 1 expected) → ☑ deploy PAIR → ☑ live proof on /work/263 (names
+clean) → ☐ owner sees the note on ✎ Edit → editions (not checked — the edit
+page needs a sign-in this proof did not have) → ☐ owner may rename #450 /
+#470 from *"Standard edition"*.
 
-### ✅ BUILT 2026-09-03 — commit `47386c8` — ☐ NOT MIGRATED, NOT SWEPT, NOT DEPLOYED
+### ✅ BUILT 2026-09-03 — commit `47386c8` — ✅ **MIGRATED, SWEPT AND DEPLOYED TO BOTH 17:57 Phoenix**
+
+- **Migrated 17:55** — `npm run db:migrate:both`: `0460_edition_note.sql` ✅ on
+  `library-catalog` and ✅ on `library-catalog-2nd`.
+- **Swept 17:56** — `node scripts/split-edition-note.mjs --remote --apply`
+  (and `--friend`): **MAIN 9 matched / 9 names rewritten / 9 notes written /
+  2 whole-name → "Standard edition" (#450 Dungeon Born, #470 Unmapped)**;
+  **padhard 1 / 1 / 1 / 0** (#426 → *Allural*). Re-read after: MAIN
+  `edition_name LIKE '%owner-verified%'` → **0 rows**; #307 *Illumicrate
+  Exclusive*, #378 *V1 Limited Edition hardcover*, #379 *V1 Limited Edition
+  Standard hardcover*, each with the phrase in `note`; padhard #426 *Allural*
+  + note.
+- **Deployed 17:57** — same pair as round 3 above (MAIN `064ec342`, friend
+  `7d27c891`, bundle `index-D8DRuBYK.js`); /work/263's card names carry no
+  suffix and the string *owner-verified* appears nowhere on the page.
+- ⚠️ **NOT verified:** the Note field on the edit page (needs a signed-in
+  session), a round-trip save through `PATCH /api/editions/:id`, the
+  "no barcode" tick now writing `note` instead of the name.
 
 - **`migrations/0460_edition_note.sql`** — `ALTER TABLE edition ADD COLUMN note
   TEXT`. ⚠️ **Run against NO remote** — the migrate PAIR is the conductor's.
