@@ -80,9 +80,17 @@ surfaces, one form:
    `AddCopy` (intent `'wanted'`) — no second form.
 
 ☑ **build** (Opus, dispatched 09:2x, landed `40a1f65` + `5ceed15`) → ☑
-**tests** → ☐ deploy PAIR from a clean tree → ☐ owner scans one book to the
-wishlist from his phone (the only real test — the scanner needs a camera) and
-finds *Want this* on a work page.
+**tests** → ☑ **deploy PAIR** from a clean tree at `0c4061b`, 09:38
+Phoenix (`npm run deploy:both`; MAIN `40f5bb4b…`, friend `d869f335…`, both
+lines in `deploys.log`) → ☑ **live** on both hosts: bundle
+`index-JYV4Ylln.js` served by `library.heygabi.ai` and `padhard.heygabi.ai`
+(curl); on the owner-signed-in tab, `/add` renders **Adding to · Shelf |
+Wishlist** with *"Scanned books go on your shelf."*, and `/work/525` renders
+the **Want this** panel under ON YOUR SHELF with the already-wanted sentence
+(DOM text reads, 09:41) → ☐ owner scans one book to the wishlist from his
+phone (the only real test — the scanner needs a camera) and finds *Want
+this* on a work page. Still NOT verified: the barcode write itself, pixels,
+padhard's signed-in rendering.
 
 ### ✅ BUILT 2026-09-04 — web-only, both instances through the shared components
 
