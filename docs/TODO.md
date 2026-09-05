@@ -718,7 +718,12 @@ lands on BOTH instances — one build, deploy pair, migration pair, sweeps run w
 documented in `second-instance.md`.
 
 
-## ☐ Billing phase 3 landed INERT — two things remain (2026-09-02)
+## ☐ Billing phase 3 landed INERT — 2 of 2 steps left: write a deny rule then flip to shadow, and gate the five CLI scripts (2026-09-02)
+
+✅ **Re-verified 2026-09-05 (AUD-library):** `BILLING_POLICY = "off"` on BOTH
+instances (`apps/worker/wrangler.toml` lines 288 and 550), and
+`scripts/research-queue.mjs:99` still hard-codes `const OWNER_USER_ID = 1`. So
+both halves below are genuinely open, exactly as written.
 
 The build is on both instances (`e7b3f6b`, versions `77a9f67c` / `37b83f8b`) and
 KI-13 is closed. What is NOT done:
@@ -791,7 +796,15 @@ is refused if EITHER denies.
 
 ---
 
-## ☐ Cross-catalog links: the one decision this build deliberately did NOT take (2026-09-02)
+## ❓ OWNER DECISION — should a curated cross-catalog join be WRITABLE on this side? (2026-09-02)
+
+**The options:** (a) leave it as today — the four reviewed pairs are guarded
+here and rendered from the sibling's file, this side writes nothing curated; or
+(b) make it writable, which means a `'curated'` value in
+`audiobook_edition_holding.matched_via`'s CHECK constraint, rebuilding that
+table **and** the `audiobook_holding` VIEW over it, on **two** production
+databases. Migration 0110 already settled the shape if (b) is ever taken: an
+owner-confirmed link got its OWN table rather than a new enum value.
 
 The build is done and in [`DONE.md`](DONE.md); this is the single open thread.
 Design of record: `audiobook_catalog/docs/info/cross-catalog-links.md` §5.
@@ -810,7 +823,7 @@ Design of record: `audiobook_catalog/docs/info/cross-catalog-links.md` §5.
   two-works-one-audiobook shape. The number to watch is how many curated pairs
   exist — **4 today**, and one file, one owner decision.
 
-## ☐ DATA: link the unlinked copies on the multi-printing works, so the shelf can name them (2026-09-02)
+## ☑ NOTHING TO BUILD — DATA: link the unlinked copies on the multi-printing works, so the shelf can name them — ☐ a person, one work at a time (2026-09-02)
 
 Fallout of the shelf change above, and a **data** task, not a code one. Where a
 work has **two printings of one format** and its copies carry no `edition_id`,
@@ -832,9 +845,29 @@ on each copy (`Copies.tsx`). Setting `copy.edition_id` immediately upgrades the
 row from `resolvedBy: null` to `'linked'` and the headline from *"Hardcover"* to
 the printing's own name — no deploy, no migration.
 
-**Scope, measured 2026-09-02:** **22** (work, format) pairs in production hold
+~~**Scope, measured 2026-09-02:** **22** (work, format) pairs in production hold
 more than one printing of the same format. Not all of them have unlinked copies;
-that narrowing has NOT been measured.
+that narrowing has NOT been measured.~~
+
+✅ **Scope, re-measured 2026-09-05 (AUD-library) against production
+`library-catalog` — the narrowing this asked for is now a number:**
+
+| | |
+|---|---|
+| (work, format) pairs holding **more than one printing** | **23** (was 22 on 2026-09-02) |
+| of those, pairs whose work has **at least one copy with `edition_id IS NULL`** | **20** |
+
+So **20 works** are worth a person's attention, not 23 — and the set has grown
+by one pair in three days, because it grows whenever a second printing is
+recorded.
+
+⚠️ **This is the MAIN instance only.** padhard was not measured for this, and its
+copies are far more often unlinked (557 of 677 carried no edition on
+2026-09-03), so its number is probably much larger and is unknown.
+
+☐ **Where to do it:** each work's ✎ Edit this book → **Editions & copies** →
+*"Which printing do I own?"*. No deploy, no migration. Start with the worked
+example, <https://library.heygabi.ai/work/220> (*Words of Radiance*).
 
 > ✂️ **2026-09-02:** *"SHIPPED-NOT-DEPLOYED: the donor alias rung is on `main`
 > and NOT yet on either Worker"* moved WHOLE to [`DONE.md`](DONE.md). The
@@ -859,7 +892,13 @@ that narrowing has NOT been measured.
 > physical check (*"ITS BOOK 1"*): padhard #489 retitled, printed form "1" set,
 > old title kept as alias, batch `owner-2026-08-31-broken-prophecies`.
 
-## ☐ Should the SECOND recording of a book be storable? (`audio_key` is a persisted key — 2026-08-26)
+## ❓ OWNER DECISION — is a second recording of one book worth a migration? (2026-08-26)
+
+**The options:** (a) leave it — one pair affected in 1,084 rows, the book is
+linked and only the second narrator is invisible; or (b) widen `audio_key`,
+which is a **migration with its own review** because that key is deliberately
+the same string the content-warning join uses (0340's `raw_title`). Full entry
+as [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) KI-12.
 
 Written up as [`KNOWN_ISSUES.md` KI-12](KNOWN_ISSUES.md) and repeated here
 because it needs an owner decision, not a fix. The household owns **two**
@@ -875,7 +914,12 @@ review**, not an edit. Measured 2026-08-26: **1 pair** in the 1,084-row catalog
 is affected. Do it when that count grows, or when you want both narrators on a
 work page. The ACOTAR dramatizations are unaffected — their raw titles differ.
 
-## ☐ Custody gaps: THREE main-instance secrets are live with no readable master (2026-08-26)
+## ☐ OWNER ACTION — custody gaps: THREE main-instance secrets are live with no readable master (2026-08-26)
+
+⚠️ **NOT re-verified by the 2026-09-05 docs audit, deliberately** — checking
+would mean reading `.dev.vars`, which agents may not open. The three names and
+the closing steps below are unchanged since 2026-08-26 and only the owner can
+act on them.
 
 🔴 **Two of these are NEW, and they falsify a row in the 2026-08-26 secrets
 review.** That review recorded them as *"master: library `.dev.vars` (file
@@ -905,7 +949,7 @@ dry run **from either source**, so `secrets:push:both` cannot rotate them.
   vault, set the VERIFIER first (`estate-auth`, `catalog-index`), then main, then
   verify the gated route. One at a time; a half-pushed pair is a silent 401/403/404.
 
-## ☐ OWNER REVIEW — three surfaces nobody has looked at with their own eyes (2026-08-24 builds, merged + deployed)
+## ☑ BUILT + DEPLOYED TO BOTH 2026-08-24 — ☐ OWNER REVIEW of three surfaces nobody has looked at with their own eyes, plus one owner-run sweep
 
 Both 2026-08-24 branches are **merged, deployed and live on both instances**
 — measured 2026-08-31 and again 2026-09-02 — and each moved WHOLE to
@@ -959,7 +1003,7 @@ human — which is why no session can close it.
 > was ambiguous — read them there before assuming what "auto-open persistence"
 > was taken to mean.
 
-## ☐ OWNER FEATURE REQUESTS — written by him directly into this file, 2026-08-23
+## ☑ OWNER FEATURE REQUESTS — all three SHIPPED (OR-1, OR-2, OR-3) — ☐ owner review of OR-2 — written by him directly into this file, 2026-08-23
 
 > He added these himself, with the note *"This was added by the user not the Ai.
 > Please apply formatting and rules to these request"* and *"always ask more
@@ -995,20 +1039,48 @@ human — which is why no session can close it.
 > (the card shows the member's CURRENT display name), owner **+ the linked
 > person** (not owner-only), and sold keeps the row.
 
-### OR-2. Find duplicates — copy the board-game filter, don't redesign it
+### ☑ OR-2 — BUILT 2026-08-23 AND DEPLOYED TO BOTH INSTANCES — ☐ owner review
 
 > *"ability to search a catalog for duplicates with a filter, we have this
 > filter in boardgame catalog so lets mimic it from there instead of
 > redesigning the wheel"*
 
-⚠️ **This is an explicit reuse instruction, so the first step is to READ
-`Board_Game_Catalog`'s implementation, not to design one.** Match its grammar
-and its wording; a second, differently-shaped duplicate finder in the estate is
-exactly what he is saying not to build.
+🔴 **Corrected 2026-09-05 (AUD-library) — THIS ASK WAS BUILT TWELVE DAYS AGO
+AND THIS ENTRY STILL READ AS UNSTARTED.** It is the most expensive kind of
+stale: an owner request that looks unbuilt gets re-planned, re-estimated and
+possibly re-built. His words above are untouched; everything below the rule is
+what was measured today.
 
-**Ask him before building:** duplicates of a WORK (same book twice) or of a
-COPY (two physical copies, which is legitimate and common)? The two want
-different defaults.
+**How it was verified, cheapest instrument first:**
+
+| Instrument | Reading |
+|---|---|
+| `git log` | commit **`00a1891`**, *"duplicates: find the same WORK recorded twice, mirroring the board-game filter"*, **2026-08-23 20:33 -0700** |
+| branch | `feature/duplicate-finder` is **merged into `main`** (`git branch --merged main`); no branch in this repo is unmerged today |
+| shipped? | `git merge-base --is-ancestor 00a1891 accc96b8` → **yes** — it is an ancestor of the latest deploy pair in `docs/deploys.log` (`2026-09-04T17:06Z`, MAIN `005a4e48` / friend `6d6e74de`) |
+| code | `packages/core/src/duplicates.ts` (leaf, no I/O), `apps/web/src/lib/duplicates-view.ts`, the `?duplicates=1` flag in `apps/web/src/router.tsx:475`, and worker route `GET /collection/duplicates` in `apps/worker/src/routes/catalog.ts:370` behind `requireCapability('read')` |
+| **live, BOTH instances** | `GET /api/collection/duplicates` answers **401 `{"error":"unauthenticated"}`** on `library.heygabi.ai` **and** `padhard.heygabi.ai` (2026-09-05 20:18Z) — a 401 rather than a 404 is what proves the route is deployed on each, the same instrument OR-1 used |
+
+**The open question in this entry was also answered, by him, at ask time.**
+`duplicates.ts`'s own header records it verbatim: *"duplicates = the same WORK
+recorded twice"* — so it finds two ROWS for one book, not two copies of one
+book. ⚠️ **That is a deliberate divergence from the board-game filter he told
+us to mimic, and the header argues it at length:** there `duplicates=1` means
+`HAVING SUM(quantity) > 1`, a COPY question, which is right for games and wrong
+for books — two copies of a book is an ordinary holding, and this catalog
+already answers that question with `ownedMoreThanOnce` and the `×2` card mark.
+The address-bar spelling and the `read` capability were kept identical.
+
+☐ **OWNER REVIEW — the only thing left.** Open
+<https://library.heygabi.ai/collection?duplicates=1> and
+<https://padhard.heygabi.ai/collection?duplicates=1>. Confirm the divergence
+above is what he wanted: it lists **the same book entered twice** (e.g.
+*Firefight* arriving once as `Firefight` and once as
+`Firefight (The Reckoners, Book 2)`), and it does **not** flag a book he simply
+owns two copies of.
+
+⚠️ **NOT verified by this audit:** anything rendered — the page needs a
+sign-in, so no session has seen the list, its count chip, or its wording.
 
 ### ~~OR-3~~ ✅ BUILT AND VERIFIED BY LIVE USE — moved to [`DONE.md`](DONE.md) 2026-09-01
 
@@ -1021,7 +1093,7 @@ pause he set himself. Whole record in DONE.md.
 
 ---
 
-## ☐ The EBOOK library's half of "say 2" — belongs to `audiobook_catalog`
+## ☐ UNBUILT — the EBOOK library's half of "say 2", and one question to ask first — belongs to `audiobook_catalog`, not this repo
 
 The physical library's half shipped on `feature/audio-edition-count` and is in
 [`DONE.md`](DONE.md) with the whole design; this is the piece that decision left
@@ -1055,7 +1127,16 @@ wait for `KI-6` to be settled so both sides agree on what a second edition is?
 
 ---
 
-## 🔜 START HERE NEXT SESSION — the audiobook link build, designed but NOT started
+## ☐ The audiobook link build — 1 of 2 parts left: part A, the sweep becomes pipeline STEP 11 (in `audiobook_catalog`, NOT this repo)
+
+⚠️ **Corrected 2026-09-05 (AUD-library): the heading read "🔜 START HERE NEXT
+SESSION" and had done since 2026-08-22 — fourteen days and roughly thirty
+sessions ago.** A permanent "start here" is an instruction nobody can act on
+and everybody scrolls past. What is actually left is part **A** only; part **B**
+shipped (migration 0390) and is in [`DONE.md`](DONE.md), as the section itself
+says. ⚠️ **Part A's files all live in `audiobook_catalog`** — this repo cannot
+build it, and per this section's own rule it should MOVE to that repo's TODO
+when picked up.
 
 > Owner, 2026-08-22 ~23:40 Phoenix: *"we need to add audiobook sweep to the
 > pipeline, we also need the schema change"* — then, on seeing the weekly budget:
@@ -1114,7 +1195,14 @@ item is in [`DONE.md`](DONE.md), and what it did NOT close is `KI-8`/`KI-9` in
 (<https://library.heygabi.ai/works/514>); `/status/processing` lists the new
 pipeline step by name.
 
-## ☐ Covers for the SECOND instance — owner ask, 2026-08-22
+## ❓ Covers for the SECOND instance — 1 of 3 pieces left and it is an OWNER COST DECISION: put `cover` in the details queue? (owner ask 2026-08-22)
+
+**The decision, on one line:** `cover` is an explicit entry in `REFUSED_FIELDS`
+(`packages/core/src/gaps.ts`, reasoned *"research cannot make a JPEG"*).
+`findCover` disproves that reason. Un-refusing it makes **every** details run
+able to spend the ~6¢ paid rung — a cost choice, not a code choice. ✅ Verified
+2026-09-05: `cover` is still in `REFUSED_FIELDS`, so nothing has been decided.
+Pieces 1 and 2 are DONE (see below); this is the whole remainder.
 
 > *"we need a way to get covers, can we have missing details fill in covers or
 > have a button on each book page to find covers with llm or something"*
@@ -1232,8 +1320,8 @@ not the question the app asks. Then `check-cover-health.mjs --friend --remote`.
 | padhard | 268 *The Villa* | `standin` — right book, **German** edition jacket | The English Berkley jacket, or the owner deciding the German one is fine |
 | padhard | 435 *Risky Business* | blank; LLM proposed a **blog-hosted** image at **low confidence**, correctly NOT written | Owner opens <https://padhard.heygabi.ai/works/435> and presses Use, or rejects it. The model's doubt is provenance, not the book — the aspect ratio is a cover's |
 | padhard | 13 blank works | free rungs exhausted; **paid rung run 2026-08-23 on the owner's key** and it found nothing for these 13 | A publisher-page rung, or hand-linked URLs. ⚠️ Re-running the paid rung will re-bill ~40c and, on the evidence, mostly return the same nothing — see the non-determinism note in [`DONE.md`](DONE.md) |
-| padhard | 199 *Foxy Tales* | 🔴 has a cover and it is **50 pixels wide** | One word deleted from the stored URL — see below |
-| padhard | 356 *Evocation* | stored Open Library cover redirects to an archive.org object answering **503** on 3 probes | Wait and re-run `check-cover-health.mjs --friend --remote`. Not cleared: a dead URL may be an outage, and blanking it loses where the cover came from |
+| padhard | ~~199 *Foxy Tales*~~ | ✅ **CLOSED — re-measured 2026-09-05:** the stored URL is now `._SY475_`, fetching **200 / 34,579 bytes**. Not 50 pixels any more | — |
+| padhard | 356 *Evocation* | stored Open Library cover redirects to an archive.org object answering **503** on 3 probes. ✅ **Re-probed 2026-09-05: still 503** — two 302s then `503 Service Unavailable`, so this row is unchanged and correct | Wait and re-run `check-cover-health.mjs --friend --remote`. Not cleared: a dead URL may be an outage, and blanking it loses where the cover came from |
 
 ### 🔴 A cover can be the RIGHT book and still be useless — 50 pixels wide
 
@@ -1255,10 +1343,32 @@ Measured, same URL with the token deleted:
 | `…222114404._SY475_.jpg` | 34,579 |
 | `…222114404.jpg` (no token) | **255,373** |
 
-**Settles it:** `UPDATE work SET cover_url = '…222114404.jpg' WHERE id = 199` on
+~~**Settles it:** `UPDATE work SET cover_url = '…222114404.jpg' WHERE id = 199` on
 `library-catalog-2nd`, or the cover control on
 <https://padhard.heygabi.ai/works/199>. **Not applied** — it is a production
-write nobody asked for, and one word is cheap to review first.
+write nobody asked for, and one word is cheap to review first.~~
+
+✅ **Corrected 2026-09-05 (AUD-library) — THIS WAS APPLIED, and the entry did
+not know.** Re-measured on production `library-catalog-2nd`
+(`SELECT cover_url FROM work WHERE id = 199`), the stored URL today is
+
+```
+https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1738511384l/222114404._SY475_.jpg
+```
+
+— the `._SX50_` token is **gone**, replaced by `._SY475_`. Fetched the same
+minute: **HTTP 200, `image/jpeg`, `Content-Length: 34579`**, which is exactly
+the middle row of this section's own byte table. So the 50-pixel smudge is
+fixed and the work has a usable cover.
+
+⚠️ **It is the 34 KB form, not the 255 KB tokenless one this section
+recommended.** At a 150px grid and a 190px detail panel that is comfortably
+enough, so nothing is owed — but if anyone wants the full-resolution jacket the
+one-word change is still `…222114404.jpg`. ⚠️ **Who applied it is unknown**;
+this audit measured the column, it did not find a change_log entry for it.
+⚠️ The GUARD half of this section is UNCHANGED and still true: nothing we own
+would have caught the 50px write, and the *"worth ~30 min if it recurs"*
+suggestion below stands.
 
 ⚠️ **This is KI-6's family with the size test inverted, and every guard we own
 misses it.** `verifyCoverUrl` has a `MIN_COVER_BYTES` **floor** and no notion of
@@ -1274,7 +1384,7 @@ minimum-dimension check instead — the 43-byte Open Library pixel and the
 4,013-byte Google card are already handled, and a dimension floor would start
 rejecting legitimate small covers without saying why.
 
-## ☐ Padhard's details queue is 2, and BOTH are named residue no lookup will close
+## ☑ NOTHING TO BUILD — padhard's details queue is 2, and BOTH are named residue no lookup will close — ☐ needs a signed-in human at <https://padhard.heygabi.ai/queue>
 
 > Owner, 2026-08-23: *"padhard shows 4 missing details"*.
 
@@ -1337,10 +1447,21 @@ Neither needs money and neither needs a deploy. Both need a signed-in human at
 
 > The rest of that ask — the free ladder in front of "look up", and the add path
 > filling series/volume/description — **shipped 2026-08-23** and moved WHOLE to
-> [`DONE.md`](DONE.md) (branch `feature/free-details-ladder`, **not deployed**).
+> [`DONE.md`](DONE.md) (branch `feature/free-details-ladder`, ~~**not
+> deployed**~~ — see the correction below).
 > Design of record: [`info/free-details-ladder.md`](info/free-details-ladder.md).
 > ⚠️ Its NOT-verified list is real: rung 2 has never run, Google Books answered
 > **400** live, and nothing has been through the deployed route.
+>
+> ⚠️ **Corrected 2026-09-05 (AUD-library): "not deployed" is FALSE and has
+> been for weeks.** Measured: `git branch --merged main` lists
+> `feature/free-details-ladder`, and **no branch in this repo is unmerged
+> today**; `docs/deploys.log` carries eleven deploy PAIRS since 2026-08-25, so
+> the ladder has been on both instances for a fortnight. What is still true is
+> the NOT-verified list above — shipped is not verified, and nothing here has
+> been exercised through the live route. The same correction applies to the
+> *"Verify, once the branch is deployed"* line at the foot of this section:
+> the branch IS deployed, so those two checks can be done now.
 
 Three things in that entry did NOT ship, and none of them is a coding oversight:
 
@@ -1378,8 +1499,12 @@ audiobook catalog holds reports a free rung as the source rather than an LLM run
 > ISBN backfill — complete 2026-08-21) moved WHOLE to [`DONE.md`](DONE.md), per
 > the done-items-get-moved-not-badged rule.
 
-## 🧰 Tech debt (owner-ordered section, 2026-08-17: "all tech debt stuff move
-## in to there so we can handle tech debt stuff later")
+## ⏸ DEFERRED BY OWNER 2026-08-17 — 🧰 Tech debt (7 items)
+
+> **His deferral, verbatim, 2026-08-17:** *"all tech debt stuff move in to there
+> so we can handle tech debt stuff later"* — the whole section is deferred by
+> him, not parked by a session, so nothing in it goes on an UNBUILT list until
+> he says otherwise.
 
 Nothing here is urgent, broken, or user-visible; each is a deliberate
 "later". An item leaves by being fixed (→ DONE.md) or by being promoted to
@@ -1437,7 +1562,7 @@ real work. New debt goes HERE, never scattered.
   whether the owner wants them reassigned or deleted — **an owner decision,
   not a cleanup.**
 
-## 🔥 Owner asks 2026-08-16 late evening — status board
+## ☐ Owner asks 2026-08-16 late evening — status board (MIXED: 4 owner reviews/actions, 2 unbuilt phases, 2 owner decisions, 1 deferred — read the bullets, not this heading)
 
 ### Third wave (2026-08-17 morning)
 - **🤖 GABI, the conversational fixer — PHASE 0 SHIPPED; DISCORD IS NEXT.**
@@ -1643,7 +1768,7 @@ that repo is outstanding, and it belongs to the conductor, not to this file.
   recommendation is now unsupported**, see the measurement above; members-only
   still recommended).
 
-## 📚 Ebook split — ⚠️ PHASE 5 (retire ingest + prune) IS STILL OWED
+## ☐ Ebook split — 1 of 5 phases left: PHASE 5, retire ingest + export + prune (UNBUILT)
 
 **Decided and mostly built.** The insight below (owner, 2026-08-16) became
 `catalog-platform/docs/info/ebook-split-design.md`; phases 1–4 have shipped and
@@ -1715,7 +1840,22 @@ pruned** (Q2 — the phase 5 above); the shelf server needs one runbook line
 because the ebooks already ride the same mirror (Q3); step 1b stays the
 manifest's producer and only the *consumer* moves home (Q4).
 
-## 🤝 A second household's library, federated with ours (owner ask 2026-08-16)
+## ⏸ DEFERRED BY OWNER 2026-08-16 — 🤝 A second household's library, federated with ours
+
+> **His deferral, verbatim, 2026-08-16, the same day he raised it:** *"do the
+> next catalog later"*.
+
+⚠️ **Corrected 2026-09-05 (AUD-library): half of this ask has since been
+delivered under other headings, and reading this section cold would suggest
+nothing exists.** `padhard.heygabi.ai` IS a second household's library and has
+been live since 2026-08-16 (`access/second-instance.md`), and the general
+version — standing one up from an accepted request — is the "Request a catalog"
+provisioner at the top of this file. **What is genuinely NOT delivered is the
+JOIN**, which is the half he actually cared about (*"so we can see who owns
+what"*): `PEERS` ships **`[]`**, so no instance reads another's holdings today,
+and turning that on is access-INCREASING and needs a redeploy of every existing
+instance (phase 7's follow-up list says so). Constraints 1 and 2 below — she is
+less technical, she is not local — were answered by the provisioner design.
 
 **Deferred by the owner the same day it was raised — "do the next catalog
 later" — recorded now so it is not lost.**
@@ -1743,7 +1883,7 @@ our shared view), and answering that first will change what gets deployed.
 Related: the combined-site architecture already sketched for our own three
 catalogs.
 
-## 📸 Owner note — Illumicrate edition photos (2026-08-14) — ⚠️ THE DASHBOARD NAG IS GONE, THIS NOTE IS NOW THE ONLY REMINDER
+## ☐ OWNER ACTION — 📸 photograph the Illumicrate editions and upload them (2026-08-14) — ⚠️ THE DASHBOARD NAG IS GONE, THIS NOTE IS NOW THE ONLY REMINDER
 
 > **2026-08-18 (~14:15 Phoenix), owner order: "yes remove the need cover but
 > keep it in our todolist."** Works 224–228 had `cover_status = 'standin'`
@@ -1830,11 +1970,24 @@ one wrong `publisher` per imported line, silently, in a column nothing revisits.
 
 ## Production right now
 
-Measured **2026-08-12**, live version `d441ecd1`:
+✅ **Re-measured 2026-09-05 (AUD-library) against production `library-catalog`,
+because the figures here were 24 days old and had drifted by 92%:**
 
-| works | editions | owned copies | preordered | audio rungs | series_volume |
-|---|---|---|---|---|---|
-| **258** | 288 | **152** | **12** | 134 | 147 |
+| | works | editions | owned copies | preordered |
+|---|---|---|---|---|
+| **2026-09-05 (current)** | **496** | **567** | **432** | **15** |
+| ~~2026-08-12~~ | ~~258~~ | ~~288~~ | ~~152~~ | ~~12~~ |
+
+⚠️ **Do not treat any of these as durable.** The catalog gains books whenever
+the owner scans, which is why the 2026-08-12 row went unnoticed at less than
+half the truth. ⚠️ **This table is the MAIN instance only** — padhard is a
+separate D1 and is not counted here. The re-measurement did NOT cover the two
+right-hand columns the old table carried (audio rungs 134, series_volume 147);
+those are unread and their 2026-08-12 ages stand, so they are dropped from the
+table above rather than restated as if current.
+
+~~Measured **2026-08-12**, live version `d441ecd1`~~ — the version id is also
+stale; both instances serve `assets/index-BcUnvzMK.js` today.
 
 Movement since the crowdfunding rescan landed: works 233 → 258, owned copies
 117 → 152. Audio corroboration: **17 series confident, 2 hedged** — and the 2 are
@@ -1845,7 +1998,27 @@ now confirmable by hand, see below. Of the 70 live `audiobook_holding` rows,
 
 ---
 
-### 🔨 Completionist Chronicles 12 & 13 — signed, in BOTH formats, 2026-08-13
+### ☑ Completionist Chronicles 12 & 13 — the four copies EXIST and #238 is flagged (re-measured 2026-09-05) — ☐ one owner question left on 239–242
+
+🔴 **Corrected 2026-09-05 (AUD-library): the data work in this section is
+DONE and the section still read `🔨 in flight`.** Measured against production
+`library-catalog`:
+
+| Claim here | Measured 2026-09-05 |
+|---|---|
+| works **#34** *Untapped* and **#33** *Unmapped* have **0 copies** each; four copies to record | `SELECT COUNT(*) FROM copy WHERE work_id IN (33,34)` = **4** — the four copies exist |
+| #238 *Ritualist*'s hardcover copy "needs `is_signed` flipped to true" | `SELECT SUM(is_signed) FROM copy WHERE work_id = 238` = **2** — flipped, and on two copies |
+
+⚠️ **NOT verified:** that the four copies on 33/34 are the right FORMATS
+(a signed paperback *and* a signed hardcover each) and carry `is_signed`; only
+the row count was read. Somebody should eyeball
+<https://library.heygabi.ai/work/34> and <https://library.heygabi.ai/work/33>.
+
+☐ **The one genuinely open thing is the owner question at the foot of this
+section** — whether 239–242 (*Regicide*, *Rexus*, *Raze*, *Ruthless*) are
+signed too. It is unchanged and must not be inferred from #238.
+
+The original entry follows.
 
 Owner: *"These are a part of completionist chronicles. The pictures I uploaded are
 paperback copies that are signed we also have hardcover versions of each of these
@@ -1946,15 +2119,28 @@ filled before React had attached, so its state stayed empty, `Save` stayed
 disabled, and the click did nothing. The blank form after was the *un-filled* form,
 not a reset one. Nothing distinguishes that from a successful save.
 
-**Rows needing repair** (all created 2026-08-13):
+**Rows needing repair** (all created 2026-08-13) — ✅ **ALL FIVE REPAIRED.
+Re-measured 2026-09-05 (AUD-library) against production `library-catalog`;
+every one now carries an edition with the exact ISBN this table asked for, and
+#269 has its copy:**
 
-| work | title | what is missing |
-|---|---|---|
-| 265 | There's a Mouse About the House! | ISBN 9781601304193 |
-| 266 | Don't Tickle the Dinosaur! | ISBN 9780794549503 |
-| 267 | Richard Scarry's Busy Busy Farm | ISBN 9781984894236 |
-| 269 | Who Goes Roar? | ISBN 9781836422808 **and a copy — it is owned** |
-| 274 | My First Toys | ISBN 9781839035944 |
+| work | title | what was missing | edition id | `isbn13` today | copies |
+|---|---|---|---|---|---|
+| 265 | There's a Mouse About the House! | ISBN 9781601304193 | 472 | ✅ `9781601304193` | — |
+| 266 | Don't Tickle the Dinosaur! | ISBN 9780794549503 | 473 | ✅ `9780794549503` | — |
+| 267 | Richard Scarry's Busy Busy Farm | ISBN 9781984894236 | 474 | ✅ `9781984894236` | — |
+| 269 | Who Goes Roar? | ISBN 9781836422808 **and a copy — it is owned** | 475 | ✅ `9781836422808` | ✅ **1** |
+| 274 | My First Toys | ISBN 9781839035944 | 476 | ✅ `9781839035944` | — |
+
+⚠️ **The three BUGS above this table are a separate question from the five rows,
+and this measurement says nothing about them** — it proves the data was
+repaired by hand, not that `/add?mode=type` now persists a typed ISBN. Bug 1
+(typed ISBN not stored), bug 2 (the "record no copy" default) and bug 3 (the
+silent save failure) were NOT re-tested by this audit; the heading's *"two now
+FIXED"* is its own claim and is untouched.
+
+⚠️ Also still open and NOT measured: the author-spelling clash below
+(*"Make Believe Ideas"* vs *"Make Believe Ideas  Ltd."*, with a double space).
 
 ⚠️ Also: #269 was entered as author **"Make Believe Ideas"** while the catalog
 already holds #144 *Never Touch a Dinosaur!* as **"Make Believe Ideas  Ltd."**
@@ -2002,7 +2188,26 @@ Korean books, they are different ISBNs (…4548 vs …4678).
 
 ---
 
-### 🔨 The Autumn Publishing 6-book set — cannot be scanned in, 2026-08-13
+### ☑ The Autumn Publishing 6-book set — ALL SIX ARE IN THE CATALOG (re-measured 2026-09-05), 2026-08-13
+
+✅ **Corrected 2026-09-05 (AUD-library): this section still read `🔨 in
+flight` and the work is done.** Measured against production `library-catalog`:
+
+```sql
+SELECT COUNT(*) FROM edition WHERE isbn13 IN
+ ('9781839035920','9781839035944','9781839035906',
+  '9781839035951','9781839035937','9781839035913');
+```
+
+→ **6**. All six set-internal ISBNs from the table below now exist as edition
+rows, so they were typed in as this section instructed.
+
+⚠️ **NOT verified:** the author convention (`Autumn Publishing`), the series
+line (*My First*), the edition/print year, or whether each has an owned copy —
+only that six editions carry those six ISBNs. ⚠️ The transcription below is
+still the only record of the facts printed on the books, so it stays.
+
+The original entry follows.
 
 ⚠️ **Read the back covers: "Sold as part of a set, not for resale."** These are
 set-internal ISBNs. No retailer lists them individually, so **every rung of the
@@ -2173,7 +2378,16 @@ answer, not a placeholder.
 
 ---
 
-## Crowdfunding rescan — 2026-08-11, IN PROGRESS
+## ☑ Crowdfunding rescan — COMPLETE 2026-08-11 (14 unrecorded pledges found) — ☐ four owner questions left
+
+⚠️ **Corrected 2026-09-05 (AUD-library): the heading said `IN PROGRESS` and
+its own body says `COMPLETE` three paragraphs down** (*"Result — 14 unrecorded
+book pledges. COMPLETE."*, with all four accounts ticked). What is left is the
+**Still needs the owner** paragraph at the foot: the Realmkeeper Set's volume
+count, what the two Grimoire "Legendary Book Box" tiers contain, whether
+*Unstoppable* is the published title, and what "+ Books" meant in the Words of
+Radiance tier. ⚠️ Its closing line *"Nothing has been written to the
+database"* was NOT re-measured by this audit.
 
 The owner: *"I'm feeling dodgey about our scanned material from kickstarter and
 related sites. Let's just do a full rescan and present me the list for
@@ -2299,24 +2513,31 @@ Ranked CRITICAL + HIGH items from the 2026-08 review/verify audit
 (`wf_69d2365f-d02`, 14 units, 97 candidate findings). Full severity-ranked
 list including MEDIUM/LOW: [`docs/info/audit-2026-08-findings.md`](info/audit-2026-08-findings.md).
 
-🟡 **The CRITICAL PEER_TOKEN item below is now FIXED-IN-CODE** on
-`feature/peer-token-secret` (2026-08-24): the plaintext `token` was removed
-from both `PEERS` entries and the outbound `X-Peer-Token` now reads the
-`PEER_TOKEN` secret. **Owner action still required to close the leak:** rotate
-`PEER_TOKEN` to a fresh value on both workers, then deploy both. Until then the
-OLD leaked value stays valid in git history. See the findings doc's top section.
+✅ **Corrected 2026-09-05 (AUD-library) — the thirteen ✅ findings below say
+"FIXED on `feature/audit-fixes-library`", and that branch framing is stale:
+it is MERGED and SHIPPED.** Measured: `git branch --merged main` lists both
+`feature/audit-fixes-library` and `feature/peer-token-secret`, **no branch in
+this repo is unmerged**, and `docs/deploys.log` carries eleven deploy PAIRS
+since 2026-08-25 — the most recent `2026-09-04T17:06Z` (MAIN `005a4e48` /
+friend `6d6e74de`). So every ✅ row below is on BOTH live instances, not
+sitting on a branch. ⚠️ Individual rows were NOT re-exercised against the live
+system; what was verified is that the code shipped.
 
-## ✅ [CRITICAL] `if (count === 0) return null;` sits BEFORE two `useCallback` hooks, so the first time a book is sel…
+🟡 **The CRITICAL PEER_TOKEN item below is FIXED-IN-CODE AND DEPLOYED**
+(`feature/peer-token-secret`, 2026-08-24, merged): the plaintext `token` was
+removed from both `PEERS` entries and the outbound `X-Peer-Token` now reads the
+`PEER_TOKEN` secret. ✅ Verified 2026-09-05: `grep -c 'token *=' apps/worker/wrangler.toml`
+returns **0**, and `PEER_TOKEN` is read in `env.ts`, `lib/peer-push.ts` and
+`routes/peer.ts`.
 
-**Where:** `apps/web/src/components/BulkActionBar.tsx:26` (library_catalog / web-components)
-
-**Status:** ✅ FIXED on `feature/audit-fixes-library` (each fix has a failing-before/passing-after test).
-
-**Claim:** `if (count === 0) return null;` sits BEFORE two `useCallback` hooks, so the first time a book is selected the component renders more hooks than the previous render and React throws — with no error boundary anywhere in the app, the whole collection page white-screens.
-
-**Fix:** Move the `if (count === 0) return null;` early return in BulkActionBar.tsx to AFTER both useCallback hooks (or hoist the hooks above any conditional return) so hook count is invariant across renders.
-
-**Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
+🔴 **OWNER ACTION STILL REQUIRED, and the code fix does NOT close it:** rotate
+`PEER_TOKEN` to a fresh value on **both** workers (`wrangler secret put
+PEER_TOKEN`, main and `--env friend`, same value), then deploy both. **Until
+that rotation happens the OLD value is still valid and is still readable in
+this public repo's git history** — removing it from the working tree does not
+remove it from history. ⚠️ This audit could not verify whether the rotation has
+happened: a Worker secret cannot be read back. See the findings doc's top
+section.
 
 ## 🟡 [CRITICAL] The live cross-instance peer shared secret is committed in plaintext, twice, in a tracked file on a …
 
@@ -2327,30 +2548,6 @@ OLD leaked value stays valid in git history. See the findings doc's top section.
 **Claim:** The live cross-instance peer shared secret is committed in plaintext, twice, in a tracked file on a PUBLIC GitHub repo — and it authenticates a route that wipes and rewrites `peer_holding` on both instances.
 
 **Fix:** Rotate PEER_TOKEN via `wrangler secret put`, remove the plaintext value from both PEERS entries in wrangler.toml, and read it from a Worker secret at runtime instead of a tracked [vars] literal.
-
-**Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
-
-## ✅ [HIGH] The paid `--llm` rung reads `ANTHROPIC_API_KEY` with no instance awareness, so a `--friend` sweep bi…
-
-**Where:** `scripts/backfill-missing-isbns.mjs:431` (library_catalog / scripts-backfills-a)
-
-**Status:** ✅ FIXED on `feature/audit-fixes-library` (each fix has a failing-before/passing-after test).
-
-**Claim:** The paid `--llm` rung reads `ANTHROPIC_API_KEY` with no instance awareness, so a `--friend` sweep bills the OWNER's Anthropic account for padhard's books — the exact custody defect fixed in the sibling cover script on 2026-08-23 and left live here.
-
-**Fix:** Read the instance-specific Anthropic key (ANTHROPIC_API_KEY_FRIEND_SAM-style) when flags.friend is set, matching the fix already applied to the sibling cover script.
-
-**Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
-
-## ✅ [HIGH] The ISBN write also overwrites `edition.source`, so a hand-created (`manual`) edition that gains an …
-
-**Where:** `scripts/backfill-missing-isbns.mjs:517` (library_catalog / scripts-backfills-a)
-
-**Status:** ✅ FIXED on `feature/audit-fixes-library` (each fix has a failing-before/passing-after test).
-
-**Claim:** The ISBN write also overwrites `edition.source`, so a hand-created (`manual`) edition that gains an ISBN from a free rung is silently demoted to `'openlibrary'` — destroying the "'manual' outranks everything and is never overwritten automatically" protection the column exists for.
-
-**Fix:** Only overwrite edition.source when the incoming source outranks the existing one (respect the 'manual' precedence rule), not unconditionally alongside isbn13.
 
 **Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
 
@@ -2365,124 +2562,3 @@ OLD leaked value stays valid in git history. See the findings doc's top section.
 **Fix:** Actually use the author argument as a gate and compute a real title-similarity score in the LibraryThing rung instead of hardcoding similarity to 1.0, or stop labeling its output source: 'openlibrary'.
 
 **Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
-
-## ✅ [HIGH] Six writing backfills destructure only `{ commit, remote, limit }` from `parseFlags()` and drop `fri…
-
-**Where:** `scripts/backfill-work-covers.mjs:35` (library_catalog / scripts-backfills-a)
-
-**Status:** ✅ FIXED on `feature/audit-fixes-library` (each fix has a failing-before/passing-after test).
-
-**Claim:** Six writing backfills destructure only `{ commit, remote, limit }` from `parseFlags()` and drop `friend`, so `--friend --remote --commit` silently reads AND writes the MAIN production catalogue while reporting as if about padhard — defeating the guard `dbName()` was added to provide, and contradicting the docs' claim of "a `--friend` flag on every script".
-
-**Fix:** Add friend to the destructured parseFlags() result in all six backfill scripts and thread it into dbName().
-
-**Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
-
-## ✅ [HIGH] `research_book` returns only `{workId}` — none of RESEARCH_RESULT_FIELDS exists on the endpoint's re…
-
-**Where:** `apps/web/src/lib/gabi.ts:151` (library_catalog / web-lib-and-app-shell)
-
-**Status:** ✅ FIXED on `feature/audit-fixes-library` (each fix has a failing-before/passing-after test).
-
-**Claim:** `research_book` returns only `{workId}` — none of RESEARCH_RESULT_FIELDS exists on the endpoint's response, so a paid lookup that came back `error` is indistinguishable from one that filled every field.
-
-**Fix:** Have research_book's response actually include the RESEARCH_RESULT_FIELDS the caller expects, or have the caller check for an explicit error field.
-
-**Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
-
-## ✅ [HIGH] Neither role-write route inspects the TARGET's current role, and the last-owner guard only fires whe…
-
-**Where:** `apps/worker/src/routes/users.ts:90` (library_catalog / worker-auth-core)
-
-**Status:** ✅ FIXED on `feature/audit-fixes-library` (each fix has a failing-before/passing-after test).
-
-**Claim:** Neither role-write route inspects the TARGET's current role, and the last-owner guard only fires when the actor is editing themselves — so an `admin` can revoke or demote every `owner`, reaching countOwners()==0, after which no role in the app can ever mint an `owner` again.
-
-**Fix:** Check the target's current role before a role-write, and fire the last-owner guard whenever a write would bring countOwners() to 0, not only on self-edit.
-
-**Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
-
-## ✅ [HIGH] `OWNER_EMAILS` is documented in five places as a lock-out recovery hatch, but it is applied only whe…
-
-**Where:** `apps/worker/src/env.ts:57` (library_catalog / worker-auth-core)
-
-**Status:** ✅ FIXED on `feature/audit-fixes-library` (each fix has a failing-before/passing-after test).
-
-**Claim:** `OWNER_EMAILS` is documented in five places as a lock-out recovery hatch, but it is applied only when a NEW app_user row is INSERTed — an existing row's role is never re-forced on sign-in, so the mechanism cannot recover the one situation it is documented for (a row that exists with the wrong role).
-
-**Fix:** Re-apply OWNER_EMAILS on every sign-in for an existing app_user row, not only on INSERT of a new one.
-
-**Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
-
-## ✅ [HIGH] DELETE /works/:id/accessories/:accessoryId deletes by accessory id ALONE — the `:id` work segment is…
-
-**Where:** `apps/worker/src/routes/accessories.ts:96` (library_catalog / worker-catalog-covers-series)
-
-**Status:** ✅ FIXED on `feature/audit-fixes-library` (each fix has a failing-before/passing-after test).
-
-**Claim:** DELETE /works/:id/accessories/:accessoryId deletes by accessory id ALONE — the `:id` work segment is never used as a scope, so a request naming the wrong work destroys another book's accessory row and answers 200.
-
-**Fix:** Scope the DELETE by both :id (work) and :accessoryId, not accessoryId alone.
-
-**Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
-
-## ✅ [HIGH] GET /api/gabi/memory returns `{turns, updatedAt}` but its ONLY caller reads `{ok, record}`, so the D…
-
-**Where:** `apps/worker/src/routes/gabi-memory.ts:101` (library_catalog / worker-gabi-and-memory)
-
-**Status:** ✅ FIXED on `feature/audit-fixes-library` (each fix has a failing-before/passing-after test).
-
-**Claim:** GET /api/gabi/memory returns `{turns, updatedAt}` but its ONLY caller reads `{ok, record}`, so the Discord side never sees the shared memory — Phase 2's cross-surface continuity is silently dead in one direction.
-
-**Fix:** Change GET /api/gabi/memory to return {ok, record} (or update the caller to read {turns, updatedAt}) so the two sides agree.
-
-**Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
-
-## ✅ [HIGH] PUT /api/gabi/memory passes the caller's FULL conversation window to `savePanelConversation`, which …
-
-**Where:** `apps/worker/src/routes/gabi-memory.ts:139` (library_catalog / worker-gabi-and-memory)
-
-**Status:** ✅ FIXED on `feature/audit-fixes-library` (each fix has a failing-before/passing-after test).
-
-**Claim:** PUT /api/gabi/memory passes the caller's FULL conversation window to `savePanelConversation`, which APPENDS rather than replaces — so every Discord save re-appends the whole stored window and the shared record fills with duplicated turns.
-
-**Fix:** Make PUT /api/gabi/memory replace the stored window via savePanelConversation instead of appending the full window every time.
-
-**Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
-
-## ✅ [HIGH] `estimateSubrequests` never counted the free-details ladder that `runDetailsResearch` now always run…
-
-**Where:** `apps/worker/src/lib/details-sweep.ts:328` (library_catalog / worker-gabi-and-memory)
-
-**Status:** ✅ FIXED on `feature/audit-fixes-library` (each fix has a failing-before/passing-after test).
-
-**Claim:** `estimateSubrequests` never counted the free-details ladder that `runDetailsResearch` now always runs, so the sweep's budget can pick two books whose real cost is ~74 subrequests against a 50 ceiling — and overrunning it terminates the invocation silently.
-
-**Fix:** Add the free-details ladder's subrequest cost into estimateSubrequests so the sweep's budget reflects what runDetailsResearch actually spends.
-
-**Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
-
-## ✅ [HIGH] GET /api/peer/holdings performs no token check at all, yet it is mounted before the requireAuth blan…
-
-**Where:** `apps/worker/src/routes/peer.ts:120` (library_catalog / worker-research-donor-peer)
-
-**Status:** ✅ FIXED on `feature/audit-fixes-library` (each fix has a failing-before/passing-after test).
-
-**Claim:** GET /api/peer/holdings performs no token check at all, yet it is mounted before the requireAuth blanket and is classified everywhere in the repo as a token-gated machine route. It is an unauthenticated public read of another household's holdings, and the justification given for the pre-auth mount is factually wrong — the route has zero callers.
-
-**Fix:** Require the peer token on GET /api/peer/holdings like every other machine route, and correct/remove the pre-auth-mount justification since the route has no callers.
-
-**Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
-
-## ✅ [HIGH] The peer-holdings query uses a copy-status set that contradicts the canonical `HELD_STATUSES` in bot…
-
-**Where:** `apps/worker/src/lib/peer-push.ts:89` (library_catalog / worker-scanjobs-isbn-enrich)
-
-**Status:** ✅ FIXED on `feature/audit-fixes-library` (each fix has a failing-before/passing-after test).
-
-**Claim:** The peer-holdings query uses a copy-status set that contradicts the canonical `HELD_STATUSES` in both directions — it advertises borrowed and not-yet-delivered books to another household as things we hold, and hides books we own but have lent out.
-
-**Fix:** Use the canonical HELD_STATUSES set in the peer-holdings query instead of a contradictory copy-status list.
-
-**Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
-
