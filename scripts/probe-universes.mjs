@@ -26,11 +26,26 @@
  * ⚠️ Cost is the point of the probe. One call, low effort, no web search.
  *
  *   node scripts/probe-universes.mjs
+ *   node scripts/probe-universes.mjs --ignore-policy   # spend despite a switched-off feature
+ *
+ * ## ⚠️ The spending gate (L13)
+ *
+ * ⚠️ **Every run of this script spends** — there is no dry mode, which is why
+ * the gate is the first thing that happens. It asks the estate whether
+ * command-line backfills are switched off for this catalogue (`cli.backfill` —
+ * see `lib/billing-cli.mjs`) and stops, with the re-run printed, if they are.
+ * `--ignore-policy` goes through anyway: a guard with a deliberate escape
+ * hatch, never a CLI that refuses its operator.
+ *
+ * ⚠️ **No `--friend`**, unchanged: the cases below are fixed rows with known
+ * answers and touch no database, so there is no second instance to aim at. The
+ * gate asks about `library`.
  */
 
 import { createClient, RESEARCH_MODEL } from '../packages/research/src/client.ts';
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
+import { CLI_FEATURE_SETS, checkCliBilling } from './lib/billing-cli.mjs';
 import { ROOT } from './lib/d1.mjs';
 
 function devVar(name) {
@@ -106,6 +121,17 @@ null: the series name already says everything.
 
 Prefer null over a guess. A wrong universe is worse than no universe, because
 nobody re-checks a filled-in field.`;
+
+// ⚠️ THE SPENDING GATE — L13, §9 Q5. First, because every run of this script
+// spends: there is no `--plan` here to fall short of the bill.
+{
+  const gate = await checkCliBilling({
+    friend: false,
+    features: CLI_FEATURE_SETS.probeUniverses,
+    label: 'Command-line backfills',
+  });
+  if (gate.blocked) process.exit(1);
+}
 
 const apiKey = devVar('ANTHROPIC_API_KEY');
 if (!apiKey) {

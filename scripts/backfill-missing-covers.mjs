@@ -49,6 +49,15 @@
  *     npm run backfill:missing-covers -- --remote --llm    # ⚠️ COSTS MONEY, see below
  *     npm run backfill:missing-covers -- --remote --llm --commit   # ⚠️ the ONLY --llm run that spends
  *     npm run backfill:missing-covers -- --remote --llm --llm-dry  # ⚠️ paid preview: spends, writes nothing
+ *     npm run backfill:missing-covers -- --remote --llm --commit --ignore-policy  # spend despite a switched-off feature
+ *
+ * ## ⚠️ The spending gate (L9)
+ *
+ * A run that would spend asks the estate whether this catalogue's paid cover
+ * search is switched off (`cli.backfill` / `research.covers` — see
+ * `lib/billing-cli.mjs`). If it is, the run stops before the first call and
+ * says so. `--ignore-policy` goes through anyway: this is a guard with a
+ * deliberate escape hatch, never a CLI that refuses its operator.
  *
  * `--repair` widens the question from "which works have no cover" to "which works
  * have no *working* cover". It fetches every stored URL, which is slow and mostly
@@ -124,6 +133,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 
+import { CLI_FEATURE_SETS, checkCliBilling } from './lib/billing-cli.mjs';
 import { execute, lit, parseFlags, query, ROOT } from './lib/d1.mjs';
 import { coverFrom, resolveIsbn, verifyCoverUrl } from '../packages/isbn/src/resolve.ts';
 import { searchOpenLibrary } from '../packages/isbn/src/search.ts';
@@ -197,6 +207,30 @@ const llmKeyFrom = (() => {
   }
   return value;
 })();
+
+/**
+ * ⚠️ **THE SPENDING GATE — L9, billing design §9 Q5.** Checked HERE, before the
+ * free rungs run, for the same reason `--llm-key-from` is validated here: a run
+ * the owner has switched off should cost nothing and stop immediately, not
+ * forty seconds of Open Library calls later.
+ *
+ * Only a run that would actually SPEND is gated — `--llm` plus `--commit` or
+ * `--llm-dry`. A dry run bills nothing and is not the subject of a spending
+ * policy, so it behaves exactly as it did before this gate existed.
+ *
+ * ⚠️ L9 is under TWO switches, `cli.backfill` and `research.covers`, and that
+ * double cover is deliberate and pinned upstream: a path under two switches is
+ * refused if EITHER denies. Never a hard refusal — `--ignore-policy` always
+ * goes through, loudly.
+ */
+if (useLlm && (flags.commit || llmDry)) {
+  const gate = await checkCliBilling({
+    friend: flags.friend,
+    features: CLI_FEATURE_SETS.covers,
+    label: 'Paid cover search',
+  });
+  if (gate.blocked) process.exit(1);
+}
 
 /**
  * "Cover needed", as SQL — ⚠️ **a MIRROR of `NEEDS_COVER` in

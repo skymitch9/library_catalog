@@ -26,6 +26,21 @@
  *   node scripts/audit-universes.mjs --remote            # the real run
  *   node scripts/audit-universes.mjs --remote --plan     # counts + cost, no spend
  *   node scripts/audit-universes.mjs --remote --limit 60 # a cheap slice
+ *   node scripts/audit-universes.mjs --remote --ignore-policy  # spend despite a switched-off feature
+ *
+ * ## ⚠️ The spending gate (L12)
+ *
+ * A real run asks the estate whether command-line backfills are switched off
+ * for this catalogue (`cli.backfill` — see `lib/billing-cli.mjs`) and stops,
+ * with the re-run printed, if they are. `--plan` spends nothing and is never
+ * gated. `--ignore-policy` goes through anyway: a guard with a deliberate
+ * escape hatch, never a CLI that refuses its operator.
+ *
+ * ⚠️ **This script has no `--friend`**, and that is unchanged. It reads `work`
+ * through `query(..., { remote })` with no `friend` flag, so it is a MAIN
+ * instance tool and the gate asks about `library`. Giving it a second instance
+ * is a separate change with its own audiobook-CSV question; it is not smuggled
+ * in here.
  *
  * ⚠️ `--remote` matters. The local D1 in this checkout holds 116 works; the
  * production one holds 231. A local run silently audits half the catalog.
@@ -36,6 +51,7 @@ import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 
 import { createClient, RESEARCH_MODEL } from '../packages/research/src/client.ts';
+import { CLI_FEATURE_SETS, checkCliBilling } from './lib/billing-cli.mjs';
 import { query, ROOT } from './lib/d1.mjs';
 import { loadAudiobooks, AUDIOBOOK_CSV } from './lib/audiobooks.mjs';
 
@@ -323,6 +339,18 @@ console.log(`  ${Math.ceil(asked.length / BATCH_SIZE)} batch(es) of ${BATCH_SIZE
 if (plan) {
   console.log('\n--plan: nothing asked, nothing spent.');
   process.exit(0);
+}
+
+// ⚠️ THE SPENDING GATE — L12, §9 Q5. After `--plan` (which spends nothing and
+// is therefore not the subject of a spending policy) and before the key is even
+// read, so a switched-off run touches no secret and makes no call.
+{
+  const gate = await checkCliBilling({
+    friend: false,
+    features: CLI_FEATURE_SETS.auditUniverses,
+    label: 'Command-line backfills',
+  });
+  if (gate.blocked) process.exit(1);
 }
 
 const apiKey = devVar('ANTHROPIC_API_KEY');

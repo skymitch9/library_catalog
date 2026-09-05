@@ -1,7 +1,16 @@
 # Secrets & ops commands — how to set/push keys and run the npx tooling
 
 > **Audience:** the owner + Claude sessions. **Status:** TRACKED.
-> **Last verified: 2026-08-26** — 1Password became the MASTER that day (the
+> **Last verified: 2026-09-05 (one section only)** — agent W2-LIBCLI added
+> *"The two NAMES the CLI spending gate reads"* below and re-measured **exactly
+> two things** for it: that `apps/worker/.dev.vars.tpl` (the tracked, generated
+> names-and-pointers template) lists **neither** `ESTATE_APP_TOKEN_LIBRARY` nor
+> `ESTATE_APP_TOKEN_LIBRARY2`, and that `packages/estate-auth/src/gate.ts`'s
+> `APP_TOKEN_VAR` still maps `library`/`library2` to exactly those two names.
+> ⚠️ **Nothing else in this file was re-checked on 2026-09-05** — every claim
+> below carries its 2026-08-25 / 2026-08-26 age, and no `secret:list` was
+> re-taken.
+> **Previously verified: 2026-08-26** — 1Password became the MASTER that day (the
 > "vault" section below): 13 items imported into vault `Estate`, the
 > `--source op` plan proved byte-identical to the `--source file` plan on all
 > three paths (main / friend / both), and `HARDCOVER_API_TOKEN` was pushed to
@@ -426,6 +435,52 @@ vault**: `ANTHROPIC_API_KEY_FRIEND_SAM`, `INDEX_READ_TOKEN_FRIEND_PADHARD` and
 `CLOUDFLARE_API_TOKEN_CI`. All three are empty, which is their correct resting
 state — a filled drop-box is an unfinished operation, never storage. The import
 skips an empty value by name, and the template carries them as blank lines.
+
+## 🆕 The two NAMES the CLI spending gate reads — 2026-09-05 (agent W2-LIBCLI)
+
+The five CLI money paths (L9–L13 — `backfill-missing-covers.mjs`,
+`backfill-missing-isbns.mjs`, `research-queue.mjs`, `audit-universes.mjs`,
+`probe-universes.mjs`) now ask the estate whether a paid run has been switched
+off, through `scripts/lib/billing-cli.mjs`. That call needs **this instance's
+own app bearer**, and the NAMES are the auth Worker's own — the estate's pairing
+rule is *same name, both sides*.
+
+| Run | Env var NAME the scripts read | Read from |
+|---|---|---|
+| main (`library`) | `ESTATE_APP_TOKEN_LIBRARY` | `process.env` first, then `apps/worker/.dev.vars` |
+| `--friend` (`library2`) | `ESTATE_APP_TOKEN_LIBRARY2` | same order |
+
+Nothing else changed: `ESTATE_AUTH_URL` and `ESTATE_APP` are read out of
+`apps/worker/wrangler.toml` (config of record, not secrets), section-aware, so a
+`--friend` run cannot be answered for the main catalogue.
+
+🔴 **NEITHER NAME IS SET ANYWHERE THIS MACHINE CAN READ TODAY, and that is a
+pre-existing custody gap, not something this change introduced.**
+`ESTATE_APP_TOKEN_LIBRARY` is one of the three gaps in the table above (live on
+the Worker, no readable master); `ESTATE_APP_TOKEN_LIBRARY2` is live on the
+friend Worker and is likewise absent from `.dev.vars` (`.dev.vars.tpl` lists
+neither). **Until one is set, the gate prints *"Spending policy for library is
+UNKNOWN … Proceeding"* and the run continues** — the same fail-open direction
+every other consumer of this policy takes, said out loud rather than silently
+read as "nothing is denied".
+
+**What the owner must do to make the gate live** (names only, no values here):
+
+1. Re-mint `ESTATE_APP_TOKEN_LIBRARY` and set it under the **same name on both
+   sides** — this Worker and `estate-auth` — per the custody-gap row above; the
+   same for `ESTATE_APP_TOKEN_LIBRARY2` if the `--friend` scripts are to be
+   gated too.
+2. Put the value in vault `Estate` under the bare title `ESTATE_APP_TOKEN_LIBRARY`
+   (the `ESTATE_APP_TOKEN_*` names are BARE, not `library.`-prefixed — see the
+   item-title convention above), then regenerate the template with
+   `node scripts/op-import-dev-vars.mjs --write-template`.
+3. Either export the var in the shell before a run, or regenerate `.dev.vars`
+   from the vault (`op inject …`), run, and delete the file again.
+
+⚠️ A shell export is the lighter option and is enough: the scripts read
+`process.env` **first**. Nothing here needs `npm run secrets:push` — the gate is
+a *reader* of a bearer the Workers already hold, and pushing is not part of
+making it work.
 
 ## Ops command reference (which Claude can run vs which need the owner)
 

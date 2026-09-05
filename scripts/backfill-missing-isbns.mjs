@@ -30,6 +30,15 @@
  *     npm run backfill:missing-isbns -- --remote --commit # apply
  *     npm run backfill:missing-isbns -- --remote --llm    # with paid rung
  *     npm run backfill:missing-isbns -- --remote --llm --commit
+ *     npm run backfill:missing-isbns -- --remote --llm --ignore-policy  # spend despite a switched-off feature
+ *
+ * ## ⚠️ The spending gate (L10)
+ *
+ * `--llm` is the only rung here that spends, so a `--llm` run asks the estate
+ * whether this catalogue's ISBN rung is switched off (`cli.backfill` /
+ * `research.isbn` — see `lib/billing-cli.mjs`). If it is, the run stops before
+ * the first free call and says so. `--ignore-policy` goes through anyway: a
+ * guard with a deliberate escape hatch, never a CLI that refuses its operator.
  *
  * ## Safety
  *
@@ -61,6 +70,7 @@ import path from 'node:path';
 
 import { execute, lit, parseFlags, query, ROOT } from './lib/d1.mjs';
 import { editionSourceWriteExpr, llmKeyName, readLlmKeyFrom } from './lib/backfill-safety.mjs';
+import { CLI_FEATURE_SETS, checkCliBilling } from './lib/billing-cli.mjs';
 import { parseThingTitleIsbns } from './lib/librarything.mjs';
 import { titleSimilarity } from '../packages/core/src/matching.ts';
 import { normaliseTitle, cleanAudiobookTitle } from '../packages/core/src/titles.ts';
@@ -68,6 +78,27 @@ import { normaliseTitle, cleanAudiobookTitle } from '../packages/core/src/titles
 const flags = parseFlags();
 const useLlm = process.argv.includes('--llm');
 const llmKeyFrom = readLlmKeyFrom(process.argv);
+
+/**
+ * ⚠️ **THE SPENDING GATE — L10, billing design §9 Q5.** Asked before the free
+ * rungs run, so a run the owner has switched off costs nothing and stops at
+ * once rather than after several minutes of rate-limited Open Library calls.
+ *
+ * Only `--llm` spends here, so only `--llm` is gated; every free run behaves
+ * exactly as it did before this gate existed.
+ *
+ * ⚠️ L10 is under TWO switches, `cli.backfill` and `research.isbn` — a path
+ * under two switches is refused if EITHER denies, and that double cover is
+ * deliberate and pinned upstream. `--ignore-policy` always goes through.
+ */
+if (useLlm) {
+  const gate = await checkCliBilling({
+    friend: flags.friend,
+    features: CLI_FEATURE_SETS.isbns,
+    label: 'ISBN backfill (LLM rung)',
+  });
+  if (gate.blocked) process.exit(1);
+}
 
 const UA = 'library_catalog (+https://github.com/private)';
 const PAUSE_MS = 1100; // Open Library asks for ~1 req/sec

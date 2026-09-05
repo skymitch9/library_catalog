@@ -81,6 +81,18 @@
  *     tsx scripts/research-queue.mjs --remote --commit --limit 5
  *     tsx scripts/research-queue.mjs --friend --remote          # padhard, estimate only
  *     tsx scripts/research-queue.mjs --friend --remote --commit --llm-key-from=main
+ *     tsx scripts/research-queue.mjs --remote --commit --ignore-policy  # spend despite a switched-off feature
+ *
+ * ## ⚠️ The spending gate (L11)
+ *
+ * This was the one library money path with **no gate at all** — it hard-codes
+ * `OWNER_USER_ID = 1` and no capability check ever ran. The identity is
+ * unchanged (it is the authority recorded against every value, not an
+ * authorisation), but a `--commit` run now asks the estate whether details
+ * research is switched off for this catalogue (`cli.backfill` — see
+ * `lib/billing-cli.mjs`) before it claims the first run. An estimate spends
+ * nothing and is not gated. `--ignore-policy` goes through anyway: a guard with
+ * a deliberate escape hatch, never a CLI that refuses its operator.
  */
 
 import { execFileSync } from 'node:child_process';
@@ -93,9 +105,20 @@ import { fileURLToPath } from 'node:url';
 import { estimateCents } from '@lc/research';
 
 import { claimRun, gapsFor, runDetailsResearch } from '../apps/worker/src/lib/research-run.ts';
+import { CLI_FEATURE_SETS, checkCliBilling } from './lib/billing-cli.mjs';
 import { execute, lit, parseFlags, query, ROOT } from './lib/d1.mjs';
 
-/** Recorded as the authority behind every value. See apply-pending-findings.mjs. */
+/**
+ * Recorded as the authority behind every value. See apply-pending-findings.mjs.
+ *
+ * ⚠️ **This is a PROVENANCE stamp, not an authorisation**, and the spending
+ * gate below is deliberately NOT resolved against it. The estate's own doors
+ * take either a person (through `/seen`, which needs a session this script does
+ * not have) or the app's token; this script presents the app's token and is
+ * answered for the SITE. Teaching it to assert a person's identity from a
+ * hard-coded id would be an app claiming a human it never authenticated —
+ * exactly the direction the estate refuses to move in without the owner.
+ */
 const OWNER_USER_ID = 1;
 
 /**
@@ -592,6 +615,16 @@ async function main() {
     console.log('\nEstimate only. Nothing was asked and nothing was written. Add --commit.');
     return;
   }
+
+  // ⚠️ THE SPENDING GATE — L11, §9 Q5. Asked at the exact point this run stops
+  // being an estimate and starts being a bill, and before the first `claimRun`:
+  // a claim that is then abandoned leaves a run row nobody asked for.
+  const gate = await checkCliBilling({
+    friend,
+    features: CLI_FEATURE_SETS.researchQueue,
+    label: 'Details research run',
+  });
+  if (gate.blocked) return;
 
   let done = 0;
   let failed = 0;
