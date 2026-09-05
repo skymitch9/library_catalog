@@ -32,7 +32,7 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
-## ☐ "Request a catalog" phase 5 — the sealed-key ladder is IN step 10 (agent S2, 2026-09-05)
+## ☑ BUILT 2026-09-05 — "Request a catalog" phase 5, the sealed-key ladder is IN step 10 (agent S2) — ☐ owner runs it for real once
 
 Commit **`acb4c44`**. Step 10 now tries the two sealed envelopes BEFORE the
 owner's own key, through `catalog-platform/scripts/lib/catalog-seal.mjs`'s
@@ -64,8 +64,12 @@ suite. ⚠️ The private key that opens them lives on the owner's machine only 
 in that repo's `docs/access/RECOVERY.md` §11.3.
 
 ☐ Still the owner's step, and unchanged by this: **run it for real once.**
+The command, from `catalog-platform`:
+`npm run provision:catalog -- --request <id> --dry` then the same without
+`--dry`. Runbook: [`access/provision-catalog.md`](access/provision-catalog.md)
+→ "The Anthropic key — three sources".
 
-## ☐ "Request a catalog" phase 7 — the owner-run BOOKS provisioner is BUILT and UNEXERCISED (2026-09-05)
+## ☑ BUILT 2026-09-05 — "Request a catalog" phase 7, the owner-run BOOKS provisioner — ☐ owner runs it for real (UNEXERCISED)
 
 Design of record: `catalog-platform/docs/info/request-a-catalog-design.md` §7.4
 and §10 phase 7. Runbook: [`access/provision-catalog.md`](access/provision-catalog.md).
@@ -107,13 +111,29 @@ against production data.
 4. commit `docs/deploys.log` afterwards, and **tail one real sign-in** for
    `"src":"seen"` — the only proof the paired token is right.
 
-☐ **One decision for the owner — the ENV NAME convention.** Design §7.1 makes
+☑ ~~**One decision for the owner — the ENV NAME convention.**~~ **ANSWERED
+2026-09-05 08:35 Phoenix — the owner said "A", the split as built.**
+
+⚠️ **Corrected 2026-09-05 (AUD-library):** this line still read as an OPEN
+decision. Measured: commit `01c8bbe` in THIS repo ("OWNER DECISION: instance
+naming is (a), the split as built — recorded in design §7.1, TODO item moved
+whole to DONE; provisioner header updated") landed at 09:06 Phoenix today and
+touched `scripts/provision-catalog.mjs`. Its message quotes him: *"A name
+follows the requested subdomain only if it is cheap to rename (env / Worker);
+D1, R2, the games covers hostname and the estate app id stay ordinal; the
+hostname is the only identity-bearing name. Both provisioners already
+implemented this, so no code path changed."* The item was moved to DONE in
+`catalog-platform` and the copy here was never cut — one ask, two homes, and
+the one people read first said it was still open. Original text kept below,
+struck.
+
+~~Design §7.1 makes
 every permanent name identity-neutral (env `third`); the brief for this build
 asked the env to follow the subdomain (`amber`). The script splits them — the
 host and the env follow the person, the D1 / bucket / estate app id stay ORDINAL
 because none of the three can ever be renamed — and `--instance third` gets the
 doc's convention back in one flag. Worth settling BEFORE the first real run,
-because the env name is baked into the `package.json` twins it writes.
+because the env name is baked into the `package.json` twins it writes.~~
 
 ☐ **Follow-ups the script deliberately does NOT take**, each printed at the end
 of every run: `PEERS` ships `[]` (a peer entry reads another household's
@@ -129,7 +149,7 @@ r2.dev tier, and a bucket custom domain needs a third covers hostname because
 another repo.
 
 
-## ☐ SHELF round 3: "still 3 lists" → ONE list per format tab, the iconed edition cards only, copy facts as chips on them — owner ask 2026-09-03 17:21 Phoenix
+## ☑ BUILT + DEPLOYED TO BOTH 2026-09-03 — SHELF round 3: "still 3 lists" → ONE list per format tab, the iconed edition cards only, copy facts as chips on them (owner ask 2026-09-03 17:21 Phoenix) — ☐ owner review
 
 Lands on BOTH instances through the shared components (global rule
 2026-09-03: one codebase, deploy PAIR). Review page: <https://library.heygabi.ai/work/263>.
@@ -231,17 +251,35 @@ added** — the SENTENCES did not change, only the shape they arrive in, so each
 now reads the same words off `card.label` + `card.chips` (a `says()` helper
 rebuilds round 2's line grammar so his written example still reads verbatim).
 
-⚠️ **NOT VERIFIED:** nothing seen on a live page — no deploy. The component
+⚠️ ~~**NOT VERIFIED:** nothing seen on a live page — no deploy.~~ ⚠️ **Corrected
+2026-09-05 (AUD-library): that sentence was written at the commit and never
+updated after the deploy 25 minutes later — the table and the "Seen live 17:59"
+paragraph above it say the opposite, in the same section.** Measured today:
+both hosts serve the same bundle (`assets/index-BcUnvzMK.js`, two later deploy
+pairs on top of this one) and `docs/deploys.log` carries the pair
+`2026-09-04T00:57:26Z` MAIN `064ec342` / `00:57:49Z` friend `7d27c891`. What is
+still true: The component
 still has **no test** (no jsdom in this harness), so the chip markup, the tab
 strip and the keyboard are unexercised; only the derivation is pinned.
 
-☐ **Review after the deploy:** <https://library.heygabi.ai/work/263> — the
+☐ **OWNER REVIEW — the one thing left on this item.**
+<https://library.heygabi.ai/work/263> — the
 Hardcover tab should hold **six cards in one list**: three of his (*Hardcover*,
 *Hardcover* + chip *Sprayed edges*, *Hardcover* + chip *Lent out*) and the three
 *May be yours* printings — and padhard
 <https://padhard.heygabi.ai/work/642> for two tabs each with a NAMED card.
 
-## ☐ EDITION NOTE: move the "no barcode printed on this copy (owner-verified)" text out of the edition NAME into a note on the edit page — owner ask 2026-09-03 17:22 Phoenix
+Two questions carried in from round 2 (moved to [`DONE.md`](DONE.md)
+2026-09-05), because they are answered by looking at the same page:
+
+- ☐ his format list said *"hardcover paperback cover audio ebook"*; "cover" was
+  read as a slip between hardcover and paperback. Confirm on the tab strip.
+- ☐ neither the sprayed-edges copy nor the lent-out copy is `is_signed` in the
+  data, so his example's *"signed"* word will not appear even after linking —
+  are those copies actually signed (a data fix, his call), or was the example
+  illustrative?
+
+## ☑ BUILT + MIGRATED + SWEPT + DEPLOYED TO BOTH 2026-09-03 — EDITION NOTE: the "no barcode printed on this copy (owner-verified)" text moved out of the edition NAME into a note on the edit page (owner ask 2026-09-03 17:22 Phoenix) — ☐ owner review
 
 Owner, verbatim: *"Also remove the no bar code part from the title and put
 it into a note in the edit page of the edition entries"*.
@@ -348,153 +386,29 @@ remotely yet): **all 9 rows matched and parsed** — the five Illumicrate rows �
 Limited Edition Standard hardcover"*, and #450 *Dungeon Born* + #470 *Unmapped*
 → **"Standard edition"** (whole name was the note).
 
-⚠️ **NOT VERIFIED:** no migration run anywhere, no write to any remote, nothing
+⚠️ ~~**NOT VERIFIED:** no migration run anywhere, no write to any remote, nothing
 seen on a live page. **padhard's 1 row was not re-measured today** — the 17:30
-figure above stands and is now hours old. The Note field, the row's note line
+figure above stands and is now hours old.~~
+
+⚠️ **Corrected 2026-09-05 (AUD-library): that paragraph was written at the
+commit and contradicts the "MIGRATED, SWEPT AND DEPLOYED TO BOTH 17:57"
+subsection directly above it, which is the same section.** Re-measured today
+against BOTH production D1s with
+`SELECT COUNT(*) FROM edition WHERE edition_name LIKE '%owner-verified%'`:
+**`library-catalog` 0 rows, `library-catalog-2nd` 0 rows** — the sweep landed
+on both and stayed landed, and padhard's 1 row IS now re-measured. Still true:
+the Note field, the row's note line
 and the rewired tick have **no test** (no jsdom in this harness).
 
-## ☐ SHELF round 2: "Better but still duplicate" → format tabs with the editions under each — owner ask 2026-09-03 15:18, spec 15:33 Phoenix
+☐ **OWNER REVIEW:** open <https://library.heygabi.ai/work/263> → ✎ Edit this
+book → **Editions & copies**, and check the **Note** textarea on a printing
+carries *"No barcode printed on this copy (owner-verified)"* and survives a
+save. ⚠️ The edit page needs a sign-in, which is why no session can close this.
+Also ☐ he may rename editions **#450** (*Dungeon Born*) and **#470**
+(*Unmapped*) from *"Standard edition"* — both still carry that name, measured
+2026-09-05.
 
-Lands on BOTH instances through the shared components (global rule
-2026-09-03: one codebase, deploy PAIR). Review page: <https://library.heygabi.ai/work/263>.
-
-Owner, 15:18, after reviewing /work/263 with round 1 (`dcbb79f`) live, verbatim:
-
-> "Better but still duplicate, the hard cover section has info and the stuff
-> underneath has information"
-
-The card he reviewed read: *Hardcover · OWNED · Not signed* / *On the shelf ·
-Sprayed edges* / *On the shelf* / *Lent out · good*, then three MAY BE YOURS
-edition cards whose meta line repeats "Hardcover" under a name that already
-says hardcover. Asked (one question, 15:20) whether the duplicate was the
-copy lines' *"On the shelf"* (already what the OWNED pill means) or the MAY
-BE YOURS meta word. His answer was a spec, not a pick — **15:33, verbatim:**
-
-> "I want to see hardcover paperback cover audio ebook as the tabs and the
-> editions owned of each under
-> So paperback with standard under it. So very similar to A with minor
-> changes. Keep what makes them different took.
-> So hardcover
-> Collectors edition - sprayed edges signed
-> Standard edition
-> Standard edition - signed - lent out"
-
-**Read as:**
-
-- The shelf is grouped by **format tabs** — Hardcover · Paperback · Audio ·
-  Ebook (his list also says "cover"; taken as a slip between "hardcover" and
-  "paperback" unless he says otherwise — ☐ confirm on review, not before).
-  A format with nothing owned shows no tab.
-- Under a tab, **one line per owned copy**: the edition name, then only the
-  facts that distinguish THAT copy — ` - sprayed edges signed`,
-  ` - signed - lent out`. A copy with nothing distinctive is its edition name
-  alone (*"Standard edition"*). No *"On the shelf"* line, no *"Not signed"*:
-  the absence of a word is the plain case.
-- "Very similar to A with minor changes" = round 1's derivation stays (a fact
-  printed once: shared facts on the group, differing facts on the copy); what
-  changes is the SHAPE — tabs per format instead of a card per edition, and
-  the copy line becomes *edition — differences* instead of *status · facts*.
-- MAY BE YOURS stays as it is unless it duplicates the tab word; the format
-  tab already says "Hardcover", so a candidate's meta line need not.
-
-**Where it lives:** `apps/web/src/lib/shelf-view.ts` (`deriveShelfView`,
-`physicalRow`, `splitBadges`, `ShelfRow`/`ShelfCopy`) and
-`apps/web/src/components/OnYourShelf.tsx` (`ShelfCard`, `CopyFacts` — the
-*"On the shelf"* word is added by `CopyFacts` whenever `withStatus`, i.e. on
-every multi-copy list). Tests in `apps/web/test/shelf-view.test.ts`. Sized as
-a web-only build (derivation + component + tests) — Opus, ~150k.
-
-☑ build → ☑ tests → ☑ deploy PAIR from a clean tree → ☐ owner review on
-/work/263 and a padhard work with two formats.
-
-### ✅ BUILT 2026-09-03 — commit `0d794f0` — ✅ **DEPLOYED TO BOTH 15:58 Phoenix**
-
-Deploy pair from the clean tree at `9b17f8b`, both from one build
-(`assets/index-CEt3kbie.js`, served on both hosts at 15:59): **main**
-`9ad44ecb-1659-4314-b46a-d6f2efda8cee` · **friend** `8e618f0a-1e98-4c54-8754-17124366ee1a`
-(`deploys.log` lines `2026-09-03T22:57…`, holder `unknown` — the conductor's
-shell had no holder name). **Seen live (15:59):** MAIN /work/263 → tabs
-*Hardcover · Audio*, lines *Hardcover — Sprayed edges / Hardcover / Hardcover —
-Lent out*, no *"On the shelf"*, no *"Not signed"* anywhere on the page — the
-unlinked-copy rendering predicted below, exactly. padhard /work/642 → tabs
-*Hardcover · Paperback · Audio*, line *Standard edition — Signed*. Tab
-switching and the keyboard were NOT exercised live.
-
-⚠️ Also measured on /work/263: neither the sprayed-edges copy nor the lent-out
-copy is `is_signed` in the data, so his example's *"signed"* words will not
-appear even after linking — ☐ ask whether those copies ARE signed (a data fix,
-his call) or the example was illustrative.
-
-**What landed** — all of it in the DERIVATION, so a test pins what the shelf
-SAYS and the component chooses no words:
-
-- **`ShelfView.sections` is GONE**, replaced by `tabs` + `looseRows`. Removed
-  rather than left beside the new grouping: two groupings of one list is two
-  things to keep in step, and only one is rendered.
-- **Tabs are per FORMAT, in his order** — Hardcover · Paperback · *(any other
-  physical format he did not name, e.g. Mass market)* · *Physical* (a copy whose
-  binding cannot be attributed at all) · Audio · Ebook. A format with nothing on
-  it gets no tab. ⚠️ The default tab is the first with something **owned**, so a
-  book whose only hardcover is a *"May be yours"* printing opens on the format it
-  actually has.
-- **One line per owned copy:** the printing's name, ` — `, then only what
-  distinguishes THAT copy — badges, then *Signed*, then a status that is not "on
-  the shelf" (*"Lent out to Sam"*, one phrase), then the location. Nothing
-  distinctive → the name alone.
-- **Round 1's split is lifted from the PRINTING to the FORMAT**: a badge every
-  copy under the tab carries is said once on the header (*"Hardcover · all
-  signed"*) and appears on no line. ⚠️ It takes **two** copies for that to mean
-  anything — a lone copy keeps its own facts on its line, because *"all signed"*
-  over one book is a claim about a set of one.
-- ⚠️ ***"On the shelf"* and *"Not signed"* are never printed** — the absence is
-  the plain case, which is what he asked for. That **narrows the 2026-09-02 "say
-  it either way" rule to the hover**: `line.title` still answers signing both
-  ways and carries the condition his example dropped. ☐ Confirm on review that
-  losing the visible *"Not signed"* is what he wants.
-- **Untouched:** MAY BE YOURS, the wishes, the audiobook recordings (cover +
-  the migration-0010 provenance sentence) and the ebook files keep the cards
-  they had, inside their tab. The neutral slot and the formatless *"any format"*
-  want belong to no format and sit beside the tabs.
-- The tab strip **is** the edit box's strip — `.shelf-tabs` was added to every
-  existing `.edit-box__tabs` rule, never given a look of its own.
-
-**Measured at the commit:** `npm test` **2297 pass / 0 fail** (2282 before);
-`npm run typecheck` and `npm run build` clean. Nineteen cases added; ⚠️ **three
-were AMENDED rather than added** because they pinned `sections` (two in
-`shelf-view.test.ts`, one in `audio-match-review.test.ts`), all marked and all
-saying what they used to claim.
-
-🔴 **HIS EXAMPLE WILL NOT RENDER ON /work/263 YET, and it is not a bug.**
-Measured against production MAIN at the build: work 263's **three copies all
-have `edition_id: null`** against **three hardcover printings** (378 *"V1
-Limited Edition hardcover…"* `collectors`, 379 *"V1 Limited Edition Standard
-hardcover…"*, 660 *"Standard Hardcover"*). Nothing attributes a copy to a
-printing, so the work-220 anti-fabrication rule holds and the lines read:
-
-> Hardcover
-> Hardcover — Sprayed edges
-> Hardcover
-> Hardcover — Lent out
-
-The three printings still show under the same tab as *MAY BE YOURS* cards.
-☐ **The data follow-up is what turns that into his *"Collectors edition /
-Standard edition"*** — link each copy to its printing under *✎ Edit this book →
-Editions & copies*. Until then the shelf says what the record says.
-
-⚠️ **NOT VERIFIED:** nothing has been seen on a live page — no deploy has
-happened. The component itself has **no test** (there is no jsdom in this
-harness): the tab strip, the default selection and the arrow-key handling were
-exercised once by a throwaway `react-dom/server` render, which produced
-*"Collectors edition — Sprayed edges · Signed"*, *"Standard edition"* and
-*"Standard edition — Signed · Lent out"* exactly, and was then deleted.
-
-☐ **Review after the deploy:** <https://library.heygabi.ai/work/263> (the tab
-strip, and the three lines above) and — for two tabs each with a NAMED line, the
-shape his example describes — padhard <https://padhard.heygabi.ai/work/642>
-*The Ashes and the Star-Cursed King*, which holds one linked paperback and one
-linked hardcover (measured on `library-catalog-2nd`, 2026-09-03).
-
-## ☐ Audio-verdict residue (from part B, shipped 15:32 — the section is in [`DONE.md`](DONE.md))
+## ☐ Audio-verdict residue — 3 of 3 steps left: measure the `rejected` filter, owner presses "Yes this is it", find padhard's 27 fold rows (from part B, shipped 15:32 — the section is in [`DONE.md`](DONE.md))
 
 - ☐ **OPEN** — `routes/reviews.ts` `/bookid-index` and `packages/db/src/tbr.ts`'s
   audio bridge do NOT filter `rejected` recordings. They are identity bridges
@@ -514,7 +428,7 @@ linked hardcover (measured on `library-catalog-2nd`, 2026-09-03).
   "a lot" before assuming the 27 are visible anywhere.
 
 
-## ☐ "Signed" typed into the edition name → the signed button ✅ **APPLIED TO BOTH INSTANCES 2026-09-03** (padhard 14:19, MAIN 14:33 Phoenix — different modes, see below), ☐ **6 rows to link by hand** and ☐ edition parity with the main catalog still open (owner ask 2026-09-03 ~13:00)
+## ☐ "Signed" typed into the edition name — ✅ **SWEEP APPLIED TO BOTH INSTANCES 2026-09-03**, 2 of 2 steps left: **4 copies to link by hand** (re-measured 2026-09-05) and **one owner answer on edition parity** (owner ask 2026-09-03 ~13:00)
 
 **Owner, verbatim (Discord/session, 2026-09-03):** *"Side project, Diva marked books as
 signed manually in edition, sweep those and apply the button. Also diva's catalog
@@ -613,11 +527,27 @@ Review it: <https://padhard.heygabi.ai/> — e.g.
 The Editions panel now shows a plain printing with no name; the signed fact is
 the lit **Mark signed** toggle on the copy.
 
-**☐ ONE ROW NEEDS THE OWNER (padhard).** Its edition was normalised like the
+**☐ ONE ROW NEEDS THE OWNER (padhard).** ~~Its edition was normalised like the
 rest, but no copy was flagged, because which copy is signed is not in the
-database:
+database:~~
 
-| Work | Was | Why it was not guessed |
+⚠️ **Corrected 2026-09-05 (AUD-library) — HALF of this is now answered, and it
+was not answered here.** Re-measured against production `library-catalog-2nd`
+(`SELECT id, edition_id, is_signed FROM copy WHERE work_id = 136`): copy
+**#320 carries `is_signed = 1`** and copy **#131 does not**. So *"no copy was
+flagged"* is no longer true — somebody (Diva or the owner, through the UI)
+answered the *which one is signed* question. What is **still** open is only the
+LINK: neither copy carries an `edition_id`, so #320 is a signed copy attached
+to no printing.
+
+**The one statement left:**
+`UPDATE copy SET edition_id = 135 WHERE id = 320;` on `library-catalog-2nd`, or
+the *"Which printing do I own?"* control on
+<https://padhard.heygabi.ai/work/136> → ✎ Edit this book → Editions & copies.
+⚠️ Confirm with Diva that #320 is the copy she meant before linking — this
+audit measured the flag, it did not witness her setting it.
+
+| Work | Was | Why it was not guessed (2026-09-03) |
 |---|---|---|
 | work **#136 "Mate"** (edition #135) | `edition_name = 'Signed'` | the work has **2 unlinked copies (#131, #320)** and neither is linked to the edition. Ask Diva which one she got signed, then `UPDATE copy SET edition_id = 135, is_signed = 1 WHERE id = <the one>;` |
 
@@ -737,6 +667,13 @@ reported rather than assumed.
 flagged signed**; what is missing is only which *printing* it belongs to, which
 is not derivable from the database:
 
+✅ **Re-measured 2026-09-05 (AUD-library) against production `library-catalog`
+— all of it is still open, nothing has drifted:** copies **#169, #382 and #407
+each read `edition_id = NULL` and `is_signed = 1`**, and work **#32
+(*Uncapped*) still has `COUNT(*) = 0` copy rows**. So the three statements
+below are exactly the three still to run, and *Uncapped* still needs its copy
+created in the UI first.
+
 | Work | Editions | Why it was not guessed |
 |---|---|---|
 | #220 *Words of Radiance* | #321 | the work has **2 unlinked copies (#169, #382)** — both flagged signed, neither linked. Pick the leatherbound one: `UPDATE copy SET edition_id = 321 WHERE id = <the one>;` |
@@ -760,37 +697,25 @@ and then re-linked it to #621 — last write silently wins, report claims two.
 `resolveCopyCollisions` sends both claimants to the owner instead.
 Padhard has no such collision (checked).
 
-**Still open — "diva's catalog doesn't have editions like mine":** both instances
+~~**Still open — "diva's catalog doesn't have editions like mine":** both instances
 run the same build (every deploy in `deploys.log` lands as a pair) and the same
 migrations, so this is a DATA or a rendered-UI difference, not a missing feature.
-Needs one owner answer: what he sees on his that he does not see on hers.
+Needs one owner answer: what he sees on his that he does not see on hers.~~
+
+⚠️ **Corrected 2026-09-05 (AUD-library): this was a DUPLICATE of the
+"MEASURED 2026-09-03 14:20, it is the THEME" block a few paragraphs above** —
+the same open question with two homes in one section, and this copy is the
+older, weaker one (it stops at *"a DATA or a rendered-UI difference"*; the
+other one measured which, and found the theme). Struck rather than deleted.
+**The live version of the question is the THEME block above**, and its one
+owner answer is still outstanding. Re-confirmed today that the "same build"
+half holds: both hosts serve `assets/index-BcUnvzMK.js` (read 20:17Z) and both
+answer `/api/health` with the same `version` and feature flags.
 
 **Global rule (written to `~/.claude/CLAUDE.md` 2026-09-03):** every catalog change
 lands on BOTH instances — one build, deploy pair, migration pair, sweeps run with
 `--friend` too; posture vars mirrored unless a difference is deliberate and
 documented in `second-instance.md`.
-
-
-## ☐ CROSS-REPO: the LIBRARY half of the owner's 2026-09-02 ~14:00 batch is DONE — the platform file still says otherwise
-
-⚠️ **Recorded here because `catalog-platform/docs/TODO.md` was read-only to the
-session that did the work**, and a finished item that only one repo knows about
-is exactly the silent staleness the docs standard exists to kill.
-
-That file's section **"OWNER DECISION BATCH 2026-09-02 ~14:00"**, item 1
-(*LIBRARY follow-up agent*), lists three things. **All three landed 2026-09-02**
-and each has its own entry in [`DONE.md`](DONE.md):
-
-| | Item | Where it landed |
-|---|---|---|
-| (a) | Harper Voyager publisher batch + the B&N-import sweep | committed to production D1; 7 rows corrected, 2 true B&N imprints left alone |
-| (b) | Work-page merge — "On your shelf" becomes THE list | `783526b`, deployed both instances |
-| (c) | Per-edition covers | `614759f`, deployed both instances |
-
-☐ **Someone with write access to that tree ticks item 1** and moves it whole per
-the standard. Items 2–4 of that batch (the AUDIOBOOK agent, the paused
-other-computer work, Emberdark) are **untouched** and still open — this is only
-the library half.
 
 
 ## ☐ Billing phase 3 landed INERT — two things remain (2026-09-02)
@@ -1852,41 +1777,17 @@ script reads. It closes with a photograph and the cover UI, or not at all.
 
 ---
 
-## ☐ The Wandering Inn — the two things the volume fix deliberately left
+## ❓ OWNER DECISION — `import-shop-orders.mjs`: NULL publisher, or `copy.vendor`? (2026-09-02)
 
-The volume mapping itself is **done** — moved whole to
-[`DONE.md`](DONE.md) 2026-09-02, mapping and sources in
-[`info/serial-print-splits.md`](info/serial-print-splits.md). These two were
-kept out of that correction batch on purpose, and both need the owner.
+**The two options, and picking is the whole item:** (a) leave
+`edition.publisher` NULL on an imported shop order and let the ISBN ladder fill
+it, or (b) record the shop in `copy.vendor`, where a shop belongs and where the
+file's own header already says it goes.
 
-✅ **RESOLVED 2026-09-02 by the owner himself: "i ticked all 4"** — all four
-  works flagged through the edit panel, the one sanctioned door. The judgement
-  call landed on *"this position spans volumes"*. Kept here (not moved) until a
-  session verifies the four flags read back true; then move whole to DONE.
-
-☐ ~~**`work.multi_volume_printing` on works 229–232 — OWNER'S CHECKBOX.**~~
-  R6 (`info/volume-numbers.md` §3a) is **human-only and mechanically guarded**;
-  no script, finding or sweep may write it, and a correction script setting it
-  would be the exact bypass the guard exists to prevent. It may well belong on
-  all four — *The Wandering Inn* Books 1 and 2 are each one reading position
-  printed as two paperbacks. ⚠️ But the shape is not quite R6's worked example:
-  R6 was written for **one work** printed as two physical books (the two-volume
-  leatherbound *Words of Radiance*), and here there are **two works**, one
-  physical book each, sharing a position. Whether the flag means *"this work
-  spans volumes"* or *"this position does"* is a judgement, not a lookup —
-  hence the ask. `serial-print-splits.md` §3.3 has the full argument.
-  **Four ticks in the book edit panel, or one word.**
-
-✂️ **2026-09-02:** the *"`edition.publisher` reads Barnes & Noble"* item moved
-  WHOLE to [`DONE.md`](DONE.md) — all **seven** B&N-imported editions corrected
-  on production (322–325 Harper Voyager, 326 Ballantine Books, 327 Clarkson
-  Potter, 328 Scholastic Press), and the **two rows where B&N really IS the
-  publisher** (511, 557) verified and left alone. What it left behind is the
-  next item.
-
----
-
-## ☐ `import-shop-orders.mjs` writes the RETAILER into `edition.publisher` (2026-09-02)
+✅ **Re-measured 2026-09-05 (AUD-library): the defect is still live in the
+code** — `scripts/import-shop-orders.mjs:141` still writes the shop name into
+`INSERT INTO edition (…, publisher, …)`, and line 149 still reads rows back by
+`publisher = <vendor>`. So the next run still re-creates it, exactly as below.
 
 The data is corrected (see [`DONE.md`](DONE.md)); **the importer is not**, so its
 next run re-creates the defect on every row it adds. It writes the shop name into

@@ -18,6 +18,294 @@
 > were extracted from this same history.
 
 
+## ✅ 2026-09-05 — The Wandering Inn: all four `multi_volume_printing` flags VERIFIED true in production — the section's own close condition is met
+
+**Moved here whole from [`TODO.md`](TODO.md) by the 2026-09-05 docs audit
+(agent AUD-library), cut and paste, not summarised.** The section said, in its
+own words: *"Kept here (not moved) until a session verifies the four flags read
+back true; then move whole to DONE."* This is that session, and this is the
+verification.
+
+**Measured 2026-09-05 against production `library-catalog`** (read-only
+`npx wrangler d1 execute … --remote`):
+
+```sql
+SELECT id, title, multi_volume_printing FROM work WHERE id IN (229,230,231,232);
+```
+
+| id | title | `multi_volume_printing` |
+|---|---|---|
+| 229 | The Wandering Inn | **1** |
+| 230 | No Killing Goblins | **1** |
+| 231 | Fae and Fare | **1** |
+| 232 | Immortal Games | **1** |
+
+Four rows, four flags, all true — exactly what *"i ticked all 4"* claimed, and
+now read back off the database rather than taken on trust. The column was
+written through the edit panel, which is the one sanctioned door: R6
+(`info/volume-numbers.md` §3a) makes this flag human-only and mechanically
+guarded, and no script may set it.
+
+⚠️ **NOT verified by this audit:** what the flags CHANGE on a rendered page —
+whether the series ladder for *The Wandering Inn* now reads correctly to a
+person's eye. That needs a browser. The column value is the thing this section
+asked to be checked, and it is checked.
+
+## ☐ The Wandering Inn — the two things the volume fix deliberately left
+
+The volume mapping itself is **done** — moved whole to
+[`DONE.md`](DONE.md) 2026-09-02, mapping and sources in
+[`info/serial-print-splits.md`](info/serial-print-splits.md). These two were
+kept out of that correction batch on purpose, and both need the owner.
+
+✅ **RESOLVED 2026-09-02 by the owner himself: "i ticked all 4"** — all four
+  works flagged through the edit panel, the one sanctioned door. The judgement
+  call landed on *"this position spans volumes"*. Kept here (not moved) until a
+  session verifies the four flags read back true; then move whole to DONE.
+
+☐ ~~**`work.multi_volume_printing` on works 229–232 — OWNER'S CHECKBOX.**~~
+  R6 (`info/volume-numbers.md` §3a) is **human-only and mechanically guarded**;
+  no script, finding or sweep may write it, and a correction script setting it
+  would be the exact bypass the guard exists to prevent. It may well belong on
+  all four — *The Wandering Inn* Books 1 and 2 are each one reading position
+  printed as two paperbacks. ⚠️ But the shape is not quite R6's worked example:
+  R6 was written for **one work** printed as two physical books (the two-volume
+  leatherbound *Words of Radiance*), and here there are **two works**, one
+  physical book each, sharing a position. Whether the flag means *"this work
+  spans volumes"* or *"this position does"* is a judgement, not a lookup —
+  hence the ask. `serial-print-splits.md` §3.3 has the full argument.
+  **Four ticks in the book edit panel, or one word.**
+
+✂️ **2026-09-02:** the *"`edition.publisher` reads Barnes & Noble"* item moved
+  WHOLE to [`DONE.md`](DONE.md) — all **seven** B&N-imported editions corrected
+  on production (322–325 Harper Voyager, 326 Ballantine Books, 327 Clarkson
+  Potter, 328 Scholastic Press), and the **two rows where B&N really IS the
+  publisher** (511, 557) verified and left alone. What it left behind is the
+  next item.
+
+## ✅ 2026-09-05 — CROSS-REPO: the platform file no longer says otherwise — the library half of the 2026-09-02 ~14:00 batch is reconciled in both repos
+
+**Moved here whole from [`TODO.md`](TODO.md) by the 2026-09-05 docs audit
+(agent AUD-library), cut and paste, not summarised.** This item existed only to
+say that another repo's work log was out of step. It is now in step, so the
+item has nothing left to do.
+
+**Measured 2026-09-05, read-only, in `catalog-platform/docs/`:**
+
+- `grep -rn "OWNER DECISION BATCH 2026-09-02" docs/` returns **nothing in
+  `TODO.md`** — the section this item was waiting on has been moved out of that
+  file.
+- The batch now lives in `catalog-platform/docs/DONE.md` (~line 480) under the
+  owner's verbatim ask, and it names **all three** library items explicitly:
+  the work-page merge ("On your shelf" is THE list, per-format sections, the
+  dashed "May be yours" rows, the audiobook cross-link painted once), the
+  per-edition covers (no migration — `edition.cover_url` has existed since
+  0001), and the publisher batch (7 rows corrected, editions 511/557 correctly
+  REFUSED as real B&N imprints, importer-side fix filed as its own item).
+- So the ask *"someone with write access to that tree ticks item 1 and moves it
+  whole"* **happened**, and it was moved whole rather than badged.
+
+⚠️ **What this does NOT close, and it is stated in the entry below:** items 2–4
+of that batch (the AUDIOBOOK agent, the paused other-computer work, Emberdark)
+are that repo's business, not this one's. The platform DONE entry's last line
+says the remnant is *"the ON-PAUSE box-steps item left in TODO"*.
+⚠️ **NOT verified by this audit:** nothing was edited in `catalog-platform` —
+this repo's agent may not write there — and the three library commits were
+taken from that entry's own text, not re-run.
+
+## ☐ CROSS-REPO: the LIBRARY half of the owner's 2026-09-02 ~14:00 batch is DONE — the platform file still says otherwise
+
+⚠️ **Recorded here because `catalog-platform/docs/TODO.md` was read-only to the
+session that did the work**, and a finished item that only one repo knows about
+is exactly the silent staleness the docs standard exists to kill.
+
+That file's section **"OWNER DECISION BATCH 2026-09-02 ~14:00"**, item 1
+(*LIBRARY follow-up agent*), lists three things. **All three landed 2026-09-02**
+and each has its own entry in [`DONE.md`](DONE.md):
+
+| | Item | Where it landed |
+|---|---|---|
+| (a) | Harper Voyager publisher batch + the B&N-import sweep | committed to production D1; 7 rows corrected, 2 true B&N imprints left alone |
+| (b) | Work-page merge — "On your shelf" becomes THE list | `783526b`, deployed both instances |
+| (c) | Per-edition covers | `614759f`, deployed both instances |
+
+☐ **Someone with write access to that tree ticks item 1** and moves it whole per
+the standard. Items 2–4 of that batch (the AUDIOBOOK agent, the paused
+other-computer work, Emberdark) are **untouched** and still open — this is only
+the library half.
+
+## ✅ 2026-09-05 — SHELF round 2: format tabs with the editions under each — SUPERSEDED BY ROUND 3, both built and deployed to BOTH instances
+
+**Moved here whole from [`TODO.md`](TODO.md) by the 2026-09-05 docs audit
+(agent AUD-library), cut and paste, not summarised.** How completion was
+verified, since the section's own text disagreed with itself:
+
+- **Built and deployed:** commit `0d794f0`, deploy PAIR from clean tree
+  `9b17f8b` — `docs/deploys.log` lines `2026-09-03T22:57:09Z` (MAIN
+  `9ad44ecb`) and `2026-09-03T22:57:28Z` (friend `8e618f0a`, `env=friend`).
+  Both halves present, so the global both-catalogs rule is satisfied.
+- **Superseded the same evening by round 3** (`e6ed1fd`, deployed to both at
+  `2026-09-04T00:57Z`), which *removed* this round's `ShelfTab.lines` /
+  `ShelfTab.rows` / `looseRows` outright — verified in the tree today:
+  `apps/web/src/lib/shelf-view.ts` carries `ShelfTab.cards` and `looseCards`
+  and no `lines`/`rows`. So nothing of round 2 is still rendering and there is
+  nothing left here to review on its own.
+- **Live today:** both hosts serve one bundle, `assets/index-BcUnvzMK.js`
+  (read 2026-09-05 20:17Z), two deploy pairs newer than this one.
+- ⚠️ **Its two non-review residues were CARRIED, not dropped** — the "cover"
+  tab-word slip and "are the sprayed-edges / lent-out copies actually signed?"
+  now sit on round 3's owner-review line in `TODO.md`, which points at the same
+  page. One question, one home.
+- ⚠️ **NOT verified by this audit:** pixels, tab keyboard behaviour, or
+  anything needing a signed-in browser.
+
+⚠️ Its own closing paragraph below still says *"nothing has been seen on a live
+page — no deploy has happened"*. That sentence was written at the commit and
+never updated; the deploy table and the *"Seen live (15:59)"* paragraph in the
+same section are the later, correct record. Left verbatim, as the archive
+requires.
+
+## ☐ SHELF round 2: "Better but still duplicate" → format tabs with the editions under each — owner ask 2026-09-03 15:18, spec 15:33 Phoenix
+
+Lands on BOTH instances through the shared components (global rule
+2026-09-03: one codebase, deploy PAIR). Review page: <https://library.heygabi.ai/work/263>.
+
+Owner, 15:18, after reviewing /work/263 with round 1 (`dcbb79f`) live, verbatim:
+
+> "Better but still duplicate, the hard cover section has info and the stuff
+> underneath has information"
+
+The card he reviewed read: *Hardcover · OWNED · Not signed* / *On the shelf ·
+Sprayed edges* / *On the shelf* / *Lent out · good*, then three MAY BE YOURS
+edition cards whose meta line repeats "Hardcover" under a name that already
+says hardcover. Asked (one question, 15:20) whether the duplicate was the
+copy lines' *"On the shelf"* (already what the OWNED pill means) or the MAY
+BE YOURS meta word. His answer was a spec, not a pick — **15:33, verbatim:**
+
+> "I want to see hardcover paperback cover audio ebook as the tabs and the
+> editions owned of each under
+> So paperback with standard under it. So very similar to A with minor
+> changes. Keep what makes them different took.
+> So hardcover
+> Collectors edition - sprayed edges signed
+> Standard edition
+> Standard edition - signed - lent out"
+
+**Read as:**
+
+- The shelf is grouped by **format tabs** — Hardcover · Paperback · Audio ·
+  Ebook (his list also says "cover"; taken as a slip between "hardcover" and
+  "paperback" unless he says otherwise — ☐ confirm on review, not before).
+  A format with nothing owned shows no tab.
+- Under a tab, **one line per owned copy**: the edition name, then only the
+  facts that distinguish THAT copy — ` - sprayed edges signed`,
+  ` - signed - lent out`. A copy with nothing distinctive is its edition name
+  alone (*"Standard edition"*). No *"On the shelf"* line, no *"Not signed"*:
+  the absence of a word is the plain case.
+- "Very similar to A with minor changes" = round 1's derivation stays (a fact
+  printed once: shared facts on the group, differing facts on the copy); what
+  changes is the SHAPE — tabs per format instead of a card per edition, and
+  the copy line becomes *edition — differences* instead of *status · facts*.
+- MAY BE YOURS stays as it is unless it duplicates the tab word; the format
+  tab already says "Hardcover", so a candidate's meta line need not.
+
+**Where it lives:** `apps/web/src/lib/shelf-view.ts` (`deriveShelfView`,
+`physicalRow`, `splitBadges`, `ShelfRow`/`ShelfCopy`) and
+`apps/web/src/components/OnYourShelf.tsx` (`ShelfCard`, `CopyFacts` — the
+*"On the shelf"* word is added by `CopyFacts` whenever `withStatus`, i.e. on
+every multi-copy list). Tests in `apps/web/test/shelf-view.test.ts`. Sized as
+a web-only build (derivation + component + tests) — Opus, ~150k.
+
+☑ build → ☑ tests → ☑ deploy PAIR from a clean tree → ☐ owner review on
+/work/263 and a padhard work with two formats.
+
+### ✅ BUILT 2026-09-03 — commit `0d794f0` — ✅ **DEPLOYED TO BOTH 15:58 Phoenix**
+
+Deploy pair from the clean tree at `9b17f8b`, both from one build
+(`assets/index-CEt3kbie.js`, served on both hosts at 15:59): **main**
+`9ad44ecb-1659-4314-b46a-d6f2efda8cee` · **friend** `8e618f0a-1e98-4c54-8754-17124366ee1a`
+(`deploys.log` lines `2026-09-03T22:57…`, holder `unknown` — the conductor's
+shell had no holder name). **Seen live (15:59):** MAIN /work/263 → tabs
+*Hardcover · Audio*, lines *Hardcover — Sprayed edges / Hardcover / Hardcover —
+Lent out*, no *"On the shelf"*, no *"Not signed"* anywhere on the page — the
+unlinked-copy rendering predicted below, exactly. padhard /work/642 → tabs
+*Hardcover · Paperback · Audio*, line *Standard edition — Signed*. Tab
+switching and the keyboard were NOT exercised live.
+
+⚠️ Also measured on /work/263: neither the sprayed-edges copy nor the lent-out
+copy is `is_signed` in the data, so his example's *"signed"* words will not
+appear even after linking — ☐ ask whether those copies ARE signed (a data fix,
+his call) or the example was illustrative.
+
+**What landed** — all of it in the DERIVATION, so a test pins what the shelf
+SAYS and the component chooses no words:
+
+- **`ShelfView.sections` is GONE**, replaced by `tabs` + `looseRows`. Removed
+  rather than left beside the new grouping: two groupings of one list is two
+  things to keep in step, and only one is rendered.
+- **Tabs are per FORMAT, in his order** — Hardcover · Paperback · *(any other
+  physical format he did not name, e.g. Mass market)* · *Physical* (a copy whose
+  binding cannot be attributed at all) · Audio · Ebook. A format with nothing on
+  it gets no tab. ⚠️ The default tab is the first with something **owned**, so a
+  book whose only hardcover is a *"May be yours"* printing opens on the format it
+  actually has.
+- **One line per owned copy:** the printing's name, ` — `, then only what
+  distinguishes THAT copy — badges, then *Signed*, then a status that is not "on
+  the shelf" (*"Lent out to Sam"*, one phrase), then the location. Nothing
+  distinctive → the name alone.
+- **Round 1's split is lifted from the PRINTING to the FORMAT**: a badge every
+  copy under the tab carries is said once on the header (*"Hardcover · all
+  signed"*) and appears on no line. ⚠️ It takes **two** copies for that to mean
+  anything — a lone copy keeps its own facts on its line, because *"all signed"*
+  over one book is a claim about a set of one.
+- ⚠️ ***"On the shelf"* and *"Not signed"* are never printed** — the absence is
+  the plain case, which is what he asked for. That **narrows the 2026-09-02 "say
+  it either way" rule to the hover**: `line.title` still answers signing both
+  ways and carries the condition his example dropped. ☐ Confirm on review that
+  losing the visible *"Not signed"* is what he wants.
+- **Untouched:** MAY BE YOURS, the wishes, the audiobook recordings (cover +
+  the migration-0010 provenance sentence) and the ebook files keep the cards
+  they had, inside their tab. The neutral slot and the formatless *"any format"*
+  want belong to no format and sit beside the tabs.
+- The tab strip **is** the edit box's strip — `.shelf-tabs` was added to every
+  existing `.edit-box__tabs` rule, never given a look of its own.
+
+**Measured at the commit:** `npm test` **2297 pass / 0 fail** (2282 before);
+`npm run typecheck` and `npm run build` clean. Nineteen cases added; ⚠️ **three
+were AMENDED rather than added** because they pinned `sections` (two in
+`shelf-view.test.ts`, one in `audio-match-review.test.ts`), all marked and all
+saying what they used to claim.
+
+🔴 **HIS EXAMPLE WILL NOT RENDER ON /work/263 YET, and it is not a bug.**
+Measured against production MAIN at the build: work 263's **three copies all
+have `edition_id: null`** against **three hardcover printings** (378 *"V1
+Limited Edition hardcover…"* `collectors`, 379 *"V1 Limited Edition Standard
+hardcover…"*, 660 *"Standard Hardcover"*). Nothing attributes a copy to a
+printing, so the work-220 anti-fabrication rule holds and the lines read:
+
+> Hardcover
+> Hardcover — Sprayed edges
+> Hardcover
+> Hardcover — Lent out
+
+The three printings still show under the same tab as *MAY BE YOURS* cards.
+☐ **The data follow-up is what turns that into his *"Collectors edition /
+Standard edition"*** — link each copy to its printing under *✎ Edit this book →
+Editions & copies*. Until then the shelf says what the record says.
+
+⚠️ **NOT VERIFIED:** nothing has been seen on a live page — no deploy has
+happened. The component itself has **no test** (there is no jsdom in this
+harness): the tab strip, the default selection and the arrow-key handling were
+exercised once by a throwaway `react-dom/server` render, which produced
+*"Collectors edition — Sprayed edges · Signed"*, *"Standard edition"* and
+*"Standard edition — Signed · Lent out"* exactly, and was then deleted.
+
+☐ **Review after the deploy:** <https://library.heygabi.ai/work/263> (the tab
+strip, and the three lines above) and — for two tabs each with a NAMED line, the
+shape his example describes — padhard <https://padhard.heygabi.ai/work/642>
+*The Ashes and the Star-Cursed King*, which holds one linked paperback and one
+linked hardcover (measured on `library-catalog-2nd`, 2026-09-03).
+
 ## ✅ 2026-09-04 — ONE SCAN MENU: all scanning through the same menu, with the wishlist-or-catalog choice on it — owner ask 2026-09-04 10:55 Phoenix
 
 Owner, from his phone, verbatim: *"I want to have all scanning be the same
