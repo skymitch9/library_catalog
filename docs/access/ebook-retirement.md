@@ -195,7 +195,15 @@ curl -s -D - -X POST https://library.heygabi.ai/api/ingest/ebook -H 'content-typ
 ```
 
 ⚠️ `-I` and `-o NUL` misreport on these hosts — use `-D -`. Expect **404**
-`{"error":"ingest_disabled"}`. Unset means *disabled*, not *open*: a 404 invites
+`{"error":"ingest_disabled"}`.
+
+✅ **Measured 2026-09-05 22:27 UTC, before any unset: both hosts answer 401** —
+`library.heygabi.ai` and `padhard.heygabi.ai` alike. That is the proof the token
+is live on **both** instances today and that step 4 has two halves. **401 → 404
+is the whole verification of step 4**, and it is the only thing that can be
+checked from outside, since a Worker secret cannot be read back.
+
+Unset means *disabled*, not *open*: a 404 invites
 less probing than a 401, and it is pinned by
 `apps/worker/src/routes/capability-wiring.test.ts` (*"with EBOOK_INGEST_TOKEN
 unset this must 404, never open"*), which passes today with no code change.

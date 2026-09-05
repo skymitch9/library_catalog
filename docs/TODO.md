@@ -1864,7 +1864,9 @@ and precondition 4 now refuses rather than assuming.
 3. 🔴 `npx wrangler secret delete EBOOK_INGEST_TOKEN --config apps/worker/wrangler.toml`
    and the same with `--env friend` — ⚠️ **both instances**;
 4. ☐ confirm `POST /api/ingest/ebook` answers **404 `ingest_disabled`** on both
-   (`curl -s -D -` — `-I` and `-o NUL` misreport here).
+   (`curl -s -D -` — `-I` and `-o NUL` misreport here). ✅ **Measured
+   2026-09-05 22:27 UTC, before any unset: both hosts answer 401**, so the token
+   is live on both and 401 → 404 is the whole verification of step 3.
 
 **⚠️ NOT verified, and it is the important one: the retirement has never been
 applied to either remote database, and no secret was touched.** Also not
