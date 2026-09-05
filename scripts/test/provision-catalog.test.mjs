@@ -18,6 +18,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
+import { resolvePlatformRepo } from '../lib/platform-repo.mjs';
+
 import {
   APEX,
   INSTANCE_MAX,
@@ -29,6 +31,8 @@ import {
   existingVar,
   extractJsonArray,
   insertScripts,
+  loadSealLib,
+  markLiveUpdate,
   manualRunbook,
   nextEstateApp,
   ordinalWord,
@@ -623,5 +627,101 @@ describe('the small parsers', () => {
     assert.equal(sqlLit(null), 'NULL');
     assert.equal(sqlLit(4), '4');
     assert.throws(() => sqlLit(Infinity), /refusing to write/);
+  });
+});
+
+/* --------------------------------------------------------------------------
+ * The sealed Claude key — design §6.4, landed 2026-09-05
+ *
+ * ⚠️ WHAT IS TESTED HERE IS THE CUSTODY CLAIM, not the cryptography. The round
+ * trip (browser seals → provisioner opens) is pinned in
+ * `catalog-platform/scripts/test/catalog-seal.test.mjs`, which owns the
+ * envelope. What this repo owns is the SQL it writes about whose key a live
+ * catalog spends, and the fact that it looks for an envelope before falling
+ * back to the owner's own key.
+ * ------------------------------------------------------------------------ */
+
+describe('markLiveUpdate — the key-custody booleans', () => {
+  const NAMES = { instance: 'amber', host: 'amber.heygabi.ai', requestId: 4 };
+
+  it('always writes the status, the instance and the host, guarded on accepted', () => {
+    const sql = markLiveUpdate(NAMES, 'none');
+    assert.match(sql, /UPDATE catalog_request SET status = 'live'/);
+    assert.match(sql, /provisioned_instance = 'amber'/);
+    assert.match(sql, /provisioned_host = 'amber\.heygabi\.ai'/);
+    // ⚠️ The guard is what makes a --resume safe: a row that is already live
+    // matches nothing and the statement reports changes: 0 instead of
+    // re-stamping a catalog somebody has been using.
+    assert.match(sql, /WHERE id = 4 AND status = 'accepted'$/);
+  });
+
+  it("🔴 a READER key writes NEITHER boolean — reader_key_set has one writer, the route", () => {
+    const sql = markLiveUpdate(NAMES, 'reader');
+    assert.ok(!/owner_key_set/.test(sql), 'claiming owner_key_set on a reader-keyed catalog is a lie about custody');
+    assert.ok(!/reader_key_set/.test(sql), 'the route already set it; a second writer of one fact is drift waiting');
+  });
+
+  it('an owner-at-accept key sets owner_key_set, idempotently', () => {
+    assert.match(markLiveUpdate(NAMES, 'owner'), /owner_key_set = 1/);
+  });
+
+  it('no key at all sets owner_key_set — §6.4 row 3, the standing decision', () => {
+    assert.match(markLiveUpdate(NAMES, 'none'), /owner_key_set = 1/);
+    // The default argument must be the SAFE one: an unnamed source is the
+    // owner's key, which is what actually gets spent.
+    assert.equal(markLiveUpdate(NAMES), markLiveUpdate(NAMES, 'none'));
+  });
+
+  it('a name with a quote in it still cannot break the statement', () => {
+    const sql = markLiveUpdate({ instance: "o'brien", host: "o'brien.heygabi.ai", requestId: 9 }, 'none');
+    assert.match(sql, /provisioned_instance = 'o''brien'/);
+  });
+});
+
+describe('loadSealLib — absent is a sentence, not a crash', () => {
+  it('returns null and says why when catalog-platform has no seal lib', async () => {
+    const said = [];
+    const mod = await loadSealLib(join(ROOT, 'no', 'such', 'platform'), { log: (l) => said.push(l) });
+    assert.equal(mod, null);
+    const text = said.join('\n');
+    assert.match(text, /no sealed-key lib/);
+    // ⚠️ It must say what the CONSEQUENCE is, not just that a file is missing.
+    assert.match(text, /falls back to the owner's own key/);
+  });
+
+  it('loads the real one from the sibling checkout, and it exports injectSealedKey', async () => {
+    const platform = resolvePlatformRepo();
+    const mod = await loadSealLib(platform.dir, { log: () => {} });
+    // ⚠️ Not skipped when absent: a checkout without catalog-platform cannot
+    // run any of this suite (the drift test reads its wrangler.toml), so a
+    // missing lib here is a real regression, not an environment quirk.
+    assert.ok(mod, 'the sibling catalog-platform has no scripts/lib/catalog-seal.mjs');
+    assert.equal(typeof mod.injectSealedKey, 'function');
+    // The candidates it will look for, in the order that IS the policy.
+    assert.deepEqual(
+      mod.envelopeCandidates(ROW.id).map((c) => c.key),
+      [`reader/${ROW.id}.json`, `owner/${ROW.id}.json`],
+    );
+  });
+});
+
+describe('the fixture row carries both key booleans', () => {
+  it('a request that arrived with a sealed reader key', () => {
+    const row = { ...ROW, reader_key_set: 1, owner_key_set: 0 };
+    assert.doesNotThrow(() => assertProvisionable(row));
+    // Both are 0/1 integers on the row, never strings — the admin UI and this
+    // script both compare them numerically.
+    for (const v of [row.reader_key_set, row.owner_key_set]) assert.equal(typeof v, 'number');
+  });
+
+  it('a request the owner keyed at Accept', () => {
+    const row = { ...ROW, reader_key_set: 0, owner_key_set: 1 };
+    assert.doesNotThrow(() => assertProvisionable(row));
+  });
+
+  it('both set is a legal state — the owner set one and the reader still wins', () => {
+    const row = { ...ROW, reader_key_set: 1, owner_key_set: 1 };
+    assert.doesNotThrow(() => assertProvisionable(row));
+    assert.match(markLiveUpdate({ instance: 'amber', host: 'amber.heygabi.ai', requestId: row.id }, 'reader'), /SET status/);
   });
 });

@@ -62,24 +62,39 @@
  * exists. 30 rather than 40 because the Worker name is `library-catalog-<env>`
  * and Cloudflare caps that at 63.
  *
- * ## ⚠️ `ANTHROPIC_API_KEY` — the OWNER'S key, by standing decision
+ * ## ⚠️ `ANTHROPIC_API_KEY` — three sources, resolved HERE and nowhere else
  *
- * Owner, 2026-09-05 ~07:03 Phoenix: *"Have it fall back to my Claude key for
- * now."* So v1 pipes the owner's own key into the new instance's secret
- * (design §6.4 row 3), the run LOGS `owner key used — standing decision
- * 2026-09-05` so a later reader can see which instances spend his money, and
- * the request row records `owner_key_set = 1`.
+ * There is exactly ONE `ANTHROPIC_API_KEY` per instance, so precedence is not a
+ * runtime rule — it is decided by which plaintext this script pipes into that
+ * one secret (design §6.4). In order:
  *
- * 🔴 **Two consequences the operator is told about out loud, because they are
- * spend, not configuration:**
+ * | # | Source | What is logged | The row |
+ * |---|---|---|---|
+ * | 1 | the requester's sealed envelope, `reader/<id>.json` | `reader key used` | `reader_key_set` stays as the ROUTE set it |
+ * | 2 | the owner's sealed envelope from Accept, `owner/<id>.json` | `owner-at-accept key used` | `owner_key_set = 1` |
+ * | 3 | the owner's own local key | `owner key used — standing decision 2026-09-05` | `owner_key_set = 1` |
+ *
+ * Rows 1 and 2 are done by `catalog-platform/scripts/lib/catalog-seal.mjs`,
+ * which fetches the envelope from the private R2 bucket, decrypts it in memory
+ * with the provisioning private key on this machine, and pipes the plaintext
+ * straight to `wrangler secret put` over stdin. ⚠️ **It returns a WORD, not a
+ * value** — `{source: 'reader'|'owner'|'none'}` — so nothing here can print a
+ * key even by accident, and there is no decrypt-to-READ path anywhere in the
+ * estate (design §6.2). Row 3 is the fallback and it is the owner's standing
+ * choice, on the record: *"Have it fall back to my Claude key for now"* (owner,
+ * 2026-09-05 ~07:03 Phoenix).
+ *
+ * ⚠️ If the platform repo's seal lib is ABSENT this script SAYS SO and falls
+ * through to row 3, rather than failing a whole provision over a file that is
+ * only needed when somebody attached a key.
+ *
+ * 🔴 **Two consequences the operator is told about out loud whenever row 3
+ * fires, because they are spend, not configuration:**
  *
  *  1. the new instance's hourly `"7 * * * *"` details sweep runs donor-then-AI
  *     and will spend that key every tick the donor cannot fully answer;
  *  2. `BILLING_POLICY` ships `"off"`, matching both existing instances, so
  *     nothing throttles it until the owner writes a rule.
- *
- * The requester's own sealed key (design §6) is the LAST phase of this build and
- * is not implemented here; `reader_key_set` therefore stays 0.
  *
  * ⚠️ **The key's VALUE is never read by a person, never printed, never logged
  * and never written to disk.** This script reads `apps/worker/.dev.vars` — the
@@ -157,7 +172,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { resolvePlatformRepo } from './lib/platform-repo.mjs';
 import {
@@ -630,6 +645,58 @@ export function sqlLit(value) {
     return String(value);
   }
   return `'${String(value).split("'").join("''")}'`;
+}
+
+/**
+ * The mark-live UPDATE, as a pure function of the names and the KEY SOURCE.
+ *
+ * ⚠️ EXTRACTED SO THE BOOLEANS ARE TESTABLE. They are a claim about custody —
+ * "whose money does this catalog spend" — and until this was a function the
+ * statement hard-coded `owner_key_set = 1` for every run, which is now wrong in
+ * exactly the case the sealed-key feature exists for.
+ *
+ * | source | what this writes | why |
+ * |---|---|---|
+ * | `'reader'` | NEITHER boolean | `reader_key_set` was set by the ROUTE when the envelope was stored; re-asserting it here would be a second writer of one fact, and setting `owner_key_set` would be a lie |
+ * | `'owner'` | `owner_key_set = 1` | the owner's Accept-time key; the route set it too, and this is idempotent |
+ * | `'none'` | `owner_key_set = 1` | design §6.4 row 3 — the owner's own key, his standing decision |
+ *
+ * The `AND status = 'accepted'` guard is what makes a re-run safe: a row that is
+ * already `live` matches nothing and the statement reports `changes: 0`.
+ */
+export function markLiveUpdate(names, keySource = 'none') {
+  const sets = [
+    `status = 'live'`,
+    `provisioned_instance = ${sqlLit(names.instance)}`,
+    `provisioned_host = ${sqlLit(names.host)}`,
+  ];
+  if (keySource !== 'reader') sets.push('owner_key_set = 1');
+  return (
+    `UPDATE catalog_request SET ${sets.join(', ')} ` +
+    `WHERE id = ${names.requestId} AND status = 'accepted'`
+  );
+}
+
+/**
+ * Load `catalog-platform/scripts/lib/catalog-seal.mjs`, or return null.
+ *
+ * ⚠️ A DYNAMIC import, and `pathToFileURL` is not optional: Node's ESM loader
+ * reads a bare Windows path as a URL scheme (`C:` looks like a protocol), the
+ * same trap `lib/platform-repo.mjs` records for the universes lib.
+ *
+ * ⚠️ AND IT RETURNS NULL RATHER THAN THROWING. The seal lib is only needed when
+ * somebody attached a key; a checkout of this repo beside an older
+ * catalog-platform must still be able to provision, saying out loud that it
+ * cannot look for envelopes rather than dying at step 10 of 12.
+ */
+export async function loadSealLib(platformDir, { log = console.log } = {}) {
+  const path = join(platformDir, 'scripts', 'lib', 'catalog-seal.mjs');
+  if (!existsSync(path)) {
+    log(`  ⚠️ no sealed-key lib at ${path}`);
+    log('     Nobody\'s attached key can be read, so this run falls back to the owner\'s own key.');
+    return null;
+  }
+  return import(pathToFileURL(path).href);
 }
 
 /**
@@ -1273,12 +1340,12 @@ async function main() {
 
   // Step 10 — the rest of the secrets
   heading('10 · Per-instance secrets   (§7.3: AUTO · ANTHROPIC_API_KEY is SPECIAL)');
+  /** 'reader' | 'owner' | 'none' — decided below, read again at step 12. */
+  let keySource = 'none';
   const plan = secretPlan(enable);
   for (const line of plan.lines) console.log(`  ${line}`);
   printCmd(cmd('bulk', { args: ['secret', 'bulk', '--config', WRANGLER_TOML, '--env', names.instance], stdinSecret: plan.push.join(', ') || '(none)' }));
   printCmd(cmd('put', { args: ['secret', 'put', 'ANTHROPIC_API_KEY', '--config', WRANGLER_TOML, '--env', names.instance], stdinSecret: 'ANTHROPIC_API_KEY' }));
-  console.log('  owner key used — standing decision 2026-09-05 (design §6.4 row 3)');
-  console.log('  ⚠️ This instance spends the OWNER\'S Anthropic key, hourly, on its details sweep.');
   if (!dry) {
     const vars = readDevVars();
     const payload = {};
@@ -1293,20 +1360,60 @@ async function main() {
         console.log(`  pushed ${Object.keys(payload).length} shared secret(s)`);
       }
     }
-    if (!vars.ANTHROPIC_API_KEY) {
-      stop(
-        `ANTHROPIC_API_KEY is not set in ${DEV_VARS}, so there is no owner key to pipe.`,
-        'The standing decision (2026-09-05) is that a new catalog runs on the owner\'s key;',
-        'set it there, or in the vault and re-run with SECRETS_SOURCE=op-style values,',
-        'then re-run this with --resume.',
-      );
-    }
-    const code = await putSecret('ANTHROPIC_API_KEY', vars.ANTHROPIC_API_KEY, {
-      env: names.instance,
-      config: WRANGLER_TOML,
+  }
+
+  /* ── ANTHROPIC_API_KEY — the §6.4 ladder, resolved here ──────────────────
+   *
+   * 🔴 THE SEALED ENVELOPES ARE TRIED FIRST, ALWAYS. Falling to the owner's own
+   * key when a requester attached one would silently spend HIS money on
+   * somebody else's catalog while a perfectly good key sat unread in a bucket —
+   * a money bug, invisible until a bill, and the exact inversion the ordering
+   * in `envelopeCandidates` exists to prevent. */
+  const seal = await loadSealLib(platform.dir);
+  if (seal) {
+    const result = await seal.injectSealedKey({
+      requestId: names.requestId,
+      // Run `wrangler secret put` from the worker directory, so it reads THIS
+      // repo's wrangler.toml and the `--env` names one of its blocks.
+      workerDir: dirname(WRANGLER_TOML),
+      envName: names.instance,
+      secretName: 'ANTHROPIC_API_KEY',
+      dry,
+      log: console.log,
     });
-    if (code !== 0) console.log(`  ⚠️ wrangler exited ${code} setting ANTHROPIC_API_KEY — read the output above.`);
-    else console.log('  set              ANTHROPIC_API_KEY   (owner key used — standing decision 2026-09-05)');
+    keySource = result.source;
+  }
+
+  if (keySource === 'none') {
+    console.log('  owner key used — standing decision 2026-09-05 (design §6.4 row 3)');
+    console.log('  ⚠️ This instance spends the OWNER\'S Anthropic key, hourly, on its details sweep.');
+    if (!dry) {
+      const vars = readDevVars();
+      if (!vars.ANTHROPIC_API_KEY) {
+        stop(
+          `ANTHROPIC_API_KEY is not set in ${DEV_VARS}, so there is no owner key to pipe,`,
+          'and neither the requester nor you attached a sealed one.',
+          'The standing decision (2026-09-05) is that a new catalog runs on the owner\'s key;',
+          'set it there, or in the vault and re-run with SECRETS_SOURCE=op-style values,',
+          'then re-run this with --resume.',
+        );
+      }
+      const code = await putSecret('ANTHROPIC_API_KEY', vars.ANTHROPIC_API_KEY, {
+        env: names.instance,
+        config: WRANGLER_TOML,
+      });
+      if (code !== 0) console.log(`  ⚠️ wrangler exited ${code} setting ANTHROPIC_API_KEY — read the output above.`);
+      else console.log('  set              ANTHROPIC_API_KEY   (owner key used — standing decision 2026-09-05)');
+    }
+  } else {
+    // ⚠️ The SOURCE is logged, never the value. Design §6.4's closing note: the
+    // run must log which instances spend whose key, so a later reader can see
+    // it without asking anybody to decrypt anything.
+    console.log(
+      keySource === 'reader'
+        ? '  ⚠️ This instance spends the REQUESTER\'S own Anthropic key, not the owner\'s.'
+        : '  ⚠️ This instance spends the key YOU set when you accepted the request.',
+    );
   }
 
   // Step 11 — deploy
@@ -1327,12 +1434,10 @@ async function main() {
   console.log(`    GET ${healthUrl}`);
   console.log('  ⚠️ The cache-buster is not decoration: /api/health is EDGE-CACHED on a custom');
   console.log('     domain, and a plain fetch right after a deploy returns the PREVIOUS body.');
-  const update =
-    `UPDATE catalog_request SET status = 'live', ` +
-    `provisioned_instance = ${sqlLit(names.instance)}, ` +
-    `provisioned_host = ${sqlLit(names.host)}, ` +
-    `owner_key_set = 1 ` +
-    `WHERE id = ${names.requestId} AND status = 'accepted'`;
+  // ⚠️ The booleans follow the KEY SOURCE step 10 resolved, not a constant.
+  // `reader_key_set` is left exactly as the ROUTE set it when the envelope was
+  // stored — one fact, one writer.
+  const update = markLiveUpdate(names, keySource);
   printCmd(cmd('update', {
     bin: ctx.platformWrangler,
     cwd: ctx.authWorkerDir,
@@ -1351,7 +1456,12 @@ async function main() {
     console.log('  ✅ 200 from /api/health');
     estateSql(update, ctx);
     const after = readRequest(names.requestId, ctx);
-    console.log(`  row now          status=${after?.status} instance=${after?.provisioned_instance} host=${after?.provisioned_host} owner_key_set=${after?.owner_key_set}`);
+    console.log(`  row now          status=${after?.status} instance=${after?.provisioned_instance} host=${after?.provisioned_host}`);
+    // ⚠️ BOTH booleans, and the source beside them. `reader_key_set=1` with
+    // `owner_key_set=1` is a legal and meaningful state — the owner set one at
+    // Accept and the reader's still won — so printing one of them names the
+    // wrong custody as often as the right one.
+    console.log(`  key custody      reader_key_set=${after?.reader_key_set} owner_key_set=${after?.owner_key_set}   (source: ${keySource})`);
   }
 
   /* ── the tail ──────────────────────────────────────────────────────────── */

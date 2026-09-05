@@ -3,8 +3,9 @@
 > **Audience:** the owner first (he is the only person who can run it), Claude
 > sessions second.
 > **Status:** TRACKED — no secret values here, names only.
-> **Last verified: 2026-09-05** — the script was written that day. What was
-> MEASURED: `node --check`; the whole suite (**2418 pass / 0 fail**); a
+> **Last verified: 2026-09-05** — the script was written that day, and the
+> sealed-key ladder (§6.4) was added to step 10 the same day. What was
+> MEASURED: `node --check`; the whole suite (**2428 pass / 0 fail**); a
 > `--dry --fixture` run printing all twelve steps and both pauses, leaving
 > `git status` untouched and grepping clean of anything secret-shaped; the live
 > Firebase authorised-domain read (13 domains, `amber.heygabi.ai` correctly
@@ -19,6 +20,20 @@
 > bucket, no hostname, no secret and no deploy exists because of it. Every AUTO
 > step below is therefore *written and unexercised*, and the first real run is
 > the test.
+>
+> **Added 2026-09-05, the sealed-key ladder in step 10.** MEASURED: a
+> `--dry --fixture` run printing both envelope candidates by key name against
+> the REAL bucket (`reader/4.json` and `owner/4.json`, both absent, falling
+> through to the owner's key with the standing-decision line); the whole suite
+> at **2428 / 0**. 🔴 **The measurement that mattered was a bug found in the
+> rehearsal:** the first version read "any stdout means the object is there",
+> and wrangler 4.123.0 answers a MISSING object with exit 127, the words *"The
+> specified key does not exist."* on stderr **and a single newline on stdout** —
+> so every absent envelope reported PRESENT. Fixed, and both real stderr strings
+> are now fixtures in `catalog-platform/scripts/test/catalog-seal.test.mjs`.
+> ⚠️ **NOT verified: no envelope has ever been decrypted from R2** — nothing has
+> been sealed by a real browser, so rows 1 and 2 of the ladder below are proven
+> only by a Node-to-Node round trip with a throwaway keypair.
 >
 > Design of record: `catalog-platform/docs/info/request-a-catalog-design.md`
 > §7 (the whole of it) — this page is the runbook, that file is the reasoning,
@@ -106,9 +121,9 @@ Every refusal names `--instance` as the way out.
 | 7 | ⏸ **Firebase authorised domain** | 🔴 **MANUAL** | 🟢 the live domain list |
 | 8 | ⏸ **auth-worker registration** | 🔴 **MANUAL** | 🟡 the sibling checkout's source |
 | 9 | the paired estate token, both sides | AUTO (stdin) | `secret list` names |
-| 10 | shared secrets + `ANTHROPIC_API_KEY` | AUTO (stdin) | `secret list` names |
+| 10 | shared secrets, then the `ANTHROPIC_API_KEY` ladder (sealed reader → sealed owner → the owner's own) | AUTO (stdin) | `secret list` names; the R2 envelope is deleted once set |
 | 11 | `deploy:<instance>` through the guards | AUTO, owner-run | `deploys.log` |
-| 12 | `/api/health?cb=` then mark the row `live` | AUTO | the row's `status` |
+| 12 | `/api/health?cb=` then mark the row `live` | AUTO | the row's `status`; the key booleans follow step 10's source |
 
 ⚠️ **A plain run STOPS when it finds an artifact that already exists**, and that
 is not pedantry: a D1 called `library-catalog-3rd` that this run did not create
@@ -152,19 +167,44 @@ a process list, a log, a console or a disk.
 | `EBOOK_INGEST_TOKEN`, `AUDIOBOOK_MAPPING_TOKEN` | **skipped** — route-ENABLING, needs `--enable NAME` one at a time |
 | `INDEX_PUSH_TOKEN`, `INDEX_READ_TOKEN`, every `ESTATE_APP_TOKEN_*` | **refused** — per-instance, with the same sentence a bulk push prints |
 | `ESTATE_APP_TOKEN_LIBRARY<N>` | **minted here** (node crypto, hex, no trailing newline, no BOM) and set under the **same name on BOTH** the new instance and the auth Worker. ⚠️ Pipe first, deploy second — that order has no inert window |
-| `ANTHROPIC_API_KEY` | **the OWNER'S key** — see below |
+| `ANTHROPIC_API_KEY` | **one of three sources, resolved at provisioning time** — see below |
 
 ⚠️ The refusal lists are **imported** from `scripts/push-secrets.mjs`
 (`PER_INSTANCE_SECRETS`, `PER_INSTANCE_PREFIXES`), never restated, and
 `secretPlan()` throws if a per-instance key ever reaches the push set. Design
 §6.4 calls that guard one that must not be weakened; this is the mechanical half.
 
-### 🔴 The Anthropic key is the owner's, and it costs him money
+### 🔴 The Anthropic key — three sources, and the fallback costs the owner money
 
-Owner, 2026-09-05 ~07:03 Phoenix: *"Have it fall back to my Claude key for now."*
-So v1 pipes his own key into the new instance, logs
-`owner key used — standing decision 2026-09-05`, and records `owner_key_set = 1`
-on the request row. Two consequences the run states out loud:
+There is exactly **one** `ANTHROPIC_API_KEY` per instance, so precedence is not
+a runtime rule: it is decided by which plaintext this script pipes into that one
+secret (design §6.4). Step 10 tries them in this order, and the order **is** the
+policy — falling to the owner's key while a perfectly good sealed one sat unread
+in a bucket would spend his money on somebody else's catalog, invisibly, until a
+bill.
+
+| # | Source | The run logs | The row, at mark-live |
+|---|---|---|---|
+| 1 | the requester's sealed envelope, `estate-catalog-keys/reader/<id>.json` | `reader key used` | **neither boolean is written** — `reader_key_set` was set by the ROUTE when the envelope was stored, and one fact has one writer |
+| 2 | the owner's sealed envelope from Accept, `owner/<id>.json` | `owner-at-accept key used` | `owner_key_set = 1` |
+| 3 | the owner's own local key, from `.dev.vars` | `owner key used — standing decision 2026-09-05` | `owner_key_set = 1` |
+
+Rows 1 and 2 are done by `catalog-platform/scripts/lib/catalog-seal.mjs`
+(`injectSealedKey`): it fetches the envelope from the private R2 bucket,
+decrypts it **in memory** with the provisioning private key on this machine, and
+pipes the plaintext straight to `wrangler secret put` over stdin, then deletes
+the R2 object. ⚠️ **It returns a word, not a value** — `{source}` — and there is
+no decrypt-to-READ path anywhere in the estate (design §6.2), so nobody,
+including the owner, can be shown a requester's key.
+
+⚠️ **If the platform repo has no seal lib**, the run says so and falls to row 3
+rather than failing a provision over a file only needed when somebody attached a
+key. ⚠️ **A failed `secret put` does NOT delete the envelope** — running a step
+twice is recoverable, deleting the only copy of a key is not.
+
+**Row 3 is the owner's standing decision** (2026-09-05 ~07:03 Phoenix: *"Have it
+fall back to my Claude key for now."*) and the run states two consequences out
+loud, because they are spend, not configuration:
 
 1. the new instance's hourly `"7 * * * *"` details sweep runs donor-then-AI and
    **spends that key** every tick the donor cannot fully answer;
@@ -172,8 +212,14 @@ on the request row. Two consequences the run states out loud:
    throttles it until a rule exists — write one on <https://heygabi.ai/admin/>,
    or drop the instance's `[triggers]` block to stop the tick.
 
-The requester's own **sealed** key (design §6) is the last phase of the build and
-is not implemented; `reader_key_set` stays 0 until it lands.
+**In a `--dry` run** step 10 prints which envelope keys it *would* look for and
+whether each is PRESENT or absent — by key NAME only, never a byte of content.
+A missing bucket is reported distinctly from a missing object, so *"the feature
+is not deployed yet"* is never read as *"this person attached no key"*.
+
+⚠️ **Custody of the private key:** `catalog-platform/docs/access/keys/catalog-provisioning.private.jwk`,
+on this machine only. It is recorded in that repo's `docs/access/RECOVERY.md`
+secrets table; without it, an envelope cannot be opened by anybody, ever.
 
 ---
 
