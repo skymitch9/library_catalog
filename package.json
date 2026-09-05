@@ -50,6 +50,8 @@
     "backfill:read-states": "tsx scripts/backfill-read-from-ratings.mjs",
     "secrets:push": "node scripts/push-secrets.mjs",
     "import:ebooks": "tsx scripts/import-ebooks.mjs",
+    "ebooks:export": "tsx scripts/export-ebook-rows.mjs",
+    "ebooks:plan": "tsx scripts/plan-ebook-retirement.mjs",
     "import:crowdfunding": "tsx scripts/import-crowdfunding.mjs",
     "backfill:covers": "tsx scripts/backfill-covers.mjs",
     "backfill:series": "tsx scripts/backfill-series.mjs",

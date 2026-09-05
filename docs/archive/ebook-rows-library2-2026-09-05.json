@@ -1,0 +1,63 @@
+{
+  "kind": "library_catalog/ebook-retirement",
+  "version": 1,
+  "instance": "library2",
+  "database": "library-catalog-2nd",
+  "generatedAt": "2026-09-05T22:15:48.082Z",
+  "predicates": {
+    "ebookOnlyWork": "EXISTS (SELECT 1 FROM edition e WHERE e.work_id = w.id AND e.format NOT IN ('hardcover', 'paperback', 'mass_market')) AND NOT EXISTS (SELECT 1 FROM edition e WHERE e.work_id = w.id AND e.format IN ('hardcover', 'paperback', 'mass_market')) AND NOT EXISTS (SELECT 1 FROM copy c WHERE c.work_id = w.id)",
+    "ebookEdition": "e.format IN ('ebook_epub', 'ebook_mobi', 'ebook_azw3', 'ebook_kepub', 'ebook_pdf') AND e.source_url IS NOT NULL",
+    "includeManual": false
+  },
+  "keptWorkIds": [],
+  "preconditions": {
+    "humanAssertedReadStatesOnEbookOnlyWorks": 0,
+    "humanAssertedRows": [],
+    "editionReferencesOutsideThisExport": {
+      "research_run.edition_id": 0,
+      "research_finding.edition_id": 0,
+      "copy.edition_id": 0,
+      "pledge_item.edition_id": 0
+    }
+  },
+  "counts": {
+    "works": 0,
+    "editions": 0,
+    "editionsOnRetiredWorks": 0,
+    "editionsOnSurvivingWorks": 0,
+    "ebook_holding": 0,
+    "user_book": 0,
+    "work_alias": 0,
+    "work_relation": 0,
+    "work_watch": 0,
+    "copy": 0,
+    "alias_check": 0,
+    "audiobook_edition_holding": 0,
+    "audiobook_match_review": 0,
+    "book_accessory": 0,
+    "pledge_item": 0,
+    "research_run": 0,
+    "research_finding": 0,
+    "gap_verdict": 0,
+    "changeLogRowsExportedNotTouched": 0
+  },
+  "works": [],
+  "editions": [],
+  "dependents": {
+    "ebook_holding": [],
+    "user_book": [],
+    "work_alias": [],
+    "work_relation": [],
+    "work_watch": [],
+    "copy": [],
+    "alias_check": [],
+    "audiobook_edition_holding": [],
+    "audiobook_match_review": [],
+    "book_accessory": [],
+    "pledge_item": [],
+    "research_run": [],
+    "research_finding": [],
+    "gap_verdict": []
+  },
+  "changeLog": []
+}
