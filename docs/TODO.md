@@ -36,6 +36,31 @@
 > simply that it is a CROSS-REPO queue. Do not duplicate it here.
 
 
+## ☐ OWNER ASKS 2026-09-05 16:37 Phoenix — series warnings, an audiobook sweep, and *Battle Mage Farmer*
+
+Owner, verbatim: *"We need to fix all the series that have warnings too, list
+those and let's fix them. Also do another audiobook sweep. I added battle mage
+farmer and it didn't associate the audiobook right away."*
+
+1. ☐ **Series with warnings — LIST, then fix.** ❓ Which mark he means is not
+   yet settled (asked 16:40): on `/series` today there are **23 red "N missing"
+   rows** (`mark--gap`, certainly-missing rungs) and **48 "none of them
+   numbered" rows** (+ 75 "no source asked yet"). Measured live 16:38 from the
+   rendered page. Once he says which, produce the list here with the per-series
+   cause and fix the DATA (numbering, wrong series names such as *Cosmere*
+   filed as a series when it is a universe), on BOTH instances where the row
+   exists.
+2. ☐ **Audiobook sweep** — `npm run backfill:audiobooks` (main) and the
+   `--friend` run. ⚠️ Why it "didn't associate right away": the sweep is a
+   SCRIPT reading `audiobook_catalog/site/catalog.csv` off disk (header of
+   `scripts/backfill-audiobook-holdings.mjs`), not a route — a book added in
+   the UI only gains its audio chip when somebody runs the sweep. ☐ Consider a
+   scheduled run (Task Scheduler beside the other pipelines) so this stops
+   being a manual step; log the decision in `docs/info/decisions.md`.
+3. ☐ **Battle Mage Farmer** — confirm after the sweep that the work he added
+   carries `audiobook_holding` (and the series ladder shows the audio rungs);
+   if the sweep still misses it, it is an alias/title mismatch → `seed:audiobook-aliases`.
+
 ## ☑ BUILT 2026-09-05 — "Request a catalog" phase 5, the sealed-key ladder is IN step 10 (agent S2) — ☐ owner runs it for real once
 
 Commit **`acb4c44`**. Step 10 now tries the two sealed envelopes BEFORE the
