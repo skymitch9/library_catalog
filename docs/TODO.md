@@ -55,9 +55,13 @@ infrastructure.
 `--dry --fixture` run printing all twelve steps and both pauses, leaving
 `git status` untouched and grepping clean of anything secret-shaped; the live
 Firebase authorised-domain read (13 domains, the fixture's host correctly
-absent); and the live estate-D1 read path — `catalog_request` **exists remotely
-with 0 rows** (agent `A-authworker` applied migration 0018 that morning), and a
-missing id gives a worded refusal at exit 1.
+absent); and **`--dry` against all three REAL rows** in the live `estate_auth`
+D1 (migration 0018 applied that morning, then back-seeded) — #1 `library` and
+#2 `padhard` refused as *"already live at https://…"* with the host read back
+correctly from the row (**exit 2**), #3 `boardgames` refused as a GAMES request
+pointing at design §8 (**exit 2**), a nonexistent id refused at **exit 1**. The
+D1 read path, the column mapping and every refusal are therefore exercised
+against production data.
 
 ☐ **The first real run, when a request exists**, in this order:
 

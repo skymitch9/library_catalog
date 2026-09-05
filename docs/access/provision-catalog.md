@@ -8,8 +8,12 @@
 > `--dry --fixture` run printing all twelve steps and both pauses, leaving
 > `git status` untouched and grepping clean of anything secret-shaped; the live
 > Firebase authorised-domain read (13 domains, `amber.heygabi.ai` correctly
-> absent); and the live estate-D1 read path (`catalog_request` exists remotely,
-> **0 rows**, and a missing id gives a worded refusal at exit 1).
+> absent); and **`--dry` against all three REAL rows in the live `estate_auth`
+> D1** — #1 `library` and #2 `padhard` each refused as *"already live at
+> https://…"* (**exit 2**, and the host read back correctly from the row), #3
+> `boardgames` refused as a GAMES request pointing at design §8 (**exit 2**), and
+> a nonexistent id refused at **exit 1**. So the D1 read path, the column
+> mapping and every refusal are exercised against production data.
 > ⚠️ **NOT verified — and this is the headline:** **no real instance has ever
 > been provisioned by this script.** Nothing has run past `--dry`. No D1, no
 > bucket, no hostname, no secret and no deploy exists because of it. Every AUTO
