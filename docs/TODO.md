@@ -32,6 +32,66 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
+## ☐ "Request a catalog" phase 7 — the owner-run BOOKS provisioner is BUILT and UNEXERCISED (2026-09-05)
+
+Design of record: `catalog-platform/docs/info/request-a-catalog-design.md` §7.4
+and §10 phase 7. Runbook: [`access/provision-catalog.md`](access/provision-catalog.md).
+Built by agent `D-provision`, one of five parallel dispatches on the owner's
+*"Time to build that"* (2026-09-05 06:26 Phoenix).
+
+✅ **Landed, commit `b84b39f`:** `scripts/provision-catalog.mjs` (+ the
+`provision:catalog` npm script, + `scripts/test/provision-catalog.test.mjs`, 68
+cases). `--request <id> [--dry] [--resume]`, twelve steps, each idempotent and
+re-checkable, with the two 🔴 MANUAL checkpoints as PAUSES that print a
+copy-pasteable runbook.
+
+🔴 **NOT verified, and it is the whole of what is left: no real instance has ever
+been provisioned.** Nothing has run past `--dry`. Every AUTO step is written and
+unexercised; the first real run is the test. **That run is the OWNER'S** — it
+creates a D1, a bucket, a hostname, secrets and a deploy, and no agent may make
+infrastructure.
+
+**What WAS measured 2026-09-05:** `npm test` **2418 pass / 0 fail**; a
+`--dry --fixture` run printing all twelve steps and both pauses, leaving
+`git status` untouched and grepping clean of anything secret-shaped; the live
+Firebase authorised-domain read (13 domains, the fixture's host correctly
+absent); and the live estate-D1 read path — `catalog_request` **exists remotely
+with 0 rows** (agent `A-authworker` applied migration 0018 that morning), and a
+missing id gives a worded refusal at exit 1.
+
+☐ **The first real run, when a request exists**, in this order:
+
+1. a member files one at <https://heygabi.ai> and the owner accepts it on
+   <https://heygabi.ai/admin/>;
+2. `npm run provision:catalog -- --request <id> --dry` — read the plan;
+3. the same without `--dry`. It stops at the R2 console step, then at PAUSE #1
+   (Firebase authorised domain) and PAUSE #2 (auth-worker `CONSUMER_APPS` +
+   `vis_` migration + deploy); each is resumed with `--resume`;
+4. commit `docs/deploys.log` afterwards, and **tail one real sign-in** for
+   `"src":"seen"` — the only proof the paired token is right.
+
+☐ **One decision for the owner — the ENV NAME convention.** Design §7.1 makes
+every permanent name identity-neutral (env `third`); the brief for this build
+asked the env to follow the subdomain (`amber`). The script splits them — the
+host and the env follow the person, the D1 / bucket / estate app id stay ORDINAL
+because none of the three can ever be renamed — and `--instance third` gets the
+doc's convention back in one flag. Worth settling BEFORE the first real run,
+because the env name is baked into the `package.json` twins it writes.
+
+☐ **Follow-ups the script deliberately does NOT take**, each printed at the end
+of every run: `PEERS` ships `[]` (a peer entry reads another household's
+holdings — access-INCREASING, the owner's explicit call, and it needs a redeploy
+of every existing instance); `BILLING_POLICY` ships `"off"` while the new
+instance's hourly sweep spends the **OWNER'S** `ANTHROPIC_API_KEY` (standing
+decision 2026-09-05, design §6.4 row 3); `COVERS_BASE_URL` is the rate-limited
+r2.dev tier, and a bucket custom domain needs a third covers hostname because
+`covers.` and `bookcovers.` are taken.
+
+☐ **Games are refused** (exit 2, pointing at design §8) and stay refused until
+`Board_Game_Catalog` grows the second-instance machinery — that is phase 8, in
+another repo.
+
+
 ## ☐ SHELF round 3: "still 3 lists" → ONE list per format tab, the iconed edition cards only, copy facts as chips on them — owner ask 2026-09-03 17:21 Phoenix
 
 Lands on BOTH instances through the shared components (global rule
