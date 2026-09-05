@@ -31,6 +31,7 @@
     "secrets:push:friend:op": "node scripts/push-secrets.mjs --friend --source op",
     "secrets:push:both:op": "node scripts/push-secrets.mjs --both --source op",
     "secrets:import:op": "node scripts/op-import-dev-vars.mjs",
+    "provision:catalog": "node scripts/provision-catalog.mjs",
     "db:create": "wrangler d1 create library-catalog",
     "db:migrate:local": "npm run db:migrate:local --workspace @lc/worker",
     "db:migrate": "npm run db:migrate --workspace @lc/worker",
