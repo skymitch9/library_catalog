@@ -26,10 +26,14 @@
 
 > 🚩 **KIRO'S RANKED QUEUE LIVES IN `catalog-platform/docs/TODO.md`**, in the
 > section **"KIRO — COMPLETE THIS WORK, by ease and quickness"** (added
-> 2026-08-21). Items from THIS repo appear there as K-numbers with plans. It is
-> kept in that repo because `catalog-platform/docs/` is the only one of the four
-> docs trees that is **tracked in git** and therefore survives a clone — this
-> file does not. Do not duplicate the queue here; one list, not two.
+> 2026-08-21). Items from THIS repo appear there as K-numbers with plans.
+> ~~It is kept in that repo because `catalog-platform/docs/` is the only one of
+> the four docs trees that is **tracked in git** and therefore survives a clone
+> — this file does not.~~ ⚠️ **Corrected 2026-09-05 (AUD-library): that reason
+> is FALSE — this tree IS in git** (`git ls-files docs` = 56 files, nothing
+> ignored, tree clean), so this file survives a clone perfectly well. The queue
+> still lives in one place, because one list beats two; the reason is now
+> simply that it is a CROSS-REPO queue. Do not duplicate it here.
 
 
 ## ☑ BUILT 2026-09-05 — "Request a catalog" phase 5, the sealed-key ladder is IN step 10 (agent S2) — ☐ owner runs it for real once

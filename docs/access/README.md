@@ -66,10 +66,25 @@ Nothing here contains a secret value. Credentials are named, and the command to
 set them is given; the values live in `wrangler secret` and in
 `apps/worker/.dev.vars` (gitignored).
 
-**The one thing to know:** Cloudflare is **done** — D1 created, migrated, Worker
+~~**The one thing to know:** Cloudflare is **done** — D1 created, migrated, Worker
 deployed at `https://library-catalog.bgc-worker.workers.dev`. The only remaining
 blocker is a **Firebase** console click: add that host to Authentication →
 Settings → Authorised domains on the `audiobook-catalog` project, or Google
-sign-in fails with `auth/unauthorized-domain`.
+sign-in fails with `auth/unauthorized-domain`.~~
+
+🔴 **Corrected 2026-09-05 (docs audit): there is no remaining blocker, and this
+paragraph has been describing a first-deploy state since 2026-08-09.** Measured
+that day: `https://library.heygabi.ai/` and `https://padhard.heygabi.ai/` both
+answer **200**, both serve the same bundle (`assets/index-BcUnvzMK.js`), and
+both `/api/health` answer `{"ok":true,"database":"up"}` with
+`estate.mode = "enforce"` (apps `library` and `library2`, tokens configured).
+Two live instances, eleven deploy pairs in `docs/deploys.log` since 2026-08-25.
+
+⚠️ **The Firebase authorised-domain step is still REAL — it just is not a
+blocker on THESE two hosts.** It is a step in standing up a NEW instance, and
+it is 🔴 MANUAL PAUSE #1 of the provisioner:
+[`provision-catalog.md`](provision-catalog.md). Left here in struck form
+because the failure mode it names (`auth/unauthorized-domain`) is the exact
+symptom a new host shows, and that is worth keeping findable.
 
 - [`rollback-points.md`](rollback-points.md) — annotated rollback ids. `docs/deploys.log` is the newer, more complete record; prefer it.

@@ -1,7 +1,14 @@
 # library_catalog — Known Issues, Waivers & Exceptions
 
 > **Audience:** Claude/Kiro sessions and the owner. **Status:** TRACKED.
-> Last verified: **2026-09-02 (latest)** — **KI-14 was added** and measured by
+> Last verified: **2026-09-05 (latest)** — the docs audit re-measured **exactly
+> one entry, KI-5**: three fresh probes of `bookcover.longitood.com`, all 522,
+> so the rung is still down and its "still 522 in a month" clock now has a date
+> (**2026-09-22**). ⚠️ **NOTHING ELSE was re-checked on 2026-09-05** — KI-6,
+> KI-7, KI-9, KI-10, KI-11, KI-12 and KI-14 all still carry the ages stated
+> below, and KI-7 in particular could not be checked at all because verifying it
+> means reading `.dev.vars`, which an agent may not open.
+> Previously **2026-09-02 (latest)** — **KI-14 was added** and measured by
 > replaying the audiobook site's own search over the 1,087 cards it ships. It
 > is the RESIDUE of a fix, not a new defect: the audiobook deep link now
 > searches the verbatim title (824 → 886 of 1,087 books reached uniquely, and
@@ -58,6 +65,14 @@ a book no database holds.
 **Measured** 2026-08-22 ~23:15 and again **2026-08-23 19:10 Phoenix**, ~20 hours
 apart, on a control ISBN known to resolve elsewhere: 522 both times. It is the
 host, not us and not the ISBNs.
+
+✅ **Re-measured 2026-09-05 13:2x Phoenix (docs audit), three probes in a row on
+`bookcover.longitood.com`: 522, 522, 522.** Fourteen days on from the first
+reading and the host has not come back once. 🔴 **This entry's own removal
+condition now has a DATE, not a feeling:** it says *"if it is still 522 in a
+month, delete the rung"*, and the month runs out on **2026-09-22**. If a probe
+that day is still 522, delete rung 2.5 rather than carry a step that always
+fails and always has to be explained.
 
 **Why tolerated.** It is a free third-party service with no contract, and it is
 the *third* rung — Open Library and Google Books are asked first and answer for
