@@ -32,6 +32,39 @@
 > file does not. Do not duplicate the queue here; one list, not two.
 
 
+## ☐ "Request a catalog" phase 5 — the sealed-key ladder is IN step 10 (agent S2, 2026-09-05)
+
+Commit **`acb4c44`**. Step 10 now tries the two sealed envelopes BEFORE the
+owner's own key, through `catalog-platform/scripts/lib/catalog-seal.mjs`'s
+`injectSealedKey`; the header paragraph saying *"`reader_key_set` therefore
+stays 0"* is gone, because it is no longer true. `markLiveUpdate()` is extracted
+so the custody booleans are testable — a **reader**-keyed catalog now writes
+**neither** boolean (the route owns `reader_key_set`; claiming `owner_key_set`
+would be a lie about whose money it spends). Runbook rewritten:
+[`access/provision-catalog.md`](access/provision-catalog.md) → "The Anthropic
+key — three sources".
+
+**MEASURED:** `npm test` **2418 → 2428 pass / 0 fail**; `--dry --request 1`
+against the live D1 still refuses correctly (already live, exit 2); a
+`--dry --fixture` run printing both envelope candidates BY KEY NAME against the
+real bucket, both absent, falling through to the standing-decision line.
+
+🔴 **The bug the rehearsal caught, and why `--dry` earns its keep:** the first
+version reported **both** envelopes PRESENT against a bucket holding neither —
+wrangler 4.123.0 answers a missing object with exit 127, *"The specified key
+does not exist."* on stderr **and a single newline on stdout**, and the inherited
+Windows teardown tolerance read any stdout as a hit. Fixed in
+`catalog-platform` `e63ccbe`, with both real stderr strings pinned as fixtures.
+
+🔴 **NOT verified:** no envelope has ever been decrypted from R2, because nothing
+has been sealed by a real browser yet. Rows 1 and 2 of the ladder are proven only
+by a Node-to-Node round trip with a throwaway keypair, in `catalog-platform`'s
+suite. ⚠️ The private key that opens them lives on the owner's machine only —
+`catalog-platform/docs/access/keys/catalog-provisioning.private.jwk`, custody row
+in that repo's `docs/access/RECOVERY.md` §11.3.
+
+☐ Still the owner's step, and unchanged by this: **run it for real once.**
+
 ## ☐ "Request a catalog" phase 7 — the owner-run BOOKS provisioner is BUILT and UNEXERCISED (2026-09-05)
 
 Design of record: `catalog-platform/docs/info/request-a-catalog-design.md` §7.4
