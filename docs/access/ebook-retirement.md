@@ -112,18 +112,23 @@ copy in its header.
 
 | | before | after |
 |---|---|---|
-| `work` | 496 | **410** |
-| `edition` | 567 | **444** |
+| `work` | 497 | **411** |
+| `edition` | 568 | **445** |
 | ebook editions | 126 | **3** (the kept works') |
 | `ebook_holding` | 126 | **40** |
 | `copy` | 449 | **449** — nothing physical is reachable |
 | `change_log` | 1,644 | **1,644** — see §7 |
 | `user_book` | 171 | 162 |
 
-⚠️ The catalog is live: `work` was 496 at 14:23 and **497** at 14:58 the same
-afternoon. The plan re-measures, so a stale number here is cosmetic; a stale
-number in the `.sql` header is not, which is why the plan is regenerated
-immediately before it is applied.
+⚠️ **The catalog is live and these two numbers move.** `work` read **496** at
+14:23 Phoenix and **497** at 15:17 the same afternoon; `edition` 567 → 568. The
+figures above are the committed `.sql` header's (497/568), and the drill numbers
+in §5 are the earlier snapshot's (496/567) because that is what the local mirror
+was seeded from. Neither is wrong; both have a time.
+
+**The rule this implies: regenerate the plan immediately before applying it.**
+`ebooks:plan` re-measures, so a stale number on this page is cosmetic — a stale
+number in the `.sql` header you are about to trust is not.
 
 ---
 
