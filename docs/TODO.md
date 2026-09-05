@@ -42,14 +42,21 @@ Owner, verbatim: *"We need to fix all the series that have warnings too, list
 those and let's fix them. Also do another audiobook sweep. I added battle mage
 farmer and it didn't associate the audiobook right away."*
 
-1. ☐ **Series with warnings — LIST, then fix.** ❓ Which mark he means is not
-   yet settled (asked 16:40): on `/series` today there are **23 red "N missing"
-   rows** (`mark--gap`, certainly-missing rungs) and **48 "none of them
-   numbered" rows** (+ 75 "no source asked yet"). Measured live 16:38 from the
-   rendered page. Once he says which, produce the list here with the per-series
-   cause and fix the DATA (numbering, wrong series names such as *Cosmere*
-   filed as a series when it is a universe), on BOTH instances where the row
-   exists.
+1. ☐ **Series with warnings — the apex `/series/` "A DECISION IS WAITING"
+   card (owner screenshot 16:44): 6 near misses, ALL on Samantha's library
+   (padhard).** The ingest wrote a volume marker or a "Series" suffix into the
+   series NAME, so the index sees two series where there is one:
+   - "Once Upon a Broken Heart (#1)" ↔ "Once Upon a Broken Heart"
+   - "A Good Girl's Guide to Murder (#3)" and "(#2)" ↔ "A Good Girl's Guide to Murder" (*As Good As Dead*, *Good Girl, Bad Blood*)
+   - "Emily Wilde" ↔ "Emily Wilde Series" (*Encyclopaedia of Faeries*, *Map of the Otherlands*)
+   - "The Asphodel Series" ↔ "Asphodel" (*Lost to Witchcraft*)
+   - "Skyward" ↔ "The Skyward Series"
+   **Fix = DATA on padhard** (`--friend`): series → the bare canonical name,
+   the `(#N)` into `series_index_display`/`_sort`, change_log rows per field,
+   then a padhard index push so the apex card clears. ☐ Also check main for
+   the same pattern (report the count even if 0). ☐ Then look at what
+   produced them — if the padhard importer writes `(#N)` into `series`, fix
+   the importer too so it does not come back.
 2. ☐ **Audiobook sweep** — `npm run backfill:audiobooks` (main) and the
    `--friend` run. ⚠️ Why it "didn't associate right away": the sweep is a
    SCRIPT reading `audiobook_catalog/site/catalog.csv` off disk (header of
