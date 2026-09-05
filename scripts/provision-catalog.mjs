@@ -33,13 +33,14 @@
  * | 11 | `deploy:<instance>` through the repo's own guards | AUTO |
  * | 12 | Verify `/api/health?cb=` and mark the request `live` | AUTO |
  *
- * ## ⚠️ The naming rule, and where it DIVERGES from the design doc
+ * ## ⚠️ The naming rule — DECIDED by the owner 2026-09-05 08:35 Phoenix, option (a)
  *
- * Design §7.1 makes every permanent resource identity-neutral (env `third`, D1
+ * Design §7.1 makes every permanent resource identity-neutral (D1
  * `library-catalog-2nd`, bucket `library-2nd-covers`) so that only the HOSTNAME
- * carries identity and a rename costs one line. The brief for this build asks
- * instead that **the wrangler env be named from `desired_subdomain`**. Both are
- * honoured, split on which name is expensive to change:
+ * carries identity and a rename costs one line; the wrangler env is named from
+ * `desired_subdomain`. The owner chose this split — (a) — over (b) all-ordinal
+ * and (c) all-follow-the-person; §7.1 records the reasons. The split is on which
+ * name is expensive to change:
  *
  * | Name | Source | Why |
  * |---|---|---|
