@@ -495,12 +495,24 @@ PEERS = "[{\"id\":\"sky\",\"label\":\"Sky's Library\",\"url\":\"https://library.
 # to {audiobook, library, games} — so `library2` the APP cannot read `library2`
 # the SHELF, and that is deliberate, not an oversight to tidy up.
 #
-# **PUSH (still off).** Her estate-index INGEST is still PHASE 2
-# (friend-ingest-design.md §7). `lib/index-push.ts` requires INDEX_URL *and*
-# INDEX_PUSH_TOKEN together, and hers stays unset — so setting this host turns
-# the read half on and leaves the write half exactly as inert as before.
-# ⚠️ Do not "complete the pair" by minting INDEX_PUSH_TOKEN here: that is
-# federation day, and it labels her rows on a shelf other people can see.
+# **PUSH — the code landed 2026-09-05; the secret is the remaining half.**
+# ⚠️ This block used to say "do not complete the pair … that is federation
+# day". Federation day is 2026-09-05: the owner asked why the apex Universes
+# and Series tabs were not pulling padhard, and `lib/index-push.ts` now pushes
+# as `resolveIndexSource(ESTATE_APP)` — `library2` from this env, its own
+# source on the index, its own row in the index's /api/health.
+#
+# The push still needs INDEX_URL *and* INDEX_PUSH_TOKEN together, and the token
+# is set BY HAND, one instance at a time (it is per-SOURCE: the index holds
+# hers as INDEX_PUSH_TOKEN_LIBRARY2, and `scripts/push-secrets.mjs` refuses to
+# copy main's value):
+#   npx wrangler secret put INDEX_PUSH_TOKEN --config apps/worker/wrangler.toml --env friend
+# Until it exists every trigger logs one line and does nothing — code before
+# secret, the same safe order as ESTATE_APP_TOKEN_LIBRARY2 below.
+#
+# ⚠️ This var is on BOTH envs on purpose, and that is what silences the old
+# wrangler nag ("INDEX_URL exists at top level but not on env.friend.vars")
+# that docs/access/second-instance.md told you to ignore.
 INDEX_URL = "https://index.heygabi.ai"
 
 # Estate auth: same mode as the main instance's production posture (enforce,

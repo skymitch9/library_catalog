@@ -213,9 +213,18 @@ export const PRODUCTION_SECRETS = [
  * suffixed secret matched (`catalog-platform/apps/index-worker/src/env.ts`).
  * Giving friend main's value would make her rows arrive labelled `library`
  * rather than `library2` — the exact `ESTATE_APP_TOKEN_LIBRARY`-on-her-instance
- * mistake that was cleaned up on 2026-08-25. Her side is unset on purpose until
- * federation day mints a `library2` token (`search-route.ts`, friend-ingest
- * design §7). It is in `PER_INSTANCE_SECRETS` instead.
+ * mistake that was cleaned up on 2026-08-25. It is in `PER_INSTANCE_SECRETS`
+ * instead.
+ *
+ * ⚠️ **Updated 2026-09-05: "her side is unset until federation day" is no
+ * longer why it is refused.** Federation day happened — padhard pushes as
+ * source `library2` (`apps/worker/src/lib/index-push.ts`), the index holds her
+ * bearer as `INDEX_PUSH_TOKEN_LIBRARY2`, and it is set by hand with
+ * `npx wrangler secret put INDEX_PUSH_TOKEN --config apps/worker/wrangler.toml
+ * --env friend`. The refusal is PERMANENT and does not weaken with the token's
+ * existence: the reason was never "hers does not exist yet", it is that main's
+ * value is not hers, and a bulk run that sent it would file her books on main's
+ * shelf.
  *
  * ⚠️ **`INDEX_READ_TOKEN` is still NOT here — but it is no longer unclassified.**
  * This note used to say the read half of the index "does not exist yet" and that
@@ -641,7 +650,12 @@ export function perInstanceReason(name) {
     return (
       'per-instance: the index Worker resolves the pushing SOURCE from which ' +
       'INDEX_PUSH_TOKEN_<SOURCE> matched, so main\'s value would label her rows ' +
-      '`library`. Hers is unset on purpose until federation mints a library2 token.'
+      '`library`. ⚠️ Hers EXISTS as of 2026-09-05 — the index holds it as ' +
+      'INDEX_PUSH_TOKEN_LIBRARY2 (federation phase 2, and padhard now pushes as ' +
+      'source `library2`). Set it on her Worker one at a time with ' +
+      '`npx wrangler secret put INDEX_PUSH_TOKEN --config apps/worker/wrangler.toml ' +
+      '--env friend`. This script still refuses to send it, and always will: ' +
+      'copying main\'s value would file her books on main\'s shelf.'
     );
   }
   return 'per-instance: each instance holds its own value — set it one at a time.';

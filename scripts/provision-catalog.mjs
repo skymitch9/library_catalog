@@ -572,6 +572,17 @@ PEERS = "[]"
 # deliberately UNSET here, so this host is inert. PUSH additionally needs
 # INDEX_PUSH_TOKEN, also unset — federation labels rows on a shelf other people
 # can see, and that is its own decision.
+#
+# ⚠️ When that decision is made, this instance needs NO CODE CHANGE. Since
+# 2026-09-05 the pusher derives its source from ESTATE_APP below
+# (\`resolveIndexSource\`, apps/worker/src/lib/index-push.ts), so
+# \`${names.estateApp}\` is both the identity this Worker asserts to the estate
+# directory and the shelf its rows are filed under — they cannot drift apart.
+# What federation needs is the PAIR: the index Worker gets the bearer as
+# INDEX_PUSH_TOKEN_${names.estateApp.toUpperCase()}, this Worker gets the same
+# value as INDEX_PUSH_TOKEN (\`wrangler secret put\`, by hand, one instance at a
+# time — push-secrets.mjs refuses to copy another instance's, see
+# \`perInstanceReason\`). Precedent: padhard, 2026-09-05.
 INDEX_URL = ${tomlString(INDEX_URL)}
 
 # Estate auth, same posture as both existing instances. ⚠️ Until
