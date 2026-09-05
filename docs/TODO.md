@@ -1806,6 +1806,9 @@ the committed export is the `--keep 358,359,360` one and they stay. **(a) keep
 them** — done, recommended — or **(b) he says in writing the three read states
 are disposable**, and the export is re-run without `--keep` (89 works, 126
 editions). Nothing else on this page is waiting on him.
+☑ **Owner decided 2026-09-05 16:03 Phoenix: (a) — "A".** The committed
+`--keep 358,359,360` export stands; nothing to re-run. Phase 5's go/no-go is
+the next question.
 
 ### 🔴 `--force-prune` is now the WRONG instrument — and would have done a fifth of the job
 
