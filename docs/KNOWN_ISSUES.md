@@ -1,7 +1,14 @@
 # library_catalog — Known Issues, Waivers & Exceptions
 
 > **Audience:** Claude/Kiro sessions and the owner. **Status:** TRACKED.
-> Last verified: **2026-09-05 (latest)** — the docs audit re-measured **exactly
+> Last verified: **2026-09-05 (ebook phase 5)** — **KI-15 was added** and
+> measured against production `library-catalog`: 127 ebook editions, the
+> `source` column split 26 `file` / 34 `openlibrary` / 55 `research` / 11
+> `googlebooks` / 1 `manual`, all 127 still carrying a manifest path in
+> `source_url`, and `ebook_holding` still recording `edition_source='file'` for
+> 125 of 126. ⚠️ **Nothing else was re-checked in that pass** — KI-5 through
+> KI-14 all still carry the ages stated below.
+> Previously **2026-09-05 (docs audit)** — the docs audit re-measured **exactly
 > one entry, KI-5**: three fresh probes of `bookcover.longitood.com`, all 522,
 > so the rung is still down and its "still 522 in a month" clock now has a date
 > (**2026-09-22**). ⚠️ **NOTHING ELSE was re-checked on 2026-09-05** — KI-6,
@@ -365,6 +372,59 @@ documents are keyed by it) — this side would change one line of
 a cross-repo change to a site this catalog does not own is not worth it. Full
 record and the measurement script's findings:
 `apps/web/src/lib/audiobook-site.ts`'s header.
+
+---
+
+## KI-15 · 101 ebook editions no longer say `source='file'`, so `--prune` cannot see them — `ACCEPTED`
+
+**Symptom.** `npm run import:ebooks -- --prune --remote` reports on **26** file
+editions where a reader would expect **127**, and would silently leave 101
+behind. Every `--prune` message is correct about what it looked at and wrong
+about what it implies, because its whole predicate is `source = 'file'`.
+
+**Measured 2026-09-05** against production `library-catalog`. All 127 ebook
+editions were created by the ebook importer on 2026-08-10/14 and all 127 still
+carry a **manifest-relative path in `source_url`** (`Will Wight/Bloodline - Will
+Wight.epub` and the like — zero carry an `http…` url). Their `source` column is
+another matter:
+
+| `source` | rows | `updated_at` |
+|---|---|---|
+| `file` | **26** | 2026-08-10/11/14 |
+| `openlibrary` | 34 | **2026-08-20** (3 on 08-23) |
+| `research` | 55 | **2026-08-20** (1 on 08-25) |
+| `googlebooks` | 11 | **2026-08-20** |
+| `manual` | 1 | 2026-08-11 (genuinely hand-added: edition 318, no `source_url`) |
+
+The 2026-08-20 details/ISBN sweep enriched these rows and stamped **its own**
+provenance over the importer's. At design time (2026-08-16) the split was 126
+`file` + 1 `manual`; `ebook_holding`, derived 2026-08-17, still records
+`edition_source='file'` for 125 of its 126 rows, which is the fossil that dates
+the rewrite.
+
+**Why tolerated.** ⚠️ **`source` is not lying about anything a person reads** —
+it names where this edition's *metadata* came from, and for 101 of these rows
+that genuinely is Open Library / research / Google Books now. Rewriting it back
+to `file` would be inventing a provenance to make one script's WHERE clause
+convenient, which is the same class of error migration 0013 refused when it
+would not backfill `decided_how` to `'human'`. The one caller that cared has
+been given a predicate that keys on `source_url` instead
+([`access/ebook-retirement.md`](access/ebook-retirement.md) §1.2), and
+`import-ebooks.mjs` is unchanged and still correct for the job it is for:
+pruning editions whose FILE has gone.
+
+⚠️ **Two things this does NOT mean.** It is not data loss — every row is intact
+and every path is intact. And it is not a reason to re-run
+`npm run backfill:ebooks`: that would flip ~99 `ebook_holding` rows from
+`edition_source='file'` to `'manual'`, a silent provenance downgrade in the
+other direction.
+
+**What would change it.** Ebook split phase 5 removing these rows entirely, at
+which point the entry retires with them — that is the likely end. Failing that,
+a **second** caller needing "rows the ebook importer created" would justify
+either a column that records the creating process separately from the metadata
+source, or a shared helper exporting the `source_url`-based predicate. One
+caller does not: it already has one.
 
 ---
 
