@@ -1,7 +1,13 @@
 # Cross-Catalog Index (`index.heygabi.ai`) — Access Reference
 
 > **Audience:** Claude sessions and the owner. **Status:** TRACKED (no secret values).
-> Last verified: **2026-08-14** — health curled, tokenless reads probed (401),
+> Last verified: **2026-09-05** — ONLY the two federation rows (the
+> `INDEX_PUSH_TOKEN_LIBRARY2` line in the token table and the `library2`
+> backstop line), written from the library repo's own code as it was deployed
+> that day. ⚠️ **Nothing on the INDEX side was measured** — this repo cannot
+> see `catalog-platform`'s deploy, and no live `/api/health` was read for a
+> `library2` source. Everything else below still carries its 2026-08-14 date.
+> Last verified before that: **2026-08-14** — health curled, tokenless reads probed (401),
 > remote migration list read, secret names read back.
 > Design: `catalog-platform/docs/info/index-worker-design.md`.
 
@@ -62,6 +68,7 @@ production 2026-08-14:
 |---|---|---|
 | `INDEX_PUSH_TOKEN_GAME` | ✅ | games Worker: `INDEX_PUSH_TOKEN` (one un-suffixed name per source repo) + `INDEX_URL` in `[vars]` |
 | `INDEX_PUSH_TOKEN_LIBRARY` | ✅ | library Worker: `INDEX_PUSH_TOKEN` + `INDEX_URL` in `[vars]` |
+| `INDEX_PUSH_TOKEN_LIBRARY2` | ⏳ 🆕 **2026-09-05 — federation phase 2, index half.** The library repo's CODE half shipped and deployed that day (padhard pushes as source `library2`, derived from its own `ESTATE_APP`). ⚠️ **The token was NOT set by that build, and the index side is a different repo** — both are the conductor's | padhard (`[env.friend]` of the same library Worker): `INDEX_PUSH_TOKEN` + `INDEX_URL`, the latter already in `[env.friend.vars]`. ⚠️ **Never main's value** — the source is resolved from which suffixed secret matched. Row: [`second-instance.md`](second-instance.md) |
 | `INDEX_PUSH_TOKEN_AUDIOBOOK` | ✅ | ⚠️ **nowhere persisted** — the pipeline's `app/index_push.py` reads `INDEX_URL`/`INDEX_PUSH_TOKEN` from the environment and *skips with one log line* when unset; the 2026-08-14 push was run with inline env vars. Adding them to `audiobook_catalog/.env` is the natural next step (owner/dispatcher call) |
 | `ESTATE_APP_TOKEN_INDEX` | ✅ (its own membership-check bearer against `auth.heygabi.ai`) | — |
 
@@ -76,7 +83,8 @@ can never stall a catalog.
 
 | Source | Trigger | Backstop |
 |---|---|---|
-| library | after mutations via `waitUntil` (`apps/worker/src/lib/index-push.ts`) | **request-traffic backstop**: at most hourly per isolate, an API request checks `/api/health` after responding and re-pushes if the library source is empty or >24h stale. Rides traffic because this Worker has NO cron (an unproven cron must not be the backstop) |
+| library | after mutations via `waitUntil` (`apps/worker/src/lib/index-push.ts`) | **request-traffic backstop**: at most hourly per isolate, an API request checks `/api/health` after responding and re-pushes if ~~the library source~~ **its own source** is empty or >24h stale. Rides traffic because this Worker has NO cron (an unproven cron must not be the backstop) |
+| library2 (padhard) | same code, same triggers — one Worker, two envs | 🆕 **2026-09-05.** Identical, with the source resolved from `ESTATE_APP` rather than hard-coded. ⚠️ **That was the fix, not a generalisation**: reading `sources.library` on padhard would have shown MAIN's fresh rows and skipped padhard's own first push forever. ⚠️ **Inert until `INDEX_PUSH_TOKEN` is set on `[env.friend]`** |
 | games | after mutations + cron for its other duties | request-traffic backstop **ported from the library shape** 2026-08-13 after the cron-riding backstop silently failed to push on three consecutive ticks (root cause UNDIAGNOSED — if the cover check or orphan sweep ever go quiet the same way, suspect the cron itself). Every pass logs its decision: `due → skipped (fresh, 836 rows)` / `throttled (next in 60m)` |
 | audiobook | pipeline calls `push_after_build` after a site rebuild (`app/main.py` → `app/index_push.py`) | none beyond the pipeline's own cadence; env unset = logged skip (see token table) |
 

@@ -1,7 +1,14 @@
 # Second Library Instance (friend) — Access Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED — no secret values here.
-> Last verified: **2026-09-03 (second entry that day)** — ONLY the "Migrate her
+> Last verified: **2026-09-05** — ONLY the federation rows: the `INDEX_PUSH_TOKEN`
+> section below (rewritten — the code half shipped and both instances were
+> deployed that afternoon) and the wrangler-nag gotcha (re-read against
+> `apps/worker/wrangler.toml`: the nag is gone, `INDEX_URL` is on both envs).
+> ⚠️ **The secret itself was NOT set and the first push was NOT made by that
+> build** — those are the conductor's, and nothing on this page claims they
+> happened. Nothing else was re-measured on 2026-09-05.
+> Last verified before that: **2026-09-03 (second entry that day)** — ONLY the "Migrate her
 > D1" row: migration `0450_audiobook_match_review.sql` was applied `--remote` to
 > BOTH databases that afternoon (`library-catalog` ✅, then `library-catalog-2nd`
 > ✅). ⚠️ The code that reads that table is committed and **NOT deployed** to
@@ -199,10 +206,57 @@ instance, not this one.
 ESTATE_APP_TOKEN_LIBRARY --env friend`; wrangler 4.120 has no `--force`, it
 wants a piped confirm), and live health still reports `configured: true`.
 
-Deliberately never set: `INDEX_PUSH_TOKEN` (federation is phase 2 — and it is a
-**per-SOURCE** bearer, so hers would be a `library2` token, never main's),
+⚠️ ~~Deliberately never set: `INDEX_PUSH_TOKEN` (federation is phase 2 — and it
+is a **per-SOURCE** bearer, so hers would be a `library2` token, never main's),
 `INDEX_READ_TOKEN` (the read half of the index does not exist on either
-instance).
+instance).~~ — **both overturned.** `INDEX_READ_TOKEN` was set 2026-08-25 (the
+read half is live on both instances). `INDEX_PUSH_TOKEN` is the section below.
+
+### `INDEX_PUSH_TOKEN` — set 2026-09-05 (federation phase 2, the INDEX half)
+
+Owner, 2026-09-05: *"in the universe and series tab it's not pulling Padhard
+library"*. The CODE half landed and deployed the same day: `lib/index-push.ts`
+pushes as `resolveIndexSource(ESTATE_APP)`, so this instance is source
+**`library2`** — its own shelf on `index.heygabi.ai`, its own row in the index's
+`/api/health`, and `detail_url`s that point back at `padhard.heygabi.ai` rather
+than at the main library (that last one was a real bug: `source_id` is a
+per-database `work.id`, so her row for id 7 pointed at main's id 7).
+
+⚠️ **Still per-SOURCE, and still never main's value.** The index resolves the
+pushing source from WHICH `INDEX_PUSH_TOKEN_<SOURCE>` matched, so it holds hers
+as `INDEX_PUSH_TOKEN_LIBRARY2`. `scripts/push-secrets.mjs` refuses to send this
+key in a bulk run and always will — that refusal did NOT weaken when the token
+started existing; the reason was never "hers does not exist yet". Set it by
+hand, one instance at a time:
+
+```
+npx wrangler secret put INDEX_PUSH_TOKEN --config apps/worker/wrangler.toml --env friend
+```
+
+**Verify, in this order:**
+
+| Check | What it proves |
+|---|---|
+| `curl -s -D - https://padhard.heygabi.ai/api/health \| head -n 20` | `estate.app: library2` — the identity the push derives its source from. ⚠️ Health does **not** expose index config at all, so this is necessary and nowhere near sufficient |
+| `curl -s -D - https://index.heygabi.ai/api/health \| head -n 40` | a `sources.library2` entry with non-zero `rows` and a recent `pushed_at`. **This is the real proof** |
+| `https://heygabi.ai/universes/` | her books in the tabs — the owner's actual ask, and the only place the result is visible |
+
+⚠️ **Until the secret is set, nothing happens and nothing is broken.** The push
+requires `INDEX_URL` *and* `INDEX_PUSH_TOKEN` together; unset means one log line
+per trigger and no request. Code before secret, the same safe order as
+`ESTATE_APP_TOKEN_LIBRARY2`.
+
+To force the first push rather than wait for a mutation or the hourly backstop:
+`POST https://padhard.heygabi.ai/api/admin/index-push`, with a Firebase bearer
+holding the **`manageUsers`** capability **on HER instance** (owner or admin
+there — the same gate as the rest of that surface). Its response now names the
+source it pushed, so a reply saying `library` from padhard would mean
+`ESTATE_APP` is wrong.
+
+⚠️ **The index side is a different repo.** `catalog-platform`'s index Worker
+must accept `PUT /api/push/library2` and hold `INDEX_PUSH_TOKEN_LIBRARY2`
+before any of this can succeed; a push into an index that does not know the
+source gets a 401/404, logged and swallowed (fails soft, by design).
 
 ⚠️ ~~`EBOOK_INGEST_TOKEN` (her ebook surface is a 404 and stays one),
 `AUDIOBOOK_MAPPING_TOKEN` (no audiobook pipeline)~~ — **both were set on
@@ -373,9 +427,17 @@ be copied by an agent):
 
 ## Gotchas that already bit
 
-- Wrangler nags on every `--env friend` command that `INDEX_URL` "exists at
+- ~~Wrangler nags on every `--env friend` command that `INDEX_URL` "exists at
   top level but not on env.friend.vars — probably not what you want". It IS
-  what we want (phase-2 federation, inert by absence). Do not "fix" it.
+  what we want (phase-2 federation, inert by absence). Do not "fix" it.~~
+  ✅ **Gone. Re-read against `apps/worker/wrangler.toml` on 2026-09-05:
+  `INDEX_URL` is on `[env.friend.vars]` as well as top level** (added
+  2026-08-25 for the index READ half, and federation phase 2 needs it too), so
+  there is no asymmetry left to nag about. ⚠️ The *reason* the nag was
+  ignorable has also expired — "inert by absence" was never how the push was
+  held off; it is held off by `INDEX_PUSH_TOKEN` being unset, which is a
+  secret and not a var. If a similar nag appears for `DONOR_URL`, that one is
+  still genuine and still correct to ignore (main has no `DONOR_URL`).
 - This LAN negative-caches new subdomains ~30 min (router NXDOMAIN cache) —
   a dead-looking `padhard.heygabi.ai` right after deploy is the router, not
   the deploy. Test via the workers.dev URL or another network.

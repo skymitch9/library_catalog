@@ -169,7 +169,14 @@ a secret is an opaque string, so "corrupt" and "rotated" look identical.
 same *name* on both sides. The index Worker holds it as
 `INDEX_PUSH_TOKEN_LIBRARY` and derives the pushing **source** from which
 suffixed secret matched, so main's value on her Worker would file her rows as
-`library`. Hers is unset until federation mints a `library2` token.
+`library`. ~~Hers is unset until federation mints a `library2` token.~~
+⚠️ **Updated 2026-09-05:** federation phase 2's index half shipped — padhard
+pushes as source `library2`, and the index holds hers as
+`INDEX_PUSH_TOKEN_LIBRARY2`, set by hand with `npx wrangler secret put
+INDEX_PUSH_TOKEN --config apps/worker/wrangler.toml --env friend`. **The
+refusal did not weaken with the token's existence**: the reason was never
+"hers does not exist yet", it is that main's value is not hers. Full row and
+the verification: [`second-instance.md`](second-instance.md).
 
 ✅ **The 🔴 warning that stood here is retired — the opt-in split landed
 2026-08-25.** It read: *"`--both` WILL push `EBOOK_INGEST_TOKEN` and

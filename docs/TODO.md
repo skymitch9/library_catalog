@@ -1975,6 +1975,67 @@ and turning that on is access-INCREASING and needs a redeploy of every existing
 instance (phase 7's follow-up list says so). Constraints 1 and 2 below — she is
 less technical, she is not local — were answered by the provisioner design.
 
+### ☑ BUILT 2026-09-05 — the INDEX half (padhard federates as source `library2`)
+
+> **Owner, 2026-09-05 15:27 Phoenix:** *"in the universe and series tab it's
+> not pulling Padhard library"*. This un-defers the INDEX half only. **The
+> peer-JOIN half (`PEERS`, instance-to-instance holdings) stays deferred and
+> was not touched.**
+
+The two halves are different mechanisms and it is worth keeping them apart:
+the INDEX is a push into `index.heygabi.ai`, which the apex Universes/Series
+tabs already read; the JOIN is instances reading each other directly.
+
+**Shipped in this repo** (`90d704b`, `ec9cd8b`) — both instances deployed:
+
+| What | Was | Is |
+|---|---|---|
+| Push URL | `PUT /api/push/library`, hard-coded | `PUT /api/push/{resolveIndexSource(ESTATE_APP)}` — `library` / `library2` |
+| Backstop freshness | read `health.sources.library` always | reads ITS OWN source's key |
+| `POST /api/admin/index-push` | answered `{"app":"library"}` always | names the source it pushed |
+| Log lines | `index push (mutation)` | carry the source — two instances, one `wrangler tail` |
+| 🔴 `detail_url` / relative `cover_url` | absolutised against `library.heygabi.ai` **on both instances** | the instance's own `SITE_ORIGIN` |
+
+🔴 **That last row was found while building and is the one that would have
+been hardest to see.** `source_id` is a per-database `work.id`, so padhard's
+row for id 7 pointed at whatever book is id 7 in the MAIN library — a wrong
+book, not a 404. Fixed in `packages/db/src/index-projection.ts` with the
+instance's own origin (already a var on both envs), defaulting to main's
+constant so main is byte-identical.
+
+⚠️ **Nothing federates yet, and nothing changed for main.** The push needs
+`INDEX_URL` *and* `INDEX_PUSH_TOKEN` together; hers is unset, so every trigger
+on padhard logs one line and does nothing, exactly as before.
+
+**Still the owner's / the conductor's, in this order:**
+
+1. **The index side must accept `library2` first** — a sibling agent
+   (W4-FED-INDEX) was teaching `catalog-platform`'s index Worker
+   `PUT /api/push/library2` + `INDEX_PUSH_TOKEN_LIBRARY2` in parallel. ⚠️ Not
+   verified from here; this repo cannot see that deploy.
+2. **Mint the bearer and set it on BOTH sides** — the index gets
+   `INDEX_PUSH_TOKEN_LIBRARY2`, padhard gets the same value as
+   `INDEX_PUSH_TOKEN`:
+   `npx wrangler secret put INDEX_PUSH_TOKEN --config apps/worker/wrangler.toml --env friend`
+   ⚠️ Never main's value — `scripts/push-secrets.mjs` refuses to copy it, and
+   copying it would file her books on main's shelf.
+3. **Trigger the first push:** `POST https://padhard.heygabi.ai/api/admin/index-push`
+   with a Firebase bearer holding the **`manageUsers`** capability on HER
+   instance (owner or admin there — the same gate as the rest of that
+   surface). Or wait for her next mutation / backstop tick.
+4. **`vis_library2` grants in /admin** — visibility on her shelf is its own
+   column (auth-worker migration 0007, `DEFAULT 0`) and is access-INCREASING,
+   so it is granted by hand, per person, never as a side effect of this.
+5. **Verify** at `https://heygabi.ai/universes/` — that is where the owner's
+   report came from and the only place the result is visible. Nothing about
+   `padhard.heygabi.ai` itself changes to the eye.
+
+⚠️ **One measurement that contradicts the note above:** it says `PEERS` ships
+`[]`. Measured in `apps/worker/wrangler.toml` on 2026-09-05, **both envs carry
+a populated `PEERS`** (main lists `padhard`, friend lists `sky`). That is the
+committed config, not a live probe — the peer half may be further along than
+this section believes. Worth a look before anyone re-plans the JOIN.
+
 **Deferred by the owner the same day it was raised — "do the next catalog
 later" — recorded now so it is not lost.**
 
