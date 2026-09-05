@@ -1,5 +1,5 @@
 -- Ebook split, phase 5 - library (library-catalog)
--- Generated 2026-09-05T22:17:17.670Z by scripts/plan-ebook-retirement.mjs
+-- Generated 2026-09-05T23:06:44.728Z by scripts/plan-ebook-retirement.mjs
 -- From the export: docs/archive/ebook-rows-library-2026-09-05.json (generated 2026-09-05T22:14:44.614Z)
 --
 -- 86 ebook-only work(s) and 123 ebook edition(s).

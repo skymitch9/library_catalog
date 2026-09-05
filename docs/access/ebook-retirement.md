@@ -1,18 +1,30 @@
 # Ebook split, phase 5 — retiring the ingest and the ebook rows
 
 > **Audience:** the owner, and the Claude session standing beside him.
-> **Status:** TRACKED. **Last verified: 2026-09-05** — every number on this page
-> was **re-measured against production D1 that afternoon** (both instances), and
-> the whole ceremony was **drilled end to end on a throwaway local D1 seeded
-> from the remote catalog**: apply, then restore, returned all sixteen row
-> counts to their starting values.
-> ⚠️ **NOT verified, and it is the important one: the retirement has never been
-> applied to either remote database.** Everything below is built and rehearsed;
-> nothing has been removed. That step is the owner's, and this page exists so it
-> is one command.
+> **Status:** TRACKED. **Last verified: 2026-09-05 ~23:10 UTC.**
+>
+> ✅ 🔴 **PHASE 5 HAS BEEN APPLIED. This page is now a RECORD and a REVERSAL
+> path, not a pending ceremony.** The owner said **GO** at 16:03 Phoenix
+> (and **"A"** on §1.1's fork — works 358/359/360 kept). Agent W4-EBOOK5-PRUNE
+> ran steps 1–5 against production the same evening.
+>
+> | Step | State |
+> |---|---|
+> | 1 · export | ✅ committed 2026-09-05 (`--keep 358,359,360`), unchanged |
+> | 2 · plan | ✅ re-run at apply time — **all five preconditions [ok]**; the regenerated `.sql` differed from the committed one by its **generation timestamp only**, all 17 statements byte-identical |
+> | 3 · apply (main) | ✅ **APPLIED** — 17 queries, 639 rows written. `work` 497→**411**, `edition` 568→**445**, ebook editions 126→**3**, `ebook_holding` 126→**40**; `copy` **450 untouched**, `change_log` **1,651 untouched** |
+> | 4 · the secret | ✅ **UNSET ON BOTH.** `EBOOK_INGEST_TOKEN` is gone from `wrangler secret list` on `library-catalog` and `library-catalog-friend`, and both hosts went **401 → 404 `ingest_disabled`** |
+> | 5 · padhard | ✅ plan run read-only: *"0 rows matched"*. **No statement was executed against `library2`** |
+>
+> ⚠️ **What is still NOT verified:** nothing was looked at through a signed-in
+> browser after the deletion — every figure here is a `COUNT(*)`. And **the
+> reversal in §5 has never been run against production**; it was drilled on a
+> throwaway local D1 only. Full record, with the before/after table as measured:
+> [`../DONE.md`](../DONE.md) → *2026-09-05 — Ebook split PHASE 5 APPLIED*.
 >
 > Design of record: `catalog-platform/docs/info/ebook-split-design.md` §3 and §6.
-> Work log: [`../TODO.md`](../TODO.md) → *Ebook split — PHASE 5*.
+> Work log: ⚠️ the TODO section **moved to [`../DONE.md`](../DONE.md)** at
+> completion — it is no longer in `TODO.md`.
 
 ---
 
@@ -170,7 +182,12 @@ chunked, commented SQL. **Nothing runs it.**
 
 🔴 **READ IT.** That is the whole point of a file instead of a flag.
 
-### Step 3 — apply (🔴 the owner's go/no-go)
+### Step 3 — apply (~~🔴 the owner's go/no-go~~ ✅ **RAN 2026-09-05 23:07 UTC**)
+
+✅ **He said GO. This command has been run** — 17 queries, 639 rows written,
+database 3.72 → 3.50 MB, and every count landed on its predicted value (see the
+header table). Do **not** run it a second time; it is idempotent in effect but
+the reversal in §5 is the way back, not a re-apply.
 
 ```bash
 npx wrangler d1 execute library-catalog --config apps/worker/wrangler.toml --remote --file docs/archive/ebook-retirement-library-2026-09-05.sql
@@ -207,6 +224,20 @@ curl -s -D - -X POST https://library.heygabi.ai/api/ingest/ebook -H 'content-typ
 is live on **both** instances today and that step 4 has two halves. **401 → 404
 is the whole verification of step 4**, and it is the only thing that can be
 checked from outside, since a Worker secret cannot be read back.
+
+✅ **DONE 2026-09-05 23:10 UTC, and the 401 → 404 ratchet closed on both.** Both
+deletes reported *"Success! Deleted secret EBOOK_INGEST_TOKEN"*, the name is
+absent from `wrangler secret list` on `library-catalog` and
+`library-catalog-friend`, and both hosts now answer
+**404 `{"error":"ingest_disabled"}`**:
+
+```
+POST https://library.heygabi.ai/api/ingest/ebook   -> 404 {"error":"ingest_disabled"}
+POST https://padhard.heygabi.ai/api/ingest/ebook   -> 404 {"error":"ingest_disabled"}
+```
+
+⚠️ **No code changed and nothing was deployed** to achieve that — exactly as
+`capability-wiring.test.ts` pins. The 404 is the unset alone.
 
 Unset means *disabled*, not *open*: a 404 invites
 less probing than a 401, and it is pinned by

@@ -1,7 +1,17 @@
 # library_catalog — Known Issues, Waivers & Exceptions
 
 > **Audience:** Claude/Kiro sessions and the owner. **Status:** TRACKED.
-> Last verified: **2026-09-05 (ebook phase 5)** — **KI-15 was added** and
+> Last verified: **2026-09-05 ~23:10 UTC (ebook phase 5 APPLIED)** — **KI-15 was
+> RETIRED by its own stated end condition** and moved to the resolved table at
+> the foot of this file. Phase 5 ran against production `library-catalog`: the
+> 123 ebook editions it was about are deleted, and the surviving ebook-format
+> rows were **re-listed one by one, not inferred** — **4 remain** (edition 318,
+> `manual`, no `source_url`, always out of scope; and 486/487/488, `research`,
+> on the three works the owner kept). `source='file'` now matches **0** rows, so
+> the predicate the entry was about has nothing left to be wrong about.
+> ⚠️ **Nothing else was re-checked in that pass** — KI-5 through KI-14 all still
+> carry the ages stated below.
+> Previously **2026-09-05 (ebook phase 5, pre-apply)** — **KI-15 was added** and
 > measured against production `library-catalog`: 127 ebook editions, the
 > `source` column split 26 `file` / 34 `openlibrary` / 55 `research` / 11
 > `googlebooks` / 1 `manual`, all 127 still carrying a manifest path in
@@ -375,58 +385,17 @@ record and the measurement script's findings:
 
 ---
 
-## KI-15 · 101 ebook editions no longer say `source='file'`, so `--prune` cannot see them — `ACCEPTED`
+## Resolved and removed — 2026-09-05 (ebook phase 5)
 
-**Symptom.** `npm run import:ebooks -- --prune --remote` reports on **26** file
-editions where a reader would expect **127**, and would silently leave 101
-behind. Every `--prune` message is correct about what it looked at and wrong
-about what it implies, because its whole predicate is `source = 'file'`.
+⚠️ Same rule as the blocks below: closed by a real change, removed rather than
+badged, recorded here so nobody re-opens it from memory.
 
-**Measured 2026-09-05** against production `library-catalog`. All 127 ebook
-editions were created by the ebook importer on 2026-08-10/14 and all 127 still
-carry a **manifest-relative path in `source_url`** (`Will Wight/Bloodline - Will
-Wight.epub` and the like — zero carry an `http…` url). Their `source` column is
-another matter:
-
-| `source` | rows | `updated_at` |
+| Was | Claimed | Closed 2026-09-05 ~23:07 UTC |
 |---|---|---|
-| `file` | **26** | 2026-08-10/11/14 |
-| `openlibrary` | 34 | **2026-08-20** (3 on 08-23) |
-| `research` | 55 | **2026-08-20** (1 on 08-25) |
-| `googlebooks` | 11 | **2026-08-20** |
-| `manual` | 1 | 2026-08-11 (genuinely hand-added: edition 318, no `source_url`) |
-
-The 2026-08-20 details/ISBN sweep enriched these rows and stamped **its own**
-provenance over the importer's. At design time (2026-08-16) the split was 126
-`file` + 1 `manual`; `ebook_holding`, derived 2026-08-17, still records
-`edition_source='file'` for 125 of its 126 rows, which is the fossil that dates
-the rewrite.
-
-**Why tolerated.** ⚠️ **`source` is not lying about anything a person reads** —
-it names where this edition's *metadata* came from, and for 101 of these rows
-that genuinely is Open Library / research / Google Books now. Rewriting it back
-to `file` would be inventing a provenance to make one script's WHERE clause
-convenient, which is the same class of error migration 0013 refused when it
-would not backfill `decided_how` to `'human'`. The one caller that cared has
-been given a predicate that keys on `source_url` instead
-([`access/ebook-retirement.md`](access/ebook-retirement.md) §1.2), and
-`import-ebooks.mjs` is unchanged and still correct for the job it is for:
-pruning editions whose FILE has gone.
-
-⚠️ **Two things this does NOT mean.** It is not data loss — every row is intact
-and every path is intact. And it is not a reason to re-run
-`npm run backfill:ebooks`: that would flip ~99 `ebook_holding` rows from
-`edition_source='file'` to `'manual'`, a silent provenance downgrade in the
-other direction.
-
-**What would change it.** Ebook split phase 5 removing these rows entirely, at
-which point the entry retires with them — that is the likely end. Failing that,
-a **second** caller needing "rows the ebook importer created" would justify
-either a column that records the creating process separately from the metadata
-source, or a shared helper exporting the `source_url`-based predicate. One
-caller does not: it already has one.
+| **KI-15** | 101 of the 127 ebook editions no longer say `source='file'` — the 2026-08-20 details/ISBN sweep stamped `openlibrary` (34) / `research` (55) / `googlebooks` (11) over the importer's own provenance — so `import:ebooks --prune` sees **26** where a reader expects 127, and would silently leave 101 behind | ⚠️ **Closed by the route the entry itself named as the likely end**: *"Ebook split phase 5 removing these rows entirely, at which point the entry retires with them."* Phase 5 was applied to production `library-catalog` at the owner's GO — **123 ebook editions deleted, 126 → 3**. The surviving ebook-format rows were **listed one by one, not inferred**: **4** remain — edition **318** (`manual`, no `source_url`, work 219: hand-added, deliberately never in scope) and **486 / 487 / 488** (`research`, manifest paths, on works **358 / 359 / 360**, which the owner kept so their three human read states survive). 🔴 **`source='file'` now matches ZERO editions**, so the WHERE clause the entry was about has nothing left to be wrong about, and `--prune` can no longer under-report because there is nothing to under-report. ⚠️ **The underlying nuance is NOT "fixed" and was never going to be** — 3 rows still say `research` about files the importer created, and `source` still means *where the metadata came from*. Nothing was rewritten back to `file`; inventing a provenance to suit a WHERE clause is what the entry refused, and it is still refused. It simply no longer matters, because the one caller that cared is retired. ⚠️ **Not verified:** `import-ebooks.mjs` was **not run** after the prune — `--prune`'s new behaviour on 0 file editions is read off the data, not exercised. And the standing ban on `npm run backfill:ebooks` is now *sharper*, not lifted: it derives `ebook_holding` from `edition`, so a run would mark the **40 surviving holdings** stale (`access/ebook-retirement.md` §6) |
 
 ---
+
 
 ## Resolved and removed — 2026-09-02
 

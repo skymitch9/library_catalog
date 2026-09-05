@@ -18,6 +18,290 @@
 > were extracted from this same history.
 
 
+## ✅ 2026-09-05 — Ebook split PHASE 5 **APPLIED**: 86 works and 123 ebook editions retired from main, `EBOOK_INGEST_TOKEN` unset on BOTH instances
+
+**Moved here whole from [`TODO.md`](TODO.md) by agent W4-EBOOK5-PRUNE at the
+owner's GO — cut and paste, nothing summarised.** The section below is verbatim
+as it stood; every line of its *"☐ Left for the owner"* list has now been done.
+Runbook of record: [`access/ebook-retirement.md`](access/ebook-retirement.md).
+
+### The owner's two decisions, both 2026-09-05 16:03 Phoenix
+
+| | His answer | What it settled |
+|---|---|---|
+| the `--keep` fork (§1.1 of the runbook) | **"A"** — option (a) | works **358 / 359 / 360** are KEPT with their editions, holdings and the three human read states. The committed `--keep 358,359,360` export stands; nothing was re-run |
+| phase 5's go/no-go (step 3, the apply) | **GO** | the retirement was applied to production `library-catalog`. It had never been applied to either remote database before this |
+
+### Measured, production, 2026-09-05 23:07–23:10 UTC
+
+⚠️ **The before column is what the database actually held at apply time, not
+what `TODO.md` quoted.** The catalog is live: it read `work` **496** at 14:23
+Phoenix, **497** at 15:17 and **497** at the apply; `copy` had grown 449 → 450
+and `change_log` 1,644 → 1,651 in the hours between. Both readings were correct
+when taken. The **deltas** are exactly what the drill and the plan predicted.
+
+| main (`library-catalog`) | before | after | expected |
+|---|---|---|---|
+| `work` | 497 | **411** | 411 ✅ |
+| `edition` | 568 | **445** | 445 ✅ |
+| ebook editions | 126 | **3** | 3 ✅ (the kept works') |
+| `ebook_holding` | 126 | **40** | 40 ✅ |
+| `user_book` | 171 | **162** | 162 ✅ |
+| `research_finding` | 1,192 | **1,020** | — (CASCADE, exported) |
+| `copy` | 450 | **450** | **untouched** ✅ |
+| `change_log` | 1,651 | **1,651** | **untouched** ✅ — §7.1, the audit trail outlives its subject |
+| works 358/359/360 still present | 3 | **3** | ✅ |
+| their `read_state_how='human'` rows | 3 | **3** | ✅ the whole point of the fork |
+
+| padhard (`library-catalog-2nd`) | before | after |
+|---|---|---|
+| `work` / `edition` | 677 / 666 | **unchanged — no statement was run** |
+| ebook editions / `ebook_holding` | 0 / 0 | 0 / 0 |
+| `copy` / `change_log` | 677 / 3,974 | unchanged |
+
+✅ **Her plan step WAS run, read-only, and exited exactly as the runbook §5 said
+it would:** *"library2: 0 rows matched. Phase 5 is a no-op on this instance -
+nothing to plan."* **0 rows** is a result, and it is recorded rather than
+assumed. Her half of phase 5 was the secret, and it is done.
+
+### What was actually run
+
+1. `npm run ebooks:plan -- --from docs/archive/ebook-rows-library-2026-09-05.json --remote`
+   — **all five preconditions [ok]**, including precondition 1 (human read states
+   on the *listed* works: **0**, because the three are kept and therefore not
+   listed) and precondition 0 (15 `work(id)` tables, 4 `edition(id)` columns, all
+   on the allowlist). ⚠️ **The regenerated `.sql` differed from the committed,
+   reviewed one by exactly one line — its own generation timestamp.** All 17
+   statements were byte-identical, which is the strongest thing that could have
+   been said about a file about to be applied to production.
+2. The `.sql` was **read in full** before applying — that is what the file
+   instead of a flag is for.
+3. `npx wrangler d1 execute library-catalog --config apps/worker/wrangler.toml --remote --file docs/archive/ebook-retirement-library-2026-09-05.sql`
+   — 17 queries, **639 rows written**, database 3.72 → 3.50 MB.
+4. `npx wrangler secret delete EBOOK_INGEST_TOKEN --config apps/worker/wrangler.toml`
+   and the same with `--env friend`. ✅ Both succeeded; the name is gone from
+   `wrangler secret list` on both Workers.
+5. ✅ **The 401 → 404 proof, which is the only thing that can verify a secret
+   nothing can read back:** before the unset both hosts answered **401**; after
+   it, `POST /api/ingest/ebook` answers **404 `{"error":"ingest_disabled"}`** on
+   `library.heygabi.ai` **and** `padhard.heygabi.ai`. Read with `curl -s -D -`,
+   because `-I` and `-o NUL` misreport on these hosts.
+
+### ⚠️ What was NOT verified
+
+- **Nothing was looked at through a signed-in browser.** No work page, no
+  collection grid, no `/stats` count was opened by a human or an agent after the
+  deletion. Every number above is a `COUNT(*)` against D1.
+- **The reversal was not exercised against production** — it was drilled on a
+  throwaway local D1 on 2026-09-05 (all sixteen counters returned to their
+  starting values) and the reversal command is unchanged, but it has never been
+  run against `library-catalog`. If it is ever needed:
+  `npm run ebooks:export -- --restore docs/archive/ebook-rows-library-2026-09-05.json --commit --remote`
+- **No deploy was made and no migration was run**, correctly — phase 5 is data
+  and one secret (runbook §8). The `Format: Ebook` facet, the collection grid
+  and `/stats` will simply show smaller numbers; whether the owner likes what
+  they now show is his to look at.
+- The `EBOOK_INGEST_TOKEN` **value** was never read, printed or handled — only
+  the name was deleted and only names were listed.
+
+⚠️ **The standing warning survives the retirement and is now sharper: do NOT
+run `npm run backfill:ebooks`.** It derives `ebook_holding` from `edition`,
+which now holds 3 ebook editions instead of 126 — a run would mark the **40
+surviving holdings** stale. Runbook §6.
+
+**KI-15 retired by this work** — the 101 rows whose `source` the 2026-08-20
+sweep rewrote are gone, which was that entry's own stated end.
+
+---
+
+## ☑ Ebook split — PHASE 5 — BUILT TO THE GO/NO-GO 2026-09-05 (agent W3-LIBEBOOK5, `cf5e8b3`); 🔴 OWNER RUNS THE PRUNE (one command per instance, runbook linked)
+
+🔴 **Everything up to the deletion is built, committed and DRILLED. Nothing has
+been removed from either remote database** — that is the owner's go/no-go, and
+it is one command with the export already committed and every precondition
+measured. **Runbook of record:
+[`access/ebook-retirement.md`](access/ebook-retirement.md)** — the four steps,
+what the counts should become, and the reversal command.
+
+**What shipped** (`cf5e8b3`, no deploy and no migration — phase 5 is data and one
+secret): `scripts/lib/ebook-rows.mjs` (the predicates, both FK allowlists, both
+statement builders — no top-level side effects), `scripts/export-ebook-rows.mjs`
+(`npm run ebooks:export` — export and `--restore`), `scripts/plan-ebook-retirement.mjs`
+(`npm run ebooks:plan` — re-measures five preconditions and writes a **reviewable
+`.sql`** rather than running it), `scripts/test/ebook-rows.test.mjs` (41 tests,
+no database; suite **2476 → 2517**, 0 fail, typecheck clean), and three committed
+artifacts under `docs/archive/`: `ebook-rows-library-2026-09-05.json` (🔴 the
+reversal path — 86 works, 123 editions, 430 dependent rows),
+`ebook-rows-library2-2026-09-05.json` (empty, on the record) and
+`ebook-retirement-library-2026-09-05.sql`.
+
+### 🔴 The owner's one decision — the design's own precondition FAILS
+
+`user_book` rows that are `read_state_how = 'human'` on ebook-only works must be
+**0** for the works to be deleted. **Re-measured 2026-09-05 against production:
+it is 3** — works **358 / 359 / 360** (*All The Skills* 2, 4 and 6), typed by him
+at 2026-08-18 **04:40** UTC, ⚠️ **fifteen minutes BEFORE the 04:55Z run whose
+figures this section used to quote**. The design says to preserve such works, so
+the committed export is the `--keep 358,359,360` one and they stay. **(a) keep
+them** — done, recommended — or **(b) he says in writing the three read states
+are disposable**, and the export is re-run without `--keep` (89 works, 126
+editions). Nothing else on this page is waiting on him.
+☑ **Owner decided 2026-09-05 16:03 Phoenix: (a) — "A".** The committed
+`--keep 358,359,360` export stands; nothing to re-run. Phase 5's go/no-go is
+the next question.
+
+### 🔴 `--force-prune` is now the WRONG instrument — and would have done a fifth of the job
+
+~~`--force-prune` the `source='file'` ebook editions (deleting all of them
+exceeds the 20% guard **by design** — the ceremony is the point)~~
+⚠️ **Corrected 2026-09-05, measured on production main:** that predicate matched
+**126 of the 127** ebook editions at design time and matches **26** today. The
+**2026-08-20 details/ISBN sweep rewrote `edition.source`** on 101 of the
+importer's own rows — `openlibrary` 34, `research` 55, `googlebooks` 11 — while
+leaving the manifest-relative path in `source_url`. Same rows, same files, one
+column reworded. And the 20% guard's *meaning* ("the manifest looks short") does
+not apply to a retirement that happens because the catalog no longer holds
+ebooks at all. `import-ebooks.mjs` is therefore **left exactly as it is**; the
+new tooling keys on `source_url`, which nothing rewrote.
+
+### Measured 2026-09-05 (production, both instances, read-only)
+
+| | main (`library`) | padhard (`library2`) |
+|---|---|---|
+| works | 496 → **410** after | 677 — unchanged |
+| ebook-only works | **89** (86 retired, 3 kept) | ⚠️ **0** |
+| ebook editions | **126** → 3 after | ⚠️ **0** |
+| `ebook_holding` | 126 → **40** after | **0** |
+| `user_book` `'human'` on those works | 🔴 **3** | 0 |
+| `copy` / `change_log` | 449 / 1,644 — **untouched** | — |
+
+⚠️ **library2: 0 rows matched.** Phase 5 is a **no-op** on padhard except for the
+secret, which she does hold (the owner set `EBOOK_INGEST_TOKEN` on her instance
+by hand 2026-08-25; unset it on **both**).
+
+⚠️ **The ebook count has NOT moved** — 127 non-physical editions on 2026-08-16
+and 127 today — so no producer is still pointed here and phase 5 is not blocked.
+(The ebook-ONLY work count fell 94 → 89: five of them grew a physical edition or
+a copy, which is the predicate working.)
+
+### Drilled, and what the drill caught
+
+Rehearsed end to end on a **throwaway** local D1 (`LC_D1_PERSIST_TO` — the
+developer's own local database was never touched), migrated to `0460` and seeded
+with 5,806 rows copied from remote. Apply → restore returned **all sixteen row
+counts to their starting values**, and a re-export of the restored rows was
+**row-for-row identical** to the remote one across works, editions and all
+fifteen dependent tables. Two real bugs were caught there and fixed before
+anything shipped: the dependent-table order violated
+`gap_verdict.run_id → research_run` on restore, and nothing was checking the
+four columns that point at `edition(id)` (a `research_run`/`research_finding`
+keyed to a retired edition CASCADES away; a `copy`/`pledge_item` has its
+`edition_id` SET NULL — none of it in the export). All four measure **0** today
+and precondition 4 now refuses rather than assuming.
+
+### ☐ Left for the owner, in order
+
+1. 🔴 answer the `--keep` fork above (or accept (a) and do nothing);
+2. 🔴 `npm run ebooks:plan -- --from docs/archive/ebook-rows-library-2026-09-05.json --remote`,
+   **read the `.sql`**, then apply it with the one wrangler command the runbook prints;
+3. 🔴 `npx wrangler secret delete EBOOK_INGEST_TOKEN --config apps/worker/wrangler.toml`
+   and the same with `--env friend` — ⚠️ **both instances**;
+4. ☐ confirm `POST /api/ingest/ebook` answers **404 `ingest_disabled`** on both
+   (`curl -s -D -` — `-I` and `-o NUL` misreport here). ✅ **Measured
+   2026-09-05 22:27 UTC, before any unset: both hosts answer 401**, so the token
+   is live on both and 401 → 404 is the whole verification of step 3.
+
+**⚠️ NOT verified, and it is the important one: the retirement has never been
+applied to either remote database, and no secret was touched.** Also not
+verified: nothing here was checked through a signed-in browser.
+
+⚠️ **After the retirement, do NOT run `npm run backfill:ebooks`** — it derives
+`ebook_holding` from `edition`, so it would mark the 40 surviving holdings
+stale. Its own header says the `site/ebooks.json` rewrite is deliberately not
+built yet. Runbook §6.
+
+**Nothing about the PRODUCER changes** (design §7): the audiobook pipeline's step
+1b keeps building `site/ebooks.json` unconditionally. And ⚠️ **`import-ebooks.mjs`
+is not scheduled anywhere** — searched the whole estate 2026-09-05 plus
+`schtasks /query`: no Task Scheduler entry, no `audiobook_catalog` pipeline step,
+no CI job. "Stop running the importer" IS the secret unset.
+
+---
+
+**Decided and mostly built.** The insight below (owner, 2026-08-16) became
+`catalog-platform/docs/info/ebook-split-design.md`; phases 1–4 have shipped and
+ebooks live at **ebooks.heygabi.ai**. What is left in *this* repo is phase 5.
+
+**Phase 5, ~~unchanged from~~ as revised against the design's §6 table** — stop
+running `import-ebooks.mjs`; unset `EBOOK_INGEST_TOKEN` so `/api/ingest/ebook`
+404s; export the ebook-only works and all ebook editions to a dated JSON
+committed here; remove the ebook editions and the ebook-only works. ⚠️
+**Re-measure `user_book` for `'human'`-asserted read states on those works
+before deleting — it must be 0**, and it was 0 at design time only because
+nobody had typed one in yet. ✅ **Re-measured 2026-09-05: it is 3. See the fork
+above.**
+
+~~**Measured 2026-08-18 04:55Z, so phase 5 knows what it is deleting:** 387 works,
+**94 ebook-only**, 127 ebook editions.~~ ⚠️ **Superseded by the 2026-09-05 table
+above** (496 works, 89 ebook-only, 127 ebook editions), and the 04:55Z reading of
+"0 human read states" was already false when it was taken — the three chips were
+pressed at 04:40 the same morning. ⚠️ The two ebook figures have not moved
+since the design measured them on 2026-08-16 while the catalog grew by 25 works
+in twenty minutes — the ebook rows are a closed 2026-08-09 import with no
+producer still pointed here. If they ever *grow*, the ingest is back on.
+
+**What landed instead, 2026-08-18 — the display half, on the owner's ask**
+(*"in the library site its showing recently added for ebooks, remove those"*):
+"Recently added" and its **See all** now ask for `ebookOnly=hide`, so the strip
+is the physical shelf. **No data was deleted** — that is phase 5's job, and the
+94 works still serve the series/universe joins, `ebook_holding`, and the "also
+as an ebook" chip. See `EBOOK_ONLY_CLAUSE` in `packages/db/src/works.ts`.
+
+⚠️ **Still showing all 387 works, and deliberately so — an owner decision, not
+an oversight:** the collection grid, the `Format: Ebook (94→126)` facet and the
+`/stats` counts are untouched. Narrowing those would make the `medium=ebook`
+filter near-pointless and would hide books with no way to reach them, which is
+phase 5's export-first ceremony done sloppily. **If the owner wants the whole
+site physical-only before phase 5 runs, that is one more line
+(`ebookOnly` defaulted on in `collectionQueryFrom`) — ask him, do not assume.**
+
+The original insight, kept because it reframes the federation question below:
+
+> *"we might need to now make ebooks its own site because we all share ebooks
+> like we do audiobooks but physical books obviously belong to someone"*
+
+**Why this is the sharp observation:** this estate has been splitting catalogs
+by MEDIUM (audiobooks / books / games), and the owner has just pointed out the
+split that actually matters is by **ownership model**:
+
+| | Shared by the household | Belongs to one person |
+|---|---|---|
+| Audiobooks | ✅ already its own site | |
+| **Ebooks** | ✅ **behaves like audiobooks** | |
+| Physical books | | ✅ a specific copy on a specific shelf |
+| Board games | | ✅ (a physical copy, though played together) |
+
+Ebooks currently live INSIDE the physical library catalog — `site/ebooks.json`
+is produced by the audiobook pipeline's step 1b and imported by
+`library_catalog`. So a shared-by-everyone format is stored inside the one
+catalog whose entire premise is "who owns this copy".
+
+⚠️ **This is exactly the question the second-household federation runs into.**
+"See who owns what" is meaningful for physical books and games, and close to
+meaningless for ebooks and audiobooks — those are "do we have it", not "whose
+is it". Deciding the ebook split FIRST would likely simplify the federation,
+because it separates *the shared pool* from *the per-person shelves* before two
+households ever have to be joined.
+
+~~**Not a build yet.** Open questions…~~ — **all four were answered on
+2026-08-16** and the answers are the design doc's §2–§5, kept there rather than
+copied here so there is one source of truth: the ebooks page rides the
+audiobook site (Q1); this repo's ebook rows are **demoted to holdings, then
+pruned** (Q2 — the phase 5 above); the shelf server needs one runbook line
+because the ebooks already ride the same mirror (Q3); step 1b stays the
+manifest's producer and only the *consumer* moves home (Q4).
+
+
 ## ✅ 2026-09-05 — Billing phase 3, step 2: the five CLI money paths (L9–L13) honour spending policy
 
 **Moved here whole from [`TODO.md`](TODO.md) by agent W2-LIBCLI** — the section
