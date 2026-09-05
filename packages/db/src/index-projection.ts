@@ -29,7 +29,23 @@
  * theoretical.
  */
 
-/** Where a lookup hit sends the visitor. The custom domain from wrangler.toml. */
+/**
+ * Where a lookup hit sends the visitor, for the MAIN instance — and the
+ * fallback when a caller passes no origin.
+ *
+ * 🔴 **This constant used to be the only answer, and on the second instance it
+ * was the WRONG one** (found 2026-09-05, building padhard's federation). Every
+ * pushed row's `detail_url`, and every site-relative `cover_url`, was
+ * absolutised against `library.heygabi.ai` — so padhard's rows would have sent
+ * a visitor to the MAIN library. And `source_id` is a per-database `work.id`:
+ * `library.heygabi.ai/work/412` is not "her book, missing", it is **a
+ * different book entirely**. A wrong answer, not a 404, which is why this was
+ * fixed in the same build rather than filed.
+ *
+ * Callers pass their own `SITE_ORIGIN` var (set on BOTH envs in
+ * `wrangler.toml`); this stays the default so nothing that forgets changes
+ * main's behaviour.
+ */
 export const SITE_ORIGIN = 'https://library.heygabi.ai';
 
 /**
@@ -61,9 +77,20 @@ export interface IndexProjectionRow {
  * relative). Absolutise on the way out — pointer construction, exactly like
  * `detail_url`, not a transformation of catalog truth.
  */
-function absoluteCoverUrl(coverUrl: string | null): string | null {
+function absoluteCoverUrl(coverUrl: string | null, siteOrigin: string): string | null {
   if (coverUrl === null) return null;
-  return coverUrl.startsWith('/') ? `${SITE_ORIGIN}${coverUrl}` : coverUrl;
+  return coverUrl.startsWith('/') ? `${siteOrigin}${coverUrl}` : coverUrl;
+}
+
+/**
+ * The origin to absolutise against: the instance's own `SITE_ORIGIN` var, or
+ * main's constant when it is unset/blank. A trailing slash is trimmed — the
+ * var is documented as having none, and one slipping in would produce
+ * `…ai//work/12`, which is the kind of thing that only shows up in production.
+ */
+export function resolveProjectionOrigin(raw: string | undefined): string {
+  const v = (raw ?? '').trim().replace(/\/+$/, '');
+  return v === '' ? SITE_ORIGIN : v;
 }
 
 interface ProjectionSourceRow {
@@ -84,7 +111,13 @@ interface ProjectionSourceRow {
  * projection sends wanted items: one row per catalogued thing, and whether it
  * is owned is this catalog's answer, not the index's.
  */
-export async function buildIndexProjection(db: D1Database): Promise<IndexProjectionRow[]> {
+export async function buildIndexProjection(
+  db: D1Database,
+  /** This instance's public origin — `env.SITE_ORIGIN`. See `SITE_ORIGIN`. */
+  siteOrigin?: string,
+): Promise<IndexProjectionRow[]> {
+  const origin = resolveProjectionOrigin(siteOrigin);
+
   const { results } = await db
     .prepare(
       `SELECT id, title, authors, series, series_index_sort, first_published, cover_url
@@ -105,8 +138,11 @@ export async function buildIndexProjection(db: D1Database): Promise<IndexProject
     // "which SITE is this row from" in a result list, not "which printing".
     // Hardcover-vs-paperback-vs-ebook is edition-level truth that stays here.
     format: 'book' as const,
-    cover_url: absoluteCoverUrl(row.cover_url),
-    detail_url: `${SITE_ORIGIN}/work/${row.id}`,
+    cover_url: absoluteCoverUrl(row.cover_url, origin),
+    // ⚠️ `row.id` is a PER-DATABASE id, so this origin has to be the instance's
+    // own — see `SITE_ORIGIN`'s note. Getting it wrong points at a real, wrong
+    // book on the other household's site.
+    detail_url: `${origin}/work/${row.id}`,
   }));
 }
 

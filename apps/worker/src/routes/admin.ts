@@ -37,7 +37,7 @@ import { cors } from 'hono/cors';
 import { ROLES, canGrantRole, updateRoleSchema } from '@lc/core';
 import { listUsers, setUserRole } from '@lc/db';
 import type { AppBindings } from '../env.js';
-import { pushIndexSnapshot } from '../lib/index-push.js';
+import { pushIndexSnapshot, resolveIndexSource } from '../lib/index-push.js';
 import { requireCapability } from '../middleware/auth.js';
 
 /**
@@ -160,5 +160,10 @@ export const adminRoutes = new Hono<AppBindings>()
    */
   .post('/index-push', requireCapability('manageUsers'), async (c) => {
     const result = await pushIndexSnapshot(c.env);
-    return c.json({ app: 'library', ...result });
+    // ⚠️ `app` was the literal `'library'` until 2026-09-05, which was a lie on
+    // padhard: the response named main's shelf whatever had actually been
+    // written. It now reports the source THIS instance pushes as
+    // (`resolveIndexSource(ESTATE_APP)` — `library` / `library2`), and a
+    // successful push carries the same value back in `source`.
+    return c.json({ app: resolveIndexSource(c.env.ESTATE_APP), ...result });
   });

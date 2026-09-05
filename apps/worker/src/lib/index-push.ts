@@ -4,9 +4,20 @@
  * Design: catalog-platform/docs/info/index-worker-design.md §5 and §7 step 4;
  * working precedent: the games pusher (Board_Game_Catalog
  * apps/worker/src/lib/index-push.ts), ported rather than reinvented. Full
- * snapshot, PUT /api/push/library, bearer token — the index replaces this
+ * snapshot, PUT /api/push/<source>, bearer token — the index replaces this
  * source's rows wholesale, so there is no incremental state to fall behind and
  * a failed push simply leaves the previous snapshot standing.
+ *
+ * ⚠️ **THE SOURCE IS PER-INSTANCE, and that is the 2026-09-05 federation
+ * change** (owner: *"in the universe and series tab it's not pulling Padhard
+ * library"*). It used to be the literal string `library` in the URL and in the
+ * health lookup, which was correct while only the main instance pushed. It is
+ * now `resolveIndexSource(env.ESTATE_APP)` — `library` on main,
+ * `library2` on padhard — so the second instance's books land under their own
+ * source rather than overwriting main's, and the staleness backstop asks about
+ * ITS OWN source's freshness instead of main's. Hard-coding `library` in the
+ * health read was the sharper half of the bug: padhard would have seen main's
+ * fresh rows and concluded it had nothing to push, forever.
  *
  * Three triggers, and the split is the design's — but the second differs from
  * the games catalog, honestly rather than cosmetically:
@@ -94,19 +105,63 @@ const ITEM_TOUCHING_PREFIXES = [
   '/api/series',
 ];
 
-export async function pushIndexSnapshot(env: Env): Promise<{ pushed: number } | { skipped: string }> {
+/**
+ * The default source, used when `ESTATE_APP` is unset. ⚠️ It matches
+ * `resolveEstateApp`'s own unset fallback in packages/estate-auth/src/gate.ts
+ * (`LIBRARY_POSTURE.app`), deliberately: the identity this Worker asserts to
+ * the estate directory and the source its rows are filed under must not be
+ * able to drift apart — that drift was the F-5 bug (a hard-coded `library` in
+ * the gate) in its other direction.
+ */
+const DEFAULT_INDEX_SOURCE = 'library';
+
+/**
+ * Which index source THIS instance pushes as, from `ESTATE_APP`.
+ *
+ * Pure, so the decision is unit-testable without a Worker environment — the
+ * same shape as `decidePushForStaleness` below, and for the same reason.
+ *
+ *  - unset/blank → `library`, the main instance's id (see
+ *    `DEFAULT_INDEX_SOURCE`);
+ *  - a plain lowercase path segment → itself, so a THIRD instance minted by
+ *    `scripts/provision-catalog.mjs` federates by setting one var and its own
+ *    `INDEX_PUSH_TOKEN`, with no code change here;
+ *  - anything else → `null`, and the caller pushes NOTHING and says why.
+ *
+ * ⚠️ The `null` branch is not decoration. This value is interpolated into a
+ * URL path, so an unvalidated var could push a snapshot at some other route
+ * entirely (`../…`); and a typo'd source would silently create a junk shelf on
+ * a surface other households can see. Refusing loudly is the inert direction,
+ * which is this module's rule everywhere.
+ */
+export function resolveIndexSource(rawEstateApp: string | undefined): string | null {
+  const v = (rawEstateApp ?? '').trim();
+  if (v === '') return DEFAULT_INDEX_SOURCE;
+  return /^[a-z][a-z0-9]{0,31}$/.test(v) ? v : null;
+}
+
+export async function pushIndexSnapshot(
+  env: Env,
+): Promise<{ pushed: number; source: string } | { skipped: string }> {
   if (!env.INDEX_URL || !env.INDEX_PUSH_TOKEN) {
     return { skipped: 'INDEX_URL / INDEX_PUSH_TOKEN not configured' };
   }
 
-  const rows = await buildIndexProjection(env.DB);
+  const source = resolveIndexSource(env.ESTATE_APP);
+  if (source === null) {
+    return { skipped: `ESTATE_APP is not a usable index source — not pushing` };
+  }
+
+  // ⚠️ THIS instance's origin, not the projection's main-library default: the
+  // rows carry `detail_url`s, and `source_id` is a per-database `work.id`.
+  const rows = await buildIndexProjection(env.DB, env.SITE_ORIGIN);
   // The index 422s an empty snapshot ("zero rows is a failed export, not an
   // empty catalog") — don't even send one.
   if (rows.length === 0) {
-    return { skipped: 'projection produced zero rows — not pushing an empty snapshot' };
+    return { skipped: `projection produced zero rows — not pushing an empty snapshot (source ${source})` };
   }
 
-  const res = await fetch(`${env.INDEX_URL}/api/push/library`, {
+  const res = await fetch(`${env.INDEX_URL}/api/push/${source}`, {
     method: 'PUT',
     headers: {
       'content-type': 'application/json',
@@ -115,9 +170,9 @@ export async function pushIndexSnapshot(env: Env): Promise<{ pushed: number } | 
     body: JSON.stringify(rows),
   });
   if (!res.ok) {
-    throw new Error(`index push failed: ${res.status} ${await res.text()}`);
+    throw new Error(`index push failed (source ${source}): ${res.status} ${await res.text()}`);
   }
-  return { pushed: rows.length };
+  return { pushed: rows.length, source };
 }
 
 /** What `pushIndexIfStale` needs to decide, stripped of D1/fetch so the
@@ -183,9 +238,16 @@ export function decidePushForStaleness(input: StalenessCheckInput): StalenessDec
  * The backstop body: one health GET, one cheap MAX(updated_at) read, push
  * only when `decidePushForStaleness` says to.
  */
-export async function pushIndexIfStale(env: Env): Promise<{ pushed: number } | { skipped: string }> {
+export async function pushIndexIfStale(
+  env: Env,
+): Promise<{ pushed: number; source: string } | { skipped: string }> {
   if (!env.INDEX_URL || !env.INDEX_PUSH_TOKEN) {
     return { skipped: 'INDEX_URL / INDEX_PUSH_TOKEN not configured' };
+  }
+
+  const source = resolveIndexSource(env.ESTATE_APP);
+  if (source === null) {
+    return { skipped: 'ESTATE_APP is not a usable index source — not checking freshness' };
   }
 
   const res = await fetch(`${env.INDEX_URL}/api/health`);
@@ -193,21 +255,24 @@ export async function pushIndexIfStale(env: Env): Promise<{ pushed: number } | {
     throw new Error(`index health check failed: ${res.status}`);
   }
   const health = (await res.json()) as {
-    sources?: { library?: { rows?: number; pushed_at?: string | null } };
+    sources?: Record<string, { rows?: number; pushed_at?: string | null } | undefined>;
   };
-  const library = health.sources?.library;
+  // ⚠️ ITS OWN source, never the literal `library` — see the module header.
+  // Reading main's row here would tell padhard it is fresh when padhard has
+  // never pushed at all.
+  const mine = health.sources?.[source];
 
   const latestSourceUpdateMs = await getLatestSourceUpdateAt(env.DB);
   const decision = decidePushForStaleness({
-    rows: library?.rows,
-    pushedAtIso: library?.pushed_at,
+    rows: mine?.rows,
+    pushedAtIso: mine?.pushed_at,
     latestSourceUpdateMs,
     nowMs: Date.now(),
     maxAgeMs: BACKSTOP_MAX_AGE_MS,
   });
 
   if (!decision.push) {
-    return { skipped: decision.reason };
+    return { skipped: `${decision.reason} (source ${source})` };
   }
   return pushIndexSnapshot(env);
 }
@@ -227,10 +292,14 @@ export function indexPushAfterMutation(): MiddlewareHandler<AppBindings> {
     if (!ITEM_TOUCHING_PREFIXES.some((p) => c.req.path.startsWith(p))) return;
     if (!c.env.INDEX_URL || !c.env.INDEX_PUSH_TOKEN) return; // unconfigured: stay silent per-request
 
+    // Every log line names the source it acted for — two instances write into
+    // one `wrangler tail` habit, and "index push 448" with no source is
+    // unreadable once padhard is pushing too.
+    const source = resolveIndexSource(c.env.ESTATE_APP) ?? '(unresolved)';
     c.executionCtx.waitUntil(
       pushIndexSnapshot(c.env).then(
-        (r) => console.log('index push (mutation)', JSON.stringify(r)),
-        (err) => console.error('index push (mutation) failed', err),
+        (r) => console.log(`index push (mutation, source ${source})`, JSON.stringify(r)),
+        (err) => console.error(`index push (mutation, source ${source}) failed`, err),
       ),
     );
   };
@@ -253,10 +322,11 @@ export function indexBackstopOnRequest(): MiddlewareHandler<AppBindings> {
     if (now - lastBackstopCheckAt < BACKSTOP_CHECK_INTERVAL_MS) return;
     lastBackstopCheckAt = now;
 
+    const source = resolveIndexSource(c.env.ESTATE_APP) ?? '(unresolved)';
     c.executionCtx.waitUntil(
       pushIndexIfStale(c.env).then(
-        (r) => console.log('index push (backstop)', JSON.stringify(r)),
-        (err) => console.error('index push (backstop) failed', err),
+        (r) => console.log(`index push (backstop, source ${source})`, JSON.stringify(r)),
+        (err) => console.error(`index push (backstop, source ${source}) failed`, err),
       ),
     );
   };

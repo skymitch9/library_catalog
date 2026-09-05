@@ -196,13 +196,27 @@ export interface Env {
    * catalog pushes its projection. See lib/index-push.ts and
    * packages/db/src/index-projection.ts.
    *
-   * ⚠️ Both optional, and unset in production ON PURPOSE until the
-   * dispatcher's deploy step. Unset means every push trigger logs one line
-   * and does nothing — the index must never be able to stall this catalog.
-   * At that step: uncomment INDEX_URL in wrangler.toml [vars] and
-   * `wrangler secret put INDEX_PUSH_TOKEN` (the same value the index Worker
-   * holds as its INDEX_PUSH_TOKEN_LIBRARY secret — mint one value, set it on
-   * both sides).
+   * ⚠️ Both optional; unset means every push trigger logs one line and does
+   * nothing — the index must never be able to stall this catalog.
+   *
+   * ⚠️ **PER-SOURCE, and per-INSTANCE by construction.** The URL is
+   * `PUT {INDEX_URL}/api/push/{source}`, where the source is
+   * `resolveIndexSource(ESTATE_APP)` — `library` on main, `library2` on
+   * padhard (lib/index-push.ts, 2026-09-05). The index holds the matching
+   * bearer under the suffixed name for that source:
+   *
+   * | This Worker | The index holds it as |
+   * |---|---|
+   * | main (`ESTATE_APP = "library"`) | `INDEX_PUSH_TOKEN_LIBRARY` |
+   * | friend (`ESTATE_APP = "library2"`) | `INDEX_PUSH_TOKEN_LIBRARY2` |
+   *
+   * Same name on this side, different values — exactly `INDEX_READ_TOKEN`'s
+   * shape below, and `scripts/push-secrets.mjs` marks it PER_INSTANCE so a
+   * `--both` run refuses it with a sentence. Set one at a time:
+   * `npx wrangler secret put INDEX_PUSH_TOKEN --config apps/worker/wrangler.toml`
+   * (add `--env friend` for hers).
+   *
+   * `INDEX_URL` is a plain var and is set on BOTH envs in wrangler.toml.
    */
   INDEX_URL?: string;
   INDEX_PUSH_TOKEN?: string;
