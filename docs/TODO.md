@@ -722,17 +722,33 @@ lands on BOTH instances — one build, deploy pair, migration pair, sweeps run w
 documented in `second-instance.md`.
 
 
-## ☐ Billing phase 3 landed INERT — 2 of 2 steps left: write a deny rule then flip to shadow, and gate the five CLI scripts (2026-09-02)
+## ☐ Billing phase 3 landed INERT — 1 of 2 steps left: 🔴 OWNER writes a deny rule, then the flip to shadow (2026-09-02)
 
 ✅ **Re-verified 2026-09-05 (AUD-library):** `BILLING_POLICY = "off"` on BOTH
 instances (`apps/worker/wrangler.toml` lines 288 and 550), and
-`scripts/research-queue.mjs:99` still hard-codes `const OWNER_USER_ID = 1`. So
-both halves below are genuinely open, exactly as written.
+`scripts/research-queue.mjs:99` still hard-codes `const OWNER_USER_ID = 1`.
+~~So both halves below are genuinely open, exactly as written.~~ ⚠️ **Superseded
+2026-09-05 (W2-LIBCLI): the second half is now BUILT** — see the pointer below.
+Both re-measured facts still hold: `BILLING_POLICY` is `"off"` on both
+instances, and `OWNER_USER_ID = 1` is deliberately unchanged (it is a provenance
+stamp, not an authorisation; the CLI gate resolves on the SITE instead).
+
+✂️ **2026-09-05 (agent W2-LIBCLI, `bbc693b`):** step **2 — the five CLI scripts
+(L9–L13)** — is BUILT and its section moved WHOLE to [`DONE.md`](DONE.md). All
+five now honour spending policy as a warning with `--ignore-policy`, through one
+helper (`scripts/lib/billing-cli.mjs`); tests 2428 → 2476, typecheck clean, **no
+deploy needed** (they run from the owner's shell). ⚠️ Two carried-forward
+gaps that step 1 needs to know about, both in that DONE entry: the registry
+declares `cli.backfill` with `principals: ['person']`, so the Spending panel's
+own cell writes an `everyone` rule the CLI's `system` door will never see; and
+`ESTATE_APP_TOKEN_LIBRARY` / `_LIBRARY2` are readable nowhere on this machine,
+so the CLI gate reports the policy UNKNOWN and proceeds until one is set
+([`access/secrets.md`](access/secrets.md)).
 
 The build is on both instances (`e7b3f6b`, versions `77a9f67c` / `37b83f8b`) and
 KI-13 is closed. What is NOT done:
 
-### 1. ⚠️ The soak, then the flip — `BILLING_POLICY` is `"off"` on both
+### 1. 🔴 OWNER ACTION — write a throwaway deny rule for library AND library2 from the Spending panel, then the conductor flips shadow
 
 **The one-line change, per instance**, in `apps/worker/wrangler.toml`:
 
@@ -766,26 +782,12 @@ has no row for `library` or `library2` today, so shadow would log a stream of
 Write the throwaway deny FIRST, from the Spending panel on
 <https://heygabi.ai/admin/>.
 
-### 2. ☐ The CLI scripts (L9–L13) are still ungated, deliberately
-
-`backfill-missing-covers.mjs`, `backfill-missing-isbns.mjs`,
-`research-queue.mjs`, `audit-universes.mjs`, `probe-universes.mjs` — five paths
-whose only gate today is a command-line flag, and one
-(`research-queue.mjs:99`) hard-codes `OWNER_USER_ID = 1` and checks nothing.
-
-Design §9 Q5's recommendation, unchanged: **honour policy as a WARNING with an
-explicit `--ignore-policy` escape hatch, never a hard refusal.** A local script
-the owner runs deliberately is not the threat model, and a CLI that refuses its
-operator is a CLI that gets edited. The banner should read *"cover search is
-switched off for library; re-run with --ignore-policy"*.
-
-⚠️ They cannot reuse `lib/billing-gate.ts`: it reads a Worker request context.
-They need the **system door** client instead (`lib/billing-system.ts` is the
-shape — one HTTPS GET on this instance's app token), or the owner's own `/seen`
-answer if the script is ever taught an identity. `cli.backfill` is the registry
-id; ⚠️ L9 and L10 are ALSO covered by `research.covers` / `research.isbn`, and
-that double cover is deliberate and pinned upstream — a path under two switches
-is refused if EITHER denies.
+> ✂️ **2026-09-05:** *"### 2. The CLI scripts (L9–L13) are still ungated,
+> deliberately"* moved WHOLE to [`DONE.md`](DONE.md) — built by agent W2-LIBCLI,
+> commit `bbc693b`. One helper (`scripts/lib/billing-cli.mjs`) called by all
+> five; the deny stops the run before the first paid call and `--ignore-policy`
+> always goes through. See the pointer at the top of this section for the two
+> gaps step 1 inherits.
 
 
 > ✂️ **2026-09-02:** *"The audiobook deep link is a SEARCH, and on a

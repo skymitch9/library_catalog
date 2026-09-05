@@ -18,6 +18,128 @@
 > were extracted from this same history.
 
 
+## ✅ 2026-09-05 — Billing phase 3, step 2: the five CLI money paths (L9–L13) honour spending policy
+
+**Moved here whole from [`TODO.md`](TODO.md) by agent W2-LIBCLI** — the section
+below is `### 2. ☐ The CLI scripts (L9–L13) are still ungated, deliberately`,
+cut and pasted verbatim. Step **1** of that TODO section (the owner's throwaway
+deny rule, then the shadow flip) is NOT this and stays open there.
+
+**Commit `bbc693b`. NO DEPLOY NEEDED and none was made** — these are local
+scripts run from the owner's shell; no Worker code, no migration, no
+`wrangler.toml` change. `BILLING_POLICY` is still `"off"` on both instances and
+a new test pins that from the CLI side too.
+
+**Verified:** the package suite went 2428 → 2476 tests, all green, `npm run
+typecheck` clean; `audit-universes.mjs --plan`, `research-queue.mjs` (local
+estimate), `research-queue.mjs --friend --remote` (padhard estimate),
+`backfill-missing-covers.mjs --limit 2` (local dry) and
+`backfill-missing-covers.mjs --friend --remote --limit 2` (padhard dry) all ran
+and behaved exactly as before; `node --check` on all five plus the helper.
+**NOT verified:** `probe-universes.mjs` was never run — every run of it spends,
+there is no dry mode, and a verification is not worth a real bill; its wiring is
+pinned structurally instead. The banner path was exercised only through a
+stubbed policy answer — **no policy row was written**, because writing one would
+switch a real household's spending off.
+
+**What the build decided, where Q5 left room** (the argument, so it is not
+re-derived): Q5 says *"a WARNING … never a hard refusal"* and its own example
+banner says *"re-run with --ignore-policy"* — and you do not "re-run" something
+that already ran. So a deny **stops the run before the first paid call** and
+`--ignore-policy` always goes through, on every posture including `enforce`.
+That is the estate's standard shape for a rule that matters: promoted from prose
+to a script, with a deliberate escape hatch — never a wall. Only a run that
+would actually SPEND is gated; a dry run, an estimate and a `--plan` bill
+nothing and are not the subject of a spending policy.
+
+🔴 **Two gaps this build could NOT close, both reported rather than fixed
+(neither is this repo's to change):**
+
+1. **The Spending panel's own cell does not reach these scripts yet.** The
+   system door (`GET /api/estate/billing/policy`, the only door an app bearer
+   opens) answers for `principal_kind='system'` ONLY — the resolver refuses to
+   match an `everyone` rule against a cron, deliberately and in both directions
+   (design §11.2 departure 1). But
+   `catalog-platform/apps/auth-worker/src/billing-registry.ts` declares
+   `cli.backfill`, `research.covers` and `research.isbn` with
+   `principals: ['person']`, and `admin.js` maps a feature's principals to the
+   rule its cell writes — so a click writes an `everyone` rule this door will
+   never return. ⚠️ A `system` rule written through
+   `POST /api/estate/billing/rules` **does** trip the gate today (the write door
+   validates the feature id and the principal coherence, not the declared
+   principals), so the gate is real and trippable, just not from the panel. The
+   one-line fix is `principals: ['person', 'system']` on those three registry
+   rows, upstream, where a pin test guards the list.
+2. **No bearer is readable on this machine.** `ESTATE_APP_TOKEN_LIBRARY` is one
+   of the three measured custody gaps in [`access/secrets.md`](access/secrets.md)
+   (live on the Worker, no readable master) and `ESTATE_APP_TOKEN_LIBRARY2` is
+   likewise absent from `.dev.vars` — `.dev.vars.tpl` lists neither, measured
+   2026-09-05. Until one is set the gate prints *"Spending policy for library is
+   UNKNOWN … Proceeding"*, which is the same fail-open direction every other
+   consumer of this policy takes (§3.5 row 3), said out loud rather than
+   silently read as "nothing is denied". The owner's steps are in
+   `access/secrets.md` → *"The two NAMES the CLI spending gate reads"*.
+
+**What landed, file by file:**
+
+| Piece | File |
+|---|---|
+| The one helper — door, decision, banner | `scripts/lib/billing-cli.mjs` |
+| 48 tests: the truth table, the double cover, both instances, the stubbed door, the wiring | `scripts/test/billing-cli.test.mjs` |
+| L9 — gated on `--llm` + (`--commit` \| `--llm-dry`) | `scripts/backfill-missing-covers.mjs` |
+| L10 — gated on `--llm` | `scripts/backfill-missing-isbns.mjs` |
+| L11 — gated on `--commit`, after the estimate, before the first `claimRun` | `scripts/research-queue.mjs` |
+| L12 — gated after `--plan`, before the key is read | `scripts/audit-universes.mjs` |
+| L13 — gated first; every run of it spends | `scripts/probe-universes.mjs` |
+| The two env var NAMES + the owner's steps | `docs/access/secrets.md` |
+
+⚠️ **`research-queue.mjs:99`'s `OWNER_USER_ID = 1` is UNCHANGED**, and the
+comment beside it now says why the gate is deliberately not resolved against it:
+it is a provenance stamp recorded against every value, not an authorisation, and
+teaching a script to assert a person it never authenticated is not a change to
+make without the owner.
+
+⚠️ **The L9/L10 double cover was reproduced verbatim, not tidied** — covers
+check `cli.backfill` AND `research.covers`, ISBNs check `cli.backfill` AND
+`research.isbn`, and either one denying refuses the path. Two tests pin it.
+
+⚠️ **`audit-universes.mjs` and `probe-universes.mjs` still have no `--friend`,
+on purpose.** Neither reaches the second instance today (the audit reads `work`
+with no `friend` flag; the probe touches no database at all), so both are gated
+against `library`, and their headers now say so. Giving either a second instance
+is a separate change with its own questions.
+
+**Review:** nothing visible changed — no page, no route, no UI. The only surface
+is a terminal banner, and the switch that would produce it lives on the Spending
+panel at <https://heygabi.ai/admin/> (see gap 1 above for why a click there does
+not reach these scripts yet).
+
+---
+
+*The original section, verbatim:*
+
+### 2. ☐ The CLI scripts (L9–L13) are still ungated, deliberately
+
+`backfill-missing-covers.mjs`, `backfill-missing-isbns.mjs`,
+`research-queue.mjs`, `audit-universes.mjs`, `probe-universes.mjs` — five paths
+whose only gate today is a command-line flag, and one
+(`research-queue.mjs:99`) hard-codes `OWNER_USER_ID = 1` and checks nothing.
+
+Design §9 Q5's recommendation, unchanged: **honour policy as a WARNING with an
+explicit `--ignore-policy` escape hatch, never a hard refusal.** A local script
+the owner runs deliberately is not the threat model, and a CLI that refuses its
+operator is a CLI that gets edited. The banner should read *"cover search is
+switched off for library; re-run with --ignore-policy"*.
+
+⚠️ They cannot reuse `lib/billing-gate.ts`: it reads a Worker request context.
+They need the **system door** client instead (`lib/billing-system.ts` is the
+shape — one HTTPS GET on this instance's app token), or the owner's own `/seen`
+answer if the script is ever taught an identity. `cli.backfill` is the registry
+id; ⚠️ L9 and L10 are ALSO covered by `research.covers` / `research.isbn`, and
+that double cover is deliberate and pinned upstream — a path under two switches
+is refused if EITHER denies.
+
+
 ## ✅ 2026-09-05 — AUDIT 2026-08: the thirteen ✅ CRITICAL/HIGH findings are MERGED AND SHIPPED TO BOTH INSTANCES
 
 **Moved here whole from [`TODO.md`](TODO.md) by the 2026-09-05 docs audit
