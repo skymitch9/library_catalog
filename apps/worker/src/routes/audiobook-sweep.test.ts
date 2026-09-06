@@ -17,6 +17,7 @@ import { afterEach, describe, it } from 'node:test';
 import { Hono } from 'hono';
 import type { AppBindings, Env } from '../env.js';
 import { audiobookSweepRoutes } from './audiobook-sweep.js';
+import { healthRoutes } from './health.js';
 
 type Role = 'owner' | 'admin' | 'moderator' | 'contributor' | 'member' | 'guest' | 'pending';
 
@@ -45,6 +46,8 @@ function stubDb() {
           return stmt;
         },
         async first() {
+          // `isDatabaseReachable` — health's own liveness probe.
+          if (/FROM sqlite_master/.test(sql)) return { n: 1 };
           if (/INSERT INTO audiobook_sweep_run/.test(sql)) return { id: 1 };
           if (/FROM audiobook_snapshot/.test(sql)) return null;
           if (/FROM audiobook_sweep_run ORDER BY id DESC/.test(sql)) {
@@ -234,6 +237,75 @@ describe('POST — dryRun writes nothing', () => {
     assert.equal(body.state, 'failed');
     assert.match(body.says, /refused to write, and that is the safe outcome/);
     assert.match(body.says, /Nothing in the catalogue was changed/);
+  });
+});
+
+describe('/api/health — additive only, and it can never fail the check', () => {
+  it('carries detail.audiobookSweep with the mode and the last run', async () => {
+    const app = new Hono<AppBindings>();
+    app.route('/api/health', healthRoutes);
+    const res = await app.request('/api/health', {}, envWith(stubDb(), 'shadow'));
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as {
+      ok: boolean;
+      detail: { audiobookSweep: Record<string, unknown> };
+    };
+    const line = body.detail.audiobookSweep;
+    assert.equal(line.mode, 'shadow');
+    assert.equal(line.state, 'shadow');
+    assert.equal(line.trigger, 'cron');
+    assert.equal(line.editionsLive, 412);
+    assert.equal(line.rungsLive, 780);
+    assert.equal(typeof line.seriesCanonEntries, 'number');
+  });
+
+  it('🔴 an instance without migration 0470 still answers ok', async () => {
+    // An additive key that can take the status page red is not additive. Both
+    // instances answer this route before they are migrated, every deploy.
+    const broken = {
+      prepare(sql: string) {
+        const stmt = {
+          bind: () => stmt,
+          async first() {
+            // The database is UP and `work` exists — this instance simply has
+            // not had migration 0470 applied yet, which is the ordinary state
+            // between a deploy and a migrate.
+            if (/FROM sqlite_master/.test(sql)) return { n: 1 };
+            throw new Error('D1_ERROR: no such table: audiobook_sweep_run');
+          },
+          async run() {
+            throw new Error('D1_ERROR');
+          },
+          async all() {
+            return { results: [] };
+          },
+        };
+        return stmt;
+      },
+    } as unknown as D1Database;
+
+    const app = new Hono<AppBindings>();
+    app.route('/api/health', healthRoutes);
+    const res = await app.request('/api/health', {}, envWith(broken, 'shadow'));
+    const body = (await res.json()) as {
+      ok: boolean;
+      detail: { audiobookSweep: { mode: string; state: unknown; editionsLive: unknown } };
+    };
+    assert.equal(res.status, 200);
+    assert.equal(body.ok, true);
+    // The posture is still readable — it is a var, not a row.
+    assert.equal(body.detail.audiobookSweep.mode, 'shadow');
+    assert.equal(body.detail.audiobookSweep.state, null);
+    assert.equal(body.detail.audiobookSweep.editionsLive, null);
+  });
+
+  it('⚠️ publishes no edition title and no narrator', async () => {
+    const app = new Hono<AppBindings>();
+    app.route('/api/health', healthRoutes);
+    const res = await app.request('/api/health', {}, envWith(stubDb(), 'shadow'));
+    const text = await res.text();
+    assert.ok(!/narrator/i.test(text), 'the unauthenticated route named a narrator');
+    assert.ok(!/Primal Hunter/.test(text), 'the unauthenticated route named a recording');
   });
 });
 

@@ -1,10 +1,16 @@
 import { Hono } from 'hono';
 import { gabiPanelEnabled } from '@lc/core';
-import { isDatabaseReachable } from '@lc/db';
+import {
+  audiobookHoldingCounts,
+  isDatabaseReachable,
+  latestAudiobookSweepRun,
+  readAudiobookSnapshot,
+} from '@lc/db';
 import { describeEstateGate } from '@lc/estate-auth';
 import { edgeMode } from '@lc/research';
-import { universeNames, universesDocument } from '@lc/universes';
-import type { AppBindings } from '../env.js';
+import { seriesCanonEntryCount, universeNames, universesDocument } from '@lc/universes';
+import type { AppBindings, Env } from '../env.js';
+import { audiobookSweepMode } from '../lib/audiobook-sweep-run.js';
 
 /**
  * Unauthenticated on purpose: this is the endpoint you curl to prove the
@@ -56,9 +62,109 @@ import type { AppBindings } from '../env.js';
  * gate has quietly fallen inert, which is the failure this whole route class
  * exists to make visible rather than silent.)
  */
+/**
+ * The audiobook-association sweep's status line — design §7.2.
+ *
+ * 🔴 **One fact, one home applies to SURFACES.** The design's first instinct was
+ * a page; this route already answers `{ ok, service, version, time, detail }`,
+ * is unauthenticated on purpose, and the apex `/status` page already reads it —
+ * so the sweep gets ONE KEY in `detail`, and `/status` shows main and padhard
+ * side by side for free. A second dashboard would be a second number to
+ * disagree with this one, and the estate has already paid for that once (a
+ * usage tracker rendering figures two days stale beside a duplicate built the
+ * same afternoon).
+ *
+ * ⚠️ **Counts, states and timestamps only** — the same posture `universes`,
+ * `gabi.panel` and `estate` take here: *names and booleans, never a value*. The
+ * run row's `detail_json` deliberately holds no edition title and no narrator
+ * (see `PlanCounts`), and this reads named fields off it rather than spreading
+ * it, so a future field added there cannot leak onto an unauthenticated route
+ * by accident.
+ *
+ * ⚠️ **Never throws, and never fails the health check.** The sweep's tables are
+ * migration 0470; an instance that has not been migrated yet must still answer
+ * `ok`. Every read here is caught and degrades to nulls, because a `/status`
+ * page that goes red over a background job's bookkeeping teaches people to
+ * ignore it.
+ *
+ * ⚠️ `seriesCanonEntries` is §2.4's guard, and it is the reason this key is
+ * worth more than a timestamp: the route's series canon is as fresh as the last
+ * DEPLOY while the script's is as fresh as the last `git pull` of
+ * catalog-platform, and when they disagree the ROUTE is the stale one. A deploy
+ * that shipped an empty canon shows up here in one curl instead of as a page
+ * full of `AUDIO?` months later.
+ *
+ * 🟡 A second reporter exists — STEP 11 of the audiobook pipeline renders
+ * `_link_report` on the audiobook status page. Once this route ENFORCES, this
+ * row is the authoritative one and STEP 11's line becomes a cross-check. Said
+ * here and on that page, rather than letting two numbers quietly disagree.
+ */
+async function audiobookSweepStatus(env: Env) {
+  const mode = audiobookSweepMode(env);
+  try {
+    const [run, snapshot, counts] = await Promise.all([
+      latestAudiobookSweepRun(env.DB),
+      readAudiobookSnapshot(env.DB),
+      audiobookHoldingCounts(env.DB),
+    ]);
+    const detail =
+      run?.detail && typeof run.detail === 'object' && 'detail' in run.detail
+        ? ((run.detail as { detail: unknown }).detail ?? null)
+        : null;
+    return {
+      mode,
+      /** Null means the sweep has never run here — not that it ran and did nothing. */
+      lastRunAt: run?.startedAt ?? null,
+      lastFinishedAt: run?.finishedAt ?? null,
+      trigger: run?.trigger ?? null,
+      state: run?.state ?? null,
+      /** The one phrase that tells the five silences apart. See `describeState`. */
+      detail: typeof detail === 'string' ? detail : null,
+      snapshotRows: snapshot?.rowCount ?? null,
+      snapshotFetchedAt: snapshot?.fetchedAt ?? null,
+      /**
+       * How stale our picture of the sibling catalog is, in hours. ⚠️ Derived
+       * here rather than left to the reader: a bare timestamp on a status page
+       * is a number nobody subtracts, and the whole question this key answers is
+       * *how old is it*.
+       */
+      snapshotAgeHours: ageHours(snapshot?.fetchedAt ?? null),
+      editionsLive: counts.editionsLive,
+      rungsLive: counts.rungsLive,
+      seriesCanonEntries: seriesCanonEntryCount,
+    };
+  } catch {
+    // Not migrated yet, or the database is down — which `database` above
+    // already says, in the place people look for it.
+    return {
+      mode,
+      lastRunAt: null,
+      lastFinishedAt: null,
+      trigger: null,
+      state: null,
+      detail: null,
+      snapshotRows: null,
+      snapshotFetchedAt: null,
+      snapshotAgeHours: null,
+      editionsLive: null,
+      rungsLive: null,
+      seriesCanonEntries: seriesCanonEntryCount,
+    };
+  }
+}
+
+/** SQLite's `datetime('now')` is `YYYY-MM-DD HH:MM:SS` in UTC, with no zone on it. */
+function ageHours(stamp: string | null): number | null {
+  if (!stamp) return null;
+  const at = Date.parse(`${stamp.replace(' ', 'T')}Z`);
+  if (Number.isNaN(at)) return null;
+  return Math.round(((Date.now() - at) / 3_600_000) * 10) / 10;
+}
+
 export const healthRoutes = new Hono<AppBindings>().get('/', async (c) => {
   const database = (await isDatabaseReachable(c.env.DB)) ? 'up' : 'down';
   const ok = database === 'up';
+  const audiobookSweep = await audiobookSweepStatus(c.env);
   // The pre-envelope shape, unchanged — nested under `detail` AND kept at
   // the top level (additive transition, see file header). Spread FIRST so
   // the explicit envelope fields after it are an intentional override, not
@@ -102,6 +208,12 @@ export const healthRoutes = new Hono<AppBindings>().get('/', async (c) => {
     },
     /** The per-instance ESTATE IDENTITY and its config state. See the header. */
     estate: describeEstateGate(c.env),
+    /**
+     * The audiobook-association sweep (design §7.2). ⚠️ **Additive only** — see
+     * `audiobookSweepStatus` for why this is a key here rather than a page, and
+     * why it can never fail the health check.
+     */
+    audiobookSweep,
     time: new Date().toISOString(),
   };
   return c.json(
