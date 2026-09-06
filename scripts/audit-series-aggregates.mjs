@@ -18,6 +18,25 @@
  * titled with its series name and legitimately owned in two printings. This
  * script never writes anything; it exists so the question gets asked.
  *
+ * ## ⚠️ THE ALARM HAS A CLOCK NOW — 2026-09-06
+ *
+ * This file called itself *"the standing alarm"* and had no cadence at all;
+ * nothing ran it, and nothing noticed that nothing ran it. The platform
+ * inventory named that exactly (§7 row #5: *"a standing alarm with no clock is
+ * the exact failure this ask is about"*), so it also fires daily in the Worker
+ * on both instances now — `apps/worker/src/lib/series-aggregates-run.ts`,
+ * reported on `/api/health` under `detail.seriesAggregates`. Runbook:
+ * `docs/access/audits.md`.
+ *
+ * **This script is not retired.** It is the attended form: run it after a
+ * scanning session and read the answer immediately, instead of waiting for
+ * 02:47. What it no longer does is keep its own copy of the rule — the filter
+ * and the report text both live in `packages/core/src/audits.ts` and are shared
+ * with the route, so the two cannot drift. The printed output is byte-identical
+ * to the pre-conversion script, and that is measured:
+ * `packages/core/test/audits.test.ts` keeps the old inline logic verbatim as an
+ * oracle and compares.
+ *
  * ## Running it
  *
  *   npm run audit:series-aggregates                # local dev database
@@ -31,7 +50,10 @@
  * shipped three wrong games).
  */
 
-import { foldSeriesNames, isBareSeriesTitle } from '../packages/core/src/matching.ts';
+import {
+  auditSeriesAggregates,
+  formatSeriesAggregateReport,
+} from '../packages/core/src/audits.ts';
 import { query } from './lib/d1.mjs';
 
 const remote = process.argv.includes('--remote');
@@ -42,8 +64,6 @@ const seriesNames = query(
    UNION SELECT series FROM series_check WHERE series IS NOT NULL AND series <> ''`,
   { remote },
 ).map((r) => r.series);
-
-const seriesKeys = foldSeriesNames(seriesNames);
 
 const works = query(
   `SELECT w.id AS id, w.title AS title, w.authors AS authors,
@@ -57,28 +77,8 @@ const works = query(
   { remote },
 );
 
-const flagged = works.filter((w) => isBareSeriesTitle(w.title, seriesKeys));
+const findings = auditSeriesAggregates({ seriesNames, works });
 
-const where = remote ? 'production' : 'local';
-console.log(
-  `${where}: ${seriesKeys.size} known series name(s), ` +
-    `${works.length} work(s) with 2+ editions, ${flagged.length} flagged.`,
-);
+console.log(formatSeriesAggregateReport(findings, remote ? 'production' : 'local'));
 
-if (flagged.length === 0) {
-  console.log('Clean — no series-titled work carries multiple editions.');
-  process.exit(0);
-}
-
-console.log(
-  '\n⚠️ Series-titled works with 2+ editions. Each is either the OL work-level\n' +
-    'aggregate bug recurring (docs/TODO.md, 2026-08-13) or a real multi-printing\n' +
-    'volume 1. A person should eyeball each one:\n',
-);
-for (const w of flagged) {
-  console.log(
-    `  #${String(w.id).padStart(4)}  ${w.title} — ${w.authors} ` +
-      `(${w.editions} editions, ${w.copies} copies)`,
-  );
-}
-process.exit(1);
+process.exit(findings.flagged.length === 0 ? 0 : 1);

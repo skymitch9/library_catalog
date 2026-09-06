@@ -71,6 +71,7 @@
     "backfill:years": "tsx scripts/backfill-years.mjs",
     "apply:findings": "tsx scripts/apply-pending-findings.mjs",
     "audit:series-aggregates": "tsx scripts/audit-series-aggregates.mjs",
+    "check:cover-health": "tsx scripts/check-cover-health.mjs",
     "gabi-conv:sync": "node scripts/sync-gabi-conversation.mjs"
   },
   "devDependencies": {
