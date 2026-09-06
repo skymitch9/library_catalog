@@ -38,6 +38,19 @@ level too — same object, one fact):
 ⚠️ **`curl -I` / `-o /dev/null` report `000` on these hosts** (estate memory,
 2026-09-05). Use `-s`, or `-D -` when you want headers.
 
+**Measured 2026-09-06 02:01 UTC, minutes after the deploy — both hosts, both
+keys, identical:**
+
+```json
+{ "lastRunAt": null, "lastFinishedAt": null, "trigger": null,
+  "state": null, "detail": null, "ageHours": null, "findings": null }
+```
+
+✅ That is the **"never run"** reading, and it is the correct one: the cron had
+not yet reached 09:47 UTC. `ok: true` and `database: "up"` on both; the
+pre-existing `audiobookSweep`, `estate`, `gabi`, `universes`, `version` and
+`time` keys were all still there — this change is additive and removed nothing.
+
 ### 🔴 The four readings, and what each one means
 
 **This is the whole point of the key.** `ok` and *never run* look identical on a
@@ -161,14 +174,29 @@ The scripts are **not retired**, and for the cover audit the script is the more
 capable instrument: it has **no per-tick cap**.
 
 ```bash
-npm run check:cover-health -- --remote               # main, the WHOLE catalog
-npm run check:cover-health -- --remote --friend      # padhard, the whole catalog
-npm run audit:series-aggregates -- --remote          # main; exits 1 if flagged
+npm run check:cover-health -- --remote                    # main, the WHOLE catalog
+npm run check:cover-health -- --remote --friend           # padhard, the whole catalog
+npm run audit:series-aggregates -- --remote               # main; exits 1 if flagged
+npm run audit:series-aggregates -- --remote --friend      # padhard; NEW 2026-09-06
 ```
 
 ⚠️ **`--friend` needs `--remote`** — there is no local copy of the second
 instance, and `scripts/lib/d1.mjs` refuses the combination rather than silently
 reading the main database.
+
+### 🔴 `audit:series-aggregates --friend` did not exist until 2026-09-06
+
+The script passed `{ remote }` to `query()` and nothing else, so `dbName()`
+resolved to the MAIN database on every run and **the alarm had never once looked
+at padhard.** It is the same shape as the defect fixed in `check-cover-health.mjs`
+on 2026-08-22 (that one switched the fetch BASE to padhard while still reading
+main's rows).
+
+⚠️ **It was invisible because the alarm's normal answer is EMPTY** — a clean run
+against main looks exactly like a clean run against a catalog nobody read. It was
+found only because the ROUTE half runs on both instances, which made the script
+the lagging one. **First measurement of padhard, ever, 2026-09-06:**
+`309 known series name(s), 4 work(s) with 2+ editions, 0 flagged` — clean.
 
 ⚠️ **`check:cover-health` runs under `tsx` now** (it imports TypeScript from
 `@lc/core`). `node scripts/check-cover-health.mjs` will not work — use the npm

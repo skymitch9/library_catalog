@@ -39,8 +39,27 @@
  *
  * ## Running it
  *
- *   npm run audit:series-aggregates                # local dev database
- *   npm run audit:series-aggregates -- --remote    # production, read-only
+ *   npm run audit:series-aggregates                          # local dev database
+ *   npm run audit:series-aggregates -- --remote              # main, read-only
+ *   npm run audit:series-aggregates -- --remote --friend     # padhard, read-only
+ *
+ * ## 🔴 `--friend` was MISSING until 2026-09-06, and that is the 2026-08-22 bug again
+ *
+ * This script passed `{ remote }` to `query()` and nothing else, so `dbName()`
+ * resolved to the MAIN database on every run and **the alarm had never once
+ * looked at padhard**. It is the same shape as the defect fixed in
+ * `check-cover-health.mjs` on 2026-08-22 (that one switched the fetch BASE to
+ * padhard while still reading main's rows) and the same shape as
+ * `scripts/lib/d1.mjs`'s hardcoded `DB_NAME`, which is why the second instance
+ * could not be maintained at all until that day.
+ *
+ * ⚠️ It was invisible because the alarm's normal answer is EMPTY. A clean run
+ * against main looks exactly like a clean run against a catalog nobody read —
+ * and it was found only because the ROUTE half runs on both instances, which
+ * made the script the lagging one.
+ *
+ * ⚠️ `--friend` needs `--remote`; `dbName()` refuses the combination rather
+ * than silently reading main. See its comment for why.
  *
  * Exits 1 when anything is flagged, 0 when the set is empty, so it can sit
  * at the end of a scanning session or in any future CI without ceremony.
@@ -54,15 +73,19 @@ import {
   auditSeriesAggregates,
   formatSeriesAggregateReport,
 } from '../packages/core/src/audits.ts';
-import { query } from './lib/d1.mjs';
+import { parseFlags, query } from './lib/d1.mjs';
 
-const remote = process.argv.includes('--remote');
+// ⚠️ The whole flag object, not a hand-made `{ remote }` — that is what made the
+// alarm blind to padhard. `query()` picks the DATABASE off `friend`, so the two
+// must travel together and be read from one place.
+const flags = parseFlags();
+const remote = flags.remote;
 
 const seriesNames = query(
   `SELECT series FROM work WHERE series IS NOT NULL AND series <> ''
    UNION SELECT series FROM series_volume WHERE series IS NOT NULL AND series <> ''
    UNION SELECT series FROM series_check WHERE series IS NOT NULL AND series <> ''`,
-  { remote },
+  flags,
 ).map((r) => r.series);
 
 const works = query(
@@ -74,11 +97,15 @@ const works = query(
     GROUP BY w.id
    HAVING COUNT(DISTINCT e.id) >= 2
     ORDER BY editions DESC, w.id`,
-  { remote },
+  flags,
 );
 
 const findings = auditSeriesAggregates({ seriesNames, works });
 
-console.log(formatSeriesAggregateReport(findings, remote ? 'production' : 'local'));
+// ⚠️ `production` and `local` are unchanged for the two invocations that
+// existed before 2026-09-06, so their printed output is still byte-identical.
+// The third label is new because the third target is.
+const where = flags.friend ? 'padhard (production)' : remote ? 'production' : 'local';
+console.log(formatSeriesAggregateReport(findings, where));
 
 process.exit(findings.flagged.length === 0 ? 0 : 1);
