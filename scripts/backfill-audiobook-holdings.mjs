@@ -31,6 +31,31 @@
  * script does the reading, the database carries the verdict, and the Worker
  * only ever reads a table.
  *
+ * ## ⚠️ AMENDED 2026-09-05: the DECISIONS are no longer in this file
+ *
+ * Phases 1 and 2 moved to `packages/core/src/audiobook-sweep.ts`
+ * (`planAudiobookSweep`), the CSV parse and row mapping to
+ * `packages/core/src/audiobook-csv.ts`, the series-canon rule to
+ * `packages/core/src/series-canon.ts`, and the SQL rendering to
+ * `scripts/lib/audiobook-sql.mjs`. **One planner, two callers**: this script,
+ * and the route/cron built on it in the later phases of
+ * `catalog-platform/docs/info/audiobook-association-route.md`. The paragraph
+ * above is still true of THIS file — it reads the disk and a Worker cannot —
+ * but the reason the Worker can now do the job at all is that it fetches the
+ * identical bytes from `audiobooks.heygabi.ai/catalog.csv` and runs the
+ * identical planner over them.
+ *
+ * 🔴 **This script is NEVER retired** (§8). It is the only path that works when
+ * the Worker is down, it is the recovery tool `docs/access/RECOVERY.md` assumes,
+ * and it runs offline and before a deploy against a checkout. What it became is
+ * a thin caller of the planner the route also uses — which is the point.
+ *
+ * ⚠️ The two callers differ in exactly ONE respect, stated out loud in §2.4:
+ * this script reads `catalog-platform/data/series-canon.json` LIVE out of the
+ * sibling checkout, and the Worker reads the copy materialised into
+ * `packages/universes/generated/` at build time. When they disagree the ROUTE is
+ * the stale one.
+ *
  * ## ⚠️ Matching goes through `matchIndexedWork` and nothing else
  *
  * `audiobookIndex()` in `scripts/lib/audiobooks.mjs` wraps the project's ONE
@@ -85,9 +110,13 @@
  * declines to stop at the first answer.
  */
 
-import { execute, lit, parseFlags, query } from './lib/d1.mjs';
-import { normaliseTitle } from '../packages/core/src/titles.ts';
-import { AUDIOBOOK_CSV, audiobookIndex, loadAudiobooks } from './lib/audiobooks.mjs';
+import { execute, parseFlags, query } from './lib/d1.mjs';
+import {
+  groupWorkAliases,
+  planAudiobookSweep,
+} from '../packages/core/src/audiobook-sweep.ts';
+import { renderSweepStatements } from './lib/audiobook-sql.mjs';
+import { AUDIOBOOK_CSV, loadAudiobooks } from './lib/audiobooks.mjs';
 import { canonicalSeries } from './lib/series-canon.mjs';
 // Reported, never written — see the block near the end of this file, and that
 // module's header for why the CHECK constraint on `matched_via` makes writing a
@@ -122,26 +151,20 @@ const existing = query(
   'SELECT work_id, audio_key, title, stale_at FROM audiobook_edition_holding',
   flags,
 );
-// A NUL joins the two halves so no work id + audio title can ever collide
-// with another pair. Written as an escape, never a literal byte: a stray NUL
-// in a source file makes git treat it as binary and every future diff of this
-// script unreadable.
-const editionKey = (workId, audioKey) => `${workId}\u0000${audioKey}`;
 
 // The other names our books answer to. Scoped per work and kept apart by kind —
 // see the header, and `WORK_ALIAS_KINDS` in packages/core/src/constants.ts.
+//
+// ⚠️ Grouped by `@lc/core`'s `groupWorkAliases` — the same call the planner
+// makes — so the two counts printed here and the name pairs actually asked
+// about cannot come from two different groupings.
 const aliasRows = query('SELECT work_id, alias, kind FROM work_alias', flags);
-const titleAliases = new Map();
-const authorAliases = new Map();
-for (const a of aliasRows) {
-  const into = a.kind === 'author' ? authorAliases : titleAliases;
-  const list = into.get(Number(a.work_id));
-  if (list) list.push(a.alias);
-  else into.set(Number(a.work_id), [a.alias]);
-}
+const aliases = groupWorkAliases(
+  aliasRows.map((a) => ({ workId: Number(a.work_id), alias: a.alias, kind: a.kind })),
+);
 console.log(
-  `${aliasRows.length} alias row(s): ${titleAliases.size} work(s) with another title,` +
-    ` ${authorAliases.size} with another author`,
+  `${aliasRows.length} alias row(s): ${aliases.titles.size} work(s) with another title,` +
+    ` ${aliases.authors.size} with another author`,
 );
 
 // ---------------------------------------------------------------------------
@@ -163,285 +186,68 @@ if (audiobooks.length === 0) {
   process.exit(1);
 }
 
-const index = audiobookIndex(audiobooks);
-
 // ---------------------------------------------------------------------------
-
-const statements = [];
-const matched = [];
-const missed = [];
-/** `${work_id} ${audio_key}` for every edition this run stands behind. */
-const liveEditions = new Set();
-/** Works reaching more than one audiobook edition — migration 0390's whole point. */
-const multiEdition = [];
-
-/** Strongest first. A rung that claims less never displaces one that claims more. */
-const VIA_RANK = { exact: 0, alias: 1, containment: 2 };
-
-/**
- * Every name pair worth asking under: the printed one first, then the recorded
- * aliases.
- *
- * ⚠️ The printed pair is always tried first and wins ties, so a work with
- * aliases can only ever gain a match, never have one replaced by a weaker route.
- */
-function attempts(w) {
-  const titles = [null, ...(titleAliases.get(Number(w.id)) ?? [])];
-  const authors = [null, ...(authorAliases.get(Number(w.id)) ?? [])];
-  const out = [];
-  for (const t of titles) {
-    for (const a of authors) {
-      out.push({
-        title: t ?? w.title,
-        authors: a ?? w.authors,
-        // Which alias, if any, this attempt is spending. Null for the printed
-        // pair; the alias string when one is in play, so the row can record it.
-        alias: t && a ? `${t} / ${a}` : (t ?? a),
-      });
-    }
-  }
-  return out;
-}
-
-for (const w of works) {
-  let best = null;
-  // Our own volume number, when we have one — see `attempts` above for why
-  // title/author are per-attempt but this is not: an alias never changes
-  // which physical book #w is, so its volume number is the same on every
-  // attempt. Only ever consulted by an ambiguous-fold match (Space Knight);
-  // every other match is unaffected. See matching.ts `disambiguateByVolume`.
-  const seriesIndex = w.series_index_sort == null ? null : Number(w.series_index_sort);
-
-  /**
-   * Every audiobook edition this work reaches, keyed by `audio_key` — the
-   * sibling catalog's verbatim title, which is `audiobook_edition_holding`'s
-   * other primary-key half (migration 0390).
-   *
-   * ⚠️ One entry per key with the STRONGEST rung kept, exactly as `best` is
-   * chosen below. Two attempts (the printed pair, then an alias pair) can reach
-   * the same edition by different rungs, and the row must record the better of
-   * them — an alias-route containment claim must not overwrite an exact one.
-   */
-  const editions = new Map();
-
-  for (const attempt of attempts(w)) {
-    // ⚠️ `lookupAll`, not `lookup`: the table is keyed per edition now, and a
-    // work with two recordings must produce two rows. `hits[0]` is what
-    // `lookup` would have returned, so `best` below is unchanged — see
-    // `lookupAll` in scripts/lib/audiobooks.mjs.
-    const hits = index.lookupAll(attempt.title, attempt.authors, seriesIndex);
-    for (const hit of hits) {
-      const prev = editions.get(hit.row.rawTitle);
-      const stronger =
-        !prev ||
-        VIA_RANK[hit.via] < VIA_RANK[prev.via] ||
-        (VIA_RANK[hit.via] === VIA_RANK[prev.via] && hit.similarity > prev.similarity);
-      if (stronger) editions.set(hit.row.rawTitle, { ...hit, alias: attempt.alias });
-    }
-
-    const top = hits[0];
-    if (!top) continue;
-    const better =
-      !best ||
-      VIA_RANK[top.via] < VIA_RANK[best.via] ||
-      (VIA_RANK[top.via] === VIA_RANK[best.via] && top.similarity > best.similarity);
-    if (better) best = { ...top, alias: attempt.alias };
-  }
-
-  if (!best) {
-    missed.push(w);
-    continue;
-  }
-  // ⚠️ Still ONE entry per work. Phase 2 and the report below both read this,
-  // and both ask a per-work question ("did a work corroborate this series
-  // mapping?"). The edition set is a separate structure on purpose.
-  matched.push({ work: w, ...best, editionCount: editions.size });
-  if (editions.size > 1) multiEdition.push({ work: w, editions: [...editions.values()] });
-
-  for (const [audioKey, e] of editions) {
-    liveEditions.add(editionKey(w.id, audioKey));
-    statements.push(
-      // ⚠️ `raw_title` is `e.row.rawTitle`, NOT `e.row.title` — migration 0340.
-      // `title` is stripped by `cleanTitleWithSeries` and is what a person is
-      // shown; `raw_title` is the sibling catalog's verbatim string and is the
-      // one the content-warning key is derived from, because that is what the
-      // audiobook site and `content_warnings.json` are both keyed by. Migration
-      // 0390 reuses that same string as `audio_key`, so the edition identity
-      // here and the warning identity there cannot drift apart.
-      `INSERT INTO audiobook_edition_holding (work_id, audio_key, title, raw_title, authors,` +
-        ` series, index_display, index_sort, cover_href, narrator, matched_via,` +
-        ` title_similarity, via_alias)` +
-        ` VALUES (${lit(w.id)}, ${lit(audioKey)}, ${lit(e.row.title)}, ${lit(e.row.rawTitle)},` +
-        ` ${lit(e.row.authors)}, ${lit(e.row.series)}, ${lit(e.row.seriesIndexDisplay)},` +
-        ` ${lit(e.row.seriesIndexSort)}, ${lit(e.row.coverHref)}, ${lit(e.row.narrator)},` +
-        ` ${lit(e.via)}, ${lit(Number(e.similarity.toFixed(4)))}, ${lit(e.alias)})` +
-        ` ON CONFLICT(work_id, audio_key) DO UPDATE SET` +
-        ` title = excluded.title, raw_title = excluded.raw_title,` +
-        ` authors = excluded.authors, series = excluded.series,` +
-        ` index_display = excluded.index_display, index_sort = excluded.index_sort,` +
-        ` cover_href = excluded.cover_href, narrator = excluded.narrator,` +
-        ` matched_via = excluded.matched_via,` +
-        ` title_similarity = excluded.title_similarity, via_alias = excluded.via_alias,` +
-        ` last_seen_at = datetime('now'), stale_at = NULL;`,
-    );
-  }
-}
-
-// An EDITION that no longer matches. Marked, never deleted — migration 0010's
-// rule, now applied one row finer: a work can keep one recording and lose
-// another (the other catalog re-titled it, or it was returned), and only the
-// row that went away may be marked. Marking by `work_id` alone would stale a
-// live edition every time its sibling changed.
-const goneStale = existing.filter(
-  (r) => !liveEditions.has(editionKey(Number(r.work_id), r.audio_key)) && !r.stale_at,
-);
-for (const r of goneStale) {
-  statements.push(
-    `UPDATE audiobook_edition_holding SET stale_at = datetime('now')` +
-      ` WHERE work_id = ${lit(r.work_id)} AND audio_key = ${lit(r.audio_key)}` +
-      ` AND stale_at IS NULL;`,
-  );
-}
-
+// The plan — DATA, not SQL
+//
+// ⚠️ Phases 1 and 2 live in `packages/core/src/audiobook-sweep.ts` now (phase 0
+// of `catalog-platform/docs/info/audiobook-association-route.md`). They are the
+// DECISIONS — which editions a work reaches, `VIA_RANK` tie-breaking, which
+// rungs exist, `corroborated`, what goes stale — and the Worker has to reach
+// the IDENTICAL ones, so they cannot live in a file only Node can run. Every
+// rule and every measurement that justified it moved with them; read that file
+// beside this header, not instead of it.
+//
+// What stayed here is the RENDERING. `planAudiobookSweep` hands back rows, and
+// this file turns them into the same `lit()`-interpolated SQL it always built.
+// A planner that returned SQL could only ever have had one caller — that is
+// §2.3, and it is the whole hinge of the extraction.
+//
+// 🔴 `scope: { kind: 'all' }`, and only this caller may say so. The script IS
+// the full sweep, so a row it did not reproduce is genuinely gone. The route's
+// on-add hook passes `{ kind: 'works', ids }`, has looked at one book, and
+// therefore marks NOTHING stale — §6.2 guard 3.
+//
+// ⚠️ `canonicalSeries` is INJECTED, and this caller injects the LIVE cross-repo
+// read (`scripts/lib/series-canon.mjs`). The Worker injects the generated copy
+// instead. §2.4 states that skew out loud and says the route is the stale side.
 // ---------------------------------------------------------------------------
-// Phase 2 — the rungs with no work row at all (migration 0090)
-//
-// ⚠️ Joined on `(series, index_sort)` and on nothing else. A gap rung has no
-// title — `completeness.ts` cannot even name an `interior` hole — so there is
-// nothing to match, which is exactly why this is safe: containment matching is
-// what shipped three wrong games in the sibling project and the flat "All 5
-// held on audio" claim here, and there is none of it below.
-//
-// ## The fold, and why it is `normaliseTitle`
-//
-// The two catalogs disagree about spelling: "All the Skills" there, "All The
-// Skills" here. Three folds exist in this estate and only one is right for this:
-//
-//   • `normaliseTitle` — the project's ONE fold, and ALREADY the series-name
-//     fold: `backfill-series-volumes.mjs` has resolved these same two spellings
-//     with it since it was written, and the rows it writes are what this table
-//     annotates. A second rule here would be the second-matching-function
-//     mistake `matching.ts` opens with.
-//   • `normaliseUniverseText` — keeps leading articles ON PURPOSE, because the
-//     universe list holds "The Cosmere" and "Cosmere" as different entries.
-//     Measured over this CSV's 331 series spellings, that is disqualifying:
-//     `Dark Healer` and `The Dark Healer` are one series written twice, and this
-//     fold is what merges them.
-//   • `bookIdFromTitle` — a Firestore document id. Not a comparison at all.
-//
-// ⚠️ It folds for COMPARISON only. What is stored is our spelling, so the read
-// path joins `work.series` exactly and no fold runs in the Worker — the same
-// decision `series_volume` made, for the same reason.
-//
-// Measured 2026-08-11: 331 raw spellings fold to 329 keys, and both collisions
-// are one series spelled two ways. Nothing distinct was conflated.
-//
-// ⚠️ `normaliseTitle` folds case and whitespace, not DECORATION. Three series
-// — Ascend Online, Harry Potter, Fae & Alchemy — built ZERO audio rungs before
-// 2026-08-14 because one catalog spells them plainly and the other adds a
-// bracketed or parenthetical suffix ("Ascend Online [publication order]",
-// "Harry Potter (Full-Cast Editions)"), and `normaliseTitle` alone does not
-// strip that. `canonicalSeries` (scripts/lib/series-canon.mjs) folds the
-// estate's known cross-catalog spellings onto one form FIRST, and
-// `normaliseTitle` still runs after it — same two-step shape
-// `canonicalize_series()` + tag-derived value has in audiobook_catalog's own
-// corrections layer. See catalog-platform/docs/UNIVERSES.md §8.
-// ---------------------------------------------------------------------------
-
-/** Folded audiobook series name -> its rows. */
-const abBySeries = new Map();
-for (const row of audiobooks) {
-  if (!row.series) continue;
-  const key = normaliseTitle(canonicalSeries(row.series));
-  const list = abBySeries.get(key);
-  if (list) list.push(row);
-  else abBySeries.set(key, [row]);
-}
 
 const existingRungs = query(
   'SELECT series, index_sort, stale_at FROM audiobook_series_holding',
   flags,
 );
-const rungKey = (series, index) => `${series}|${index}`;
 
-/**
- * Which of our series a work-level match has already proved.
- *
- * ⚠️ Both halves, and the second is the one that matters. A work matched by
- * `matching.ts` proves the two SERIES NAMES mean one series; the same work
- * carrying the same volume number on both sides additionally proves the two
- * catalogs NUMBER it alike. Only that pair earns `work_match` and an unhedged
- * AUDIO chip — everything else says AUDIO?, because a series whose numbering we
- * have never seen agree is a series whose book 4 might be somebody else's 3.
- *
- * Folded through `canonicalSeries` first, same as `abBySeries` above — a
- * decoration-only spelling difference must not be the reason a series stays
- * hedged as AUDIO? forever.
- */
-const corroborated = new Set();
-for (const m of matched) {
-  if (!m.work.series || !m.row.series) continue;
-  if (normaliseTitle(canonicalSeries(m.work.series)) !== normaliseTitle(canonicalSeries(m.row.series))) continue;
-  if (m.work.series_index_sort == null || m.row.seriesIndexSort == null) continue;
-  if (Number(m.work.series_index_sort) !== Number(m.row.seriesIndexSort)) continue;
-  corroborated.add(m.work.series);
-}
+const plan = planAudiobookSweep({
+  works: works.map((w) => ({
+    id: w.id,
+    title: w.title,
+    authors: w.authors,
+    series: w.series,
+    seriesIndexSort: w.series_index_sort == null ? null : Number(w.series_index_sort),
+  })),
+  aliases,
+  audiobooks,
+  existingEditions: existing.map((r) => ({
+    workId: Number(r.work_id),
+    audioKey: r.audio_key,
+    staleAt: r.stale_at,
+  })),
+  existingRungs: existingRungs.map((r) => ({
+    series: r.series,
+    indexSort: Number(r.index_sort),
+    staleAt: r.stale_at,
+  })),
+  canonicalSeries,
+  scope: { kind: 'all' },
+});
 
-const ourSeries = [...new Set(works.map((w) => w.series).filter(Boolean))].sort();
-const rungReport = [];
-const liveRungs = new Set();
-
-for (const series of ourSeries) {
-  const hits = abBySeries.get(normaliseTitle(canonicalSeries(series))) ?? [];
-  const numbered = hits.filter((h) => typeof h.seriesIndexSort === 'number');
-  if (numbered.length === 0) continue;
-
-  const via = corroborated.has(series) ? 'work_match' : 'fold';
-
-  // One row per index — the same rule `backfill-series-volumes.mjs` applies, so
-  // the two tables cannot end up describing different rungs. First wins.
-  const seen = new Map();
-  for (const h of numbered) if (!seen.has(h.seriesIndexSort)) seen.set(h.seriesIndexSort, h);
-
-  for (const [index, row] of [...seen].sort((a, b) => a[0] - b[0])) {
-    liveRungs.add(rungKey(series, index));
-    statements.push(
-      `INSERT INTO audiobook_series_holding (series, index_sort, title, authors,` +
-        ` audiobook_series, index_display, cover_href, series_matched_via)` +
-        ` VALUES (${lit(series)}, ${lit(index)}, ${lit(row.title)}, ${lit(row.authors)},` +
-        ` ${lit(row.series)}, ${lit(row.seriesIndexDisplay)}, ${lit(row.coverHref)}, ${lit(via)})` +
-        ` ON CONFLICT(series, index_sort) DO UPDATE SET` +
-        ` title = excluded.title, authors = excluded.authors,` +
-        ` audiobook_series = excluded.audiobook_series,` +
-        ` index_display = excluded.index_display, cover_href = excluded.cover_href,` +
-        ` series_matched_via = excluded.series_matched_via,` +
-        ` last_seen_at = datetime('now'), stale_at = NULL;`,
-    );
-  }
-
-  rungReport.push({
-    series,
-    via,
-    abName: hits[0].series,
-    indexes: [...seen.keys()].sort((a, b) => a - b),
-    fresh: [...seen.keys()].filter(
-      (i) => !existingRungs.some((r) => rungKey(r.series, r.index_sort) === rungKey(series, i)),
-    ).length,
-  });
-}
-
-// Marked, never deleted — the other catalog renaming a series must not look like
-// the audiobook having been returned.
-const rungsGoneStale = existingRungs.filter(
-  (r) => !liveRungs.has(rungKey(r.series, r.index_sort)) && !r.stale_at,
-);
-for (const r of rungsGoneStale) {
-  statements.push(
-    `UPDATE audiobook_series_holding SET stale_at = datetime('now')` +
-      ` WHERE series = ${lit(r.series)} AND index_sort = ${lit(r.index_sort)}` +
-      ` AND stale_at IS NULL;`,
-  );
-}
+const { report } = plan;
+// ⚠️ The rendering lives in `scripts/lib/audiobook-sql.mjs` so it can be TESTED:
+// this file reads two databases at import time, so nothing can import it. The
+// statement order is part of the contract — edition upserts, edition stales,
+// rung upserts, rung stales — and `scripts/test/backfill-audiobook-holdings.test.mjs`
+// pins the exact SQL for a fixture plan.
+const statements = renderSweepStatements(plan);
 
 // ---------------------------------------------------------------------------
 // ⚠️ Read the rows, not the totals.
@@ -455,24 +261,24 @@ for (const r of rungsGoneStale) {
 // ---------------------------------------------------------------------------
 
 const pct = (n) => `${((n / works.length) * 100).toFixed(0)}%`;
-const byVia = (v) => matched.filter((m) => m.via === v).length;
+const byVia = (v) => report.byVia[v];
 
 console.log('');
-console.log(`matched an audiobook   ${matched.length}  (${pct(matched.length)})`);
+console.log(`matched an audiobook   ${report.matched.length}  (${pct(report.matched.length)})`);
 console.log(`  exact title          ${byVia('exact')}`);
 console.log(`  a recorded alias     ${byVia('alias')}`);
 console.log(`  containment          ${byVia('containment')}`);
-console.log(`  (of those, reached only through one of our aliases: ${matched.filter((m) => m.alias).length})`);
-console.log(`no audiobook found     ${missed.length}  (${pct(missed.length)})`);
+console.log(`  (of those, reached only through one of our aliases: ${report.viaAliasCount})`);
+console.log(`no audiobook found     ${report.missed.length}  (${pct(report.missed.length)})`);
 console.log('');
 // ⚠️ Migration 0390's number, and the one to watch. Before it, a work with two
 // recordings kept whichever the upsert wrote last — and for work 514 that was
 // the edition with NO series, while the one that knew "Elantris, volume 1" was
 // silently discarded. A count of 0 here does not mean the household owns no
 // second editions; it means none of them cleared the matcher's unchanged gates.
-console.log(`audio editions written ${liveEditions.size}`);
-console.log(`works with >1 edition  ${multiEdition.length}`);
-for (const m of multiEdition.sort((a, b) => a.work.title.localeCompare(b.work.title))) {
+console.log(`audio editions written ${report.liveEditions.length}`);
+console.log(`works with >1 edition  ${report.multiEdition.length}`);
+for (const m of report.multiEdition.sort((a, b) => a.work.title.localeCompare(b.work.title))) {
   console.log(`  ${m.work.title}  (work ${m.work.id})`);
   for (const e of m.editions) {
     const bits = [
@@ -512,14 +318,15 @@ try {
   if (curated.length === 0) {
     console.log('curated cross-links    none on file');
   } else {
-    // Undo `editionKey` above. It joins on a NUL so no work id + audio title
-    // pair can ever collide with another; the split must use the SAME escape,
-    // never a literal byte -- a stray NUL in this file makes git call it
-    // binary and every future diff of this script unreadable.
-    const holdingRows = [...liveEditions].map((k) => {
-      const cut = k.indexOf('\u0000');
-      return { work_id: Number(k.slice(0, cut)), audio_key: k.slice(cut + 1), stale_at: null };
-    });
+    // ⚠️ The plan carries the live edition set as ROWS already — the NUL-joined
+    // key it used internally never leaves `@lc/core`, so this file no longer
+    // splits one apart. `stale_at` is null by construction: every entry here is
+    // an edition THIS run stands behind.
+    const holdingRows = report.liveEditions.map((e) => ({
+      work_id: e.workId,
+      audio_key: e.audioKey,
+      stale_at: null,
+    }));
     const { unknownWorkId, unresolved, resolved } = checkCuratedLinks(curated, works, holdingRows);
     console.log(
       `curated cross-links    ${resolved.length} resolved, ${unresolved.length} unresolved, ` +
@@ -535,7 +342,7 @@ try {
 }
 console.log('');
 
-for (const m of [...matched].sort((a, b) => a.work.title.localeCompare(b.work.title))) {
+for (const m of [...report.matched].sort((a, b) => a.work.title.localeCompare(b.work.title))) {
   const same = m.work.title === m.row.title;
   console.log(
     `  ${m.via.padEnd(11)} ${m.similarity.toFixed(2)}  ${m.work.title}` +
@@ -544,7 +351,7 @@ for (const m of [...matched].sort((a, b) => a.work.title.localeCompare(b.work.ti
   );
 }
 
-const loose = matched.filter((m) => m.via === 'containment');
+const loose = report.matched.filter((m) => m.via === 'containment');
 if (loose.length) {
   console.log('');
   console.log(`⚠️ ${loose.length} match(es) rest on containment — read these before committing:`);
@@ -553,17 +360,17 @@ if (loose.length) {
   }
 }
 
-if (missed.length) {
+if (report.missed.length) {
   console.log('');
   console.log('no audiobook:');
-  for (const w of missed.sort((a, b) => a.title.localeCompare(b.title))) {
+  for (const w of report.missed.sort((a, b) => a.title.localeCompare(b.title))) {
     console.log(`  ${w.title}`);
   }
 }
 
-if (goneStale.length) {
+if (report.editionsGoneStale) {
   console.log('');
-  console.log(`${goneStale.length} existing edition(s) no longer match and will be marked stale.`);
+  console.log(`${report.editionsGoneStale} existing edition(s) no longer match and will be marked stale.`);
 }
 
 // ---------------------------------------------------------------------------
@@ -577,11 +384,11 @@ if (goneStale.length) {
 // ---------------------------------------------------------------------------
 
 console.log('');
-console.log(`series with audio rungs   ${rungReport.length}`);
-console.log(`  corroborated by a work  ${rungReport.filter((r) => r.via === 'work_match').length}`);
-console.log(`  series name only        ${rungReport.filter((r) => r.via === 'fold').length}`);
+console.log(`series with audio rungs   ${report.rungs.length}`);
+console.log(`  corroborated by a work  ${report.rungs.filter((r) => r.via === 'work_match').length}`);
+console.log(`  series name only        ${report.rungs.filter((r) => r.via === 'fold').length}`);
 
-for (const r of rungReport.sort((a, b) => a.series.localeCompare(b.series))) {
+for (const r of report.rungs.sort((a, b) => a.series.localeCompare(b.series))) {
   const renamed = r.abName !== r.series ? `  ("${r.abName}" there)` : '';
   console.log(
     `  ${r.via.padEnd(11)} ${r.series}  ${r.indexes.length} rung(s) [${r.indexes.join(',')}]` +
@@ -589,7 +396,7 @@ for (const r of rungReport.sort((a, b) => a.series.localeCompare(b.series))) {
   );
 }
 
-const hedged = rungReport.filter((r) => r.via === 'fold');
+const hedged = report.rungs.filter((r) => r.via === 'fold');
 if (hedged.length) {
   console.log('');
   console.log(
@@ -598,9 +405,9 @@ if (hedged.length) {
   for (const r of hedged) console.log(`  "${r.series}"  ←→  "${r.abName}"`);
 }
 
-if (rungsGoneStale.length) {
+if (report.rungsGoneStale) {
   console.log('');
-  console.log(`${rungsGoneStale.length} audio rung(s) no longer match and will be marked stale.`);
+  console.log(`${report.rungsGoneStale} audio rung(s) no longer match and will be marked stale.`);
 }
 
 console.log('');
