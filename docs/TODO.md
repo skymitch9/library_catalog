@@ -2213,9 +2213,11 @@ section above — same question, now printed with both candidates beside it.
 
 ## ☐ The 2026-08-20 ISBN backfill filed 12 ISBNs belonging to other books (W6-ISBN, 2026-09-05)
 
-**Writer named, blast radius measured, both guards built and tested, data fix
-DRY-RUN READY — ☐ awaiting the owner.** Full post-mortem with every number:
-[`info/isbn-ladder.md` §7](info/isbn-ladder.md).
+**Writer named, blast radius measured, THREE guards built and tested, tier A
+APPLIED, tiers B and C approved and DRY-RUN READY — ☐ awaiting the owner's two
+commands (below).** Full post-mortem with every number:
+[`info/isbn-ladder.md` §7](info/isbn-ladder.md); the owner's ruling and tier C:
+[§7.6](info/isbn-ladder.md).
 
 **The writer is `scripts/backfill-missing-isbns.mjs`**, run `--remote --commit`
 twice on **2026-08-20** — **15:33:26Z** (free rungs, 45 rows in one batch) and
@@ -2243,23 +2245,30 @@ the **work's** title, so a translation passes at `sim 1.00`.
 | rows the run filled that still carry an ISBN | **43** | **0** |
 | **Tier A — wrong object** (foreign language, wrong medium, or contradicted by the row's own name) | **12** | **0** |
 | Tier B — right book, wrong printing (the row's own name says *"no per-volume ISBN recorded"*) | **17** | **0** |
-| untouched — a plausible trade ISBN on a Kickstarter/collector's printing that makes no claim | 14 | 0 |
+| **Tier C — a crowdfunded/collector's printing he HOLDS** (approved 2026-09-05 18:29 — see the ruling below) | **13** | **0** |
+| left out — no evidence of being a special printing at all (#507 only) | 1 | 0 |
 
 padhard was **unreachable** by that run (`scripts/lib/d1.mjs` gained `--friend`
 on 2026-08-22; her earliest edition writes are 2026-08-22 02:00Z) — re-measured
 rather than argued, and the zero is a result.
 
-### ✅ The WRITER is fixed — two guards + `change_log`, exercised on production
+### ✅ The WRITER is fixed — three guards + `change_log`, exercised on production
 
-`scripts/lib/backfill-safety.mjs` gains two pure functions, pinned by
-`scripts/test/backfill-safety.test.mjs` with the real wrong ISBNs as fixtures
-(**+14 cases**; whole suite **2678 pass / 0 fail**):
+`scripts/lib/backfill-safety.mjs` gains three pure functions, pinned by
+`scripts/test/backfill-safety.test.mjs` with the real wrong ISBNs and the real
+production `edition_name`s as fixtures (**+14 cases 2026-09-05 13:xx**, then
+**+14 more that evening for `isCrowdfundedPrinting`** — that file is now **35
+pass / 0 fail**):
 
 - **`declaresNoIsbn`** — a printing whose own `edition_name`/`note` states no
-  ISBN exists is skipped and printed. ⚠️ Deliberately **narrow**: it matches a
-  statement about an absent ISBN, never the words "Kickstarter" or "Collector's
-  Edition", because refusing every exclusive trades one silent-wrong-fill for a
-  silent-never-fill.
+  ISBN exists is skipped and printed. ⚠️ Deliberately **narrow**, and it stays
+  narrow: it matches a statement about an absent ISBN, never the words
+  "Kickstarter" or "Collector's Edition".
+- 🔴 **`isCrowdfundedPrinting`** — added **2026-09-05 18:29** on the owner's
+  ruling. A crowdfunded / collector's / campaign printing he HOLDS is skipped,
+  because an absent ISBN there is his recorded answer. ⚠️ It is the widening the
+  guard above refuses to make, kept as a **separate function** because it rests
+  on a fact about this household rather than on the row alone. Details below.
 - **`isbnLanguageVerdict`** — `foreign` refuses, `ok` and `unknown` proceed. An
   attested language beats the registration group (a `979-8` KDP book is
   English); a non-English group with no attested language is `foreign`.
@@ -2276,7 +2285,7 @@ skipped by `declaresNoIsbn`** (#450 *Dungeon Born*), **1 refused by the language
 gate** (`9784047336582`, **978-4 = Japan**, proposed by LibraryThing for
 *Sanctuary: The Art Book of Yuumei*), 10 updates + 10 `change_log` rows.
 
-### ☑ The DATA fix — tier A APPLIED by the owner 2026-09-05 18:23 Phoenix; tiers B and C still his
+### ☑ The DATA fix — tier A APPLIED by the owner 2026-09-05 18:23 Phoenix; B and C approved at 18:29 and awaiting his run
 
 `scripts/fix-foreign-isbns-2026-09-05.mjs`: explicit id list, **asserted
 from-values** (a moved row stops the run), `isbn13 → NULL`, `source → 'manual'`
@@ -2300,17 +2309,117 @@ then `node scripts/fix-foreign-isbns-2026-09-05.mjs --remote --friend --commit`
 <https://library.heygabi.ai/work/220> (*Words of Radiance*, the leatherbound) and
 <https://library.heygabi.ai/work/464> (*Oathbringer*).
 
-☐ **A SECOND owner decision — tier B, the 17 slipcase volumes.** Same script,
-`--also-declared-no-isbn` (dry run: 29 → NULL, 61 statements). Each row's own
-`edition_name` says *"no per-volume ISBN recorded"* and the run filled it with a
-real English trade ISBN of the same title. It is **not** default because it is a
-judgement about physical objects, not a measurement.
+### 🔴 The owner RULED 2026-09-05 18:29 Phoenix — tiers B and C are both approved
 
-☐ **A THIRD, and it is genuinely his to answer**: the **14 untouched rows** —
-Kickstarter and collector's printings carrying a plausible trade ISBN
-(#317, #319, #320, #330, #331, #332, #334, #335, #343, #344, #345, #349, #350,
-#507). Does a crowdfunded hardcover share the trade ISBN? Only somebody holding
-the book can say.
+> **Owner, verbatim:** *"For the kickstarters we have in stock the ISBNs are
+> recorded if they exist."*
+
+⚠️ **That answers BOTH open decisions below at once, and it does so by turning
+them from judgement calls into the same finding as tier A.** On a crowdfunded
+printing he holds, `isbn13 IS NULL` is a **measured absence** — he records the
+ISBN at entry when the object carries one — so the 2026-08-20 run did not fill a
+blank, it **overwrote a recorded fact with a guess**. Read as a standing rule:
+**an in-stock crowdfunded printing with no ISBN has none.** Full write-up, with
+the per-row table and the evidence for every `source` restore:
+[`info/isbn-ladder.md` §7.6](info/isbn-ladder.md).
+
+☑ **Tier B — the 17 slipcase volumes: APPROVED.** ~~It is **not** default because
+it is a judgement about physical objects, not a measurement.~~ The judgement was
+made. Flag unchanged: `--also-declared-no-isbn`.
+
+☑ **Tier C — 13 crowdfunded rows: APPROVED and BUILT.** New flag
+`--also-crowdfunded`; `--all-tiers` runs A + B + C. Rows #317 #319 #320 #330
+#331 #332 #334 #335 #343 #344 #345 #349 #350 — every `from` value **re-read live
+from production 2026-09-05** before the list was written, and the
+asserted-from-value guard still stops any row that has moved since.
+
+⚠️ **#507 is deliberately NOT in tier C — that is 13 rows, not 14.** *The Book of
+Mormon*, work 375, `9780929753249`. Measured: `edition_name` **NULL**, `note`
+**NULL**, `format` `paperback`, both owned copies (#283, #291) carry no
+`edition_notes` and have `leatherbound`/`slipcase`/`sprayed_edges` all 0, and no
+crowdfunding importer in `scripts/` names it. `isbn-ladder.md` §7.1 had already
+called it *"the one ordinary printing"* among the 43. The ruling is about *"the
+kickstarters we have in stock"* and nothing on this row says it is one.
+
+☐ **#507 is still an OPEN question, just a different one — and it needs the
+owner.** The ISBN on it is Stratford Books' *"Hand Leather Bound Pocket
+Edition"* (Open Library `OL8358629M`, 2007, English, `physical_format:
+Leather-bound`) sitting on a row whose `format` is `paperback` — **wrong
+medium**. 🔴 It is English and `978-0`, so `isbnLanguageVerdict` returns
+`unknown` and **the language gate will never catch it**. Is his copy that pocket
+edition, or an ordinary paperback? Review:
+<https://library.heygabi.ai/work/375>.
+
+**Dry run 2026-09-05, `--remote --all-tiers`, production `library-catalog`:**
+
+| | |
+|---|---|
+| rows in the evidence list | **42** (A 12 + B 17 + C 13) |
+| ✅ already applied (tier A, landed 2026-09-06 01:23:49Z) | **12** |
+| isbn13 → NULL | **30** (A 0, B 17, C 13) |
+| `source` restored to `manual` | **10** (all tier C: #330 #331 #332 #334 #335 #343 #344 #345 #349 #350) |
+| `change_log` rows | **40** |
+| statements | **70** |
+
+**`--remote --friend --all-tiers` (padhard): still nothing to do**, and its zero
+is re-measured, not asserted — 0 printings declaring no ISBN yet carrying one,
+1 non-English registration group (the known #605 *Italian Affair*), and a **new
+third signature**: 6 crowdfunded/collector's printings carrying an ISBN. ⚠️ **Not
+the same defect** — all 6 already HAVE an ISBN (five *"Bn exclusive"*, two
+*"Collector edition"* deluxe limiteds), a retail exclusive genuinely gets its own
+trade ISBN, and **the ruling is about HIS habit; nobody has asked Diva about
+hers.**
+
+☐ **THE OWNER'S COMMANDS — B and C are approved but NOT YET RUN.** Both lines,
+PowerShell 5.1:
+
+```
+cd C:\Users\nbasl\OneDrive\Documents\vs-code-repos\bookbuddy\library_catalog; node scripts/fix-foreign-isbns-2026-09-05.mjs --remote --commit --all-tiers
+cd C:\Users\nbasl\OneDrive\Documents\vs-code-repos\bookbuddy\library_catalog; node scripts/fix-foreign-isbns-2026-09-05.mjs --remote --friend --commit --all-tiers
+```
+
+The `--friend` line is an expected **no-op** and is run for the same reason as
+last time: so the zero is measured rather than assumed. Review afterwards:
+<https://library.heygabi.ai/work/237> (*The Dungeon Anarchist's Cookbook*,
+Kickstarter limited hardcover), <https://library.heygabi.ai/work/238>
+(*Ritualist*, Grimoire faux leather) and <https://library.heygabi.ai/work/257>
+(*Ascend Online*, Kickstarter Collector's Edition).
+
+### ✅ The writer now REFUSES these rows — and it caught two the owner had just repaired
+
+`scripts/lib/backfill-safety.mjs` gains **`isCrowdfundedPrinting(editionName,
+note)`**, wired into `scripts/backfill-missing-isbns.mjs` as guard 1b beside
+`declaresNoIsbn`. ⚠️ **It is a SECOND function, not an edit to the first, and
+that is deliberate:** `declaresNoIsbn` refuses a row that *states* no ISBN exists
+— true in anyone's hands — and stays narrow. This one refuses a crowdfunded
+*object*, and is sound only because of the owner's stated data-entry habit. A
+future session must be able to move one without moving the other.
+
+**Exercised on production, dry run** (`npx tsx scripts/backfill-missing-isbns.mjs
+--remote`, no `--commit`), 2026-09-06 01:44Z: 411 works, **45** with no ISBN on
+any edition → **9 skipped by `declaresNoIsbn`**, **19 skipped by
+`isCrowdfundedPrinting`**, **17 searched** (34 before the guard), 10 found, 20
+statements planned.
+
+🔴 **Two of those 19 are editions #316 and #329 — tier A rows the owner had
+repaired two hours earlier.** Without this guard the next backfill run would have
+re-filled them and the repair would have had a half-life of one sweep. That is
+the result worth keeping, not the count.
+
+☐ 🔴 **STILL UNPROTECTED, and measured in that same dry run: ed#321 *Words of
+Radiance*.** The writer proposed `9780575097421` (Gollancz UK) for work #220,
+whose only edition is the Dragonsteel leatherbound repaired as tier A. Neither
+guard catches it — the row does not say it has no ISBN, and its `edition_name`
+is *"Leatherbound (two-volume set: Vol 1 ISBN 9781938570308, Vol 2 ISBN
+9781938570315)"*, in which **"leatherbound" is a binding material, not campaign
+vocabulary**. ⚠️ It was deliberately NOT added to the guard: whether a
+leatherbound is "a kickstarter we have in stock" is a question about a physical
+object, and this whole item is the lesson that those belong to the owner. The
+candidate fix is a **third narrow guard** — *a row whose own `edition_name`/`note`
+NAMES an ISBN has already stated which identifiers apply* — which catches #321
+and nothing else new. Not built; it is a behaviour change on a write path.
+⚠️ **Until it is, do not run the backfill `--commit` without reading its
+proposals**, or work #220 goes straight back to a wrong ISBN.
 
 ☐ **padhard, one row, unrelated to this run:** edition **#605** *Italian Affair*
 carries `9789358568417` (**978-93 = India**), the only non-English registration

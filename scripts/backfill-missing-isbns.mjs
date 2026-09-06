@@ -59,9 +59,10 @@
  * - Every write targets the FIRST edition of the work (the one the owner
  *   interacts with). If it already carries an isbn13 somehow, the work is
  *   skipped rather than overwritten.
- * - 🔴 **A LANGUAGE GATE on every free rung** and 🔴 **a refusal to fill a row
- *   that says it has no ISBN** — both added 2026-09-05 after the 2026-08-20 run
- *   was audited. See "The two guards the 2026-08-20 run did not have" below.
+ * - 🔴 **A LANGUAGE GATE on every free rung**, 🔴 **a refusal to fill a row
+ *   that says it has no ISBN**, and 🔴 **a refusal to fill a crowdfunded printing
+ *   the owner holds** — all added 2026-09-05 after the 2026-08-20 run was
+ *   audited. See "The two guards the 2026-08-20 run did not have" below.
  * - 🔴 **Every write logs a `change_log` row per changed field.** It did not
  *   before, which is why the 2026-08-20 run left no trace at all and had to be
  *   reconstructed from `updated_at` and three stdout logs at the repo root.
@@ -81,6 +82,13 @@
  *   1. **`declaresNoIsbn`** — a row whose `edition_name` or `note` states that no
  *      ISBN exists is not a gap. `isbn13 IS NULL` there is a recorded FACT, and
  *      the old `AND isbn13 IS NULL` guard cannot tell the two apart.
+ *   1b. 🔴 **`isCrowdfundedPrinting`** — added 2026-09-05 **18:29 Phoenix** on the
+ *      owner's ruling, verbatim: *"For the kickstarters we have in stock the ISBNs
+ *      are recorded if they exist."* On a crowdfunded / collector's / exclusive
+ *      printing he holds, an absent ISBN is a **measured absence**: he records it
+ *      at entry when the object has one. ⚠️ This is an explicit WIDENING of guard
+ *      1, which is deliberately narrow and stays narrow — the two make different
+ *      claims and are two functions on purpose.
  *   2. **`isbnLanguageVerdict`** — rung 1 reads `doc.isbn`, *"an array of ALL
  *      isbns from all editions of this work"*, and the title gate scores the
  *      **work's** title, so a translation passes at `sim 1.00`. Every candidate
@@ -102,6 +110,7 @@ import { execute, lit, parseFlags, query, ROOT } from './lib/d1.mjs';
 import {
   declaresNoIsbn,
   editionSourceWriteExpr,
+  isCrowdfundedPrinting,
   isbnLanguageVerdict,
   llmKeyName,
   readLlmKeyFrom,
@@ -553,12 +562,38 @@ const allCandidates = query(CANDIDATES_SQL, flags);
  * `AND isbn13 IS NULL` write guard could not tell a fact from a gap. Refused
  * loudly rather than silently, so the count is a number somebody can check.
  */
+/*
+ * 🔴 GUARD 1b — a CROWDFUNDED printing the owner holds has already answered.
+ *
+ * Owner ruling 2026-09-05 18:29 Phoenix, verbatim:
+ *
+ *   "For the kickstarters we have in stock the ISBNs are recorded if they exist."
+ *
+ * So on a Kickstarter / collector's / exclusive printing in this catalogue,
+ * `isbn13 IS NULL` is a **measured absence** — he types the ISBN at entry when
+ * the object carries one — and filling it overwrites a recorded fact with a
+ * guess. That is what happened to 13 rows on 2026-08-20.
+ *
+ * ⚠️ This is an explicit WIDENING of guard 1, made on the owner's answer about
+ * the physical objects; guard 1 is deliberately narrow and stays that way. The
+ * two claims are different and are kept as two functions — see
+ * `lib/backfill-safety.mjs isCrowdfundedPrinting`.
+ */
 const declared = [];
+const crowdfunded = [];
 const rows = [];
 for (const r of allCandidates) {
   const phrase = declaresNoIsbn(r.edition_name, r.note);
-  if (phrase) declared.push({ ...r, phrase });
-  else rows.push(r);
+  if (phrase) {
+    declared.push({ ...r, phrase });
+    continue;
+  }
+  const campaign = isCrowdfundedPrinting(r.edition_name, r.note);
+  if (campaign) {
+    crowdfunded.push({ ...r, phrase: campaign });
+    continue;
+  }
+  rows.push(r);
 }
 
 const totalWorks = query('SELECT COUNT(*) AS n FROM work', flags)[0].n;
@@ -573,6 +608,20 @@ if (declared.length > 0) {
   );
   for (const d of declared) {
     console.log(`   work #${d.work_id} ed#${d.edition_id}  ${d.title.slice(0, 44)}  — "${d.phrase}"`);
+  }
+}
+if (crowdfunded.length > 0) {
+  console.log(
+    `\n🔴 ${crowdfunded.length} SKIPPED — a crowdfunded/collector's printing the owner holds, ` +
+      'and an absent ISBN there is his ANSWER, not a gap.',
+  );
+  console.log(
+    '   Owner ruling 2026-09-05 18:29 Phoenix: "For the kickstarters we have in stock the ' +
+      'ISBNs are recorded if they exist."',
+  );
+  console.log('   (see lib/backfill-safety.mjs isCrowdfundedPrinting)');
+  for (const c of crowdfunded) {
+    console.log(`   work #${c.work_id} ed#${c.edition_id}  ${c.title.slice(0, 44)}  — "${c.phrase}"`);
   }
 }
 
@@ -773,8 +822,10 @@ if (allFound.length > 0) {
   const NOTE =
     'scripts/backfill-missing-isbns.mjs filled a missing ISBN from the free/LLM ladder. ' +
     'Guards in force: the title gate (>=0.80), the ISBN-13 check digit, the UNIQUE-conflict ' +
-    'check, declaresNoIsbn (a printing that states it has no ISBN is skipped) and ' +
-    'isbnLanguageVerdict (a printing in another language is refused). ' +
+    'check, declaresNoIsbn (a printing that states it has no ISBN is skipped), ' +
+    'isCrowdfundedPrinting (a crowdfunded/collector\'s printing the owner holds is skipped — ' +
+    'owner ruling 2026-09-05: "For the kickstarters we have in stock the ISBNs are recorded if ' +
+    'they exist") and isbnLanguageVerdict (a printing in another language is refused). ' +
     'See docs/info/isbn-ladder.md §7.';
 
   const logRow = (entityId, field, oldValue, newValue, source, url) =>

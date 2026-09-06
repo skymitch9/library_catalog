@@ -108,6 +108,93 @@ export function declaresNoIsbn(editionName, note) {
 }
 
 /**
+ * 🔴 **Is this a crowdfunded / collector's printing the owner HOLDS?**
+ * (Owner ruling 2026-09-05 18:29 Phoenix — see `docs/info/isbn-ladder.md` §7.6.)
+ *
+ * ⚠️ **This deliberately does what `declaresNoIsbn` above deliberately does NOT,
+ * and the difference is an owner decision, not a change of mind.** That function
+ * says of itself:
+ *
+ * > *Deliberately narrow: it matches a STATEMENT about an absent ISBN, not the
+ * > mere words "Kickstarter" or "Collector's Edition". A crowdfunded printing may
+ * > well have a real ISBN, and refusing every exclusive would turn one
+ * > silent-wrong-fill into a silent-never-fill.*
+ *
+ * That reasoning was correct on **2026-09-05 at 13:00**, when nobody knew whether
+ * these objects carry ISBNs. It stopped being correct at **18:29**, when the
+ * owner answered the question about the physical objects, verbatim:
+ *
+ * > **"For the kickstarters we have in stock the ISBNs are recorded if they
+ * > exist."**
+ *
+ * 🔴 **That converts the risk this function's sibling was avoiding into a
+ * measurement.** On a crowdfunded printing the owner holds, `isbn13 IS NULL` is
+ * not an unknown waiting to be filled — it is his ANSWER, recorded at entry: the
+ * object has no ISBN, because if it had one he would have typed it. So the
+ * "silent-never-fill" this widening costs is not a loss at all; there is nothing
+ * to fill. Filling it is the loss, and it is exactly what happened on
+ * 2026-08-20 to 13 rows.
+ *
+ * ⚠️ **The narrow guard is KEPT, not replaced.** `declaresNoIsbn` refuses a row
+ * that states no ISBN exists — true of any printing, in anyone's hands. This one
+ * refuses a row that is a crowdfunded/exclusive OBJECT, and it is sound only
+ * because of a fact about THIS household's data-entry habit. Two different
+ * claims, deliberately two functions, so a future session widening or narrowing
+ * one does not silently move the other.
+ *
+ * Matches the campaign vocabulary in production `edition_name`s (every one of
+ * these is a real value, not a guess): *Kickstarter · Indiegogo · BackerKit ·
+ * crowdfunded · campaign · collector's · limited · numbered · exclusive · tier ·
+ * Grimoire*. ⚠️ Word-boundary anchored on purpose — an unanchored `tier` matches
+ * *Fron**tier***, and a guard that fires on a title is worse than no guard.
+ *
+ * ⚠️ It reads only what the row SAYS. A `NULL` `edition_name` with a `NULL` note
+ * is not crowdfunded evidence and must not match — that is edition **#507** (*The
+ * Book of Mormon*), the one ordinary printing among the 43 rows the 2026-08-20
+ * run filled, and the reason it is excluded from the tier C repair.
+ *
+ * 🔴 **INSTANCE ASYMMETRY, stated rather than hidden.** The ruling is the OWNER's,
+ * about the OWNER's stock. This function is instance-agnostic, so a `--friend`
+ * run applies his habit to padhard, where nobody has asked. Measured 2026-09-05
+ * on `library-catalog-2nd`: **6** rows match this vocabulary and all 6 already
+ * CARRY an ISBN — five *"Bn exclusive"* and two *"Collector edition"* deluxe
+ * limited printings — so none is a candidate today, and a retail exclusive
+ * genuinely does get its own trade ISBN. It is left instance-agnostic on purpose:
+ * the failure mode is a REFUSAL TO WRITE, it is printed with its reason on every
+ * run, and refusing to invent an identifier in somebody else's catalogue is the
+ * safe direction to be wrong in. Revisit if padhard ever grows a campaign row
+ * with no ISBN that she wants filled.
+ *
+ * @param {string | null | undefined} editionName
+ * @param {string | null | undefined} note
+ * @returns {string | null} the phrase that refused it, or null to proceed
+ */
+export function isCrowdfundedPrinting(editionName, note) {
+  const PATTERNS = [
+    /\bkickstarter\b/i,
+    /\bindiegogo\b/i,
+    /\bbackerkit\b/i,
+    /\bcrowdfund\w*/i,
+    /\bcampaign\b/i,
+    /\bcollector'?s?\b/i,
+    /\blimited\b/i,
+    /\bnumbered\b/i,
+    /\bexclusive\b/i,
+    /\btier\b/i,
+    /\bgrimoire\b/i,
+  ];
+  for (const field of [editionName, note]) {
+    if (!field) continue;
+    const s = String(field);
+    for (const re of PATTERNS) {
+      const m = re.exec(s);
+      if (m) return m[0].trim();
+    }
+  }
+  return null;
+}
+
+/**
  * 🔴 **Is this ISBN a printing of the book in the language the catalogue holds?**
  * (Incident 2026-08-20 — the reason this exists.)
  *

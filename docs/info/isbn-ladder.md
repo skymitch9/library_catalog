@@ -8,9 +8,21 @@
 >
 > 🔴 **§7 was added 2026-09-05 and is measured on that date** against production
 > `library-catalog` and `library-catalog-2nd`. It is the post-mortem of the
-> 2026-08-20 backfill run and the two guards that came out of it. Nothing in
+> 2026-08-20 backfill run and the guards that came out of it. Nothing in
 > §§1–6 was re-measured that day — in particular §4.4 predicted this failure in
 > August and its numbers still carry their 2026-08-09 age.
+>
+> 🔴 **§7.6 was added 2026-09-05 ~18:45 Phoenix / 2026-09-06 01:45Z**, on the
+> owner's ruling of 18:29, and everything in it is measured that evening: the 13
+> tier C rows and their 10 evidenced `source` restores re-read live from
+> production; #507's exclusion measured from its own row, its two copies and
+> `openlibrary.org`; the guard exercised in a production dry run at 01:44Z.
+> ⚠️ **Re-read §7.4's struck-through lines rather than skipping them** — the
+> ruling REVERSED two "only the owner can answer this" verdicts, and the old
+> text is left visible so nobody re-derives the superseded conclusion.
+> ⚠️ **NOT re-measured on 2026-09-05 evening:** §§7.1–7.3 (the writer
+> attribution and the 43-row blast radius) still carry their earlier-that-day
+> readings, and nothing in §§1–6 was touched.
 
 This is phase 0 of `catalog-platform/docs/LIBRARY_CATALOG.md`, which required
 that *"everything about external book APIs is knowledge, not measurement"* be
@@ -322,13 +334,17 @@ Verified through the repo's own `lookupOpenLibraryByIsbn` plus the per-edition
 **The other 31**, split by what can be said about them:
 
 - **17 (tier B)** — right book, wrong printing: a real English trade ISBN on a
-  row whose own `edition_name` says *"no per-volume ISBN recorded"*. A judgement
-  for the owner, not a measurement, so it sits behind
-  `--also-declared-no-isbn` rather than in the default batch.
-- **14 (untouched)** — Kickstarter / collector's printings carrying a plausible
+  row whose own `edition_name` says *"no per-volume ISBN recorded"*. ~~A judgement
+  for the owner, not a measurement~~ — ✅ **the owner ruled on 2026-09-05 18:29
+  Phoenix and tier B is approved**; see §7.6. It stays behind
+  `--also-declared-no-isbn` (or `--all-tiers`) rather than becoming the default,
+  so a tier can still be landed one at a time.
+- ~~**14 (untouched)** — Kickstarter / collector's printings carrying a plausible
   trade ISBN and making no claim about having none. Whether a crowdfunded
   hardcover shares the trade ISBN is a question about the **physical object**;
-  only somebody holding the book can answer it.
+  only somebody holding the book can answer it.~~ ✅ **He answered it** — §7.6.
+  **13 of the 14 are now tier C** (`--also-crowdfunded`); the fourteenth, **#507
+  *The Book of Mormon***, is excluded and is a different open question.
 
 **padhard: 0.** The 2026-08-20 run could not reach it — `scripts/lib/d1.mjs`
 gained `--friend` on **2026-08-22** (before that `DB_NAME` was a constant), and
@@ -339,12 +355,14 @@ registration group is `9789358568417` (978-93, India) on edition #605
 
 ### 7.5 The guards, and where they live
 
-Both are pure functions in `scripts/lib/backfill-safety.mjs`, pinned by
-`scripts/test/backfill-safety.test.mjs` with the real ISBNs above as fixtures.
+All three are pure functions in `scripts/lib/backfill-safety.mjs`, pinned by
+`scripts/test/backfill-safety.test.mjs` with the real ISBNs and the real
+production `edition_name`s above as fixtures.
 
 | Guard | Rule |
 |---|---|
-| **`declaresNoIsbn(editionName, note)`** | A printing whose own record states no ISBN exists is skipped and printed. ⚠️ Deliberately **narrow**: it matches a *statement about an absent ISBN*, never the words "Kickstarter" or "Collector's Edition". Refusing every exclusive would trade one silent-wrong-fill for a silent-never-fill |
+| **`declaresNoIsbn(editionName, note)`** | A printing whose own record states no ISBN exists is skipped and printed. ⚠️ Deliberately **narrow**, and it stays narrow: it matches a *statement about an absent ISBN*, never the words "Kickstarter" or "Collector's Edition" |
+| 🔴 **`isCrowdfundedPrinting(editionName, note)`** | Added **2026-09-05 18:29 Phoenix** on the owner's ruling (§7.6). A crowdfunded / collector's / campaign printing the owner HOLDS is skipped, because an absent ISBN there is his recorded answer. ⚠️ This is the **widening** the row above refuses to make, and it is sound only because of a fact about this household's data entry — which is why it is a **second function**, not an edit to the first |
 | **`isbnLanguageVerdict({ isbn13, languages, expected })`** | `foreign` refuses; `ok` and `unknown` proceed. An **attested** language beats the registration group, because a group only says who registered the prefix — `979-8` (KDP) and `978-1` self-published books are English. A non-English group with no attested language is `foreign`; an English group is `unknown`, never a confirmation |
 
 Wired in as: rung 1 now walks the work's ISBN list (up to
@@ -370,3 +388,134 @@ gate at all. 15 found, 5 dropped on the UNIQUE conflict, **10 updates + 10
 UNIQUE index catches it and the rows are skipped, so it is safe — but a rung
 answering five different books with one ISBN is a title-gate problem
 (`sim 0.80` on a numbered series), and §4.4's warning applies to it.
+
+---
+
+### 7.6 🔴 The owner's ruling — *"the ISBNs are recorded if they exist"* — and tier C
+
+> **Owner, 2026-09-05 18:29 Phoenix, verbatim:**
+>
+> ### *"For the kickstarters we have in stock the ISBNs are recorded if they exist."*
+
+**This is a STANDING RULE about this catalogue's data, not a one-off approval,
+and it should be read as one:**
+
+> 🔴 **An in-stock crowdfunded printing with no ISBN has none.** On a Kickstarter,
+> Indiegogo, campaign-tier, collector's or exclusive printing the owner holds,
+> `edition.isbn13 IS NULL` is a **MEASURED ABSENCE** — he records the ISBN at
+> entry when the object carries one. It is not a gap awaiting research, and
+> anything that fills it is overwriting a fact with a guess.
+
+⚠️ **That one sentence changes the classification of 30 rows, and it is worth
+being precise about why.** §7.4 above said of the 14 untouched rows that *"whether
+a crowdfunded hardcover shares the trade ISBN is a question about the physical
+object; only somebody holding the book can answer it"*, and of tier B that it was
+*"a judgement for the owner, not a measurement"*. Both were correct. **The person
+holding the books answered**, so both stop being open questions and become the
+same finding as tier A — a wrong object written over a recorded state. Tiers B
+and C are therefore **approved**, and the flags stay separate only so a tier can
+be landed at a time.
+
+#### Tier C — 13 rows, re-read live from production 2026-09-05
+
+| ed | work | isbn13 on the row | `edition_name` | source restore |
+|---|---|---|---|---|
+| 317 | Fires of December | 9781938570728 | Book with sticker and bookmark tier | — |
+| 319 | The Primal Hunter | 9798426232426 | Collector's Edition Trilogy — Book 1 Numbered | — |
+| 320 | Ascend Online: Legacy of the Fallen | 9781775241317 | Collector's Edition | — |
+| 330 | The Dungeon Anarchist's Cookbook | 9798724495066 | Kickstarter limited edition hardcover | → `manual` |
+| 331 | Ritualist | 9781986338509 | Kickstarter Grimoire Edition — faux leather | → `manual` |
+| 332 | Regicide | 9781950914142 | Kickstarter Grimoire Edition — faux leather | → `manual` |
+| 334 | Raze | 9781637660898 | Kickstarter Grimoire Edition — faux leather | → `manual` |
+| 335 | Ruthless | 9781950914623 | Kickstarter Grimoire Edition — faux leather | → `manual` |
+| 343 | Space Knight Book 2 | 9781951641856 | Crowdfunded print copy | → `manual` |
+| 344 | Space Knight Book 3 | 9781986619233 | Crowdfunded print copy | → `manual` |
+| 345 | Space Knight Book 4 | 9781721829316 | Crowdfunded print copy | → `manual` |
+| 349 | Monster Empire Book 1 | 9781951641122 | Kickstarter paperback | → `manual` |
+| 350 | Ascend Online | 9780995337800 | Kickstarter Collector's Edition | → `manual` |
+
+**The 10 `source` restores are EVIDENCED, on the same standard tier A used** —
+never inferred from the row looking hand-made:
+
+- **#330** — created by `scripts/add-dcc-kickstarter.mjs`, whose INSERT writes
+  `edition_name = 'Kickstarter limited edition hardcover'`,
+  `edition_kind = 'collectors'`, `source = 'manual'` for exactly works 236/237.
+- **#331 #332 #334 #335 #343 #344 #345 #349 #350** — created by
+  `scripts/add-crowdfunding-rescan-books.mjs`, which writes `source = 'manual'`
+  with a comment explaining why (`'crowdfunding'` fails the `edition.source`
+  CHECK). ✅ **Corroborated in the data, not just the code:** that batch is
+  `created_at = '2026-08-12 06:21:00'`, and of its **28** edition rows the **13
+  the backfill never touched** (`updated_at == created_at`) read `source =
+  'manual'` **unanimously** — #339 #341 #346 #347 #348 #351 #352 #353 #354 #355
+  #356 #357 #358.
+- **#317 #319 #320 get NO restore.** Their batch (`created_at = '2026-08-11
+  13:32:46'`) has no untouched sibling of the same shape, and
+  `scripts/import-crowdfunding.mjs` — the only script reading
+  `crowdfunding-scan.json`, where these three campaigns live — **creates no
+  `edition` rows at all, deliberately**. Nothing evidences their prior `source`,
+  and restoring an unevidenced `manual` would repair a provenance bug with a
+  provenance lie.
+
+#### ⚠️ #507 is NOT tier C, and the reason is measured
+
+Edition **#507** (*The Book of Mormon*, work 375, `9780929753249`) was the
+fourteenth of the "untouched" rows. It is **left out**:
+
+| Checked 2026-09-05 | Reading |
+|---|---|
+| `edition_name` | **NULL** |
+| `note` | **NULL** |
+| `format` | `paperback` |
+| its two owned copies (#283, #291) | no `edition_notes`, and `leatherbound` / `slipcase` / `sprayed_edges` all 0 |
+| any crowdfunding importer in `scripts/` naming it | **none** |
+| §7.1 above, written before the ruling | *"Only one (**#507**, The Book of Mormon) was an ordinary printing"* |
+
+The ruling is about **"the kickstarters we have in stock"**. Nothing on this row
+says it is one, and stretching the ruling to cover a row with no evidence would
+be exactly the inference-dressed-as-measurement this whole section exists to
+kill.
+
+⚠️ **It is still wrong, just differently, and this is an OPEN question for the
+owner.** `9780929753249` is Stratford Books' *"Hand Leather Bound Pocket
+Edition"* (Open Library `OL8358629M`, 2007, English, `physical_format:
+Leather-bound`) sitting on a row whose `format` is `paperback` — **wrong medium**.
+🔴 And because it is English and `978-0`, `isbnLanguageVerdict` returns
+`unknown` and **the language gate would never catch it**. Tracked in
+[`../TODO.md`](../TODO.md).
+
+#### ✅ The guard, exercised — and what it caught
+
+`isCrowdfundedPrinting` was exercised against production, dry run
+(`npx tsx scripts/backfill-missing-isbns.mjs --remote`, no `--commit`),
+**2026-09-06 01:44Z**: 411 works, **45** with no ISBN on any edition →
+**9 skipped by `declaresNoIsbn`**, **19 skipped by `isCrowdfundedPrinting`**,
+**17 searched**, 10 found, 20 statements planned. (Before the new guard the same
+run searched 34.)
+
+🔴 **Two of the 19 are editions #316 and #329 — tier A rows the owner had
+repaired barely two hours earlier.** Without this guard the very next run of the
+backfill would have re-filled them, and the repair would have had a half-life of
+one sweep. That, not the count, is the result worth keeping.
+
+#### 🔴 Still open: ed#321 *Words of Radiance* is NOT protected
+
+⚠️ **Measured in that same dry run** — the writer proposed `9780575097421`
+(Gollancz UK) for work #220, whose only edition is **#321**, the Dragonsteel
+leatherbound repaired as tier A. **Neither guard catches it:**
+
+- `declaresNoIsbn` — the row does not say it has *no* ISBN.
+- `isCrowdfundedPrinting` — its `edition_name` is
+  *"Leatherbound (two-volume set: Vol 1 ISBN 9781938570308, Vol 2 ISBN
+  9781938570315)"*, and **"leatherbound" is a binding material, not campaign
+  vocabulary**. It was deliberately NOT added: whether a leatherbound counts as
+  "a kickstarter we have in stock" is a question about a physical object, and the
+  answer to that kind of question belongs to the owner (that is the whole lesson
+  of this section).
+
+The candidate fix, if he wants one, is a **third** narrow guard rather than a
+wider second: *a row whose own `edition_name` or `note` NAMES an ISBN has already
+stated which identifiers apply, so `isbn13 IS NULL` there is a recorded state.*
+That shape catches #321 and nothing else new (tier B's *"set ISBN …"* rows are
+already caught by their *"no per-volume ISBN recorded"* phrase). Not built —
+it is a behaviour change on a write path and it needs asking first.
+Tracked in [`../TODO.md`](../TODO.md).

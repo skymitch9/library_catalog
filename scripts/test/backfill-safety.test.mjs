@@ -15,6 +15,7 @@ import { describe, it } from 'node:test';
 import {
   declaresNoIsbn,
   editionSourceWriteExpr,
+  isCrowdfundedPrinting,
   isbnLanguageVerdict,
   llmKeyName,
   readLlmKeyFrom,
@@ -119,6 +120,89 @@ describe('declaresNoIsbn — a printing that says it has no ISBN is not a gap (2
     assert.equal(declaresNoIsbn(null, null), null);
     assert.equal(declaresNoIsbn('', ''), null);
     assert.equal(declaresNoIsbn(undefined, undefined), null);
+  });
+});
+
+describe("isCrowdfundedPrinting — the owner's ruling of 2026-09-05 18:29 Phoenix", () => {
+  /*
+   * Owner, verbatim: "For the kickstarters we have in stock the ISBNs are
+   * recorded if they exist." So on a crowdfunded printing he holds, an absent
+   * isbn13 is a MEASURED ABSENCE, and filling it overwrites a recorded fact.
+   *
+   * ⚠️ These 12 names are the REAL edition_name values on the 13 tier C rows,
+   * read live from production 2026-09-05 — not invented fixtures. (The Grimoire
+   * name covers five rows: #331 #332 #334 #335 and its sibling.)
+   */
+  const TIER_C_NAMES = [
+    ['Book with sticker and bookmark tier', 'tier', 'ed#317 Fires of December'],
+    ["Collector's Edition Trilogy — Book 1 Numbered", "Collector's", 'ed#319 The Primal Hunter'],
+    ["Collector's Edition", "Collector's", 'ed#320 Ascend Online: Legacy of the Fallen'],
+    ['Kickstarter limited edition hardcover', 'Kickstarter', "ed#330 The Dungeon Anarchist's Cookbook"],
+    ['Kickstarter Grimoire Edition — faux leather', 'Kickstarter', 'ed#331/332/334/335 Krout'],
+    ['Crowdfunded print copy', 'Crowdfunded', 'ed#343/344/345 Space Knight'],
+    ['Kickstarter paperback', 'Kickstarter', 'ed#349 Monster Empire Book 1'],
+    ["Kickstarter Collector's Edition", 'Kickstarter', 'ed#350 Ascend Online'],
+  ];
+
+  for (const [name, phrase, which] of TIER_C_NAMES) {
+    it(`refuses ${JSON.stringify(name)} (${which})`, () => {
+      assert.equal(isCrowdfundedPrinting(name, null), phrase);
+    });
+  }
+
+  it('catches the other campaign vocabulary in production edition_names', () => {
+    assert.ok(isCrowdfundedPrinting('Indiegogo print copy', null));
+    assert.ok(isCrowdfundedPrinting('Illumicrate Exclusive', null));
+    assert.ok(isCrowdfundedPrinting('Campaign-only exclusive hardcover, extras', null));
+    assert.ok(isCrowdfundedPrinting('B&N Exclusive Edition', null));
+    assert.ok(isCrowdfundedPrinting('BackerKit add-on', null));
+  });
+
+  it('reads the note as well as the name', () => {
+    assert.ok(isCrowdfundedPrinting(null, 'came from the Kickstarter campaign'));
+    assert.equal(isCrowdfundedPrinting(null, 'a plain second-hand paperback'), null);
+  });
+
+  it('🔴 does NOT match a plain trade edition_name', () => {
+    // The whole cost of this widening is silent-never-fill on ordinary rows, so
+    // the ordinary rows have to stay fillable.
+    assert.equal(isCrowdfundedPrinting('Hardcover', null), null);
+    assert.equal(isCrowdfundedPrinting('Paperback', null), null);
+    assert.equal(isCrowdfundedPrinting('Trade paperback', null), null);
+    assert.equal(isCrowdfundedPrinting('First Edition', null), null);
+    assert.equal(isCrowdfundedPrinting('Mass market', null), null);
+  });
+
+  it('🔴 does NOT match edition_name NULL — that is #507, The Book of Mormon', () => {
+    // Edition #507 is the ONE ordinary printing among the 43 rows the 2026-08-20
+    // run filled (isbn-ladder.md §7.1): edition_name NULL, note NULL, format
+    // paperback, no special-copy flags on either owned copy. The owner's ruling
+    // is about "the kickstarters we have in stock" and does not reach it, which
+    // is why tier C is 13 rows and not 14.
+    assert.equal(isCrowdfundedPrinting(null, null), null);
+    assert.equal(isCrowdfundedPrinting(undefined, undefined), null);
+    assert.equal(isCrowdfundedPrinting('', ''), null);
+  });
+
+  it('is word-boundary anchored — "tier" must not fire on "Frontier"', () => {
+    // An unanchored /tier/ matches Fron-TIER, and a guard that fires on a title
+    // is worse than no guard: it turns one silent-wrong-fill into many
+    // silent-never-fills, the exact trade declaresNoIsbn refused to make.
+    assert.equal(isCrowdfundedPrinting('Frontier Justice', null), null);
+    assert.equal(isCrowdfundedPrinting('Rentier', null), null);
+  });
+
+  it('is a SEPARATE claim from declaresNoIsbn, and both still hold', () => {
+    // declaresNoIsbn stays narrow on purpose: it refuses a row that STATES no
+    // ISBN exists, true in anyone's hands. This one refuses a crowdfunded
+    // OBJECT, and is sound only because of the owner's stated habit. A future
+    // session must be able to move one without moving the other.
+    assert.equal(declaresNoIsbn('Kickstarter limited edition hardcover', null), null);
+    assert.ok(isCrowdfundedPrinting('Kickstarter limited edition hardcover', null));
+
+    const slipcase = 'Volume of the slipcase set (set ISBN 9781368053099); no per-volume ISBN recorded';
+    assert.ok(declaresNoIsbn(slipcase, null));
+    assert.equal(isCrowdfundedPrinting(slipcase, null), null);
   });
 });
 
