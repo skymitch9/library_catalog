@@ -80,6 +80,39 @@ describe('the audiobook cron is scheduled on BOTH instances', () => {
   });
 });
 
+describe('the mode ships SHADOW on both instances, and never enforce by accident', () => {
+  const modes = [...toml.matchAll(/^AUDIOBOOK_SWEEP_MODE\s*=\s*"([^"]*)"/gm)].map(
+    (m) => m[1] as string,
+  );
+
+  it('both [vars] blocks declare it — a missing one is silently OFF', () => {
+    // The var fails closed, which is right, and it means an omission does not
+    // announce itself: that instance simply never sweeps and nothing says so.
+    assert.equal(
+      modes.length,
+      2,
+      'AUDIOBOOK_SWEEP_MODE must appear in [vars] AND [env.friend.vars] — a missing ' +
+        'one resolves to `off` and that instance silently stops sweeping',
+    );
+  });
+
+  it('🔴 both are "shadow" — enforce is a deliberate flip with a numbered gate', () => {
+    // §8 phase 2 → 3: ≥42 shadow ticks with zero divergences against the
+    // script. Shipping `enforce` as a side effect of an unrelated deploy is
+    // exactly what the estate's off → shadow → enforce rule exists to stop.
+    assert.deepEqual(modes, ['shadow', 'shadow']);
+  });
+
+  it('the two instances are mirrored', () => {
+    assert.equal(
+      modes[0],
+      modes[1],
+      'one instance is enforcing while the other is not — the shadow evidence on ' +
+        'either becomes unreadable against the other',
+    );
+  });
+});
+
 describe('the dispatcher knows both, and guesses at neither', () => {
   it('scheduled() branches on AUDIOBOOK_SWEEP_CRON by name', () => {
     assert.match(

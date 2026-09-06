@@ -288,10 +288,20 @@ describe('renderEnvBlock — the [env.<i>] block', () => {
     assert.match(block, /pattern = "amber\.heygabi\.ai"\ncustom_domain = true/);
   });
 
-  it('⚠️ the cron STRING is byte-identical to the other instances', () => {
-    // scheduled() dispatches on DETAILS_SWEEP_CRON; "roughly the same" is a sweep
-    // that never runs.
-    assert.match(block, /crons = \["7 \* \* \* \*"\]/);
+  it('⚠️ BOTH cron STRINGS are byte-identical to the other instances', () => {
+    // scheduled() dispatches on DETAILS_SWEEP_CRON and AUDIOBOOK_SWEEP_CRON;
+    // "roughly the same" is a sweep that never runs. ⚠️ The second string
+    // joined 2026-09-05: a new instance given the audiobook MODE without the
+    // audiobook TRIGGER would sit in shadow and never tick, which from the
+    // outside reads exactly like a sweep that is working and finding nothing.
+    assert.match(block, /crons = \["7 \* \* \* \*", "23 \*\/4 \* \* \*"\]/);
+  });
+
+  it('the audiobook sweep ships SHADOW on a new instance, never enforce', () => {
+    // A brand-new catalog nobody has looked at is the worst possible place to
+    // start ENFORCING a sweep whose stale phase marks rows across the whole
+    // catalogue.
+    assert.match(block, /AUDIOBOOK_SWEEP_MODE = "shadow"/);
   });
 
   it('OWNER_EMAILS is the REQUESTER — they cannot be locked out of their own shelf', () => {

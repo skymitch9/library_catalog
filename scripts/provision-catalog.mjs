@@ -441,7 +441,21 @@ export function tomlString(value) {
  * | `PEERS` | `[]` | letting a new catalog read the owner's holdings is access-INCREASING; it is a printed follow-up, never a default |
  * | `ESTATE_APP` | `library<N>` | its own consumer identity — the whole of the F-5 fix |
  */
-export function renderEnvBlock(names, { coversBaseUrl, databaseId, ownerEmails, cron = '7 * * * *' }) {
+export function renderEnvBlock(
+  names,
+  {
+    coversBaseUrl,
+    databaseId,
+    ownerEmails,
+    cron = '7 * * * *',
+    // ⚠️ The audiobook association sweep's string (2026-09-05, design §9 step
+    // 11). Defaulted here rather than imported from
+    // `apps/worker/src/lib/audiobook-sweep-run.ts` for the same reason `cron`
+    // is: this script runs from a bare checkout with nothing built, and the
+    // guard that keeps the two honest is the toml-reading test, not an import.
+    audiobookCron = '23 */4 * * *',
+  },
+) {
   const i = names.instance;
   return `
 # ═════════════════════════════════════════════════════════════════════════════
@@ -496,8 +510,17 @@ bucket_name = ${tomlString(names.bucketName)}
 # tick the donor cannot fully answer is billed to him. BILLING_POLICY below is
 # "off" like both existing instances, so nothing throttles it until a rule
 # exists — write one at https://heygabi.ai/admin/ before this matters.
+#
+# ⚠️ The SECOND string is the audiobook association sweep (2026-09-05, design
+# §9 step 11). Same rule, same trap: scheduled() dispatches on
+# AUDIOBOOK_SWEEP_CRON and a different minute here is a sweep that never runs
+# while this file still looks configured. It ships beside
+# AUDIOBOOK_SWEEP_MODE = "shadow" below, so the first ticks compute a plan and
+# write nothing — a new instance must not start ENFORCING a stale sweep against
+# a catalog nobody has looked at yet. This tick costs one conditional GET and
+# spends no money.
 [env.${i}.triggers]
-crons = ["${cron}"]
+crons = ["${cron}", "${audiobookCron}"]
 
 # ⚠️ Firebase: this host must be on Authentication → Settings → Authorised
 # domains of the \`${FIREBASE_PROJECT}\` project BEFORE anyone relies on it, or
@@ -607,6 +630,16 @@ ESTATE_APP = ${tomlString(names.estateApp)}
 # to "shadow" then "enforce" is one line and its own commit (the gate test reads
 # this file and fails unless it says what it is supposed to say).
 BILLING_POLICY = "off"
+
+# ── THE AUDIOBOOK ASSOCIATION SWEEP — off | shadow | enforce ─────────────────
+# ⚠️ Ships "shadow" like both existing instances: the sweep computes its whole
+# plan and writes NOTHING until somebody has compared it against
+# \`npm run backfill:audiobooks -- --remote\` on the same CSV. The var FAILS
+# CLOSED (anything unrecognised is "off"), which is the opposite posture to
+# BILLING_POLICY above and deliberate: this switch's worst case is the stale
+# sweep marking every holding stale and the pages telling somebody they do not
+# own books that are on their shelf.
+AUDIOBOOK_SWEEP_MODE = "shadow"
 `;
 }
 

@@ -318,6 +318,37 @@ ESTATE_APP = "library"
 # this is TWO flips: this line and the one in [env.friend.vars].
 BILLING_POLICY = "off"
 
+# ── THE AUDIOBOOK ASSOCIATION SWEEP — off | shadow | enforce ─────────────────
+#
+# `src/lib/audiobook-sweep-run.ts`; design §8. Shipping SHADOW (2026-09-05).
+#
+#   off      no fetch, no run row, nothing costs
+#   shadow   the whole plan is computed and RECORDED in
+#            `audiobook_sweep_run.detail_json`, and NOTHING is written — STEP 11
+#            of the audiobook pipeline is still doing the writing
+#   enforce  the cron writes, and the on-add hook goes live
+#
+# ⚠️ **This var fails CLOSED, unlike BILLING_POLICY above.** Unset, blank,
+# misspelt or unrecognised all resolve to `off`. Billing fails open on purpose —
+# its worst case is spending 4¢ — and that reasoning does NOT transfer to a
+# switch whose worst case is the stale sweep marking every holding in the
+# catalog stale and the pages telling the owner he does not own books that are
+# in the house.
+#
+# 🔴 **THE FLIP TO `enforce` IS ITS OWN DELIBERATE CHANGE, and it has a
+# numbered gate:** ≥42 shadow ticks (a week at four-hourly) with ZERO
+# divergences against `npm run backfill:audiobooks -- --remote` on the same CSV.
+# A divergence is almost certainly the §2.4 canon skew — the route's series
+# canon is as fresh as the last DEPLOY, the script's as fresh as the last
+# `git pull` of catalog-platform — and it gets diagnosed, never waved through.
+#
+# ⚠️ TWO flips, like BILLING_POLICY: this line and the one in [env.friend.vars].
+# Never as a side effect of an unrelated deploy.
+#
+# Read it back without a sign-in:
+#   curl -s https://library.heygabi.ai/api/health   # .detail.audiobookSweep.mode
+AUDIOBOOK_SWEEP_MODE = "shadow"
+
 # ── GABI's DELEGATED DOOR (routes/gabi-delegated.ts, 2026-08-18) ─────────────
 #
 # Owner ask 2026-08-17: *"Can I dm her an isbn or a photo and she adds it to
@@ -609,6 +640,23 @@ ESTATE_APP = "library2"
 # Same three values, same flip criterion, same one-site-at-a-time rule as the
 # main instance — see the block beside the other ESTATE_APP.
 BILLING_POLICY = "off"
+
+# ── THE AUDIOBOOK ASSOCIATION SWEEP — off | shadow | enforce ─────────────────
+#
+# Same three values, same fails-closed rule, same numbered gate as the main
+# instance — see the block beside the other BILLING_POLICY for all of it.
+#
+# ⚠️ **Mirrored deliberately.** The estate rule is that posture vars match
+# across the two instances unless a difference is deliberate and recorded in
+# `docs/access/second-instance.md`; there is no reason for one household to be
+# enforcing while the other is in shadow, and a difference would make the
+# shadow-tick evidence on one instance unreadable against the other. Her
+# instance fetches the SAME published CSV and matches it against HER work rows
+# — one audio pool, two databases, two failure domains that never meet.
+#
+# Read it back without a sign-in:
+#   curl -s https://padhard.heygabi.ai/api/health   # .detail.audiobookSweep.mode
+AUDIOBOOK_SWEEP_MODE = "shadow"
 
 # ── The paused owner decision: her default role ──────────────────────────────
 # friend-ingest-design.md §3 recommends auto-granting `moderator` on HER
