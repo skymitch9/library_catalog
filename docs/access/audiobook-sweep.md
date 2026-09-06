@@ -1,7 +1,13 @@
 # Operating the audiobook association sweep
 
 > **Audience:** Claude sessions first, the owner second.
-> **Status:** ✅ TRACKED. **Last verified: 2026-09-05** — measured that day, after
+> **Status:** ✅ TRACKED. **Last verified: 2026-09-06** — the §6 gate counters,
+> the shadow-fetch change and the `force` flag were measured live on both hosts
+> that day (see the ✅ block below and `docs/deploys.log`). ⚠️ **NOT re-measured
+> on 2026-09-06:** the §4/§4a script-vs-route figures, which are still the
+> 2026-09-05 readings.
+>
+> The paragraph below is the 2026-09-05 record: measured that day, after
 > the series-volume half landed (deploy pair MAIN `6ed4a22b` / friend
 > `c57c5173`): both hosts answer `200` on `/api/health` with
 > `detail.audiobookSweep.mode = "shadow"` and the new `seriesVolumes`
@@ -28,6 +34,17 @@
 > exist per instance; one computed a plan; none has ever carried
 > `seriesVolumes`. **A flip to `enforce` was refused on this reading** — §6 and
 > [`../TODO.md`](../TODO.md) carry the whole measurement.
+>
+> ✅ **FIXED 2026-09-06 (W10-SWEEP-EVIDENCE), commit `c19fbbf`.** Three changes,
+> all in §2, §3 and §6 below:
+>
+> | | |
+> |---|---|
+> | **Shadow fetches unconditionally** | a full-scope `shadow` tick sends no `If-None-Match`, so it cannot be `304`'d and always computes **both** halves. `enforce` and `off` keep the conditional GET and the short-circuit; so does the on-add hook |
+> | **`force` on the admin route** | `{"dryRun":true,"force":true}` skips `If-None-Match`, so the rehearsal §3 calls *"the instrument"* always returns a plan |
+> | **Gate counters on `/api/health`** | `audiobookSweep.gate` — `required`, `planTicks`, `seriesVolumeTicks`, `cronPlanTicks`, `divergences`. The page now answers *"can we flip?"* without a `wrangler d1 execute` |
+>
+> **No migration**, no mode change: both instances stay `shadow`.
 >
 > **Why it works this way** is [`../info/series-formats-and-audiobooks.md`
 > §4.12](../info/series-formats-and-audiobooks.md); the design of record is
@@ -58,8 +75,8 @@ as it did before. Nothing about the catalogue's behaviour has changed.
 | Value | What runs |
 |---|---|
 | `off` | nothing. No fetch, no run row, no cost |
-| **`shadow`** ← today | **both** plans are computed and their COUNTS recorded in `audiobook_sweep_run.detail_json` (`plan` and `seriesVolumes`). **Nothing is written to the holding tables, nor to `series_volume`/`series_check`** |
-| `enforce` | the cron writes both halves; the on-add hook goes live |
+| **`shadow`** ← today | **both** plans are computed and their COUNTS recorded in `audiobook_sweep_run.detail_json` (`plan` and `seriesVolumes`). **Nothing is written to the holding tables, nor to `series_volume`/`series_check`.** 🔴 **Since 2026-09-06 a full-scope shadow tick fetches UNCONDITIONALLY** — no `If-None-Match`, so it cannot be `304`'d into computing nothing (§6, §7) |
+| `enforce` | the cron writes both halves; the on-add hook goes live. **Keeps the conditional GET** — there, nothing changed really does mean nothing to write |
 
 🔴 **One switch, both halves — and that is a decision, not an oversight.** A
 second variable would let an instance shadow the holdings and enforce the
@@ -99,16 +116,40 @@ Read `detail.audiobookSweep`:
     "lastRun": null,          // what the last tick RECORDED, verbatim — see below
     "volumesLive": 159,       // rows in `series_volume` that are not stale
     "seriesChecked": 84       // rows in `series_check`
+  },
+  "gate": {                   // 🔴 the ENFORCE gate, counted — added 2026-09-06
+    "required": 42,           // the constant, so nobody has to remember it
+    "planTicks": 5,           // shadow ticks that computed a HOLDINGS plan, ever
+    "seriesVolumeTicks": 5,   // of those, the ones that also planned series volumes
+    "cronPlanTicks": 4,       // the subset the four-hourly clock produced
+    "divergences": null       // ⚠️ NOT MEASURED. Never read this as zero
   }
 }
 ```
+
+⚠️ **`gate` is the ONLY field here that is not about the latest run.** Everything
+above it reads one row — which is why one `304` used to hide every plan behind
+it, and why the 2026-09-06 flip attempt had to go to two production databases
+with a `wrangler d1 execute` to find out how much evidence existed. These five
+numbers are an aggregate over the whole `audiobook_sweep_run` table.
+
+| Field | Reads as |
+|---|---|
+| `planTicks` | shadow ticks whose row carries a `plan` object. ⚠️ A row is not evidence — a `304` tick is a row and counts for nothing |
+| `seriesVolumeTicks` | of those, the ones carrying `seriesVolumes.planned`. **Separate on purpose:** one switch enforces both halves, so evidence for one is not evidence for the other. Every row before 2026-09-05 has no `seriesVolumes` key at all, and a scoped on-add run declines that half by design |
+| `cronPlanTicks` | the same count restricted to `trigger = 'cron'`. **This is the number the gate's "42" was written about** — forty `force`d admin runs in an afternoon are forty readings of one CSV, not a week of evidence |
+| `divergences` | 🔴 **always `null`, and `null` means NOT MEASURED — never zero.** Nothing in the Worker can compute it: a divergence is the ROUTE's plan disagreeing with the SCRIPT's (§4, §4a), and the Worker has never seen the script's side. It is a person's comparison and it stays one. The key is published rather than omitted so a reader counting to 42 is told, in the same object, that the third condition is not machine-checked |
+
+⚠️ **All four go `null` — not `0` — on an unmigrated or unreachable database.**
+*"The table is not there"* and *"42 are required and none have happened"* are
+different facts, and a zero would read as the second while meaning the first.
 
 ⚠️ **`seriesVolumes.lastRun` keeps three silences apart, and they are not
 interchangeable:**
 
 | It reads | It means |
 |---|---|
-| `null` | the tick never got that far. 🔴 **In practice the cause is almost always a `304`** — `state: "skipped"`, `detail: "unchanged"` — which returns at `audiobook-sweep-run.ts:430-442`, ~75 lines **before** the series-volume block at `:515`. Read `state` in the same breath as this field or you will misdiagnose it. The other causes: mode `off`, a refused fetch, a failed guard. **Also what a run row written BEFORE 2026-09-05 says**, because the field did not exist (such a row has **no key at all**, where a 304 row carries an explicit `"seriesVolumes":null` — that is how you tell the two bundles apart in the data) |
+| `null` | the tick never got that far. ~~🔴 **In practice the cause is almost always a `304`**~~ ✅ **No longer, in shadow: a full-scope shadow tick cannot BE `304`'d since 2026-09-06** (`c19fbbf`), so this silence in shadow now means mode `off`, a refused fetch or a failed guard. It is still the `304` answer under **`enforce`**, and under the **on-add hook in any mode** — both keep the conditional GET, and both return at `audiobook-sweep-run.ts`'s 304 branch ~75 lines before the series-volume block. Read `state` in the same breath as this field or you will misdiagnose it. **Also what a run row written BEFORE 2026-09-05 says**, because the field did not exist (such a row has **no key at all**, where a 304 row carries an explicit `"seriesVolumes":null` — that is how you tell the two bundles apart in the data) |
 | `{ "planned": null, "written": null, "detail": "scoped run …" }` | the **on-add hook** fired and deliberately declined this half. Guard 3: a run that looked at one book has not consulted a source about the rest of the catalogue. The cron owns it |
 | `{ "planned": {…}, "written": null, "detail": null }` | **shadow, working correctly** |
 | `{ "planned": {…}, "written": 329 }` | enforce, applied |
@@ -128,7 +169,8 @@ that never fired all look identical from the holding table.
 |---|---|---|
 | `lastRunAt: null` | it has never run **here** | check the cron is registered (§5) and wait for `:23` |
 | `state: "shadow"` | working, writing nothing | this is the expected state today |
-| `state: "skipped"`, `detail: "unchanged"` | a `304` — the CSV has not changed | nothing. This is healthy |
+| `state: "shadow"`, `detail: "… (unchanged-replayed)"` | a shadow tick fetched the body unconditionally and it had **not changed** since last time. It computed the whole plan anyway | nothing. **It counts toward the gate** — the planner really ran over the really-live CSV. ⚠️ It is deliberately NOT `unchanged`: the two words are opposite facts about the same quiet input, one meaning *"nothing was computed"* and this one meaning *"everything was"*. A replay does not re-stamp the snapshot, so `snapshotAgeHours` keeps climbing and keeps meaning something |
+| `state: "skipped"`, `detail: "unchanged"` | a `304` — the CSV has not changed. ⚠️ Since 2026-09-06 this can only be an **`enforce`/`off`** tick or the **on-add hook**; a full-scope shadow tick no longer sends `If-None-Match` | nothing. This is healthy |
 | `state: "failed"`, `detail: "drift: 900 rows against 1000 last time (cap 3%)"` | the fetch came back short | look at `https://audiobooks.heygabi.ai/catalog.csv` before touching anything. **Nothing was written** |
 | `state: "failed"`, `detail: "empty snapshot"` | the body parsed to zero rows | same. A Pages deploy mid-flight is the usual cause; the next tick heals it |
 | `state: "failed"`, `detail: "empty-read"` | D1 returned zero WORKS | this is the phase-0 wrangler bug in Worker form. **Nothing was written**; the next tick heals it |
@@ -139,6 +181,15 @@ that never fired all look identical from the holding table.
 pipeline commits ≈3×/day and the cron reads every 4 hours. Twenty-four-plus means
 either the CSV has genuinely not changed or the sweep has stopped.
 
+⚠️ **It still means that after the 2026-09-06 change, and that took deliberate
+work.** A shadow tick now fetches the body every four hours whether or not it
+changed — so re-stamping `fetched_at` on every one of them would have pegged this
+number near zero forever and destroyed the only signal that says the sibling
+pipeline has died. **A replay therefore does not write the snapshot at all**
+(`etag` and `row_count` are identical by definition; `fetched_at` is the whole
+point), which is why `unchanged-replayed` and a climbing age appear together and
+are not a contradiction.
+
 ---
 
 ## 3. Run it now, or rehearse it — the admin route
@@ -148,20 +199,37 @@ contributor or moderator gets a worded 403 naming the role and the way out; a
 `pending` account gets a different sentence, because its fix is different.
 
 ```bash
-# Rehearse: computes the whole plan, writes NOTHING, whatever the mode is.
+# 🔴 Rehearse — THE ONE TO USE. Computes the whole plan, writes NOTHING,
+# whatever the mode is, and `force` guarantees a plan comes back.
 curl -s -X POST https://library.heygabi.ai/api/admin/audiobooks/sweep \
   -H "Authorization: Bearer $ID_TOKEN" \
   -H 'content-type: application/json' \
-  -d '{"dryRun":true}'
+  -d '{"dryRun":true,"force":true}'
 
 # What did the last run decide?
 curl -s https://library.heygabi.ai/api/admin/audiobooks/sweep \
   -H "Authorization: Bearer $ID_TOKEN"
 ```
 
+🔴 **`force` was added 2026-09-06 and without it this curl usually shows you
+nothing.** `{"dryRun":true}` alone sends the stored etag; the origin answers
+`304`; the reply is `state: "skipped"`, `detail: "unchanged"`, **`plan: null`**.
+That is not a broken route — there was genuinely nothing new to fetch — but it
+made the instrument §7.1 calls *"the ONLY way to answer the phase-1 gate"* unable
+to answer it, for a whole day. `force: true` skips `If-None-Match`, costs one
+1.4 MB GET, and always returns a plan.
+
 ⚠️ **Only an explicit `true` is a dry run.** `{"dryRun":"false"}` is a REAL run —
 the parse is strict on purpose, because the dangerous direction is a rehearsal
-that turns out to have written.
+that turns out to have written. **`force` is parsed exactly as strictly**, for
+the opposite reason: `"force":"true"` quietly meaning `false` sends you back to
+the `plan: null` the flag exists to end.
+
+⚠️ **They are INDEPENDENT flags, and only `dryRun` decides whether anything is
+written.** `{"force":true}` on its own, in `enforce` mode, is a **real sweep**
+over a body that may be byte-identical to the last one — safe, because the sweep
+is idempotent, but it is not a rehearsal. Pass both when a rehearsal is what you
+meant.
 
 ⚠️ **A refused sweep answers `200`, with the reason in words under `says`.** The
 REQUEST succeeded; the sweep refused. An HTTP error would put *"the fetch came
@@ -306,6 +374,32 @@ on both production databases: **3 run rows each**, of which **one** computed a
 plan (`04:23`) and **none has ever carried a `seriesVolumes` object**. The
 `08:23` and `12:23` ticks are both `skipped` / `unchanged`.
 
+### ✅ 2026-09-06 — the clock is now REAL, and it is on `/api/health`
+
+Commit `c19fbbf`. **Shadow no longer sends `If-None-Match`, so every four-hourly
+tick computes both halves whatever the sibling pipeline is doing** — six
+plan-bearing ticks a day instead of ~one, which is what makes *"42 ticks = a
+week"* true as arithmetic rather than aspiration. And **you no longer count them
+by hand:**
+
+```bash
+curl -s "https://library.heygabi.ai/api/health?cb=$RANDOM" | jq .detail.audiobookSweep.gate
+curl -s "https://padhard.heygabi.ai/api/health?cb=$RANDOM" | jq .detail.audiobookSweep.gate
+```
+
+**Flip when BOTH instances read `cronPlanTicks ≥ 42` AND
+`seriesVolumeTicks ≥ 42`** — and when the §4/§4a comparisons have been done by a
+person, because `divergences` is `null` and always will be (§2). ⚠️ Count
+`cronPlanTicks`, not `planTicks`: the second includes admin `force`d runs, and
+forty of those in an afternoon are forty readings of one CSV.
+
+**The clock starts at the first cron tick after the deploy pair.** Deployed
+2026-09-06; first counting tick **`16:23` UTC**; tick 42 lands
+**`2026-09-13 12:23` UTC** (41 × 4 h). 🔴 **So the earliest honest enforce date is
+2026-09-13** — and that is a floor, not a booking: a failed guard, a `502` from
+the origin or a redeploy that resets nothing but happens to miss a tick each push
+it later, and the §4/§4a comparison still has to be run.
+
 **Three things make today's state not-evidence, and only the first is obvious:**
 
 1. **A `304` short-circuits the whole tick**, series volumes included — the
@@ -313,19 +407,25 @@ plan (`04:23`) and **none has ever carried a `seriesVolumes` object**. The
 2. **The one plan-bearing row predates the series-volume bundle** (no
    `seriesVolumes` key at all, and `seriesCanonEntries: 6` where both hosts now
    report **10**).
-3. ⚠️ **Only 200-ticks count.** The CSV changes ≈3×/day, so *"42 ticks = a week
-   at four-hourly"* is really **~14 days** — and ⚠️ **`POST … {"dryRun":true}`
-   cannot substitute**: it runs the same function and 304s too, returning
-   `plan: null`. **The route half of the parity comparison has never been
-   measured in production at all** — the 2026-09-05 §4 and §4a figures are the
-   SCRIPT's, with the route side produced by a local harness.
+3. ~~⚠️ **Only 200-ticks count.** The CSV changes ≈3×/day, so *"42 ticks = a week
+   at four-hourly"* is really **~14 days**~~ ✅ **FIXED — shadow fetches
+   unconditionally, so all six daily ticks count and a week is a week again.**
+   ~~and ⚠️ **`POST … {"dryRun":true}` cannot substitute**: it runs the same
+   function and 304s too, returning `plan: null`~~ ✅ **FIXED — `{"dryRun":true,
+   "force":true}`** (§3). ⚠️ **What is still TRUE in this point:** *"the route
+   half of the parity comparison has never been measured in production"* — the
+   2026-09-05 §4 and §4a figures are the SCRIPT's, with the route side produced
+   by a local harness. The first `force`d dry run against production is what
+   closes that, and nobody has run one: **it needs an owner bearer token, which
+   an agent may not have.**
 
-**Ways to get a forced 200-tick, cheapest first:** wait for the CSV to change ·
-blank the stored etag in `audiobook_snapshot` (safe — the snapshot is written
-only after the guards, and the drift baseline is `row_count` — but it is a
-production write and needs saying out loud) · **add a `force` flag to the admin
-route that skips `If-None-Match`**, which is the honest fix, because §3 above
-calls `dryRun` *"the ONLY way to answer the phase-1 gate"* and today it is not.
+~~**Ways to get a forced 200-tick, cheapest first:** wait for the CSV to change ·
+blank the stored etag in `audiobook_snapshot` … · **add a `force` flag to the
+admin route that skips `If-None-Match`**, which is the honest fix.~~ ✅ **The
+third option was BUILT on 2026-09-06 (`c19fbbf`) and the other two are no longer
+needed.** Blanking the etag in particular should not be done — it is a production
+write to a state table, and there is now a flag that gets the same result without
+one.
 
 Full record and the numbers: [`../TODO.md`](../TODO.md), *"THE FLIP TO
 `enforce` WAS REFUSED 2026-09-06"*.
@@ -361,10 +461,11 @@ Version ids live in [`rollback-points.md`](rollback-points.md) and `docs/deploys
 
 | | |
 |---|---|
-| Money | **nothing.** No model is called. The only external request is one conditional GET |
-| Subrequests, cron tick | ~10 of the 50 an invocation gets: 1 fetch, 4 D1 reads, 1 batch, 3 run-row writes |
-| Bandwidth | 1.4 MB per tick **only when the CSV changed** — an `If-None-Match` `304` costs a few hundred bytes |
-| On an add | one conditional GET, on `ctx.waitUntil`, after the response has gone out |
+| Money | **nothing.** No model is called. The only external request is one GET |
+| Subrequests, cron tick | ~11 of the 50 an invocation gets: 1 fetch, 5 D1 reads (the gate counter is `/api/health`'s, not the tick's), 1 batch, 3 run-row writes |
+| Bandwidth, **`enforce`/`off`** | 1.4 MB per tick **only when the CSV changed** — an `If-None-Match` `304` costs a few hundred bytes |
+| 🔴 Bandwidth, **`shadow`** | **1.4 MB EVERY tick.** Six ticks a day × two instances ≈ **17 MB/day**, against a CSV that genuinely changes ≈3×/day. That is the price of the change made 2026-09-06 and it was paid deliberately: while shadow could be `304`'d it produced ~1 usable tick a day out of 6, so the gate's *"a week"* was really ~14 days of waiting on somebody else's publish schedule. Shadow writes nothing to any catalogue table either way — the only thing the extra bytes buy is the **record**, which is the entire purpose of the mode. It ends when the mode flips |
+| On an add | one **conditional** GET, on `ctx.waitUntil`, after the response has gone out. ⚠️ The scoped run kept `If-None-Match` in every mode: it plans no series volumes at all (guard 3), so making every book somebody adds pull 1.4 MB would buy no evidence |
 
 ⚠️ **The on-add hook DOES fetch**, which the design said it must not. There is no
 row cache to read instead — migration 0470 stores the etag and the row count, not

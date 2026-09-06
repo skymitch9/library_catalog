@@ -298,6 +298,19 @@ why "right away" never happens today, and item 3 below is the standing fix.
    "unchanged"`, `plan: null` — the same as the last two crons. It is not
    broken; there is nothing new to plan. See the block below.
 
+   ✅ **FIXED the same day (W10-SWEEP-EVIDENCE, `c19fbbf`) — add `"force":true`
+   and it always returns a plan.** THIS is the curl to use:
+
+   ```
+   curl -s -X POST https://library.heygabi.ai/api/admin/audiobooks/sweep \
+     -H "Authorization: Bearer <ID_TOKEN>" \
+     -H "content-type: application/json" -d "{\"dryRun\":true,\"force\":true}"
+   ```
+
+   `force` skips `If-None-Match` and costs one 1.4 MB GET; `dryRun` still writes
+   nothing. ⚠️ They are **independent** — `{"force":true}` on its own in
+   `enforce` mode is a REAL sweep, not a rehearsal.
+
 ### 🔴 THE FLIP TO `enforce` WAS REFUSED 2026-09-06 — the gate is not 3 shadow ticks from met, it is ~0 (agent W10-LIB-FLIP)
 
 The owner approved the flip on 2026-09-06 on the understanding that the shadow
@@ -388,6 +401,54 @@ set both lines to `"off"` in one commit and `npm run deploy:both` — it takes
 effect on the next tick, needs no migration, and un-does nothing already
 written, because the sweep is idempotent and STEP 11 keeps running regardless
 ([`access/audiobook-sweep.md`](access/audiobook-sweep.md) §6).
+
+### ✅ 2026-09-06 — the gate is now MEASURABLE, and it is on `/api/health` (agent W10-SWEEP-EVIDENCE)
+
+Commit **`c19fbbf`**. Option 3 above was built, plus the two things that made it
+worth building. ⚠️ Option 2 (blanking the etag) should now **never** be done —
+there is a flag that gets the same result without a production write.
+
+| | |
+|---|---|
+| **Shadow fetches unconditionally** | a full-scope `shadow` tick sends no `If-None-Match`, so it cannot be `304`'d and always computes **both** halves. `enforce`/`off` keep the conditional GET and the short-circuit — nothing changed there really does mean nothing to write. The on-add hook keeps it too: a scoped run plans no series volumes (guard 3), so 1.4 MB per book added would buy no evidence |
+| **`force` on the admin route** | `{"dryRun":true,"force":true}` always returns a plan. Parsed as strictly as `dryRun`, and independent of it |
+| **`audiobookSweep.gate` on `/api/health`** | `required` · `planTicks` · `seriesVolumeTicks` · `cronPlanTicks` · `divergences` |
+
+🔴 **Why a stored-snapshot replay was NOT the fix:** there is nothing to replay.
+Migration 0470 caches an `etag`, a `fetched_at` and a `row_count` — *"neither
+table is a cache of the CSV"*, in its own words — so there are no rows in the
+database to plan over. An unconditional fetch is the smallest honest way to get
+a plan out of a quiet input. A tick that re-fetches an unchanged body records
+`detail: "shadow — nothing written (unchanged-replayed)"` and does **not**
+re-stamp the snapshot, so `snapshotAgeHours` keeps meaning *"how old is our
+picture"* instead of pegging at zero forever.
+
+☐ **THE FLIP, restated as a reading anybody can take:**
+
+```
+curl -s "https://library.heygabi.ai/api/health?cb=$RANDOM" | jq .detail.audiobookSweep.gate
+curl -s "https://padhard.heygabi.ai/api/health?cb=$RANDOM" | jq .detail.audiobookSweep.gate
+```
+
+Flip when **BOTH** hosts read **`cronPlanTicks ≥ 42` and
+`seriesVolumeTicks ≥ 42`**, and the §4/§4a script-vs-route comparison has been
+run by a person. ⚠️ Count `cronPlanTicks`, not `planTicks`: the second includes
+admin `force`d runs, and forty of those in an afternoon are forty readings of one
+CSV. ⚠️ **`divergences` is `null` and always will be — `null` means NOT
+MEASURED, never zero.** The Worker has never seen the script's side of that
+comparison and cannot.
+
+**Earliest enforce date: `2026-09-13`.** The clock starts at the first cron tick
+after the deploy pair — `2026-09-06 16:23` UTC — and tick 42 lands
+`2026-09-13 12:23` UTC (41 × 4 h). That is a floor, not a booking: a failed
+guard or an origin `502` pushes it later, and the parity comparison still has to
+be done.
+
+⚠️ **STILL NOT verified, and it needs the owner:** the `force`d dry run has never
+been called against production, because it needs an owner Firebase bearer token
+and an agent may not have one. **That first call is what finally measures the
+ROUTE side of the §4/§4a parity comparison** — every figure in this item today is
+the SCRIPT's, with the route side produced by a local harness.
 
 ## ☑ BUILT 2026-09-05 — "Request a catalog" phase 5, the sealed-key ladder is IN step 10 (agent S2) — ☐ owner runs it for real once
 
