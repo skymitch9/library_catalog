@@ -1,7 +1,13 @@
 # Gotchas — library_catalog   (Information Reference)
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
-> Last verified: **2026-09-03** — the `ShelfCopy.badges` entry at the top was
+> Last verified: **2026-09-05** — the *"a copy imported seconds after its
+> edition comes out with `edition_id NULL`"* entry at the **foot** of this file
+> was added that day, and its 20/20 hit rate is a live experiment run against
+> production D1 on that date
+> (`scripts/experiments/d1-read-after-write-2026-09-05.mjs`, re-runnable).
+> ⚠️ **Nothing else here was re-checked then.**
+> Previously **2026-09-03** — the `ShelfCopy.badges` entry at the top was
 > **added** that day and measured against `shelf-view.ts` at commit `0d794f0`.
 > ⚠️ **Nothing else here was re-checked then**; every other entry still carries
 > the age stated next.
@@ -624,3 +630,75 @@ or write `printf '\nKEY=%s\n'`. (2) Verify structure by counts before pushing.
 "glued lines = 0" check kills itself silently — use `|| true` or test the
 variable, not the exit code. (4) The mechanical guard is queued in `TODO.md`:
 `push-secrets.mjs` should refuse a value that itself contains `[A-Z_]+=`.
+
+---
+
+## "A copy imported seconds after its edition comes out with `edition_id NULL`" — 2026-09-05
+
+**Symptom.** An importer inserts editions, reads them straight back to find
+their ids, then inserts copies pointing at them — and the copies land with
+`edition_id = NULL`. Nothing errors. The run's own confirmation query joins on
+work + vendor and is satisfied by an unlinked copy, so it prints success.
+
+**Two importers, a week apart, twelve copies.** `import-shop-orders.mjs` (copies
+109–115, editions 322–328, **7 seconds** apart) and
+`import-illumicrate-percy-jackson.mjs` (copies 104–108, editions 307–311,
+**9 seconds**). Different lookup predicates in each; the same result.
+
+### What has been RULED OUT, each measured
+
+| Suspect | Why it is not this |
+|---|---|
+| Ordering — the copies going in first | Editions `14:19:32`, copies `14:19:39`. The write order is right |
+| The predicate's value | `change_log` batch `fix-retailer-publishers-2026-09-02` proves those editions read `publisher = 'Barnes & Noble'` from import until 2026-09-02 |
+| The `--file`-returns-a-summary bug | `query()` moved to `--command` in `052a726`, 2026-08-10 — before both runs |
+| The read path being wrong today | Both predicate shapes, re-run against production, return the right rows, correctly typed, ampersand and all |
+| A double run | 7 editions for 7 works, 5 for 5 |
+
+### 🔴 The read-after-write hypothesis — TESTED 2026-09-05, and it did NOT reproduce
+
+The strongest surviving candidate was a **visibility gap** between `execute()`
+and the `query()` immediately after it on `--remote` D1. It cannot be settled by
+reasoning, so the owner authorised one scratch-table experiment:
+**`scripts/experiments/d1-read-after-write-2026-09-05.mjs`** — re-runnable,
+MAIN-and-remote only, everything inside `_scratch_raw_test`, dropped in a
+`finally` and the drop **verified against `sqlite_master`**.
+
+Each trial mirrors the importers exactly: **five rows in one `execute()`** (a
+batch through `wrangler d1 execute --file`), then **one `query()`** through
+`--command`, with no pause. A miss is retried at 100/250/500/1000/2000 ms so the
+*length* of any gap is measured, not just its existence.
+
+**Result: 20/20 immediate hits. 0 recovered-after-a-wait. 0 never visible.**
+Mean write 2,733 ms, mean read 1,661 ms.
+
+⚠️ **The hypothesis is WEAKENED, not killed, and the difference matters.** The
+experiment exercises the same two functions against the same remote D1 — but not
+the same colo, the same load, or the same D1 build as the August runs, and a
+*rare* race is under no obligation to appear in twenty tries. Do not write
+"D1 is read-after-write consistent" anywhere on the strength of this.
+
+**What is still on the table**, in the order worth checking next:
+
+1. **A stale `--file` write that returned before it was durable.** `execute()`
+   decides success by whether the output *parsed*, never by exit code (a
+   deliberate workaround for the Windows teardown quirk), so a partially applied
+   batch would look identical to a clean one.
+2. **The lookup predicate genuinely matching nothing at the time.** Both
+   importers' old predicates matched on a column another sweep has since
+   rewritten; the `change_log` evidence covers `publisher` but not
+   `edition_name` or `format`, which the Illumicrate lookup also used.
+3. **A silent throw inside the read** being swallowed by a `try` that degrades
+   rather than breaks — the pattern used by every rung in these scripts.
+
+**Regardless of cause, the mechanism is now harder to get wrong**: both
+importers read back through the shared `matchEditionIds` (work + format +
+`edition_name`, newest id winning), and the Illumicrate one **says out loud**
+when a copy is about to go in unlinked — the part that was silent for a month.
+
+**The data was repaired separately** by
+`scripts/fix-copy-edition-links-2026-09-05.mjs` (12 rows, `change_log` batch
+`fix-2026-09-05-copy-edition-links`, applied 2026-09-06 00:46:09Z).
+
+**Re-run the experiment rather than trusting this entry:**
+`node scripts/experiments/d1-read-after-write-2026-09-05.mjs --remote`

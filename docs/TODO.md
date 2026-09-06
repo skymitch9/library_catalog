@@ -2021,18 +2021,22 @@ Illumicrate section above), so the rows will be touched again anyway.
 - **Dry run:** main **5 publishers → NULL, 0 copy-vendor fills** (copies 104–108
   already read `vendor='Illumicrate'`), 5 change_log rows, 10 statements.
   padhard **0** — *"Nothing to do."*
-- ☐ **The owner's command:**
-  `node scripts/fix-illumicrate-publisher-2026-09-05.mjs --remote --commit`
-  then `node scripts/fix-illumicrate-publisher-2026-09-05.mjs --remote --friend --commit`
-  (expected no-op). Review: <https://library.heygabi.ai/work/224>
+- ☑ ~~**The owner's command:**~~ ✅ **APPLIED — the owner ran it at
+  `2026-09-06 00:45:53Z` (2026-09-05 17:45 Phoenix).** Re-measured by W6-ISBN
+  against production: editions **307–311 all read `publisher IS NULL`**, and
+  `change_log` holds **5 rows** for batch
+  `fix-2026-09-05-illumicrate-publisher`. ☐ Owner review is the only step left:
+  <https://library.heygabi.ai/work/224>.
+  ⚠️ **NOT verified: the `--friend` half.** No padhard `change_log` batch exists
+  — which is also exactly what a correct no-op looks like, so this is evidence
+  of nothing either way.
 
-⚠️ **A THIRD defect found while measuring this one — NOT fixed, and it needs its
-own section:** editions **307, 308 and 311 carry `isbn13` values belonging to
-different books** (two of them foreign-language), written on **2026-08-20**
-(`updated_at 15:33:26`, `source` flipped `manual → openlibrary`) by a backfill
-that left **no `change_log` row at all**. These are printings the owner verified
-have *no ISBN on them*. Worth knowing which backfill did it, because it will do
-it again.
+⚠️ **A THIRD defect found while measuring this one — it has its own section
+below**: *"The 2026-08-20 ISBN backfill filed ISBNs belonging to other books"*.
+⚠️ **Note for anyone re-deriving it: the `updated_at 15:33:26` evidence on
+307–311 is GONE** — the publisher fix above bumped all five rows to
+`2026-09-06 00:45:53`. The other 40 rows of that batch still carry the original
+stamp, which is how the blast radius was measured.
 
 ---
 
@@ -2077,6 +2081,33 @@ between `execute()` and the `query()` immediately after it on `--remote` — it
 would explain both importers and nothing else measured does — but proving it
 needs a scratch-table write, which is the owner's call, not a dry run's.
 
+#### 🔴 TESTED 2026-09-05 (W6-ISBN, on the owner's authorisation) — **20/20 hits, the hypothesis is WEAKENED, not killed**
+
+`scripts/experiments/d1-read-after-write-2026-09-05.mjs` — re-runnable, MAIN and
+`--remote` only (`--friend` and local are refused), everything inside
+`_scratch_raw_test`, dropped in a `finally` and **the drop verified against
+`sqlite_master`** (it is gone; re-checked after the run). Each trial mirrors the
+importers exactly: **five rows in ONE `execute()`**, then **one `query()`** with
+no pause; a miss is retried at 100/250/500/1000/2000 ms so the *length* of any
+gap would be measured, not just its existence.
+
+**Result: 20/20 immediate hits, 0 recovered-after-a-wait, 0 never visible.**
+Mean write 2,733 ms, mean read 1,661 ms.
+
+⚠️ **Weakened, not killed, and the difference is the whole point:** the same two
+functions against the same remote D1, but **not** the same colo, load or D1 build
+as the August runs, and a rare race need not appear in twenty tries. Do not
+write *"D1 is read-after-write consistent"* anywhere on the strength of this.
+
+☐ **What is still on the table**, in the order worth checking — written up in
+[`info/gotchas.md`](info/gotchas.md) under the symptom heading:
+(1) a `--file` write that returned before it was durable — `execute()` decides
+success by whether the output *parsed*, never by exit code, so a partially
+applied batch looks identical to a clean one; (2) the lookup predicate genuinely
+matching nothing at the time — the `change_log` evidence covers `publisher` but
+**not** `edition_name` or `format`, which the Illumicrate lookup also used;
+(3) a silent throw inside the read swallowed by a degrade-never-break `try`.
+
 **What the UI shows today** (`effectiveFormat` in `apps/web/src/lib/shelf-view.ts`):
 an unlinked copy on a work with ONE printing already renders correctly
 (`resolved-sole`) — so **the seven B&N copies are invisible as a defect**. An
@@ -2100,16 +2131,125 @@ link; **C** ambiguous, listed with every candidate, never linked.
 | Tier C — ambiguous, for the owner | **50** | **3** |
 | no edition exists — untouched | 0 | **15** |
 
-☐ **The owner's command:**
-`npx tsx scripts/fix-copy-edition-links-2026-09-05.mjs --remote --commit`
-then `npx tsx scripts/fix-copy-edition-links-2026-09-05.mjs --remote --friend --commit`
-(expected no-op). Review: <https://library.heygabi.ai/work/224> (the five
-Illumicrate cards) and <https://library.heygabi.ai/work/229>.
+☑ ~~**The owner's command:**~~ ✅ **APPLIED — the owner ran tier A at
+`2026-09-06 00:46:09Z` (2026-09-05 17:46 Phoenix).** Re-measured by W6-ISBN:
+`change_log` holds **12 rows** for batch `fix-2026-09-05-copy-edition-links`.
+☐ Owner review: <https://library.heygabi.ai/work/224> (the five Illumicrate
+cards) and <https://library.heygabi.ai/work/229>.
+⚠️ **NOT verified:** the `--friend` half (a padhard no-op leaves no trace), and
+nothing on either page has been looked at since.
 ☐ Separately, **decide Tier B** (`--all-unambiguous`) — 357 main / 485 padhard.
 
 ↩️ Tier C's padhard list includes copies **#131 and #320 on work #136 *Mate***,
 which is the *"ONE ROW NEEDS THE OWNER"* item already open in the signed-editions
 section above — same question, now printed with both candidates beside it.
+
+---
+
+## ☐ The 2026-08-20 ISBN backfill filed 12 ISBNs belonging to other books (W6-ISBN, 2026-09-05)
+
+**Writer named, blast radius measured, both guards built and tested, data fix
+DRY-RUN READY — ☐ awaiting the owner.** Full post-mortem with every number:
+[`info/isbn-ladder.md` §7](info/isbn-ladder.md).
+
+**The writer is `scripts/backfill-missing-isbns.mjs`**, run `--remote --commit`
+twice on **2026-08-20** — **15:33:26Z** (free rungs, 45 rows in one batch) and
+**18:03–18:04Z** (the `--llm` rung, 19 rows). Five lines of evidence: its own
+three stdout logs are still in the repo root (⚠️ **UTF-16LE** —
+`iconv -f UTF-16LE` to read them) and name the command; the ISBNs they report
+finding are the ISBNs on the rows; the version in force that day wrote
+`source = <rung>` **bluntly**, which is the `manual → openlibrary` flip (the
+`CASE` that preserves `manual` landed four days later in `fd705b0`); its
+rung→source mapping produces all three source values seen, and nothing else in
+this repo writes `edition.source = 'research'` beside an `isbn13`; and it logged
+nothing, matching the absence. ⚠️ **Honest gap: the 15:33:26Z batch has no
+surviving log of its own** — it is attributed by code-path signature.
+
+🔴 **Why it hit exactly the wrong rows, and it is structural rather than bad
+luck:** `CANDIDATES_SQL` takes works with no ISBN on ANY edition and writes to
+the **oldest** edition row. On this catalogue those works are the crowdfunded and
+exclusive ones, so the target is nearly always the SPECIAL printing — **42 of the
+43 rows it filled**. And rung 1 read `doc.isbn` off an Open Library **work**
+record (*"ALL isbns from all editions of this work"*) while the title gate scored
+the **work's** title, so a translation passes at `sim 1.00`.
+
+| Blast radius, measured 2026-09-05 | main | padhard |
+|---|---|---|
+| rows the run filled that still carry an ISBN | **43** | **0** |
+| **Tier A — wrong object** (foreign language, wrong medium, or contradicted by the row's own name) | **12** | **0** |
+| Tier B — right book, wrong printing (the row's own name says *"no per-volume ISBN recorded"*) | **17** | **0** |
+| untouched — a plausible trade ISBN on a Kickstarter/collector's printing that makes no claim | 14 | 0 |
+
+padhard was **unreachable** by that run (`scripts/lib/d1.mjs` gained `--friend`
+on 2026-08-22; her earliest edition writes are 2026-08-22 02:00Z) — re-measured
+rather than argued, and the zero is a result.
+
+### ✅ The WRITER is fixed — two guards + `change_log`, exercised on production
+
+`scripts/lib/backfill-safety.mjs` gains two pure functions, pinned by
+`scripts/test/backfill-safety.test.mjs` with the real wrong ISBNs as fixtures
+(**+14 cases**; whole suite **2678 pass / 0 fail**):
+
+- **`declaresNoIsbn`** — a printing whose own `edition_name`/`note` states no
+  ISBN exists is skipped and printed. ⚠️ Deliberately **narrow**: it matches a
+  statement about an absent ISBN, never the words "Kickstarter" or "Collector's
+  Edition", because refusing every exclusive trades one silent-wrong-fill for a
+  silent-never-fill.
+- **`isbnLanguageVerdict`** — `foreign` refuses, `ok` and `unknown` proceed. An
+  attested language beats the registration group (a `979-8` KDP book is
+  English); a non-English group with no attested language is `foreign`.
+  Rung 1 now probes the **per-edition** `/isbn/<isbn>.json` record (⚠️ never the
+  work-level one, which aggregates every translation — that shape is the bug);
+  rung 2 reads `volumeInfo.language` at no extra call; rung 2.5 gets the same
+  probe, being the rung that had no gate at all.
+- **Every write now logs a `change_log` row per changed field**, batch
+  `isbn-backfill-<ISO timestamp>` — it logged nothing before, which is the whole
+  reason this took a fortnight to find.
+
+**Exercised on production, dry run** (`--remote`, no `--commit`): 34 works → **1
+skipped by `declaresNoIsbn`** (#450 *Dungeon Born*), **1 refused by the language
+gate** (`9784047336582`, **978-4 = Japan**, proposed by LibraryThing for
+*Sanctuary: The Art Book of Yuumei*), 10 updates + 10 `change_log` rows.
+
+### ☐ The DATA fix — dry-run ready — awaiting owner
+
+`scripts/fix-foreign-isbns-2026-09-05.mjs`: explicit id list, **asserted
+from-values** (a moved row stops the run), `isbn13 → NULL`, `source → 'manual'`
+only where that is evidenced, one `change_log` row per field, batch
+`fix-2026-09-05-foreign-isbns`. Dry run is the default.
+
+**Dry run 2026-09-05:** main **12 isbn13 → NULL, 3 sources restored to
+`manual`** (307/308/311 — provable from their two untouched Illumicrate
+siblings), 15 change_log rows, **27 statements**. padhard **0** and it says why.
+
+☐ **The owner's command — dry-run ready, awaiting owner:**
+`node scripts/fix-foreign-isbns-2026-09-05.mjs --remote --commit`
+then `node scripts/fix-foreign-isbns-2026-09-05.mjs --remote --friend --commit`
+(expected no-op). Review: <https://library.heygabi.ai/work/224>,
+<https://library.heygabi.ai/work/220> (*Words of Radiance*, the leatherbound) and
+<https://library.heygabi.ai/work/464> (*Oathbringer*).
+
+☐ **A SECOND owner decision — tier B, the 17 slipcase volumes.** Same script,
+`--also-declared-no-isbn` (dry run: 29 → NULL, 61 statements). Each row's own
+`edition_name` says *"no per-volume ISBN recorded"* and the run filled it with a
+real English trade ISBN of the same title. It is **not** default because it is a
+judgement about physical objects, not a measurement.
+
+☐ **A THIRD, and it is genuinely his to answer**: the **14 untouched rows** —
+Kickstarter and collector's printings carrying a plausible trade ISBN
+(#317, #319, #320, #330, #331, #332, #334, #335, #343, #344, #345, #349, #350,
+#507). Does a crowdfunded hardcover share the trade ISBN? Only somebody holding
+the book can say.
+
+☐ **padhard, one row, unrelated to this run:** edition **#605** *Italian Affair*
+carries `9789358568417` (**978-93 = India**), the only non-English registration
+group on that instance. Not written by the 2026-08-20 run; nobody has checked it.
+
+⚠️ **NOT fixed, and visible in the same dry run:** Google Books proposed the
+**same** ISBN `9781986619233` for *Space Knight* books **5, 6, 7, 8 and 9**. The
+UNIQUE index catches it and all five are skipped, so it is safe — but a rung
+answering five different books with one ISBN is a title-gate problem
+(`sim 0.80` on a numbered series), and it is a separate item nobody has opened.
 
 ---
 

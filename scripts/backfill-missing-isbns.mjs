@@ -59,6 +59,36 @@
  * - Every write targets the FIRST edition of the work (the one the owner
  *   interacts with). If it already carries an isbn13 somehow, the work is
  *   skipped rather than overwritten.
+ * - 🔴 **A LANGUAGE GATE on every free rung** and 🔴 **a refusal to fill a row
+ *   that says it has no ISBN** — both added 2026-09-05 after the 2026-08-20 run
+ *   was audited. See "The two guards the 2026-08-20 run did not have" below.
+ * - 🔴 **Every write logs a `change_log` row per changed field.** It did not
+ *   before, which is why the 2026-08-20 run left no trace at all and had to be
+ *   reconstructed from `updated_at` and three stdout logs at the repo root.
+ *
+ * ## 🔴 The two guards the 2026-08-20 run did not have (measured 2026-09-05)
+ *
+ * That run filled **43 editions** on the main instance, and **42 of them were
+ * special printings** — Kickstarter exclusives, leatherbounds, subscription-box
+ * hardcovers, volumes of slipcase sets. That is not bad luck: `CANDIDATES_SQL`
+ * asks for works with no ISBN on ANY edition, and on this catalogue those are
+ * precisely the crowdfunded and exclusive ones, whose oldest edition row IS the
+ * special printing. **12 of the 43 got an ISBN belonging to a different object**
+ * — French, Polish, German, Catalan, Spanish and Turkish translations, two
+ * audiobook ISBNs, and one trade hardcover filed onto a leatherbound whose own
+ * `edition_name` names the two real ISBNs.
+ *
+ *   1. **`declaresNoIsbn`** — a row whose `edition_name` or `note` states that no
+ *      ISBN exists is not a gap. `isbn13 IS NULL` there is a recorded FACT, and
+ *      the old `AND isbn13 IS NULL` guard cannot tell the two apart.
+ *   2. **`isbnLanguageVerdict`** — rung 1 reads `doc.isbn`, *"an array of ALL
+ *      isbns from all editions of this work"*, and the title gate scores the
+ *      **work's** title, so a translation passes at `sim 1.00`. Every candidate
+ *      is now checked against the printing's own attested language (Open Library
+ *      `/isbn/<isbn>.json`, or Google Books' `volumeInfo.language`) and, failing
+ *      that, its ISBN registration group.
+ *
+ * Full write-up, with the per-row table: `docs/info/isbn-ladder.md` §7.
  *
  * ⚠️ ORDER: a --commit run that finds via LibraryThing writes source=
  * 'librarything', which migration 0420 must have added to the edition.source
@@ -69,7 +99,13 @@ import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 
 import { execute, lit, parseFlags, query, ROOT } from './lib/d1.mjs';
-import { editionSourceWriteExpr, llmKeyName, readLlmKeyFrom } from './lib/backfill-safety.mjs';
+import {
+  declaresNoIsbn,
+  editionSourceWriteExpr,
+  isbnLanguageVerdict,
+  llmKeyName,
+  readLlmKeyFrom,
+} from './lib/backfill-safety.mjs';
 import { CLI_FEATURE_SETS, checkCliBilling } from './lib/billing-cli.mjs';
 import { parseThingTitleIsbns } from './lib/librarything.mjs';
 import { titleSimilarity } from '../packages/core/src/matching.ts';
@@ -102,6 +138,14 @@ if (useLlm) {
 
 const UA = 'library_catalog (+https://github.com/private)';
 const PAUSE_MS = 1100; // Open Library asks for ~1 req/sec
+/**
+ * How many of a work's ISBNs the language gate will probe before giving up on
+ * the rung. A popular work can list forty printings; probing all of them costs
+ * forty rate-limited round trips to find an English one that the next rung would
+ * have answered for free. Five is enough to get past a run of translations and
+ * cheap enough not to matter.
+ */
+const MAX_LANGUAGE_PROBES = 5;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------------------------------------------------------------------------
@@ -137,23 +181,80 @@ function isValidIsbn13(isbn) {
   return check === Number(isbn[12]);
 }
 
-/** Pick the best ISBN-13 from a list of raw ISBN strings (may be isbn10 or isbn13). */
-function pickBestIsbn13(isbns) {
-  if (!isbns || isbns.length === 0) return null;
-  // Prefer 978/979 prefixed 13-digit ones
+/**
+ * Every valid ISBN-13 in a list of raw ISBN strings (13s first, then converted
+ * 10s), in order.
+ *
+ * ⚠️ This used to be `pickBestIsbn13`, returning the FIRST one. That single line
+ * is how a French and a Polish printing were filed onto English hardcovers: the
+ * list it is given is Open Library's work-level `doc.isbn`, every printing in
+ * every language, in no particular order. The caller now walks the list and
+ * keeps the first candidate that survives the language gate.
+ */
+function allIsbn13s(isbns) {
+  if (!isbns || isbns.length === 0) return [];
+  const out = [];
   for (const raw of isbns) {
-    const cleaned = raw.replace(/[-\s]/g, '');
-    if (/^97[89]\d{10}$/.test(cleaned) && isValidIsbn13(cleaned)) return cleaned;
+    const cleaned = String(raw).replace(/[-\s]/g, '');
+    if (/^97[89]\d{10}$/.test(cleaned) && isValidIsbn13(cleaned)) out.push(cleaned);
   }
-  // Try converting isbn10 to isbn13
   for (const raw of isbns) {
-    const cleaned = raw.replace(/[-\s]/g, '');
+    const cleaned = String(raw).replace(/[-\s]/g, '');
     if (/^\d{9}[\dXx]$/.test(cleaned)) {
       const isbn13 = isbn10to13(cleaned);
-      if (isbn13 && isValidIsbn13(isbn13)) return isbn13;
+      if (isbn13 && isValidIsbn13(isbn13) && !out.includes(isbn13)) out.push(isbn13);
     }
   }
-  return null;
+  return out;
+}
+
+/**
+ * The languages Open Library attests for ONE printing.
+ *
+ * ⚠️ Deliberately the `/isbn/<isbn>.json` **edition** endpoint, not the search
+ * or `/api/books` one. A work-level record aggregates every translation and
+ * would answer `['eng','fre','pol',…]` for all of them — which is exactly the
+ * shape that let a Polish printing pass as English. Returns `[]` when Open
+ * Library has no record or does not say, and `isbnLanguageVerdict` then falls
+ * back to the registration group.
+ */
+async function olEditionLanguages(isbn13) {
+  try {
+    const res = await fetch(`https://openlibrary.org/isbn/${isbn13}.json`, {
+      headers: { 'User-Agent': UA },
+      redirect: 'follow',
+    });
+    if (!res.ok) return [];
+    const body = await res.json();
+    return (body.languages ?? [])
+      .map((l) => String(l?.key ?? '').replace('/languages/', ''))
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 🔴 The language gate. `foreign` refuses; `ok` and `unknown` proceed.
+ *
+ * "Unknown proceeds" is the deliberate half: refusing everything Open Library
+ * does not label would turn one silent-wrong-fill into a silent-never-fill, and
+ * most self-published records carry no `languages` at all. The registration
+ * group inside `isbnLanguageVerdict` is what makes `unknown` narrow — a
+ * non-English group is `foreign` whether or not a language is attested.
+ */
+async function passesLanguageGate(isbn13, why) {
+  const languages = await olEditionLanguages(isbn13);
+  await sleep(PAUSE_MS);
+  const verdict = isbnLanguageVerdict({ isbn13, languages });
+  if (verdict === 'foreign') {
+    console.log(
+      `      ⚠️ REFUSED ${isbn13} — ${why}: Open Library says ` +
+        `${languages.length ? languages.join(',') : 'nothing'}, registration group is not English.`,
+    );
+    return false;
+  }
+  return true;
 }
 
 function isbn10to13(isbn10) {
@@ -189,9 +290,13 @@ async function searchOpenLibraryForIsbn(title, author) {
     const sim = titleSimilarity(normaliseTitle(doc.title), normaliseTitle(title));
     if (sim < 0.80) continue;
 
-    // doc.isbn is an array of ALL isbns from all editions of this work
-    const isbn13 = pickBestIsbn13(doc.isbn ?? []);
-    if (isbn13) {
+    // ⚠️ doc.isbn is an array of ALL isbns from all editions of this work — every
+    // translation included — and `sim` above scored the WORK's title, so it says
+    // 1.00 for a Polish printing. Walk the candidates and take the first the
+    // language gate accepts, rather than the first that parses.
+    const candidates = allIsbn13s(doc.isbn ?? []).slice(0, MAX_LANGUAGE_PROBES);
+    for (const isbn13 of candidates) {
+      if (!(await passesLanguageGate(isbn13, `openlibrary work ${doc.key ?? '?'}`))) continue;
       return {
         isbn13,
         matchedTitle: doc.title,
@@ -231,33 +336,41 @@ async function searchGoogleBooksForIsbn(title, author) {
     if (sim < 0.80) continue;
 
     const ids = vi.industryIdentifiers ?? [];
-    const isbn13Entry = ids.find((i) => i.type === 'ISBN_13');
-    if (isbn13Entry) {
-      const isbn = isbn13Entry.identifier.replace(/[-\s]/g, '');
-      if (isValidIsbn13(isbn)) {
-        return {
-          isbn13: isbn,
-          matchedTitle: vi.title,
-          similarity: sim,
-          source: 'googlebooks',
-          sourceUrl: vi.infoLink ?? null,
-        };
-      }
+    const isbn13 = allIsbn13s([
+      ...ids.filter((i) => i.type === 'ISBN_13').map((i) => i.identifier),
+      ...ids.filter((i) => i.type === 'ISBN_10').map((i) => i.identifier),
+    ])[0];
+    if (!isbn13) continue;
+
+    /*
+     * 🔴 The language gate, rung 2 — and here it costs NOTHING and needs no
+     * extra call, because Google Books has been returning `volumeInfo.language`
+     * on every volume all along and this rung simply never read it. That
+     * omission is how a German `978-3` printing of *Carl's Doomsday Scenario*
+     * and an Italian `979-12` one of a Kickstarter hardcover were written.
+     * Unlike rung 1's work-level record this one IS a single printing, so its
+     * own label is authoritative; the registration group only decides when
+     * Google leaves the label off.
+     */
+    const verdict = isbnLanguageVerdict({
+      isbn13,
+      languages: vi.language ? [vi.language] : [],
+    });
+    if (verdict === 'foreign') {
+      console.log(
+        `      ⚠️ REFUSED googlebooks ${isbn13} "${vi.title.slice(0, 40)}" — ` +
+          `language ${vi.language ?? 'unstated'}, registration group is not English.`,
+      );
+      continue;
     }
-    // Try isbn10 conversion
-    const isbn10Entry = ids.find((i) => i.type === 'ISBN_10');
-    if (isbn10Entry) {
-      const converted = isbn10to13(isbn10Entry.identifier.replace(/[-\s]/g, ''));
-      if (converted && isValidIsbn13(converted)) {
-        return {
-          isbn13: converted,
-          matchedTitle: vi.title,
-          similarity: sim,
-          source: 'googlebooks',
-          sourceUrl: vi.infoLink ?? null,
-        };
-      }
-    }
+
+    return {
+      isbn13,
+      matchedTitle: vi.title,
+      similarity: sim,
+      source: 'googlebooks',
+      sourceUrl: vi.infoLink ?? null,
+    };
   }
   return null;
 }
@@ -286,8 +399,21 @@ async function searchLibraryThingForIsbn(title, author) {
   const isbnMatches = parseThingTitleIsbns(xml);
   if (isbnMatches.length === 0) return null;
 
-  // Find the first valid ISBN-13 (or convert ISBN-10)
-  const isbn13 = pickBestIsbn13(isbnMatches);
+  /*
+   * 🔴 The language gate, rung 2.5 — and it is the rung that needs it MOST.
+   * `thingTitle` returns bare ISBNs with no title, author or language ("omitted
+   * per vendor terms"), so there has never been anything to compare against;
+   * that is why this rung is last and why its writes carry their own source.
+   * The printing's own Open Library record is the only signal available, and
+   * one call for a rung that fires rarely is cheap.
+   */
+  let isbn13 = null;
+  for (const candidate of allIsbn13s(isbnMatches).slice(0, MAX_LANGUAGE_PROBES)) {
+    if (await passesLanguageGate(candidate, 'librarything thingTitle')) {
+      isbn13 = candidate;
+      break;
+    }
+  }
   if (!isbn13) return null;
 
   return {
@@ -396,10 +522,19 @@ async function searchLlmForIsbn(apiKey, title, author) {
 // Find ISBN-less works
 // ---------------------------------------------------------------------------
 
+/*
+ * ⚠️ `ORDER BY e.id LIMIT 1` is the OLDEST edition of the work, and on this
+ * catalogue that is almost always the SPECIAL printing — measured 2026-09-05,
+ * 42 of the 43 rows the 2026-08-20 run filled were exclusives, leatherbounds or
+ * slipcase volumes. The row's own name and note are read here so
+ * `declaresNoIsbn` can refuse the ones that state no ISBN exists.
+ */
 const CANDIDATES_SQL = `
   SELECT w.id AS work_id, w.title, w.authors,
-         (SELECT e.id FROM edition e WHERE e.work_id = w.id ORDER BY e.id LIMIT 1) AS edition_id
+         e0.id AS edition_id, e0.edition_name, e0.note, e0.source AS edition_source
     FROM work w
+    LEFT JOIN edition e0
+      ON e0.id = (SELECT e.id FROM edition e WHERE e.work_id = w.id ORDER BY e.id LIMIT 1)
    WHERE NOT EXISTS (
      SELECT 1 FROM edition e
       WHERE e.work_id = w.id
@@ -408,10 +543,38 @@ const CANDIDATES_SQL = `
    ORDER BY w.id
 `;
 
-const rows = query(CANDIDATES_SQL, flags);
+const allCandidates = query(CANDIDATES_SQL, flags);
+
+/*
+ * 🔴 GUARD 1 — a printing that SAYS it has no ISBN is not a gap.
+ *
+ * `isbn13 IS NULL` there is a recorded fact (an owner-verified note, or a
+ * slipcase volume whose set carries the only barcode), and the old
+ * `AND isbn13 IS NULL` write guard could not tell a fact from a gap. Refused
+ * loudly rather than silently, so the count is a number somebody can check.
+ */
+const declared = [];
+const rows = [];
+for (const r of allCandidates) {
+  const phrase = declaresNoIsbn(r.edition_name, r.note);
+  if (phrase) declared.push({ ...r, phrase });
+  else rows.push(r);
+}
 
 const totalWorks = query('SELECT COUNT(*) AS n FROM work', flags)[0].n;
-console.log(`\n${flags.remote ? 'production' : 'local'}: ${totalWorks} work(s), ${rows.length} with no ISBN on any edition`);
+console.log(
+  `\n${flags.remote ? 'production' : 'local'}: ${totalWorks} work(s), ` +
+    `${allCandidates.length} with no ISBN on any edition`,
+);
+if (declared.length > 0) {
+  console.log(
+    `\n🔴 ${declared.length} SKIPPED — the printing's own record says it has no ISBN ` +
+      '(not a gap; see lib/backfill-safety.mjs declaresNoIsbn):',
+  );
+  for (const d of declared) {
+    console.log(`   work #${d.work_id} ed#${d.edition_id}  ${d.title.slice(0, 44)}  — "${d.phrase}"`);
+  }
+}
 
 if (rows.length === 0) {
   console.log('Nothing to do.');
@@ -588,20 +751,64 @@ if (allFound.length > 0) {
     }
   }
 
+  /*
+   * 🔴 EVERY PERSISTED-FIELD CHANGE GETS A `change_log` ROW — the estate's rule,
+   * and this script did not obey it until 2026-09-05.
+   *
+   * The cost of that omission is measured: the 2026-08-20 run wrote 43 ISBNs and
+   * flipped several editions from `manual` to `openlibrary`, and because it left
+   * no row at all the whole thing had to be reconstructed a fortnight later from
+   * `updated_at` clustering and three stdout logs that happened to survive in the
+   * repo root. A `change_log` row would have answered it in one SELECT — and,
+   * more importantly, would have made the repair a revert instead of a research
+   * project.
+   *
+   * ⚠️ `changed_by` is a real `app_user(id)` and the instances do NOT share one.
+   * On main, 1 is the owner. On padhard, user 1 is HER — stamping her name on a
+   * script run she did not make would be a lie in the one table written to be
+   * trusted. Same rule as `fix-illumicrate-publisher-2026-09-05.mjs`.
+   */
+  const BATCH = `isbn-backfill-${new Date().toISOString().replace(/\.\d+Z$/, 'Z')}`;
+  const CHANGED_BY = flags.friend ? 'NULL' : '1';
+  const NOTE =
+    'scripts/backfill-missing-isbns.mjs filled a missing ISBN from the free/LLM ladder. ' +
+    'Guards in force: the title gate (>=0.80), the ISBN-13 check digit, the UNIQUE-conflict ' +
+    'check, declaresNoIsbn (a printing that states it has no ISBN is skipped) and ' +
+    'isbnLanguageVerdict (a printing in another language is refused). ' +
+    'See docs/info/isbn-ladder.md §7.';
+
+  const logRow = (entityId, field, oldValue, newValue, source, url) =>
+    `INSERT INTO change_log (batch_id, entity, entity_id, field, old_json, new_json, changed_by, changed_how, note)
+      VALUES (${lit(BATCH)}, 'edition', ${lit(entityId)}, ${lit(field)}, ${lit(JSON.stringify(oldValue))}, ` +
+    `${lit(JSON.stringify(newValue))}, ${CHANGED_BY}, 'auto', ${lit(`${NOTE} rung=${source}${url ? ` src=${url}` : ''}`)});`;
+
   // Also filter out works whose edition already gained an isbn13 (race/re-run)
-  const statements = safe
-    .filter((f) => f.edition_id != null)
-    .map(
-      (f) =>
-        // ⚠️ source is written through a CASE that preserves 'manual': a
-        // hand-created edition that gains an ISBN from a free rung keeps its
-        // 'manual' provenance rather than being silently demoted. See
-        // lib/backfill-safety.mjs (audit HIGH, :517).
-        `UPDATE edition SET isbn13 = ${lit(f.isbn13)}, source = ${editionSourceWriteExpr(lit, f.source)}, updated_at = datetime('now')` +
+  const statements = [];
+  for (const f of safe) {
+    if (f.edition_id == null) continue;
+    statements.push(logRow(f.edition_id, 'isbn13', null, f.isbn13, f.source, f.sourceUrl ?? null));
+
+    // The `source` column only moves when the CASE below actually rewrites it,
+    // so the log says the same thing the UPDATE does rather than a hopeful
+    // guess: 'manual' survives, everything else takes the rung's name.
+    const mappedSource = f.source === 'llm' ? 'research' : f.source;
+    if (f.edition_source !== 'manual' && f.edition_source !== mappedSource) {
+      statements.push(logRow(f.edition_id, 'source', f.edition_source ?? null, mappedSource, f.source, null));
+    }
+
+    statements.push(
+      // ⚠️ source is written through a CASE that preserves 'manual': a
+      // hand-created edition that gains an ISBN from a free rung keeps its
+      // 'manual' provenance rather than being silently demoted. See
+      // lib/backfill-safety.mjs (audit HIGH, :517).
+      `UPDATE edition SET isbn13 = ${lit(f.isbn13)}, source = ${editionSourceWriteExpr(lit, f.source)}, updated_at = datetime('now')` +
         ` WHERE id = ${lit(f.edition_id)} AND isbn13 IS NULL;`,
     );
+  }
 
-  console.log(`\n${statements.length} statement(s) to run.`);
+  const writes = safe.filter((f) => f.edition_id != null).length;
+  console.log(`\n${statements.length} statement(s) to run — ${writes} edition update(s) + their change_log rows.`);
+  console.log(`change_log batch_id: ${BATCH}`);
   if (!flags.commit) {
     console.log('\nDRY RUN. Nothing written. Re-run with --commit.');
     process.exit(0);
@@ -615,7 +822,12 @@ if (allFound.length > 0) {
     `SELECT COUNT(*) AS n FROM work w WHERE NOT EXISTS (SELECT 1 FROM edition e WHERE e.work_id = w.id AND e.isbn13 IS NOT NULL)`,
     flags,
   )[0];
-  console.log(`\nWrote ${statements.length}. Works still without ISBN: ${after.n} (was ${rows.length}).`);
+  const logged = query(`SELECT COUNT(*) AS n FROM change_log WHERE batch_id = ${lit(BATCH)}`, flags)[0];
+  console.log(
+    `\nWrote ${writes} edition(s); change_log holds ${logged?.n} row(s) for ${BATCH}. ` +
+      `Works still without ISBN: ${after.n} (was ${allCandidates.length}, of which ${declared.length} ` +
+      'are printings that state they have none and are meant to stay that way).',
+  );
 } else {
   console.log('\nNo ISBNs found. Nothing to write.');
 }

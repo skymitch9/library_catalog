@@ -1,10 +1,16 @@
 # ISBN & Title Lookup — Information Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
-> Last verified: **2026-08-09**. Every figure below is a **live call made on that
-> date**, not a recollection. Raw output is in the session scratchpad
-> (`phase0-report.json`, `phase0b-report.json`); the numbers are reproduced here
-> because the scratchpad is not durable.
+> Last verified: **2026-08-09** for §§1–6. Every figure in those sections is a
+> **live call made on that date**, not a recollection. Raw output is in the
+> session scratchpad (`phase0-report.json`, `phase0b-report.json`); the numbers
+> are reproduced here because the scratchpad is not durable.
+>
+> 🔴 **§7 was added 2026-09-05 and is measured on that date** against production
+> `library-catalog` and `library-catalog-2nd`. It is the post-mortem of the
+> 2026-08-20 backfill run and the two guards that came out of it. Nothing in
+> §§1–6 was re-measured that day — in particular §4.4 predicted this failure in
+> August and its numbers still carry their 2026-08-09 age.
 
 This is phase 0 of `catalog-platform/docs/LIBRARY_CATALOG.md`, which required
 that *"everything about external book APIs is knowledge, not measurement"* be
@@ -234,3 +240,133 @@ observe the actual item. Neither is a research task.
 about the **work** and has one right answer; an **identifier is a fact about an
 object** and has as many answers as there are editions. Research settles the
 first and usually cannot settle the second.
+
+---
+
+## 7. 🔴 The 2026-08-20 backfill filed 12 wrong ISBNs — the post-mortem, and the two guards
+
+> **Measured 2026-09-05** against production `library-catalog` and
+> `library-catalog-2nd`, by agent W6-ISBN, on the owner's decision of that day.
+> Section 4.4 above called this failure in August — *"the similarity gate cannot
+> catch the worst case"* — and it happened anyway, in a script, unattended, with
+> no `change_log` row to find it by.
+
+### 7.1 What happened
+
+`scripts/backfill-missing-isbns.mjs` was run `--remote --commit` twice on
+**2026-08-20**: at **15:33:26Z** (free rungs, 45 rows in one batch) and at
+**18:03–18:04Z** (the `--llm` rung, 19 rows). Between them they filled **43
+editions that still carry an ISBN today**.
+
+**42 of those 43 were SPECIAL printings** — Kickstarter exclusives,
+leatherbounds, subscription-box hardcovers, crowdfunded copies, and volumes of
+slipcase sets. Only one (#507, *The Book of Mormon*) was an ordinary printing.
+
+⚠️ **That is structural, not bad luck.** `CANDIDATES_SQL` asks for works with no
+ISBN on ANY edition and writes to `ORDER BY e.id LIMIT 1` — the **oldest**
+edition row. On this catalogue the works with no ISBN anywhere are precisely the
+crowdfunded and exclusive ones, and their oldest row IS the special printing.
+The backfill's target set and the set of rows that legitimately have no ISBN are
+almost the same set.
+
+### 7.2 The two mechanisms
+
+| Hole | What it did |
+|---|---|
+| Rung 1 read `doc.isbn` off an Open Library **work** search result — its own comment says *"an array of ALL isbns from all editions of this work"* — and `pickBestIsbn13` took the first that parsed | Every translation is a candidate. The title gate scores the **work's** title, so a translation passes at `sim 1.00`; the surviving log shows exactly that for a Korean printing of *Understanding the Old Testament* |
+| Rung 2 had `volumeInfo.language` in the response all along and never read it | A German `978-3` and an Italian `979-12` printing went in from Google Books |
+| Rung 2.5 (LibraryThing) had nothing to gate on at all — `thingTitle` returns bare ISBNs with no title, author or language | Documented as the lowest-trust rung since 2026-08-24, but the write was still unconditional |
+| `isbn13 IS NULL` was the only write guard | It cannot tell a **gap** from a recorded **fact**. Three rows carried an owner-verified note saying no ISBN is printed on them, and 17 more said *"no per-volume ISBN recorded"* in their own name |
+| No `change_log` row, anywhere | The whole run had to be reconstructed a fortnight later from `updated_at` clustering and three stdout logs that happened to survive in the repo root |
+
+### 7.3 How the writer was identified (five lines of evidence)
+
+1. Three of its own stdout logs are still in the repo root —
+   `isbn-backfill-llm.log`, `isbn-backfill-llm2.log`, `isbn-final.log`
+   (⚠️ **UTF-16LE**; `iconv -f UTF-16LE` to read them) — each opening
+   `> library-catalog@0.1.0 backfill:missing-isbns` /
+   `tsx scripts/backfill-missing-isbns.mjs --remote --llm --commit`.
+2. The ISBNs those logs report finding are the ISBNs now on the rows
+   (`9781981818648` → ed#336, `9781039470224` → ed#486, …).
+3. The version in force that day wrote `source = <rung>` **bluntly** — the exact
+   `manual → openlibrary` flip seen on the Illumicrate rows. The `CASE` that
+   preserves `manual` landed four days later in `fd705b0`.
+4. Its rung→source mapping produces all three source values seen across both
+   batches (`openlibrary`, `googlebooks`, `research`), and **nothing else in this
+   repo writes `edition.source = 'research'` beside an `isbn13`**.
+5. It writes no `change_log` row — matching the absence.
+
+⚠️ **Honest gap:** the 15:33:26Z batch has **no surviving log of its own**. It is
+attributed by code-path signature, not by a log line naming it.
+
+### 7.4 The 12 wrong objects (tier A)
+
+Verified through the repo's own `lookupOpenLibraryByIsbn` plus the per-edition
+`/isbn/<isbn>.json` record, 2026-09-05.
+
+| ed | work | isbn13 on the row | what that ISBN actually is | verdict |
+|---|---|---|---|---|
+| 307 | The Lightning Thief | 9780786838653 | Disney-Hyperion **2006 US trade** printing | wrong object (row is owner-verified as having no ISBN) |
+| 308 | The Sea of Monsters | 9782226177612 | *La mer des monstres*, Albin Michel — **FRENCH** | wrong language |
+| 311 | The Last Olympian | 9788362170043 | *Ostatni Olimpijczyk*, Jaguar — **POLISH** | wrong language |
+| 316 | DCC: Crocodile | 9791281656383 | group **979-12 = Italy**; Open Library has no record at all | unattested |
+| 321 | Words of Radiance | 9781399622073 | Orion/Gollancz **2024 UK trade hardcover** | the row is the Dragonsteel leatherbound, and its own `edition_name` names the two real ISBNs |
+| 329 | Carl's Doomsday Scenario | 9783596712496 | FISCHER Tor — **GERMAN** | wrong language |
+| 584 | Starsight | 9788381168830 | *Wśród gwiazd*, Zysk i S-ka — **POLISH** | wrong language |
+| 585 | Cytonic | 9781713664017 | Audible Studios on Brilliance Audio — an **AUDIOBOOK** | wrong medium |
+| 587 | Oathbringer | 9786052382349 | Akılçelen Kitaplar, group 978-605 — **TURKISH** | wrong language |
+| 589 | The Son of Neptune | 9788424664558 | *El fill de Neptú*, La Galera — **CATALAN** | wrong language |
+| 595 | The Tyrant's Tomb | 9788417773090 | *La tumba del tirano*, Montena — **SPANISH** | wrong language |
+| 596 | The Tower of Nero | 9780593290941 | Listening Library — an **AUDIOBOOK** | wrong medium |
+
+**The other 31**, split by what can be said about them:
+
+- **17 (tier B)** — right book, wrong printing: a real English trade ISBN on a
+  row whose own `edition_name` says *"no per-volume ISBN recorded"*. A judgement
+  for the owner, not a measurement, so it sits behind
+  `--also-declared-no-isbn` rather than in the default batch.
+- **14 (untouched)** — Kickstarter / collector's printings carrying a plausible
+  trade ISBN and making no claim about having none. Whether a crowdfunded
+  hardcover shares the trade ISBN is a question about the **physical object**;
+  only somebody holding the book can answer it.
+
+**padhard: 0.** The 2026-08-20 run could not reach it — `scripts/lib/d1.mjs`
+gained `--friend` on **2026-08-22** (before that `DB_NAME` was a constant), and
+her earliest edition writes are 2026-08-22 02:00Z. Re-measured rather than
+argued: 0 rows there declare no ISBN yet carry one. Her one non-English
+registration group is `9789358568417` (978-93, India) on edition #605
+*Italian Affair* — **not** written by this run, and unresolved.
+
+### 7.5 The guards, and where they live
+
+Both are pure functions in `scripts/lib/backfill-safety.mjs`, pinned by
+`scripts/test/backfill-safety.test.mjs` with the real ISBNs above as fixtures.
+
+| Guard | Rule |
+|---|---|
+| **`declaresNoIsbn(editionName, note)`** | A printing whose own record states no ISBN exists is skipped and printed. ⚠️ Deliberately **narrow**: it matches a *statement about an absent ISBN*, never the words "Kickstarter" or "Collector's Edition". Refusing every exclusive would trade one silent-wrong-fill for a silent-never-fill |
+| **`isbnLanguageVerdict({ isbn13, languages, expected })`** | `foreign` refuses; `ok` and `unknown` proceed. An **attested** language beats the registration group, because a group only says who registered the prefix — `979-8` (KDP) and `978-1` self-published books are English. A non-English group with no attested language is `foreign`; an English group is `unknown`, never a confirmation |
+
+Wired in as: rung 1 now walks the work's ISBN list (up to
+`MAX_LANGUAGE_PROBES = 5`) and takes the first candidate whose **per-edition**
+`/isbn/<isbn>.json` record survives the gate — ⚠️ the per-edition endpoint, not
+the work-level one, which aggregates every translation and is the shape that
+caused this; rung 2 reads `volumeInfo.language`, at no extra call; rung 2.5
+gets the same per-edition probe, being the rung with no gate of its own.
+**And every write now logs a `change_log` row per changed field**, batch
+`isbn-backfill-<ISO timestamp>`, `changed_how = 'auto'`, `changed_by` 1 on main
+and NULL on padhard.
+
+**Exercised on production, dry run, 2026-09-05** (`--remote`, no `--commit`):
+34 works with no ISBN → **1 skipped by `declaresNoIsbn`** (#450 *Dungeon Born*,
+*"No barcode printed on this copy (owner-verified)"*), 33 searched, **1 refused
+by the language gate** — `9784047336582` (**978-4 = Japan**) proposed by
+LibraryThing for *Sanctuary: The Art Book of Yuumei*, the exact rung that had no
+gate at all. 15 found, 5 dropped on the UNIQUE conflict, **10 updates + 10
+`change_log` rows**.
+
+⚠️ **Not fixed here, and visible in that same run:** Google Books proposed the
+**same** ISBN `9781986619233` for *Space Knight* books 5, 6, 7, 8 and 9. The
+UNIQUE index catches it and the rows are skipped, so it is safe — but a rung
+answering five different books with one ISBN is a title-gate problem
+(`sim 0.80` on a numbered series), and §4.4's warning applies to it.
