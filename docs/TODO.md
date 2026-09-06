@@ -61,8 +61,17 @@ why "right away" never happens today, and item 3 below is the standing fix.
    *"a queue that re-asks a question a human already answered is a queue nobody
    reads"*). The four `library2` causes are gone — those slugs now hold **0
    entries** — so a merge is a formality that also drops the empty series row.
-   ⚠️ The apex `/series/` page can LIST the queue but has **no button that
-   resolves one**; it is a `POST` with an owner-standing bearer:
+   ⚠️ ~~The apex `/series/` page can LIST the queue but has **no button that
+   resolves one**~~ — **corrected 2026-09-05: it HAS one now.** Agent
+   W6-RESOLVE built the control on the owner's ask that evening
+   (`catalog-platform` `b1a791f`; deploys `catalog-index` `04bef4e8`,
+   `heygabi-home` `1f17c1e5`). 🔗 **Sign in at
+   <https://heygabi.ai/series/> → "Show me which series"**, and each row
+   carries both spellings with their entry counts and a **Keep "…"** button
+   per spelling. ⚠️ **The button whose label names the SURVIVING spelling is
+   the one to press** — two of the six below merge into the candidate, not
+   the closest, and the queue never asks twice. The raw `POST` below still
+   works and is kept as the record of what the button sends:
 
    ```
    POST https://index.heygabi.ai/api/series/pending/<candidate_fold>   (URL-encode the spaces)
