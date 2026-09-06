@@ -258,6 +258,53 @@ must accept `PUT /api/push/library2` and hold `INDEX_PUSH_TOKEN_LIBRARY2`
 before any of this can succeed; a push into an index that does not know the
 source gets a 401/404, logged and swallowed (fails soft, by design).
 
+### ✅ padhard can now READ the index from a browser — 2026-09-06
+
+⚠️ **The push half and the read half are different permissions, and this
+instance had only the first.** Pushing is a bearer token; *reading* from a page
+served on `padhard.heygabi.ai` is a **CORS** decision made by the index Worker's
+`READ_ORIGINS` — and that list held the apex, library, boardgames and
+audiobooks, and not padhard. So this site mounted `<estate-search>` (it runs the
+same build as `library.heygabi.ai`) and the component could reach **neither**
+`/api/catalogs` nor `/api/search` from here. It degraded in words rather than
+erroring, which is exactly why nothing looked broken.
+
+**Owner's explicit "Yes", 2026-09-06 00:5x Phoenix** — widening a CORS list is
+access-increasing, so it waited for him. Shipped the same day from
+`catalog-platform`: commit `4ef4816`, deployment
+`a2ed0d67-2d8e-4391-854f-3895ae5bee02`, rollback
+`04bef4e8-9842-4a11-a9ff-7bbd9aa52119`.
+
+**Measured live 14:33Z** (`curl -s -D -`, never `-I` or `-o NUL`, which
+misreport on these hosts):
+
+```
+curl -s -D - -o /dev/null -H "Origin: https://padhard.heygabi.ai" \
+  https://index.heygabi.ai/api/catalogs
+  → HTTP/1.1 200 · Access-Control-Allow-Origin: https://padhard.heygabi.ai
+  → Vary: Authorization, Origin · Cache-Control: public, max-age=300
+```
+
+`/api/search?q=test` answers the same ACAO. Before the deploy the identical
+request returned 200 with **no** `Access-Control-Allow-Origin` at all.
+
+⚠️ **It widened which PAGES may ASK, not what is RETURNED.** Visibility is still
+decided per-caller inside the index Worker: Samantha's rows still need
+`vis_library2`, and an anonymous caller on this host sees exactly what an
+anonymous caller on the apex sees.
+
+⚠️ **`ebooks.heygabi.ai` is the same question and is still absent** — it was not
+part of what the owner was asked, and needs its own "Yes". The exact list is
+pinned by `catalog-platform/apps/index-worker/test/read-origins.test.ts`, which
+parses `wrangler.toml` so a hard-coded copy cannot drift from the deployed one.
+
+⚠️ **Not verified: nobody has loaded a page on `padhard.heygabi.ai` and watched
+the search box populate.** The headers are measured; the browser is not. And
+`sites/heygabi-home/public/assets/estate-search.js` — the canonical component,
+copied into this repo — still carries a comment saying the call *"is refused by
+CORS today"* on padhard, which is now wrong; correcting it is a synced-asset
+change across three repos.
+
 ⚠️ ~~`EBOOK_INGEST_TOKEN` (her ebook surface is a 404 and stays one),
 `AUDIOBOOK_MAPPING_TOKEN` (no audiobook pipeline)~~ — **both were set on
 2026-08-25 and both routes are live.** The reasoning above was overturned by the
