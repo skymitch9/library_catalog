@@ -266,8 +266,10 @@ why "right away" never happens today, and item 3 below is the standing fix.
    run row carrying the new `seriesVolumes` sub-object exists yet**, because
    every row today predates the deploy pair. `/api/health` therefore reads
    `seriesVolumes.lastRun: null` on both, which is the *"never got that far"*
-   silence rather than a fault. **The first tick after `08:23` UTC is what fills
-   it — read the run rows then** (§5 of the runbook):
+   silence rather than a fault. ~~**The first tick after `08:23` UTC is what fills
+   it — read the run rows then**~~ 🔴 **THAT PREDICTION IS MEASURED FALSE — see
+   the flip-refused block below. The `08:23` and `12:23` ticks both 304'd and
+   filled nothing, and they were always going to.** (§5 of the runbook):
 
    ```
    npx wrangler d1 execute library-catalog --remote --config apps/worker/wrangler.toml \
@@ -288,6 +290,104 @@ why "right away" never happens today, and item 3 below is the standing fix.
    It writes nothing in any mode, and returns the plan plus a `says` sentence.
    Read it back either way at <https://library.heygabi.ai/api/health> and
    <https://padhard.heygabi.ai/api/health> → `detail.audiobookSweep`.
+
+   ⚠️ **Corrected 2026-09-06 (W10-LIB-FLIP): that curl will NOT show you a plan
+   today.** The admin `POST` runs the same `runAudiobookSweep`, which sends
+   `If-None-Match` from the stored snapshot, and the origin is currently
+   answering **304**. It will come back `state: "skipped"`, `detail:
+   "unchanged"`, `plan: null` — the same as the last two crons. It is not
+   broken; there is nothing new to plan. See the block below.
+
+### 🔴 THE FLIP TO `enforce` WAS REFUSED 2026-09-06 — the gate is not 3 shadow ticks from met, it is ~0 (agent W10-LIB-FLIP)
+
+The owner approved the flip on 2026-09-06 on the understanding that the shadow
+evidence was in. 🔴 **It is not, and the shortfall is not a matter of degree.**
+Measured that day, ~14:20 UTC, by reading `audiobook_sweep_run` on **both**
+production databases rather than by reading this file:
+
+| | MAIN `library-catalog` | padhard `library-catalog-2nd` |
+|---|---|---|
+| run rows, **ever** | **3** | **3** |
+| of those, ticks that computed a plan | **1** (id 1, `04:23:18`) | **1** (id 1, `04:23:12`) |
+| ticks carrying a `seriesVolumes` object | 🔴 **0** | 🔴 **0** |
+| id 2 (`08:23`) and id 3 (`12:23`) | `skipped` / `unchanged` | `skipped` / `unchanged` |
+
+**The gate is *"≥42 shadow ticks with ZERO divergences on BOTH halves"*
+([`access/audiobook-sweep.md`](access/audiobook-sweep.md) §6). The achieved
+count is 1 tick on the holdings half and 0 on the series-volume half.** The
+"42" in circulation is the gate's *requirement*, never a reading.
+
+**Three separate things are wrong with treating today's state as evidence:**
+
+1. 🔴 **A `304` short-circuits the WHOLE tick, series volumes included.**
+   `apps/worker/src/lib/audiobook-sweep-run.ts:430-442` returns
+   `skipped`/`unchanged` **before** the body is parsed, before the D1 read, and
+   ~75 lines before the series-volume block at `:515-536`. So
+   `seriesVolumes.lastRun: null` on `/api/health` does not mean *"the sub-step
+   ran and found nothing"* — it means **the last tick was a 304**, and the
+   sub-step has never executed in production at all. ⚠️ `/api/health` reads only
+   the **latest** run row (`routes/health.ts:108-121`), so one 304 hides every
+   earlier plan.
+2. 🔴 **The one plan-bearing tick predates the series-volume code.** Row id 1's
+   `detail_json` has **no `seriesVolumes` key whatsoever** — not `null`, absent
+   — because it ran on the bundle from before the W8-SERIES-VOL deploy pair
+   (`docs/deploys.log`, `2026-09-06T05:06Z`). Rows 2 and 3 carry
+   `"seriesVolumes":null` explicitly, which is how you can tell the bundles
+   apart in the data. It also recorded `seriesCanonEntries: 6`; both hosts now
+   report **10**, so even the holdings half's single data point was produced by
+   a planner whose canon has since changed — §2.4's skew, in the evidence
+   itself.
+3. ⚠️ **The evidence rate is half what the schedule assumed.** Only a **200**
+   tick computes anything, the sibling CSV changes ≈3×/day, and the etag
+   (`"4d4d09ade4b45fb1baa48ab7880b7a34"`, 1089 rows) has been identical across
+   `04:23`, `08:23` and `12:23`. So *"42 ticks = a week at four-hourly"* is
+   wrong as a schedule: at ~3 plan-bearing ticks a day it is **~14 days**, and
+   `snapshotAgeHours` was already **10** at 14:21 UTC.
+
+**Where the numbers everyone is quoting actually come from — they are the
+SCRIPT's, not the route's.** *"padhard would gain 140 volumes / 313 checks"* is
+`npm run backfill:series-volumes -- --remote --friend`, measured 2026-09-05 and
+recorded in [`access/audiobook-sweep.md`](access/audiobook-sweep.md) §4a. The
+route half of that comparison was produced by running the planner over the
+route's inputs **in a local harness**, not by a live tick. 🔴 **The gate is a
+comparison of two sides and only one side has ever been measured in
+production.**
+
+**What enforcing would actually write, and why the padhard half is the risk:**
+
+| | MAIN | padhard |
+|---|---|---|
+| holdings (`applyAudiobookSweepPlan`, `:578`) | 127 edition upserts, 190 rungs, **0 stales** | 123, 140, **0 stales** |
+| series volumes (`applySeriesVolumePlan`, `:585`) | 329 statements (190 volume + 139 check) | **453** (140 volume + 313 check) |
+| what those tables hold today | 159 volumes / 84 checked | 🔴 **0 / 0 — never written by anything** |
+
+So on padhard the first enforcing tick is a **cold fill of two empty tables from
+a plan that has never once been computed by the Worker that would write it.**
+
+☐ **What would produce the evidence — in order of cost:**
+
+1. **Wait for the CSV to change** and read the run rows. Free, correct, and the
+   only option that needs no decision. ⚠️ Only 200-ticks count toward 42.
+2. **Blank the stored etag** so the next tick fetches unconditionally
+   (`audiobook_snapshot`, migration `0470_audiobook_sweep_state.sql:39`). One
+   forced 200-tick per blanking, and it is safe — the snapshot is rewritten
+   *after* the guards (`:540`) and the drift baseline is `row_count`, which is
+   untouched. But it is a **production write to a state table** and it is not
+   the owner's ask; nobody should do it without saying so first.
+3. **Give the admin route a `force` flag** that skips `If-None-Match`. A code
+   change, but it is the instrument the gate actually needs — `dryRun` was built
+   to be *"the ONLY way to answer the phase-1 gate"*
+   (`routes/audiobook-sweep.ts:11-18`) and today it cannot, because it 304s like
+   everything else. ⚠️ This is the honest fix and it should probably be built
+   before the next flip attempt.
+
+🔴 **Nothing was flipped, nothing was deployed, no data changed.** Both
+instances remain `AUDIOBOOK_SWEEP_MODE = "shadow"` (`apps/worker/wrangler.toml`
+`:383` and `:704`). **Rollback confirmed for whenever the flip does happen:**
+set both lines to `"off"` in one commit and `npm run deploy:both` — it takes
+effect on the next tick, needs no migration, and un-does nothing already
+written, because the sweep is idempotent and STEP 11 keeps running regardless
+([`access/audiobook-sweep.md`](access/audiobook-sweep.md) §6).
 
 ## ☑ BUILT 2026-09-05 — "Request a catalog" phase 5, the sealed-key ladder is IN step 10 (agent S2) — ☐ owner runs it for real once
 
@@ -1574,7 +1674,7 @@ not the question the app asks. Then `check-cover-health.mjs --friend --remote`.
 |---|---|---|---|
 | main | 511 *Beauty X Beast*, 512 *Rob X Punzel* | blank; free rungs and the LLM both found nothing | Mountaindale Press's own store has these — the publisher-page rung sketched in KI-6's neighbour, or a hand-linked URL |
 | main | 513 *Snow X Dwight* | blank; LLM proposed the publisher's `og:image` at **low confidence** and it was correctly NOT written | Owner opens `https://www.mountaindalepress.store/cdn/shop/files/00_600x.png?v=1767642347` and presses Use, or rejects it. The model's doubt is only whether that file is the flat jacket or a 3D mockup |
-| main | ~~516 *Sanctuary (Yuumei)*~~ | ✅ **CLOSED — re-measured 2026-09-06: `cover_status` is `ok`.** `change_log` row **1593** records `"standin"` → `"ok"` at **2026-08-24 22:44:43**, `changed_how = 'human'`, `changed_by = 1`, with **no `coverUrl` row beside it** — the owner looked at the 3D product photo and accepted it (0040: `'ok'` means a person looked). | — ⚠️ The row's other half is live and is now **KI-17**: ed#670 is one of **four art books** the ISBN guard refuses on the word *"Collector's"*. See [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) |
+| main | ~~516 *Sanctuary (Yuumei)*~~ | ✅ **CLOSED — re-measured 2026-09-06: `cover_status` is `ok`.** `change_log` row **1593** records `"standin"` → `"ok"` at **2026-08-24 22:44:43**, `changed_how = 'human'`, `changed_by = 1`, with **no `coverUrl` row beside it** — the owner looked at the 3D product photo and accepted it (0040: `'ok'` means a person looked). | ✅ **BOTH HALVES CLOSED.** ~~⚠️ The row's other half is live and is now **KI-17**: ed#670 is one of **four art books** the ISBN guard refuses on the word *"Collector's"*.~~ **SETTLED 2026-09-06 — the owner looked and answered *"No ISBN"***, so the guard's refusal is now the right outcome rather than a mis-handling, and `isbn13 IS NULL` on ed#670–673 is a recorded fact. **Nothing was written**: re-measured that day, the four rows are unchanged on `library-catalog`, do **not exist** on `library-catalog-2nd`, and are still refused at guard 1b by the only script that could fill them. See [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) KI-17's SETTLED banner — ⚠️ it also records the one thing still true (the refusal rests on a WORD, so narrowing the list re-exposes them; a `note` typed on the edit page is the durable fix) |
 | padhard | 113 *Summer in the City* | `standin` — the Google placeholder, **KI-6** | Any real cover; the ISBN rungs had nothing |
 | padhard | 268 *The Villa* | `standin` — right book, **German** edition jacket | The English Berkley jacket, or the owner deciding the German one is fine |
 | padhard | 435 *Risky Business* | blank; LLM proposed a **blog-hosted** image at **low confidence**, correctly NOT written | Owner opens <https://padhard.heygabi.ai/works/435> and presses Use, or rejects it. The model's doubt is provenance, not the book — the aspect ratio is a cover's |

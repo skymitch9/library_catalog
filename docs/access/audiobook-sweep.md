@@ -19,7 +19,15 @@
 > admin route has never been called with a real bearer (401 is as far as an
 > agent may go), and **no run row carrying the new `seriesVolumes` sub-object
 > exists yet** — every row today predates the deploy, so the key reads
-> `lastRun: null`. The first tick after `08:23` UTC is what fills it.
+> `lastRun: null`. ~~The first tick after `08:23` UTC is what fills it.~~
+>
+> 🔴 **CORRECTED 2026-09-06 ~14:20 UTC (W10-LIB-FLIP): the `08:23` tick did NOT
+> fill it, and neither did `12:23` — both `304`'d.** A `304` returns at
+> `audiobook-sweep-run.ts:430-442`, upstream of the series-volume block, so
+> **only a tick that gets a 200 computes that half at all.** Three run rows
+> exist per instance; one computed a plan; none has ever carried
+> `seriesVolumes`. **A flip to `enforce` was refused on this reading** — §6 and
+> [`../TODO.md`](../TODO.md) carry the whole measurement.
 >
 > **Why it works this way** is [`../info/series-formats-and-audiobooks.md`
 > §4.12](../info/series-formats-and-audiobooks.md); the design of record is
@@ -100,7 +108,7 @@ interchangeable:**
 
 | It reads | It means |
 |---|---|
-| `null` | the tick never got that far — mode `off`, a refused fetch, or a failed guard. **Also what a run row written BEFORE 2026-09-05 says**, because the field did not exist |
+| `null` | the tick never got that far. 🔴 **In practice the cause is almost always a `304`** — `state: "skipped"`, `detail: "unchanged"` — which returns at `audiobook-sweep-run.ts:430-442`, ~75 lines **before** the series-volume block at `:515`. Read `state` in the same breath as this field or you will misdiagnose it. The other causes: mode `off`, a refused fetch, a failed guard. **Also what a run row written BEFORE 2026-09-05 says**, because the field did not exist (such a row has **no key at all**, where a 304 row carries an explicit `"seriesVolumes":null` — that is how you tell the two bundles apart in the data) |
 | `{ "planned": null, "written": null, "detail": "scoped run …" }` | the **on-add hook** fired and deliberately declined this half. Guard 3: a run that looked at one book has not consulted a source about the rest of the catalogue. The cron owns it |
 | `{ "planned": {…}, "written": null, "detail": null }` | **shadow, working correctly** |
 | `{ "planned": {…}, "written": 329 }` | enforce, applied |
@@ -287,10 +295,40 @@ npx wrangler d1 execute library-catalog --remote --config apps/worker/wrangler.t
 > holdings comparison in §4 *and* the series-volume comparison in §4a. One
 > switch flips both, so evidence for one is not evidence for the other.
 
-⚠️ **The clock started 2026-09-06.** The first `audiobook_sweep_run` rows are on
+⚠️ ~~**The clock started 2026-09-06.** The first `audiobook_sweep_run` rows are on
 both instances (`04:23` UTC, `trigger: cron`, `state: shadow`), so the tick count
 is running — but the rows that carry `seriesVolumes` only begin with the tick
-after the 2026-09-05 deploy pair.
+after the 2026-09-05 deploy pair.~~
+
+🔴 **CORRECTED 2026-09-06 ~14:20 UTC (W10-LIB-FLIP) — the clock is barely
+running, and a flip attempted that day was REFUSED on this measurement.** Read
+on both production databases: **3 run rows each**, of which **one** computed a
+plan (`04:23`) and **none has ever carried a `seriesVolumes` object**. The
+`08:23` and `12:23` ticks are both `skipped` / `unchanged`.
+
+**Three things make today's state not-evidence, and only the first is obvious:**
+
+1. **A `304` short-circuits the whole tick**, series volumes included — the
+   return at `audiobook-sweep-run.ts:430-442` is upstream of everything.
+2. **The one plan-bearing row predates the series-volume bundle** (no
+   `seriesVolumes` key at all, and `seriesCanonEntries: 6` where both hosts now
+   report **10**).
+3. ⚠️ **Only 200-ticks count.** The CSV changes ≈3×/day, so *"42 ticks = a week
+   at four-hourly"* is really **~14 days** — and ⚠️ **`POST … {"dryRun":true}`
+   cannot substitute**: it runs the same function and 304s too, returning
+   `plan: null`. **The route half of the parity comparison has never been
+   measured in production at all** — the 2026-09-05 §4 and §4a figures are the
+   SCRIPT's, with the route side produced by a local harness.
+
+**Ways to get a forced 200-tick, cheapest first:** wait for the CSV to change ·
+blank the stored etag in `audiobook_snapshot` (safe — the snapshot is written
+only after the guards, and the drift baseline is `row_count` — but it is a
+production write and needs saying out loud) · **add a `force` flag to the admin
+route that skips `If-None-Match`**, which is the honest fix, because §3 above
+calls `dryRun` *"the ONLY way to answer the phase-1 gate"* and today it is not.
+
+Full record and the numbers: [`../TODO.md`](../TODO.md), *"THE FLIP TO
+`enforce` WAS REFUSED 2026-09-06"*.
 
 Then, and only then: change **both** `AUDIOBOOK_SWEEP_MODE` lines in
 `apps/worker/wrangler.toml` to `"enforce"`, in **one commit of its own**, and
