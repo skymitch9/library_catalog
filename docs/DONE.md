@@ -18,6 +18,84 @@
 > were extracted from this same history.
 
 
+## ✅ 2026-09-05 21:5x Phoenix — the two CROSS-CATALOG series-canon entries (emily wilde / skyward)
+
+> **Closed by W8-CANON**, across three repos. `catalog-platform` **`91c88b8`**
+> — both entries added through `node tools/series-canon.mjs add` (never a text
+> editor), `validate` clean, that repo's root suite **3076 pass / 0 fail**.
+> `audiobook_catalog` — `python -m app.tools.sync_series_canon --commit` wrote
+> **4 new folds of 10 total** into `scripts/catalog_overrides.json`; a re-run
+> reports *"Nothing to do"*; its overrides + sync tests **156 pass / 0 fail**.
+>
+> **The entries, and why skyward folds the "wrong" way:**
+>
+> | canonical | variant | decidedHow |
+> |---|---|---|
+> | `Emily Wilde` | `Emily Wilde Series` | `seed` — the plain form, by `_decided.canonicalRule` |
+> | `The Skyward Series` | `Skyward` | `human` — ⚠️ **folds TO the decorated form**, because the owner kept it as the survivor at the `series_pending` queue on 2026-09-05 ~18:08 Phoenix (item 1 above) |
+>
+> The canon file's `_decided.canonicalRule` said the plain undecorated form
+> ALWAYS wins, which skyward contradicts. Rather than leave the file arguing
+> with itself, `canonicalRule` and `provenance` were amended to say the rule is
+> **mechanical, not sovereign**: a `decidedHow: "human"` entry overrides it, and
+> `human` is exactly the flag that stops a later session "correcting" skyward
+> back to the plain form.
+>
+> 🔴 **NO PERSISTED KEY MOVES — measured, not reasoned.** The stop condition
+> was whether folding `"Skyward"` → `"The Skyward Series"` moves a `work_key` or
+> a `series_key`. It does not:
+>
+> - **The index writes nothing new.** `series_alias` already held
+>   `emily wilde series → emily-wilde` and `skyward → skyward-series` (read live
+>   off remote `index_catalog`, both `decided_how = human`), and
+>   `planSeries` checks the alias map at **step 1**, before the canon at
+>   **step 3** — the canon branch never fires. Had it fired it would have
+>   produced the identical slugs.
+> - **`packages/core/src/audiobook-sweep.ts` folds for COMPARISON only** — its
+>   own line 466 says so, and a rung row stores `series` = OUR spelling with
+>   `audiobookSeries` = theirs. So `"Skyward"` stays `"Skyward"` on every
+>   library surface; nothing a person sees on this side changes.
+> - **`packages/core/src/matching.ts`'s `seriesKey`** is `normaliseTitle(work.series)`
+>   over library rows only and never calls `canonicalSeries`. Untouched.
+> - ⚠️ **`workKeyForAudiobookRow` was the one real risk**, and it is indirect:
+>   the sync changes `catalog.csv`'s `series` column on the next pipeline build,
+>   and `cleanTitleWithSeries(title, series)` strips that exact string from the
+>   title before `workKeyFor`. **Measured by running the real
+>   `packages/core/src/titles.ts`** over all 9 affected CSV rows (2 Emily Wilde,
+>   7 Skyward) under both the old and the new series spelling: every key
+>   byte-identical, **0 of 9 moved**. The Emily Wilde titles carry the series as
+>   *"- Book One of the Emily Wilde Series"*, which the exact-strip regex never
+>   matched under either spelling.
+>
+> **What this actually buys, and it is one thing:** the series fold now MATCHES
+> across catalogs where it did not (`"emily wilde"` vs `"emily wilde series"`;
+> `"skyward"` vs `"skyward series"`), so the audiobook sweep can build audio
+> rungs for both series — it built none before. Plus the audiobook catalog's own
+> display drops to `"Emily Wilde"`. Skyward's CSV spelling was already canonical,
+> so that half is a self-map and nothing about it changes.
+>
+> **Measured spellings, 2026-09-05, all four stores read rather than assumed:**
+>
+> | Store | Emily Wilde | Skyward |
+> |---|---|---|
+> | `audiobook_catalog/site/catalog.csv` | `"Emily Wilde Series"` ×2 | `"The Skyward Series"` ×7 |
+> | `library-catalog` D1 `work.series` | — **none** | `"Skyward"` ×5 |
+> | `library-catalog-2nd` D1 (`--env friend`) | `"Emily Wilde"` ×2 | `"Skyward"` ×1 |
+>
+> ⚠️ **The moved item's claim that "both library instances already hold the
+> plain form" was WRONG for Emily Wilde** — the main instance holds no Emily
+> Wilde row at all; only padhard does. It does not change the entry, but a later
+> reader should not inherit the error.
+>
+> ⚠️ **NOT verified:** nothing was rebuilt, re-pushed, swept or deployed. The
+> audiobook CSV still spells it `"Emily Wilde Series"` until the next
+> `python -m app.main`, and the new rungs do not exist until an audiobook sweep
+> runs. No `db:migrate`, no deploy pair — neither is needed for a reference-data
+> change. Nobody has looked at <https://audiobooks.heygabi.ai/> or
+> <https://library.heygabi.ai/> to see anything.
+
+*(moved whole from `TODO.md`, item 2 of the 2026-09-05 16:37 owner asks)*
+
 ## ✅ 2026-09-05 18:09 Phoenix — the owner resolved the six `series_pending` rows on <https://heygabi.ai/series/> (first live use of W6-RESOLVE's button)
 
 > **Measured 2026-09-05 18:12 Phoenix** from the index D1: all six `resolved_as = merged`, `resolved_by` = the owner,

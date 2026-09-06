@@ -162,14 +162,12 @@ why "right away" never happens today, and item 3 below is the standing fix.
    his clicks: all six `merged`; ⚠️ he kept **"The Skyward Series"** (`skyward-series`,
    13 entries) as the survivor, NOT the plain form the table recommended — item 2
    below must map TO the decorated form for skyward.
-2. ☐ **The two CROSS-CATALOG folds want a `catalog-platform/data/series-canon.json`
-   entry** — *"Emily Wilde Series"* and *"The Skyward Series"* are the AUDIOBOOK
-   catalog's spellings (measured in its `site/catalog.csv`); both library
-   instances already hold the plain form. That file is exactly for this (*"The
-   Fae & Alchemy Series"* is the precedent) and a merge in the index does **not**
-   substitute for it — without the entry the audiobook catalog keeps pushing the
-   decorated name. Needs the `catalog-platform` edit **and** the audiobook
-   repo's `python -m app.tools.sync_series_canon`. Another repo: not started.
+2. ✅ **The two CROSS-CATALOG folds have their `catalog-platform/data/series-canon.json`
+   entries — DONE 2026-09-05 21:5x Phoenix, moved WHOLE to [`DONE.md`](DONE.md).**
+   `catalog-platform` `91c88b8`; the audiobook repo's sync ran and committed.
+   ⚠️ One claim in the moved item was wrong and is corrected in the `DONE.md`
+   entry: only **padhard** holds `"Emily Wilde"` — the main instance holds no
+   Emily Wilde row at all.
 3. ☐ **Consider a scheduled audiobook sweep** (Task Scheduler beside the other
    pipelines) so it stops being a manual step; log the decision in
    [`info/decisions.md`](info/decisions.md). ⚠️ Note `audiobook_catalog`'s
