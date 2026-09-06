@@ -217,6 +217,109 @@ function numbersAgree(a: string, b: string): boolean {
 }
 
 /**
+ * The volume number a title states, as a canonical string — or null if it
+ * states none.
+ *
+ * ## Why this exists — Space Knight, measured 2026-09-06
+ *
+ * Google Books answered the ISBN backfill with the **same** ISBN
+ * `9781986619233` for *Space Knight* books **5, 6, 7, 8 and 9*. The title gate
+ * on that rung is `titleSimilarity >= 0.80`, and on a numbered series where only
+ * the number differs it passes easily: `titleSimilarity` drops words of one
+ * character, so *"space knight book 5"* and *"space knight book 7"* share every
+ * word it can see and score **1.00**. Nothing in the response marks the answer
+ * as being about a different volume.
+ *
+ * ⚠️ Only the UNIQUE index on `edition.isbn13` stopped four of those five writes,
+ * and an index is a backstop, not a gate: it refuses the second write and says
+ * nothing about whether the FIRST one was right.
+ *
+ * ⚠️ **Not a second similarity function** — the ban in this file's header still
+ * stands. This reads a *number*, which `titleSimilarity` cannot see at all
+ * (`titleWords` keeps digits but weighs them like any other word, so one wrong
+ * digit costs a fraction of a point on a long title). It is the same stance as
+ * `numbersAgree` above, moved to raw titles: `numbersAgree` compares two folded
+ * keys inside the index, this compares two titles as an API hands them over.
+ *
+ * ## What counts as the number
+ *
+ *   1. **An explicit marker wins wherever it sits** — `book 5`, `Book #5`,
+ *      `Vol. 5`, `volume 5`, `part 5`, `#5`. This is the same marker vocabulary
+ *      `foldVolumeMarker` folds, and for the same reason: the two catalogues
+ *      spell the same volume both ways.
+ *   2. **Otherwise the FIRST standalone number in the title.** First rather than
+ *      last on purpose: a search result's trailing annotation is far more often a
+ *      year or a print run (*"Space Knight 5 (2019)"*) than a volume, whereas a
+ *      title whose leading number is not a volume (*1984*, *2001: A Space
+ *      Odyssey*) scores the same number on both sides and so still agrees.
+ *   3. `null` when no digit survives — *"Space Knight"*, *"The Book Thief"*
+ *      (a marker word with no number is not a volume, exactly as
+ *      `foldVolumeMarker` treats it).
+ *
+ * ⚠️ Roman numerals are NOT read, and that is a deliberate silence rather than a
+ * measurement: a reader that turned *"Henry V"* or the *"II"* of an author's
+ * suffix into a volume number would refuse real matches, and the cost of not
+ * reading them is only that a `Book II` candidate is treated as carrying no
+ * number — which this comparison accepts. ⚠️ **Not verified:** nobody has
+ * counted how many titles in either instance number a volume that way.
+ */
+export function seriesVolumeNumber(title: string | null | undefined): string | null {
+  const s = String(title ?? '');
+  if (s.length === 0) return null;
+
+  const canonical = (raw: string): string => {
+    const n = Number(raw);
+    return Number.isFinite(n) ? String(n) : raw;
+  };
+
+  // 1. An explicit volume marker, wherever it sits.
+  const marker = /(?:\b(?:book|volume|vol|bk|part)\b\.?\s*#?\s*|#\s*)(\d+(?:\.\d+)?)(?!\d)/i.exec(s);
+  if (marker) return canonical(marker[1]);
+
+  // 2. The first standalone number token. Splitting on everything but letters,
+  //    digits and the decimal point means "1.5" survives as one token while
+  //    "9781986619233," and "(2019)" lose their punctuation.
+  for (const token of s.toLowerCase().split(/[^a-z0-9.]+/)) {
+    const clean = token.replace(/^\.+|\.+$/g, '');
+    if (/^\d+(?:\.\d+)?$/.test(clean)) return canonical(clean);
+  }
+  return null;
+}
+
+/**
+ * 🔴 **Does this candidate title claim the same volume as ours?**
+ *
+ * The gate `titleSimilarity` cannot be: it refuses a candidate whose volume
+ * number contradicts ours, and accepts one that carries no number at all.
+ *
+ * | ours | candidate | verdict | why |
+ * |---|---|---|---|
+ * | Space Knight 5 | Space Knight 7 | ❌ | a different book |
+ * | Space Knight 5 | Space Knight, Book 5 | ✅ | the same volume spelt two ways |
+ * | Space Knight 5 | Space Knight | ✅ | the candidate names no volume |
+ * | Space Knight | Space Knight 5 | ❌ | it names one and we do not |
+ *
+ * ⚠️ **The last row is the asymmetry, and it is deliberate.** A candidate that
+ * volunteers a volume number our row never claimed is the *Primal Hunter* shape
+ * `numbersAgree` already refuses inside the index — we hold book 1 and the
+ * longest-key sort offers *The Primal Hunter 10*. Refusing costs a
+ * silent-never-fill on an unnumbered row; accepting writes another book's
+ * identifier onto ours. This whole file's stance is that a wrong match is worse
+ * than no match, and every caller prints the refusal with its reason.
+ *
+ * ⚠️ **A refusal here is not a claim that the candidate is a different BOOK** —
+ * only that it is a different VOLUME, or that we cannot tell. Callers should
+ * keep looking rather than record a verdict.
+ */
+export function numberedTitleAgrees(candidateName: string, searchedFor: string): boolean {
+  const theirs = seriesVolumeNumber(candidateName);
+  if (theirs === null) return true;
+  const ours = seriesVolumeNumber(searchedFor);
+  if (ours === null) return false;
+  return ours === theirs;
+}
+
+/**
  * Resolve a set of same-folded-title candidates to at most one, when a series
  * volume number can settle it.
  *
