@@ -273,14 +273,19 @@ export function seriesVolumeNumber(title: string | null | undefined): string | n
   };
 
   // 1. An explicit volume marker, wherever it sits.
+  // ⚠️ `marker[1]` is `string | undefined` under this tree's
+  // `noUncheckedIndexedAccess`, so the group is read defensively rather than
+  // asserted — a `!` here would be a compile-time lie about a regex whose shape
+  // a later edit could change.
   const marker = /(?:\b(?:book|volume|vol|bk|part)\b\.?\s*#?\s*|#\s*)(\d+(?:\.\d+)?)(?!\d)/i.exec(s);
-  if (marker) return canonical(marker[1]);
+  const marked = marker?.[1];
+  if (marked !== undefined) return canonical(marked);
 
   // 2. The first standalone number token. Splitting on everything but letters,
   //    digits and the decimal point means "1.5" survives as one token while
   //    "9781986619233," and "(2019)" lose their punctuation.
   for (const token of s.toLowerCase().split(/[^a-z0-9.]+/)) {
-    const clean = token.replace(/^\.+|\.+$/g, '');
+    const clean = (token ?? '').replace(/^\.+|\.+$/g, '');
     if (/^\d+(?:\.\d+)?$/.test(clean)) return canonical(clean);
   }
   return null;
