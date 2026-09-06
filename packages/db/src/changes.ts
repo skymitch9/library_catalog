@@ -45,8 +45,15 @@ export interface ChangeLogEntry {
    * 'app_user' joined 2026-08-13 (role changes — users.ts setUserRole). The
    * 0120 DDL anticipated growth ("user_book? watches?") and carries no CHECK,
    * so widening this union is the entire migration.
+   *
+   * ⚠️ 'audiobook_holding' joined 2026-09-05 (the audiobook sweep's transition
+   * rows — `audiobook-holdings.ts`, design §6.3). Its `entity_id` is a
+   * `work_id`, so the entity name is what keeps "somebody edited this book"
+   * and "the sibling catalog gained a recording of it" distinguishable in one
+   * list. ⚠️ Only STATE CHANGES are logged: the sweep touches every live row
+   * six times a day, and a row per upsert would bury a person's own edits.
    */
-  entity: 'work' | 'edition' | 'copy' | 'app_user';
+  entity: 'work' | 'edition' | 'copy' | 'app_user' | 'audiobook_holding';
   /**
    * The row's id — or the literal string 'last_insert_rowid()' when the entry
    * is batched immediately after the INSERT that creates the row and the id
