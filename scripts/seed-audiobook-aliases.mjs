@@ -13,6 +13,7 @@
  * | `Tamer: King of Dinosaurs Book 9` | `Tamer: King of Dinosaurs 9 Kickstarter Edition` | containment ratio is 25/45 = **0.56**, under the ported 0.6 floor |
  * | `Tamer: King of Dinosaurs Book 10` | `Tamer: King of Dinosaurs 10 Kickstarter Edition` | the same, 26/46 |
  * | `The Primal Hunter` | `The Primal Hunter - A LitRPG Adventure` | 13/32 = 0.41 |
+ * | `Domestication` | `Domestication - A Fantasy LitRPG Adventure` | 13/40 = **0.325** |
  *
  * Lowering that floor to catch them is exactly what this project's history says
  * not to do — it is the rung that shipped three wrong games in the sibling Board
@@ -65,6 +66,22 @@ const ASSERTIONS = [
   {
     title: 'The Primal Hunter',
     alias: 'The Primal Hunter - A LitRPG Adventure',
+    kind: 'title',
+  },
+  /*
+   * Owner ask 2026-09-05: *"I added battle mage farmer and it didn't associate
+   * the audiobook right away."* Work 526 was retitled to the catalog's bare
+   * convention the same day (batch `owner-2026-09-05-battle-mage-farmer`), and
+   * the retitle alone is NOT enough: the audiobook row cleans to
+   * "Domestication - A Fantasy LitRPG Adventure", so containment scores
+   * 13/40 = 0.325 against our "Domestication" — under the 0.6 floor, and further
+   * under it than before, because the bare title is SHORTER. Exactly the Primal
+   * Hunter shape one row above, from the same publisher's subtitle habit, and it
+   * takes the same answer.
+   */
+  {
+    title: 'Domestication',
+    alias: 'Domestication - A Fantasy LitRPG Adventure',
     kind: 'title',
   },
 ];
