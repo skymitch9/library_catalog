@@ -18,6 +18,135 @@
 > were extracted from this same history.
 
 
+## ✅ 2026-09-06 — the ISBN writer's THIRD guard (#321), and the Space Knight one-ISBN-five-volumes title gate
+
+> **Closed by W8-GUARD.** Both items below are moved **whole** from
+> [`TODO.md`](TODO.md); the resolution follows each.
+
+☐ 🔴 **STILL UNPROTECTED, and measured in that same dry run: ed#321 *Words of
+Radiance*.** The writer proposed `9780575097421` (Gollancz UK) for work #220,
+whose only edition is the Dragonsteel leatherbound repaired as tier A. Neither
+guard catches it — the row does not say it has no ISBN, and its `edition_name`
+is *"Leatherbound (two-volume set: Vol 1 ISBN 9781938570308, Vol 2 ISBN
+9781938570315)"*, in which **"leatherbound" is a binding material, not campaign
+vocabulary**. ⚠️ It was deliberately NOT added to the guard: whether a
+leatherbound is "a kickstarter we have in stock" is a question about a physical
+object, and this whole item is the lesson that those belong to the owner. The
+candidate fix is a **third narrow guard** — *a row whose own `edition_name`/`note`
+NAMES an ISBN has already stated which identifiers apply* — which catches #321
+and nothing else new. Not built; it is a behaviour change on a write path.
+⚠️ **Until it is, do not run the backfill `--commit` without reading its
+proposals**, or work #220 goes straight back to a wrong ISBN.
+
+✅ **BUILT 2026-09-06 — exactly the third guard the item specifies, and nothing
+wider.** `namesAnIsbn(editionName, note)` in `scripts/lib/backfill-safety.mjs`,
+wired into `scripts/backfill-missing-isbns.mjs` as **guard 1c**, after
+`declaresNoIsbn` (1) and `isCrowdfundedPrinting` (1b) so their reported counts do
+not move. Three claims, three functions — the same reasoning 1b gives for not
+folding into 1: a future session must be able to move one without silently
+moving the others.
+
+**Narrow by construction:** the field must contain the WORD *ISBN* **and** an
+identifier-shaped run of at least ten digits near it. *"ISBN unknown"* names
+none; a year, a price or a tier number is not an identifier. ⚠️ It deliberately
+does **not** check the check digit — the claim is *"this row has already stated
+its identifiers"*, which a mistyped ISBN states just as loudly, and checking
+would mean importing `packages/core/src/isbn.ts` into a leaf `.mjs` that has to
+keep running under plain `node`.
+
+**Exercised on production, dry run** (`npx tsx scripts/backfill-missing-isbns.mjs
+--remote`, no `--commit`), **2026-09-06 05:01Z**: 411 works, **75** with no ISBN
+on any edition → **26** `declaresNoIsbn`, **32** `isCrowdfundedPrinting`,
+**1** `namesAnIsbn` — and that one is
+
+```
+   work #220 ed#321  Words of Radiance  — names 9781938570308
+```
+
+— **16 searched** (17 without the new guard), 10 found, 20 statements planned.
+`--remote --friend` (padhard, same hour): 677 works, **110** candidates → 1 / 6 /
+**0** / 103. The zero is a result: no padhard row names an ISBN in its own
+`edition_name` or `note`.
+
+⚠️ **The item's standing warning is now retired with it:** *"do not run the
+backfill `--commit` without reading its proposals, or work #220 goes straight
+back to a wrong ISBN"*. Work #220 is refused by name.
+
+**Tests:** `scripts/test/backfill-safety.test.mjs` **45 pass / 0 fail** (was 35),
+with ed#321's real production `edition_name` as the fixture and one case pinning
+that `namesAnIsbn` is the **only** one of the three guards that catches it.
+
+---
+
+⚠️ **NOT fixed, and visible in the same dry run:** Google Books proposed the
+**same** ISBN `9781986619233` for *Space Knight* books **5, 6, 7, 8 and 9**. The
+UNIQUE index catches it and all five are skipped, so it is safe — but a rung
+answering five different books with one ISBN is a title-gate problem
+(`sim 0.80` on a numbered series), and it is a separate item nobody has opened.
+
+✅ **OPENED AND CLOSED 2026-09-06 — the writer half is fixed and the data half is
+measured.**
+
+**The writer.** `seriesVolumeNumber` and `numberedTitleAgrees` in
+`packages/core/src/matching.ts` — the canonical implementation, beside
+`numbersAgree`, which makes the same argument inside the work index. A marker
+wins wherever it sits (`book 5`, `Book #5`, `Vol. 5`, `part 5`, `#5`); otherwise
+the FIRST standalone number, because a trailing annotation in a search result is
+far more often a year than a volume; `null` when no digit survives. Half-volumes
+(`8.5`) survive, per [`info/serial-print-splits.md`](info/serial-print-splits.md).
+A candidate carrying **no** number is accepted; one naming a volume our row does
+not is refused — the *Primal Hunter* shape `numbersAgree` already refuses.
+⚠️ **Not a second similarity function**, which `matching.ts`'s header bans: it
+reads a NUMBER, which `titleSimilarity` cannot see at all.
+
+Wired into **rungs 1 (Open Library) and 2 (Google Books)** of
+`scripts/backfill-missing-isbns.mjs` beside the existing `0.80` floor, each
+refusal printed with its reason. ⚠️ Rung 2.5 (LibraryThing) **cannot** have it —
+`thingTitle` returns no per-item title to compare against, which is already why
+it is last and lowest-trust. ⚠️ Deliberately **not** applied to
+`apps/worker/src/routes/scan-jobs.ts`, whose own comment says a weak match is
+kept, scored and shown unticked on purpose.
+
+**It fires on real data.** The 2026-09-06 `--remote --friend` dry run refused
+**6** candidates across two series, none of which was a false alarm about the
+book — only about the volume:
+
+| our row | refused candidates |
+|---|---|
+| *He Who Fights with Monsters* | `…, Book 1` · `…, Book 3` · `…, Book 4` · `… 2` |
+| *Storm Breaker* | `Storm Breaker #2` · `Storm Breaker 2` |
+
+Both works still got an ISBN in the same run, from a candidate carrying no
+volume number (`9781950912612` and `9781649379931`). The main-instance run
+refused none.
+
+**The data.** New `scripts/fix-same-isbn-series-2026-09-05.mjs` — dry run by
+default, `--commit` gated, `change_log` per cleared field, batch
+`fix-2026-09-05-same-isbn-series`. Measured **2026-09-06 on both production
+instances: ZERO** ISBNs are carried by more than one work.
+
+🔴 **And the script says why that zero is not reassuring.**
+`migrations/0001_init.sql:234` makes `idx_edition_isbn13` UNIQUE **catalog-wide**,
+so the SECOND write of a duplicate is refused by the database — an index is a
+**backstop, not a gate**. It says nothing about whether the FIRST write was
+right, and four of the five *Space Knight* proposals never reached a row at all.
+The one that did land (ed#344, *Book 3*) was cleared for an unrelated reason —
+tier C, applied 2026-09-06 02:32:09Z. ⚠️ **Nobody has established which volume
+`9781986619233` actually belongs to**, and this repair deliberately does not
+guess: within a shared-ISBN group it keeps the row a PERSON typed
+(`source = 'manual'`) and refuses the whole group when none or several qualify.
+
+**Tests:** `packages/core/test/numbered-title.test.ts` **17 pass / 0 fail** —
+including all five real volumes against all five, and one case pinning that
+`titleSimilarity` alone still passes the `0.80` gate, so the premise is
+re-checkable rather than remembered.
+
+**Review:** <https://library.heygabi.ai/work/220> (*Words of Radiance*) ·
+<https://library.heygabi.ai/work/249> … <https://library.heygabi.ai/work/255>
+(*Space Knight* 1–9).
+
+---
+
 ## ✅ 2026-09-05 21:5x Phoenix — the two CROSS-CATALOG series-canon entries (emily wilde / skyward)
 
 > **Closed by W8-CANON**, across three repos. `catalog-platform` **`91c88b8`**

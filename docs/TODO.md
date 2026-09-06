@@ -1574,7 +1574,7 @@ not the question the app asks. Then `check-cover-health.mjs --friend --remote`.
 |---|---|---|---|
 | main | 511 *Beauty X Beast*, 512 *Rob X Punzel* | blank; free rungs and the LLM both found nothing | Mountaindale Press's own store has these — the publisher-page rung sketched in KI-6's neighbour, or a hand-linked URL |
 | main | 513 *Snow X Dwight* | blank; LLM proposed the publisher's `og:image` at **low confidence** and it was correctly NOT written | Owner opens `https://www.mountaindalepress.store/cdn/shop/files/00_600x.png?v=1767642347` and presses Use, or rejects it. The model's doubt is only whether that file is the flat jacket or a 3D mockup |
-| main | 516 *Sanctuary (Yuumei)* | `standin` — right book, 3D product photo | A flat jacket scan. The art book may not have one online |
+| main | ~~516 *Sanctuary (Yuumei)*~~ | ✅ **CLOSED — re-measured 2026-09-06: `cover_status` is `ok`.** `change_log` row **1593** records `"standin"` → `"ok"` at **2026-08-24 22:44:43**, `changed_how = 'human'`, `changed_by = 1`, with **no `coverUrl` row beside it** — the owner looked at the 3D product photo and accepted it (0040: `'ok'` means a person looked). | — ⚠️ The row's other half is live and is now **KI-17**: ed#670 is one of **four art books** the ISBN guard refuses on the word *"Collector's"*. See [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) |
 | padhard | 113 *Summer in the City* | `standin` — the Google placeholder, **KI-6** | Any real cover; the ISBN rungs had nothing |
 | padhard | 268 *The Villa* | `standin` — right book, **German** edition jacket | The English Berkley jacket, or the owner deciding the German one is fine |
 | padhard | 435 *Risky Business* | blank; LLM proposed a **blog-hosted** image at **low confidence**, correctly NOT written | Owner opens <https://padhard.heygabi.ai/works/435> and presses Use, or rejects it. The model's doubt is provenance, not the book — the aspect ratio is a cover's |
@@ -2480,6 +2480,32 @@ medium**. 🔴 It is English and `978-0`, so `isbnLanguageVerdict` returns
 edition, or an ordinary paperback? Review:
 <https://library.heygabi.ai/work/375>.
 
+✅ **Built 2026-09-06 (W8-GUARD): the repair now EXISTS behind its own flag, and
+is still nobody's decision but his.** `fix-foreign-isbns-2026-09-05.mjs` gains
+**TIER D**, one row, opted into by name with `--tier D`. 🔴 **Deliberately NOT
+part of `--all-tiers`** — that string is already written into this file as the
+owner's A + B + C line, and a flag that quietly grows a fourth meaning is how a
+runbook goes stale. Its `change_log` note (`WHY_WRONG_MEDIUM`) says in its own
+words that this is a **decision about a physical object, not a measurement**, so
+a reader a year from now cannot mistake the two.
+
+**Dry run 2026-09-06, `--remote --tier D`, production `library-catalog`:** the 12
+tier A rows report *already applied*; **1 `isbn13` → NULL** (ed#507), **0**
+source restores (the pre-backfill provenance is not evidenced for this row), **1
+`change_log` row**, **2 statements**. Nothing written.
+
+❗ **THE OWNER'S COMMAND — only if the answer is "an ordinary paperback".**
+PowerShell 5.1:
+
+```
+cd C:\Users\nbasl\OneDrive\Documents\vs-code-repos\bookbuddy\library_catalog; node scripts/fix-foreign-isbns-2026-09-05.mjs --remote --commit --tier D
+```
+
+⚠️ If his copy **IS** the Stratford leather pocket edition, do **not** run it:
+the ISBN is then correct and `format = 'paperback'` is the wrong half, which is
+a different one-column fix on <https://library.heygabi.ai/work/375>. There is no
+`--friend` line — the id list is main-instance only.
+
 **Dry run 2026-09-05, `--remote --all-tiers`, production `library-catalog`:**
 
 | | |
@@ -2500,8 +2526,15 @@ the same defect** — all 6 already HAVE an ISBN (five *"Bn exclusive"*, two
 trade ISBN, and **the ruling is about HIS habit; nobody has asked Diva about
 hers.**
 
-☐ **THE OWNER'S COMMANDS — B and C are approved but NOT YET RUN.** Both lines,
-PowerShell 5.1:
+☑ ~~**THE OWNER'S COMMANDS — B and C are approved but NOT YET RUN.**~~
+✅ **APPLIED — re-measured 2026-09-06 (W8-GUARD) on production
+`library-catalog`, because this line said the opposite and was wrong.**
+`change_log` holds **55** rows for batch `fix-2026-09-05-foreign-isbns`:
+**42 `isbn13`** (12 A + 17 B + 13 C) and **13 `source`** (3 A + 10 C), the last
+of them at **2026-09-06 02:32:09Z** — an hour after tier A. Spot-checked in the
+data: ed#343 / #344 / #345 (*Space Knight* 2, 3, 4) all read `isbn13 NULL` /
+`source 'manual'` today. A re-run of the lines below is now an idempotent no-op
+that reports every row as *already applied*. The lines, kept as the record:
 
 ```
 cd C:\Users\nbasl\OneDrive\Documents\vs-code-repos\bookbuddy\library_catalog; node scripts/fix-foreign-isbns-2026-09-05.mjs --remote --commit --all-tiers
@@ -2536,30 +2569,29 @@ repaired two hours earlier.** Without this guard the next backfill run would hav
 re-filled them and the repair would have had a half-life of one sweep. That is
 the result worth keeping, not the count.
 
-☐ 🔴 **STILL UNPROTECTED, and measured in that same dry run: ed#321 *Words of
-Radiance*.** The writer proposed `9780575097421` (Gollancz UK) for work #220,
-whose only edition is the Dragonsteel leatherbound repaired as tier A. Neither
-guard catches it — the row does not say it has no ISBN, and its `edition_name`
-is *"Leatherbound (two-volume set: Vol 1 ISBN 9781938570308, Vol 2 ISBN
-9781938570315)"*, in which **"leatherbound" is a binding material, not campaign
-vocabulary**. ⚠️ It was deliberately NOT added to the guard: whether a
-leatherbound is "a kickstarter we have in stock" is a question about a physical
-object, and this whole item is the lesson that those belong to the owner. The
-candidate fix is a **third narrow guard** — *a row whose own `edition_name`/`note`
-NAMES an ISBN has already stated which identifiers apply* — which catches #321
-and nothing else new. Not built; it is a behaviour change on a write path.
-⚠️ **Until it is, do not run the backfill `--commit` without reading its
-proposals**, or work #220 goes straight back to a wrong ISBN.
-
 ☐ **padhard, one row, unrelated to this run:** edition **#605** *Italian Affair*
 carries `9789358568417` (**978-93 = India**), the only non-English registration
-group on that instance. Not written by the 2026-08-20 run; nobody has checked it.
+group on that instance. Not written by the 2026-08-20 run; ~~nobody has checked
+it.~~
 
-⚠️ **NOT fixed, and visible in the same dry run:** Google Books proposed the
-**same** ISBN `9781986619233` for *Space Knight* books **5, 6, 7, 8 and 9**. The
-UNIQUE index catches it and all five are skipped, so it is safe — but a rung
-answering five different books with one ISBN is a title-gate problem
-(`sim 0.80` on a numbered series), and it is a separate item nobody has opened.
+✅ **Checked 2026-09-06 (W8-GUARD) — and the "foreign" half is ANSWERED: it is
+ENGLISH.** Open Library's per-edition record `/isbn/9789358568417.json` (probed
+live, HTTP 200) reads `languages: ["eng"]`, `publishers: ["Prakash Book Depot"]`,
+`publish_date: "2023"`, title *Italian Affair*, author `OL3873654A` — the same
+Amanda Burns the row names, and the only Open Library search hit for that
+title+author. So `isbnLanguageVerdict` returns **`ok`**, not `foreign`: an
+attested language beats the registration group, and `978-93` only says who
+*registered* the prefix. ⚠️ This row is **not** the 2026-08-20 defect, and the
+language gate would not refuse it today.
+
+☐ **What is left is a question for DIVA, not a repair.** The row is unchanged
+since `2026-08-26 02:11:25` (`source = 'openlibrary'`, `format` paperback,
+`edition_name` NULL), so the ISBN is a *lookup's* answer rather than something
+she typed. An Indian English-language printing is a real printing; the open
+question is only whether it is the one on her shelf. ⚠️ **Nobody has asked
+her** — the same standing asymmetry `isCrowdfundedPrinting` records: the owner's
+rulings are about the owner's stock. Review:
+<https://padhard.heygabi.ai/work/618>.
 
 ---
 
