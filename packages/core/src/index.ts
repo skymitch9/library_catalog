@@ -34,6 +34,11 @@ export * from './audiobook-csv.js';
 export * from './series-canon.js';
 export * from './audiobook-sweep.js';
 export * from './matching.js';
+// ⚠️ AFTER matching.js and covers.js — `audits.ts` imports from both. The
+// import-order rule in this file's header is not decoration: a cycle makes
+// `z.enum()` receive `undefined` and every write endpoint answer 500 with a
+// misleading message, and typecheck does not catch it.
+export * from './audits.js';
 export * from './duplicates.js';
 export * from './corroboration.js';
 export * from './crowdfunding.js';
