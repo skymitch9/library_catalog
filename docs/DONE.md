@@ -18,6 +18,51 @@
 > were extracted from this same history.
 
 
+## ✅ 2026-09-05 18:09 Phoenix — the owner resolved the six `series_pending` rows on <https://heygabi.ai/series/> (first live use of W6-RESOLVE's button)
+
+> **Measured 2026-09-05 18:12 Phoenix** from the index D1: all six `resolved_as = merged`, `resolved_by` = the owner,
+> 01:07:59Z–01:09:08Z. Survivors / entries: `once-upon-a-broken-heart` 3 · `good-girl-s-guide-to-murder` 3 · `asphodel` 2 ·
+> `emily-wilde` 4 (2 audiobook + 2 library2) · **`skyward-series` "The Skyward Series" 13 (7 audiobook / 5 library / 1 library2)**
+> — the owner chose the DECORATED form for Skyward, against the table below; recorded so nobody "corrects" it. `series_alias`
+> now maps each fold to its survivor (`skyward → skyward-series`, `emily wilde series → emily-wilde`). Queue empty.
+> The item as it stood, moved whole:
+
+1. **OWNER: resolve the six open `series_pending` rows — the apex card still
+   says 6 and NO data fix can change that.** Rows are keyed on `candidate_fold`
+   and stay once written (migration `0004_series_registry.sql`, deliberately:
+   *"a queue that re-asks a question a human already answered is a queue nobody
+   reads"*). The four `library2` causes are gone — those slugs now hold **0
+   entries** — so a merge is a formality that also drops the empty series row.
+   ⚠️ ~~The apex `/series/` page can LIST the queue but has **no button that
+   resolves one**~~ — **corrected 2026-09-05: it HAS one now.** Agent
+   W6-RESOLVE built the control on the owner's ask that evening
+   (`catalog-platform` `b1a791f`; deploys `catalog-index` `04bef4e8`,
+   `heygabi-home` `1f17c1e5`). 🔗 **Sign in at
+   <https://heygabi.ai/series/> → "Show me which series"**, and each row
+   carries both spellings with their entry counts and a **Keep "…"** button
+   per spelling. ⚠️ **The button whose label names the SURVIVING spelling is
+   the one to press** — two of the six below merge into the candidate, not
+   the closest, and the queue never asks twice. The raw `POST` below still
+   works and is kept as the record of what the button sends:
+
+   ```
+   POST https://index.heygabi.ai/api/series/pending/<candidate_fold>   (URL-encode the spaces)
+   Authorization: Bearer <a Firebase token for an OWNER_EMAILS address>
+   {"action":"merge","into":"<the slug that should SURVIVE>"}
+   ```
+
+   | candidate_fold | merge `into` | why that side survives |
+   |---|---|---|
+   | `once upon a broken heart 1` | `once-upon-a-broken-heart` | cause fixed; 3 entries vs 0 |
+   | `good girl s guide to murder 2` | `good-girl-s-guide-to-murder` | cause fixed; 3 entries vs 0 |
+   | `good girl s guide to murder 3` | `good-girl-s-guide-to-murder` | cause fixed; 3 entries vs 0 |
+   | `asphodel series` | `asphodel` | cause fixed; 2 entries vs 0 |
+   | `emily wilde` | `emily-wilde` | the plain form wins — `series-canon.json`'s `canonicalRule` |
+   | `skyward` | `skyward` | the plain form wins; ⚠️ this one's source is **`library`**, not padhard |
+
+   `into` must be one of that row's two slugs or the route answers 422.
+   `{"action":"separate"}` is the other legitimate answer and is equally sticky.
+
 ## ✅ 2026-09-05 — the owner's 16:37 asks: the audiobook sweep, *Battle Mage Farmer*, and four padhard series names (agent W6-LIBDATA)
 
 **Moved here from [`TODO.md`](TODO.md) by agent W6-LIBDATA — items 2 and 3 whole,

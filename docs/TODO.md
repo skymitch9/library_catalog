@@ -55,41 +55,11 @@ disk (header of `scripts/backfill-audiobook-holdings.mjs`), not a route — a bo
 added in the UI gains its audio chip only when somebody runs the sweep. That is
 why "right away" never happens today, and item 3 below is the standing fix.
 
-1. ☐ **OWNER: resolve the six open `series_pending` rows — the apex card still
-   says 6 and NO data fix can change that.** Rows are keyed on `candidate_fold`
-   and stay once written (migration `0004_series_registry.sql`, deliberately:
-   *"a queue that re-asks a question a human already answered is a queue nobody
-   reads"*). The four `library2` causes are gone — those slugs now hold **0
-   entries** — so a merge is a formality that also drops the empty series row.
-   ⚠️ ~~The apex `/series/` page can LIST the queue but has **no button that
-   resolves one**~~ — **corrected 2026-09-05: it HAS one now.** Agent
-   W6-RESOLVE built the control on the owner's ask that evening
-   (`catalog-platform` `b1a791f`; deploys `catalog-index` `04bef4e8`,
-   `heygabi-home` `1f17c1e5`). 🔗 **Sign in at
-   <https://heygabi.ai/series/> → "Show me which series"**, and each row
-   carries both spellings with their entry counts and a **Keep "…"** button
-   per spelling. ⚠️ **The button whose label names the SURVIVING spelling is
-   the one to press** — two of the six below merge into the candidate, not
-   the closest, and the queue never asks twice. The raw `POST` below still
-   works and is kept as the record of what the button sends:
-
-   ```
-   POST https://index.heygabi.ai/api/series/pending/<candidate_fold>   (URL-encode the spaces)
-   Authorization: Bearer <a Firebase token for an OWNER_EMAILS address>
-   {"action":"merge","into":"<the slug that should SURVIVE>"}
-   ```
-
-   | candidate_fold | merge `into` | why that side survives |
-   |---|---|---|
-   | `once upon a broken heart 1` | `once-upon-a-broken-heart` | cause fixed; 3 entries vs 0 |
-   | `good girl s guide to murder 2` | `good-girl-s-guide-to-murder` | cause fixed; 3 entries vs 0 |
-   | `good girl s guide to murder 3` | `good-girl-s-guide-to-murder` | cause fixed; 3 entries vs 0 |
-   | `asphodel series` | `asphodel` | cause fixed; 2 entries vs 0 |
-   | `emily wilde` | `emily-wilde` | the plain form wins — `series-canon.json`'s `canonicalRule` |
-   | `skyward` | `skyward` | the plain form wins; ⚠️ this one's source is **`library`**, not padhard |
-
-   `into` must be one of that row's two slugs or the route answers 422.
-   `{"action":"separate"}` is the other legitimate answer and is equally sticky.
+1. ✅ **The six `series_pending` rows — RESOLVED by the owner 2026-09-05 18:07–18:09
+   Phoenix, moved WHOLE to [`DONE.md`](DONE.md).** Measured in the index D1 after
+   his clicks: all six `merged`; ⚠️ he kept **"The Skyward Series"** (`skyward-series`,
+   13 entries) as the survivor, NOT the plain form the table recommended — item 2
+   below must map TO the decorated form for skyward.
 2. ☐ **The two CROSS-CATALOG folds want a `catalog-platform/data/series-canon.json`
    entry** — *"Emily Wilde Series"* and *"The Skyward Series"* are the AUDIOBOOK
    catalog's spellings (measured in its `site/catalog.csv`); both library
