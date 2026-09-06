@@ -588,6 +588,10 @@ default, `--commit` gated, `change_log` per cleared field. Its rule, when a grou
 ever appears: keep the row a PERSON typed (`source = 'manual'`) and clear the
 automated rest; with none or several manual members **refuse the group and print
 it**, because guessing which volume owns an identifier is the failure that
-created the defect. ⚠️ **Nobody has established which volume `9781986619233`
-actually belongs to** — the one row that did carry it (ed#344, *Book 3*) was
-cleared for an unrelated reason, tier C at 2026-09-06 02:32:09Z.
+created the defect. ✅ **Established 2026-09-06: `9781986619233` is *Space
+Knight 3*** (Open Library edition `OL54710350M`, CreateSpace 2018; isbnsearch.org
+agrees; Google Books answered 429 that day). The one row that did carry it
+(ed#344, *Book 3*) was cleared for an unrelated reason, tier C at 2026-09-06
+02:32:09Z — and §7.6 is why it does NOT go back on by itself: ed#344 is a
+crowdfunded print copy, so whether the object carries the trade ISBN is the
+owner's to read off the barcode, then `source = 'manual'`.
