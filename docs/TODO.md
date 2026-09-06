@@ -2004,6 +2004,39 @@ row. Deciding those five needs the same per-row evidence
 Also note the owner still owes photographs for these exact five works (the
 Illumicrate section above), so the rows will be touched again anyway.
 
+### ✅ DRY-RUN READY 2026-09-05 (W6-DEFECTS) — ☐ AWAITING THE OWNER
+
+- **Importer fixed** — `PUBLISHER = null` plus testable `editionSql` / `copySql`
+  halves, pinned by `scripts/test/illumicrate-import.test.mjs` (12 cases; whole
+  suite **2572 pass / 0 fail**). ⚠️ It is now a **`tsx`** script, not `node`.
+- **Data half** — `scripts/fix-illumicrate-publisher-2026-09-05.mjs`: dry run by
+  default, an explicit id list with **asserted from-values** (the
+  `fix-retailer-publishers-2026-09-02` shape, deliberately **not** a
+  `source='manual'` sweep, because three of the five read `openlibrary`).
+- 🔴 **All five go to NULL, and that IS the evidence, not a shrug.** Measured
+  2026-09-05: the announcement page names no publisher; every row carries the
+  owner-verified note *"no ISBN printed on this edition"*; and the `isbn13`
+  values three of them DO carry belong to **other books** — 307 = the 2006
+  Disney-Hyperion US printing, 308 = *La mer des monstres* (**Albin Michel**,
+  FRENCH), 311 = *Ostatni Olimpijczyk* (**Jaguar**, POLISH), read from
+  openlibrary.org that day. There is no prefix registrant left to attest
+  anything, and §9.1 says the ISBN ladder fills the column later.
+- **Dry run:** main **5 publishers → NULL, 0 copy-vendor fills** (copies 104–108
+  already read `vendor='Illumicrate'`), 5 change_log rows, 10 statements.
+  padhard **0** — *"Nothing to do."*
+- ☐ **The owner's command:**
+  `node scripts/fix-illumicrate-publisher-2026-09-05.mjs --remote --commit`
+  then `node scripts/fix-illumicrate-publisher-2026-09-05.mjs --remote --friend --commit`
+  (expected no-op). Review: <https://library.heygabi.ai/work/224>
+
+⚠️ **A THIRD defect found while measuring this one — NOT fixed, and it needs its
+own section:** editions **307, 308 and 311 carry `isbn13` values belonging to
+different books** (two of them foreign-language), written on **2026-08-20**
+(`updated_at 15:33:26`, `source` flipped `manual → openlibrary`) by a backfill
+that left **no `change_log` row at all**. These are printings the owner verified
+have *no ISBN on them*. Worth knowing which backfill did it, because it will do
+it again.
+
 ---
 
 ## ☐ The seven shop-order copies are not linked to their editions (found 2026-09-05)
@@ -2026,6 +2059,60 @@ work can hold several printings.
 ⚠️ **Not yet established:** *why* they came out NULL. At import time `publisher`
 did hold `'Barnes & Noble'`, so the old lookup should have matched. Worth
 finding out before assuming the new code would not have done the same.
+
+### ✅ DRY-RUN READY 2026-09-05 (W6-DEFECTS) — ☐ AWAITING THE OWNER
+
+🔴 **It is TWELVE copies, not seven.** The Illumicrate importer produced the same
+result nine seconds after inserting its editions — copies **104–108** also read
+`edition_id = NULL`. Two importers, two different lookup predicates, one week.
+
+🔴 **Root cause STILL NOT ESTABLISHED**, but the field is much narrower. Ruled
+out, each measured 2026-09-05: **not ordering** (editions 322–328 `14:19:32`,
+copies 109–115 `14:19:39` — 7s; Illumicrate 9s); **not the predicate's value**
+(`change_log` batch `fix-retailer-publishers-2026-09-02` proves those editions
+read `publisher='Barnes & Noble'` from import until 2026-09-02); **not the
+`--file` summary bug** (`query()` moved to `--command` in `052a726`, 2026-08-10
+07:28 Phoenix — before both runs); **not the read path today** (both predicate
+shapes re-run against production return the right rows, correctly typed,
+ampersand and all); **not a double run** (7 editions for 7 works, 5 for 5).
+The strongest surviving candidate is a **read-after-write visibility gap**
+between `execute()` and the `query()` immediately after it on `--remote` — it
+would explain both importers and nothing else measured does — but proving it
+needs a scratch-table write, which is the owner's call, not a dry run's.
+
+**What the UI shows today** (`effectiveFormat` in `apps/web/src/lib/shelf-view.ts`):
+an unlinked copy on a work with ONE printing already renders correctly
+(`resolved-sole`) — so **the seven B&N copies are invisible as a defect**. An
+unlinked copy on a work with SEVERAL printings cannot be attributed and falls
+back to a bare format word — **that is the five Illumicrate copies**, works
+224–228 holding 2–3 printings each. The five are the ones a person can see.
+
+**Script:** `scripts/fix-copy-edition-links-2026-09-05.mjs`, dry run default,
+⚠️ run with **`npx tsx`** (it reuses `matchEditionIds`, which reaches
+`crowdfunding.ts`). Three tiers: **A** the 12 evidenced importer rows (default);
+**B** `--all-unambiguous`, every other sole-edition copy — **not** default,
+because `copy` has no `format` column, so it is an inference that could fabricate
+which printing is owned, and the shelf already renders those right without a
+link; **C** ambiguous, listed with every candidate, never linked.
+
+| Dry run 2026-09-05 | main | padhard |
+|---|---|---|
+| copies / `edition_id IS NULL` | 450 / **419** | 677 / **503** |
+| **Tier A — would link** | **12** (104–115) | **0** |
+| Tier B — sole-edition, NOT claimed | 357 | 485 |
+| Tier C — ambiguous, for the owner | **50** | **3** |
+| no edition exists — untouched | 0 | **15** |
+
+☐ **The owner's command:**
+`npx tsx scripts/fix-copy-edition-links-2026-09-05.mjs --remote --commit`
+then `npx tsx scripts/fix-copy-edition-links-2026-09-05.mjs --remote --friend --commit`
+(expected no-op). Review: <https://library.heygabi.ai/work/224> (the five
+Illumicrate cards) and <https://library.heygabi.ai/work/229>.
+☐ Separately, **decide Tier B** (`--all-unambiguous`) — 357 main / 485 padhard.
+
+↩️ Tier C's padhard list includes copies **#131 and #320 on work #136 *Mate***,
+which is the *"ONE ROW NEEDS THE OWNER"* item already open in the signed-editions
+section above — same question, now printed with both candidates beside it.
 
 ---
 
