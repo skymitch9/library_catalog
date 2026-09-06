@@ -1,10 +1,9 @@
 /**
- * THE T2 CONFIRM LANE — the panel's apply logic. Run with:
- *   CATALOG_PLATFORM_DIR=<catalog-platform> npx tsx --test \
- *     apps/web/src/lib/gabi-confirm.test.ts
- * (apps/web has no standing test runner; this exercises the panel's own wiring —
- * the flag, the client-side compare-and-set, and the outcome mapping. The
- * grammar itself is pinned in the shared package's tests.)
+ * THE T2 CONFIRM LANE — the panel's apply logic. Exercises the panel's own
+ * wiring — the flag, the client-side compare-and-set, and the outcome
+ * mapping. The grammar itself is pinned in the shared package's tests.
+ * Moved into apps/web/test/ 2026-09-05 so it gates `npm test` — its old home
+ * in src/lib/ sat outside that glob and had never gated a deploy.
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
@@ -14,7 +13,7 @@ import {
   buildPanelRestatement,
   panelConfirmOn,
   type PanelConfirmDeps,
-} from './gabi-confirm.js';
+} from '../src/lib/gabi-confirm.js';
 
 const NOW = 1_700_000_000_000;
 
