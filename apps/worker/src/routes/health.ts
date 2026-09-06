@@ -6,6 +6,7 @@ import {
   latestAudiobookSweepRun,
   latestAuditRun,
   readAudiobookSnapshot,
+  seriesVolumeCounts,
   type AuditName,
 } from '@lc/db';
 import { describeEstateGate } from '@lc/estate-auth';
@@ -104,14 +105,19 @@ import { audiobookSweepMode } from '../lib/audiobook-sweep-run.js';
 async function audiobookSweepStatus(env: Env) {
   const mode = audiobookSweepMode(env);
   try {
-    const [run, snapshot, counts] = await Promise.all([
+    const [run, snapshot, counts, volumes] = await Promise.all([
       latestAudiobookSweepRun(env.DB),
       readAudiobookSnapshot(env.DB),
       audiobookHoldingCounts(env.DB),
+      seriesVolumeCounts(env.DB),
     ]);
     const detail =
       run?.detail && typeof run.detail === 'object' && 'detail' in run.detail
         ? ((run.detail as { detail: unknown }).detail ?? null)
+        : null;
+    const recorded =
+      run?.detail && typeof run.detail === 'object' && 'seriesVolumes' in run.detail
+        ? ((run.detail as { seriesVolumes: unknown }).seriesVolumes ?? null)
         : null;
     return {
       mode,
@@ -134,6 +140,22 @@ async function audiobookSweepStatus(env: Env) {
       editionsLive: counts.editionsLive,
       rungsLive: counts.rungsLive,
       seriesCanonEntries: seriesCanonEntryCount,
+      /**
+       * The OTHER half of the same tick — `series_volume` / `series_check`.
+       *
+       * ⚠️ `lastRun` is whatever the last run RECORDED, verbatim, so the three
+       * silences stay apart: `null` means the tick never got that far (mode off,
+       * a refused fetch, a failed guard); `{ planned: null, detail: 'scoped
+       * run…' }` means the on-add hook fired and deliberately declined this
+       * half; `{ planned: {...}, written: null }` is shadow working correctly.
+       * The two live counts beside it are what the tables actually hold, which
+       * is the number the script's own closing line reports.
+       */
+      seriesVolumes: {
+        lastRun: recorded,
+        volumesLive: volumes.volumesLive,
+        seriesChecked: volumes.seriesChecked,
+      },
     };
   } catch {
     // Not migrated yet, or the database is down — which `database` above
@@ -151,6 +173,7 @@ async function audiobookSweepStatus(env: Env) {
       editionsLive: null,
       rungsLive: null,
       seriesCanonEntries: seriesCanonEntryCount,
+      seriesVolumes: { lastRun: null, volumesLive: null, seriesChecked: null },
     };
   }
 }

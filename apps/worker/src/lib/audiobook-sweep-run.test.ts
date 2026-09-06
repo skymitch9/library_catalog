@@ -63,6 +63,8 @@ function fakeEnv(over: Partial<FakeState> = {}, envOver: Partial<Env> = {}) {
   const stmt = (sql: string) => {
     let binds: unknown[] = [];
     const api = {
+      /** So `batch()` can say WHICH table a batched statement touched. */
+      _sql: sql,
       bind(...args: unknown[]) {
         binds = args;
         return api;
@@ -125,6 +127,9 @@ function fakeEnv(over: Partial<FakeState> = {}, envOver: Partial<Env> = {}) {
       async batch(statements: unknown[]) {
         state.batches += 1;
         state.written.push(`BATCH(${statements.length})`);
+        // ⚠️ The batched SQL is recorded too, because there are TWO halves now
+        // and "nothing was written" has to be answerable per table.
+        for (const st of statements) state.written.push(String((st as { _sql?: string })._sql ?? ''));
         return statements.map(() => ({ success: true }));
       },
     },
@@ -154,6 +159,11 @@ function csvResponse(body: string, init: ResponseInit = {}): Response {
 /** Did anything reach the holding tables? */
 function wroteHoldings(state: FakeState): boolean {
   return state.batches > 0 || state.written.some((s) => /audiobook_(edition|series)_holding/.test(s));
+}
+
+/** Did anything reach `series_volume` / `series_check` — the OTHER half of a tick? */
+function wroteSeriesVolumes(state: FakeState): boolean {
+  return state.written.some((s) => /INSERT INTO series_(volume|check)/.test(s));
 }
 
 // ---------------------------------------------------------------------------
@@ -396,13 +406,133 @@ describe('shadow mode', () => {
 });
 
 describe('enforce mode', () => {
-  it('applies the plan in ONE batch', async () => {
+  it('applies the holdings plan in ONE batch', async () => {
     stubFetch(() => csvResponse(csv(20)));
     const { env, state } = fakeEnv({}, { AUDIOBOOK_SWEEP_MODE: 'enforce' });
     const result = await runAudiobookSweep(env, { trigger: 'cron' });
     assert.equal(result.state, 'applied');
-    assert.equal(state.batches, 1);
+    // ⚠️ TWO batches since 2026-09-05, and deliberately so: the holdings and
+    // the series volumes are one TICK but not one fate, so a `series_volume`
+    // failure cannot roll back holdings that landed correctly.
+    assert.equal(state.batches, 2);
     assert.ok((result.written?.statements ?? 0) > 0);
+  });
+});
+
+describe('the OTHER half of the tick — series_volume / series_check', () => {
+  it('shadow plans it and writes NOTHING', async () => {
+    stubFetch(() => csvResponse(csv(20)));
+    const { env, state } = fakeEnv({}, { AUDIOBOOK_SWEEP_MODE: 'shadow' });
+    const result = await runAudiobookSweep(env, { trigger: 'cron' });
+
+    assert.equal(result.state, 'shadow');
+    assert.equal(wroteSeriesVolumes(state), false);
+    assert.ok(result.seriesVolumes?.planned, 'the plan must be recorded, or shadow is a no-op');
+    assert.equal(result.seriesVolumes?.written, null);
+    // One series in the fake catalog, 20 numbered rows under it.
+    assert.equal(result.seriesVolumes?.planned?.seriesCount, 1);
+    assert.equal(result.seriesVolumes?.planned?.found, 1);
+    assert.equal(result.seriesVolumes?.planned?.volumeUpserts, 20);
+    assert.equal(result.seriesVolumes?.planned?.checkUpserts, 1);
+    assert.equal(result.seriesVolumes?.planned?.statements, 21);
+  });
+
+  it('the counts land in the run row under `seriesVolumes`', async () => {
+    // That sub-object IS the shadow evidence — `/api/health` reads it back, and
+    // a plan computed and not recorded proves nothing about the flip gate.
+    stubFetch(() => csvResponse(csv(20)));
+    const { env, state } = fakeEnv({}, { AUDIOBOOK_SWEEP_MODE: 'shadow' });
+    await runAudiobookSweep(env, { trigger: 'cron' });
+    const recorded = state.runRows[0]!.detail as {
+      seriesVolumes: { planned: { volumeUpserts: number } | null };
+    };
+    assert.equal(recorded.seriesVolumes.planned?.volumeUpserts, 20);
+  });
+
+  it('⚠️ the recorded counts carry NO series name and no volume title', async () => {
+    // `detail_json` is read back by an unauthenticated route.
+    stubFetch(() => csvResponse(csv(20)));
+    const { env, state } = fakeEnv({}, { AUDIOBOOK_SWEEP_MODE: 'shadow' });
+    await runAudiobookSweep(env, { trigger: 'cron' });
+    const json = JSON.stringify(
+      (state.runRows[0]!.detail as { seriesVolumes: unknown }).seriesVolumes,
+    );
+    assert.ok(!/Primal Hunter/.test(json), 'a series name reached the run row');
+  });
+
+  it('enforce writes it, in its own batch', async () => {
+    stubFetch(() => csvResponse(csv(20)));
+    const { env, state } = fakeEnv({}, { AUDIOBOOK_SWEEP_MODE: 'enforce' });
+    const result = await runAudiobookSweep(env, { trigger: 'cron' });
+    assert.equal(result.state, 'applied');
+    assert.equal(wroteSeriesVolumes(state), true);
+    assert.equal(result.seriesVolumes?.written, 21);
+  });
+
+  it('a dryRun in ENFORCE mode writes neither half', async () => {
+    stubFetch(() => csvResponse(csv(20)));
+    const { env, state } = fakeEnv({}, { AUDIOBOOK_SWEEP_MODE: 'enforce' });
+    const result = await runAudiobookSweep(env, { trigger: 'admin', dryRun: true });
+    assert.equal(wroteSeriesVolumes(state), false);
+    assert.equal(result.seriesVolumes?.written, null);
+    assert.ok(result.seriesVolumes?.planned);
+  });
+
+  it('🔴 guard 3 — a SCOPED run plans none of it', async () => {
+    // A `series_check` row is a per-series claim that a source was consulted,
+    // and a run that looked at one book has consulted nothing about the rest of
+    // the catalogue. The cron owns this half.
+    stubFetch(() => csvResponse(csv(20)));
+    const { env, state } = fakeEnv({}, { AUDIOBOOK_SWEEP_MODE: 'enforce' });
+    const result = await runAudiobookSweep(env, {
+      trigger: 'on-add',
+      scope: { kind: 'works', ids: [1] },
+    });
+    assert.equal(result.seriesVolumes?.planned, null);
+    assert.match(result.seriesVolumes?.detail ?? '', /scoped run/);
+    assert.equal(wroteSeriesVolumes(state), false);
+  });
+
+  it('guards 1, 2 and 4 cover it too — a refused tick plans nothing', async () => {
+    // Inherited rather than re-implemented: this half is planned downstream of
+    // all three, so each refusal returns before it is ever reached.
+    const refusals: Array<[string, () => Response, Partial<FakeState>]> = [
+      ['empty snapshot', () => csvResponse(HEADER), {}],
+      ['drift', () => csvResponse(csv(900)), { snapshot: { etag: '"old"', rowCount: 1000 } }],
+      ['empty-read', () => csvResponse(csv(50)), { works: [] }],
+    ];
+    for (const [what, answer, over] of refusals) {
+      stubFetch(answer);
+      const { env, state } = fakeEnv(over, { AUDIOBOOK_SWEEP_MODE: 'enforce' });
+      const result = await runAudiobookSweep(env, { trigger: 'cron' });
+      assert.equal(result.state, 'failed', what);
+      assert.equal(result.seriesVolumes, null, `${what} planned a series-volume write`);
+      assert.equal(wroteSeriesVolumes(state), false, what);
+    }
+  });
+
+  it('mode off never reaches it at all', async () => {
+    stubFetch(() => csvResponse(csv(20)));
+    const { env, state } = fakeEnv({}, { AUDIOBOOK_SWEEP_MODE: 'off' });
+    const result = await runAudiobookSweep(env, { trigger: 'cron' });
+    assert.equal(result.seriesVolumes, null);
+    assert.equal(wroteSeriesVolumes(state), false);
+  });
+
+  it('🔴 no second mode variable — one switch decides both halves', async () => {
+    // A second var would let an instance shadow one half and enforce the other,
+    // which is a state nobody could read off /api/health and nothing needs.
+    for (const mode of ['shadow', 'enforce'] as const) {
+      stubFetch(() => csvResponse(csv(20)));
+      const { env, state } = fakeEnv({}, { AUDIOBOOK_SWEEP_MODE: mode });
+      await runAudiobookSweep(env, { trigger: 'cron' });
+      assert.equal(
+        wroteSeriesVolumes(state),
+        mode === 'enforce',
+        `${mode} must treat both halves alike`,
+      );
+      assert.equal(wroteHoldings(state), mode === 'enforce');
+    }
   });
 });
 

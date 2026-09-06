@@ -8,6 +8,28 @@
  * them that a script never needed — the fetch, the guards, the run row, and the
  * mode ladder.
  *
+ * ## ⚠️ ONE tick, TWO halves — added 2026-09-05
+ *
+ * The same tick now also refreshes `series_volume` / `series_check` from the
+ * SAME parsed CSV (`planSeriesVolumes` in `@lc/core`, `applySeriesVolumePlan` in
+ * `@lc/db`) — platform inventory §7 row #2, *"same input, same fetch, same
+ * instance pair … it costs one function"*. It costs one extra D1 read and no
+ * second fetch, and it is folded in here rather than given a cron of its own for
+ * the reason that row ends on: **two audiobook-derived tables that fall out of
+ * step is a worse bug than either being stale.**
+ *
+ * 🔴 **No second mode variable.** `AUDIOBOOK_SWEEP_MODE` expresses this half
+ * exactly — `off` means no fetch at all, `shadow` means the plan is computed and
+ * its counts recorded under `detail_json.seriesVolumes` with nothing written,
+ * `enforce` means it is applied. A second switch would let one instance shadow
+ * one half and enforce the other, which is a state nobody could read off
+ * `/api/health` and nothing needs.
+ *
+ * ⚠️ The two halves share a TICK, not a FATE. Each is planned and applied in its
+ * own `try`/batch, so a missing or unreadable `series_volume` table records
+ * `seriesVolumes.detail` and leaves the holdings the work pages draw from
+ * untouched.
+ *
  * ## 🔴 Why the guards, and why they are not "defensive programming"
  *
  * The sweep's stale phase marks every holding it did not reproduce. In a script
@@ -24,6 +46,13 @@
  * | 2 | **Mass drift** | more than **3%** fewer rows than the last successful fetch aborts with `failed: drift` and BOTH numbers. Precedent: `drive_role_parity.py`'s `MASS_DRIFT_CAP=3`. A catalog does not lose 3% of its rows between ticks; a broken fetch does |
  * | 3 | **A scoped run stales nothing** | enforced in the planner as a TYPE, not here — `scope: { kind: 'works' }` produces zero stale entries and `packages/core/test/audiobook-sweep-scope.test.ts` pins it |
  * | 4 | **Zero WORKS read** | abort, `failed: empty-read`. ⚠️ Not in §6.2 — added because phase 0 measured it: one `--remote` run returned `0 work(s) in the REMOTE database` and **exited 0**, wrangler handing back an empty result set with no error. Re-running gave the full 411. In a Worker the same empty read reaches the stale sweep with nothing to reproduce, which is guard 1's disaster arriving through the other door |
+ *
+ * ⚠️ **All four cover the series-volume half too**, and three of them for free:
+ * it is planned downstream of guards 1, 2 and 4, so a zero-row CSV, a drifted
+ * CSV or a zero-WORKS read has already returned with nothing written. Guard 3 it
+ * gets in its own form — a scoped run plans NONE of it, because a
+ * `series_check` row is a per-series claim that a source was consulted and a run
+ * that looked at one book has consulted nothing about the rest.
  *
  * ⚠️ **The snapshot is written only AFTER the guards pass.** A snapshot written
  * from a refused fetch would poison the drift baseline: the next tick would
@@ -67,15 +96,20 @@ import {
   groupWorkAliases,
   parseAudiobookCsv,
   planAudiobookSweep,
+  planSeriesVolumes,
+  type SeriesVolumePlan,
   type SweepPlan,
   type SweepScope,
 } from '@lc/core';
 import {
   applyAudiobookSweepPlan,
+  applySeriesVolumePlan,
   finishAudiobookSweepRun,
   readAudiobookSnapshot,
   readAudiobookSweepInputs,
+  readSeriesVolumeRows,
   saveAudiobookSnapshot,
+  seriesVolumeStatements,
   startAudiobookSweepRun,
   type AudiobookSweepTrigger,
 } from '@lc/db';
@@ -134,11 +168,12 @@ const FETCH_TIMEOUT_MS = 20_000;
  * only on measured equality and never as a side effect of an unrelated deploy.
  *
  * - **`off`** — costs nothing and asks nothing. No fetch, no run row.
- * - **`shadow`** — computes the whole plan and **writes nothing** to the holding
- *   tables; the plan's counts land in `audiobook_sweep_run.detail_json`, which
- *   is what makes a shadow tick evidence rather than a no-op. STEP 11 of the
- *   audiobook pipeline is still doing the writing.
- * - **`enforce`** — the plan is applied.
+ * - **`shadow`** — computes BOTH plans and **writes nothing** to the holding
+ *   tables or to `series_volume`/`series_check`; the counts land in
+ *   `audiobook_sweep_run.detail_json` (`plan` and `seriesVolumes`), which is what
+ *   makes a shadow tick evidence rather than a no-op. STEP 11 of the audiobook
+ *   pipeline and `npm run backfill:series-volumes` are still doing the writing.
+ * - **`enforce`** — both plans are applied.
  */
 export type AudiobookSweepMode = 'off' | 'shadow' | 'enforce';
 
@@ -179,7 +214,54 @@ export interface AudiobookSweepRunResult {
   plan: PlanCounts | null;
   /** What was actually written. Null in shadow, in a dry run, and on a refusal. */
   written: { statements: number; transitions: number } | null;
+  /**
+   * The OTHER half of the same tick — `series_volume` / `series_check`. Null
+   * when the tick never got as far as planning anything (mode off, a refused
+   * fetch, a failed guard).
+   */
+  seriesVolumes: SeriesVolumeRunCounts | null;
   snapshot: { etag: string | null; rowCount: number } | null;
+}
+
+/**
+ * The series-volume half of a tick, as numbers.
+ *
+ * 🔴 **Counts only, exactly as `PlanCounts` is** — `detail_json` is read back by
+ * `/api/health`, which is unauthenticated on purpose, and a shape carrying
+ * volume titles would be one careless spread away from publishing what the
+ * household reads. The numbers below are exactly the ones
+ * `npm run backfill:series-volumes -- --remote` prints, which is what makes the
+ * parity check a comparison somebody can actually do.
+ */
+export interface SeriesVolumePlanCounts {
+  /** Our series considered — the script's `N series in the … database`. */
+  seriesCount: number;
+  /** Series the sibling catalog knows. */
+  found: number;
+  /** Series it has never heard of — recorded as `not_found`, not as silence. */
+  notFound: number;
+  volumeUpserts: number;
+  checkUpserts: number;
+  /** Volumes this run had not seen before — the script's `N volume(s) …`. */
+  newVolumes: number;
+  /** Rows left alone because a person entered them. */
+  manualSkipped: number;
+  /** Statements the plan renders to — what the script's dry run counts. */
+  statements: number;
+}
+
+export interface SeriesVolumeRunCounts {
+  /**
+   * 🔴 Null under a SCOPED run. Guard 3, applied to this half: a run that looked
+   * at one book has no standing to re-answer *"what volumes does the sibling
+   * catalog know?"* for the whole catalogue, and `series_check` is a per-series
+   * claim that a source was consulted. The cron owns it.
+   */
+  planned: SeriesVolumePlanCounts | null;
+  /** Statements written. Null in shadow, in a dry run, and on a refusal. */
+  written: number | null;
+  /** One phrase when nothing was planned. */
+  detail: string | null;
 }
 
 /**
@@ -238,6 +320,20 @@ function planCounts(plan: SweepPlan): PlanCounts {
   };
 }
 
+function seriesVolumePlanCounts(plan: SeriesVolumePlan): SeriesVolumePlanCounts {
+  const r = plan.report;
+  return {
+    seriesCount: r.seriesCount,
+    found: r.found,
+    notFound: r.notFound,
+    volumeUpserts: plan.writes.filter((w) => w.kind === 'volume').length,
+    checkUpserts: plan.writes.filter((w) => w.kind === 'check').length,
+    newVolumes: r.newVolumes,
+    manualSkipped: r.manualSkipped,
+    statements: plan.writes.length,
+  };
+}
+
 export interface AudiobookSweepRunOptions {
   trigger: AudiobookSweepTrigger;
   /**
@@ -271,6 +367,7 @@ export async function runAudiobookSweep(
     runId: null as number | null,
     plan: null as PlanCounts | null,
     written: null as { statements: number; transitions: number } | null,
+    seriesVolumes: null as SeriesVolumeRunCounts | null,
     snapshot: null as { etag: string | null; rowCount: number } | null,
   };
 
@@ -304,6 +401,7 @@ export async function runAudiobookSweep(
           scope: scope.kind,
           plan: full.plan,
           written: full.written,
+          seriesVolumes: full.seriesVolumes,
           snapshot: full.snapshot,
         },
       });
@@ -399,6 +497,44 @@ export async function runAudiobookSweep(
 
     const counts = planCounts(plan);
 
+    // ── The OTHER half of the same tick — `series_volume` / `series_check` ──
+    //
+    // Platform inventory §7 row #2. It reads the SAME parsed CSV and the SAME
+    // works, so it costs one D1 read and no second fetch — and the two
+    // audiobook-derived tables cannot fall out of step, which was the argument
+    // for folding it in here rather than giving it a cron of its own.
+    //
+    // 🔴 **Guard 3, applied to this half: a scoped run plans NONE of it.** The
+    // audiobook half's scoped form has a type-level reason to be safe (zero
+    // stale entries); this half's reason is different and needs saying: a
+    // `series_check` row is a per-series claim that a source was consulted, and
+    // a run that looked at one book has not consulted anything about the rest of
+    // the catalogue. The cron owns it. Guards 1, 2 and 4 are inherited whole —
+    // this code is downstream of all three, so a zero-row CSV, a drifted CSV or
+    // a zero-WORKS read has already returned above with nothing written.
+    let seriesPlan: SeriesVolumePlan | null = null;
+    let seriesVolumes: SeriesVolumeRunCounts;
+    if (scope.kind !== 'all') {
+      seriesVolumes = { planned: null, written: null, detail: 'scoped run — the cron owns this half' };
+    } else {
+      try {
+        const existingVolumes = await readSeriesVolumeRows(env.DB);
+        seriesPlan = planSeriesVolumes({
+          works: rows.works,
+          audiobooks,
+          existing: existingVolumes,
+        });
+        seriesVolumes = { planned: seriesVolumePlanCounts(seriesPlan), written: null, detail: null };
+      } catch (err) {
+        // ⚠️ Recorded, never thrown, and it does NOT fail the audiobook half.
+        // The two halves share a tick, not a fate: a `series_volume` table that
+        // is missing or unreadable is no reason to withhold the holdings the
+        // work pages draw from.
+        seriesPlan = null;
+        seriesVolumes = { planned: null, written: null, detail: `series volumes failed: ${message(err)}` };
+      }
+    }
+
     // ⚠️ Only now. A snapshot written before the guards would poison the drift
     // baseline for every tick after it.
     await saveAudiobookSnapshot(env.DB, { etag, rowCount: audiobooks.length }).catch(() => {});
@@ -409,15 +545,21 @@ export async function runAudiobookSweep(
         state: 'shadow',
         detail: opts.dryRun ? 'dry run — nothing written' : 'shadow — nothing written',
         plan: counts,
+        seriesVolumes,
         snapshot: { etag, rowCount: audiobooks.length },
       });
     }
+
+    const seriesStatements = seriesPlan ? seriesVolumeStatements(seriesPlan).length : 0;
 
     const nothingToDo =
       plan.editionUpserts.length === 0 &&
       plan.editionStales.length === 0 &&
       plan.rungUpserts.length === 0 &&
-      plan.rungStales.length === 0;
+      plan.rungStales.length === 0 &&
+      // ⚠️ Both halves, or `in-sync` would be a lie the moment the holdings were
+      // steady and a new series volume had appeared.
+      seriesStatements === 0;
 
     if (nothingToDo) {
       return finish({
@@ -425,14 +567,30 @@ export async function runAudiobookSweep(
         state: 'in-sync',
         detail: null,
         plan: counts,
+        seriesVolumes,
         snapshot: { etag, rowCount: audiobooks.length },
       });
     }
 
+    // ⚠️ Called even when only the series half has work: an empty plan batches
+    // nothing (`applyAudiobookSweepPlan` skips the batch at zero statements) and
+    // reports zero, which is cheaper than a second branch that could drift.
     const written = await applyAudiobookSweepPlan(env.DB, plan, {
       trigger,
       existingEditions: rows.existingEditions,
     });
+
+    if (seriesPlan && seriesStatements > 0) {
+      try {
+        const applied = await applySeriesVolumePlan(env.DB, seriesPlan);
+        seriesVolumes = { ...seriesVolumes, written: applied.statements };
+      } catch (err) {
+        // Same reasoning as the planning catch: one half failing is recorded,
+        // it does not un-write the other. ⚠️ Its own batch, so a `series_volume`
+        // failure cannot roll back holdings that landed correctly.
+        seriesVolumes = { ...seriesVolumes, written: 0, detail: `series volumes failed: ${message(err)}` };
+      }
+    }
 
     return finish({
       ...base,
@@ -440,6 +598,7 @@ export async function runAudiobookSweep(
       detail: null,
       plan: counts,
       written: { statements: written.statements, transitions: written.transitions },
+      seriesVolumes,
       snapshot: { etag, rowCount: audiobooks.length },
     });
   } catch (err) {
