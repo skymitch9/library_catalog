@@ -32,6 +32,7 @@ export * from './lookup-errors.js';
 export * from './titles.js';
 export * from './audiobook-csv.js';
 export * from './series-canon.js';
+export * from './audiobook-sweep.js';
 export * from './matching.js';
 export * from './duplicates.js';
 export * from './corroboration.js';
