@@ -88,11 +88,76 @@ why "right away" never happens today, and item 3 below is the standing fix.
    [`info/series-formats-and-audiobooks.md` §4.11](info/series-formats-and-audiobooks.md).
    The sweep's decisions moved to `packages/core/src/audiobook-sweep.ts` and the
    script became a thin caller, proven by **byte-identical `--remote` dry runs on
-   both instances**. ☐ **Steps 6–14 remain** — migration 0470, the D1 writer, the
-   run wrapper with §6.2's three guards, the admin routes, the `/api/health`
-   line, the second cron string on BOTH `[triggers]` blocks, the on-add hook and
-   the shadow flag. **Nothing is deployed and no route exists yet**, so a book
-   added today still waits for STEP 11.
+   both instances**.
+
+   ✅ ~~☐ **Steps 6–14 remain** — migration 0470, the D1 writer, the run wrapper
+   with §6.2's three guards, the admin routes, the `/api/health` line, the second
+   cron string on BOTH `[triggers]` blocks, the on-add hook and the shadow flag.
+   **Nothing is deployed and no route exists yet**, so a book added today still
+   waits for STEP 11.~~ **STEPS 6–14 ARE BUILT, MIGRATED AND DEPLOYED TO BOTH
+   INSTANCES — 2026-09-06, agent W6-AUDIO-B.** Commits `3d2d62e` (migration
+   0470) · `9ba4beb` (the D1 writer, and ONE statement rendering shared with the
+   script) · `a37153b` (the run wrapper + four guards) · `ce281a9` (the admin
+   verbs) · `42a0024` (`/api/health`) · `b378a27` (the second cron, both
+   `[triggers]` blocks) · `1d4a80e` (the on-add hook) · `235010f` (shadow, both
+   `[vars]` blocks). Written up in
+   [`info/series-formats-and-audiobooks.md` §4.12](info/series-formats-and-audiobooks.md);
+   **operating it is [`access/audiobook-sweep.md`](access/audiobook-sweep.md)**.
+
+   🔴 **THIS ITEM STAYS OPEN, and stays open until the sweep ENFORCES.**
+   Everything shipped in **SHADOW**: the cron and the on-add hook compute the
+   whole plan and **write nothing**, and STEP 11 of the audiobook pipeline is
+   still doing all the writing. **So a book added today STILL waits for STEP 11
+   — the owner's original complaint is not closed yet**, and nothing moves to
+   [`DONE.md`](DONE.md) before it is.
+
+   ☐ **THE GATE, and it is a number:** flip `AUDIOBOOK_SWEEP_MODE` to
+   `"enforce"` in BOTH `[vars]` blocks **after ≥42 shadow ticks (a week at
+   four-hourly) with ZERO divergences** between the route's recorded plan and
+   `npm run backfill:audiobooks -- --remote` on the same CSV — the STEP 11
+   comparison. ⚠️ A divergence is almost certainly the design's §2.4
+   series-canon skew (the route's canon is as fresh as the last DEPLOY, the
+   script's as fresh as the last `git pull` of catalog-platform, and the ROUTE
+   is the stale side); diagnose it, never wave it through. **Rollback at any
+   point is one word: mode `off`.** Its own commit, never a side effect of an
+   unrelated deploy.
+
+   **Measured 2026-09-06** — migration 0470 applied to `library-catalog` AND
+   `library-catalog-2nd`; deployed (MAIN version `b547095d`, friend `9b2b64d2`);
+   both hosts answer `detail.audiobookSweep.mode = "shadow"` with `editionsLive`
+   127/123 and `rungsLive` 190/140; and the **phase-1 gate passed on both** —
+   the planner over the ROUTE's inputs (the published URL + the build-generated
+   canon) produced a plan **byte-identical** to the SCRIPT's (the disk CSV + the
+   live cross-repo canon): MAIN 127 edition upserts / 190 rungs / 0 stales / 122
+   matched; padhard 123 / 140 / 0 / 119. The live CSV and the on-disk CSV both
+   parse to **1089 rows** and the two row arrays are deep-identical.
+
+   ⚠️ **NOT verified, and it is the whole of what is left to watch: no
+   `audiobook_sweep_run` row exists on either instance yet.** No cron tick has
+   been observed (it fires at `:23` past every fourth hour, UTC), no on-add hook
+   has been seen to fire, and the admin route has never been called with a real
+   bearer — the building session had no Firebase token. **The first thing to do
+   next session is read the run rows** (§5 of the runbook):
+
+   ```
+   npx wrangler d1 execute library-catalog --remote --config apps/worker/wrangler.toml \
+     --command "SELECT id, trigger, started_at, finished_at, state, detail_json
+                  FROM audiobook_sweep_run ORDER BY id DESC LIMIT 5"
+   ```
+
+   ☐ **OWNER, if you want to see it now** rather than waiting for the clock —
+   with an owner Firebase ID token from a signed-in browser (devtools → Network
+   → any `/api/` call → the `Authorization` header):
+
+   ```
+   curl -s -X POST https://library.heygabi.ai/api/admin/audiobooks/sweep \
+     -H "Authorization: Bearer <ID_TOKEN>" \
+     -H "content-type: application/json" -d "{\"dryRun\":true}"
+   ```
+
+   It writes nothing in any mode, and returns the plan plus a `says` sentence.
+   Read it back either way at <https://library.heygabi.ai/api/health> and
+   <https://padhard.heygabi.ai/api/health> → `detail.audiobookSweep`.
 
 ## ☑ BUILT 2026-09-05 — "Request a catalog" phase 5, the sealed-key ladder is IN step 10 (agent S2) — ☐ owner runs it for real once
 

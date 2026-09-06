@@ -689,6 +689,195 @@ before a deploy against a checkout.
 **Commits:** `965d226` (CSV) · `e307bc3` (loader) · `bb7af18` (canon) · `e2f4aee`
 (planner) · `8f38125` (script + gate).
 
+### 4.12 🔴 THE SWEEP IS A ROUTE NOW — deployed to both instances in SHADOW, 2026-09-06
+
+Design of record:
+[`catalog-platform/docs/info/audiobook-association-route.md`](../../../catalog-platform/docs/info/audiobook-association-route.md).
+§9 steps 6–14, on top of §4.11's phase 0. **Operating it is
+[`access/audiobook-sweep.md`](../access/audiobook-sweep.md)** — this section is
+the *why*, that one is the *how*.
+
+> **Last verified: 2026-09-06.** Measured today: migration 0470 applied to both
+> instances; both deployed and answering `detail.audiobookSweep.mode = "shadow"`;
+> the phase-1 plan equality measured on both (below). ⚠️ **NOT measured: a real
+> cron tick, a real on-add hook firing, and the admin route end to end** — all
+> three need either a Firebase bearer or the clock, and the session that built it
+> had neither.
+
+#### 🔴 The diagnosis, restated because it is the whole design
+
+The sweep was already automated — it is **STEP 11** of the audiobook pipeline and
+has run against **both** instances every 8 hours since before 2026-08-25. So the
+owner's *"I added battle mage farmer and it didn't associate the audiobook right
+away"* was never "nobody runs it". It is:
+
+> **The trigger was on the wrong side of the relationship.** The association
+> fires when the AUDIOBOOK catalog changes. He changed the LIBRARY, and nothing
+> on the library side had a trigger at all.
+
+*Battle Mage Farmer*'s eleven audiobook rows were in the CSV a day before he
+added the print book. The data was there the whole time; **the library had no way
+to ask.**
+
+⚠️ **This is also why "run the sweep more often" is not the fix.** A cron alone
+still leaves a gap between the add and the next tick. The **on-add hook** answers
+*"right away"*; the **cron is the backstop** for what the hook missed and for
+whatever the sibling catalog gained since. Build only one of the two and you
+rebuild the same complaint at a shorter interval.
+
+#### The three doors, and what each is allowed to do
+
+| Trigger | Fires when | Scope | May mark stale? |
+|---|---|---|---|
+| `cron` | `23 */4 * * *`, both instances | `{ kind: 'all' }` | ✅ yes — it looked at everything |
+| `on-add` | `POST /api/works`, GABI's `add-isbn` | `{ kind: 'works', ids: [id] }` | 🔴 **never** |
+| `admin` | `POST /api/admin/audiobooks/sweep` | `{ kind: 'all' }` | ✅ yes |
+
+🔴 **The hook's inability to stale anything is a TYPE, not a convention** —
+`planAudiobookSweep` emits zero stale entries under `{ kind: 'works' }`, and emits
+a rung only where that run itself corroborated the series. §4.11's `scope` section
+carries the reasoning; what phase B adds is the caller that passes it and a test
+that the recorded run says `scope: "works"` with zero stales.
+
+⚠️ **The bulk ebook importer passes `'defer'` and does nothing at all.** One hook
+per row against a thousand-book import is a thousand index builds and a thousand
+fetches of a 1.4 MB CSV — for an audiobook row set that is *identical for every
+work in the run*. The cron picks them up.
+
+#### 🔴 The four guards — why a cron is more dangerous than a script
+
+The stale phase marks every holding it did not reproduce. In a script that is
+safe: a missing file exits 1 in front of the person who started it. **A Worker's
+failure looks like success** — a Pages deploy mid-flight, a truncated body, an
+origin error page served with a `200` — and the sweep would then mark *every
+holding in the catalog* stale, on both instances, with nobody watching.
+
+| # | Guard | Verdict recorded |
+|---|---|---|
+| 1 | zero audiobook rows parsed | `failed: empty snapshot` |
+| 2 | more than **3%** fewer rows than the last successful fetch | `failed: drift`, with BOTH numbers |
+| 3 | a scoped run stales nothing | (enforced in the planner, as a type) |
+| 4 | zero WORKS read from D1 | `failed: empty-read` |
+
+Guard 4 is **not in the design**, and it is here because phase 0 measured it: one
+`--remote` run returned *"0 work(s) in the REMOTE database"* and **exited 0** —
+wrangler handing back an empty result set with no error. Re-running gave the full
+411. In a Worker that same empty read reaches the stale sweep with nothing to
+reproduce, which is guard 1's disaster arriving through the other door.
+
+⚠️ **The snapshot is written only AFTER the guards pass.** A snapshot written from
+a refused fetch poisons the drift baseline: the next tick would compare against
+the broken number, find no drift, and sail through — guard 2 destroying itself on
+first use. There is a test for exactly that.
+
+#### The mode ladder, and the numbered gate out of shadow
+
+`AUDIOBOOK_SWEEP_MODE`, in both `[vars]` blocks. **Ships `shadow`.**
+
+| Mode | Does | Gate to the next rung |
+|---|---|---|
+| `off` | no fetch, no run row, nothing costs | — |
+| **`shadow`** ← today | computes the whole plan, records its COUNTS in `audiobook_sweep_run.detail_json`, **writes nothing**. STEP 11 still does the writing | 🔴 **≥42 ticks (a week at four-hourly) with ZERO divergences** against `npm run backfill:audiobooks -- --remote` on the same CSV |
+| `enforce` | the cron writes; the on-add hook goes live. **STEP 11 keeps running unchanged** | STEP 11 finds nothing to do on consecutive runs — itself the proof, and free because the sweep is idempotent |
+
+⚠️ **This var FAILS CLOSED**, the opposite posture to `BILLING_POLICY` a few lines
+above it in the same file. Unset, blank, misspelt and unrecognised all resolve to
+`off`. Billing fails open on purpose because its worst case is spending 4¢; this
+switch's worst case is a page telling the owner he does not own books that are on
+his shelf.
+
+#### ✅ The phase-1 gate — MEASURED 2026-09-06, both instances, IDENTICAL
+
+The gate is *"the route's plan on the live snapshot equals the script's plan on
+the same CSV"*. It was measured without waiting for a bearer token, by planning
+**both ways** over the live D1s — the script's inputs (disk CSV + the live
+cross-repo canon) against the route's (the published URL + the build-generated
+canon):
+
+| | MAIN | padhard |
+|---|---|---|
+| works / audiobook rows | 411 / 1089 | 677 / 1089 |
+| matched | 122 (114 exact, 8 containment) | 119 (119 exact) |
+| edition upserts / stales | **127 / 0** | **123 / 0** |
+| rung upserts / stales | **190 / 0** | **140 / 0** |
+| series with rungs | 31 | 44 |
+| **script plan vs route plan** | 🟢 **byte-identical** | 🟢 **byte-identical** |
+
+Two things that equality rests on, both re-measured the same day:
+
+- **Transport equivalence.** `https://audiobooks.heygabi.ai/catalog.csv`
+  (1,408,735 bytes, `ETag "4d4d09ade4b45fb1baa48ab7880b7a34"`) and
+  `audiobook_catalog/site/catalog.csv` both parse to **1089 rows**, and the two
+  row arrays are **deep-identical** — the parser skips `\r`, so CRLF-vs-LF is the
+  only difference in the bytes and none at all in the rows. §3.2 of the design
+  asserted this; this is it re-measured against the built code.
+- **No canon skew today.** §2.4 warns that the route's series canon is as fresh as
+  the last DEPLOY while the script's is as fresh as the last `git pull` of
+  catalog-platform, *and that when they disagree the route is the stale one*. Both
+  currently hold the same **6 spellings across 3 entries**, which is what
+  `/api/health`'s `seriesCanonEntries: 6` reports. **A divergence during shadow is
+  most likely to be this** — diagnose it, do not wave it through.
+
+⚠️ **What this equality does NOT prove: that the deployed Worker ran.** It proves
+the planner produces the same plan from the route's inputs as from the script's,
+which removes every variable except the Worker's own D1 reads and the guards. The
+remaining proof is an `audiobook_sweep_run` row — see the runbook.
+
+Note the plan is *entirely upserts, zero stales, on both instances*: STEP 11 has
+already written everything, so the first enforcing run would change no values and
+write **zero** `change_log` transition rows. That is the expected steady state,
+not a coincidence.
+
+#### Where the design was wrong or silent, measured against the code
+
+1. 🔴 **§3.3 and §4.3 assume the parsed ROWS are cached, and migration 0470 —
+   exactly as §9 step 6 specifies it — caches only the `etag`, the `fetched_at`
+   and the `row_count`.** So *"the on-add hook must never fetch 1.4 MB; it reads
+   the cached snapshot"* has nothing warm to read. **The scoped run therefore
+   fetches, conditionally, like the cron.** §4.3's objection was that fetching
+   would slow the add — `ctx.waitUntil` already answers that, because the response
+   has gone out before any of this starts. What is really spent is one conditional
+   GET per book added, against a cron that fetches six times a day regardless.
+   **A KV row cache is the follow-up**, deliberately not built here: a new binding
+   on both instances is its own change, and shadow had to land first.
+2. ⚠️ **§4.4's *"collect work ids and fire one `associateWorks(ids)` at the end of
+   the batch"* is not implementable in `routes/ingest.ts`.** Measured: that file
+   has exactly ONE route and it creates ONE work per REQUEST, so the loop lives in
+   the external importer and a Worker invocation never sees a batch begin or end.
+   The deferral is real; the batching is the cron's. If that route ever grows a
+   multi-row body, that is where the batched call belongs.
+
+And one place phase B went **further** than the design. §2.3's *"the plan is DATA,
+not SQL"* was read in phase 0 as *two renderers over one plan*. It is now **one
+statement list** — `audiobookSweepStatements` in `@lc/db`, as `{ sql, binds }` —
+which the Worker binds and `scripts/lib/audiobook-sql.mjs` renders by substituting
+`lit()` for each `?`. The planner still returns rows for exactly the reason §2.3
+gives; what it does not follow from is that each caller should keep its own copy
+of *which columns a sweep writes and in what order*. **The script's rendered bytes
+did not move**, and the whole-string test in
+`scripts/test/backfill-audiobook-holdings.test.mjs` passing unchanged is what
+proves it.
+
+#### The audit trail — transitions only
+
+`change_log` gained the entity `'audiobook_holding'` (0120 carries no CHECK, so
+widening the union is the whole migration). `entity_id` is the **work id**,
+`changed_by` is NULL, `changed_how` is `'auto'`, and the note names the
+**trigger** — `audiobook sweep (cron)` / `(on add)` / `(admin)`. ⚠️ That last
+detail is the fact worth keeping: it is the only way to tell later whether the
+hook is working or the cron is quietly carrying the whole feature.
+
+🔴 **One row per work whose association CHANGED, never one per upsert.** The sweep
+touches every live row six times a day; a row per upsert would be thousands a day
+in a table a person is meant to read, and would bury their own edits. In steady
+state it writes **nothing**. The audit rows go in the **same `db.batch()`** as the
+mutation, per `changes.ts`.
+
+**Commits:** `3d2d62e` (migration 0470) · `9ba4beb` (the D1 writer + one
+rendering) · `a37153b` (the run wrapper + the four guards) · `ce281a9` (the admin
+verbs) · `42a0024` (`/api/health`) · `b378a27` (the second cron, both blocks) ·
+`1d4a80e` (the on-add hook) · `235010f` (shadow, both instances).
+
 ---
 
 ## 5. Why the series list filters in the browser
