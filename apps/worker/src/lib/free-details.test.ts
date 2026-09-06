@@ -230,6 +230,42 @@ describe('readSeriesLabel', () => {
     });
   });
 
+  it('⚠️ reads the COMBINED "Name (#N)" spelling — the one that reached production', () => {
+    // MEASURED 2026-09-05 on the second instance (padhard): three works held a
+    // series name ending in a volume marker, every one written `changed_how
+    // 'auto'` by this ladder within twenty seconds of the work being added. The
+    // bracket branch matched and handed `parseVolumeNumber` the token "#2",
+    // which is not a number, so the whole string fell through to the name — and
+    // the estate index's near-miss queue correctly reported two series where
+    // there is one.
+    assert.deepEqual(readSeriesLabel("A Good Girl's Guide to Murder (#2)", true), {
+      series: "A Good Girl's Guide to Murder",
+      sort: 2,
+      display: null,
+    });
+    assert.deepEqual(readSeriesLabel('Once Upon a Broken Heart (#1)', true), {
+      series: 'Once Upon a Broken Heart',
+      sort: 1,
+      display: null,
+    });
+    // A decimal position survives the strip too — 2.5 is a real rung shape here.
+    assert.deepEqual(readSeriesLabel('Skyward (#2.5)', true), {
+      series: 'Skyward',
+      sort: 2.5,
+      display: null,
+    });
+  });
+
+  it('⚠️ the # strip does NOT widen the guard — a non-numeric hash keeps the name whole', () => {
+    // The whole reason stripping the '#' is safe: `parseVolumeNumber` is still
+    // the only thing that reads a position, and it refuses this one.
+    assert.deepEqual(readSeriesLabel('Foo (#hashtag)', true), {
+      series: 'Foo (#hashtag)',
+      sort: null,
+      display: null,
+    });
+  });
+
   it('⚠️ leaves a name that merely ENDS in a parenthetical alone', () => {
     // The guard that makes the branch above safe: it fires only when
     // `parseVolumeNumber` gets a position out of the bracketed token.

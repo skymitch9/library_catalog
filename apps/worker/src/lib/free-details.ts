@@ -318,19 +318,34 @@ export function readSeriesLabel(
    * landed in `work.series` and the catalogue grew a series literally named
    * **"Elantris (1)"** — a shelf of one, next to the real one.
    *
-   * `Name (N)` and `Name #N` are the two spellings this field carries. The
-   * NUMBER still goes through `parseVolumeNumber` and nothing else; the name is
-   * whatever is in front of it, which is a split rather than a parse — the same
-   * distinction `splitSeriesPrefix` draws in `@lc/core`.
+   * `Name (N)`, `Name #N` and `Name (#N)` are the three spellings this field
+   * carries. The NUMBER still goes through `parseVolumeNumber` and nothing
+   * else; the name is whatever is in front of it, which is a split rather than
+   * a parse — the same distinction `splitSeriesPrefix` draws in `@lc/core`.
+   *
+   * ⚠️ **`Name (#N)` — the COMBINED form — was the gap, and it reached
+   * production.** Measured 2026-09-05 on the second instance: three works
+   * carried a series name ending in a volume marker, every one written
+   * `changed_how 'auto'` by this ladder within twenty seconds of the work being
+   * added — *"A Good Girl's Guide to Murder (#2)"*, *"(#3)"*, *"Once Upon a
+   * Broken Heart (#1)"*. The bracket branch matched and handed
+   * `parseVolumeNumber` the token `"#2"`, which is not a number, so the whole
+   * string fell through to the name: the exact *"Elantris (1)"* failure this
+   * block exists to prevent, one character further along. It surfaced on the
+   * estate index's near-miss queue, which correctly saw two series where there
+   * is one. The `#` is stripped from the token for that reason and no other;
+   * `parseVolumeNumber` is still the only thing that reads a position.
    *
    * ⚠️ It only fires when `parseVolumeNumber` returns a position, so a series
    * whose name genuinely ends in a parenthetical — *"Discworld (UK)"* — keeps
-   * its name whole. That guard is the whole reason this is safe.
+   * its name whole. That guard is the whole reason this is safe, and stripping
+   * the `#` does not weaken it: *"Foo (#hashtag)"* still yields no position and
+   * still keeps its name whole.
    */
   const numbered = /^(.+?)\s*(?:\(\s*([^()]+?)\s*\)|#\s*([^\s#]+))\s*$/.exec(text);
   if (numbered) {
     const name = (numbered[1] ?? '').trim();
-    const token = (numbered[2] ?? numbered[3] ?? '').trim();
+    const token = (numbered[2] ?? numbered[3] ?? '').trim().replace(/^#\s*/, '');
     const sort = parseVolumeNumber(token);
     if (name && sort !== null) {
       // The token is a bare position, not a designation anybody printed, so
