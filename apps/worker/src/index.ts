@@ -15,8 +15,11 @@ import {
   decideBilling,
 } from './lib/billing-gate.js';
 import { AUDIOBOOK_SWEEP_CRON, runAudiobookSweep } from './lib/audiobook-sweep-run.js';
+import { AUDITS_CRON } from './lib/audit-run.js';
 import { fetchSystemDenied } from './lib/billing-system.js';
+import { runCoverHealthAudit } from './lib/cover-health-run.js';
 import { DETAILS_SWEEP_CRON, runDetailsSweep } from './lib/details-sweep.js';
+import { runSeriesAggregateAudit } from './lib/series-aggregates-run.js';
 import { indexBackstopOnRequest, indexPushAfterMutation } from './lib/index-push.js';
 import { peerPushAfterMutation } from './lib/peer-push.js';
 import { requireAuth } from './middleware/auth.js';
@@ -25,6 +28,7 @@ import { adminCors, adminRoutes } from './routes/admin.js';
 import { aliasRoutes } from './routes/aliases.js';
 import { audiobookMappingRoutes } from './routes/audiobook-mapping.js';
 import { audiobookSweepRoutes } from './routes/audiobook-sweep.js';
+import { auditRoutes } from './routes/audits.js';
 import { catalogRoutes } from './routes/catalog.js';
 import { coverRoutes } from './routes/covers.js';
 import { crowdfundingRoutes, provenanceRoutes } from './routes/crowdfunding.js';
@@ -154,6 +158,13 @@ app.route('/api/admin', adminRoutes);
 // collide with `adminRoutes`' `/users` or `/users/:id/role` — different first
 // segment — so mount order carries no meaning here.
 app.route('/api/admin', audiobookSweepRoutes);
+// The two standing audits' operator verbs (platform inventory §7 rows #4/#5).
+// ⚠️ Same `/api/admin` prefix and therefore the same blanket `requireAuth` and
+// the same one-origin CORS allowance; the routes gate themselves on
+// `manageUsers` through the shared `lib/admin-refusal.ts` and word their own
+// refusal. `/audits/*` shares no first segment with `/users` or
+// `/audiobooks/sweep`, so mount order carries no meaning here either.
+app.route('/api/admin', auditRoutes);
 app.route('/api', userRoutes);
 app.route('/api', catalogRoutes);
 // Mounted at /api too: `/works/:id/relations` and `/works/:id/aliases` each have
@@ -301,9 +312,12 @@ export default {
   fetch: app.fetch,
 
   /**
-   * The clock. ⚠️ **TWO jobs now, dispatched on `event.cron` and nothing else**
-   * — the hourly details sweep (owner ask 2026-08-16) and the four-hourly
-   * audiobook association sweep (2026-09-05). The shape is the games Worker's
+   * The clock. ⚠️ **THREE cron strings now, dispatched on `event.cron` and
+   * nothing else** — the hourly details sweep (owner ask 2026-08-16), the
+   * four-hourly audiobook association sweep (2026-09-05), and the daily
+   * standing-audit pair (2026-09-06: cover health + the bare-series alarm,
+   * platform inventory §7 rows #4 and #5, sharing ONE string on purpose —
+   * `AUDITS_CRON`'s comment has the three reasons). The shape is the games Worker's
    * (`Board_Game_Catalog/apps/worker/src/index.ts:244`), which has dispatched
    * three crons through one handler since before this one had two.
    *
@@ -357,12 +371,37 @@ export default {
       return work;
     }
 
+    if (event.cron === AUDITS_CRON) {
+      // ⚠️ **ONE cron, TWO audits, and they run SEQUENTIALLY on purpose.** Both
+      // are read-only, neither depends on the other, and only one of them makes
+      // any subrequest at all (`series-aggregates` is pure D1) — so there is no
+      // budget to divide. Running them in sequence rather than with
+      // `Promise.all` keeps the cover audit's 250 probes from sharing an
+      // invocation's egress with anything else, and costs nothing but wall
+      // clock a scheduled handler has plenty of.
+      //
+      // ⚠️ Neither runner rejects — both fold every failure into a run row —
+      // so `Promise.allSettled` would be theatre. The `.catch` below is the
+      // same unreachable belt-and-braces the two sweeps above keep, for the
+      // same reason: an unhandled rejection in a scheduled invocation is
+      // invisible in a way a request's never is.
+      const work = (async () => {
+        const covers = await runCoverHealthAudit(env, { trigger: 'cron' });
+        console.log('cover health audit', JSON.stringify(covers.findings ?? covers.detail));
+        const series = await runSeriesAggregateAudit(env, { trigger: 'cron' });
+        console.log('series aggregate audit', JSON.stringify(series.findings ?? series.detail));
+      })().catch((err) => console.error('audits failed', err));
+      ctx.waitUntil(work);
+      return work;
+    }
+
     console.error(
       'cron fired that nothing handles',
       event.cron,
       'expected one of',
       DETAILS_SWEEP_CRON,
       AUDIOBOOK_SWEEP_CRON,
+      AUDITS_CRON,
     );
     return;
   },

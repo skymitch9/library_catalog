@@ -4,7 +4,9 @@ import {
   audiobookHoldingCounts,
   isDatabaseReachable,
   latestAudiobookSweepRun,
+  latestAuditRun,
   readAudiobookSnapshot,
+  type AuditName,
 } from '@lc/db';
 import { describeEstateGate } from '@lc/estate-auth';
 import { edgeMode } from '@lc/research';
@@ -153,6 +155,81 @@ async function audiobookSweepStatus(env: Env) {
   }
 }
 
+/**
+ * One standing audit's status line — platform inventory §7 rows #4 and #5,
+ * built 2026-09-06.
+ *
+ * 🔴 **One fact, one home applies to SURFACES.** Neither audit gets a page. This
+ * route already answers `{ ok, service, version, time, detail }`, is
+ * unauthenticated on purpose, and the apex `/status` page already reads it — so
+ * each audit gets ONE KEY in `detail`, and `/status` shows main and padhard side
+ * by side for free. A second dashboard would be a second number to disagree with
+ * this one, and the estate has already paid for that once (a usage tracker
+ * rendering figures two days stale beside a duplicate built the same afternoon).
+ *
+ * ⚠️ **A person reading this must be able to tell THREE things apart**, which is
+ * why `state` is a word and `lastRunAt` is nullable:
+ *
+ * | Reads as | Means |
+ * |---|---|
+ * | `lastRunAt: null, state: null` | **never run here** — check the cron and the migration |
+ * | `state: "ok"` | **ran and found nothing** — the good news |
+ * | `state: "findings"` | ran and found something; `findings` has the counts |
+ * | `state: "failed"` | **refused**; `detail` says why, and NOTHING was measured |
+ *
+ * ⚠️ `failed` is never clean. An audit that could not read the database has
+ * learnt nothing about the catalog, and a status page that showed it as green
+ * would be the exact silent-staleness trap the estate's rules exist to kill.
+ *
+ * ⚠️ **Counts and ids only.** The stored `detail_json` deliberately carries no
+ * title, no author and no cover URL (migration 0480 says so at length), and this
+ * reads NAMED fields off it rather than spreading it — so a field added there
+ * later cannot leak onto an unauthenticated route by accident.
+ *
+ * ⚠️ **Never throws, and never fails the health check.** `audit_run` is
+ * migration 0480; an instance that has not been migrated yet must still answer
+ * `ok`. Every read here degrades to nulls, because a `/status` page that goes
+ * red over a background job's bookkeeping teaches people to ignore it.
+ */
+async function auditStatus(env: Env, audit: AuditName) {
+  try {
+    const run = await latestAuditRun(env.DB, audit);
+    const stored =
+      run?.detail && typeof run.detail === 'object'
+        ? (run.detail as { detail?: unknown; findings?: unknown })
+        : null;
+    return {
+      /** Null means it has NEVER run here — not that it ran and found nothing. */
+      lastRunAt: run?.startedAt ?? null,
+      lastFinishedAt: run?.finishedAt ?? null,
+      trigger: run?.trigger ?? null,
+      state: run?.state ?? null,
+      /** The one phrase that tells a refusal's reasons apart — `empty-read`, `read failed: …`. */
+      detail: typeof stored?.detail === 'string' ? stored.detail : null,
+      /**
+       * How long ago, in hours. ⚠️ Derived here rather than left to the reader:
+       * a bare timestamp on a status page is a number nobody subtracts, and *how
+       * old is it* is the whole question a daily audit's row answers.
+       */
+      ageHours: ageHours(run?.startedAt ?? null),
+      /** Counts only. Null when the run refused before it could count anything. */
+      findings: stored?.findings ?? null,
+    };
+  } catch {
+    // Not migrated yet, or the database is down — which `database` above already
+    // says, in the place people look for it.
+    return {
+      lastRunAt: null,
+      lastFinishedAt: null,
+      trigger: null,
+      state: null,
+      detail: null,
+      ageHours: null,
+      findings: null,
+    };
+  }
+}
+
 /** SQLite's `datetime('now')` is `YYYY-MM-DD HH:MM:SS` in UTC, with no zone on it. */
 function ageHours(stamp: string | null): number | null {
   if (!stamp) return null;
@@ -164,7 +241,11 @@ function ageHours(stamp: string | null): number | null {
 export const healthRoutes = new Hono<AppBindings>().get('/', async (c) => {
   const database = (await isDatabaseReachable(c.env.DB)) ? 'up' : 'down';
   const ok = database === 'up';
-  const audiobookSweep = await audiobookSweepStatus(c.env);
+  const [audiobookSweep, coverHealth, seriesAggregates] = await Promise.all([
+    audiobookSweepStatus(c.env),
+    auditStatus(c.env, 'cover-health'),
+    auditStatus(c.env, 'series-aggregates'),
+  ]);
   // The pre-envelope shape, unchanged — nested under `detail` AND kept at
   // the top level (additive transition, see file header). Spread FIRST so
   // the explicit envelope fields after it are an intentional override, not
@@ -214,6 +295,18 @@ export const healthRoutes = new Hono<AppBindings>().get('/', async (c) => {
      * why it can never fail the health check.
      */
     audiobookSweep,
+    /**
+     * The two standing audits (platform inventory §7 rows #4 and #5).
+     * ⚠️ **Additive only** — see `auditStatus` for why these are keys here
+     * rather than pages, why they can never fail the health check, and how to
+     * tell "never run" from "ran and found nothing" from "refused".
+     *
+     * Read them back without a sign-in:
+     *   curl -s https://library.heygabi.ai/api/health   # .detail.coverHealth
+     *   curl -s https://padhard.heygabi.ai/api/health   # .detail.seriesAggregates
+     */
+    coverHealth,
+    seriesAggregates,
     time: new Date().toISOString(),
   };
   return c.json(

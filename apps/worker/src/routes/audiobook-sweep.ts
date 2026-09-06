@@ -40,9 +40,9 @@
  */
 
 import { Hono, type Context } from 'hono';
-import { can } from '@lc/core';
 import { audiobookHoldingCounts, latestAudiobookSweepRun, readAudiobookSnapshot } from '@lc/db';
 import type { AppBindings } from '../env.js';
+import { refuseUnlessAdmin as refuseUnlessAdminWith } from '../lib/admin-refusal.js';
 import { audiobookSweepMode, runAudiobookSweep } from '../lib/audiobook-sweep-run.js';
 
 /**
@@ -52,26 +52,20 @@ import { audiobookSweepMode, runAudiobookSweep } from '../lib/audiobook-sweep-ru
  * "admin" means in §7.1. It is checked by name rather than by role so that
  * adding a role later does not mean auditing this route — the same reasoning
  * `requireCapability` carries.
+ *
+ * ⚠️ **The BODY of this moved to `lib/admin-refusal.ts` on 2026-09-06**, when
+ * the two standing audits gained admin routes and would otherwise have carried
+ * a second and third copy of it. The wording below is unchanged, character for
+ * character, and `audiobook-sweep.test.ts` still pins it; what changed is that
+ * there is now one implementation of *"what a refused operator verb says"*
+ * rather than one per route file.
  */
 export function refuseUnlessAdmin(c: Context<AppBindings>) {
-  const user = c.get('user');
-  if (can(user.role, 'manageUsers')) return null;
-  return c.json(
-    {
-      error: 'forbidden',
-      capability: 'manageUsers',
-      role: user.role,
-      detail:
-        user.role === 'pending'
-          ? 'Your account is still waiting for an owner to approve it, so nothing here is ' +
-            'available yet. An owner approves accounts on the People page.'
-          : `Running the audiobook sweep is an owner-or-admin job, and your account is ` +
-            `'${user.role}'. Ask an owner to change your role on the People page — or ask ` +
-            `them to run it for you; it is a background job and there is nothing to see ` +
-            `on a page.`,
-    },
-    403,
-  );
+  return refuseUnlessAdminWith(c, {
+    job: 'Running the audiobook sweep',
+    reassurance:
+      'it is a background job and there is nothing to see on a page.',
+  });
 }
 
 export const audiobookSweepRoutes = new Hono<AppBindings>()

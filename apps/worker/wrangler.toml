@@ -91,8 +91,41 @@ bucket_name = "library-covers"
 # SHADOW (`AUDIOBOOK_SWEEP_MODE`, in [vars] below), so the first rows will say
 # `shadow` and write nothing — which is the point, and is itself the evidence
 # the §8 phase-2 gate counts.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# "47 9 * * *" — the THIRD cron (added 2026-09-06): the STANDING AUDITS, both of
+# them. `src/lib/audit-run.ts` (`AUDITS_CRON`) is the string `scheduled()`
+# dispatches on; `src/lib/audits-cron.test.ts` reads THIS FILE and asserts both
+# blocks carry all three strings. Design and runbook:
+# `docs/info/audit-routes.md` and `docs/access/audits.md`.
+#
+# ⚠️ **ONE string for TWO audits, deliberately.** Cover health (platform
+# inventory §7 #4) and the bare-series alarm (#5) fire in one invocation, in
+# sequence. Three reasons, in weight order: the failure this whole family of
+# tests exists to catch is a STRING that drifted between these two blocks three
+# hundred lines apart, and one shared string means two entries to keep in step
+# rather than four; the two audits compete for nothing, because the series alarm
+# is pure D1 and spends ZERO subrequests; and they answer one question — *is the
+# catalog quietly rotting?* — which a person reads as two keys off one
+# `/api/health`.
+#
+# ⚠️ Daily and no faster. A broken cover does not un-break itself. The
+# inventory's own words are *"a report nobody remembers to run is a report that
+# never runs"* — the fix for which is a clock, not a fast clock.
+#
+# ⚠️ Minute 47 and hour 09 UTC (02:47 Phoenix). Not :00 (the world's stampede),
+# not :07 (the details sweep, which the games repo measures spending 46 of its
+# 50 subrequests), not :23 (the audiobook sweep). The cover half HEADs up to 250
+# URLs, several of them other people's origins, so the quietest hour is the
+# right one.
+#
+# ⚠️ Same rule about what a trigger PROVES: claimed until an `audit_run` row
+# exists with `trigger = 'cron'` on this instance. Both audits are READ-ONLY —
+# they write nothing to any catalog table ever — so unlike the sweep above there
+# is no shadow ladder here and none is needed. 🔴 **The rollback is one edit:
+# delete this string from both blocks and redeploy.**
 [triggers]
-crons = ["7 * * * *", "23 */4 * * *"]
+crons = ["7 * * * *", "23 */4 * * *", "47 9 * * *"]
 
 # The public hostname. Declared here rather than clicked in the dashboard so the
 # mapping lives in git and a redeploy reasserts it.
@@ -453,8 +486,20 @@ bucket_name = "library-2nd-covers"
 # second source and there must not be one — and the two D1s are two failure
 # domains that never meet, because each instance's cron fires in its own
 # invocation against its own database.
+# ⚠️ **"47 9 * * *" is the SAME STRING as the main instance too** (added
+# 2026-09-06) — the daily standing-audit pair, one string for both audits. The
+# trap is identical to the two above and worth restating rather than referring
+# to: a different minute HERE would silently stop auditing HER covers while this
+# file still looked configured, and padhard is the instance whose covers have
+# actually gone missing before (40 blanks, measured 2026-08-23, every one from a
+# row added after the last sweep — `docs/TODO.md`). ⚠️ Her covers are also the
+# ones the script could not audit at all until 2026-08-22, so she is precisely
+# the instance a clock is worth most on.
+#
+# ⚠️ Three strings, both blocks, one edit. `audits-cron.test.ts` asserts exactly
+# that and fails if either block loses any of the three.
 [env.friend.triggers]
-crons = ["7 * * * *", "23 */4 * * *"]
+crons = ["7 * * * *", "23 */4 * * *", "47 9 * * *"]
 
 # Hostname settled 2026-08-16 (was `sam.heygabi.ai` for a few hours) — see the
 # naming note above. Changing it again is: edit this pattern, add the new host

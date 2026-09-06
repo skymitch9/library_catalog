@@ -223,6 +223,16 @@ describe('index.ts mount order', () => {
       // `audiobook-sweep.test.ts` pins the refusal for every role, including
       // the separate wording a `pending` account gets.
       'audiobookSweepRoutes',
+      // ⚠️ `auditRoutes` joined the `/api/admin` prefix 2026-09-06 (the two
+      // standing audits' operator verbs — platform inventory §7 rows #4/#5).
+      // Excluded for exactly the same reason as the two above: `/api/admin` is
+      // not part of the bare-`/api` composition this file tests, and the leak
+      // point (`exportRoutes`' old blanket gate on the BARE prefix)
+      // structurally cannot reach a route mounted under a longer one. Its gate
+      // is `manageUsers`, checked inside each handler through the shared
+      // `lib/admin-refusal.ts`; `audits.test.ts` pins the refusal for every
+      // role, including the separate wording a `pending` account gets.
+      'auditRoutes',
     ];
     const behindAuth = found.filter(([, name]) => !inFront.includes(name));
 
