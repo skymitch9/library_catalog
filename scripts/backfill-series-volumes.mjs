@@ -18,6 +18,28 @@
  * floor. Reading it as a total would produce "6 of 12" with nothing behind the
  * 12 — the lie that looks like data.
  *
+ * ## ⚠️ AMENDED 2026-09-05: the AUDIOBOOK RUNG'S DECISIONS ARE NOT IN THIS FILE
+ *
+ * Rung 1 moved to `packages/core/src/series-volumes.ts` (`planSeriesVolumes`)
+ * and its SQL to `packages/db/src/series-volumes.ts`, so the CRON can reach the
+ * identical rows — platform inventory §7 row #2: *"same input, same fetch, same
+ * instance pair — once the CSV fetch and the shared parser exist, this costs one
+ * function"*. The audiobook sweep's four-hourly tick
+ * (`apps/worker/src/lib/audiobook-sweep-run.ts`) now plans this half from the
+ * same parsed CSV it already fetches, under the same `AUDIOBOOK_SWEEP_MODE`.
+ *
+ * 🔴 **This script is NEVER retired**, for the three reasons the audiobook
+ * backfill's header gives: it is the only path that works when the Worker is
+ * down, it is what `docs/access/RECOVERY.md` assumes, and it runs offline
+ * against a checkout. It is ALSO the more capable instrument — **rung 2 below,
+ * Open Library, is script-only** and stays here.
+ *
+ * ⚠️ The two callers differ in exactly one respect, and it is the same one §2.4
+ * of the association design already states: this script reads the CSV off DISK
+ * out of the sibling checkout; the Worker fetches the identical bytes from
+ * `audiobooks.heygabi.ai/catalog.csv`. When they disagree the ROUTE is the
+ * staler side.
+ *
  * ## The measured yield, 2026-08-10
  *
  * 1,075 audiobook rows, 331 distinct curated series. Against this library's 25:
@@ -31,6 +53,10 @@
  * and the one-offs. They are a real answer and are written to `series_check` so
  * the next session does not re-ask, exactly as `series-overrides.json` records
  * "researched, no series" separately from "nobody has looked".
+ *
+ * ⚠️ Re-measured 2026-09-05 with the conversion: **MAIN 139 series — 32 known,
+ * 107 never heard of; padhard 313 series — 44 known, 269 never heard of.** The
+ * catalogue grew; the shape of the answer did not.
  *
  * ## ⚠️ Name matching, and why it is `normaliseTitle` and nothing else
  *
@@ -49,33 +75,34 @@
  *     npm run backfill:series-volumes                    # dry run, local
  *     npm run backfill:series-volumes -- --commit
  *     npm run backfill:series-volumes -- --remote --commit
+ *     npm run backfill:series-volumes -- --remote --friend    # padhard, dry
  *
  * Idempotent: the upsert keys on (series, index_sort) and a second run reports
  * nothing to write. It never touches a `manual` row — a person's answer is not
  * a CSV's to overwrite.
  */
 
-import { normaliseTitle } from '../packages/core/src/titles.ts';
+import { planSeriesVolumes } from '../packages/core/src/series-volumes.ts';
+import { seriesVolumeStatements } from '../packages/db/src/series-volumes.ts';
 
 import { execute, lit, parseFlags, query } from './lib/d1.mjs';
 import { loadAudiobooks } from './lib/audiobooks.mjs';
+import { renderStatements } from './lib/sweep-sql.mjs';
 
 const flags = parseFlags();
 
 // ---------------------------------------------------------------------------
 // What we hold
+//
+// ⚠️ Read as WORKS, not as a GROUP BY, because the planner groups them — the
+// route reads the same rows out of D1 and the two must not group them two ways.
+// The count printed below is the number of distinct series, exactly as before.
 // ---------------------------------------------------------------------------
 
-const ours = query(
-  `SELECT series, COUNT(*) AS works, MAX(series_index_sort) AS top
-     FROM work WHERE series IS NOT NULL GROUP BY series ORDER BY series`,
+const works = query(
+  `SELECT series, series_index_sort FROM work WHERE series IS NOT NULL ORDER BY id`,
   flags,
 );
-
-console.log(
-  `${ours.length} series in the ${flags.remote ? 'REMOTE' : 'local'} database`,
-);
-if (ours.length === 0) process.exit(0);
 
 const existing = query('SELECT series, index_sort, source FROM series_volume', flags);
 const known = new Set(existing.map((r) => `${r.series}|${r.index_sort}`));
@@ -83,101 +110,45 @@ const manual = new Set(
   existing.filter((r) => r.source === 'manual').map((r) => `${r.series}|${r.index_sort}`),
 );
 
+const audiobooks = loadAudiobooks();
+
 // ---------------------------------------------------------------------------
-// What the sibling catalog knows
+// Rung 1 — the sibling catalog. THE DECISIONS ARE IN `@lc/core`.
 // ---------------------------------------------------------------------------
 
-const audiobooks = loadAudiobooks();
+const plan = planSeriesVolumes({
+  works: works.map((w) => ({
+    series: w.series,
+    seriesIndexSort: w.series_index_sort == null ? null : Number(w.series_index_sort),
+  })),
+  audiobooks,
+  existing: existing.map((r) => ({
+    series: r.series,
+    indexSort: Number(r.index_sort),
+    source: r.source,
+  })),
+});
+
+console.log(
+  `${plan.report.seriesCount} series in the ${flags.remote ? 'REMOTE' : 'local'} database`,
+);
+if (plan.report.seriesCount === 0) process.exit(0);
 console.log(`${audiobooks.length} audiobook row(s) read from the sibling catalog`);
 
-/** Folded series name -> every audiobook row filed under it. */
-const abBySeries = new Map();
-for (const row of audiobooks) {
-  if (!row.series) continue;
-  const key = normaliseTitle(row.series);
-  const list = abBySeries.get(key);
-  if (list) list.push(row);
-  else abBySeries.set(key, [row]);
-}
-
-// ---------------------------------------------------------------------------
-
-const statements = [];
-const report = [];
-let found = 0;
-let notFound = 0;
-let newVolumes = 0;
-
-for (const s of ours) {
-  const hits = abBySeries.get(normaliseTitle(s.series)) ?? [];
-
-  if (hits.length === 0) {
-    notFound++;
-    report.push({ series: s.series, outcome: 'not_found', added: 0, top: s.top, abTop: null });
-    statements.push(
-      `INSERT INTO series_check (series, source, outcome, volumes_seen)` +
-        ` VALUES (${lit(s.series)}, 'audiobook_catalog', 'not_found', 0)` +
-        ` ON CONFLICT(series) DO UPDATE SET checked_at = datetime('now'),` +
-        ` source = 'audiobook_catalog', outcome = 'not_found', volumes_seen = 0;`,
-    );
-    continue;
-  }
-
-  found++;
-
-  // ⚠️ Only numbered rows become volumes. An audiobook row with a series and no
-  // index is real (a boxed set, a companion) but has no place on the number
-  // line, and `series_volume.index_sort` is NOT NULL precisely so that such a
-  // row cannot become a volume nobody can name.
-  const numbered = hits.filter((h) => typeof h.seriesIndexSort === 'number');
-  const seen = new Map();
-  for (const h of numbered) if (!seen.has(h.seriesIndexSort)) seen.set(h.seriesIndexSort, h);
-
-  let added = 0;
-  for (const [index, row] of [...seen].sort((a, b) => a[0] - b[0])) {
-    const key = `${s.series}|${index}`;
-    // A hand-entered row outranks the CSV and is skipped entirely rather than
-    // upserted — the SQL would leave it alone anyway, and not sending the
-    // statement keeps the dry run's count honest.
-    if (manual.has(key)) continue;
-    if (!known.has(key)) added++;
-
-    statements.push(
-      `INSERT INTO series_volume (series, index_sort, index_display, title, authors,` +
-        ` source, source_url)` +
-        ` VALUES (${lit(s.series)}, ${lit(index)}, ${lit(row.seriesIndexDisplay)},` +
-        ` ${lit(row.title)}, ${lit(row.authors)}, 'audiobook_catalog',` +
-        ` 'audiobook_catalog/site/catalog.csv')` +
-        ` ON CONFLICT(series, index_sort) DO UPDATE SET` +
-        ` index_display = COALESCE(excluded.index_display, series_volume.index_display),` +
-        ` title = COALESCE(excluded.title, series_volume.title),` +
-        ` authors = COALESCE(excluded.authors, series_volume.authors),` +
-        ` source = CASE WHEN series_volume.source = 'manual' THEN series_volume.source` +
-        ` ELSE excluded.source END,` +
-        ` last_seen_at = datetime('now'), stale_at = NULL;`,
-    );
-  }
-  newVolumes += added;
-
-  statements.push(
-    `INSERT INTO series_check (series, source, outcome, volumes_seen)` +
-      ` VALUES (${lit(s.series)}, 'audiobook_catalog', 'ok', ${lit(seen.size)})` +
-      ` ON CONFLICT(series) DO UPDATE SET checked_at = datetime('now'),` +
-      ` source = 'audiobook_catalog', outcome = 'ok', volumes_seen = ${lit(seen.size)};`,
-  );
-
-  report.push({
-    series: s.series,
-    outcome: 'ok',
-    added,
-    top: s.top,
-    abTop: Math.max(...seen.keys()),
-    abName: hits[0].series,
-  });
-}
+const statements = renderStatements(seriesVolumeStatements(plan));
+const report = plan.report.entries;
+const found = plan.report.found;
+const notFound = plan.report.notFound;
+let newVolumes = plan.report.newVolumes;
 
 // ---------------------------------------------------------------------------
 // Rung 2: Open Library, for the works that carry an id
+//
+// 🔴 SCRIPT-ONLY, and it is why the script is the more capable instrument. It
+// makes one HTTP call per work carrying an Open Library id, serially, with a
+// politeness delay — 45 works is ten seconds and a thousand would be minutes,
+// which is a cron tick's whole subrequest budget spent on the smaller half of
+// the answer. The Worker does rung 1 and defers this one to a person.
 //
 // ⚠️ READ THE EDITION RECORDS, NOT THE SEARCH INDEX. This rung was nearly not
 // built, on a measurement that used the wrong source — and the difference is
@@ -196,11 +167,7 @@ for (const s of ours) {
 // linked to a work we hold: `series:"Cradle"` is a fuzzy full-text match that
 // returns Cat's Cradle, and `/series/<name>` is the *lists* endpoint, which
 // rejects anything that is not an `OL…L` id. So this rung is only ever as broad
-// as `work.openlibrary_work_id` is populated — 45 of 116 works today.
-//
-// That is still worth having: Cradle is one of the 13 series the sibling
-// audiobook catalog has never heard of, and this rung attests all 12 of its
-// volumes independently. `--no-openlibrary` skips the network.
+// as `work.openlibrary_work_id` is populated.
 //
 // It attests volumes the same way the audiobook rung does. It NEVER writes a
 // series length: `series_check.known_total` stays NULL, because nothing here
@@ -291,7 +258,7 @@ console.log(`the sibling catalog knows  ${found}`);
 console.log(`never heard of it          ${notFound}`);
 console.log('');
 
-for (const r of report.sort((a, b) => a.series.localeCompare(b.series))) {
+for (const r of [...report].sort((a, b) => a.series.localeCompare(b.series))) {
   if (r.outcome === 'not_found') {
     console.log(`  --   ${r.series}  (recorded as not_found)`);
     continue;
@@ -299,8 +266,13 @@ for (const r of report.sort((a, b) => a.series.localeCompare(b.series))) {
   const beyond = r.abTop != null && r.top != null && r.abTop > r.top ? `  +${r.abTop - r.top} beyond our top` : '';
   const under = r.abTop != null && r.top != null && r.abTop < r.top ? '  ⚠️ tops out BELOW our top' : '';
   const renamed = r.abName !== r.series ? `  ("${r.abName}" there)` : '';
+  // ⚠️ `theirs→-` where this printed `theirs→-Infinity` until 2026-09-05. The
+  // old text came from `Math.max()` over an empty set: the sibling catalog KNOWS
+  // the series but numbers none of its rows (The Hunger Games, on MAIN). It also
+  // made that line claim "⚠️ tops out BELOW our top", which is a different and
+  // untrue fact — a catalog that numbers nothing has no top to compare.
   console.log(
-    `  ok   ${r.series}  ours→${r.top ?? '-'}  theirs→${r.abTop}  ${r.added} new${beyond}${under}${renamed}`,
+    `  ok   ${r.series}  ours→${r.top ?? '-'}  theirs→${r.abTop ?? '-'}  ${r.added} new${beyond}${under}${renamed}`,
   );
 }
 

@@ -13,8 +13,11 @@
  * the recovery script quietly disagreeing about what the catalog says.
  *
  * So the statements come from `audiobookSweepStatements` — ONE list, as
- * `{ sql, binds }` — and this file does the one thing that is genuinely
- * script-shaped: substitutes `lit()` for each `?` and terminates the statement.
+ * `{ sql, binds }` — and the one genuinely script-shaped step, substituting
+ * `lit()` for each `?` and terminating the statement, is `renderStatements` in
+ * `sweep-sql.mjs`. ⚠️ It moved there on 2026-09-05 when the series-volume half
+ * of the same cron needed the identical rendering; a second copy of `fill` would
+ * be a second idea of how a value reaches SQL.
  *
  * ## Why the script interpolates at all
  *
@@ -44,26 +47,7 @@
  */
 
 import { audiobookSweepStatements } from '../../packages/db/src/audiobook-holdings.ts';
-import { lit } from './d1.mjs';
-
-/**
- * Put the binds back into the text, in order.
- *
- * ⚠️ Positional and unescaped-by-construction: the shared SQL contains no `?`
- * inside a string literal (every literal in it is a column name or the word
- * `NULL`), so counting placeholders is exact rather than a parse. The count is
- * asserted rather than trusted — a mismatch would silently shift every value
- * one column to the left, which is the single worst thing this function could
- * do quietly.
- */
-function fill(sql, binds) {
-  const holes = sql.split('?').length - 1;
-  if (holes !== binds.length) {
-    throw new Error(`statement has ${holes} placeholder(s) and ${binds.length} bind(s): ${sql}`);
-  }
-  let i = 0;
-  return sql.replace(/\?/g, () => lit(binds[i++]));
-}
+import { renderStatements } from './sweep-sql.mjs';
 
 /**
  * Every statement for one plan, in the order the script has always run them.
@@ -75,5 +59,5 @@ function fill(sql, binds) {
  * gone away.
  */
 export function renderSweepStatements(plan) {
-  return audiobookSweepStatements(plan).map((s) => `${fill(s.sql, s.binds)};`);
+  return renderStatements(audiobookSweepStatements(plan));
 }
