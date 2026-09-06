@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { gabiPanelEnabled } from '@lc/core';
 import {
   audiobookHoldingCounts,
+  audiobookSweepGateCounts,
   isDatabaseReachable,
   latestAudiobookSweepRun,
   latestAuditRun,
@@ -13,7 +14,7 @@ import { describeEstateGate } from '@lc/estate-auth';
 import { edgeMode } from '@lc/research';
 import { seriesCanonEntryCount, universeNames, universesDocument } from '@lc/universes';
 import type { AppBindings, Env } from '../env.js';
-import { audiobookSweepMode } from '../lib/audiobook-sweep-run.js';
+import { AUDIOBOOK_SWEEP_GATE_TICKS, audiobookSweepMode } from '../lib/audiobook-sweep-run.js';
 
 /**
  * Unauthenticated on purpose: this is the endpoint you curl to prove the
@@ -105,11 +106,12 @@ import { audiobookSweepMode } from '../lib/audiobook-sweep-run.js';
 async function audiobookSweepStatus(env: Env) {
   const mode = audiobookSweepMode(env);
   try {
-    const [run, snapshot, counts, volumes] = await Promise.all([
+    const [run, snapshot, counts, volumes, gate] = await Promise.all([
       latestAudiobookSweepRun(env.DB),
       readAudiobookSnapshot(env.DB),
       audiobookHoldingCounts(env.DB),
       seriesVolumeCounts(env.DB),
+      audiobookSweepGateCounts(env.DB),
     ]);
     const detail =
       run?.detail && typeof run.detail === 'object' && 'detail' in run.detail
@@ -156,6 +158,36 @@ async function audiobookSweepStatus(env: Env) {
         volumesLive: volumes.volumesLive,
         seriesChecked: volumes.seriesChecked,
       },
+      /**
+       * 🔴 **The `enforce` gate, answered here instead of by hand.**
+       *
+       * Added 2026-09-06. Every field above reads the LATEST run row, which is
+       * exactly why the flip attempt that day had to go to two production
+       * databases with a `wrangler d1 execute`: one `304` hid every plan before
+       * it, and `/api/health` could not say how much evidence existed. These
+       * three counters are the gate's own question — *"≥42 shadow ticks with a
+       * plan, on both halves, zero divergences"* — as an aggregate over
+       * `audiobook_sweep_run`.
+       *
+       * ⚠️ **`divergences` is `null`, and `null` means NOT MEASURED — never
+       * zero.** Nothing in the Worker can compute it: a divergence is the
+       * ROUTE's plan disagreeing with `npm run backfill:audiobooks --remote`'s,
+       * and the Worker has never seen the script's side. It is a person's
+       * comparison (runbook §4 and §4a) and it stays one. The key is here rather
+       * than absent so a reader counting to 42 is told, in the same object, that
+       * the third condition is not machine-checked.
+       *
+       * ⚠️ `planTicks` counts admin dry runs too; `cronPlanTicks` is the subset
+       * the four-hourly clock produced, which is the number the gate's "42" was
+       * written about.
+       */
+      gate: {
+        required: AUDIOBOOK_SWEEP_GATE_TICKS,
+        planTicks: gate.planTicks,
+        seriesVolumeTicks: gate.seriesVolumeTicks,
+        cronPlanTicks: gate.cronPlanTicks,
+        divergences: null,
+      },
     };
   } catch {
     // Not migrated yet, or the database is down — which `database` above
@@ -174,6 +206,16 @@ async function audiobookSweepStatus(env: Env) {
       rungsLive: null,
       seriesCanonEntries: seriesCanonEntryCount,
       seriesVolumes: { lastRun: null, volumesLive: null, seriesChecked: null },
+      // ⚠️ Nulls, not zeroes. "The database is down or unmigrated" and "42 ticks
+      // are required and none have happened" are different facts, and a 0 here
+      // would read as the second while meaning the first.
+      gate: {
+        required: AUDIOBOOK_SWEEP_GATE_TICKS,
+        planTicks: null,
+        seriesVolumeTicks: null,
+        cronPlanTicks: null,
+        divergences: null,
+      },
     };
   }
 }

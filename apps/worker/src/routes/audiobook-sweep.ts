@@ -4,7 +4,7 @@
  *
  * | Route | Does |
  * |---|---|
- * | `POST /api/admin/audiobooks/sweep` | run it now. Body `{ dryRun?: boolean }` |
+ * | `POST /api/admin/audiobooks/sweep` | run it now. Body `{ dryRun?: boolean, force?: boolean }` |
  * | `GET  /api/admin/audiobooks/sweep` | what the last run decided |
  *
  * ## ⚠️ `dryRun` is not a convenience — it is the instrument
@@ -14,6 +14,26 @@
  * *does the route's plan on the live snapshot equal the script's plan on the
  * same CSV?* A `POST … {"dryRun":true}` beside `npm run backfill:audiobooks --
  * --remote` is that comparison, and it costs nothing to run wrong.
+ *
+ * ## 🔴 …and `force` is what lets `dryRun` keep that promise
+ *
+ * Added 2026-09-06, because for a day it could **not**. `runAudiobookSweep` sent
+ * the stored etag, the origin answered `304`, and the rehearsal came back
+ * `state: "skipped"`, `detail: "unchanged"`, **`plan: null`** — an instrument
+ * that answers *"nothing to see"* when the question is *"what would you plan?"*
+ * is not an instrument. `force: true` skips `If-None-Match`, so the body is
+ * always fetched and a plan is always computed.
+ *
+ * ```bash
+ * curl -s -X POST https://library.heygabi.ai/api/admin/audiobooks/sweep \
+ *   -H "Authorization: Bearer $ID_TOKEN" -H 'content-type: application/json' \
+ *   -d '{"dryRun":true,"force":true}'
+ * ```
+ *
+ * ⚠️ **They are independent, and only `dryRun` decides whether anything is
+ * written.** `force` alone, in `enforce` mode, is a REAL sweep over a body that
+ * may be byte-identical to the last one — safe, because the sweep is idempotent,
+ * but it is not a rehearsal. Pass both when a rehearsal is what you meant.
  *
  * ## ⚠️ Never a bare status
  *
@@ -89,14 +109,21 @@ export const audiobookSweepRoutes = new Hono<AppBindings>()
     const refusal = refuseUnlessAdmin(c);
     if (refusal) return refusal;
 
-    const body = (await c.req.json().catch(() => null)) as { dryRun?: unknown } | null;
+    const body = (await c.req.json().catch(() => null)) as
+      | { dryRun?: unknown; force?: unknown }
+      | null;
     // ⚠️ Anything but an explicit `true` is a real run — a typo in the body must
     // never silently turn a requested write into a rehearsal, and the reverse
     // (a rehearsal read as a write) is the direction that can damage. So the
     // parse is strict and the default is the safe-to-repeat one only when asked.
     const dryRun = body?.dryRun === true;
+    // ⚠️ Parsed the same strict way, for a different reason: `force` costs 1.4 MB
+    // and a `"true"` string quietly meaning `false` would send somebody back to
+    // the `plan: null` this flag exists to end. It changes what is FETCHED, never
+    // what is written — `dryRun` and the mode ladder still own that.
+    const force = body?.force === true;
 
-    const result = await runAudiobookSweep(c.env, { trigger: 'admin', dryRun });
+    const result = await runAudiobookSweep(c.env, { trigger: 'admin', dryRun, force });
 
     // ⚠️ 200 even for `state: 'failed'`, deliberately. The REQUEST succeeded and
     // the answer is the report; an HTTP error here would put a refused sweep and

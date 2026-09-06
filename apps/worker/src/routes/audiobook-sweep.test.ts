@@ -35,7 +35,12 @@ afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
-function stubDb() {
+/**
+ * @param opts.snapshotEtag what `audiobook_snapshot` already holds. ⚠️ Needed to
+ *   exercise `force`: with no stored etag there is no `If-None-Match` to skip,
+ *   so a route that ignored the flag entirely would pass anyway.
+ */
+function stubDb(opts: { snapshotEtag?: string } = {}) {
   const written: string[] = [];
   const db = {
     prepare(sql: string) {
@@ -49,7 +54,13 @@ function stubDb() {
           // `isDatabaseReachable` — health's own liveness probe.
           if (/FROM sqlite_master/.test(sql)) return { n: 1 };
           if (/INSERT INTO audiobook_sweep_run/.test(sql)) return { id: 1 };
-          if (/FROM audiobook_snapshot/.test(sql)) return null;
+          if (/FROM audiobook_snapshot/.test(sql)) {
+            return opts.snapshotEtag
+              ? { etag: opts.snapshotEtag, fetched_at: '2026-09-06 04:23:00', row_count: 1 }
+              : null;
+          }
+          // The gate counters — one aggregate, three numbers (added 2026-09-06).
+          if (/plan_ticks/.test(sql)) return { plan_ticks: 5, sv_ticks: 3, cron_ticks: 4 };
           if (/FROM audiobook_sweep_run ORDER BY id DESC/.test(sql)) {
             return {
               id: 7,
@@ -240,6 +251,97 @@ describe('POST — dryRun writes nothing', () => {
   });
 });
 
+describe('🔴 POST — `force`, the flag that lets a dry run answer the gate', () => {
+  /** An origin that behaves like the real one: 304 to a conditional GET, 200 otherwise. */
+  function conditionalOrigin(etag: string) {
+    const seen: (Record<string, string> | undefined)[] = [];
+    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+      const headers = init?.headers as Record<string, string> | undefined;
+      seen.push(headers);
+      if (headers && headers['If-None-Match'] === etag) return new Response(null, { status: 304 });
+      return new Response(CSV, { status: 200, headers: { etag } });
+    }) as typeof fetch;
+    return seen;
+  }
+
+  it('without it, a dry run against an unchanged CSV returns `plan: null` — the bug', async () => {
+    // Measured in production 2026-09-06: the route documented as *"the ONLY way
+    // to answer the phase-1 gate"* answered `skipped` / `unchanged` for a day,
+    // because the origin's etag had not moved since 04:23Z.
+    conditionalOrigin('"abc"');
+    const res = await app('owner').request(
+      '/api/admin/audiobooks/sweep',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ dryRun: true }),
+      },
+      envWith(stubDb({ snapshotEtag: '"abc"' }), 'enforce'),
+    );
+    const body = (await res.json()) as { state: string; plan: unknown; detail: string };
+    assert.equal(body.state, 'skipped');
+    assert.equal(body.detail, 'unchanged');
+    assert.equal(body.plan, null);
+  });
+
+  it('`{"dryRun":true,"force":true}` skips If-None-Match and ALWAYS returns a plan', async () => {
+    const seen = conditionalOrigin('"abc"');
+    const db = stubDb({ snapshotEtag: '"abc"' });
+    const res = await app('owner').request(
+      '/api/admin/audiobooks/sweep',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ dryRun: true, force: true }),
+      },
+      envWith(db, 'enforce'),
+    );
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { state: string; plan: unknown; says: string };
+    assert.deepEqual(seen[0], {}, 'force must not send the stored etag');
+    assert.equal(body.state, 'shadow');
+    assert.ok(body.plan, 'the whole reason the flag exists');
+    assert.deepEqual(db._written, [], 'and it is still a rehearsal');
+  });
+
+  it('⚠️ only an explicit `true` forces — `"true"` is not a forced fetch', async () => {
+    // Same strictness as `dryRun`, for a different reason: a string that quietly
+    // means `false` sends somebody back to the `plan: null` this flag ends.
+    const seen = conditionalOrigin('"abc"');
+    const res = await app('owner').request(
+      '/api/admin/audiobooks/sweep',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ dryRun: true, force: 'true' }),
+      },
+      envWith(stubDb({ snapshotEtag: '"abc"' }), 'enforce'),
+    );
+    const body = (await res.json()) as { state: string };
+    assert.deepEqual(seen[0], { 'If-None-Match': '"abc"' });
+    assert.equal(body.state, 'skipped');
+  });
+
+  it('⚠️ force WITHOUT dryRun is a real run — the flags are independent', async () => {
+    // `force` decides what is fetched; `dryRun` and the mode decide what is
+    // written. Conflating them is how a rehearsal turns out to have written.
+    conditionalOrigin('"abc"');
+    const db = stubDb({ snapshotEtag: '"abc"' });
+    const res = await app('owner').request(
+      '/api/admin/audiobooks/sweep',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ force: true }),
+      },
+      envWith(db, 'enforce'),
+    );
+    const body = (await res.json()) as { state: string };
+    assert.equal(body.state, 'applied');
+    assert.ok(db._written.length > 0, 'a non-dry forced run is a real sweep');
+  });
+});
+
 describe('/api/health — additive only, and it can never fail the check', () => {
   it('carries detail.audiobookSweep with the mode and the last run', async () => {
     const app = new Hono<AppBindings>();
@@ -257,6 +359,27 @@ describe('/api/health — additive only, and it can never fail the check', () =>
     assert.equal(line.editionsLive, 412);
     assert.equal(line.rungsLive, 780);
     assert.equal(typeof line.seriesCanonEntries, 'number');
+  });
+
+  it('🔴 carries the GATE counters, so the page answers the flip question itself', async () => {
+    // Every other field here reads the LATEST run row — which is why the
+    // 2026-09-06 flip attempt had to go to two production databases with a
+    // `wrangler d1 execute` to find out that one `304` was hiding every plan
+    // before it.
+    const app = new Hono<AppBindings>();
+    app.route('/api/health', healthRoutes);
+    const res = await app.request('/api/health', {}, envWith(stubDb(), 'shadow'));
+    const body = (await res.json()) as {
+      detail: { audiobookSweep: { gate: Record<string, unknown> } };
+    };
+    const gate = body.detail.audiobookSweep.gate;
+    assert.equal(gate.required, 42);
+    assert.equal(gate.planTicks, 5);
+    assert.equal(gate.seriesVolumeTicks, 3);
+    assert.equal(gate.cronPlanTicks, 4);
+    // ⚠️ NOT MEASURED, never zero: a divergence is the route's plan against the
+    // script's, and the Worker has never seen the script's side.
+    assert.equal(gate.divergences, null);
   });
 
   it('🔴 an instance without migration 0470 still answers ok', async () => {
@@ -289,7 +412,14 @@ describe('/api/health — additive only, and it can never fail the check', () =>
     const res = await app.request('/api/health', {}, envWith(broken, 'shadow'));
     const body = (await res.json()) as {
       ok: boolean;
-      detail: { audiobookSweep: { mode: string; state: unknown; editionsLive: unknown } };
+      detail: {
+        audiobookSweep: {
+          mode: string;
+          state: unknown;
+          editionsLive: unknown;
+          gate: Record<string, unknown>;
+        };
+      };
     };
     assert.equal(res.status, 200);
     assert.equal(body.ok, true);
@@ -297,6 +427,12 @@ describe('/api/health — additive only, and it can never fail the check', () =>
     assert.equal(body.detail.audiobookSweep.mode, 'shadow');
     assert.equal(body.detail.audiobookSweep.state, null);
     assert.equal(body.detail.audiobookSweep.editionsLive, null);
+    // ⚠️ The counters degrade to NULL, not to 0. "The table is not there" and
+    // "42 are required and none have happened" are different facts, and a zero
+    // would read as the second while meaning the first.
+    assert.equal(body.detail.audiobookSweep.gate.planTicks, null);
+    assert.equal(body.detail.audiobookSweep.gate.seriesVolumeTicks, null);
+    assert.equal(body.detail.audiobookSweep.gate.required, 42);
   });
 
   it('⚠️ publishes no edition title and no narrator', async () => {

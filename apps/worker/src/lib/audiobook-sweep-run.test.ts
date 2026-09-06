@@ -48,6 +48,15 @@ interface FakeState {
   runRows: { id: number; state: string; detail: unknown }[];
   works: { id: number; title: string; authors: string }[];
   snapshot: { etag: string | null; rowCount: number } | null;
+  /**
+   * How many times the snapshot row was WRITTEN.
+   *
+   * ⚠️ Counted rather than inferred from the value: a replay rewrites the same
+   * etag and the same row count, so comparing the object cannot tell a skipped
+   * write from a redundant one — and the point of skipping it is `fetched_at`,
+   * which the stored value here does not carry.
+   */
+  snapshotWrites: number;
 }
 
 function fakeEnv(over: Partial<FakeState> = {}, envOver: Partial<Env> = {}) {
@@ -57,6 +66,7 @@ function fakeEnv(over: Partial<FakeState> = {}, envOver: Partial<Env> = {}) {
     runRows: [],
     works: [{ id: 1, title: 'The Primal Hunter 1', authors: 'Zogarth' }],
     snapshot: null,
+    snapshotWrites: 0,
     ...over,
   };
 
@@ -97,6 +107,7 @@ function fakeEnv(over: Partial<FakeState> = {}, envOver: Partial<Env> = {}) {
         }
         if (/INSERT INTO audiobook_snapshot/.test(sql)) {
           state.snapshot = { etag: binds[0] as string | null, rowCount: Number(binds[1]) };
+          state.snapshotWrites += 1;
           return { meta: { changes: 1 } };
         }
         state.written.push(sql);
@@ -623,5 +634,189 @@ describe('the on-add hook — §4.2 and the §4.4 bulk guard', () => {
 describe('the cron string', () => {
   it('is minute 23 and four-hourly — neither :00 nor the details sweep’s :07', () => {
     assert.equal(AUDIOBOOK_SWEEP_CRON, '23 */4 * * *');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 🔴 Shadow fetches unconditionally — 2026-09-06
+// ---------------------------------------------------------------------------
+//
+// Shadow mode's entire purpose is evidence, and for a day it produced none: the
+// `304` return is upstream of the parse, the D1 read and BOTH planners, so a
+// quiet input meant a quiet record. Measured on both instances: 3 run rows, 1
+// with a plan, 0 with `seriesVolumes`.
+//
+// ⚠️ Every test here is about what is FETCHED. Not one of them relaxes what may
+// be WRITTEN — the shadow assertions above still own that, and the `enforce`
+// cases below prove the cheap path was left alone.
+
+/** Answer 304 to a conditional GET and 200 to an unconditional one, like an origin would. */
+function conditionalOrigin(body: string, etag = '"abc"') {
+  const seen: (Record<string, string> | undefined)[] = [];
+  globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+    const headers = init?.headers as Record<string, string> | undefined;
+    seen.push(headers);
+    if (headers && headers['If-None-Match'] === etag) return new Response(null, { status: 304 });
+    return new Response(body, {
+      status: 200,
+      headers: { 'content-type': 'text/csv', etag },
+    });
+  }) as typeof fetch;
+  return seen;
+}
+
+describe('🔴 a quiet CSV must not silence SHADOW', () => {
+  it('a full-scope shadow tick sends no If-None-Match and computes BOTH halves', async () => {
+    // The bug, stated as its fix: the same snapshot etag that produced
+    // `skipped`/`unchanged` for a day now produces a plan.
+    const seen = conditionalOrigin(csv(20));
+    const { env, state } = fakeEnv(
+      { snapshot: { etag: '"abc"', rowCount: 20 } },
+      { AUDIOBOOK_SWEEP_MODE: 'shadow' },
+    );
+    const result = await runAudiobookSweep(env, { trigger: 'cron' });
+
+    assert.deepEqual(seen[0], {}, 'shadow must not send the stored etag');
+    assert.equal(result.state, 'shadow');
+    assert.ok(result.plan, 'the holdings half must have planned');
+    assert.ok(result.seriesVolumes?.planned, 'and so must the series-volume half');
+    // Still writes nothing. The change is to the fetch, never to the mode.
+    assert.equal(wroteHoldings(state), false);
+    assert.equal(wroteSeriesVolumes(state), false);
+  });
+
+  it('an unchanged body is marked `unchanged-replayed` — evidence, but not NEWS', async () => {
+    conditionalOrigin(csv(20));
+    const { env, state } = fakeEnv(
+      { snapshot: { etag: '"abc"', rowCount: 20 } },
+      { AUDIOBOOK_SWEEP_MODE: 'shadow' },
+    );
+    const result = await runAudiobookSweep(env, { trigger: 'cron' });
+
+    assert.match(result.detail ?? '', /unchanged-replayed/);
+    assert.ok(result.plan, 'a replay still computes the whole plan');
+    // The marker reaches the run row, which is where a reader counting toward
+    // the gate actually looks.
+    const recorded = state.runRows[0]!.detail as { detail: string };
+    assert.match(recorded.detail, /unchanged-replayed/);
+  });
+
+  it('⚠️ a replay does NOT re-stamp the snapshot — `snapshotAgeHours` must stay honest', async () => {
+    // Re-stamping `fetched_at` every four hours with a body we already had would
+    // peg the age near zero forever and destroy the one signal that says the
+    // sibling pipeline has stopped publishing.
+    conditionalOrigin(csv(20));
+    const { env, state } = fakeEnv(
+      { snapshot: { etag: '"abc"', rowCount: 20 } },
+      { AUDIOBOOK_SWEEP_MODE: 'shadow' },
+    );
+    await runAudiobookSweep(env, { trigger: 'cron' });
+    assert.equal(state.snapshotWrites, 0);
+  });
+
+  it('a CHANGED body under shadow is an ordinary tick — no marker, snapshot rewritten', async () => {
+    // The lie in the other direction: a forced fetch that brought back something
+    // new must not be filed as a replay.
+    conditionalOrigin(csv(25), '"new"');
+    const { env, state } = fakeEnv(
+      { snapshot: { etag: '"abc"', rowCount: 20 } },
+      { AUDIOBOOK_SWEEP_MODE: 'shadow' },
+    );
+    const result = await runAudiobookSweep(env, { trigger: 'cron' });
+
+    assert.equal(result.detail, 'shadow — nothing written');
+    assert.equal(state.snapshotWrites, 1);
+    assert.deepEqual(state.snapshot, { etag: '"new"', rowCount: 25 });
+  });
+
+  it('the FIRST ever shadow tick has no stored etag and is not a replay', async () => {
+    conditionalOrigin(csv(20));
+    const { env, state } = fakeEnv({ snapshot: null }, { AUDIOBOOK_SWEEP_MODE: 'shadow' });
+    const result = await runAudiobookSweep(env, { trigger: 'cron' });
+    assert.equal(result.detail, 'shadow — nothing written');
+    assert.equal(state.snapshotWrites, 1);
+  });
+
+  it('🔴 ENFORCE keeps the conditional GET and keeps the 304 short-circuit', async () => {
+    // The cheap path is left exactly as it was: nothing changed means nothing to
+    // write, and re-planning to discover that costs 1.4 MB to reach a batch of
+    // zero statements.
+    const seen = conditionalOrigin(csv(20));
+    const { env, state } = fakeEnv(
+      { snapshot: { etag: '"abc"', rowCount: 20 } },
+      { AUDIOBOOK_SWEEP_MODE: 'enforce' },
+    );
+    const result = await runAudiobookSweep(env, { trigger: 'cron' });
+
+    assert.deepEqual(seen[0], { 'If-None-Match': '"abc"' });
+    assert.equal(result.state, 'skipped');
+    assert.equal(result.detail, 'unchanged');
+    assert.equal(result.plan, null);
+    assert.equal(wroteHoldings(state), false);
+    assert.equal(state.snapshotWrites, 0);
+  });
+
+  it('⚠️ a SCOPED on-add run keeps the conditional GET even in shadow', async () => {
+    // It plans no series volumes at all (guard 3), so it generates no gate
+    // evidence — making every book somebody adds pull 1.4 MB would buy nothing.
+    const seen = conditionalOrigin(csv(20));
+    const { env } = fakeEnv(
+      { snapshot: { etag: '"abc"', rowCount: 20 } },
+      { AUDIOBOOK_SWEEP_MODE: 'shadow' },
+    );
+    const result = await runAudiobookSweep(env, {
+      trigger: 'on-add',
+      scope: { kind: 'works', ids: [1] },
+    });
+
+    assert.deepEqual(seen[0], { 'If-None-Match': '"abc"' });
+    assert.equal(result.state, 'skipped');
+    assert.equal(result.detail, 'unchanged');
+  });
+});
+
+describe('🔴 `force` — the flag that lets a dry run answer the gate', () => {
+  it('skips If-None-Match in ENFORCE mode, so `dryRun` always returns a plan', async () => {
+    // The failure it fixes: `POST {"dryRun":true}` came back `skipped` /
+    // `unchanged` / `plan: null`, and §7.1 calls that route the instrument.
+    const seen = conditionalOrigin(csv(20));
+    const { env, state } = fakeEnv(
+      { snapshot: { etag: '"abc"', rowCount: 20 } },
+      { AUDIOBOOK_SWEEP_MODE: 'enforce' },
+    );
+    const result = await runAudiobookSweep(env, { trigger: 'admin', dryRun: true, force: true });
+
+    assert.deepEqual(seen[0], {});
+    assert.equal(result.state, 'shadow');
+    assert.ok(result.plan);
+    assert.ok(result.seriesVolumes?.planned);
+    assert.match(result.detail ?? '', /dry run/);
+    assert.match(result.detail ?? '', /unchanged-replayed/);
+    assert.equal(wroteHoldings(state), false, 'dryRun still writes nothing');
+  });
+
+  it('⚠️ force alone does NOT make a run a rehearsal — the mode still decides', async () => {
+    // They are independent flags. `force` changes what is fetched; `dryRun` and
+    // the mode ladder decide what is written, and mislabelling either direction
+    // is how a rehearsal turns out to have written.
+    conditionalOrigin(csv(20));
+    const { env, state } = fakeEnv(
+      { snapshot: { etag: '"abc"', rowCount: 20 } },
+      { AUDIOBOOK_SWEEP_MODE: 'enforce' },
+    );
+    const result = await runAudiobookSweep(env, { trigger: 'admin', force: true });
+    assert.equal(result.state, 'applied');
+    assert.equal(wroteHoldings(state), true);
+  });
+
+  it('without force, an enforce-mode dry run still 304s — the state before the fix', async () => {
+    conditionalOrigin(csv(20));
+    const { env } = fakeEnv(
+      { snapshot: { etag: '"abc"', rowCount: 20 } },
+      { AUDIOBOOK_SWEEP_MODE: 'enforce' },
+    );
+    const result = await runAudiobookSweep(env, { trigger: 'admin', dryRun: true });
+    assert.equal(result.state, 'skipped');
+    assert.equal(result.plan, null);
   });
 });

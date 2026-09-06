@@ -562,6 +562,71 @@ export async function saveAudiobookSnapshot(
     .run();
 }
 
+/**
+ * 🔴 **The gate, as a number the status page can answer with.**
+ *
+ * `AUDIOBOOK_SWEEP_MODE` flips to `enforce` after *"≥42 shadow ticks with ZERO
+ * divergences on BOTH halves"* (`docs/access/audiobook-sweep.md` §6). Until
+ * 2026-09-06 nothing counted them: `/api/health` read only the LATEST run row,
+ * so one `304` hid every plan before it, and the flip was attempted — and
+ * refused — on a reading of *"3 rows, 1 with a plan, 0 with `seriesVolumes`"*
+ * that had to be dug out of two production databases by hand.
+ *
+ * ⚠️ **A tick counts only if it PLANNED.** `state = 'shadow'` alone is not
+ * enough and neither is a row existing: the question the gate asks is *"did the
+ * planner run and produce something to compare?"*, so both counters test for the
+ * recorded object rather than for the verdict word.
+ *
+ * ⚠️ **The two counts are separate on purpose.** One switch enforces both
+ * halves, so evidence for the holdings half is NOT evidence for the
+ * series-volume half — a scoped on-add run plans the first and deliberately
+ * declines the second (guard 3), and every row written before 2026-09-05 has no
+ * `seriesVolumes` key at all.
+ */
+export interface AudiobookSweepGateCounts {
+  /** Shadow ticks whose row carries a holdings `plan` object. */
+  planTicks: number;
+  /** Of those, the ones that also carry `seriesVolumes.planned`. */
+  seriesVolumeTicks: number;
+  /**
+   * The subset produced by the four-hourly cron — the clock the gate's "42" was
+   * written about. ⚠️ Reported beside `planTicks` because an admin `force` dry
+   * run also lands a plan-bearing shadow row, and forty of those in an afternoon
+   * would be forty readings of one CSV rather than a week of evidence.
+   */
+  cronPlanTicks: number;
+}
+
+/**
+ * Count them. One aggregate, three numbers, no rows returned.
+ *
+ * ⚠️ `json_extract` over `detail_json`, which is always either NULL or something
+ * `JSON.stringify` produced (`finishAudiobookSweepRun`), so there is no
+ * malformed-JSON path for SQLite to throw on. A row still `running` has NULL
+ * there and is counted by neither.
+ */
+export async function audiobookSweepGateCounts(
+  db: D1Database,
+): Promise<AudiobookSweepGateCounts> {
+  const row = await db
+    .prepare(
+      "SELECT COUNT(*) AS plan_ticks," +
+        " SUM(CASE WHEN json_extract(detail_json, '$.seriesVolumes.planned') IS NOT NULL" +
+        ' THEN 1 ELSE 0 END) AS sv_ticks,' +
+        // ⚠️ `trigger` is a SQLite keyword; quoted so the parser cannot decide
+        // this is the start of a CREATE TRIGGER on some future version.
+        " SUM(CASE WHEN \"trigger\" = 'cron' THEN 1 ELSE 0 END) AS cron_ticks" +
+        ' FROM audiobook_sweep_run' +
+        " WHERE state = 'shadow' AND json_extract(detail_json, '$.plan') IS NOT NULL",
+    )
+    .first<{ plan_ticks: number; sv_ticks: number | null; cron_ticks: number | null }>();
+  return {
+    planTicks: Number(row?.plan_ticks ?? 0),
+    seriesVolumeTicks: Number(row?.sv_ticks ?? 0),
+    cronPlanTicks: Number(row?.cron_ticks ?? 0),
+  };
+}
+
 export interface AudiobookSweepRunRow {
   id: number;
   trigger: string;

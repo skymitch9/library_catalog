@@ -30,6 +30,27 @@
  * `seriesVolumes.detail` and leaves the holdings the work pages draw from
  * untouched.
  *
+ * ## 🔴 SHADOW fetches unconditionally — added 2026-09-06
+ *
+ * A full-scope tick in `shadow` mode (and anything passed `force`) sends **no**
+ * `If-None-Match`, so it cannot be answered `304` and always computes both
+ * halves of the plan. `enforce` and `off` keep the conditional GET and keep the
+ * `304` short-circuit.
+ *
+ * **Why:** shadow mode exists to produce evidence for the §8 phase-2 gate, and
+ * for a day it produced none — W10-LIB-FLIP measured **3 run rows per instance,
+ * 1 with a plan, 0 with `seriesVolumes`**, because the `304` return is upstream
+ * of the parse, the D1 read and both planners. The input changes ≈3×/day, so the
+ * gate's *"a week at four-hourly"* was really ~14 days. Shadow writes nothing to
+ * any catalogue table in either case; the only thing the extra 1.4 MB buys is
+ * the record, which is the whole point of the mode. The reasoning, and why a
+ * stored-snapshot replay is impossible (0470 caches no rows), is at the fetch.
+ *
+ * ⚠️ A tick that fetched unconditionally and got the SAME body back records
+ * `detail: "… (unchanged-replayed)"` and does **not** re-stamp the snapshot's
+ * `fetched_at` — otherwise `snapshotAgeHours` would sit at zero forever and stop
+ * being able to say the sibling pipeline had died.
+ *
  * ## 🔴 Why the guards, and why they are not "defensive programming"
  *
  * The sweep's stale phase marks every holding it did not reproduce. In a script
@@ -159,6 +180,22 @@ export const AUDIOBOOK_CSV_URL = 'https://audiobooks.heygabi.ai/catalog.csv';
  * ticks four hours apart. A truncated body does.
  */
 export const MASS_DRIFT_CAP_PERCENT = 3;
+
+/**
+ * 🔴 **The `enforce` gate, as a number — one home for it.**
+ *
+ * *"≥42 shadow ticks with ZERO divergences on BOTH halves"*, from §8 phase 2 of
+ * `catalog-platform/docs/info/audiobook-association-route.md` and
+ * `docs/access/audiobook-sweep.md` §6. Published on `/api/health` beside the
+ * achieved counts so the page answers the flip question outright instead of
+ * making a reader hold the requirement in their head — the failure mode of
+ * 2026-09-06, when *"42"* was quoted back as if it were a reading.
+ *
+ * ⚠️ It is 42 because the gate was written as *"a week at four-hourly"*. The
+ * arithmetic only holds now that shadow fetches unconditionally; while every
+ * tick could `304`, six ticks a day bought about three.
+ */
+export const AUDIOBOOK_SWEEP_GATE_TICKS = 42;
 
 /** How long the origin has to answer before the tick gives up on it. */
 const FETCH_TIMEOUT_MS = 20_000;
@@ -348,6 +385,22 @@ export interface AudiobookSweepRunOptions {
    * enforcing would do before flipping the var.
    */
   dryRun?: boolean;
+  /**
+   * 🔴 **Skip `If-None-Match` — fetch the body whatever the etag says.**
+   *
+   * The admin route's `force`, and the answer to the thing that broke the
+   * phase-1 gate on 2026-09-06: `dryRun` is documented as *"the ONLY way to
+   * answer the phase-1 gate"* and it could not, because it sent the stored etag
+   * like everything else and the origin answered `304`. A rehearsal that
+   * returns `plan: null` is not an instrument.
+   *
+   * ⚠️ It changes **what is fetched, never what is written.** `dryRun` and the
+   * mode ladder still decide that. `force` on its own in `enforce` mode is a
+   * real run against a body that may be byte-identical to the last one — which
+   * is safe (the sweep is idempotent) but is not a rehearsal; pass `dryRun`
+   * too if that is what you meant.
+   */
+  force?: boolean;
 }
 
 /**
@@ -417,10 +470,42 @@ export async function runAudiobookSweep(
     const previous = await readAudiobookSnapshot(env.DB).catch(() => null);
 
     // ── The fetch ─────────────────────────────────────────────────────────
+    //
+    // 🔴 **SHADOW FETCHES UNCONDITIONALLY. Enforce does not.** Added 2026-09-06
+    // after W10-LIB-FLIP measured what shadow mode had actually produced in a
+    // day of running: **1 tick with a plan and 0 carrying `seriesVolumes`, out
+    // of 3, on both instances.** The conditional GET is what makes a tick cheap,
+    // and it is also what made shadow mode — whose ENTIRE PURPOSE is evidence —
+    // produce none, because a `304` returns below, upstream of the parse, the D1
+    // read, the planner and both halves of the plan. The sibling CSV changes
+    // ≈3×/day, so *"42 ticks = a week at four-hourly"* was really ~14 days of
+    // waiting on somebody else's publish schedule.
+    //
+    // ⚠️ **The 304 short-circuit is KEPT for `enforce` (and `off`), deliberately.**
+    // There the conditional GET is exactly right: nothing changed means nothing
+    // to write, and re-planning to discover that costs 1.4 MB to reach the same
+    // batch of zero statements. Shadow writes nothing either way, so the only
+    // thing it can spend bandwidth on is the record — which is the thing being
+    // asked for.
+    //
+    // ⚠️ **Full-scope only.** The on-add hook's scoped run plans no series
+    // volumes at all (guard 3) and therefore generates no gate evidence, so
+    // making every book somebody adds pull 1.4 MB would buy nothing. It keeps
+    // the conditional GET in every mode.
+    //
+    // 🔴 **Why not replay the STORED snapshot instead of re-fetching?** Because
+    // there is nothing to replay: migration 0470's `audiobook_snapshot` holds an
+    // `etag`, a `fetched_at` and a `row_count` — *"⚠️ Neither table is a cache of
+    // the CSV"*, in the migration's own words. There are no rows in the database
+    // to plan over, so an unconditional fetch is the smallest honest way to get
+    // a plan out of a quiet input.
+    const unconditional = opts.force === true || (mode === 'shadow' && scope.kind === 'all');
+    const conditionalEtag = unconditional ? null : (previous?.etag ?? null);
+
     let res: Response;
     try {
       res = await fetch(AUDIOBOOK_CSV_URL, {
-        headers: previous?.etag ? { 'If-None-Match': previous.etag } : {},
+        headers: conditionalEtag ? { 'If-None-Match': conditionalEtag } : {},
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
     } catch (err) {
@@ -433,6 +518,10 @@ export async function runAudiobookSweep(
       // this is a claim about the CSV — they are different facts, and conflating
       // them would hide a holding table that had drifted while the source stood
       // still.
+      //
+      // ⚠️ Only reachable when the GET was conditional — i.e. `enforce`/`off`, or
+      // a scoped on-add run. A full-scope shadow tick and anything with `force`
+      // sent no `If-None-Match` and cannot be answered `304`.
       return finish({
         ...base,
         state: 'skipped',
@@ -535,15 +624,52 @@ export async function runAudiobookSweep(
       }
     }
 
+    // 🔴 **A REPLAY: an unconditional GET that brought back the body we already
+    // had.** The etag matched and the parse produced the same number of rows, so
+    // this plan was computed over an input that has not moved since the last
+    // fetch. It is still evidence — the planner really ran, over the really-live
+    // CSV, and both halves really produced counts — but a reader must be able to
+    // tell it from a tick that saw something new, or *"42 shadow ticks"* would
+    // silently become *"42 readings of one CSV"*.
+    //
+    // ⚠️ It is deliberately NOT enough that `unconditional` is true: a forced
+    // fetch that brings back a CHANGED body is an ordinary tick, and calling it
+    // a replay would be the lie in the other direction.
+    const replayed =
+      unconditional &&
+      previous !== null &&
+      etag !== null &&
+      previous.etag !== null &&
+      etag === previous.etag &&
+      audiobooks.length === previous.rowCount;
+
     // ⚠️ Only now. A snapshot written before the guards would poison the drift
     // baseline for every tick after it.
-    await saveAudiobookSnapshot(env.DB, { etag, rowCount: audiobooks.length }).catch(() => {});
+    //
+    // ⚠️ **And not at all on a replay.** `fetched_at` answers *"how old is our
+    // picture of the sibling catalog"* — the migration says so in as many words,
+    // and `/api/health` derives `snapshotAgeHours` from it. Re-stamping it every
+    // four hours with a body we already had would peg that number near zero
+    // forever and destroy the one signal that says the sibling pipeline has
+    // stopped publishing. `etag` and `row_count` are identical by definition
+    // here, so the write would change nothing else.
+    if (!replayed) {
+      await saveAudiobookSnapshot(env.DB, { etag, rowCount: audiobooks.length }).catch(() => {});
+    }
 
     if (mode === 'shadow' || opts.dryRun) {
       return finish({
         ...base,
         state: 'shadow',
-        detail: opts.dryRun ? 'dry run — nothing written' : 'shadow — nothing written',
+        // ⚠️ The `(unchanged-replayed)` suffix is the distinguishing marker, and
+        // it is in `detail` because `detail` is where every other silence in
+        // this function is told apart — the runbook's silence table reads this
+        // one field. `unchanged` (a 304) and `unchanged-replayed` (a full fetch
+        // of an unchanged body, which DID compute a plan) are opposite facts
+        // about the same quiet input.
+        detail:
+          `${opts.dryRun ? 'dry run' : 'shadow'} — nothing written` +
+          (replayed ? ' (unchanged-replayed)' : ''),
         plan: counts,
         seriesVolumes,
         snapshot: { etag, rowCount: audiobooks.length },
