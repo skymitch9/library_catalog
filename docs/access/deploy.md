@@ -32,6 +32,19 @@ npm run deploy             # done
 A redeploy from now on is just `npm run deploy`. `predeploy` refuses a dirty
 tree. **Migrate before deploying**, so new code never meets an old schema.
 
+> ⚠️ **Deploying from a shared tree with other writers' WIP in it — use a
+> throwaway worktree, and put it at a SHORT path (measured 2026-09-05).**
+> `git worktree add --detach <path> HEAD` at the Claude scratchpad path
+> (`%TEMP%\claude\<long-project-slug>\<session>\...`) fails with **"Filename
+> too long"** on two cover files in this repo — the checkout aborts half-made.
+> `C:/lcw/wt-<name>` works. Then junction `node_modules` from the main
+> checkout rather than `npm ci` (a fresh install can resolve deps differently
+> from the tree the tests passed on — see `DONE.md`), run the tests and both
+> deploys from inside the worktree, remove the junctions with `rmdir` on the
+> reparse points, and `git worktree remove` it. Both W8-SERIES-VOL and
+> W8-GUARD shipped this way that day (`deploys.log` pairs at
+> 2026-09-06T05:06Z, holder logged as `unknown`, and 05:30Z).
+
 ## 3. Firebase authorised domain — done 2026-08-09
 
 `library-catalog.bgc-worker.workers.dev` is on the allow-list and **sign-in is
