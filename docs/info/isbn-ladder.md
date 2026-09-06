@@ -6,6 +6,15 @@
 > session scratchpad (`phase0-report.json`, `phase0b-report.json`); the numbers
 > are reproduced here because the scratchpad is not durable.
 >
+> 🔴 **§7.5's FOURTH guard and the new §7.7 were added 2026-09-06 (W8-GUARD)
+> and are measured on that date** against both production instances: the guard
+> split is main **26 / 32 / 1 / 16** of 75 candidates and padhard **1 / 6 / 0 /
+> 103** of 110; `namesAnIsbn`'s single hit is ed#321; the new volume gate refused
+> **6** candidates on padhard and cost neither work its fill; and **0** works on
+> either instance share an ISBN with another work. ⚠️ **Nothing else in this file
+> was re-measured that day** — §§1–6 still carry 2026-08-09 and the rest of §7
+> still carries 2026-09-05.
+>
 > 🔴 **§7 was added 2026-09-05 and is measured on that date** against production
 > `library-catalog` and `library-catalog-2nd`. It is the post-mortem of the
 > 2026-08-20 backfill run and the guards that came out of it. Nothing in
@@ -355,14 +364,15 @@ registration group is `9789358568417` (978-93, India) on edition #605
 
 ### 7.5 The guards, and where they live
 
-All three are pure functions in `scripts/lib/backfill-safety.mjs`, pinned by
+All four are pure functions in `scripts/lib/backfill-safety.mjs`, pinned by
 `scripts/test/backfill-safety.test.mjs` with the real ISBNs and the real
-production `edition_name`s above as fixtures.
+production `edition_name`s above as fixtures (**45 pass / 0 fail**, 2026-09-06).
 
 | Guard | Rule |
 |---|---|
 | **`declaresNoIsbn(editionName, note)`** | A printing whose own record states no ISBN exists is skipped and printed. ⚠️ Deliberately **narrow**, and it stays narrow: it matches a *statement about an absent ISBN*, never the words "Kickstarter" or "Collector's Edition" |
 | 🔴 **`isCrowdfundedPrinting(editionName, note)`** | Added **2026-09-05 18:29 Phoenix** on the owner's ruling (§7.6). A crowdfunded / collector's / campaign printing the owner HOLDS is skipped, because an absent ISBN there is his recorded answer. ⚠️ This is the **widening** the row above refuses to make, and it is sound only because of a fact about this household's data entry — which is why it is a **second function**, not an edit to the first |
+| 🔴 **`namesAnIsbn(editionName, note)`** | Added **2026-09-06** for ed#321 (the *"CLOSED 2026-09-06"* block at the foot of §7.6). A row whose own `edition_name`/`note` NAMES an ISBN has already stated which identifiers apply. Narrow by construction: the field must contain the WORD *ISBN* **and** an identifier-shaped run of at least ten digits near it — *"ISBN unknown"* names none, and a year or a tier number is not an identifier. ⚠️ It does **not** check the check digit: the claim is *"this row has already stated its identifiers"*, which a mistyped ISBN states just as loudly. Runs THIRD, so the rows the two above already refuse keep their existing reason and the counts in this section do not move |
 | **`isbnLanguageVerdict({ isbn13, languages, expected })`** | `foreign` refuses; `ok` and `unknown` proceed. An **attested** language beats the registration group, because a group only says who registered the prefix — `979-8` (KDP) and `978-1` self-published books are English. A non-English group with no attested language is `foreign`; an English group is `unknown`, never a confirmation |
 
 Wired in as: rung 1 now walks the work's ISBN list (up to
@@ -497,7 +507,7 @@ repaired barely two hours earlier.** Without this guard the very next run of the
 backfill would have re-filled them, and the repair would have had a half-life of
 one sweep. That, not the count, is the result worth keeping.
 
-#### 🔴 Still open: ed#321 *Words of Radiance* is NOT protected
+#### ✅ CLOSED 2026-09-06: ed#321 *Words of Radiance* — the third guard was built
 
 ⚠️ **Measured in that same dry run** — the writer proposed `9780575097421`
 (Gollancz UK) for work #220, whose only edition is **#321**, the Dragonsteel
@@ -512,10 +522,72 @@ leatherbound repaired as tier A. **Neither guard catches it:**
   answer to that kind of question belongs to the owner (that is the whole lesson
   of this section).
 
-The candidate fix, if he wants one, is a **third** narrow guard rather than a
-wider second: *a row whose own `edition_name` or `note` NAMES an ISBN has already
-stated which identifiers apply, so `isbn13 IS NULL` there is a recorded state.*
-That shape catches #321 and nothing else new (tier B's *"set ISBN …"* rows are
-already caught by their *"no per-volume ISBN recorded"* phrase). Not built —
-it is a behaviour change on a write path and it needs asking first.
-Tracked in [`../TODO.md`](../TODO.md).
+~~The candidate fix, if he wants one, is a **third** narrow guard rather than a
+wider second~~ ✅ **BUILT 2026-09-06 as `namesAnIsbn`, exactly that shape:** *a row
+whose own `edition_name` or `note` NAMES an ISBN has already stated which
+identifiers apply, so `isbn13 IS NULL` there is a recorded state.*
+
+**And it catches #321 and nothing else** — measured, not predicted. Production
+dry run 2026-09-06 05:01Z (`--remote`, no `--commit`): 411 works, **75** with no
+ISBN on any edition → **26** `declaresNoIsbn`, **32** `isCrowdfundedPrinting`,
+**1** `namesAnIsbn`, **16** reaching the ladder (17 without it). The one is
+
+```
+   work #220 ed#321  Words of Radiance  — names 9781938570308
+```
+
+`--remote --friend` the same hour: 677 works, **110** candidates → 1 / 6 / **0**
+/ 103. No padhard row names an ISBN in its own record. Tier B's *"set ISBN …"*
+rows do match this guard too, exactly as predicted — but guard 1 runs first, so
+they keep being reported under *"no per-volume ISBN recorded"* and the counts
+above do not move. Re-measurable with no network calls:
+`node scripts/experiments/count-isbn-guards-2026-09-06.mjs --remote [--friend]`.
+
+### 7.7 🔴 One ISBN for five volumes — the title gate cannot see a number
+
+⚠️ **Found in the same 2026-09-06 dry run, and it is a different defect from
+everything above.** Google Books proposed the **same** ISBN `9781986619233` for
+*Space Knight* books **5, 6, 7, 8 and 9**.
+
+**Why the gate passed it.** `titleSimilarity` is word membership with words of
+one character dropped, so *"space knight book 5"* against *"space knight book 7"*
+shares **every word it can see** and scores **1.00** — far above the rung's
+`0.80` floor. A digit is weighed like any other word, and on a long title one
+wrong digit costs a fraction of a point. ⚠️ **The similarity function cannot see
+a volume number at all**, and no threshold change would fix that.
+
+**What stopped four of the five writes was the DATABASE, not a gate.**
+`migrations/0001_init.sql:234` makes `idx_edition_isbn13` UNIQUE catalog-wide.
+🔴 **An index is a backstop, not a gate**: it refuses the SECOND write and says
+nothing about whether the FIRST was right. Measured 2026-09-06 on both
+production instances: **0** works share an ISBN with another work — which is
+what the index guarantees, and is *not* evidence the ladder was right.
+
+**The fix, canonical in `packages/core/src/matching.ts`** beside `numbersAgree`,
+which makes the same argument inside the work index:
+
+| Function | Rule |
+|---|---|
+| `seriesVolumeNumber(title)` | An explicit marker wins wherever it sits (`book 5`, `Book #5`, `Vol. 5`, `part 5`, `#5`); otherwise the **first** standalone number, because a trailing annotation in a search result is more often a year than a volume; `null` when no digit survives. Half-volumes (`8.5`) survive, per [`serial-print-splits.md`](serial-print-splits.md). ⚠️ Roman numerals are deliberately not read |
+| `numberedTitleAgrees(candidate, ours)` | Refuse a candidate whose volume number contradicts ours; **accept one carrying no number**. ⚠️ Asymmetric on purpose: a candidate that names a volume our row does not is the *Primal Hunter* shape `numbersAgree` already refuses |
+
+⚠️ **Not a second similarity function**, which `matching.ts`'s header bans: it
+reads a NUMBER, which `titleSimilarity` cannot see. Wired into **rungs 1 and 2**
+beside the `0.80` floor, each refusal printed. ⚠️ **Rung 2.5 cannot have it** —
+`thingTitle` returns no per-item title to compare against, which is already why
+it is last and lowest-trust.
+
+**It fires on real data.** The 2026-09-06 `--remote --friend` dry run refused
+**6** candidates — 4 for *He Who Fights with Monsters* (`Book 1`, `Book 3`,
+`Book 4`, ` 2`) and 2 for *Storm Breaker* (`#2`, ` 2`). ⚠️ **Neither work lost
+its fill**: both were answered in the same run by a candidate carrying no volume
+number (`9781950912612`, `9781649379931`). The main-instance run refused none.
+
+**The data half** is `scripts/fix-same-isbn-series-2026-09-05.mjs` — dry-run
+default, `--commit` gated, `change_log` per cleared field. Its rule, when a group
+ever appears: keep the row a PERSON typed (`source = 'manual'`) and clear the
+automated rest; with none or several manual members **refuse the group and print
+it**, because guessing which volume owns an identifier is the failure that
+created the defect. ⚠️ **Nobody has established which volume `9781986619233`
+actually belongs to** — the one row that did carry it (ed#344, *Book 3*) was
+cleared for an unrelated reason, tier C at 2026-09-06 02:32:09Z.
