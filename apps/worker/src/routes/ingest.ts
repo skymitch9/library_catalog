@@ -21,6 +21,7 @@ import {
   type Work,
 } from '@lc/db';
 import type { AppBindings } from '../env.js';
+import { associateWorkAfterAdd } from '../lib/audiobook-sweep-run.js';
 import { secretEquals } from '../lib/secret-equals.js';
 
 /**
@@ -238,6 +239,21 @@ export const ingestRoutes = new Hono<AppBindings>()
           input.seriesIndexSort != null ? seriesIndexDisplayFrom(input.seriesIndexSort) : null,
       });
       createdWork = true;
+      // 🔴 **`'defer'`, and this is the guard §4.4 exists for.** This route is
+      // the machine-token bulk ebook importer: one hook per row against a
+      // thousand-book import is a thousand index builds and a thousand fetches
+      // of a 1.4 MB CSV. The audiobook rows are the SAME for every work in a
+      // run, so per-row work here buys nothing at all — the cron's next full
+      // sweep catches every one of them.
+      //
+      // ⚠️ The design says *"collect work ids and fire ONE `associateWorks(ids)`
+      // at the end of the batch"*, and that is not implementable at this layer:
+      // measured 2026-09-05, `/ebook` is this file's only route and it creates
+      // ONE work per REQUEST, so the loop lives in the external importer and a
+      // Worker invocation never sees a batch begin or end. The deferral is real
+      // and the batching is the cron's. If this route ever grows a multi-row
+      // body, that is where the batched call belongs.
+      associateWorkAfterAdd(c, work.id, 'defer');
     }
 
     // ⚠️ Idempotent on the EDITION too, not just the work.

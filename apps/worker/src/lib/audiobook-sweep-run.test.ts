@@ -16,6 +16,7 @@ import {
   AUDIOBOOK_CSV_URL,
   AUDIOBOOK_SWEEP_CRON,
   MASS_DRIFT_CAP_PERCENT,
+  associateWorkAfterAdd,
   audiobookSweepMode,
   runAudiobookSweep,
 } from './audiobook-sweep-run.js';
@@ -402,6 +403,90 @@ describe('enforce mode', () => {
     assert.equal(result.state, 'applied');
     assert.equal(state.batches, 1);
     assert.ok((result.written?.statements ?? 0) > 0);
+  });
+});
+
+describe('the on-add hook — §4.2 and the §4.4 bulk guard', () => {
+  /** Just enough of a Hono context to register a promise. */
+  function ctxOver(env: Env) {
+    const registered: Promise<unknown>[] = [];
+    return {
+      c: { env, executionCtx: { waitUntil: (p: Promise<unknown>) => void registered.push(p) } },
+      registered,
+    };
+  }
+
+  it("🔴 `'defer'` registers NOTHING — no fetch, no run row, no index build", async () => {
+    // §4.4: one hook per row against a thousand-book import is a thousand index
+    // builds and a thousand 1.4 MB fetches, for an audiobook row set that is
+    // identical for every work in the run.
+    let fetched = false;
+    stubFetch(() => {
+      fetched = true;
+      return csvResponse(csv(20));
+    });
+    const { env, state } = fakeEnv({}, { AUDIOBOOK_SWEEP_MODE: 'enforce' });
+    const { c, registered } = ctxOver(env);
+    associateWorkAfterAdd(c, 42, 'defer');
+    assert.equal(registered.length, 0);
+    assert.equal(fetched, false);
+    assert.equal(state.runRows.length, 0);
+  });
+
+  it("`'per-work'` registers exactly one background task", async () => {
+    stubFetch(() => csvResponse(csv(20)));
+    const { env } = fakeEnv({}, { AUDIOBOOK_SWEEP_MODE: 'shadow' });
+    const { c, registered } = ctxOver(env);
+    associateWorkAfterAdd(c, 1, 'per-work');
+    assert.equal(registered.length, 1);
+    await Promise.all(registered);
+  });
+
+  it('the run it starts is trigger `on-add` and STALES NOTHING', async () => {
+    // §6.2 guard 3 as it reaches this layer: a run that looked at one book has
+    // no standing to say another book's row is gone. The type-level half is
+    // pinned in `packages/core/test/audiobook-sweep-scope.test.ts`; this is the
+    // half that proves the hook actually passes the scoped shape.
+    stubFetch(() => csvResponse(csv(20)));
+    const { env, state } = fakeEnv({}, { AUDIOBOOK_SWEEP_MODE: 'shadow' });
+    const { c, registered } = ctxOver(env);
+    associateWorkAfterAdd(c, 1, 'per-work');
+    await Promise.all(registered);
+
+    assert.equal(state.runRows.length, 1);
+    const recorded = state.runRows[0]!.detail as {
+      trigger: string;
+      scope: string;
+      plan: { editionStales: number; rungStales: number };
+    };
+    assert.equal(recorded.trigger, 'on-add');
+    assert.equal(recorded.scope, 'works');
+    assert.equal(recorded.plan.editionStales, 0);
+    assert.equal(recorded.plan.rungStales, 0);
+  });
+
+  it('⚠️ in SHADOW it records what it would do, and writes nothing', async () => {
+    stubFetch(() => csvResponse(csv(20)));
+    const { env, state } = fakeEnv({}, { AUDIOBOOK_SWEEP_MODE: 'shadow' });
+    const { c, registered } = ctxOver(env);
+    associateWorkAfterAdd(c, 1, 'per-work');
+    await Promise.all(registered);
+    assert.equal(state.runRows[0]!.state, 'shadow');
+    assert.equal(wroteHoldings(state), false);
+  });
+
+  it('a missing execution context is a skipped hook, never a thrown add', async () => {
+    // An add that failed because an audiobook lookup failed would be a strictly
+    // worse app. The hook is allowed to do nothing; it is never allowed to
+    // throw into somebody's book-add.
+    const { env } = fakeEnv();
+    const c = {
+      env,
+      get executionCtx(): { waitUntil(p: Promise<unknown>): void } {
+        throw new Error('no execution context');
+      },
+    };
+    assert.doesNotThrow(() => associateWorkAfterAdd(c, 1, 'per-work'));
   });
 });
 

@@ -147,6 +147,7 @@ import {
 } from '@lc/gabi-conv';
 import { bestCandidate, resolveIsbn, type BestCandidate } from '@lc/isbn';
 import type { AppBindings, Env } from '../env.js';
+import { associateWorkAfterAdd } from '../lib/audiobook-sweep-run.js';
 import { runDetailsSweep } from '../lib/details-sweep.js';
 import {
   BILLING_FEATURES,
@@ -699,6 +700,14 @@ export const gabiDelegatedRoutes = new Hono<AppBindings>()
       createCopySchema.parse({ workId: work.id, status: 'owned', editionId: edition.id }),
       actor,
     );
+
+    // The second person-facing add site (§4.2). Somebody DMing GABI an ISBN is
+    // adding a book exactly as the form does, and a book that gains its audio
+    // chip only when added through one of the two doors would be a difference
+    // nobody could explain. ⚠️ After the copy, so the work is complete before
+    // anything reads it back; free to the response, because it only registers
+    // background work and returns.
+    associateWorkAfterAdd(c, work.id, 'per-work');
 
     return c.json({
       outcome: 'added',

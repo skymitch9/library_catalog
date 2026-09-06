@@ -452,3 +452,101 @@ export async function runAudiobookSweep(
 function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
+
+// ---------------------------------------------------------------------------
+// The on-add hook — §4.2, §4.3, §4.4
+// ---------------------------------------------------------------------------
+
+/**
+ * What a caller that just created a work wants done about it.
+ *
+ * 🔴 **Explicit, never inferred.** §4.4: `routes/ingest.ts` is a bulk importer,
+ * and one hook per row against a thousand-book import is a thousand index
+ * builds. The choice is a REQUIRED argument rather than a default with an
+ * opt-out, because the failure mode of forgetting it is invisible until
+ * somebody imports a library.
+ */
+export type AssociationPolicy = 'per-work' | 'defer';
+
+/**
+ * Associate one freshly-created work with the audiobook catalog, in the
+ * background.
+ *
+ * ⚠️ **`ctx.waitUntil`, never inline and never a queue** (§4.3). Inline would
+ * make the person's add wait on a fetch, an index build and a match — which is
+ * precisely "slowing the add". A Queue would be a new binding, a producer, a
+ * consumer and a new failure domain on both instances, for one row.
+ *
+ * ⚠️ **`scope: { kind: 'works', ids: [workId] }`, and that is a TYPE-level
+ * guarantee, not a promise.** This run has looked at one book, so it has no
+ * standing to say any other row is gone: `planAudiobookSweep` produces zero
+ * stale entries under this scope, and it emits a rung only where this run itself
+ * corroborated the series — a scoped `fold` verdict is an ABSENCE of evidence
+ * rather than weaker evidence, and writing it would downgrade a `work_match`
+ * rung the cron had already earned. `packages/core/test/audiobook-sweep-scope.test.ts`
+ * pins both.
+ *
+ * ⚠️ **In shadow mode this records what it WOULD do** and writes nothing — the
+ * run row lands with `trigger = 'on-add'` and the plan in `detail_json`, which
+ * is how the §8 gate can tell whether the hook is firing at all before it is
+ * ever allowed to write.
+ *
+ * ⚠️ Nothing here can affect the response: the caller has already returned by
+ * the time this runs, and `runAudiobookSweep` never rejects. A missing
+ * `ExecutionContext` (a unit test, an unusual host) is a skipped hook and a log
+ * line, never a thrown error inside somebody's book-add.
+ */
+export function associateWorkAfterAdd(
+  // ⚠️ Structural, not `Context<AppBindings>` and not `ExecutionContext`. Hono's
+  // `ExecutionContext` and the Workers runtime types have drifted apart
+  // (`tracing` is required in one and absent in the other), so naming either
+  // fails to typecheck at the call sites. The only thing this needs is a place
+  // to register a promise, and asking for exactly that is both honest and
+  // trivially fake-able in a test.
+  c: { env: Env; executionCtx: { waitUntil(promise: Promise<unknown>): void } },
+  workId: number,
+  policy: AssociationPolicy,
+): void {
+  if (policy === 'defer') {
+    // §4.4. The importer's rows are caught by the cron's next full sweep, which
+    // is the backstop the design already relies on.
+    //
+    // ⚠️ **The design says "collect work ids and fire ONE `associateWorks(ids)`
+    // at the end of the batch", and that is not implementable HERE** — measured
+    // 2026-09-05: `routes/ingest.ts` has exactly one route and it creates ONE
+    // work per request. The loop is in the external importer, so a Worker
+    // invocation never sees a batch begin or end and has nothing to flush. The
+    // deferral is therefore real and the batching is the cron's. If the importer
+    // ever grows a multi-row body, THAT is where the batched call belongs.
+    console.log(
+      JSON.stringify({ evt: 'audiobook_associate', policy: 'defer', workId }),
+    );
+    return;
+  }
+
+  let ctx: { waitUntil(promise: Promise<unknown>): void } | null = null;
+  try {
+    ctx = c.executionCtx;
+  } catch {
+    ctx = null;
+  }
+  if (!ctx) {
+    console.log(
+      JSON.stringify({ evt: 'audiobook_associate', policy, workId, skipped: 'no execution ctx' }),
+    );
+    return;
+  }
+
+  ctx.waitUntil(
+    runAudiobookSweep(c.env, { trigger: 'on-add', scope: { kind: 'works', ids: [workId] } }).then(
+      (run) =>
+        console.log(
+          JSON.stringify({ evt: 'audiobook_associate', policy, workId, state: run.state, detail: run.detail }),
+        ),
+      // Unreachable — `runAudiobookSweep` never rejects — and kept for the same
+      // reason `scheduled()` keeps its catch: an unhandled rejection in a
+      // background task is invisible in a way a request's never is.
+      (err) => console.error('audiobook associate failed', workId, err),
+    ),
+  );
+}

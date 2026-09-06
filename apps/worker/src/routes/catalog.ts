@@ -63,6 +63,7 @@ import {
 } from '@lc/db';
 import { universeFor, universeIndex } from '@lc/universes';
 import type { AppBindings } from '../env.js';
+import { associateWorkAfterAdd } from '../lib/audiobook-sweep-run.js';
 import { withCopyPeople } from '../lib/copy-person.js';
 import { describeError } from '../lib/describe-error.js';
 import { buildWorkDetailResponse } from '../lib/work-detail-response.js';
@@ -597,7 +598,24 @@ export const catalogRoutes = new Hono<AppBindings>()
     // this route is only ever a person's form or a person's scan-review tap;
     // importers go through /api/ingest and scripts write SQL, both 'auto'.
     const actor: Actor = { userId: c.get('user').id, how: 'human' };
-    return c.json({ work: await createWork(c.env.DB, parsed.data, actor) }, 201);
+    const work = await createWork(c.env.DB, parsed.data, actor);
+    // 🔴 **THE OWNER'S PATH, and the whole reason the audiobook route exists.**
+    // *"I added battle mage farmer and it didn't associate the audiobook right
+    // away"* (2026-09-05): the association used to fire only when the AUDIOBOOK
+    // catalog changed, so a book added HERE waited up to eight hours for the
+    // pipeline's STEP 11 — and only if the home PC was on. This is the trigger
+    // on the other side of the relationship.
+    //
+    // ⚠️ After the row exists and BEFORE the response is built, but it costs the
+    // response nothing: `associateWorkAfterAdd` only registers work on
+    // `ctx.waitUntil` and returns. It never throws, so a book is added whether
+    // or not the sibling catalog is reachable — an add that failed because an
+    // audiobook lookup failed would be a strictly worse app.
+    //
+    // ⚠️ `'per-work'`, unlike the bulk importer's `'defer'` — see §4.4 and
+    // `AssociationPolicy`.
+    associateWorkAfterAdd(c, work.id, 'per-work');
+    return c.json({ work }, 201);
   })
 
   /**
