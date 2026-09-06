@@ -385,6 +385,55 @@ record and the measurement script's findings:
 
 ---
 
+## KI-16 · The cover audit will intermittently call padhard's own covers "unreachable" — `ACCEPTED`
+
+**Symptom.** A cover-health run against `padhard` reports a handful of works as
+`fetch failed` (the ROUTE's `unreachable`; the SCRIPT prints it in the same list
+as `broken`). Re-probe the same URLs a minute later and they answer perfectly.
+
+**Measured 2026-09-06**, the first production run of the converted audit:
+**642 covers checked, 8 reported.** Seven of the eight were `fetch failed`
+against `pub-6521c378bf4b4ac3b17d5ac898832819.r2.dev` — padhard's
+`COVERS_BASE_URL`. Three of those seven were re-fetched by hand within minutes:
+
+| work | re-probe |
+|---|---|
+| 7 *Bitten (Deluxe Limited Edition)* | **200**, `image/jpeg`, **3,470,395 B** |
+| 51 *The Knight and the Moth* | **200**, `image/jpeg`, **4,185,831 B** |
+| 73 *Lessons in Chemistry* | **200**, `image/jpeg`, **3,399,074 B** |
+
+So **7 of the 8 were fine.** The eighth — 356 *Evocation* — is a real `HTTP 503`
+and is `docs/TODO.md`'s long-standing row, now confirmed for the third time
+(2026-08-23, 2026-09-05, 2026-09-06).
+
+**Why it happens.** `apps/worker/wrangler.toml` already records the cause beside
+the var: **r2.dev is rate-limited and uncacheable**, which is exactly why the
+main instance fronts its bucket with `bookcovers.heygabi.ai`. Padhard's covers
+are also LARGE — 3–4 MB each, an order of magnitude above a jacket thumbnail —
+and the SCRIPT fetches them one at a time with **no timeout**, so a rate-limited
+large object is the normal failure rather than the unlucky one.
+
+**Why tolerated.** ⚠️ Nothing is wrong with the covers, and the audit is
+already built to say so: `unreachable` is a **separate count** from `broken`
+precisely so this does not read as eight dead covers. `/api/health` reports the
+two apart, and `access/audits.md` §1 tells a reader to re-run before touching
+anything. 🔴 **Never blank one of these URLs to make the number go down** — the
+object is there.
+
+**What would change it.** Attach a **custom domain + a 1-year Cache Rule** to
+`library-2nd-covers`, the way `bookcovers.heygabi.ai` fronts the main bucket —
+`wrangler.toml` names that as the intended end state and says the change is
+**one line** (`COVERS_BASE_URL`). Object names are content hashes, so a cached
+copy can never be stale. Removal condition, as a number: **a padhard tick
+reporting `unreachable: 0` on two consecutive nights.**
+
+⚠️ **Do NOT "fix" this by lengthening the route's timeout or retrying.** A
+retry loop would hide a genuine outage, and the count is the instrument — an
+`unreachable` figure that trends upward is the signal that the r2.dev decision
+finally needs revisiting.
+
+---
+
 ## Resolved and removed — 2026-09-05 (ebook phase 5)
 
 ⚠️ Same rule as the blocks below: closed by a real change, removed rather than

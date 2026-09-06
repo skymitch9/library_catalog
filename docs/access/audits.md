@@ -99,7 +99,8 @@ outage, and blanking it loses where the cover came from (`docs/TODO.md`, padhard
 356 *Evocation*).
 
 ⚠️ **`checked` is a WINDOW, not the catalog.** The audit probes 250 URLs a night
-and the window rotates daily, so two nights cover either instance. A single
+and the window rotates daily. **Measured 2026-09-06: main has 411 covers and
+padhard 642**, so a full pass takes **2 nights on main and 3 on padhard**. A single
 tick's `broken: 0` means *"the 250 I looked at were fine"*.
 
 ### The series-aggregate counts
@@ -161,10 +162,23 @@ unauthenticated.
 
 ### If you are refused
 
-The refusal says what happened, what it needs by name (`manageUsers`) and how to
-get it — and it says something different if your account is still `pending`,
-because that is a different fix. There is **no UI control** for these routes;
-curl is the whole surface, deliberately.
+There are **two different refusals**, and they come from two different places:
+
+| You get | From | Means |
+|---|---|---|
+| **401** `{"error":"unauthenticated"}` | `requireAuth`, the blanket `/api/*` middleware | **no valid bearer.** Not a permissions problem — you are not signed in at all |
+| **403** with `capability`, `role` and a worded `detail` | these routes, via `lib/admin-refusal.ts` | you ARE signed in and your role is not enough — or your account is still `pending`, which says something different because it is a different fix |
+
+⚠️ **Measured 2026-09-06:** a bearer-less `GET`/`POST` to
+`/api/admin/audits/*` answers **401 on both hosts**. That terse body is the
+estate-wide shape every `/api/*` route shares — the web app turns it into a
+sign-in prompt, which is where the "never a bare status" rule is met for it.
+🟡 A raw curl still sees only the code; widening that would touch every route on
+the Worker and is deliberately **not** done here.
+
+The 403 says what happened, what it needs by name (`manageUsers`) and how to get
+it. There is **no UI control** for these routes; curl is the whole surface,
+deliberately — preferring not to render a control somebody cannot use.
 
 ---
 
@@ -210,6 +224,20 @@ beside the shared functions and compares the printed bytes.
 deliberate (it can sit at the end of a scanning session), and it means a shell
 that stops on error will stop there.
 
+### ⚠️ `check:cover-health` has NO fetch timeout, and it is slow
+
+The ROUTE gives every probe **10 seconds** (`AbortSignal.timeout`) and runs six
+at a time. The SCRIPT does neither: it fetches **one at a time with no timeout**,
+so a single hanging origin stalls the whole run, and ~400 covers take **many
+minutes** even when nothing hangs. It prints `  N/total...` every 50 rows, which
+is the only progress you get.
+
+⚠️ **Do not read a run that is still going as a run that found nothing.** If you
+need an answer in a hurry, the ROUTE's window is the fast instrument and the
+script is the thorough one. Adding a timeout to the script would be a behaviour
+change to a tool whose output is currently pinned byte-for-byte, so it has been
+left alone deliberately — but it is a fair thing to change on purpose.
+
 ---
 
 ## 4. 🔴 The rollback: delete one string
@@ -242,6 +270,7 @@ history.
 |---|---|---|
 | `state: null`, no row, days after deploy | the cron string is missing on this instance, or `scheduled()` does not know it | `audits-cron.test.ts` catches both. Check `wrangler.toml`'s **friend** block — it is the one three hundred lines down that people forget |
 | `run row failed: … no such table: audit_run` | migration 0480 not applied here | `npm run db:migrate` / `npm run db:migrate:friend` |
+| a handful of PADHARD covers `unreachable`, repeatedly | **KI-16** — her `COVERS_BASE_URL` is `r2.dev`, which is rate-limited, and her covers are 3–4 MB each. Measured 2026-09-06: **7 of 8 reported rows were fine on a re-probe** | nothing. Re-run. 🔴 **Never blank one to make the number go down** — the object is there |
 | every cover suddenly `unreachable` | the Worker's egress, or an origin-wide outage — **not** 400 broken covers | re-run tomorrow before touching a single URL |
 | `broken` climbing on padhard only | expected historically — her rows are the ones the script could not audit at all until 2026-08-22, and she had 40 blank covers on 2026-08-23 | the free ladder: `npm run backfill:missing-covers -- --remote --friend` |
 | `flagged` suddenly non-zero | either the 2026-08-13 OL aggregate bug recurring, or a real multi-printing volume 1 | **a person looks.** Nothing may auto-act on this list |
@@ -255,12 +284,43 @@ history.
 
 | Claim | State |
 |---|---|
-| Migration 0480 applied to both instances | ✅ **measured 2026-09-06** |
+| Migration 0480 applied to both instances | ✅ **measured 2026-09-06** — and re-checked from the other side: `audit_run` exists on **both** D1s, with **0 rows**, which is exactly what `/api/health`'s "never run" reading claims |
 | Both hosts answer both health keys | ✅ **measured 2026-09-06** — see §1 |
 | Script output unchanged by the conversion | ✅ **measured** — byte comparison against the pre-conversion logic |
+| **The shared rules run against PRODUCTION on both instances** | ✅ **measured 2026-09-06** — see the table below |
 | 2,816 tests + typecheck green | ✅ **measured 2026-09-06** |
+
+### The first production run of the converted code, both instances
+
+| Audit | main `library-catalog` | padhard `library-catalog-2nd` |
+|---|---|---|
+| **cover health** | **411 covers, 0 broken** | **642 covers, 8 reported — and 🔴 7 of the 8 were FINE** (below) |
+| **series aggregates** | 151 series names, 28 works with 2+ editions, **3 flagged** | 309 series names, 4 works with 2+ editions, **0 flagged** — ⚠️ **the first measurement of this instance, ever** |
+
+### 🔴 The padhard run is the case `unreachable` vs `broken` was built for
+
+Seven of the eight were `fetch failed` against `pub-….r2.dev` — her
+`COVERS_BASE_URL`, which `wrangler.toml` already records as **rate-limited**.
+Re-probed by hand minutes later, **three of three answered HTTP 200,
+`image/jpeg`, 3.4–4.2 MB**. Only the eighth — **356 *Evocation***, an Open
+Library URL that redirects to an archive.org object — was a genuine **HTTP
+503**, confirming this catalog's long-standing row for the third time.
+
+So the honest reading is **1 broken, 7 unreachable**. A merged count would have
+said *"8 broken covers on padhard"* and sent somebody after seven covers that
+were never broken. Full record and the removal condition: **KI-16**.
+
+### The three flagged on main are a QUESTION, not a defect
+
+**#263 Dungeon Crawler Carl** (3 editions, 3
+copies), **#333 The Maze Runner** (2/2) and **#341 He Who Fights with Monsters**
+(2/3). ⚠️ **All three look like the legitimate case** — a volume 1 genuinely
+titled with its series name, owned in more than one printing — which is exactly
+the *question, not defect* the alarm exists to raise. 🔴 **Nothing was changed,
+and nothing may be**: a person decides.
 | 🔴 **A cron tick has fired** | ❌ **NOT measured.** First fires 09:47 UTC; the trigger is CLAIMED until an `audit_run` row exists with `trigger = 'cron'` on each instance |
-| The admin routes end to end | ❌ **NOT measured** — they need a Firebase bearer. The gate and the bodies are pinned by tests, not by a live call |
+| The admin routes are MOUNTED and gated | ✅ **measured 2026-09-06** — a bearer-less call answers **401 on both hosts**, so the routes exist and `requireAuth` is in front of them |
+| The admin routes end to end, SIGNED IN | ❌ **NOT measured** — that needs a Firebase bearer the building session did not have. The 403 wording, the four causes and the response bodies are pinned by `apps/worker/src/routes/audits.test.ts`, not by a live call |
 | A cover probed from a Worker | ❌ **NOT measured** — every test stubs `fetch` |
 
 **How to close the first one**, the morning after a deploy:

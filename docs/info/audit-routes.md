@@ -15,6 +15,9 @@
 > | Migration 0480 applied to **both** instances | `npm run db:migrate` and `npm run db:migrate:friend`, both `✅` |
 > | Both Workers answer `detail.coverHealth` and `detail.seriesAggregates` | `curl -s …/api/health` on both hosts — see [`../access/audits.md`](../access/audits.md) §1 for the readings |
 > | 2,816 tests green, typecheck green | `npm run test` / `npm run typecheck` (2,697 before this work) |
+> | `audit_run` exists on both D1s with **0 rows** | `wrangler d1 execute … --remote` on each — which is the same fact `/api/health`'s "never run" reading claims, checked from the other side |
+> | **The shared rules run against PRODUCTION, both instances** | the two scripts, `--remote` and `--remote --friend`. Main: **411 covers, 0 broken**; 151 series names, 28 multi-edition works, **3 flagged**. Padhard: **642 covers, 8 reported — 7 of them FINE on a hand re-probe** (KI-16); 309 series names, 4 multi-edition works, **0 flagged**, the first measurement of that instance ever |
+> | The admin routes are mounted and gated | bearer-less `GET`/`POST` answers **401 on both hosts** |
 >
 > ### ⚠️ What was NOT verified
 >
@@ -23,9 +26,9 @@
 >   `trigger = 'cron'` on each instance. This is the same rule the two crons
 >   above it carry, and it is not a formality — `wrangler deploy` reporting a
 >   registered trigger proves nothing about it firing.
-> - **The admin routes were not exercised end to end.** They sit behind
->   `requireAuth`, which needs a Firebase bearer the building session did not
->   have. The refusal shape, the auth gate and the response bodies are pinned by
+> - **The admin routes were not exercised SIGNED IN.** The 401 half is measured
+>   (above); the authenticated half needs a Firebase bearer the building session
+>   did not have. The refusal shape, the auth gate and the response bodies are pinned by
 >   `apps/worker/src/routes/audits.test.ts`; what is unmeasured is a real
 >   signed-in call.
 > - **No cover URL was probed from a Worker.** Every cover-health test uses a
@@ -155,8 +158,11 @@ learnt nothing about the catalog.
 
 🔴 **250 URLs per tick, concurrency 6, 10-second timeout.**
 
-Main holds ~411 works and padhard ~370, so **two ticks cover either catalog** and
-a third is slack. The cap exists because this is the only one of the two audits
+🔴 **Measured 2026-09-06, and one of those numbers was a guess that was wrong:**
+main holds **411** works with a cover and padhard **642** — not the ~370 assumed
+before the script was pointed at her. So a full pass is **2 ticks on main and 3
+on padhard**, which is still fine for a defect class that does not change hour to
+hour. The cap exists because this is the only one of the two audits
 that leaves the Worker, and a scheduled invocation's subrequest budget is finite
 — the games repo records 50 on the free plan, and *"the account moved to Workers
 Paid so it is higher"* is not a number worth betting a silent cron on.
@@ -182,10 +188,15 @@ nothing. The window is applied in memory, which is what lets it wrap at all.
 | `missingCover` | the work has no cover URL to check | the free ladder's (`backfill-missing-covers.mjs`) |
 
 The script folded the first two together, and that was right for a script: a
-person watching it scroll has the reason column. **A cron has no reader.** A
-Worker with flaky egress would file every cover in the catalog as broken,
-`/api/health` would say so, and the next person would go hunting four hundred
-dead covers that were all fine.
+person watching it scroll has the reason column. **A cron has no reader.**
+
+🔴 **And this is not hypothetical — it happened on the first production run.**
+Padhard reported **8**, and **7 were fine**: all seven `fetch failed` against
+`pub-….r2.dev` (her `COVERS_BASE_URL`, recorded in `wrangler.toml` as
+rate-limited), three of three answering **200 / `image/jpeg` / 3.4–4.2 MB** on a
+hand re-probe minutes later. Only work **356 *Evocation*** was a real `HTTP 503`.
+A merged count would have published *"8 broken covers on padhard"*. Full record
+and the removal condition: **KI-16**.
 
 ⚠️ **The script still prints them under one heading** — that is what the
 byte-equality test pins.

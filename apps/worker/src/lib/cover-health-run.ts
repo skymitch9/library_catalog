@@ -25,11 +25,21 @@
  * | `missingCover` | the work has no cover URL to check | the free ladder's (`backfill-missing-covers.mjs`) |
  *
  * 🔴 **Merging `unreachable` into `broken` is the failure mode this split
- * exists to prevent.** A Worker with flaky egress would file every cover in the
- * catalog as broken, `/api/health` would say so, and the next person would go
- * hunting four hundred dead covers that were all fine. The script folds them
- * back into one printed list because a person reading a script has the reason
- * column; a cron has no reader.
+ * exists to prevent** — and it is not hypothetical. **Measured 2026-09-06, the
+ * first production run of this code against padhard: 8 rows failed, and 7 of
+ * them were FINE.** All seven were `fetch failed` against
+ * `pub-….r2.dev` (her `COVERS_BASE_URL`, which `wrangler.toml` already records
+ * as *rate-limited*); re-probed by hand minutes later, three of three answered
+ * **HTTP 200, `image/jpeg`, 3.4–4.2 MB**. Only the eighth — work 356
+ * *Evocation*, an Open Library URL redirecting to an archive.org object — was a
+ * genuine `HTTP 503`, and `docs/TODO.md` has been recording that same 503 since
+ * 2026-08-23.
+ *
+ * So the honest reading of that night was *"1 broken, 7 unreachable"*, and a
+ * merged count would have said **"8 broken covers on padhard"** — sending
+ * somebody after seven covers that were never broken. The script folds them back
+ * into one printed list because a person reading a script has the reason column;
+ * a cron has no reader.
  *
  * ## ⚠️ What this audit is NOT the instrument for
  *
@@ -62,11 +72,14 @@ import { recordAuditRun, type AuditRunResult } from './audit-run.js';
  * 2026-08-17, which raises it, and *"raises it"* is not a number worth betting a
  * silent cron on).
  *
- * Why 250: main holds ~411 works and padhard ~370, so **two ticks cover either
- * catalog completely** and a third is slack for growth. It is comfortably inside
- * any plausible budget while leaving room for the details sweep, which the
- * games repo measures spending 46 subrequests on its own — though these two never
- * share a minute (`AUDITS_CRON` is `:47`, details is `:07`).
+ * Why 250 — **measured 2026-09-06, and one of the two numbers was a guess that
+ * turned out wrong**: main holds **411** works with a cover and padhard **642**
+ * (not the ~370 assumed before the script was actually run against her). So the
+ * catalog is covered in **2 ticks on main and 3 on padhard**, which is still
+ * fine for a defect class that does not change hour to hour. It is comfortably
+ * inside any plausible subrequest budget while leaving room for the details
+ * sweep, which the games repo measures spending 46 on its own — though these two
+ * never share a minute (`AUDITS_CRON` is `:47`, details is `:07`).
  *
  * ⚠️ **The cap only works because the window WRAPS** — see `auditWindow`. A cap
  * with a fixed `LIMIT` would audit the first 250 covers every night, never look

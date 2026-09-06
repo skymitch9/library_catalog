@@ -73,6 +73,32 @@ blocks · admin `POST/GET /api/admin/audits/{cover-health,series-aggregates}`
 · additive `/api/health` keys, nothing removed · 2,697 → **2,816 tests**, typecheck
 green · deployed to both instances.
 
+**The shared rules run against PRODUCTION on both instances** (the scripts,
+`--remote` / `--remote --friend`, read-only):
+
+| | main | padhard |
+|---|---|---|
+| cover health | **411 covers, 0 broken** | **642 covers, 8 reported — 🔴 7 of the 8 were FINE** |
+| series aggregates | 151 series names, 28 works with 2+ editions, **3 flagged** | 309 / 4 / **0 flagged** — ⚠️ first measurement ever |
+
+🔴 **The padhard cover run is the case the `unreachable`/`broken` split was
+built for, and it fired on day one.** Seven of the eight were `fetch failed`
+against `pub-….r2.dev` — her `COVERS_BASE_URL`, which `wrangler.toml` already
+records as **rate-limited**, serving 3–4 MB covers. Re-probed by hand minutes
+later, **three of three answered 200 / `image/jpeg` / 3.4–4.2 MB**. Only the
+eighth — **356 *Evocation*** — was a real **HTTP 503**, confirming this file's
+own long-standing row for the third time. A merged count would have published
+*"8 broken covers on padhard"*. Recorded as **KI-16** with its removal
+condition (attach a custom domain to `library-2nd-covers`; the change is one
+line).
+
+⚠️ The three on main are **#263 Dungeon Crawler Carl**, **#333 The Maze
+Runner** and **#341 He Who Fights with Monsters** — all three look like the
+LEGITIMATE case (a volume 1 genuinely titled with its series name, owned in
+more than one printing), which is exactly the *question, not defect* the
+alarm exists to raise. Nothing was changed and nothing may be: a person
+decides.
+
 **Facts:** [`info/audit-routes.md`](info/audit-routes.md) (the why) ·
 [`access/audits.md`](access/audits.md) (the how, incl. 🔴 the rollback — delete
 the cron string from both blocks).
@@ -91,11 +117,13 @@ the cron string from both blocks).
    ```
 
    A `lastRunAt` near `09:47` with `"trigger":"cron"` is the proof.
-2. ☐ **The admin routes have not been exercised end to end.** They sit behind
-   `requireAuth` and need a Firebase bearer the building session did not have.
-   The gate, the four refusal causes and the response bodies are pinned by
-   `apps/worker/src/routes/audits.test.ts`; what is unmeasured is a real
-   signed-in call. — [`access/audits.md`](access/audits.md) §2 has the curl.
+2. ☐ **The admin routes have not been exercised SIGNED IN.** ✅ The 401 half
+   IS measured — a bearer-less `GET`/`POST` answers **401 on both hosts**, so
+   the routes are mounted and `requireAuth` is in front of them. What is
+   unmeasured is an authenticated call; the 403 wording, the four refusal
+   causes and the response bodies are pinned by
+   `apps/worker/src/routes/audits.test.ts`, not by a live one. —
+   [`access/audits.md`](access/audits.md) §2 has the curl and the bearer.
 3. ☐ **No cover URL has been probed from a Worker.** Every test stubs `fetch`.
    Same code as the script, different egress — so the first real tick is also
    the first evidence that a Worker can reach the cover origins at all.
