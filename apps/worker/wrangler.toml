@@ -281,6 +281,17 @@ DONOR_URL = "https://padhard.heygabi.ai"
 #
 # ⚠️ Adding a new library to the network: append one entry here AND add an
 # entry for this instance to the new library's PEERS. Then deploy both.
+#
+# ⚠️ 2026-09-06 — THIS LIST IS THE *SET*; THE NAMES COME FROM THE REGISTRY.
+# `resolvePeers()` (src/lib/peer-push.ts) reads each named peer's HOST and
+# LABEL from GET https://index.heygabi.ai/api/catalogs, with the values below
+# as the fallback, so a rename or a rehost no longer needs a redeploy. It does
+# NOT decide WHO the peers are, deliberately: a peer entry lets another
+# household read our holdings, which is access-INCREASING and the owner's
+# explicit call — a catalog must never enrol itself by appearing in a
+# directory. So the sentence above still stands in full.
+# An entry matches a registry row by its `url`'s host, or by an optional
+# "catalog":"library2" field; that host match is why these two need no edit.
 PEER_SELF_ID = "sky"
 PEER_SELF_LABEL = "Sky's Library"
 SITE_ORIGIN = "https://library.heygabi.ai"
@@ -596,6 +607,11 @@ DONOR_URL = "https://library.heygabi.ai"
 # ── Cross-library peer push (migration 0370) ─────────────────────────────────
 # Same mechanism as the main instance: pushes her holdings to all peers after
 # mutations. The main library appears on HER gap rungs as "In Sky's Library".
+#
+# ⚠️ 2026-09-06 — same split as the top-level block: this list is the SET and
+# the registry supplies each peer's host and label (these values are the
+# fallback). Adding a peer is still a line here plus a redeploy, because
+# peering is access-increasing. See the comment above [vars].PEERS.
 PEER_SELF_ID = "padhard"
 PEER_SELF_LABEL = "the Padhard Library"
 SITE_ORIGIN = "https://padhard.heygabi.ai"
