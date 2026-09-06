@@ -143,6 +143,17 @@
  *   node scripts/fix-foreign-isbns-2026-09-05.mjs --remote --also-declared-no-isbn  # + B
  *   node scripts/fix-foreign-isbns-2026-09-05.mjs --remote --also-crowdfunded       # + C
  *   node scripts/fix-foreign-isbns-2026-09-05.mjs --remote --all-tiers              # A + B + C
+ *   node scripts/fix-foreign-isbns-2026-09-05.mjs --remote --tier D                 # + D (owner only)
+ *
+ * ✅ **A, B and C are all APPLIED.** Tier A landed 2026-09-06 01:23:49Z and
+ * B + C at **02:32:09Z** — measured 2026-09-06 on production `library-catalog`:
+ * `change_log` holds **55** rows for batch `fix-2026-09-05-foreign-isbns`,
+ * **42 `isbn13`** (12 A + 17 B + 13 C) and **13 `source`** (3 A + 10 C). Every
+ * one of those rows now reports as *already applied* on a re-run, which is what
+ * the `already` branch is for.
+ *
+ * 🔴 **Tier D is the one thing here that has never been run**, and it is a
+ * QUESTION for the owner rather than a finding — see `TIER_D`.
  */
 
 import { execute, lit, parseFlags, query } from './lib/d1.mjs';
@@ -420,6 +431,55 @@ const TIER_C = [
   },
 ];
 
+/**
+ * TIER D — the WRONG MEDIUM, and 🔴 **it is a QUESTION, not a finding.**
+ *
+ * One row: edition **#507**, work 375, *The Book of Mormon*, `9780929753249`.
+ * This is the row the header above says is *"deliberately NOT in tier C"*, and
+ * that is still true — tier C rests on the owner's ruling about crowdfunded
+ * printings, and nothing on this row says it is one. Tier D rests on something
+ * else entirely, which is why it is a separate flag and NOT in `--all-tiers`.
+ *
+ * **What is measured** (2026-09-05, re-read live 2026-09-06):
+ *
+ *   - The ISBN resolves to Stratford Books' *"Hand Leather Bound Pocket
+ *     Edition"* — Open Library `OL8358629M`, 2007, English,
+ *     `physical_format: Leather-bound`.
+ *   - The row it sits on is `format = 'paperback'`, `edition_name` NULL, `note`
+ *     NULL, `source = 'openlibrary'` (the backfill's own stamp).
+ *   - Both owned copies (#283, #291) carry no `edition_notes` and have
+ *     `leatherbound` / `slipcase` / `sprayed_edges` all **0**.
+ *
+ * So the ISBN says leather-bound pocket edition and the row says paperback.
+ * 🔴 **The language gate can never catch this one**: the ISBN is English and
+ * `978-0`, so `isbnLanguageVerdict` returns `unknown`, which proceeds by design.
+ *
+ * ⚠️ **What is NOT measured, and cannot be from here: which book is on his
+ * shelf.** If his copy IS the Stratford pocket edition then the ISBN is right
+ * and the `format` column is what is wrong — and clearing the ISBN would delete
+ * the correct identifier to fix the wrong column. That is why this tier exists
+ * as a flag the owner passes and not as a default: it is the same class of
+ * question as tier B and C were before he answered them, and the whole lesson of
+ * this item is that questions about physical objects belong to the person
+ * holding the object.
+ *
+ * ⚠️ Its `change_log` note says so, so a reader a year from now sees a decision
+ * rather than a measurement.
+ */
+const TIER_D = [
+  {
+    id: 507, work: 375, title: 'The Book of Mormon', from: '9780929753249',
+    sourceFrom: 'openlibrary', sourceTo: null,
+    evidence:
+      'Stratford Books "Hand Leather Bound Pocket Edition" (Open Library OL8358629M, 2007, ' +
+      'English, physical_format: Leather-bound) sitting on a row whose format is paperback, with ' +
+      'both owned copies (#283, #291) carrying no edition_notes and leatherbound/slipcase/' +
+      'sprayed_edges all 0. WRONG MEDIUM. ⚠️ English and 978-0, so isbnLanguageVerdict returns ' +
+      '"unknown" and the language gate can never catch it. 🔴 OWNER QUESTION, not a finding: if ' +
+      'his copy IS that pocket edition the ISBN is right and the format column is wrong instead.',
+  },
+];
+
 const WHY =
   'The 2026-08-20 run of scripts/backfill-missing-isbns.mjs filled this printing with an ISBN ' +
   'belonging to a different object. Owner decision 2026-09-05. Two holes, both now closed in the ' +
@@ -437,6 +497,25 @@ const WHY =
  * nulling these rows, and a `change_log` reader a year from now needs to see it
  * without opening a doc.
  */
+/**
+ * The `change_log` note for the TIER D row. ⚠️ It states in its own words that
+ * this was a **decision about a physical object**, not a measurement, because
+ * that is the one thing a future reader must not mistake — the other three tiers
+ * each rest on something checkable, and this one rests on the owner saying which
+ * book is on his shelf.
+ */
+const WHY_WRONG_MEDIUM =
+  'The 2026-08-20 run of scripts/backfill-missing-isbns.mjs filled this paperback row with the ' +
+  'ISBN of a LEATHER-BOUND POCKET EDITION: 9780929753249 is Stratford Books\' "Hand Leather Bound ' +
+  'Pocket Edition" (Open Library OL8358629M, 2007, English, physical_format Leather-bound), while ' +
+  'the row is format=paperback with edition_name and note both NULL and both owned copies (#283, ' +
+  '#291) carrying no edition_notes and leatherbound/slipcase/sprayed_edges all 0. ⚠️ The ISBN is ' +
+  'English and 978-0, so isbnLanguageVerdict returns "unknown" and the language gate could never ' +
+  'have refused it. 🔴 This clearing is the OWNER\'S DECISION, taken with the book in his hand — ' +
+  'not a measurement. If the copy on the shelf IS that pocket edition, the ISBN was right and the ' +
+  'format column was the wrong half; NULL is recoverable from this log either way. ' +
+  'Per-row evidence: scripts/fix-foreign-isbns-2026-09-05.mjs TIER_D. See docs/TODO.md #507.';
+
 const WHY_CROWDFUNDED =
   'The 2026-08-20 run of scripts/backfill-missing-isbns.mjs filled this crowdfunded/collector\'s ' +
   'printing with a trade ISBN belonging to a different object. OWNER RULING 2026-09-05 18:29 ' +
@@ -458,8 +537,24 @@ const flags = parseFlags();
 const alsoDeclared = process.argv.includes('--also-declared-no-isbn');
 const alsoCrowdfunded = process.argv.includes('--also-crowdfunded');
 const allTiers = process.argv.includes('--all-tiers');
+/**
+ * 🔴 **`--tier D` is NOT in `--all-tiers`, deliberately.**
+ *
+ * `--all-tiers` is the exact string written into `docs/TODO.md` as the line the
+ * owner was given for A + B + C, and it landed on production 2026-09-06
+ * 02:32:09Z. Folding a fourth tier into a flag whose meaning is already recorded
+ * in a runbook would change what an owner's written command does — the same
+ * failure the `--also-declared-no-isbn` spelling is kept for. Tier D is an
+ * unanswered question about a physical object; it is opted into by name or not
+ * at all.
+ */
+const tierArg = (() => {
+  const i = process.argv.indexOf('--tier');
+  return i >= 0 && process.argv[i + 1] ? String(process.argv[i + 1]).toUpperCase() : null;
+})();
 const wantB = allTiers || alsoDeclared;
 const wantC = allTiers || alsoCrowdfunded;
+const wantD = tierArg === 'D';
 const target = { remote: flags.remote, friend: flags.friend };
 const q = (sql) => query(sql, target);
 const where = flags.friend ? 'padhard' : flags.remote ? 'production' : 'local';
@@ -476,8 +571,14 @@ const ROWS = [
   ...TIER_A.map((r) => ({ ...r, tier: 'A' })),
   ...(wantB ? TIER_B.map((r) => ({ ...r, tier: 'B' })) : []),
   ...(wantC ? TIER_C.map((r) => ({ ...r, tier: 'C' })) : []),
+  ...(wantD ? TIER_D.map((r) => ({ ...r, tier: 'D' })) : []),
 ];
-const TIERS = ['A', ...(wantB ? ['B'] : []), ...(wantC ? ['C'] : [])].join(' + ');
+const TIERS = [
+  'A',
+  ...(wantB ? ['B'] : []),
+  ...(wantC ? ['C'] : []),
+  ...(wantD ? ['D'] : []),
+].join(' + ');
 
 // ---------------------------------------------------------------------------
 // 1. Measure. Read the live rows by ID and assert every from-value, so a row
@@ -612,12 +713,16 @@ if (claimed.length === 0) {
 // ---------------------------------------------------------------------------
 const stmts = [];
 let sourceRestores = 0;
-const byTier = { A: 0, B: 0, C: 0 };
+const byTier = { A: 0, B: 0, C: 0, D: 0 };
 for (const row of claimed) {
   byTier[row.tier]++;
-  // Tier C's warrant is the owner's sentence, not a lookup, so its change_log
-  // note is a different text and says so verbatim.
-  const why = row.tier === 'C' ? WHY_CROWDFUNDED : WHY;
+  // Each tier's warrant is different, so each carries its own change_log note:
+  // tier C's is the owner's sentence rather than a lookup, and tier D's says
+  // outright that it is a decision about a physical object and not a
+  // measurement. A single generic note would flatten exactly the distinction a
+  // reader needs.
+  const why =
+    row.tier === 'C' ? WHY_CROWDFUNDED : row.tier === 'D' ? WHY_WRONG_MEDIUM : WHY;
   console.log(`\n  edition #${row.id} [tier ${row.tier}] (work #${row.work} ${row.title})`);
   console.log(`      isbn13 ${JSON.stringify(row.from)} -> NULL`);
   if (row.evidence) console.log(`      evidence: ${row.evidence}`);
@@ -650,7 +755,7 @@ for (const row of claimed) {
 
 console.log(
   `\n${where}: ${claimed.length} isbn13(s) to null ` +
-    `(tier A ${byTier.A}, B ${byTier.B}, C ${byTier.C}), ` +
+    `(tier A ${byTier.A}, B ${byTier.B}, C ${byTier.C}, D ${byTier.D}), ` +
     `${sourceRestores} source(s) to restore to 'manual', ` +
     `${claimed.length + sourceRestores} change_log row(s).`,
 );
@@ -665,6 +770,14 @@ if (!wantC) {
     `(tier C is ${TIER_C.length} more rows on crowdfunded/collector's printings the owner holds — ` +
       'pass --also-crowdfunded, or --all-tiers. Owner ruling 2026-09-05: "For the kickstarters we ' +
       'have in stock the ISBNs are recorded if they exist.")',
+  );
+}
+if (!wantD) {
+  console.log(
+    `(tier D is ${TIER_D.length} row, ed#507 The Book of Mormon — a LEATHER-BOUND pocket ` +
+      "edition's ISBN on a paperback row. 🔴 It is an OWNER QUESTION, not a finding: if his copy " +
+      'IS that pocket edition the ISBN is right and the format column is wrong instead. Pass ' +
+      '--tier D. ⚠️ Deliberately NOT part of --all-tiers.)',
   );
 }
 
