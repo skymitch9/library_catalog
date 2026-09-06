@@ -33,6 +33,7 @@ export * from './titles.js';
 export * from './audiobook-csv.js';
 export * from './series-canon.js';
 export * from './audiobook-sweep.js';
+export * from './series-volumes.js';
 export * from './matching.js';
 // ⚠️ AFTER matching.js and covers.js — `audits.ts` imports from both. The
 // import-order rule in this file's header is not decoration: a cycle makes
