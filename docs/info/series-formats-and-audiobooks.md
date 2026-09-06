@@ -1,7 +1,14 @@
 # Series pages — formats, alternate printings, audiobooks — Information Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
-> Last verified: **2026-09-05** for the **NEW §4.10** only — every number in it
+> Last verified: **2026-09-05** for the **NEW §4.11** only — the byte-identical
+> dry-run diffs it quotes were run that evening against BOTH production
+> instances (`--remote` and `--remote --friend`, dry only, never `--commit`),
+> and the test counts were read off `npm run test`. ⚠️ **NOT verified in §4.11:
+> anything rendered, anything deployed, and any Worker behaviour** — phase 0
+> ships no route, no cron and no migration, and nothing under `apps/worker` was
+> touched.
+> Last verified before that: **2026-09-05** for the **NEW §4.10** only — every number in it
 > was measured that evening against production `library-catalog` and the live
 > `catalog.csv`: the containment ratios were computed by RUNNING
 > `cleanAudiobookTitle` on the real CSV row, and the 121 → 122 / `fold` →
@@ -585,6 +592,102 @@ stopped being one of the two series that "map on the folded name alone".
 ⚠️ **This is why the answer to "it didn't associate right away" is never a
 threshold change.** §4.3 and `matching.ts`'s header record what a second, looser
 similarity rule cost the sibling Board Game Catalog: three wrong games shipped.
+
+---
+
+### 4.11 ⚠️ ONE PLANNER, TWO CALLERS — the sweep's decisions left `scripts/` — 2026-09-05
+
+**The sentence to carry away:** `npm run backfill:audiobooks` no longer *makes*
+the audiobook association decisions. It **renders** them. The decisions live in
+`packages/core/src/audiobook-sweep.ts`, and the Worker route being built in the
+later phases calls the same function over the same rows.
+
+This is phase 0 of
+[`catalog-platform/docs/info/audiobook-association-route.md`](../../../../catalog-platform/docs/info/audiobook-association-route.md),
+which exists because of §4.10's owner report: *"I added battle mage farmer and
+it didn't associate the audiobook right away."* The diagnosis there is that the
+trigger is on the wrong side — the sweep fires when the AUDIOBOOK catalog
+changes, and the owner changed the LIBRARY. Phase 0 builds nothing that fires;
+it makes the decision code reachable from a place that can.
+
+#### What moved, and what deliberately did not
+
+| | Now lives in | Was |
+|---|---|---|
+| CSV parse + row mapping | `packages/core/src/audiobook-csv.ts` — `parseAudiobookCsv` | `scripts/lib/audiobooks.mjs` |
+| The series-canon fold RULE | `packages/core/src/series-canon.ts` — `normText`, `buildSeriesCanonMap`, `canonicalSeriesIn` | `scripts/lib/series-canon.mjs` |
+| The canon DATA, bundle-ready | `packages/universes/src/series-canon.ts` — `seriesCanonMap`, `seriesCanonEntryCount` | (new) |
+| Phases 1 and 2 — every decision | `packages/core/src/audiobook-sweep.ts` — `planAudiobookSweep` | `scripts/backfill-audiobook-holdings.mjs` |
+| The `lit()` SQL rendering | `scripts/lib/audiobook-sql.mjs` — `renderSweepStatements` | same script, inline |
+| 🔴 **The matcher** | `packages/core/src/matching.ts` — **unchanged, unwrapped** | — |
+| The disk read, the two D1 reads, the zero-row refusal, the printed report | **still the script** | — |
+
+🔴 **The plan is DATA, not SQL,** and that is the hinge. The script interpolates
+`lit()` strings through `wrangler d1 execute`; a Worker binds prepared
+statements. A planner that returned SQL could only ever have had one caller — and
+two callers deciding separately which audiobook belongs to which book is exactly
+the drift `matching.ts` opens by blaming for three wrong games.
+
+#### The measurement that says it worked
+
+The acceptance test is that the script's dry-run output does not change by one
+character. Captured before the first commit, re-run after the last, `--remote`
+on **both** instances:
+
+| | lines | works | matched | editions | series | statements | diff |
+|---|---|---|---|---|---|---|---|
+| main | 561 | 411 | 122 | 127 | 31 | 317 | **EMPTY** |
+| padhard | 843 | 677 | — | — | — | 263 | **EMPTY** |
+
+⚠️ **Byte-identical, not "identical apart from timestamps"** — the report block
+prints no clock, which is what makes it usable as a diff instrument at all.
+Dry runs only; `--commit` was not passed at any point.
+
+#### ⚠️ The one behaviour difference, and which side is stale
+
+`scripts/lib/series-canon.mjs` reads `catalog-platform/data/series-canon.json`
+**live out of the sibling checkout**, because a hand-run script has no `prebuild`
+step. A Worker cannot read across repos at runtime, so it reads the copy
+`scripts/sync-universes.mjs` materialises into `packages/universes/generated/`.
+
+**They can disagree, and when they do the ROUTE is the stale one** — its canon is
+as fresh as the last deploy, the script's as fresh as the last `git pull`. That
+is accepted, because the canon governs only phase 2's `fold`-vs-`work_match`
+hedging and a missing canon already degrades to plain `normaliseTitle` by design.
+The guard is `seriesCanonEntryCount`, which the sweep's `/api/health` line will
+report: **zero is the number that means something**, because it says the bundle
+shipped with no canon at all.
+
+#### 🔴 `scope` — the guard that only matters once there is a route
+
+`planAudiobookSweep` takes `scope: { kind: 'all' } | { kind: 'works', ids }`, and
+the stale phases run **only** under `all`. The per-work hook will have looked at
+one book, so it has no standing to say any other row is gone — and on a Worker
+that mistake would mark every holding on both instances stale while looking
+exactly like success. `packages/core/test/audiobook-sweep-scope.test.ts` pins it,
+with a control test proving the same fixture *does* stale five rows under `all`,
+so the guard test cannot pass vacuously.
+
+⚠️ **A scoped run also refuses to write a `fold` rung**, which the design did not
+cover and which is not the same question. A scoped run holds a fraction of the
+evidence, so its `fold` verdict is an *absence* of proof rather than a weaker
+proof — and `series_matched_via = excluded.series_matched_via` on every upsert
+means writing it would **downgrade** a `work_match` rung a full sweep had already
+earned. Those series are named in `report.foldSeriesDeferred` and left to the
+cron.
+
+#### What phase 0 does NOT do
+
+**No route, no cron, no migration, no deploy.** Nothing under `apps/worker`
+changed. ⚠️ The new modules are re-exported from `@lc/core`'s barrel, so they may
+ride into the Worker bundle as dead code on the next unrelated deploy; nothing
+calls them until phase B. 🔴 **The script is never retired** — it is the only path
+that works when the Worker is down, it is the recovery tool
+[`access/RECOVERY.md`](../access/RECOVERY.md) assumes, and it runs offline and
+before a deploy against a checkout.
+
+**Commits:** `965d226` (CSV) · `e307bc3` (loader) · `bb7af18` (canon) · `e2f4aee`
+(planner) · `8f38125` (script + gate).
 
 ---
 

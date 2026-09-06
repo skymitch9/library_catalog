@@ -97,6 +97,24 @@ why "right away" never happens today, and item 3 below is the standing fix.
    "why did STEP 11 not cover the book he added?", and that is measured before
    anything is built.
 
+   ✅ **ANSWERED 2026-09-05, and the answer is a ROUTE rather than a schedule.**
+   The design is
+   [`catalog-platform/docs/info/audiobook-association-route.md`](../../../catalog-platform/docs/info/audiobook-association-route.md):
+   STEP 11 fires when the AUDIOBOOK catalog changes, the owner changed the
+   LIBRARY, and nothing on the library side has a trigger at all — so a shorter
+   cron would rebuild the same complaint at a shorter interval.
+
+   ⚠️ **PHASE 0 (design §9 steps 1–5) IS LANDED** — commits `965d226`,
+   `e307bc3`, `bb7af18`, `e2f4aee`, `8f38125`; written up in
+   [`info/series-formats-and-audiobooks.md` §4.11](info/series-formats-and-audiobooks.md).
+   The sweep's decisions moved to `packages/core/src/audiobook-sweep.ts` and the
+   script became a thin caller, proven by **byte-identical `--remote` dry runs on
+   both instances**. ☐ **Steps 6–14 remain** — migration 0470, the D1 writer, the
+   run wrapper with §6.2's three guards, the admin routes, the `/api/health`
+   line, the second cron string on BOTH `[triggers]` blocks, the on-add hook and
+   the shadow flag. **Nothing is deployed and no route exists yet**, so a book
+   added today still waits for STEP 11.
+
 ## ☑ BUILT 2026-09-05 — "Request a catalog" phase 5, the sealed-key ladder is IN step 10 (agent S2) — ☐ owner runs it for real once
 
 Commit **`acb4c44`**. Step 10 now tries the two sealed envelopes BEFORE the
