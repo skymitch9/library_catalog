@@ -605,7 +605,10 @@ describe('the manual runbook', () => {
 
   it('⚠️ READ_ORIGINS is EMITTED for the owner and never applied — it is access-increasing', () => {
     assert.match(text, /OWNER, ACCESS-INCREASING/);
-    assert.match(text, /wrangler\.toml:65 — READ_ORIGINS/);
+    // ⚠️ The LINE NUMBER is deliberately not pinned: it moved 65 → 86 within a
+    // day of being written, and a test that fails on somebody else's edit
+    // teaches people to loosen tests. What must be there is the file and the var.
+    assert.match(text, /index-worker\/wrangler\.toml:\d+ — READ_ORIGINS/);
     // The pasteable line itself, ending in the new host.
     assert.match(text, /READ_ORIGINS = "https:\/\/heygabi\.ai,.*,https:\/\/amber\.heygabi\.ai"/);
     assert.match(text, /does NOT apply it and must not/);

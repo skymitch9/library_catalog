@@ -3,6 +3,27 @@
 > **Audience:** the owner first (he is the only person who can run it), Claude
 > sessions second.
 > **Status:** TRACKED — no secret values here, names only.
+>
+> ✅ **UPDATED 2026-09-06 (multi-library survey dispatch 4, agent W10-FED-PROV).**
+> Two changes, both measured that day and both described in §"The twelve steps"
+> and §"The checklist" below:
+> 1. **The manual runbook was measured INCOMPLETE and is now complete.** The
+>    survey's §7 counted what a `library3` is missing on every estate surface —
+>    **~28 hand-edits across four repos, of which this script named 3.** It now
+>    names all of them, including the two that do not fail politely.
+> 2. **Step 12 writes the `estate_catalog` registry row**, so a provisioned
+>    catalog arrives with a NAME and an OWNER instead of as a bare id nothing
+>    can render.
+>
+> MEASURED 2026-09-06: `scripts/test/provision-catalog.test.mjs` **74 → 95
+> cases, 0 fail** (one per checklist item); the repo suite **2918 → 2968**;
+> `node --check`; a `--dry --fixture` run end to end — exit 0, all twelve steps
+> and both pauses printed, the registry INSERT rendered correctly, `git status`
+> untouched, and the whole output grepped clean of anything secret-shaped.
+> ⚠️ **STILL NOT VERIFIED, and it is the same headline as before: no real
+> instance has ever been provisioned by this script.** Every line added on
+> 2026-09-06 is written and unexercised.
+>
 > **Last verified: 2026-09-05** — the script was written that day, and the
 > sealed-key ladder (§6.4) was added to step 10 the same day. What was
 > MEASURED: `node --check`; the whole suite (**2428 pass / 0 fail**); a
@@ -123,7 +144,77 @@ Every refusal names `--instance` as the way out.
 | 9 | the paired estate token, both sides | AUTO (stdin) | `secret list` names |
 | 10 | shared secrets, then the `ANTHROPIC_API_KEY` ladder (sealed reader → sealed owner → the owner's own) | AUTO (stdin) | `secret list` names; the R2 envelope is deleted once set |
 | 11 | `deploy:<instance>` through the guards | AUTO, owner-run | `deploys.log` |
-| 12 | `/api/health?cb=` then mark the row `live` | AUTO | the row's `status`; the key booleans follow step 10's source |
+| 12 | `/api/health?cb=`, mark the row `live`, **write the registry row** | AUTO | the row's `status`; the key booleans follow step 10's source; `estate_catalog` by id |
+
+### Step 12's second half — the catalog's NAME (added 2026-09-06)
+
+The same call now writes one row into `estate_catalog` (auth-worker migration
+**0020**), which is what every apex surface reads to decide what this catalog
+is called and whose it is: search-hit labels, the series holding line, the
+universes subtitle, the front-door card, and `/status`'s row name.
+
+⚠️ **Without it the catalog is live and ANONYMOUS** — the state
+`catalog-platform/docs/info/catalog-registry.md` §7 calls *"live, but nothing
+knows its name yet"*. Nothing looks broken; the shelf simply has no name
+anywhere in the estate.
+
+| Column | Value | Why |
+|---|---|---|
+| `id` / `push_source` | the estate app id (`library3`) | the two vocabularies happen to agree for a library; they do NOT for games (`games`↔`game`) |
+| `label` | the request's `display_name` | snapshotted at submit — a devops run must not be able to rename a catalog |
+| `owner_name` | the request's `requester_display_name`, or **`NULL`** | ⚠️ NULL is a real answer: an unattributed physical shelf is honest, an invented name on the front door is not |
+| `holding` / `shared` | `physical` / `0` | constants, per the owner's settled model (2026-09-05) |
+| `host` | the derived hostname | one fact, one home |
+
+⚠️ **`ON CONFLICT(id) DO NOTHING`**, so a `--resume` or a re-run cannot rename a
+catalog somebody is already using. ⚠️ **The write cannot fail the provision:** a
+failure prints the one idempotent command that repairs it and lands in the
+NOT-verified list, because the catalog IS live either way.
+
+🔴 **Why a direct `d1 execute` rather than the route.**
+`POST /api/estate/catalogs/requests/:id/live` is the canonical writer and does
+exactly this — but it is `requireDevops()`, which needs a Firebase ID token
+from an admin account, and this script runs on the owner's **wrangler** login
+with no browser near it. It already marks the request live the same way, so
+this is the second half of one write, not a second mechanism. ⚠️ **They are
+near-duplicates ON PURPOSE and are NOT interchangeable: change one and the
+other must change too.**
+
+### The checklist — what a `library3` is missing, in full
+
+Printed by `--dry` and at PAUSE #2. The survey (§7) counted ~28 hand-edits and
+found this script naming **3**; these are the ones added on 2026-09-06, ordered
+by how badly each fails.
+
+| Item | Where | If it is missed |
+|---|---|---|
+| 🔴 index `entry.source` **migration** | `index-worker/migrations/00NN_entry_source_<app>.sql` | **every push is a bare 500.** And `wrangler d1 migrations list --remote` says *"No migrations to apply"* — TRUE, and not the question: nothing is pending, one is required |
+| 🔴 `UNSCOPED_LOOKUP_EXCLUDED` | `index-worker/src/read.ts:69` | **fails OPEN.** Every approved member, and every machine token, can enumerate the new shelf by title through `/api/lookup` while holding no `vis_<app>` grant |
+| `SOURCES` | `index-worker/src/rows.ts:33` | the push is refused as an unknown source (a worded 404) |
+| `pushTokenFor` + `INDEX_PUSH_TOKEN_<APP>` | `index-worker/src/env.ts:187` | a worded 503 naming the secret. ⚠️ A **different value** per instance: the index resolves the caller FROM the value |
+| `SOURCE_FOR_CATALOG` + `VALID_SOURCE_PARAMS` | `index-worker/src/search-route.ts:47,111` | rows land but no scoped search can ask for them |
+| `MACHINE_APPS` + `INDEX_READ_TOKEN_<APP>` | `index-worker/src/env.ts:169` | ⚠️ **only if** this instance should use the free-details ladder. `MACHINE_VISIBILITY` stays default-deny either way — being an APP is not being a SHELF |
+| auth CORS origin | `auth-worker/src/env.ts:487` | the new site's calls are refused by the preflight, which reaches the page as a **network error** nobody debugs as CORS |
+| the visibility vocabulary ×2 files, 4 places each | `auth-worker/src/visibility.ts` **and** `packages/estate-auth/src/visibility.ts` | 🟡 **silent** — the catalog can never be granted; `/seen` never answers it |
+| `RESERVED_SUBDOMAINS` | `auth-worker/src/catalog-names.ts:109` | the next person to ask for that subdomain is told it is free |
+| the site's theme | `apps/web/index.html:18` | it gets `DEFAULT_THEME` — a real answer, not a bug |
+
+❓ **`READ_ORIGINS` is EMITTED, NEVER APPLIED.** The index Worker's browser
+origin allowlist decides whether a browser on the new host may search the
+estate index at all. Widening it is **access-increasing**, so the run prints
+the exact line for the owner to paste and says to read the LIVE value first —
+pasting a stale template would silently **revoke** an origin added since.
+(Measured: that list gained `padhard.heygabi.ai` on 2026-09-06, hours after the
+template was written.)
+
+✅ **What the registry row makes automatic, so nobody hand-edits it:** the apex
+search labels, the series/universes holding lines and the front-door card. They
+read `/api/catalogs`; a hand-added label would be a second copy of a fact that
+has a home. Allow up to **10 minutes** (the registry's cache). ⚠️ `/admin`'s
+`CATALOGS` array stays hand-kept on purpose — it is a permission surface and
+must not fail closed on a cache miss. ⚠️ `/status` will show the new catalog's
+age and deliberately NOT grade it: a threshold is a measured push cadence, and
+guessing one is what that page is written against.
 
 ⚠️ **A plain run STOPS when it finds an artifact that already exists**, and that
 is not pedantry: a D1 called `library-catalog-3rd` that this run did not create
