@@ -881,7 +881,7 @@ verbs) · `42a0024` (`/api/health`) · `b378a27` (the second cron, both blocks) 
 #### ➡️ This pattern was reused the next day, and it has its own file
 
 **2026-09-06:** the two STANDING AUDITS — `scripts/check-cover-health.mjs` and
-`scripts/audit-series-aggregates.mjs`, rows **#4** and **#5** of the platform
+`scripts/audit-series-aggregates.mjs`, **#5** and **#6** of the platform
 inventory's ranked list — became routes and a daily cron on the same shape: a
 runner that never throws, an `empty-read` guard, a run row, an additive
 `/api/health` key, a `manageUsers` admin verb, and a toml-reading cron test.

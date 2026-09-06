@@ -41,12 +41,14 @@
 Owner ask 2026-09-05, verbatim: *"then do the scripts you think are the best for
 routes"*. The ranked list is
 [`catalog-platform/docs/info/scripts-inventory-2026-09-05.md`](../../../catalog-platform/docs/info/scripts-inventory-2026-09-05.md)
-§7; this section is rows **#4** and **#5** of it.
+§7; this section is **#5** and the newly-added **#6** of it. ⚠️ The brief said
+"#4 and #5" — off by one: #4 was `estate-probes`, already built, and the series
+alarm was not in §7 at all (it sat in §3.1). It was added there with this work.
 
-| | Script | Now also |
+| §7 # | Script | Now also |
 |---|---|---|
-| #4 | `scripts/check-cover-health.mjs` | `apps/worker/src/lib/cover-health-run.ts`, `detail.coverHealth` on `/api/health` |
-| #5 | `scripts/audit-series-aggregates.mjs` | `apps/worker/src/lib/series-aggregates-run.ts`, `detail.seriesAggregates` |
+| #5 | `scripts/check-cover-health.mjs` | `apps/worker/src/lib/cover-health-run.ts`, `detail.coverHealth` on `/api/health` |
+| #6 | `scripts/audit-series-aggregates.mjs` | `apps/worker/src/lib/series-aggregates-run.ts`, `detail.seriesAggregates` |
 
 ⚠️ **BOTH SCRIPTS STAY. Neither is retired, and neither should be.** For the
 cover audit the SCRIPT is the more capable instrument — it has **no per-tick

@@ -40,18 +40,23 @@ The owner asked on 2026-09-05: *"Should we make all the scripts routes? Or at
 least the ones we use a lot"* → *"then do the scripts you think are the best for
 routes"*. The answer to the first half is **no** —
 [`catalog-platform/docs/info/scripts-inventory-2026-09-05.md`](../../../catalog-platform/docs/info/scripts-inventory-2026-09-05.md)
-measured **186 scripts, of which 13 should move**. These are rows **#4** and
-**#5** of its ranked list.
+measured **186 scripts, of which 13 should move**.
+
+⚠️ **The numbering, said accurately:** §7's ranked list carried
+`check-cover-health.mjs` at **#5**, and `audit-series-aggregates.mjs` was **not
+in §7 at all** — it sat in §3.1 classed `ROUTE+CRON`. It was added to §7 as **#6**
+when this work landed. The brief that commissioned this called them #4 and #5;
+that was off by one and is recorded here rather than carried forward.
 
 They earn it for one reason each, and both reasons are about a CLOCK rather than
 about a route:
 
-| # | Script | The inventory's words |
+| §7 # | Script | The inventory's words |
 |---|---|---|
-| 4 | `check-cover-health.mjs` | *"pure HTTP + D1 read, zero disk, and **a report nobody remembers to run is a report that never runs**"* |
-| 5 | `audit-series-aggregates.mjs` | *"**a standing alarm with no clock is the exact failure this ask is about**"* |
+| 5 | `check-cover-health.mjs` | *"pure HTTP + D1 read, zero disk, and **a report nobody remembers to run is a report that never runs**"* |
+| 6 | `audit-series-aggregates.mjs` | *"**a standing alarm with no clock is the exact failure this ask is about**"* |
 
-⚠️ **#5 is the sharper of the two.** That file's own header calls it *"the
+⚠️ **The series alarm is the sharper of the two.** That file's own header calls it *"the
 standing alarm"* for tier 3 of the bare-series-name rule. Nothing ran it. Nothing
 noticed that nothing ran it. And because the set it watches has been EMPTY in
 production since the 2026-08-13 cleanup, an alarm that never fired and an alarm
