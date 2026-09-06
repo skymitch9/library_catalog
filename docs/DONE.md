@@ -108,6 +108,13 @@ Fantasy LitRPG Adventure (Battle Mage Farmer, Book 1)"*, `matched_via` `exact`,
 `via_alias` *"Domestication - A Fantasy LitRPG Adventure"*, not stale; all 9
 rungs live.
 
+⚠️ **The 10 rungs main marked stale are the EBOOK PRUNE's fallout, not a
+regression** — measured after the run rather than assumed: *Arcane Pathfinder*
+×4, *The Last Horizon* ×3, *Board & Conquest*, *Chance Encounter*, *Legion* ×1
+each, and **all five series now have 0 `work` rows on main**. They were among
+the 86 works ebook phase 5 deleted earlier the same evening (`work` 497 → 411),
+so a rung with no work left to map it is exactly what should go stale.
+
 ⚠️ padhard's 9 fold-only series (*Dungeon Crawler Carl*, *He Who Fights with
 Monsters*, *Heavenly Bodies*, *Into Darkness*, *Song of the Last Kingdom*, *The
 Ernest Cunningham Mysteries*, *The Lightlark Saga*, *The Wicked Years*,
