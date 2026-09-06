@@ -36,6 +36,78 @@
 > simply that it is a CROSS-REPO queue. Do not duplicate it here.
 
 
+## ☑ BUILT + MIGRATED + DEPLOYED TO BOTH 2026-09-06 — the two STANDING AUDITS became routes + a daily cron — ☐ 3 things NOT yet verified (agent W6-CRON-LIBRARY)
+
+Owner ask 2026-09-05, verbatim: *"then do the scripts you think are the best for
+routes"*. The ranked list is
+[`catalog-platform/docs/info/scripts-inventory-2026-09-05.md`](../../../catalog-platform/docs/info/scripts-inventory-2026-09-05.md)
+§7; this section is rows **#4** and **#5** of it.
+
+| | Script | Now also |
+|---|---|---|
+| #4 | `scripts/check-cover-health.mjs` | `apps/worker/src/lib/cover-health-run.ts`, `detail.coverHealth` on `/api/health` |
+| #5 | `scripts/audit-series-aggregates.mjs` | `apps/worker/src/lib/series-aggregates-run.ts`, `detail.seriesAggregates` |
+
+⚠️ **BOTH SCRIPTS STAY. Neither is retired, and neither should be.** For the
+cover audit the SCRIPT is the more capable instrument — it has **no per-tick
+cap**, while the cron probes a rotating 250-URL window a night. The series alarm
+stays as the *attended* form you run at the end of a scanning session instead of
+waiting for 02:47. What they no longer do is keep their own copy of a rule: both
+now import from `packages/core/src/audits.ts`, and
+`packages/core/test/audits.test.ts` keeps their pre-conversion logic **verbatim
+as an oracle** and compares the printed BYTES.
+
+⚠️ `check-cover-health.mjs` runs under **tsx** now — use
+`npm run check:cover-health`, not `node scripts/...`.
+
+🔴 **Neither audit writes anything, to any catalog table, ever.** A finding is a
+QUESTION for a person. This file's own padhard 356 *Evocation* row is the reason
+in one line: *a dead URL may be an outage, and blanking it loses where the cover
+came from*.
+
+**Shipped, measured 2026-09-06:** migration `0480_audit_run.sql` applied to
+**both** instances · one shared cron `"47 9 * * *"` on **both** `[triggers]`
+blocks · admin `POST/GET /api/admin/audits/{cover-health,series-aggregates}`
+· additive `/api/health` keys, nothing removed · 2,697 → **2,816 tests**, typecheck
+green · deployed to both instances.
+
+**Facts:** [`info/audit-routes.md`](info/audit-routes.md) (the why) ·
+[`access/audits.md`](access/audits.md) (the how, incl. 🔴 the rollback — delete
+the cron string from both blocks).
+
+### ☐ What is NOT verified — three things, and how to close each
+
+1. 🔴 **NO CRON TICK HAS BEEN OBSERVED.** The first fires at **09:47 UTC**. The
+   trigger is CLAIMED until an `audit_run` row exists with `trigger = 'cron'` on
+   **each** instance — the same rule the details and audiobook crons carry, and
+   it is not a formality: `wrangler deploy` happily reports triggers that never
+   fire. Close it the morning after:
+
+   ```bash
+   curl -s https://library.heygabi.ai/api/health | grep -o '"coverHealth":{[^}]*}'
+   curl -s https://padhard.heygabi.ai/api/health | grep -o '"coverHealth":{[^}]*}'
+   ```
+
+   A `lastRunAt` near `09:47` with `"trigger":"cron"` is the proof.
+2. ☐ **The admin routes have not been exercised end to end.** They sit behind
+   `requireAuth` and need a Firebase bearer the building session did not have.
+   The gate, the four refusal causes and the response bodies are pinned by
+   `apps/worker/src/routes/audits.test.ts`; what is unmeasured is a real
+   signed-in call. — [`access/audits.md`](access/audits.md) §2 has the curl.
+3. ☐ **No cover URL has been probed from a Worker.** Every test stubs `fetch`.
+   Same code as the script, different egress — so the first real tick is also
+   the first evidence that a Worker can reach the cover origins at all.
+
+### ⚠️ The first tick may look alarming on padhard, and probably is not
+
+Her rows are the ones the script could not audit **at all** until 2026-08-22
+(`--friend` switched the fetch base and not the database), and she had **40
+blank covers** on 2026-08-23. So the first `findings` there is likely a real
+backlog rather than a regression — and 🔴 **`unreachable` is not `broken`**:
+re-run before touching a single URL.
+
+---
+
 ## ☐ OWNER ASKS 2026-09-05 16:37 Phoenix — the THREE remainders (agent W6-LIBDATA)
 
 Owner, verbatim: *"We need to fix all the series that have warnings too, list

@@ -878,6 +878,23 @@ rendering) · `a37153b` (the run wrapper + the four guards) · `ce281a9` (the ad
 verbs) · `42a0024` (`/api/health`) · `b378a27` (the second cron, both blocks) ·
 `1d4a80e` (the on-add hook) · `235010f` (shadow, both instances).
 
+#### ➡️ This pattern was reused the next day, and it has its own file
+
+**2026-09-06:** the two STANDING AUDITS — `scripts/check-cover-health.mjs` and
+`scripts/audit-series-aggregates.mjs`, rows **#4** and **#5** of the platform
+inventory's ranked list — became routes and a daily cron on the same shape: a
+runner that never throws, an `empty-read` guard, a run row, an additive
+`/api/health` key, a `manageUsers` admin verb, and a toml-reading cron test.
+
+⚠️ **They are filed separately, in [`audit-routes.md`](audit-routes.md), not
+here** — one fact, one home. Neither audit has anything to do with audiobooks,
+and a reader looking for *"why does `detail.coverHealth` say `failed`"* must not
+have to know the pattern was born in an audiobook section. What belongs here is
+the pointer, and the three ways they DIFFER from the sweep above: they **write
+nothing, ever**, so there is **no mode ladder** and **no `dryRun`**, and their
+run table (`audit_run`, migration 0480) is **generic** rather than sweep-shaped.
+Operating them: [`../access/audits.md`](../access/audits.md).
+
 ---
 
 ## 5. Why the series list filters in the browser
