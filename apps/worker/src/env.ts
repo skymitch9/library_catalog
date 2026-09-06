@@ -300,6 +300,31 @@ export interface Env {
   BILLING_POLICY?: string;
 
   /**
+   * The audiobook-association sweep's ladder — `off | shadow | enforce`
+   * (`lib/audiobook-sweep-run.ts`; design §8).
+   *
+   *   off      no fetch, no run row, nothing costs
+   *   shadow   the whole plan is computed and RECORDED, and nothing is written
+   *            — STEP 11 of the audiobook pipeline is still doing the writing
+   *   enforce  the cron writes, and the on-add hook goes live
+   *
+   * ⚠️ **This one fails CLOSED, unlike `BILLING_POLICY` immediately above.**
+   * Unset, misspelt or unrecognised resolves to `off`, because what sits on the
+   * other side of this switch marks holdings STALE across a whole catalog. The
+   * billing switch fails open on purpose — its worst case is spending 4¢ — and
+   * that reasoning does not transfer to a switch whose worst case is a page
+   * telling the owner he does not own books that are in the house.
+   *
+   * ⚠️ Ships `"shadow"` on BOTH instances, and the flip to `enforce` is its own
+   * deliberate change gated on ≥42 shadow ticks with zero divergences against
+   * the script (§8 phase 2 → 3). Never as a side effect of an unrelated deploy.
+   * `/api/health` reports the RESOLVED value under
+   * `detail.audiobookSweep.mode`, so "I set it to shadow" and "it is on shadow"
+   * stay two claims with one curl settling the second.
+   */
+  AUDIOBOOK_SWEEP_MODE?: string;
+
+  /**
    * Per-instance posture lever: the role the estate auto-grant hands out on
    * THIS instance, overriding LIBRARY_POSTURE's `member`. Built for the
    * second instance (friend-ingest-design.md §3 — its wrangler env can say

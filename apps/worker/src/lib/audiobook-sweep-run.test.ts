@@ -1,0 +1,412 @@
+/**
+ * The audiobook sweep's guards — §6.2 plus the one phase 0 measured.
+ *
+ * ⚠️ **Every test here is about a run that must NOT write.** The sweep's stale
+ * phase marks every holding it did not reproduce, so each of these is one step
+ * away from a catalog telling the owner he does not own books that are in the
+ * house — on both instances, with nobody watching. They are asserted on the
+ * WRITE, not on the return value alone: a function that returns
+ * `state: 'failed'` after having already batched is a function that failed
+ * safely on paper only.
+ */
+
+import assert from 'node:assert/strict';
+import { afterEach, describe, it } from 'node:test';
+import {
+  AUDIOBOOK_CSV_URL,
+  AUDIOBOOK_SWEEP_CRON,
+  MASS_DRIFT_CAP_PERCENT,
+  audiobookSweepMode,
+  runAudiobookSweep,
+} from './audiobook-sweep-run.js';
+import type { Env } from '../env.js';
+
+// ---------------------------------------------------------------------------
+// A fake catalog: one CSV, one D1
+// ---------------------------------------------------------------------------
+
+const HEADER =
+  'title,series,series_index_display,series_index_sort,author,narrator,year,genre,' +
+  'duration_hhmm,cover_href,companion_files,desc,library_work_id,library_formats,universe,series_gap';
+
+function csv(rows: number): string {
+  const lines = [HEADER];
+  for (let i = 1; i <= rows; i += 1) {
+    lines.push(
+      `The Primal Hunter ${i},The Primal Hunter,${i},${i},Zogarth,Travis Baldree,2021,LitRPG,` +
+        `12:00,covers/Zogarth/ph${i}.jpg,,A book,,,,`,
+    );
+  }
+  return lines.join('\n');
+}
+
+interface FakeState {
+  /** Every statement the fake was asked to run or batch. */
+  written: string[];
+  batches: number;
+  runRows: { id: number; state: string; detail: unknown }[];
+  works: { id: number; title: string; authors: string }[];
+  snapshot: { etag: string | null; rowCount: number } | null;
+}
+
+function fakeEnv(over: Partial<FakeState> = {}, envOver: Partial<Env> = {}) {
+  const state: FakeState = {
+    written: [],
+    batches: 0,
+    runRows: [],
+    works: [{ id: 1, title: 'The Primal Hunter 1', authors: 'Zogarth' }],
+    snapshot: null,
+    ...over,
+  };
+
+  const stmt = (sql: string) => {
+    let binds: unknown[] = [];
+    const api = {
+      bind(...args: unknown[]) {
+        binds = args;
+        return api;
+      },
+      async first() {
+        if (/FROM audiobook_snapshot/.test(sql)) {
+          return state.snapshot
+            ? {
+                etag: state.snapshot.etag,
+                fetched_at: '2026-09-05 00:00:00',
+                row_count: state.snapshot.rowCount,
+              }
+            : null;
+        }
+        if (/INSERT INTO audiobook_sweep_run/.test(sql)) {
+          const id = state.runRows.length + 1;
+          state.runRows.push({ id, state: 'running', detail: null });
+          return { id };
+        }
+        return null;
+      },
+      async run() {
+        if (/UPDATE audiobook_sweep_run/.test(sql)) {
+          const row = state.runRows.find((r) => r.id === binds[2]);
+          if (row) {
+            row.state = String(binds[0]);
+            row.detail = JSON.parse(String(binds[1]));
+          }
+          return { meta: { changes: 1 } };
+        }
+        if (/INSERT INTO audiobook_snapshot/.test(sql)) {
+          state.snapshot = { etag: binds[0] as string | null, rowCount: Number(binds[1]) };
+          return { meta: { changes: 1 } };
+        }
+        state.written.push(sql);
+        return { meta: { changes: 1 } };
+      },
+      async all() {
+        if (/FROM work ORDER BY id/.test(sql)) {
+          return {
+            results: state.works.map((w) => ({
+              id: w.id,
+              title: w.title,
+              authors: w.authors,
+              series: 'The Primal Hunter',
+              series_index_sort: 1,
+            })),
+          };
+        }
+        return { results: [] };
+      },
+    };
+    return api;
+  };
+
+  const env = {
+    AUDIOBOOK_SWEEP_MODE: 'enforce',
+    DB: {
+      prepare: (sql: string) => stmt(sql),
+      async batch(statements: unknown[]) {
+        state.batches += 1;
+        state.written.push(`BATCH(${statements.length})`);
+        return statements.map(() => ({ success: true }));
+      },
+    },
+    ...envOver,
+  } as unknown as Env;
+
+  return { env, state };
+}
+
+/** Swap `fetch` for one canned answer, and put it back afterwards. */
+const realFetch = globalThis.fetch;
+function stubFetch(answer: () => Response | Promise<Response> | never) {
+  globalThis.fetch = (async () => answer()) as typeof fetch;
+}
+afterEach(() => {
+  globalThis.fetch = realFetch;
+});
+
+function csvResponse(body: string, init: ResponseInit = {}): Response {
+  return new Response(body, {
+    status: 200,
+    headers: { 'content-type': 'text/csv', etag: '"abc"' },
+    ...init,
+  });
+}
+
+/** Did anything reach the holding tables? */
+function wroteHoldings(state: FakeState): boolean {
+  return state.batches > 0 || state.written.some((s) => /audiobook_(edition|series)_holding/.test(s));
+}
+
+// ---------------------------------------------------------------------------
+
+describe('the mode ladder fails CLOSED', () => {
+  it('unset, blank, misspelt and unknown all resolve to off', () => {
+    for (const raw of [undefined, '', '  ', 'shadowy', 'ENFORCED', 'on', 'true', 'yes']) {
+      assert.equal(
+        audiobookSweepMode({ AUDIOBOOK_SWEEP_MODE: raw }),
+        'off',
+        `"${raw}" must not switch a stale sweep on`,
+      );
+    }
+  });
+
+  it('reads the two live values, case- and space-insensitively', () => {
+    assert.equal(audiobookSweepMode({ AUDIOBOOK_SWEEP_MODE: 'shadow' }), 'shadow');
+    assert.equal(audiobookSweepMode({ AUDIOBOOK_SWEEP_MODE: ' Enforce ' }), 'enforce');
+  });
+
+  it('mode off costs nothing — no fetch, no run row, no write', async () => {
+    let fetched = false;
+    stubFetch(() => {
+      fetched = true;
+      return csvResponse(csv(10));
+    });
+    const { env, state } = fakeEnv({}, { AUDIOBOOK_SWEEP_MODE: 'off' });
+    const result = await runAudiobookSweep(env, { trigger: 'cron' });
+    assert.equal(result.state, 'skipped');
+    assert.equal(result.detail, 'mode off');
+    assert.equal(result.runId, null);
+    assert.equal(fetched, false);
+    assert.equal(wroteHoldings(state), false);
+  });
+});
+
+describe('§6.2 guard 1 — zero rows is a failure, not an empty catalog', () => {
+  it('a header-only body fails the run and writes nothing', async () => {
+    stubFetch(() => csvResponse(HEADER));
+    const { env, state } = fakeEnv();
+    const result = await runAudiobookSweep(env, { trigger: 'cron' });
+    assert.equal(result.state, 'failed');
+    assert.equal(result.detail, 'empty snapshot');
+    assert.equal(wroteHoldings(state), false);
+    assert.equal(state.runRows[0]!.state, 'failed');
+  });
+
+  it('an empty body fails the same way', async () => {
+    stubFetch(() => csvResponse(''));
+    const { env, state } = fakeEnv();
+    const result = await runAudiobookSweep(env, { trigger: 'cron' });
+    assert.equal(result.state, 'failed');
+    assert.equal(wroteHoldings(state), false);
+  });
+
+  it('🔴 the snapshot is NOT updated by a refused fetch', async () => {
+    // The baseline-poisoning bug: a snapshot written from a broken read makes
+    // the NEXT tick compare against the broken number, find no drift, and sail
+    // through. Guard 2 would destroy itself on first use.
+    stubFetch(() => csvResponse(HEADER));
+    const { env, state } = fakeEnv({ snapshot: { etag: '"old"', rowCount: 1088 } });
+    await runAudiobookSweep(env, { trigger: 'cron' });
+    assert.deepEqual(state.snapshot, { etag: '"old"', rowCount: 1088 });
+  });
+});
+
+describe('§6.2 guard 2 — mass drift', () => {
+  it(`a drop of more than ${MASS_DRIFT_CAP_PERCENT}% fails with BOTH numbers`, async () => {
+    stubFetch(() => csvResponse(csv(900)));
+    const { env, state } = fakeEnv({ snapshot: { etag: '"old"', rowCount: 1000 } });
+    const result = await runAudiobookSweep(env, { trigger: 'cron' });
+    assert.equal(result.state, 'failed');
+    assert.match(result.detail ?? '', /^drift: 900 rows against 1000 last time/);
+    assert.equal(wroteHoldings(state), false);
+  });
+
+  it('a drop INSIDE the cap is news, not a failure', async () => {
+    // 990 of 1000 is 1% — a book removed from the sibling catalog, which is a
+    // thing that happens and must not stop the sweep.
+    stubFetch(() => csvResponse(csv(990)));
+    const { env } = fakeEnv({ snapshot: { etag: '"old"', rowCount: 1000 } });
+    const result = await runAudiobookSweep(env, { trigger: 'cron' });
+    assert.notEqual(result.state, 'failed');
+  });
+
+  it('GROWTH is never drift', async () => {
+    stubFetch(() => csvResponse(csv(50)));
+    const { env } = fakeEnv({ snapshot: { etag: '"old"', rowCount: 10 } });
+    const result = await runAudiobookSweep(env, { trigger: 'cron' });
+    assert.notEqual(result.state, 'failed');
+  });
+
+  it('the first ever run has no baseline and is not refused for lacking one', async () => {
+    stubFetch(() => csvResponse(csv(5)));
+    const { env } = fakeEnv({ snapshot: null });
+    const result = await runAudiobookSweep(env, { trigger: 'cron' });
+    assert.notEqual(result.state, 'failed');
+  });
+});
+
+describe('the fourth guard — a zero-WORKS read is a refused run', () => {
+  it('reads zero works → failed: empty-read, nothing written', async () => {
+    // Measured in phase 0: one `--remote` run returned 0 works and EXITED 0.
+    // In a Worker the same empty read reaches the stale sweep with nothing to
+    // reproduce — guard 1's disaster arriving through the other door.
+    stubFetch(() => csvResponse(csv(50)));
+    const { env, state } = fakeEnv({ works: [] });
+    const result = await runAudiobookSweep(env, { trigger: 'cron' });
+    assert.equal(result.state, 'failed');
+    assert.equal(result.detail, 'empty-read');
+    assert.equal(wroteHoldings(state), false);
+  });
+});
+
+describe('the conditional GET', () => {
+  it('a 304 is `skipped: unchanged` and writes nothing', async () => {
+    stubFetch(() => new Response(null, { status: 304 }));
+    const { env, state } = fakeEnv({ snapshot: { etag: '"abc"', rowCount: 1088 } });
+    const result = await runAudiobookSweep(env, { trigger: 'cron' });
+    assert.equal(result.state, 'skipped');
+    assert.equal(result.detail, 'unchanged');
+    assert.equal(wroteHoldings(state), false);
+  });
+
+  it('sends If-None-Match when a snapshot etag exists, and not when it does not', async () => {
+    const seen: (HeadersInit | undefined)[] = [];
+    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+      seen.push(init?.headers);
+      return new Response(null, { status: 304 });
+    }) as typeof fetch;
+
+    const withEtag = fakeEnv({ snapshot: { etag: '"abc"', rowCount: 10 } });
+    await runAudiobookSweep(withEtag.env, { trigger: 'cron' });
+    const without = fakeEnv({ snapshot: null });
+    await runAudiobookSweep(without.env, { trigger: 'cron' });
+
+    assert.deepEqual(seen[0], { 'If-None-Match': '"abc"' });
+    assert.deepEqual(seen[1], {});
+  });
+
+  it('the URL is the published CSV, never the index Worker', () => {
+    // §3.1: the index has no narrator and no series_index_display, by POLICY.
+    assert.equal(AUDIOBOOK_CSV_URL, 'https://audiobooks.heygabi.ai/catalog.csv');
+  });
+});
+
+describe('it never rejects', () => {
+  it('a non-2xx is a RECORDED failure, not a thrown exception', async () => {
+    stubFetch(() => new Response('<html>origin down</html>', { status: 502 }));
+    const { env, state } = fakeEnv();
+    const result = await runAudiobookSweep(env, { trigger: 'cron' });
+    assert.equal(result.state, 'failed');
+    assert.equal(result.detail, 'origin answered 502');
+    assert.equal(state.runRows[0]!.state, 'failed');
+    assert.equal(wroteHoldings(state), false);
+  });
+
+  it('a fetch that throws is folded into the result', async () => {
+    globalThis.fetch = (async () => {
+      throw new Error('network is unreachable');
+    }) as typeof fetch;
+    const { env } = fakeEnv();
+    const result = await runAudiobookSweep(env, { trigger: 'cron' });
+    assert.equal(result.state, 'failed');
+    assert.match(result.detail ?? '', /fetch failed: network is unreachable/);
+  });
+
+  it('🔴 a database that has gone away does not reject either', async () => {
+    stubFetch(() => csvResponse(csv(10)));
+    const env = {
+      AUDIOBOOK_SWEEP_MODE: 'enforce',
+      DB: {
+        prepare() {
+          throw new Error('D1_ERROR: no such table');
+        },
+        batch() {
+          throw new Error('D1_ERROR');
+        },
+      },
+    } as unknown as Env;
+    const result = await runAudiobookSweep(env, { trigger: 'cron' });
+    assert.equal(result.state, 'failed');
+    assert.ok(result.detail);
+  });
+
+  it('every failure path settles rather than rejecting — swept together', async () => {
+    // The guarantee `scheduled()` relies on, asserted as one property over all
+    // four shapes of bad news rather than trusted per branch.
+    const answers: Array<() => Response> = [
+      () => csvResponse(HEADER),
+      () => new Response(null, { status: 500 }),
+      () => new Response(null, { status: 304 }),
+      () => csvResponse(csv(3)),
+    ];
+    for (const answer of answers) {
+      stubFetch(answer);
+      const { env } = fakeEnv({ snapshot: { etag: '"abc"', rowCount: 1000 } });
+      await assert.doesNotReject(() => runAudiobookSweep(env, { trigger: 'cron' }));
+    }
+  });
+});
+
+describe('shadow mode', () => {
+  it('computes the whole plan and writes NOTHING', async () => {
+    stubFetch(() => csvResponse(csv(20)));
+    const { env, state } = fakeEnv({}, { AUDIOBOOK_SWEEP_MODE: 'shadow' });
+    const result = await runAudiobookSweep(env, { trigger: 'cron' });
+    assert.equal(result.state, 'shadow');
+    assert.equal(wroteHoldings(state), false);
+    // The plan is RECORDED — that is what makes a shadow tick evidence for the
+    // §8 phase-2 gate rather than a no-op.
+    assert.ok(result.plan);
+    assert.equal(result.plan!.audiobookCount, 20);
+    assert.equal(result.plan!.workCount, 1);
+    assert.ok(result.plan!.editionUpserts >= 1, 'the plan must have found the match');
+    const recorded = state.runRows[0]!.detail as { plan: { editionUpserts: number } };
+    assert.equal(recorded.plan.editionUpserts, result.plan!.editionUpserts);
+  });
+
+  it('a dryRun in ENFORCE mode also writes nothing', async () => {
+    stubFetch(() => csvResponse(csv(20)));
+    const { env, state } = fakeEnv({}, { AUDIOBOOK_SWEEP_MODE: 'enforce' });
+    const result = await runAudiobookSweep(env, { trigger: 'admin', dryRun: true });
+    assert.equal(result.state, 'shadow');
+    assert.match(result.detail ?? '', /dry run/);
+    assert.equal(wroteHoldings(state), false);
+  });
+
+  it('⚠️ the recorded plan carries COUNTS, never a title or a narrator', async () => {
+    // `detail_json` is read back by `/api/health`, which is unauthenticated on
+    // purpose. A shape carrying edition titles would be one careless spread
+    // away from publishing what the household listens to.
+    stubFetch(() => csvResponse(csv(20)));
+    const { env, state } = fakeEnv({}, { AUDIOBOOK_SWEEP_MODE: 'shadow' });
+    await runAudiobookSweep(env, { trigger: 'cron' });
+    const json = JSON.stringify(state.runRows[0]!.detail);
+    assert.ok(!/Travis Baldree/.test(json), 'a narrator reached the run row');
+    assert.ok(!/The Primal Hunter 1/.test(json), 'an edition title reached the run row');
+  });
+});
+
+describe('enforce mode', () => {
+  it('applies the plan in ONE batch', async () => {
+    stubFetch(() => csvResponse(csv(20)));
+    const { env, state } = fakeEnv({}, { AUDIOBOOK_SWEEP_MODE: 'enforce' });
+    const result = await runAudiobookSweep(env, { trigger: 'cron' });
+    assert.equal(result.state, 'applied');
+    assert.equal(state.batches, 1);
+    assert.ok((result.written?.statements ?? 0) > 0);
+  });
+});
+
+describe('the cron string', () => {
+  it('is minute 23 and four-hourly — neither :00 nor the details sweep’s :07', () => {
+    assert.equal(AUDIOBOOK_SWEEP_CRON, '23 */4 * * *');
+  });
+});
