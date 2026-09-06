@@ -18,6 +18,141 @@
 > were extracted from this same history.
 
 
+## ✅ 2026-09-05 — `import-shop-orders.mjs`: the SHOP is not the PUBLISHER — owner settled it, importer fixed, both instances swept (0 rows, and 0 is the result)
+
+**Moved here whole from [`TODO.md`](TODO.md) by agent W6-SHOP — cut and paste,
+nothing summarised.** The owner's decision that closes it, taken 2026-09-05, is
+**both** options the item posed, not a choice between them:
+
+* **`edition.publisher` is NULL** unless the source row carries a real publisher
+  (`item.publisher`); the ISBN ladder fills it later. ⚠️ NULL, never `''` — an
+  empty string is invisible to every `publisher IS NULL` gap query the ladder
+  runs on.
+* **the shop goes to `copy.vendor`**, where a shop belongs and where the file's
+  own header already said it goes. That write was already correct and is
+  unchanged.
+
+Durable rule and its traps: [`info/crowdfunding-and-accessories.md`](info/crowdfunding-and-accessories.md) **§9**
+(Last verified 2026-09-05).
+
+### Commits
+
+| Commit | What |
+|---|---|
+| `8de3b9a` | the importer fix + `scripts/test/shop-orders.test.mjs` (13 tests) |
+| `0b1f34e` | `scripts/fix-shop-publisher-2026-09-05.mjs` — the data sweep |
+| `12f6b42` | `info/crowdfunding-and-accessories.md` §9 + the index row |
+
+### ⚠️ The read-back predicate had to change with it, and that was the real work
+
+`INSERT INTO edition (…, publisher, …) VALUES (…, scan.vendor, …)` was one line.
+Line 149 — `SELECT id, work_id FROM edition WHERE source = 'manual' AND
+publisher = <vendor>` — was the harder half: it only located the importer's own
+new rows **because of** the bug, the shop name in `publisher` doubling as a
+batch marker. With `publisher` correctly NULL that predicate matches every
+publisher-less manual edition in the catalog — **97** of them on main, measured
+2026-09-05 — and would hand each copy an arbitrary `edition_id`. It now matches
+on **work + format + `edition_name`**, newest id winning (`matchEditionIds`).
+
+Also found and fixed in passing: **`--friend` was parsed and then silently
+dropped** — every query and write in this importer went to MAIN regardless. A
+`--friend` dry run now prints `padhard` and genuinely reads the second D1.
+
+### The data sweep — measured, ran, and found nothing, on both
+
+| | editions whose `publisher` IS a known shop name | `source='manual'` | changed |
+|---|---|---|---|
+| main (`library-catalog`) | **1** — ed#511, and it is **CORRECT** | **0** | **0** |
+| padhard (`library-catalog-2nd`) | **0** | **0** | **0** |
+
+Dry run then `--commit`, both instances, 2026-09-05. `change_log` holds **0**
+rows for batch `fix-2026-09-05-shop-publisher` on both, because nothing changed.
+The zeros are honest: `fix-retailer-publishers-2026-09-02.mjs` had already
+repaired the seven rows the importer made, and **padhard has never run the shop
+importer at all** (zero copies with any vendor recorded). The script is kept
+because the importer can run again on either instance.
+
+🔴 **The single main match is edition #511 "Barnes and Noble" — and it is
+right.** Barnes & Noble Books (`978-0-7607`) really published *The Children's
+Treasury of Classic Poetry*, as Barnes & Noble Classics (`978-1-5930`) published
+#557's *Huck Finn*. Both are `source='openlibrary'`, so the `source='manual'`
+rule excludes them; both are **also** asserted by name, so a backfill that ever
+restamps one to `manual` stops the run instead of corrupting it. **Exact
+equality, never `LIKE`** — a `LIKE '%Barnes%'` cannot tell the shop from the
+imprint.
+
+🔴 **A bug the script's own guard caught on its first `--friend` run, worth the
+line it is written on:** the protected ids are MAIN's. padhard's edition #511 is
+*Harper Paperbacks* on a different book entirely — separate D1s, separate
+`AUTOINCREMENT` sequences, and **an id means nothing beside the wrong
+database**. The assertion is now main-only and says so.
+
+### ⚠️ Two defects found while measuring — NEITHER fixed, both filed
+
+1. **`scripts/import-illumicrate-percy-jackson.mjs:118` has the same defect**,
+   writing its `VENDOR` constant (`'Illumicrate'`) into `edition.publisher`.
+   Editions **307–311** (works 224–228) carry it today. Three of the five now
+   read `source='openlibrary'`, so a later backfill has been over them and the
+   provenance is no longer clean — that is a second concern with its own review,
+   kept out of this batch for the reason `fix-wandering-inn-volumes-2026-09-02.mjs`
+   first drew the line.
+2. **The seven copies the shop importer created are not linked to their
+   editions.** Copies **109–115** on main all have `edition_id = NULL` even
+   though the importer inserted an edition for each. `matchEditionIds` fixes the
+   mechanism for future runs; it repairs none of these seven. It is also why the
+   sweep joins on `copy.edition_id` and **not** on `work_id`: a work can hold
+   several printings, and a work-level fallback would hand the shop to copies of
+   a printing nobody bought there.
+
+### Verified
+
+`npm run test` — **2546 pass, 0 fail** (13 of them new). Both instances answer
+200 on a work page: <https://library.heygabi.ai/work/229> (*The Wandering Inn* —
+publisher reads **Harper Voyager**, not the shop) and
+<https://library.heygabi.ai/work/386> (the protected B&N Books row, still
+**"Barnes and Noble"** and correct); <https://padhard.heygabi.ai/work/1>.
+
+⚠️ **NOT verified:** no page was read in a signed-in browser — the evidence is
+`curl` status plus production D1 reads, not pixels. The importer's `--commit`
+path has not been exercised against a real order since the fix; only its dry
+run (fixture, both instances) and its unit tests.
+
+The item as it stood in `TODO.md`, moved whole:
+
+---
+
+## ❓ OWNER DECISION — `import-shop-orders.mjs`: NULL publisher, or `copy.vendor`? (2026-09-02)
+
+**The two options, and picking is the whole item:** (a) leave
+`edition.publisher` NULL on an imported shop order and let the ISBN ladder fill
+it, or (b) record the shop in `copy.vendor`, where a shop belongs and where the
+file's own header already says it goes.
+
+✅ **Re-measured 2026-09-05 (AUD-library): the defect is still live in the
+code** — `scripts/import-shop-orders.mjs:141` still writes the shop name into
+`INSERT INTO edition (…, publisher, …)`, and line 149 still reads rows back by
+`publisher = <vendor>`. So the next run still re-creates it, exactly as below.
+
+The data is corrected (see [`DONE.md`](DONE.md)); **the importer is not**, so its
+next run re-creates the defect on every row it adds. It writes the shop name into
+a field that answers a different question — it is already careful this way about
+`format` (`suggestFormat`, never the retailer's marketing word) and about
+`edition_name` (the retailer's wording preserved deliberately), so this is one
+field out of step with the file's own standard.
+
+**The fix is a decision, not a line.** A shop order genuinely does not know the
+publisher, and the honest options are: (a) leave `publisher` NULL and let the
+ISBN ladder fill it, or (b) record the shop where a shop belongs — `copy.vendor`
+already exists and the file's own header says so. ⚠️ Do **not** fix it by
+looking the publisher up inside the importer: that would make an import a
+research run, which is the split `docs/info/isbn-ladder.md` keeps.
+
+**Measured 2026-09-02:** 7 of 7 rows the importer created carried the wrong
+value, and 0 of them were caught by any check. **Blast radius if it re-runs:**
+one wrong `publisher` per imported line, silently, in a column nothing revisits.
+
+---
+
 ## ✅ 2026-09-05 — Ebook split PHASE 5 **APPLIED**: 86 works and 123 ebook editions retired from main, `EBOOK_INGEST_TOKEN` unset on BOTH instances
 
 **Moved here whole from [`TODO.md`](TODO.md) by agent W4-EBOOK5-PRUNE at the

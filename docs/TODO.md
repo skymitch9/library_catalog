@@ -1944,35 +1944,59 @@ script reads. It closes with a photograph and the cover UI, or not at all.
 
 ---
 
-## ❓ OWNER DECISION — `import-shop-orders.mjs`: NULL publisher, or `copy.vendor`? (2026-09-02)
+> ✂️ **2026-09-05:** *"❓ OWNER DECISION — `import-shop-orders.mjs`: NULL
+> publisher, or `copy.vendor`?"* moved WHOLE to [`DONE.md`](DONE.md) by W6-SHOP.
+> The owner settled it as **both** halves, not a choice: `edition.publisher` is
+> NULL unless the source row names a real publisher, and the shop goes to
+> `copy.vendor`. Importer fixed (`8de3b9a`), swept on both instances
+> (`0b1f34e` — **0 rows changed on each**, and 0 is the result), rule written up
+> in [`info/crowdfunding-and-accessories.md`](info/crowdfunding-and-accessories.md) §9.
 
-**The two options, and picking is the whole item:** (a) leave
-`edition.publisher` NULL on an imported shop order and let the ISBN ladder fill
-it, or (b) record the shop in `copy.vendor`, where a shop belongs and where the
-file's own header already says it goes.
+---
 
-✅ **Re-measured 2026-09-05 (AUD-library): the defect is still live in the
-code** — `scripts/import-shop-orders.mjs:141` still writes the shop name into
-`INSERT INTO edition (…, publisher, …)`, and line 149 still reads rows back by
-`publisher = <vendor>`. So the next run still re-creates it, exactly as below.
+## ☐ `import-illumicrate-percy-jackson.mjs` writes the SHOP into `edition.publisher` too (found 2026-09-05)
 
-The data is corrected (see [`DONE.md`](DONE.md)); **the importer is not**, so its
-next run re-creates the defect on every row it adds. It writes the shop name into
-a field that answers a different question — it is already careful this way about
-`format` (`suggestFormat`, never the retailer's marketing word) and about
-`edition_name` (the retailer's wording preserved deliberately), so this is one
-field out of step with the file's own standard.
+**The same defect the shop importer just had, in a second importer.**
+`scripts/import-illumicrate-percy-jackson.mjs:118` writes its `VENDOR` constant
+— `'Illumicrate'` — into `INSERT INTO edition (…, publisher, …)`. Illumicrate is
+a subscription box that commissions exclusive printings; it is the **vendor**,
+and the publisher of a Percy Jackson hardcover is Puffin or Disney Hyperion.
 
-**The fix is a decision, not a line.** A shop order genuinely does not know the
-publisher, and the honest options are: (a) leave `publisher` NULL and let the
-ISBN ladder fill it, or (b) record the shop where a shop belongs — `copy.vendor`
-already exists and the file's own header says so. ⚠️ Do **not** fix it by
-looking the publisher up inside the importer: that would make an import a
-research run, which is the split `docs/info/isbn-ladder.md` keeps.
+**Measured 2026-09-05 on production:** editions **307–311** (works **224–228**)
+carry `publisher = 'Illumicrate'`. padhard holds **0**.
 
-**Measured 2026-09-02:** 7 of 7 rows the importer created carried the wrong
-value, and 0 of them were caught by any check. **Blast radius if it re-runs:**
-one wrong `publisher` per imported line, silently, in a column nothing revisits.
+⚠️ **This is NOT a copy of the shop-order fix, and the reason it was left out of
+that batch matters:** three of the five rows now read `source = 'openlibrary'`
+(308, 309 read `manual`; 307, 310, 311 read `openlibrary`) — a later backfill
+has been over them, so "the importer wrote this" is no longer provable from the
+row. Deciding those five needs the same per-row evidence
+`fix-retailer-publishers-2026-09-02.mjs` gathered, not a sweep.
+
+Also note the owner still owes photographs for these exact five works (the
+Illumicrate section above), so the rows will be touched again anyway.
+
+---
+
+## ☐ The seven shop-order copies are not linked to their editions (found 2026-09-05)
+
+**Measured 2026-09-05 on production main:** copies **109–115** (works 229–235,
+`vendor = 'Barnes & Noble'`) all have `edition_id = NULL`, even though
+`import-shop-orders.mjs` inserted editions **322–328** for exactly those seven
+works in the same run. So every one of those books has a copy and a printing
+that do not know about each other.
+
+The **mechanism** is fixed for future runs — `matchEditionIds` (commit
+`8de3b9a`) matches on work + format + `edition_name` instead of the old
+`publisher = <vendor>` predicate. **These seven are not repaired**, and were
+deliberately kept out of the publisher sweep: linking a copy to a printing is a
+different decision from clearing a wrong column, and the sweep joins on
+`copy.edition_id` precisely so it cannot guess. ⚠️ A work-level fallback
+(`copy.work_id = edition.work_id`) is the tempting fix and the wrong one — a
+work can hold several printings.
+
+⚠️ **Not yet established:** *why* they came out NULL. At import time `publisher`
+did hold `'Barnes & Noble'`, so the old lookup should have matched. Worth
+finding out before assuming the new code would not have done the same.
 
 ---
 
