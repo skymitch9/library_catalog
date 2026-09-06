@@ -1,7 +1,16 @@
 # Series pages — formats, alternate printings, audiobooks — Information Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
-> Last verified: **2026-09-03** for the **NEW §4.9** only — migration 0450 was
+> Last verified: **2026-09-05** for the **NEW §4.10** only — every number in it
+> was measured that evening against production `library-catalog` and the live
+> `catalog.csv`: the containment ratios were computed by RUNNING
+> `cleanAudiobookTitle` on the real CSV row, and the 121 → 122 / `fold` →
+> `work_match` change is the diff between two real `--remote` dry runs taken
+> before and after the alias landed. The sweep was then committed on both
+> instances. ⚠️ **NOT verified: anything rendered** — `/work/526` and
+> `/series/Battle Mage Farmer` need a signed-in eye and have not been looked at.
+> ⚠️ Nothing else here was re-checked on 2026-09-05.
+> Last verified before that: **2026-09-03** for the **NEW §4.9** only — migration 0450 was
 > written and applied `--remote` to BOTH D1s that day (`library-catalog` and
 > `library-catalog-2nd`, both ✅), and the counts it quotes were measured against
 > both live databases that afternoon. ⚠️ **NOT verified that day: anything
@@ -528,6 +537,54 @@ that file's own header warns that a rung the arithmetic has stopped calling
 missing beside a caption that still hedges is one screen contradicting itself —
 the inverse holds just as hard. Unhedging the words there is a change to the
 COUNT, not to the wording, and it was not asked for.
+
+---
+
+### 4.10 🔴 A BARE title can be FURTHER from the audiobook than a decorated one — *Battle Mage Farmer*, 2026-09-05
+
+**Owner, 16:37 Phoenix, verbatim:** *"I added battle mage farmer and it didn't
+associate the audiobook right away."*
+
+Two separate things were true, and the obvious fix was only the first of them.
+
+**1. The title carried its own series and volume, against convention.** Work
+526 was added as *"Battle Mage Farmer, Book 1: Domestication"* with
+`series_index_display` `'Book 1'`. This catalog keeps both of those in COLUMNS:
+work 221 is `The Primal Hunter` / series `The Primal Hunter` / display `1`, work
+263 is `Dungeon Crawler Carl` / display `1`. Corrected to the bare title (batch
+`owner-2026-09-05-battle-mage-farmer`, four fields including a `work_key` move —
+`DONE.md` for why that was safe here).
+
+**2. ⚠️ The retitle did NOT make the sweep match, and could not.** Measured
+immediately after it landed: the dry run still listed the work under *"no
+audiobook found"*. `cleanAudiobookTitle` reduces the CSV's *"Domestication - A
+Fantasy LitRPG Adventure (Battle Mage Farmer, Book 1)"* to **"Domestication - A
+Fantasy LitRPG Adventure"** — it strips the parenthetical series+volume and
+keeps the publisher's subtitle, which is not decoration it knows about. So
+containment compares 13 characters against 40:
+
+| ours | theirs | ratio | vs the 0.6 floor |
+|---|---|---|---|
+| `battle mage farmer book 1 domestication` (39) | `domestication a fantasy litrpg adventure` (40) | — | not contained at all |
+| `domestication` (13) | the same (40) | **0.325** | further under it |
+
+🔴 **The lesson worth keeping: shortening a title moves it AWAY from a
+containment match, not towards one.** "Fix the title and the sweep will find
+it" is intuitive and wrong on this shape — the floor is a *ratio*, so the
+shorter side of a substring pair is penalised. Both changes were needed and
+neither substitutes for the other.
+
+**The bridge is an asserted alias, not a lowered floor** — `seed-audiobook-
+aliases.mjs`, whose header already argues this for the identical *"The Primal
+Hunter - A LitRPG Adventure"* row (0.41) from the same publisher's subtitle
+habit. One row added, `work_alias` 41 → 42, and the script proves an alias
+reaches something before storing it. Result: matched 121 → 122, and the series
+mapping went **`fold` → `work_match`** with 9 rungs, so *Battle Mage Farmer*
+stopped being one of the two series that "map on the folded name alone".
+
+⚠️ **This is why the answer to "it didn't associate right away" is never a
+threshold change.** §4.3 and `matching.ts`'s header record what a second, looser
+similarity rule cost the sibling Board Game Catalog: three wrong games shipped.
 
 ---
 

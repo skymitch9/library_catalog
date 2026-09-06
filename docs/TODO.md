@@ -36,37 +36,66 @@
 > simply that it is a CROSS-REPO queue. Do not duplicate it here.
 
 
-## ☐ OWNER ASKS 2026-09-05 16:37 Phoenix — series warnings, an audiobook sweep, and *Battle Mage Farmer*
+## ☐ OWNER ASKS 2026-09-05 16:37 Phoenix — the THREE remainders (agent W6-LIBDATA)
 
 Owner, verbatim: *"We need to fix all the series that have warnings too, list
 those and let's fix them. Also do another audiobook sweep. I added battle mage
 farmer and it didn't associate the audiobook right away."*
 
-1. ☐ **Series with warnings — the apex `/series/` "A DECISION IS WAITING"
-   card (owner screenshot 16:44): 6 near misses, ALL on Samantha's library
-   (padhard).** The ingest wrote a volume marker or a "Series" suffix into the
-   series NAME, so the index sees two series where there is one:
-   - "Once Upon a Broken Heart (#1)" ↔ "Once Upon a Broken Heart"
-   - "A Good Girl's Guide to Murder (#3)" and "(#2)" ↔ "A Good Girl's Guide to Murder" (*As Good As Dead*, *Good Girl, Bad Blood*)
-   - "Emily Wilde" ↔ "Emily Wilde Series" (*Encyclopaedia of Faeries*, *Map of the Otherlands*)
-   - "The Asphodel Series" ↔ "Asphodel" (*Lost to Witchcraft*)
-   - "Skyward" ↔ "The Skyward Series"
-   **Fix = DATA on padhard** (`--friend`): series → the bare canonical name,
-   the `(#N)` into `series_index_display`/`_sort`, change_log rows per field,
-   then a padhard index push so the apex card clears. ☐ Also check main for
-   the same pattern (report the count even if 0). ☐ Then look at what
-   produced them — if the padhard importer writes `(#N)` into `series`, fix
-   the importer too so it does not come back.
-2. ☐ **Audiobook sweep** — `npm run backfill:audiobooks` (main) and the
-   `--friend` run. ⚠️ Why it "didn't associate right away": the sweep is a
-   SCRIPT reading `audiobook_catalog/site/catalog.csv` off disk (header of
-   `scripts/backfill-audiobook-holdings.mjs`), not a route — a book added in
-   the UI only gains its audio chip when somebody runs the sweep. ☐ Consider a
-   scheduled run (Task Scheduler beside the other pipelines) so this stops
-   being a manual step; log the decision in `docs/info/decisions.md`.
-3. ☐ **Battle Mage Farmer** — confirm after the sweep that the work he added
-   carries `audiobook_holding` (and the series ladder shows the audio rungs);
-   if the sweep still misses it, it is an alias/title mismatch → `seed:audiobook-aliases`.
+✅ **The sweep, *Battle Mage Farmer* and the four padhard series names are DONE
+and moved WHOLE to [`DONE.md`](DONE.md)** (2026-09-05, commits `73c96a5`,
+`d5f421a`, `e441202`, `dacce6a`; deployed to both instances). Three things
+were deliberately NOT done, each because it is somebody else's decision or
+another repo. **Do not re-derive them from the screenshot — the six rows below
+were read from the index's own `series_pending` table.**
+
+⚠️ **The gotcha the sweep item existed for, kept here because it recurs:** the
+audiobook sweep is a SCRIPT reading `audiobook_catalog/site/catalog.csv` off
+disk (header of `scripts/backfill-audiobook-holdings.mjs`), not a route — a book
+added in the UI gains its audio chip only when somebody runs the sweep. That is
+why "right away" never happens today, and item 3 below is the standing fix.
+
+1. ☐ **OWNER: resolve the six open `series_pending` rows — the apex card still
+   says 6 and NO data fix can change that.** Rows are keyed on `candidate_fold`
+   and stay once written (migration `0004_series_registry.sql`, deliberately:
+   *"a queue that re-asks a question a human already answered is a queue nobody
+   reads"*). The four `library2` causes are gone — those slugs now hold **0
+   entries** — so a merge is a formality that also drops the empty series row.
+   ⚠️ The apex `/series/` page can LIST the queue but has **no button that
+   resolves one**; it is a `POST` with an owner-standing bearer:
+
+   ```
+   POST https://index.heygabi.ai/api/series/pending/<candidate_fold>   (URL-encode the spaces)
+   Authorization: Bearer <a Firebase token for an OWNER_EMAILS address>
+   {"action":"merge","into":"<the slug that should SURVIVE>"}
+   ```
+
+   | candidate_fold | merge `into` | why that side survives |
+   |---|---|---|
+   | `once upon a broken heart 1` | `once-upon-a-broken-heart` | cause fixed; 3 entries vs 0 |
+   | `good girl s guide to murder 2` | `good-girl-s-guide-to-murder` | cause fixed; 3 entries vs 0 |
+   | `good girl s guide to murder 3` | `good-girl-s-guide-to-murder` | cause fixed; 3 entries vs 0 |
+   | `asphodel series` | `asphodel` | cause fixed; 2 entries vs 0 |
+   | `emily wilde` | `emily-wilde` | the plain form wins — `series-canon.json`'s `canonicalRule` |
+   | `skyward` | `skyward` | the plain form wins; ⚠️ this one's source is **`library`**, not padhard |
+
+   `into` must be one of that row's two slugs or the route answers 422.
+   `{"action":"separate"}` is the other legitimate answer and is equally sticky.
+2. ☐ **The two CROSS-CATALOG folds want a `catalog-platform/data/series-canon.json`
+   entry** — *"Emily Wilde Series"* and *"The Skyward Series"* are the AUDIOBOOK
+   catalog's spellings (measured in its `site/catalog.csv`); both library
+   instances already hold the plain form. That file is exactly for this (*"The
+   Fae & Alchemy Series"* is the precedent) and a merge in the index does **not**
+   substitute for it — without the entry the audiobook catalog keeps pushing the
+   decorated name. Needs the `catalog-platform` edit **and** the audiobook
+   repo's `python -m app.tools.sync_series_canon`. Another repo: not started.
+3. ☐ **Consider a scheduled audiobook sweep** (Task Scheduler beside the other
+   pipelines) so it stops being a manual step; log the decision in
+   [`info/decisions.md`](info/decisions.md). ⚠️ Note `audiobook_catalog`'s
+   `sync_to_drive.py` STEP 11 already runs this repo's backfill twice per cycle
+   (main then `--friend`) — so the honest question is not "schedule it?" but
+   "why did STEP 11 not cover the book he added?", and that is measured before
+   anything is built.
 
 ## ☑ BUILT 2026-09-05 — "Request a catalog" phase 5, the sealed-key ladder is IN step 10 (agent S2) — ☐ owner runs it for real once
 

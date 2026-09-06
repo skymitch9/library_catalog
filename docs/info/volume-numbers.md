@@ -1,7 +1,17 @@
 # Volume numbers — Information Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
-> Last verified: **2026-08-21** — §3b's counts were read from
+> Last verified: **2026-09-05** for the **NEW §4a** only — the three padhard
+> rows, their `changed_how 'auto'` provenance and their already-correct
+> `series_index_sort` were read from `library-catalog-2nd --remote` that
+> evening; `readSeriesLabel`'s fall-through was reproduced by RUNNING it, not
+> by reading the regex; the six open near-miss rows were read from the index's
+> own `index_catalog` D1. The fix is committed, tested (2548 pass / 0 fail) and
+> **deployed to both instances**. ⚠️ **NOT verified: that a NEW book whose
+> source spells the series `Name (#N)` now files correctly** — no such book has
+> been added since the deploy, so the production path is exercised only by the
+> unit tests. ⚠️ Nothing else in this file was re-checked on 2026-09-05.
+> Last verified before that: **2026-08-21** — §3b's counts were read from
 > `library-catalog-2nd --remote` that day; §1–§9's were read from
 > `library-catalog` and `library-catalog-2nd` (both `--remote`) on 2026-08-19
 > and have NOT been re-measured since.
@@ -206,6 +216,58 @@ asked), and previously recorded as un-investigated in
 ⚠️ **None of it came from anybody reading a cover.** The older comments in this
 repo describe `display` as *"what the cover actually says"*; that is what it is
 *for*, not where it has ever come from. Do not cite it as provenance.
+
+## 4a. ⚠️ When the volume number lands in the series NAME — the `(#N)` shape (2026-09-05)
+
+**The failure this section exists to make findable:** a metadata source answers
+a series field like `"A Good Girl's Guide to Murder (#2)"`, the marker is not
+recognised, and the whole string becomes the series NAME. The catalog then holds
+two series where there is one, and the second has exactly one book in it.
+
+**Where it is read.** `readSeriesLabel` in `apps/worker/src/lib/free-details.ts`.
+`detectSeriesFromTitle` refuses a bare trailing number by design (rule: else
+*Summoner 6* becomes six books), so that function has a second branch for the
+markerless numbering these APIs really use. It handled `Name (N)` — the
+*"Elantris (1)"* shape measured on Open Library 2026-08-23 — and `Name #N`.
+
+🔴 **It did NOT handle the COMBINED `Name (#N)`, and that reached production.**
+Measured 2026-09-05 on padhard: three works carried it, each written
+`changed_by NULL, changed_how 'auto'` **within twenty seconds of the work being
+added** — the free-details ladder, not an importer, which is worth knowing
+because the instinct is to go looking at import scripts.
+
+| work | series as stored | should have been |
+|---|---|---|
+| 568 *Once Upon a Broken Heart* | `Once Upon a Broken Heart (#1)` | `Once Upon a Broken Heart`, sort 1 |
+| 551 *Good Girl, Bad Blood* | `A Good Girl's Guide to Murder (#2)` | the bare name, sort 2 |
+| 549 *As Good As Dead* | `A Good Girl's Guide to Murder (#3)` | the bare name, sort 3 |
+
+The bracket branch matched and handed `parseVolumeNumber` the token `"#2"`,
+which is not a number, so the guard correctly declined and the whole string fell
+through to the name. **Fixed by stripping a leading `#` off the token and
+nothing else** — `parseVolumeNumber` is still the only thing that reads a
+position, so *"Discworld (UK)"* and *"Foo (#hashtag)"* still keep their names
+whole. Three assertions cover it, including the decimal `(#2.5)` rung.
+
+⚠️ **`series_index_sort` was ALREADY CORRECT on all three.** The sort came from
+the source's own numeric field and never went through the label parse, so the
+defect was invisible to every ordering check — only the NAME was wrong. A
+"volumes are numbered correctly" audit would have passed this.
+
+⚠️ **The display column was left NULL, deliberately.** R1 makes the printed form
+optional, and a `(#N)` from a metadata API is not a printed form — filling it
+from the marker would invent provenance §4 above says this column has never had.
+
+**How it surfaced, and what a data fix does NOT do.** The estate index's
+`series_pending` near-miss queue (`catalog-platform/apps/index-worker/
+migrations/0004_series_registry.sql`) caught it: two names sharing the
+decoration-stripped `seriesNearKey` but not a fold are **never merged**, and a
+human is asked. Correcting `work.series` and pushing removes the CAUSE — the
+next push folds the rows onto the right slug and queues no new candidate — but
+🔴 **the open queue rows STAY**, because they are keyed on `candidate_fold` and
+the migration keeps resolved rows on purpose. Clearing them is an approver's
+`POST /api/series/pending/<fold>`; the apex page can LIST the queue but has no
+button that resolves one.
 
 ## 5. Provenance and undo
 

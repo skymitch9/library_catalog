@@ -18,6 +18,191 @@
 > were extracted from this same history.
 
 
+## ✅ 2026-09-05 — the owner's 16:37 asks: the audiobook sweep, *Battle Mage Farmer*, and four padhard series names (agent W6-LIBDATA)
+
+**Moved here from [`TODO.md`](TODO.md) by agent W6-LIBDATA — items 2 and 3 whole,
+and item 1's completed half. ⚠️ Three remainders were LEFT in `TODO.md` and are
+named at the foot of this entry; nothing was summarised away.**
+
+Owner, verbatim: *"We need to fix all the series that have warnings too, list
+those and let's fix them. Also do another audiobook sweep. I added battle mage
+farmer and it didn't associate the audiobook right away."*
+
+Commits `73c96a5`, `d5f421a`, `e441202`, `dacce6a`.
+
+### ✅ *Battle Mage Farmer* — and why the obvious fix was only half of it
+
+Moved whole from `TODO.md`:
+
+> 3. ☐ **Battle Mage Farmer** — confirm after the sweep that the work he added
+>    carries `audiobook_holding` (and the series ladder shows the audio rungs);
+>    if the sweep still misses it, it is an alias/title mismatch → `seed:audiobook-aliases`.
+
+**It took BOTH branches of that sentence, in that order.**
+
+Work 526 was added at 22:10:43Z as *"Battle Mage Farmer, Book 1: Domestication"*
+with `series_index_display` `'Book 1'` — series and volume inside the title,
+which this catalog keeps in columns (work 221 *The Primal Hunter*, work 263
+*Dungeon Crawler Carl*: bare title, display `1`). Corrected by
+`scripts/fix-battle-mage-farmer-title-2026-09-05.mjs`, batch
+`owner-2026-09-05-battle-mage-farmer`, 4 `change_log` rows, `changed_by 1`:
+
+| field | from | to |
+|---|---|---|
+| `title` | `Battle Mage Farmer, Book 1: Domestication` | `Domestication` |
+| `sort_title` | the same | `Domestication` (canonical `sortTitleFor`) |
+| `series_index_display` | `Book 1` | `1` |
+| `work_key` | `battle mage farmer book 1 domestication\|seth ring` | `domestication\|seth ring` (canonical `workKeyFor`) |
+
+`series` and `series_index_sort` were already right and were not touched; no
+edition or copy row was touched. **padhard: 0 works at that key** — the same
+script pointed at her instance reports it and writes nothing.
+
+⚠️ **The `work_key` move is the exception `scripts/lib/d1.mjs` names as normally
+a migration**, taken on the same grounds as batch
+`owner-2026-08-31-pokemon-primers` and — the part worth copying — **re-asserted
+by the script at run time rather than trusted from a doc**: 0 `user_book` rows,
+0 `peer_holding` rows at the old key, 0 `work_alias` rows, and
+`reviews_seen_count` **0** observed by a real browser at 22:11:35, which is the
+guard migration 0120 built. The script refuses the edit if any of those is
+non-zero, and refuses a `work_key` collision.
+
+🔴 **The retitle did NOT make the sweep match, and could not.** Measured
+immediately after it landed: still *"no audiobook found"*. The CSV row cleans to
+*"Domestication - A Fantasy LitRPG Adventure"*, so containment compares 13
+characters to 40 — **0.325**, further under the 0.6 floor than the long title
+was, which is the counter-intuitive half. **Shortening a title moves it AWAY
+from a containment match.** Full record and the ratio table:
+[`info/series-formats-and-audiobooks.md`](info/series-formats-and-audiobooks.md) §4.10.
+
+The bridge is the asserted alias the item's own sentence predicted —
+`seed:audiobook-aliases`, one row, `work_alias` 41 → 42, the identical shape to
+the *"The Primal Hunter - A LitRPG Adventure"* row already in that file. Never a
+lowered floor: `matching.ts`'s header records the three wrong games the sibling
+catalog shipped from exactly that.
+
+### ✅ The audiobook sweep, both instances
+
+Moved whole from `TODO.md` (its ☐ third bullet is a remainder, see below):
+
+> 2. ☐ **Audiobook sweep** — `npm run backfill:audiobooks` (main) and the
+>    `--friend` run. ⚠️ Why it "didn't associate right away": the sweep is a
+>    SCRIPT reading `audiobook_catalog/site/catalog.csv` off disk (header of
+>    `scripts/backfill-audiobook-holdings.mjs`), not a route — a book added in
+>    the UI only gains its audio chip when somebody runs the sweep.
+
+| | MAIN (`library-catalog`) | padhard (`library-catalog-2nd`) |
+|---|---|---|
+| works read | 411 | 677 |
+| matched an audiobook | **122 (30%)** — was 121 before the alias | 119 (18%) |
+| statements run | 327 | 263 |
+| live editions after | 127 of 128 rows, across 123 works | 123 of 123, across 119 works |
+| live series rungs after | 190 of 206 | 140 of 140 |
+| **new** rungs | **9**, all *Battle Mage Farmer* | **0** |
+| rungs marked stale | 10 | 0 |
+| "map on the folded name alone" | **2 → 1** (only *The Twilight Saga* left) | 9 |
+
+*Battle Mage Farmer* went **`fold` → `work_match`**, 9 rungs [1–9]. Verified in
+D1: work 526 holds `audiobook_edition_holding` `audio_key` *"Domestication - A
+Fantasy LitRPG Adventure (Battle Mage Farmer, Book 1)"*, `matched_via` `exact`,
+`via_alias` *"Domestication - A Fantasy LitRPG Adventure"*, not stale; all 9
+rungs live.
+
+⚠️ padhard's 9 fold-only series (*Dungeon Crawler Carl*, *He Who Fights with
+Monsters*, *Heavenly Bodies*, *Into Darkness*, *Song of the Last Kingdom*, *The
+Ernest Cunningham Mysteries*, *The Lightlark Saga*, *The Wicked Years*,
+*Towerfall*) are unchanged and were not in scope — they are the §4.9 shape, a
+series-level mechanism.
+
+### ✅ The series warnings — four padhard names, and the producer that wrote them
+
+**MEASURED from the index's own `series_pending` table, not from the
+screenshot.** Six rows open, and ⚠️ **"ALL on Samantha's library" is not quite
+true** — `skyward`'s candidate source is **`library`** (main):
+
+| candidate_fold | candidate | closest | source |
+|---|---|---|---|
+| `once upon a broken heart 1` | "Once Upon a Broken Heart (#1)" | "Once Upon a Broken Heart" | library2 |
+| `good girl s guide to murder 2` | "A Good Girl's Guide to Murder (#2)" | "A Good Girl's Guide to Murder" | library2 |
+| `good girl s guide to murder 3` | "A Good Girl's Guide to Murder (#3)" | "A Good Girl's Guide to Murder" | library2 |
+| `asphodel series` | "The Asphodel Series" | "Asphodel" | library2 |
+| `emily wilde` | "Emily Wilde" | "Emily Wilde Series" | library2 |
+| `skyward` | "Skyward" | "The Skyward Series" | **library** |
+
+⚠️ **Only the first FOUR are this repo's defect.** For `emily wilde` and
+`skyward` BOTH library instances already hold the plain form that
+`catalog-platform/data/series-canon.json`'s `canonicalRule` says wins; the
+decorated spellings are the AUDIOBOOK catalog's, measured in its
+`site/catalog.csv`. Cross-catalog drift → a `series-canon.json` entry (*"The
+Fae & Alchemy Series"* is the precedent), a different repo. Left as a remainder.
+
+**The producer was NOT an importer** — every one of the four values was written
+`changed_by NULL, changed_how 'auto'` **within twenty seconds of the work being
+added**, i.e. by the free-details ladder. `readSeriesLabel` handled `Name (N)`
+(the *"Elantris (1)"* shape) and `Name #N` but fell through on the **combined
+`Name (#N)`**, handing `parseVolumeNumber` the token `"#2"`. Fixed by stripping
+a leading `#` off the token and nothing else, so the guard that keeps
+*"Discworld (UK)"* whole is untouched; three assertions added, `npm test` **2548
+pass / 0 fail**. Full record: [`info/volume-numbers.md`](info/volume-numbers.md) §4a.
+
+Because that is Worker code it shipped as a **deploy PAIR** from a clean tree —
+`npm run deploy:both`, main version `c73b0406` / friend `82da5112`, both lines
+in `deploys.log`.
+
+**The data**, `scripts/fix-padhard-series-near-misses-2026-09-05.mjs --remote
+--friend --commit`, batch `owner-2026-09-05-padhard-series-near-misses`, 4
+`change_log` rows, `changed_how 'human'`:
+
+| work | series was | now |
+|---|---|---|
+| 568 *Once Upon a Broken Heart* | `Once Upon a Broken Heart (#1)` | `Once Upon a Broken Heart` |
+| 551 *Good Girl, Bad Blood* | `A Good Girl's Guide to Murder (#2)` | `A Good Girl's Guide to Murder` |
+| 549 *As Good As Dead* | `A Good Girl's Guide to Murder (#3)` | `A Good Girl's Guide to Murder` |
+| 396 *Lost to Witchcraft* | `The Asphodel Series` | `Asphodel` |
+
+**MAIN: 0 rows.** The same script pointed at `library-catalog` reports *"0 series
+name(s) to correct"*, and a `series LIKE '%(#%)' OR '% Series'` scan of main
+returns 0. Said out loud because a zero is a result.
+
+⚠️ **`series_index_sort` was already correct on all four** (1, 2, 3, 2) and is
+untouched — the sort came from the source's numeric field and never went through
+the label parse, so an ordering audit would have passed this.
+`series_index_display` is NULL on all four and on every sibling, and R1 makes
+the printed form optional, so it was left NULL rather than invented from the
+`(#N)`.
+
+⚠️ **`changed_by` is NULL, not Samantha's id** (padhard `app_user` 1), and the
+note says why: the rows are hers, but the decision is the owner's and the value
+being corrected was written by the machine. Stamping her id on a librarian
+correction she never saw would be a false entry in an append-only log. Same
+shape as `fix-series-spelling-2026-08-15.mjs`.
+
+**The index push landed and was verified**: padhard `pushed_at`
+`2026-09-06T00:12:23Z`, 677 rows. In the index's `entry` table all four rows now
+carry the canonical slug (`once-upon-a-broken-heart`,
+`good-girl-s-guide-to-murder` ×2, `asphodel`), work 526 reads *"Domestication"*
+under `battle-mage-farmer`, and the four decorated slugs now hold **0 entries**.
+
+⚠️ **Not a `/api/health` job**: that route is registered ABOVE
+`indexBackstopOnRequest()` in `apps/worker/src/index.ts`, so a health GET does
+not trigger the backstop. A GET of `/api/works` does (a 401 is fine — the
+middleware runs on the way out).
+
+### ☐ What was LEFT in `TODO.md`, and why
+
+1. **The six `series_pending` rows are still OPEN, and no data fix can close
+   them.** They are keyed on `candidate_fold` and the migration keeps rows on
+   purpose (*"a queue that re-asks a question a human already answered is a
+   queue nobody reads"*). Resolving one is an approver's `POST`, and the apex
+   page can LIST the queue but has no button that resolves anything.
+2. **The two cross-catalog folds** (`emily wilde`, `skyward`) want a
+   `catalog-platform/data/series-canon.json` entry — another repo, and the
+   audiobook catalog's `canonical_series` sync goes with it.
+3. **Whether the audiobook sweep should be scheduled** rather than hand-run —
+   an owner decision, untouched.
+
+---
+
 ## ✅ 2026-09-05 — `import-shop-orders.mjs`: the SHOP is not the PUBLISHER — owner settled it, importer fixed, both instances swept (0 rows, and 0 is the result)
 
 **Moved here whole from [`TODO.md`](TODO.md) by agent W6-SHOP — cut and paste,
