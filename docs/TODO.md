@@ -215,7 +215,28 @@ why "right away" never happens today, and item 3 below is the standing fix.
    `"enforce"` in BOTH `[vars]` blocks **after ≥42 shadow ticks (a week at
    four-hourly) with ZERO divergences** between the route's recorded plan and
    `npm run backfill:audiobooks -- --remote` on the same CSV — the STEP 11
-   comparison. ⚠️ A divergence is almost certainly the design's §2.4
+   comparison.
+
+   🔴 **THE GATE NOW COVERS TWO HALVES — 2026-09-05, agent W8-SERIES-VOL.**
+   The same tick also plans `series_volume`/`series_check` (platform inventory
+   §7 row #2), under the **same** `AUDIOBOOK_SWEEP_MODE` — there is deliberately
+   no second switch, so **one flip enforces both** and evidence for one half is
+   NOT evidence for the other. The gate is therefore zero divergences on BOTH
+   comparisons: `backfill:audiobooks` (runbook §4) **and**
+   `backfill:series-volumes` (runbook §4a). ⚠️ Subtract the script's Open
+   Library lines before comparing the second one — rung 2 is script-only and its
+   count wobbles between runs because it is a live third-party fetch.
+
+   Commits `e1e5755` (the shared planner + one rendering) · `8cbdc40` (the
+   script becomes a thin caller) · `b2c9931` (the cron half + the health key).
+   Deployed to both 2026-09-05: **MAIN `6ed4a22b`, friend `c57c5173`**
+   (rollback ids `eadd16b6` / `0408aa25`). Written up in
+   [`info/series-formats-and-audiobooks.md` §4.13](info/series-formats-and-audiobooks.md).
+   **Measured on both instances, script and route identical:** MAIN 139 series /
+   32 known / 107 not_found / 329 statements / 69 new; padhard 313 / 44 / 269 /
+   453 / 140. 🔴 **padhard's `series_volume` is EMPTY (0 rows, 0 checks)** —
+   nobody was running that script on her instance, which is the size of what
+   enforcing this half would land. `npm test` 2,891 pass / 0 fail. ⚠️ A divergence is almost certainly the design's §2.4
    series-canon skew (the route's canon is as fresh as the last DEPLOY, the
    script's as fresh as the last `git pull` of catalog-platform, and the ROUTE
    is the stale side); diagnose it, never wave it through. **Rollback at any
@@ -232,12 +253,21 @@ why "right away" never happens today, and item 3 below is the standing fix.
    matched; padhard 123 / 140 / 0 / 119. The live CSV and the on-disk CSV both
    parse to **1089 rows** and the two row arrays are deep-identical.
 
-   ⚠️ **NOT verified, and it is the whole of what is left to watch: no
-   `audiobook_sweep_run` row exists on either instance yet.** No cron tick has
-   been observed (it fires at `:23` past every fourth hour, UTC), no on-add hook
-   has been seen to fire, and the admin route has never been called with a real
-   bearer — the building session had no Firebase token. **The first thing to do
-   next session is read the run rows** (§5 of the runbook):
+   ✅ ~~⚠️ **NOT verified … no `audiobook_sweep_run` row exists on either
+   instance yet.**~~ 🔴 **CORRECTED 2026-09-05 — THE CRON HAS FIRED.** Measured
+   05:07 UTC on both `/api/health`: MAIN `lastRunAt 2026-09-06 04:23:18`,
+   padhard `04:23:12`, both `trigger: cron`, `state: shadow`, `snapshotRows`
+   1089, `snapshotAgeHours` 0.7. The four-hourly tick is real, it is landing
+   rows, and the ≥42-tick clock is running on both.
+
+   ⚠️ **What is STILL not verified:** the on-add hook has not been seen to fire;
+   the admin route has never been called with a real bearer (it answers **401**
+   unauthenticated on both — measured, and as far as an agent may go); and **no
+   run row carrying the new `seriesVolumes` sub-object exists yet**, because
+   every row today predates the deploy pair. `/api/health` therefore reads
+   `seriesVolumes.lastRun: null` on both, which is the *"never got that far"*
+   silence rather than a fault. **The first tick after `08:23` UTC is what fills
+   it — read the run rows then** (§5 of the runbook):
 
    ```
    npx wrangler d1 execute library-catalog --remote --config apps/worker/wrangler.toml \

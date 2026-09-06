@@ -1,13 +1,25 @@
 # Operating the audiobook association sweep
 
 > **Audience:** Claude sessions first, the owner second.
-> **Status:** ✅ TRACKED. **Last verified: 2026-09-06** — measured that day:
-> migration 0470 applied to **both** instances, both deployed, both answering
-> `detail.audiobookSweep.mode = "shadow"`, and the phase-1 plan equality
-> measured on both. ⚠️ **NOT measured, and it is the whole of what is left: no
-> `audiobook_sweep_run` row exists yet on either instance.** No cron tick has
-> been observed, no on-add hook has been seen to fire, and the admin route has
-> never been called with a real bearer.
+> **Status:** ✅ TRACKED. **Last verified: 2026-09-05** — measured that day, after
+> the series-volume half landed (deploy pair MAIN `6ed4a22b` / friend
+> `c57c5173`): both hosts answer `200` on `/api/health` with
+> `detail.audiobookSweep.mode = "shadow"` and the new `seriesVolumes`
+> sub-object; the admin route answers **401** unauthenticated on both; and the
+> script-vs-route parity was re-measured on both instances for the new half
+> (§4a).
+>
+> 🔴 **CORRECTED: the cron HAS fired.** This header previously said *"no
+> `audiobook_sweep_run` row exists yet on either instance"*. Measured
+> 2026-09-06 05:07 UTC: **MAIN `lastRunAt 04:23:18`, padhard `04:23:12`, both
+> `trigger: cron`, `state: shadow`.** The four-hourly tick is real and the
+> shadow-tick count toward the ≥42 gate has started on both.
+>
+> ⚠️ **STILL NOT measured:** the on-add hook has not been seen to fire, the
+> admin route has never been called with a real bearer (401 is as far as an
+> agent may go), and **no run row carrying the new `seriesVolumes` sub-object
+> exists yet** — every row today predates the deploy, so the key reads
+> `lastRun: null`. The first tick after `08:23` UTC is what fills it.
 >
 > **Why it works this way** is [`../info/series-formats-and-audiobooks.md`
 > §4.12](../info/series-formats-and-audiobooks.md); the design of record is
@@ -17,6 +29,12 @@
 **What it is:** *"do we own this on audio?"*, answered on a clock and on every
 book somebody adds, instead of only when the audiobook pipeline next runs.
 Two instances, one shared audio pool, one codebase.
+
+⚠️ **Since 2026-09-05 one tick does TWO things.** The same four-hourly
+invocation, from the same fetched CSV, also refreshes `series_volume` /
+`series_check` — what `npm run backfill:series-volumes` writes. It runs under
+the **same** `AUDIOBOOK_SWEEP_MODE`; there is deliberately no second switch. Why:
+[`../info/series-formats-and-audiobooks.md` §4.13](../info/series-formats-and-audiobooks.md).
 
 ---
 
@@ -32,8 +50,12 @@ as it did before. Nothing about the catalogue's behaviour has changed.
 | Value | What runs |
 |---|---|
 | `off` | nothing. No fetch, no run row, no cost |
-| **`shadow`** ← today | the whole plan is computed and its COUNTS recorded in `audiobook_sweep_run.detail_json`. **Nothing is written to the holding tables** |
-| `enforce` | the cron writes; the on-add hook goes live |
+| **`shadow`** ← today | **both** plans are computed and their COUNTS recorded in `audiobook_sweep_run.detail_json` (`plan` and `seriesVolumes`). **Nothing is written to the holding tables, nor to `series_volume`/`series_check`** |
+| `enforce` | the cron writes both halves; the on-add hook goes live |
+
+🔴 **One switch, both halves — and that is a decision, not an oversight.** A
+second variable would let an instance shadow the holdings and enforce the
+volumes, a state nobody could read off `/api/health` and nothing needs.
 
 ⚠️ **It fails CLOSED.** Unset, blank, misspelt, `"on"`, `"true"` — every one of
 them resolves to `off`. That is the opposite of `BILLING_POLICY` a few lines
@@ -64,9 +86,31 @@ Read `detail.audiobookSweep`:
   "snapshotAgeHours": null,  // how stale our picture of the sibling catalog is
   "editionsLive": 127,
   "rungsLive": 190,
-  "seriesCanonEntries": 6
+  "seriesCanonEntries": 6,
+  "seriesVolumes": {          // the OTHER half of the same tick
+    "lastRun": null,          // what the last tick RECORDED, verbatim — see below
+    "volumesLive": 159,       // rows in `series_volume` that are not stale
+    "seriesChecked": 84       // rows in `series_check`
+  }
 }
 ```
+
+⚠️ **`seriesVolumes.lastRun` keeps three silences apart, and they are not
+interchangeable:**
+
+| It reads | It means |
+|---|---|
+| `null` | the tick never got that far — mode `off`, a refused fetch, or a failed guard. **Also what a run row written BEFORE 2026-09-05 says**, because the field did not exist |
+| `{ "planned": null, "written": null, "detail": "scoped run …" }` | the **on-add hook** fired and deliberately declined this half. Guard 3: a run that looked at one book has not consulted a source about the rest of the catalogue. The cron owns it |
+| `{ "planned": {…}, "written": null, "detail": null }` | **shadow, working correctly** |
+| `{ "planned": {…}, "written": 329 }` | enforce, applied |
+| `{ … "detail": "series volumes failed: …" }` | this half failed and the holdings half did **not**. The two share a tick, not a fate |
+
+`planned` carries `seriesCount`, `found`, `notFound`, `volumeUpserts`,
+`checkUpserts`, `newVolumes`, `manualSkipped` and `statements` — exactly the
+numbers the script's dry run prints, which is what makes §4a a comparison
+somebody can actually do. 🔴 **Counts only, never a series name**: this route is
+unauthenticated on purpose.
 
 ⚠️ **The five silences are NOT interchangeable, which is why `detail` exists.**
 A refused fetch, a `304`, an in-sync catalogue, a switch left off and a sweep
@@ -159,6 +203,44 @@ or the `plan` object the admin `POST` returns):
 | rung upserts / stales | 190 / 0 | 140 / 0 |
 | statements | 317 | 263 |
 
+### 4a. The OTHER half — `series_volume`, the same comparison
+
+```bash
+npm run backfill:series-volumes -- --remote            # MAIN, dry by default
+npm run backfill:series-volumes -- --remote --friend   # padhard
+```
+
+| Script line | Route field (`seriesVolumes.planned`) |
+|---|---|
+| `N series in the REMOTE database` | `seriesCount` |
+| `the sibling catalog knows  N` | `found` |
+| `never heard of it          N` | `notFound` |
+| `N volume(s) this run has not seen before` | `newVolumes` |
+| `N statement(s)` — ⚠️ **minus the Open Library rung's** | `statements` |
+
+🔴 **The script counts MORE statements than the route plans, and that is
+correct.** Rung 2 (Open Library) is script-only: one serial HTTP call per work
+carrying an OL id is a cron tick's whole subrequest budget. Subtract the lines
+under `open library:` before comparing, and expect the OL half to wobble between
+runs — it is a live third-party fetch.
+
+**Measured 2026-09-05, script and route identical on both instances:**
+
+| | MAIN | padhard |
+|---|---|---|
+| series | 139 | 313 |
+| knows / never heard of | 32 / 107 | 44 / 269 |
+| volume upserts / check upserts | 190 / 139 | 140 / 313 |
+| statements (rung 1) | 329 | 453 |
+| volumes not seen before | 69 | 140 |
+
+🔴 **What those numbers say about the tables today:** `/api/health` reports
+**MAIN 159 volumes / 84 series checked** and **padhard 0 / 0**. padhard's
+`series_volume` has never been written at all — nobody was running the script on
+her instance — which is the size of what enforcing this half would land.
+
+---
+
 ⚠️ **A divergence is most likely the series-canon skew.** The route's canon is as
 fresh as the last DEPLOY; the script's is as fresh as the last `git pull` of
 `catalog-platform`. When they disagree the ROUTE is the stale one, and the fix is
@@ -201,7 +283,14 @@ npx wrangler d1 execute library-catalog --remote --config apps/worker/wrangler.t
 **To `enforce` — the gate, and it is a number:**
 
 > 🔴 **≥42 shadow ticks (a week at four-hourly) with ZERO divergences** against
-> the script's dry run on the same CSV.
+> the script's dry run on the same CSV — ⚠️ **on BOTH halves now**: the
+> holdings comparison in §4 *and* the series-volume comparison in §4a. One
+> switch flips both, so evidence for one is not evidence for the other.
+
+⚠️ **The clock started 2026-09-06.** The first `audiobook_sweep_run` rows are on
+both instances (`04:23` UTC, `trigger: cron`, `state: shadow`), so the tick count
+is running — but the rows that carry `seriesVolumes` only begin with the tick
+after the 2026-09-05 deploy pair.
 
 Then, and only then: change **both** `AUDIOBOOK_SWEEP_MODE` lines in
 `apps/worker/wrangler.toml` to `"enforce"`, in **one commit of its own**, and
@@ -254,9 +343,13 @@ carries the reasoning.
 | The decisions (shared with the script) | `packages/core/src/audiobook-sweep.ts` |
 | The one statement list | `packages/db/src/audiobook-holdings.ts` |
 | The script's renderer over that list | `scripts/lib/audiobook-sql.mjs` |
+| **The series-volume decisions** (shared with `backfill:series-volumes`) | `packages/core/src/series-volumes.ts` |
+| **Its one statement list** | `packages/db/src/series-volumes.ts` |
+| The `lit()` substitution BOTH renderers use | `scripts/lib/sweep-sql.mjs` |
 | The fetch, guards, run row, mode | `apps/worker/src/lib/audiobook-sweep-run.ts` |
 | The admin verbs | `apps/worker/src/routes/audiobook-sweep.ts` |
 | The status line | `apps/worker/src/routes/health.ts` |
 | The on-add hook's callers | `routes/catalog.ts`, `routes/gabi-delegated.ts`, `routes/ingest.ts` |
 | The tables | migration `0470_audiobook_sweep_state.sql`; the holdings are `0390` and `0090` |
 | The recovery path | `npm run backfill:audiobooks -- --remote --commit` — 🔴 **the script is never retired**; it is the only path that works when the Worker is down |
+| The series-volume recovery path | `npm run backfill:series-volumes -- --remote --commit` (and `--friend`) — same rule, plus it is the **only** caller that has the Open Library rung at all |

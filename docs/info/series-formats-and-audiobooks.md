@@ -1,7 +1,21 @@
 # Series pages — formats, alternate printings, audiobooks — Information Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
-> Last verified: **2026-09-05** for the **NEW §4.11** only — the byte-identical
+> Last verified: **2026-09-05** for the **NEW §4.13** only — every number in it
+> was measured that day: the parity table by running
+> `npm run backfill:series-volumes -- --remote` (and `--friend`) dry on BOTH
+> production instances before and after the conversion, and the planner over the
+> ROUTE's inputs (the published CSV fetched over HTTP + the Worker's own works
+> query) beside it; the live counts and the cron evidence by `curl`ing
+> `/api/health` on both hosts after the deploy pair (MAIN `6ed4a22b`, friend
+> `c57c5173`). 🔴 **One claim in §4.12 is CORRECTED there rather than edited
+> away: the cron HAS fired** — both instances carry an `audiobook_sweep_run`
+> row from `04:23` UTC, `trigger: cron`, `state: shadow`. ⚠️ **NOT verified in
+> §4.13: the `seriesVolumes` sub-object populated on a LIVE run.** The only rows
+> that exist predate the deploy, so the key reads `lastRun: null` today; the
+> admin route answers **401** unauthenticated (measured) and needs an owner
+> bearer this session did not have. ⚠️ Nothing else here was re-checked.
+> Last verified before that: **2026-09-05** for the **NEW §4.11** only — the byte-identical
 > dry-run diffs it quotes were run that evening against BOTH production
 > instances (`--remote` and `--remote --friend`, dry only, never `--commit`),
 > and the test counts were read off `npm run test`. ⚠️ **NOT verified in §4.11:
@@ -894,6 +908,138 @@ the pointer, and the three ways they DIFFER from the sweep above: they **write
 nothing, ever**, so there is **no mode ladder** and **no `dryRun`**, and their
 run table (`audit_run`, migration 0480) is **generic** rather than sweep-shaped.
 Operating them: [`../access/audits.md`](../access/audits.md).
+
+### 4.13 🔴 ONE TICK, TWO HALVES — `series_volume` rides the same cron — 2026-09-05
+
+**The ask.** Platform inventory §7 row **#2**: `backfill:series-volumes` reads
+the **same** `catalog.csv` the sweep above already fetches every four hours, so
+*"once the CSV fetch and the shared parser exist, this costs one function"*. The
+row ends on the reason it is worth doing rather than merely cheap: **two
+audiobook-derived tables that fall out of step is a worse bug than either being
+stale.**
+
+#### What moved, and what deliberately did not
+
+| | Where it lives now |
+|---|---|
+| The decisions (rung 1, the sibling catalog) | `packages/core/src/series-volumes.ts` — `planSeriesVolumes`, returning ROWS |
+| The SQL | `packages/db/src/series-volumes.ts` — ONE rendering, as `{ sql, binds }` |
+| The `lit()` substitution both scripts render with | `scripts/lib/sweep-sql.mjs` (lifted out of `audiobook-sql.mjs`) |
+| The tick | `apps/worker/src/lib/audiobook-sweep-run.ts`, inside the existing run |
+| 🔴 Rung 2 — Open Library | **STAYS in the script.** One serial HTTP call per work carrying an OL id, with a politeness delay: a cron tick's whole subrequest budget spent on the smaller half of the answer |
+
+🔴 **The script is not retired**, for the three reasons §4.11 already gives, plus
+a fourth: it is the only caller that has rung 2 at all.
+
+#### ⚠️ The fold here is `normaliseTitle` ALONE — and that is not the sweep's fold
+
+Phase 2 of `planAudiobookSweep` folds `normaliseTitle(canonicalSeries(name))`.
+This half folds `normaliseTitle(name)` and nothing else, exactly as the script
+has since 2026-08-10. **They are deliberately different and must not be "made
+consistent" by somebody tidying**: `series_volume` rows join `work.series` **by
+name** at read time, so widening the fold would silently re-file existing rows
+under a different series name on both instances. If that widening is ever wanted
+it is a measured change of its own, with a row count beside it.
+
+#### The mode, the guards, and the one thing that is per-half
+
+🔴 **No second mode variable.** `AUDIOBOOK_SWEEP_MODE` expresses this half
+exactly — `off` never reaches it, `shadow` computes the plan and records its
+counts under `detail_json.seriesVolumes` writing nothing, `enforce` applies it. A
+second switch would let one instance shadow one half and enforce the other, which
+is a state nobody could read off `/api/health` and nothing needs.
+
+The four guards cover it, and three of them for free: this half is planned
+**downstream** of guard 1 (zero rows), guard 2 (>3% drift) and guard 4 (zero
+WORKS), so each refusal returns before it is ever reached. **Guard 3 it gets in
+its own form** — a SCOPED run plans NONE of it, because a `series_check` row is a
+per-series claim that *a source was consulted*, and a run that looked at one book
+has consulted nothing about the rest of the catalogue. The on-add hook therefore
+records `seriesVolumes: { planned: null, detail: "scoped run — the cron owns this
+half" }` and the cron does the work.
+
+⚠️ **The two halves share a TICK, not a FATE.** Each is planned and applied in its
+own `try` and its own `db.batch()`, so an unreadable `series_volume` records a
+phrase and leaves the holdings the work pages draw from untouched.
+
+#### ⚠️ There are NO `change_log` rows for this half, and that is a decision
+
+The audiobook half writes one audit row per work whose association changed. This
+one writes none, and the reason is structural rather than lazy:
+
+| | |
+|---|---|
+| `change_log.entity_id` is **`INTEGER NOT NULL`** (0120) | a series is **named**, not numbered |
+| `series_volume.id` exists but is unknown at upsert time | and `last_insert_rowid()` is only correct on an upsert's INSERT path — on the CONFLICT path SQLite leaves it at whatever the previous statement set, so the audit row would be filed against **somebody else's book**. A wrong audit row is worse than none |
+| The closest precedent agrees | `audiobook_series_holding`, the other series-keyed table the same sweep writes, logs nothing either |
+| The audit trail already exists | `series_check` records per series that a source was consulted, when, and what it said — in the SAME batch as the volumes — and `audiobook_sweep_run.detail_json.seriesVolumes` records what each tick decided |
+
+🔴 **What would change it:** widening `entity_id` to TEXT, or an `entity_key`
+column. That is a migration with its own review on a table every panel reads,
+and nothing today needs it.
+
+#### The parity check — measured 2026-09-05, both instances
+
+The script's `--remote` dry run against the planner run over the **route's**
+inputs (the published CSV over HTTP + the Worker's own `SELECT … FROM work ORDER
+BY id`, which has no `WHERE series IS NOT NULL`):
+
+| | MAIN | padhard |
+|---|---|---|
+| audiobook rows / work rows | 1089 / 411 | 1089 / 677 |
+| series | **139** | **313** |
+| the sibling catalog knows / never heard of | **32 / 107** | **44 / 269** |
+| volume upserts / check upserts | **190 / 139** | **140 / 313** |
+| statements (rung 1) | **329** | **453** |
+| volumes not seen before | **69** | **140** |
+| manual rows skipped | 0 | 0 |
+
+**Every figure identical on both sides.** padhard's whole printed output is
+byte-identical before and after the conversion; MAIN's differs in exactly one
+line, deliberately:
+
+```
+- ok  The Hunger Games  ours→5  theirs→-Infinity  0 new  ⚠️ tops out BELOW our top
++ ok  The Hunger Games  ours→5  theirs→-           0 new
+```
+
+⚠️ **That was a bug being printed, not a fact.** `-Infinity` is `Math.max()` over
+an empty set: the sibling catalog KNOWS *The Hunger Games* and numbers none of
+its rows, so there is no top to compare and the "tops out BELOW our top" warning
+was untrue. (MAIN's total statement count also moved 330 → 329 between the two
+runs because three Open Library fetches failed on the second — rung 2's network,
+not this change.)
+
+#### 🔴 A finding the deploy produced: THE CRON HAS FIRED
+
+§4.12 and the runbook both say *"no `audiobook_sweep_run` row exists yet on
+either instance"*. **That is no longer true.** Measured 2026-09-06 05:07 UTC on
+both `/api/health`:
+
+| | MAIN | padhard |
+|---|---|---|
+| `lastRunAt` / `lastFinishedAt` | `04:23:18` / `04:23:19` | `04:23:12` / `04:23:13` |
+| `trigger` · `state` | `cron` · `shadow` | `cron` · `shadow` |
+| `snapshotRows` · `snapshotAgeHours` | 1089 · 0.7 | 1089 · 0.7 |
+
+So the four-hourly tick is real, it is landing rows, and the shadow-tick count
+toward the ≥42 gate has started on both instances.
+
+#### The live counts, and what they say
+
+`/api/health` → `detail.audiobookSweep.seriesVolumes` also carries what the
+tables actually hold. Measured the same minute: **MAIN 159 volumes / 84 series
+checked; padhard 0 / 0.** Against plans of 190/139 and 140/313 — so both tables
+are behind the CSV, and **padhard's have never been written at all**. That is the
+size of what enforcing this half would land, and it is the reason it was worth
+converting: nobody was running the script on her instance.
+
+**Commits:** `e1e5755` (the shared planner + the one rendering) · `8cbdc40` (the
+script becomes a thin caller) · `b2c9931` (the cron half, the health key and the
+guards). Deployed to both 2026-09-06 — MAIN `6ed4a22b`, friend `c57c5173`.
+Operating it: [`../access/audiobook-sweep.md`](../access/audiobook-sweep.md).
+
+---
 
 ---
 
