@@ -1,7 +1,17 @@
 # library_catalog — Known Issues, Waivers & Exceptions
 
 > **Audience:** Claude/Kiro sessions and the owner. **Status:** TRACKED.
-> Last verified: **2026-09-06 (W8-GUARD)** — **KI-17 was added** (the four art
+> Last verified: **2026-09-06 ~14:25 UTC (W10-LIB-FLIP)** — **KI-17 was SETTLED
+> by the owner** (*"No ISBN"*) and re-measured against BOTH production databases
+> before anything was written: editions **670–673** unchanged on
+> `library-catalog` (`Collector's Edition`, `note` NULL, every identifier NULL,
+> `source 'manual'`), **absent entirely from `library-catalog-2nd`**, and all
+> four still refused by `isCrowdfundedPrinting` when the three guards are run
+> over their real values. **No data was changed on either instance** — the rows
+> were already inert and `scripts/backfill-missing-isbns.mjs` is the only script
+> that could have filled them. ⚠️ **Nothing else was re-checked in that pass** —
+> KI-5 through KI-16 all still carry the ages stated below.
+> Previously **2026-09-06 (W8-GUARD)** — **KI-17 was added** (the four art
 > books) and measured against production `library-catalog`: editions
 > **670–673** all read `edition_name = "Collector's Edition"` / `source
 > 'manual'` / `isbn13` NULL, all four are skipped by `isCrowdfundedPrinting` in
@@ -443,7 +453,50 @@ finally needs revisiting.
 
 ---
 
-## KI-17 · The four ART BOOKS are refused by the crowdfunding guard, and one wears a product photo for a cover — `ACCEPTED`
+## KI-17 · The four ART BOOKS are refused by the crowdfunding guard, and one wears a product photo for a cover — ✅ **SETTLED 2026-09-06** · `ACCEPTED`
+
+> ✅ **SETTLED 2026-09-06 by the owner, verbatim: *"No ISBN"*.** He looked at the
+> four books, which are in the house. **The entry's one open question is
+> answered and it is answered in the direction that costs nothing.**
+>
+> This entry used to end on the sentence *"`isbn13 IS NULL` on these rows means
+> **nobody asked**, not **there is none** — the one place these four differ from
+> every other row the guard refuses."* 🔴 **That sentence is now FALSE, and its
+> falseness is the closure.** These four no longer differ from anything: like
+> every crowdfunded row `isCrowdfundedPrinting` refuses under the owner's
+> 2026-09-05 ruling, their `isbn13 IS NULL` is a **recorded fact**, not a gap.
+> The guard's refusal — which was the *right outcome reached by the wrong
+> reasoning*, because the word matched was *"Collector's"* — is now simply the
+> right outcome.
+>
+> **Nothing was changed in the data, and that is the finding, not an omission.**
+> Re-measured 2026-09-06 14:2x UTC against production:
+>
+> | Checked | Result |
+> |---|---|
+> | `edition` 670–673 on `library-catalog` | still `edition_name = "Collector's Edition"`, `note` NULL, `isbn13`/`isbn10`/`asin` all NULL, `source = 'manual'` |
+> | the same rows on `library-catalog-2nd` | **they do not exist** — no art book is in padhard's catalogue, so there is no `--friend` half to this item |
+> | the three guards run over the four rows' real values | `declaresNoIsbn` → null · **`isCrowdfundedPrinting` → `"Collector's"` on all four** · `namesAnIsbn` → null |
+> | who could still fill them | **exactly one script**, `scripts/backfill-missing-isbns.mjs` — the only caller of any of the three guards, and it skips all four at guard 1b (`:654`). The other four ISBN-touching scripts either NULL a wrong value (`fix-foreign-isbns-2026-09-05.mjs:743`, `fix-same-isbn-series-2026-09-05.mjs:229`) or run off a fixed seven-work data file (`apply-bn-details.mjs:133`) |
+>
+> **So the rows are already inert and no write was needed.** A `--commit` sweep
+> would have had nothing to do on main and no rows to find on padhard.
+>
+> ⚠️ **The one thing that stays true, and is why this entry is kept rather than
+> retired to the resolved table:** the refusal rests on the WORD *"Collector's"*,
+> not on a statement these rows make about themselves. `declaresNoIsbn` — the
+> guard that would refuse them for the correct reason — reads a *phrase*, and
+> these rows carry none. **If the crowdfunding word list is ever narrowed, these
+> four re-enter the ladder**, and the 2026-09-05 dry run recorded what happens
+> then: LibraryThing proposed `9784047336582` (**978-4 = Japan**) for work 516
+> and only the language gate stopped it (`info/isbn-ladder.md` §7.5). The
+> durable fix is one field, and it belongs to a person, not to a sweep: put
+> *"No ISBN printed on this edition (owner-verified)"* in each row's `note` —
+> the wording migration 0460 already established and `declaresNoIsbn` already
+> matches — through **✎ Edit this book → Editions & copies → Note** (or the
+> "no barcode" tick, which since 2026-09-03 writes `note` rather than the name).
+> Until somebody does, the accidental refusal is doing the work of the stated
+> one.
 
 **Symptom.** Two ladders mis-handle the same four objects, for the same reason:
 **an art book's ordinary retail packaging looks exactly like a special
@@ -523,12 +576,16 @@ half**; both were found by looking.
   crowdfunding guard passes **ten**, the answer is an `edition_kind` the guard
   can read (`packages/core` already models `collectors`) rather than a word in a
   name — a row's KIND is a fact, its NAME is prose.
-- 🔴 **The cheap fix needs no code and belongs to the owner: type the four
+- ✅ ~~🔴 **The cheap fix needs no code and belongs to the owner: type the four
   ISBNs.** They are printed on the books, which are in the house. Under the same
   ruling that created the guard, a hand-entered ISBN is the recorded fact and
   ends the question permanently. Until then `isbn13 IS NULL` on these rows means
   *"nobody asked"*, not *"there is none"* — ⚠️ the one place these four differ
-  from every other row the guard refuses.
+  from every other row the guard refuses.~~ **DONE 2026-09-06 — the owner looked
+  and answered *"No ISBN"*.** There are none to type. `isbn13 IS NULL` on these
+  four now means *"there is none"*, exactly like every other row the guard
+  refuses, and the sentence about them differing is retired with it. See the
+  SETTLED banner at the top of this entry for what was and was not changed.
 - 🔴 **What must NOT change it:** blanking work 516's `cover_url` so the default
   cover sweep re-tries it. `scripts/backfill-missing-covers.mjs` targets
   `cover_url IS NULL` unless `--standins` is passed, and the temptation is to
