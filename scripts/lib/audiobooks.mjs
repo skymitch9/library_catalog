@@ -14,7 +14,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 
-import { cleanTitleWithSeries, parseVolumeNumber } from '../../packages/core/src/titles.ts';
+import { parseAudiobookCsv } from '../../packages/core/src/audiobook-csv.ts';
 import {
   buildWorkIndex,
   matchIndexedWork,
@@ -42,74 +42,28 @@ const CSV = path.join(AUDIOBOOK_ROOT, 'site/catalog.csv');
 /** The CSV this module reads, so a caller can say where it looked when it is empty. */
 export const AUDIOBOOK_CSV = CSV;
 
-/** RFC4180 enough for this file: quoted fields, doubled quotes, embedded newlines. */
-function parseCsv(text) {
-  const rows = [];
-  let row = [];
-  let cur = '';
-  let quoted = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (quoted) {
-      if (c === '"') {
-        if (text[i + 1] === '"') { cur += '"'; i++; } else quoted = false;
-      } else cur += c;
-    } else if (c === '"') quoted = true;
-    else if (c === ',') { row.push(cur); cur = ''; }
-    else if (c === '\n') { row.push(cur); cur = ''; rows.push(row); row = []; }
-    else if (c !== '\r') cur += c;
-  }
-  if (cur || row.length) { row.push(cur); rows.push(row); }
-  return rows;
-}
-
 /**
  * Every audiobook row, with its title already stripped of Audible's decoration.
  *
- * The strip uses `cleanTitleWithSeries` and not the bare heuristic, for the
- * reason `docs/info/identity-and-reviews.md` §5 records: Audible writes the same
- * series suffix three ways inside one series and only the exact strip catches
- * all three.
+ * ⚠️ **The parsing and the row mapping are NOT here any more.** They moved
+ * verbatim to `packages/core/src/audiobook-csv.ts` (`parseAudiobookCsv`) on
+ * 2026-09-05, phase 0 of
+ * `catalog-platform/docs/info/audiobook-association-route.md`, so the Worker —
+ * which cannot read this file off disk but can fetch the identical bytes from
+ * `audiobooks.heygabi.ai/catalog.csv` — parses it with the same code rather
+ * than a second copy of it. The row mapping IS the row identity; two copies
+ * would be two different ideas of what a row is, which is the drift
+ * `packages/core/src/matching.ts` opens by banning.
+ *
+ * **What stayed here is the I/O and only the I/O**: where the checkout is, that
+ * a missing file reads as `[]`, and the `LC_AUDIOBOOK_ROOT` escape hatch. That
+ * is the split `@lc/core`'s "no I/O — safe to import anywhere" promise requires,
+ * and it is why an offline run, a run before a deploy and a recovery run all
+ * still work exactly as they did.
  */
 export function loadAudiobooks() {
   if (!existsSync(CSV)) return [];
-  const rows = parseCsv(readFileSync(CSV, 'utf8'));
-  const header = rows[0] ?? [];
-  const at = Object.fromEntries(header.map((h, i) => [h, i]));
-
-  return rows.slice(1)
-    .filter((r) => r.length >= header.length && (r[at.title] ?? '').trim())
-    .map((r, n) => {
-      const rawTitle = r[at.title] ?? '';
-      const series = (r[at.series] ?? '').trim() || null;
-      return {
-        // `matchIndexedWork` wants an id; nothing here reads it back.
-        id: n + 1,
-        rawTitle,
-        title: cleanTitleWithSeries(rawTitle, series),
-        authors: (r[at.author] ?? '').trim(),
-        series,
-        seriesIndexSort: parseVolumeNumber(r[at.series_index_sort] ?? ''),
-        // Same value, under the field name `MatchableWork` reads (see
-        // matching.ts). Kept as a second field rather than a rename so every
-        // existing `.seriesIndexSort` reader here stays untouched — this one
-        // exists solely so `buildWorkIndex` can see it for ambiguous-fold
-        // disambiguation (the Space Knight case).
-        seriesIndex: parseVolumeNumber(r[at.series_index_sort] ?? ''),
-        seriesIndexDisplay: (r[at.series_index_display] ?? '').trim() || null,
-        // Who read it. The one field that tells two recordings of the same book
-        // apart at a glance — a fourteen-name full cast against "Jack Garrett"
-        // — and the reason `audiobook_edition_holding` (migration 0390) can
-        // show WHICH edition each row is. Read verbatim; the CSV states it as
-        // one comma-joined string and splitting it here would invent a
-        // structure that catalog does not itself draw.
-        narrator: (r[at.narrator] ?? '').trim() || null,
-        coverHref: (r[at.cover_href] ?? '').trim() || null,
-        year: (r[at.year] ?? '').trim() || null,
-        genre: (r[at.genre] ?? '').trim() || null,
-        description: (r[at.desc] ?? '').trim() || null,
-      };
-    });
+  return parseAudiobookCsv(readFileSync(CSV, 'utf8'));
 }
 
 /**
