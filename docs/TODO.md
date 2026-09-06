@@ -2211,7 +2211,7 @@ skipped by `declaresNoIsbn`** (#450 *Dungeon Born*), **1 refused by the language
 gate** (`9784047336582`, **978-4 = Japan**, proposed by LibraryThing for
 *Sanctuary: The Art Book of Yuumei*), 10 updates + 10 `change_log` rows.
 
-### ☐ The DATA fix — dry-run ready — awaiting owner
+### ☑ The DATA fix — tier A APPLIED by the owner 2026-09-05 18:23 Phoenix; tiers B and C still his
 
 `scripts/fix-foreign-isbns-2026-09-05.mjs`: explicit id list, **asserted
 from-values** (a moved row stops the run), `isbn13 → NULL`, `source → 'manual'`
@@ -2222,7 +2222,13 @@ only where that is evidenced, one `change_log` row per field, batch
 `manual`** (307/308/311 — provable from their two untouched Illumicrate
 siblings), 15 change_log rows, **27 statements**. padhard **0** and it says why.
 
-☐ **The owner's command — dry-run ready, awaiting owner:**
+☑ ~~**The owner's command — dry-run ready, awaiting owner:**~~ ✅ **APPLIED — the
+owner ran tier A at 2026-09-06 01:23:49Z (18:23 Phoenix); measured straight
+after in main's D1: all 12 editions `isbn13 = NULL`, 307/308/311 back to
+`source = 'manual'`, `change_log` holds 12 `isbn13` + 3 `source` rows for batch
+`fix-2026-09-05-foreign-isbns`. padhard: 0 rows for the batch, as the dry run
+said (a no-op leaves no trace, so whether the `--friend` line was run is
+unknowable and does not matter).** The lines, kept as the record:
 `node scripts/fix-foreign-isbns-2026-09-05.mjs --remote --commit`
 then `node scripts/fix-foreign-isbns-2026-09-05.mjs --remote --friend --commit`
 (expected no-op). Review: <https://library.heygabi.ai/work/224>,
