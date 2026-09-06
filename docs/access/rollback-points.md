@@ -1,7 +1,10 @@
 # Rollback points — library_catalog   (Access Reference)
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
-> Last verified: **2026-09-05** for the NEW 2026-09-05 row ONLY — both version
+> Last verified: **2026-09-06** for the NEW 2026-09-06 `c19fbbf` row ONLY — the
+> four version ids in it were read off `npx wrangler deployments list` (each
+> env) and the deploy output on the day. ⚠️ No other row was re-verified.
+> Last verified before that: **2026-09-05** for the 2026-09-05 row ONLY — both version
 > ids were read off `npx wrangler deployments list` (each env) BEFORE the
 > deploy pair, and the new ids off the deploy output. ⚠️ No older row was
 > re-verified against Cloudflare.
@@ -26,6 +29,7 @@ which has real users now and where changes are "more damning".
 | 2026-08-11 | `75e650f` — cover status, watches, upload path, migration `0040` | **`3848593`** | **`05fdf2e3`** |
 | 2026-09-06 | `888ffbe` — the two STANDING AUDITS become routes + a daily cron, migration `0480` | **`235010f`** (main) / **`b1fb406`** (friend) | main `eadd16b6-143b-4a81-a492-9b4598ef5cac` → back to **`b547095d-4ec4-4cd6-b586-d40467f28e62`**; friend `0408aa25-e757-4b07-b02c-34b25259b578` → back to **`9b2b64d2-cffa-4a1d-abcb-7193694b1e31`** |
 | 2026-09-05 | `b2c9931` — `series_volume`/`series_check` refreshed by the SAME audiobook cron (platform inventory §7 row #2), no migration | **`744f866`** is the tip; the code to go back to is **`0fa9ad6`** | main `6ed4a22b-d8dc-4703-b3b7-08f3214c6aef` → back to **`eadd16b6-143b-4a81-a492-9b4598ef5cac`**; friend `c57c5173-eaa9-4445-be06-48a4f2711ef5` → back to **`0408aa25-e757-4b07-b02c-34b25259b578`** |
+| 2026-09-06 | `c19fbbf` — shadow fetches unconditionally, `force` on the admin route, the gate counters on `/api/health`. **No migration** | **`eb69b810`** — the last commit before this change | main `67554087-3791-495e-bb5f-61f730bc50dd` → back to **`c0d40662-60ca-4ee0-aed6-3b40b7802211`**; friend `2fde08ea-4fd0-4363-b3ad-90083ede2f69` → back to **`bfec83c1-70a7-4991-b3d4-55cb106acbf7`**. ⚠️ **NOT the immediately-previous version.** W10-FED-PROV deployed the same commit `09ea0cbf` two minutes earlier, so `d950b97d` / `7f782b10` already carry this build; the ids above are the last pair WITHOUT it, from `05:30Z`. 🔴 **And a version rollback is almost certainly the wrong tool** — nothing here writes, and the proportionate undo is `AUDIOBOOK_SWEEP_MODE = "off"` (the section below) |
 
 To undo the code: `git reset --hard c75d174 && git push --force-with-lease`.
 ⚠️ **That does not undo the database.** Migrations `0013`, `0020` and `0021` are
