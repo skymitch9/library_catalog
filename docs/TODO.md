@@ -1216,33 +1216,6 @@ Write the throwaway deny FIRST, from the Spending panel on
 
 ---
 
-## ❓ OWNER DECISION — should a curated cross-catalog join be WRITABLE on this side? (2026-09-02)
-
-**The options:** (a) leave it as today — the four reviewed pairs are guarded
-here and rendered from the sibling's file, this side writes nothing curated; or
-(b) make it writable, which means a `'curated'` value in
-`audiobook_edition_holding.matched_via`'s CHECK constraint, rebuilding that
-table **and** the `audiobook_holding` VIEW over it, on **two** production
-databases. Migration 0110 already settled the shape if (b) is ever taken: an
-owner-confirmed link got its OWN table rather than a new enum value.
-
-The build is done and in [`DONE.md`](DONE.md); this is the single open thread.
-Design of record: `audiobook_catalog/docs/info/cross-catalog-links.md` §5.
-
-☐ **Should a curated join be WRITABLE on this side?** Today the four reviewed
-  pairs are GUARDED here and rendered from the sibling's file; this side writes
-  nothing curated, because `audiobook_edition_holding.matched_via` is
-  `CHECK (matched_via IN ('exact','alias','containment'))` and a `'curated'`
-  value means rebuilding the table **and** the `audiobook_holding` VIEW over it,
-  on **two** production databases.
-  ⚠️ **Migration 0110 already settled the shape, if it is ever done:** an
-  owner-confirmed *series* link got its **own table** rather than a new enum
-  value, for the same reason (an upsert would overwrite the confirmation).
-  **What would change it:** the two `work_alias` rows that carry works 230 and
-  232 being judged too fragile to rest on, or a second book needing the same
-  two-works-one-audiobook shape. The number to watch is how many curated pairs
-  exist — **4 today**, and one file, one owner decision.
-
 ## ☑ NOTHING TO BUILD — DATA: link the unlinked copies on the multi-printing works, so the shelf can name them — ☐ a person, one work at a time (2026-09-02)
 
 Fallout of the shelf change above, and a **data** task, not a code one. Where a
@@ -1311,28 +1284,6 @@ example, <https://library.heygabi.ai/work/220> (*Words of Radiance*).
 > Q2 (*Keepers of the Light* / Broken Prophecies) was un-pinned by the owner's
 > physical check (*"ITS BOOK 1"*): padhard #489 retitled, printed form "1" set,
 > old title kept as alias, batch `owner-2026-08-31-broken-prophecies`.
-
-## ❓ OWNER DECISION — is a second recording of one book worth a migration? (2026-08-26)
-
-**The options:** (a) leave it — one pair affected in 1,084 rows, the book is
-linked and only the second narrator is invisible; or (b) widen `audio_key`,
-which is a **migration with its own review** because that key is deliberately
-the same string the content-warning join uses (0340's `raw_title`). Full entry
-as [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) KI-12.
-
-Written up as [`KNOWN_ISSUES.md` KI-12](KNOWN_ISSUES.md) and repeated here
-because it needs an owner decision, not a fix. The household owns **two**
-*Isles of the Emberdark* audiobooks (one read by Kaleo Griffith + Jennifer Jill
-Araya, one read by **Brandon Sanderson himself**) and `catalog.csv` gives them
-the **byte-identical** title. `audiobook_edition_holding` is keyed
-`(work_id, audio_key)` with `audio_key` = that verbatim string, so they collide
-and only one is stored — works #4 and #348 each show one audiobook.
-
-⚠️ **`audio_key` is deliberately the same string as the content-warning key**
-(migration 0340's `raw_title`), so widening it is a **migration with its own
-review**, not an edit. Measured 2026-08-26: **1 pair** in the 1,084-row catalog
-is affected. Do it when that count grows, or when you want both narrators on a
-work page. The ACOTAR dramatizations are unaffected — their raw titles differ.
 
 ## ☐ OWNER ACTION — custody gaps: THREE main-instance secrets are live with no readable master (2026-08-26)
 
@@ -2187,110 +2138,6 @@ that repo is outstanding, and it belongs to the conductor, not to this file.
   first-page thumbnail?** (~~recommended: PDF first~~ — **the PDF-first
   recommendation is now unsupported**, see the measurement above; members-only
   still recommended).
-
-## ⏸ DEFERRED BY OWNER 2026-08-16 — 🤝 A second household's library, federated with ours
-
-> **His deferral, verbatim, 2026-08-16, the same day he raised it:** *"do the
-> next catalog later"*.
-
-⚠️ **Corrected 2026-09-05 (AUD-library): half of this ask has since been
-delivered under other headings, and reading this section cold would suggest
-nothing exists.** `padhard.heygabi.ai` IS a second household's library and has
-been live since 2026-08-16 (`access/second-instance.md`), and the general
-version — standing one up from an accepted request — is the "Request a catalog"
-provisioner at the top of this file. **What is genuinely NOT delivered is the
-JOIN**, which is the half he actually cared about (*"so we can see who owns
-what"*): `PEERS` ships **`[]`**, so no instance reads another's holdings today,
-and turning that on is access-INCREASING and needs a redeploy of every existing
-instance (phase 7's follow-up list says so). Constraints 1 and 2 below — she is
-less technical, she is not local — were answered by the provisioner design.
-
-### ☑ BUILT 2026-09-05 — the INDEX half (padhard federates as source `library2`)
-
-> **Owner, 2026-09-05 15:27 Phoenix:** *"in the universe and series tab it's
-> not pulling Padhard library"*. This un-defers the INDEX half only. **The
-> peer-JOIN half (`PEERS`, instance-to-instance holdings) stays deferred and
-> was not touched.**
-
-The two halves are different mechanisms and it is worth keeping them apart:
-the INDEX is a push into `index.heygabi.ai`, which the apex Universes/Series
-tabs already read; the JOIN is instances reading each other directly.
-
-**Shipped in this repo** (`90d704b`, `ec9cd8b`) — both instances deployed:
-
-| What | Was | Is |
-|---|---|---|
-| Push URL | `PUT /api/push/library`, hard-coded | `PUT /api/push/{resolveIndexSource(ESTATE_APP)}` — `library` / `library2` |
-| Backstop freshness | read `health.sources.library` always | reads ITS OWN source's key |
-| `POST /api/admin/index-push` | answered `{"app":"library"}` always | names the source it pushed |
-| Log lines | `index push (mutation)` | carry the source — two instances, one `wrangler tail` |
-| 🔴 `detail_url` / relative `cover_url` | absolutised against `library.heygabi.ai` **on both instances** | the instance's own `SITE_ORIGIN` |
-
-🔴 **That last row was found while building and is the one that would have
-been hardest to see.** `source_id` is a per-database `work.id`, so padhard's
-row for id 7 pointed at whatever book is id 7 in the MAIN library — a wrong
-book, not a 404. Fixed in `packages/db/src/index-projection.ts` with the
-instance's own origin (already a var on both envs), defaulting to main's
-constant so main is byte-identical.
-
-⚠️ **Nothing federates yet, and nothing changed for main.** The push needs
-`INDEX_URL` *and* `INDEX_PUSH_TOKEN` together; hers is unset, so every trigger
-on padhard logs one line and does nothing, exactly as before.
-
-**Still the owner's / the conductor's, in this order:**
-
-1. **The index side must accept `library2` first** — a sibling agent
-   (W4-FED-INDEX) was teaching `catalog-platform`'s index Worker
-   `PUT /api/push/library2` + `INDEX_PUSH_TOKEN_LIBRARY2` in parallel. ⚠️ Not
-   verified from here; this repo cannot see that deploy.
-2. **Mint the bearer and set it on BOTH sides** — the index gets
-   `INDEX_PUSH_TOKEN_LIBRARY2`, padhard gets the same value as
-   `INDEX_PUSH_TOKEN`:
-   `npx wrangler secret put INDEX_PUSH_TOKEN --config apps/worker/wrangler.toml --env friend`
-   ⚠️ Never main's value — `scripts/push-secrets.mjs` refuses to copy it, and
-   copying it would file her books on main's shelf.
-3. **Trigger the first push:** `POST https://padhard.heygabi.ai/api/admin/index-push`
-   with a Firebase bearer holding the **`manageUsers`** capability on HER
-   instance (owner or admin there — the same gate as the rest of that
-   surface). Or wait for her next mutation / backstop tick.
-4. **`vis_library2` grants in /admin** — visibility on her shelf is its own
-   column (auth-worker migration 0007, `DEFAULT 0`) and is access-INCREASING,
-   so it is granted by hand, per person, never as a side effect of this.
-5. **Verify** at `https://heygabi.ai/universes/` — that is where the owner's
-   report came from and the only place the result is visible. Nothing about
-   `padhard.heygabi.ai` itself changes to the eye.
-
-⚠️ **One measurement that contradicts the note above:** it says `PEERS` ships
-`[]`. Measured in `apps/worker/wrangler.toml` on 2026-09-05, **both envs carry
-a populated `PEERS`** (main lists `padhard`, friend lists `sky`). That is the
-committed config, not a live probe — the peer half may be further along than
-this section believes. Worth a look before anyone re-plans the JOIN.
-
-**Deferred by the owner the same day it was raised — "do the next catalog
-later" — recorded now so it is not lost.**
-
-The ask: *"I want to make a site for my friends library and then link it to
-mine so we can see who owns what. but she's less technical and doesnt live near
-me, they need a much better automated solution."*
-
-Three constraints that make this NOT just "deploy another copy":
-
-1. ⚠️ **She is less technical.** Every operational assumption this estate rests
-   on — a pipeline on a home machine, wrangler from a laptop, reading a runbook
-   — is unavailable. Whatever is built has to run without her ever seeing a
-   terminal.
-2. ⚠️ **She is not local.** No shared LAN, no "I'll set it up on your machine",
-   no physical access to fix a stuck box. Remote-first from day one.
-3. **The point is the JOIN, not the copy.** "See who owns what" means the two
-   catalogs must be comparable — which is what the shared index
-   (`index.heygabi.ai`) already does across our three catalogs, and is the
-   obvious foundation rather than a new mechanism.
-
-⚠️ **Do not start this by cloning a repo.** The interesting design question is
-the automation and the ownership boundary (her data, her account, her control,
-our shared view), and answering that first will change what gets deployed.
-Related: the combined-site architecture already sketched for our own three
-catalogs.
 
 ## ☐ OWNER ACTION — 📸 photograph the Illumicrate editions and upload them (2026-08-14) — ⚠️ THE DASHBOARD NAG IS GONE, THIS NOTE IS NOW THE ONLY REMINDER
 

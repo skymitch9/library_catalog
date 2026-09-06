@@ -359,6 +359,13 @@ count is more than a handful, or when he asks to see both narrators on a work
 page. The ACOTAR dramatizations are NOT affected — their raw titles differ by
 `(Part 1 of 2)` / `(Part 2 of 2)`, so both halves store.
 
+⚠️ **Decided 2026-09-06 — the migration is CANCELLED until that count moves.**
+`TODO.md`'s *"is a second recording of one book worth a migration?"* was closed
+by the conductor under the owner's silence-takes-the-recommendation rule and
+moved WHOLE to [`DONE.md`](DONE.md) (*"Closed by the conductor under the silence
+rule — reversible"*, 2026-09-06). **This entry is now the only place that
+decision lives, and it reverses on the number above.**
+
 ---
 
 ## KI-14 · A book whose TITLE is its SERIES name cannot be isolated on the audiobook site — `ACCEPTED`
