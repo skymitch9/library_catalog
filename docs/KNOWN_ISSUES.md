@@ -1,7 +1,16 @@
 # library_catalog — Known Issues, Waivers & Exceptions
 
 > **Audience:** Claude/Kiro sessions and the owner. **Status:** TRACKED.
-> Last verified: **2026-09-05 ~23:10 UTC (ebook phase 5 APPLIED)** — **KI-15 was
+> Last verified: **2026-09-06 (W8-GUARD)** — **KI-17 was added** (the four art
+> books) and measured against production `library-catalog`: editions
+> **670–673** all read `edition_name = "Collector's Edition"` / `source
+> 'manual'` / `isbn13` NULL, all four are skipped by `isCrowdfundedPrinting` in
+> the live `--remote` dry run (32 skipped by that guard in total), and
+> `change_log` row **1593** shows work 516 *Sanctuary* was promoted `standin` →
+> `ok` by a **human** at 2026-08-24 22:44:43. Stand-ins across both instances:
+> **0** main / **6** padhard. ⚠️ **Nothing else was re-checked in that pass** —
+> KI-5 through KI-16 all still carry the ages stated below.
+> Previously **2026-09-05 ~23:10 UTC (ebook phase 5 APPLIED)** — **KI-15 was
 > RETIRED by its own stated end condition** and moved to the resolved table at
 > the foot of this file. Phase 5 ran against production `library-catalog`: the
 > 123 ebook editions it was about are deleted, and the surviving ebook-format
@@ -431,6 +440,105 @@ reporting `unreachable: 0` on two consecutive nights.**
 retry loop would hide a genuine outage, and the count is the instrument — an
 `unreachable` figure that trends upward is the signal that the r2.dev decision
 finally needs revisiting.
+
+---
+
+## KI-17 · The four ART BOOKS are refused by the crowdfunding guard, and one wears a product photo for a cover — `ACCEPTED`
+
+**Symptom.** Two ladders mis-handle the same four objects, for the same reason:
+**an art book's ordinary retail packaging looks exactly like a special
+printing.**
+
+1. 🔴 **The ISBN backfill refuses them.** Editions **#670 #671 #672 #673** all
+   carry `edition_name = "Collector's Edition"`, and `isCrowdfundedPrinting`
+   (`scripts/lib/backfill-safety.mjs`, guard 1b) matches
+   `/\bcollector'?s?\b/i`. Every run prints them as *"a crowdfunded/collector's
+   printing the owner holds"* and never asks a rung. These are retail art books
+   — a "collector's edition" is what the publisher calls the only edition there
+   is — so, unlike a Kickstarter hardcover, they very probably **do** have
+   ISBNs.
+2. **The cover ladder returns a photograph of the object, not a jacket.** Work
+   **516** *Sanctuary: The Art Book of Yuumei* was written a Goodreads image at
+   **high** confidence that is the right book and a **3D product photo**
+   annotated *11.5 in / 9 in / 124 Pages*
+   ([`info/covers-and-series.md`](info/covers-and-series.md) §0.1).
+
+| edition | work | title | `edition_name` | `source` | `isbn13` |
+|---|---|---|---|---|---|
+| **670** | 516 | *Sanctuary: The Art Book of Yuumei* | `Collector's Edition` | `manual` | NULL |
+| **671** | 517 | *PERSONA 5 ROYAL ART BOOK* | `Collector's Edition` | `manual` | NULL |
+| **672** | 518 | *PERSONA 5 ART BOOK The Aesthetics* | `Collector's Edition` | `manual` | NULL |
+| **673** | 519 | *THE ART OF FIRE EMBLEM: THREE HOUSES* | `Collector's Edition` | `manual` | NULL |
+
+**Measured 2026-09-06** against production `library-catalog`, in the `--remote`
+dry run of `scripts/backfill-missing-isbns.mjs`: **32** rows skipped by
+`isCrowdfundedPrinting`, and **these four are among them**. All four were
+created in one batch at `2026-08-25 03:09:17`, all `hardcover`, all
+`source = 'manual'`; each has exactly one owned `copy` (453–456) with
+`edition_notes` NULL and `leatherbound` / `slipcase` / `sprayed_edges` all
+**0**, and no crowdfunding importer in `scripts/` names any of them. That is the
+same evidence profile that kept edition **#507** out of the tier C repair —
+nothing on these rows says they came from a campaign except the word
+*"Collector's"*.
+
+⚠️ **The cover half of #516 is CLOSED, and it closed the way the design says it
+should — a person looked.** Re-measured 2026-09-06: `cover_status` is **`ok`**,
+and `change_log` row **1593** records `"standin"` → `"ok"` at
+**2026-08-24 22:44:43**, `changed_how = 'human'`, `changed_by = 1`, with **no
+accompanying `coverUrl` row** — so the owner assessed the product photograph and
+accepted it, and that is a judgement rather than a failure (0040's rule: `'ok'`
+means a person looked). ⚠️ [`TODO.md`](TODO.md)'s residue table still listed it
+as a stand-in until this entry was written. Cover state of the other three
+today: 517 `ok`, 518 and 519 `cover_status` NULL with a URL set. Stand-ins
+across the estate right now: **0** on main, **6** on padhard (113, 268, 542,
+552, 561, 675 — none of them an art book).
+
+**Why tolerated.** ⚠️ **This is the exact cost `isCrowdfundedPrinting`'s own
+docstring priced before it was written**, and the owner accepted the trade:
+
+> *"refusing every exclusive would turn one silent-wrong-fill into a
+> silent-never-fill"*
+
+The guard exists because of the owner's ruling of 2026-09-05 18:29 Phoenix
+(*"For the kickstarters we have in stock the ISBNs are recorded if they
+exist"*), and the direction it is wrong in is the safe one: a **refusal to
+write**, printed with its reason on every run, on four rows that already read
+`isbn13 IS NULL` and lose nothing by staying that way. Narrowing the word list
+to exclude *"Collector's"* is not available — three of the 13 tier C rows the
+owner approved are refused by **that word alone** (#319 *"Collector's Edition
+Trilogy — Book 1 Numbered"*, #320 *"Collector's Edition"*, #350 *"Kickstarter
+Collector's Edition"*), so dropping it would re-open the defect the guard was
+built for. ⚠️ And the ladder is unlikely to help even if asked: an art book's
+ISBN is the sort a title search answers with a *different* art book from the
+same franchise, which is precisely the wrong-object failure of 2026-08-20.
+
+⚠️ **Not the same as KI-6.** That is a placeholder card showing the wrong book
+(byte-identical, catchable by hash). This is the right book, photographed the
+wrong way and named the wrong thing — **no automated check can catch either
+half**; both were found by looking.
+
+**What would change it — as numbers.**
+
+- **Four is the number.** If the count of art-book rows refused by the
+  crowdfunding guard passes **ten**, the answer is an `edition_kind` the guard
+  can read (`packages/core` already models `collectors`) rather than a word in a
+  name — a row's KIND is a fact, its NAME is prose.
+- 🔴 **The cheap fix needs no code and belongs to the owner: type the four
+  ISBNs.** They are printed on the books, which are in the house. Under the same
+  ruling that created the guard, a hand-entered ISBN is the recorded fact and
+  ends the question permanently. Until then `isbn13 IS NULL` on these rows means
+  *"nobody asked"*, not *"there is none"* — ⚠️ the one place these four differ
+  from every other row the guard refuses.
+- 🔴 **What must NOT change it:** blanking work 516's `cover_url` so the default
+  cover sweep re-tries it. `scripts/backfill-missing-covers.mjs` targets
+  `cover_url IS NULL` unless `--standins` is passed, and the temptation is to
+  make a row re-enter that sweep by emptying it. Same standing rule as KI-16's
+  *"never blank a cover URL to make the number go down"* — the image is there
+  and a person accepted it.
+
+Review: <https://library.heygabi.ai/work/516> ·
+<https://library.heygabi.ai/work/517> · <https://library.heygabi.ai/work/518> ·
+<https://library.heygabi.ai/work/519>
 
 ---
 
