@@ -15,6 +15,15 @@
  *      is left exactly alone — the shop it names is better evidence than the
  *      publisher column ever was, and overwriting it would destroy a fact to
  *      replace it with a guess.
+ *
+ *      ⚠️ **The join is `copy.edition_id`, and it is narrower than it looks.**
+ *      Measured 2026-09-05: all seven copies the shop importer created on main
+ *      (copies 109–115) have `edition_id = NULL` even though the importer
+ *      inserted an edition for each — a separate, still-open defect reported
+ *      the same day. A work-level fallback (`copy.work_id = edition.work_id`)
+ *      would reach them and was deliberately NOT written: a work can hold
+ *      several printings, and it would hand the shop to copies of a printing
+ *      nobody bought there.
  *   3. one `change_log` row **per changed field**, batch
  *      `fix-2026-09-05-shop-publisher`, `changed_how = 'auto'`.
  *

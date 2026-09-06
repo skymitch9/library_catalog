@@ -341,10 +341,13 @@ provenance is the exception and carries no amount.
 - **No `/crowdfunding` screen.** The audit is an API and the importer prints it.
   A screen means a route in `App.tsx` and `router.tsx`, which another branch is
   editing; the reconciliation surface a scan needs is the script's output.
-- **No Barnes & Noble path.** §1.4. `copy.vendor` / `copy.acquired_on` /
-  `copy.price_paid_cents` already model a shop order and adding a fourth
+- ~~**No Barnes & Noble path.**~~ ⚠️ **Superseded — that script now exists.**
+  The *reasoning* stands and was right: `copy.vendor` / `copy.acquired_on` /
+  `copy.price_paid_cents` already model a shop order, and adding a fourth
   "platform" would put retail rows in a table whose every column is meaningless
-  for them. A retail importer would be a *different* script writing `copy` rows.
+  for them. What changed is the last sentence — *"a retail importer would be a
+  **different script writing `copy` rows**"* — which is exactly what
+  `scripts/import-shop-orders.mjs` became. **See §9.**
 - **No campaign or pledge editing in the UI.** The scan is the source. A form
   that could mint a campaign beside an imported one is how the two get out of
   step. Unlinking a wrong reward line **is** offered, because a scan makes
@@ -371,3 +374,82 @@ npm run import:crowdfunding -- --remote --commit             # ⚠️ owner gate
 ⚠️ **Migrate before deploying.** `/api/works/:id/provenance` and
 `/api/works/:id/accessories` query four tables production does not have;
 deploying first makes every book page's two new panels a 500.
+
+---
+
+## 9. The shop-order importer — and the one column that is not the shop
+
+> **Last verified: 2026-09-05** — the rule below is the owner's decision of that
+> date, and both instances were re-measured against it (the counts in §9.3 are
+> production reads, not estimates). ⚠️ **NOT re-checked:** anything else in this
+> file; §1–§8 keep their 2026-08-10 age.
+
+`scripts/import-shop-orders.mjs` is the retail half §7 said would have to be a
+different script. It is not the crowdfunding importer and must not become one:
+**did the money buy a promise or a product?** A shop sells products, so a shop
+order has no campaign, no pledge and no reward tier — it has a vendor, a date
+and a price, which `copy` already models.
+
+### 9.1 🔴 The rule: the SHOP is not the PUBLISHER
+
+| The question | The column that answers it |
+|---|---|
+| *Where did I buy this?* | **`copy.vendor`** |
+| *Who published this printing?* | **`edition.publisher`** |
+| *What did the retailer call this printing?* | `edition.edition_name` |
+
+**Owner decision, 2026-09-05 — both halves, not a choice between them:**
+
+* **`edition.publisher` is `NULL`** unless the source row carries a real
+  publisher. A shop order genuinely does not know who published the book; the
+  ISBN ladder fills it later. ⚠️ NULL, never `''` — an empty string is invisible
+  to every `publisher IS NULL` gap query the ladder runs on.
+* **the shop goes to `copy.vendor`**, which is where a shop belongs.
+
+⚠️ **Do not "fix" a missing publisher by looking it up inside the importer.**
+That turns an import into a research run, which is the split
+[`isbn-ladder.md`](isbn-ladder.md) exists to keep.
+
+### 9.2 ⚠️ Two traps, both of which have already cost real rows
+
+1. **A shop CAN be a publisher.** *Barnes & Noble Books* (`978-0-7607`) and
+   *Barnes & Noble Classics* (`978-1-5930`) are real imprints and two rows in
+   this catalog are theirs — editions **511** and **557**, both from
+   `openlibrary`, both correct. So the rule is *"use what the source row says"*,
+   never *"reject anything shop-shaped"*, and any sweep matches on **exact
+   equality, never `LIKE`** — a `LIKE '%Barnes%'` cannot tell the shop from the
+   imprint and would have corrupted both true records.
+2. **The shop name in `publisher` was doubling as a batch marker.** The importer
+   read its own new rows back with `WHERE source = 'manual' AND publisher =
+   <vendor>`, which only worked *because of* the bug. With `publisher` correctly
+   NULL that predicate matches every publisher-less manual edition in the
+   catalog — **97** of them on main, measured 2026-09-05. The read-back now
+   matches on **work + format + `edition_name`**, newest id winning
+   (`matchEditionIds`, unit-tested in `scripts/test/shop-orders.test.mjs`).
+
+### 9.3 What was measured, 2026-09-05
+
+| | editions whose `publisher` IS a known shop name | of those, `source='manual'` | repaired |
+|---|---|---|---|
+| main (`library-catalog`) | **1** — ed#511, and it is **correct** | **0** | **0** |
+| padhard (`library-catalog-2nd`) | **0** | **0** | **0** |
+
+The zeros are the result, not a failure to find anything:
+`scripts/fix-retailer-publishers-2026-09-02.mjs` had already repaired the seven
+rows the importer made, and **padhard has never run the shop importer** (zero
+copies with any vendor recorded). The sweep
+`scripts/fix-shop-publisher-2026-09-05.mjs` exists because the importer can run
+again on either instance, and because *"0 rows"* is only worth believing once
+something has measured it.
+
+### 9.4 Two open defects found while doing this — neither fixed here
+
+* ⚠️ **`import-illumicrate-percy-jackson.mjs:118` has the same defect**: it
+  writes its `VENDOR` constant (`'Illumicrate'`) into `edition.publisher`.
+  Editions **307–311** (works 224–228) carry it today. Three of the five now
+  read `source = 'openlibrary'`, so a later backfill has been over them and the
+  provenance is no longer clean — deciding those is a separate batch.
+* ⚠️ **The seven copies the shop importer created are not linked to their
+  editions.** Copies **109–115** on main all have `edition_id = NULL` even
+  though the importer inserted an edition for each. `matchEditionIds` fixes the
+  mechanism for future runs; it does not repair these seven.
