@@ -35,6 +35,15 @@ export * from './assign.js';
  * places.
  */
 export * from './catalog.js';
+/**
+ * ⚠️ The estate SERIES CANON is not universe data — a canon entry says two
+ * strings name the same series, a universe says a series belongs to a larger
+ * continuity, and `data/series-canon.json`'s own `_scope.notAUniverse` keeps
+ * them apart. It lives in this package for one reason only: it is a second
+ * build-generated file with a cross-repo provenance, and this is the one
+ * package allowed to hold those. The RULE is in `@lc/core`.
+ */
+export * from './series-canon.js';
 
 /** The parsed list, exactly as catalog-platform holds it — comment keys and all. */
 export const universesDocument = document as unknown as UniversesDocument;

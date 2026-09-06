@@ -37,38 +37,33 @@
  * whole backfill over reference data for a feature it does not need. This is
  * the SAME choice `audiobook_catalog/app/core/universes.py` makes for its own
  * live cross-repo read, and for the same reason.
+ *
+ * ## ⚠️ Since 2026-09-05 this module is a THIN WRAPPER — the rule moved
+ *
+ * `normText`, the map build and the lookup are now
+ * `packages/core/src/series-canon.ts`, so the Worker and this script fold a
+ * series name with the same code rather than two copies of it (phase 0 of
+ * `catalog-platform/docs/info/audiobook-association-route.md`, §9 step 3).
+ * **What stayed here is the LIVE read and the warn-and-degrade posture** — the
+ * two things that are true of a hand-run script and false of a Worker. The
+ * Worker's bundle-ready binding is `@lc/universes`' `seriesCanonMap`, over the
+ * generated copy; §2.4 of that design states the resulting skew out loud, and
+ * says the route is the stale side.
+ *
+ * `normText` is re-exported unchanged so every existing importer keeps working.
  */
 
 import { readFileSync, existsSync } from 'node:fs';
+import {
+  buildSeriesCanonMap,
+  canonicalSeriesIn,
+  normText,
+} from '../../packages/core/src/series-canon.ts';
 import { resolvePlatformRepo } from './platform-repo.mjs';
 
-/**
- * Lowercase, fold curly quotes to straight, collapse whitespace, trim.
- * Identical fold to catalog-platform tools/lib/{universes,series-canon}.mjs
- * normText — one estate rule for comparing names, not a second one.
- */
-export function normText(s) {
-  if (s === null || s === undefined) return '';
-  return String(s)
-    .replace(/[‘’ʼ′]/g, "'")
-    .replace(/[“”]/g, '"')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
-}
+export { normText };
 
 let cached = null; // Map<normalised variant, canonical> | null, built once per process
-
-function buildMap(doc) {
-  const map = new Map();
-  for (const entry of doc.entries ?? []) {
-    if (!entry.canonical) continue;
-    for (const variant of [...(entry.variants ?? []), entry.canonical]) {
-      map.set(normText(variant), entry.canonical);
-    }
-  }
-  return map;
-}
 
 /** Load the estate canon once per process. Never throws — see the header. */
 function loadMap() {
@@ -98,7 +93,7 @@ function loadMap() {
 
   try {
     const doc = JSON.parse(readFileSync(path, 'utf8'));
-    cached = buildMap(doc);
+    cached = buildSeriesCanonMap(doc);
     console.log(`series-canon: ${cached.size} spelling(s) across ${doc.entries?.length ?? 0} entries, from ${path}`);
   } catch (err) {
     console.warn(`\n[WARN] series-canon: could not read/parse ${path} (${err.message}). Continuing with NO folds.\n`);
@@ -118,8 +113,7 @@ function loadMap() {
  * `normaliseTitle` alone does not.
  */
 export function canonicalSeries(name) {
-  if (!name) return name;
-  return loadMap().get(normText(name)) ?? name;
+  return canonicalSeriesIn(loadMap(), name);
 }
 
 /** For tests: force a reload on the next canonicalSeries() call. */
