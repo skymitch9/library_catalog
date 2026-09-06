@@ -60,9 +60,15 @@
  *   interacts with). If it already carries an isbn13 somehow, the work is
  *   skipped rather than overwritten.
  * - 🔴 **A LANGUAGE GATE on every free rung**, 🔴 **a refusal to fill a row
- *   that says it has no ISBN**, and 🔴 **a refusal to fill a crowdfunded printing
- *   the owner holds** — all added 2026-09-05 after the 2026-08-20 run was
- *   audited. See "The two guards the 2026-08-20 run did not have" below.
+ *   that says it has no ISBN**, 🔴 **a refusal to fill a crowdfunded printing
+ *   the owner holds**, and 🔴 **a refusal to fill a row that NAMES its own
+ *   ISBNs** (2026-09-06) — added after the 2026-08-20 run was audited. See
+ *   "The two guards the 2026-08-20 run did not have" below.
+ * - 🔴 **A VOLUME-NUMBER gate on the title-search rungs** (2026-09-06):
+ *   `numberedTitleAgrees` (`packages/core/src/matching.ts`) refuses a candidate
+ *   whose volume number contradicts ours. Google Books answered *Space Knight*
+ *   **5, 6, 7, 8 and 9** with the one ISBN `9781986619233` — `sim 0.80` passes
+ *   on a numbered series where only the number differs.
  * - 🔴 **Every write logs a `change_log` row per changed field.** It did not
  *   before, which is why the 2026-08-20 run left no trace at all and had to be
  *   reconstructed from `updated_at` and three stdout logs at the repo root.
@@ -89,6 +95,13 @@
  *      at entry when the object has one. ⚠️ This is an explicit WIDENING of guard
  *      1, which is deliberately narrow and stays narrow — the two make different
  *      claims and are two functions on purpose.
+ *   1c. 🔴 **`namesAnIsbn`** — added 2026-09-06 for edition **#321**, the one row
+ *      neither guard above could reach. Its `edition_name` is *"Leatherbound
+ *      (two-volume set: Vol 1 ISBN 9781938570308, Vol 2 ISBN 9781938570315)"*:
+ *      it does not say it HAS no ISBN (it names two), and "leatherbound" is a
+ *      binding material rather than campaign vocabulary. A row that names its own
+ *      identifiers has already answered the question, and the ladder had been
+ *      proposing a UK trade hardcover's ISBN over it.
  *   2. **`isbnLanguageVerdict`** — rung 1 reads `doc.isbn`, *"an array of ALL
  *      isbns from all editions of this work"*, and the title gate scores the
  *      **work's** title, so a translation passes at `sim 1.00`. Every candidate
@@ -113,11 +126,12 @@ import {
   isCrowdfundedPrinting,
   isbnLanguageVerdict,
   llmKeyName,
+  namesAnIsbn,
   readLlmKeyFrom,
 } from './lib/backfill-safety.mjs';
 import { CLI_FEATURE_SETS, checkCliBilling } from './lib/billing-cli.mjs';
 import { parseThingTitleIsbns } from './lib/librarything.mjs';
-import { titleSimilarity } from '../packages/core/src/matching.ts';
+import { numberedTitleAgrees, titleSimilarity } from '../packages/core/src/matching.ts';
 import { normaliseTitle, cleanAudiobookTitle } from '../packages/core/src/titles.ts';
 
 const flags = parseFlags();
@@ -298,6 +312,13 @@ async function searchOpenLibraryForIsbn(title, author) {
     if (!doc.title) continue;
     const sim = titleSimilarity(normaliseTitle(doc.title), normaliseTitle(title));
     if (sim < 0.80) continue;
+    if (!numberedTitleAgrees(doc.title, title)) {
+      console.log(
+        `      ⚠️ REFUSED openlibrary "${String(doc.title).slice(0, 40)}" — ` +
+          'a different volume of the series (see packages/core numberedTitleAgrees).',
+      );
+      continue;
+    }
 
     // ⚠️ doc.isbn is an array of ALL isbns from all editions of this work — every
     // translation included — and `sim` above scored the WORK's title, so it says
@@ -343,6 +364,30 @@ async function searchGoogleBooksForIsbn(title, author) {
     if (!vi?.title) continue;
     const sim = titleSimilarity(normaliseTitle(vi.title), normaliseTitle(title));
     if (sim < 0.80) continue;
+
+    /*
+     * 🔴 The volume gate — THIS is the rung that needed it, measured 2026-09-06.
+     *
+     * Google Books answered *Space Knight* books 5, 6, 7, 8 and 9 with the one
+     * ISBN `9781986619233`. `sim` is 1.00 across a numbered series where only
+     * the number differs, because `titleSimilarity` drops one-character words
+     * and weighs a digit like any other word. Only the UNIQUE index on
+     * `edition.isbn13` stopped four of those five writes — a backstop, not a
+     * gate: it refuses the second write and says nothing about the first.
+     *
+     * ⚠️ A candidate carrying NO number still passes; the refusal is for one
+     * that names a different volume, or names one where our row names none.
+     * `vi.subtitle` is deliberately not appended — Google puts the volume in
+     * `title` when it has one, and folding a subtitle in would let a year or an
+     * edition note read as a volume number.
+     */
+    if (!numberedTitleAgrees(vi.title, title)) {
+      console.log(
+        `      ⚠️ REFUSED googlebooks "${String(vi.title).slice(0, 40)}" — ` +
+          'a different volume of the series (see packages/core numberedTitleAgrees).',
+      );
+      continue;
+    }
 
     const ids = vi.industryIdentifiers ?? [];
     const isbn13 = allIsbn13s([
@@ -579,8 +624,26 @@ const allCandidates = query(CANDIDATES_SQL, flags);
  * two claims are different and are kept as two functions — see
  * `lib/backfill-safety.mjs isCrowdfundedPrinting`.
  */
+/*
+ * 🔴 GUARD 1c — a row that NAMES an ISBN has already said which ones apply.
+ *
+ * Edition #321 (work 220, *Words of Radiance*, the Dragonsteel leatherbound) is
+ * the row both guards above miss and the reason this one exists: its
+ * `edition_name` is *"Leatherbound (two-volume set: Vol 1 ISBN 9781938570308,
+ * Vol 2 ISBN 9781938570315)"*. It does not say it HAS no ISBN — it names two —
+ * and "leatherbound" is a binding material, not campaign vocabulary. Measured in
+ * the 2026-09-06 01:44Z dry run: with guards 1 and 1b in force the ladder still
+ * proposed `9781399622073` (Orion, a UK trade hardcover) for it, two hours after
+ * the owner had nulled that exact value.
+ *
+ * ⚠️ Third guard, third claim, third function — see
+ * `lib/backfill-safety.mjs namesAnIsbn`. It runs LAST of the three so the rows
+ * the first two already refuse keep being reported under their existing reason
+ * and the counts in `docs/info/isbn-ladder.md` §7 do not move.
+ */
 const declared = [];
 const crowdfunded = [];
+const named = [];
 const rows = [];
 for (const r of allCandidates) {
   const phrase = declaresNoIsbn(r.edition_name, r.note);
@@ -591,6 +654,11 @@ for (const r of allCandidates) {
   const campaign = isCrowdfundedPrinting(r.edition_name, r.note);
   if (campaign) {
     crowdfunded.push({ ...r, phrase: campaign });
+    continue;
+  }
+  const identifier = namesAnIsbn(r.edition_name, r.note);
+  if (identifier) {
+    named.push({ ...r, phrase: identifier });
     continue;
   }
   rows.push(r);
@@ -622,6 +690,19 @@ if (crowdfunded.length > 0) {
   console.log('   (see lib/backfill-safety.mjs isCrowdfundedPrinting)');
   for (const c of crowdfunded) {
     console.log(`   work #${c.work_id} ed#${c.edition_id}  ${c.title.slice(0, 44)}  — "${c.phrase}"`);
+  }
+}
+if (named.length > 0) {
+  console.log(
+    `\n🔴 ${named.length} SKIPPED — the printing's own record NAMES the ISBN(s) that apply to it, ` +
+      'so it has already answered this question',
+  );
+  console.log(
+    '   (see lib/backfill-safety.mjs namesAnIsbn — whoever typed those numbers had the book in ' +
+      'hand, and a search result is not better evidence than that):',
+  );
+  for (const n of named) {
+    console.log(`   work #${n.work_id} ed#${n.edition_id}  ${n.title.slice(0, 44)}  — names ${n.phrase}`);
   }
 }
 

@@ -195,6 +195,106 @@ export function isCrowdfundedPrinting(editionName, note) {
 }
 
 /**
+ * 🔴 **Does this printing's own record NAME the ISBNs that apply to it?**
+ * (`docs/TODO.md` #321, measured 2026-09-06 — the third narrow guard.)
+ *
+ * ⚠️ **The row that got past the other two, and why neither could catch it.**
+ * Edition **#321**, work 220 *Words of Radiance* — the Dragonsteel leatherbound,
+ * repaired as tier A on 2026-09-06 01:23:49Z — carries the `edition_name`:
+ *
+ * > *"Leatherbound (two-volume set: Vol 1 ISBN 9781938570308, Vol 2 ISBN
+ * > 9781938570315)"*
+ *
+ *   - `declaresNoIsbn` misses it because the row does **not** state that no ISBN
+ *     exists. It states the opposite: two of them, by number.
+ *   - `isCrowdfundedPrinting` misses it because *"leatherbound"* is a **binding
+ *     material, not campaign vocabulary** — and it was deliberately NOT added to
+ *     that guard's word list, because whether a leatherbound is *"a kickstarter
+ *     we have in stock"* is a question about a physical object and those belong
+ *     to the owner.
+ *
+ * Measured in the 2026-09-06 01:44Z production dry run: with both other guards
+ * in force the writer still proposed `9781399622073` (Orion, a UK trade
+ * hardcover) for this row — the very ISBN the owner had nulled two hours
+ * earlier. Without a third guard the repair had a half-life of one sweep.
+ *
+ * ## The claim this makes, which is narrower than either sibling
+ *
+ * **A row whose own `edition_name`/`note` names an ISBN has already stated which
+ * identifiers apply to it.** It is not a statement that no ISBN exists
+ * (`declaresNoIsbn`) and not a claim about the physical object
+ * (`isCrowdfundedPrinting`) — it is the row *disagreeing with the proposal in
+ * advance*. Whoever typed those numbers had the book in hand; a search result is
+ * not better evidence than that, and `#321` is the case where the row and the
+ * ladder contradict each other outright.
+ *
+ * ⚠️ **A third function, not a widening of either existing one.** Same reasoning
+ * `isCrowdfundedPrinting` gives for not being folded into `declaresNoIsbn`: the
+ * three rest on three different claims, and a future session must be able to
+ * move one without silently moving the others.
+ *
+ * ## Deliberately narrow — the word AND a number, in the same field
+ *
+ * It fires only where the field literally contains the word *ISBN* **and** an
+ * identifier-shaped run of digits directly after it. Neither half alone:
+ *
+ *   - *"ISBN unknown"* or *"check the ISBN"* names none → proceeds.
+ *   - A bare number with no `ISBN` beside it — a year, a print run, a price,
+ *     a Kickstarter tier number — is not a named identifier → proceeds.
+ *
+ * ⚠️ It does **not** verify a check digit, and that is on purpose: the claim is
+ * *"this row has already stated its identifiers"*, which a mistyped ISBN states
+ * just as loudly as a valid one. Checking the digit would import
+ * `packages/core/src/isbn.ts` into a leaf `.mjs` that must keep running under
+ * plain `node` (see `fix-foreign-isbns-2026-09-05.mjs`), and would buy a
+ * refusal-to-refuse in exactly the case a person most needs to be told.
+ *
+ * ⚠️ **Overlap with `declaresNoIsbn` is expected and harmless.** The slipcase
+ * wording — *"Volume of the slipcase set (set ISBN 9781368053099); no
+ * per-volume ISBN recorded"* — matches BOTH. Guard 1 runs first, so those rows
+ * keep being reported under their existing reason and the counts already in
+ * `docs/info/isbn-ladder.md` §7 do not move.
+ *
+ * @param {string | null | undefined} editionName
+ * @param {string | null | undefined} note
+ * @returns {string | null} the named identifier that refused it, or null to proceed
+ */
+export function namesAnIsbn(editionName, note) {
+  // `ISBN`, `ISBNs`, `ISBN-13`, `ISBN 10` — the word as anything writes it.
+  const ISBN_WORD = /\bisbns?(?:[-\s]?1[03])?\b/gi;
+  for (const field of [editionName, note]) {
+    if (!field) continue;
+    const s = String(field);
+    ISBN_WORD.lastIndex = 0;
+    let m;
+    while ((m = ISBN_WORD.exec(s)) !== null) {
+      const after = s.slice(m.index + m[0].length, m.index + m[0].length + 48);
+      /*
+       * Skip the punctuation — and the few words — an importer or a person puts
+       * between the word and the number ("ISBN: 978…", "set ISBN is 978…"),
+       * then take the leading run of digits, allowing the single spaces and
+       * hyphens a printed ISBN is grouped with.
+       *
+       * ⚠️ The filler window is short and lazy, but it is NOT what keeps this
+       * narrow — the **ten-digit minimum** is. A sentence that mentions an ISBN
+       * and then a year, a print run or a price ("ISBN unknown, printed 2019,
+       * 1 of 500") has no run of ten digits anywhere near the word, so it
+       * proceeds to the ladder as it should.
+       */
+      const run = /^[^0-9]{0,24}?((?:\d[\s-]?){9,16}[\dXx])/.exec(after);
+      if (!run) continue;
+      const compact = run[1].replace(/[\s-]/g, '').toUpperCase();
+      // 978/979 + 10 is an ISBN-13; nine digits and a check character is an
+      // ISBN-10. Take the leading identifier only — two ISBNs separated by a
+      // space would otherwise concatenate into one 26-digit non-answer.
+      if (/^97[89]\d{10}/.test(compact)) return compact.slice(0, 13);
+      if (/^\d{9}[\dX]/.test(compact)) return compact.slice(0, 10);
+    }
+  }
+  return null;
+}
+
+/**
  * 🔴 **Is this ISBN a printing of the book in the language the catalogue holds?**
  * (Incident 2026-08-20 — the reason this exists.)
  *

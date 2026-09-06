@@ -18,6 +18,7 @@ import {
   isCrowdfundedPrinting,
   isbnLanguageVerdict,
   llmKeyName,
+  namesAnIsbn,
   readLlmKeyFrom,
 } from '../lib/backfill-safety.mjs';
 
@@ -203,6 +204,102 @@ describe("isCrowdfundedPrinting — the owner's ruling of 2026-09-05 18:29 Phoen
     const slipcase = 'Volume of the slipcase set (set ISBN 9781368053099); no per-volume ISBN recorded';
     assert.ok(declaresNoIsbn(slipcase, null));
     assert.equal(isCrowdfundedPrinting(slipcase, null), null);
+  });
+});
+
+describe('namesAnIsbn — the third guard, and the row that got past the other two', () => {
+  /*
+   * Edition #321, work 220 *Words of Radiance* — the Dragonsteel leatherbound.
+   * This edition_name is the REAL production value, read live 2026-09-06:
+   * isbn13 NULL, source 'openlibrary', and the name below.
+   *
+   * Measured in the 2026-09-06 01:44Z production dry run: with declaresNoIsbn
+   * and isCrowdfundedPrinting both in force, the ladder still proposed
+   * 9781399622073 (Orion, a UK trade hardcover) for this row — two hours after
+   * the owner had nulled that exact value as tier A.
+   */
+  const ED_321 =
+    'Leatherbound (two-volume set: Vol 1 ISBN 9781938570308, Vol 2 ISBN 9781938570315)';
+
+  it('🔴 refuses ed#321, naming the first identifier the row states', () => {
+    assert.equal(namesAnIsbn(ED_321, null), '9781938570308');
+  });
+
+  it('🔴 is the ONLY one of the three guards that catches ed#321', () => {
+    // The whole reason this function exists. declaresNoIsbn misses it because
+    // the row does not say it has no ISBN — it names two. isCrowdfundedPrinting
+    // misses it because "leatherbound" is a binding material, not campaign
+    // vocabulary, and it was deliberately NOT added to that word list: whether a
+    // leatherbound is "a kickstarter we have in stock" is a question about a
+    // physical object, and those belong to the owner.
+    assert.equal(declaresNoIsbn(ED_321, null), null);
+    assert.equal(isCrowdfundedPrinting(ED_321, null), null);
+    assert.ok(namesAnIsbn(ED_321, null));
+  });
+
+  it('reads the note as well as the name', () => {
+    assert.equal(namesAnIsbn(null, 'the set ISBN is 9781368053099'), '9781368053099');
+  });
+
+  it('accepts the hyphenated printed form, and the ISBN-13 / ISBN-10 spellings', () => {
+    assert.equal(namesAnIsbn('Vol 1, ISBN 978-1-938570-30-8', null), '9781938570308');
+    assert.equal(namesAnIsbn('ISBN-13: 9781938570308', null), '9781938570308');
+    assert.equal(namesAnIsbn('ISBN-10 0786838655', null), '0786838655');
+    assert.equal(namesAnIsbn('ISBNs: 9781938570308 / 9781938570315', null), '9781938570308');
+    // An ISBN-10 ending in the check character X.
+    assert.equal(namesAnIsbn('ISBN 043942089X', null), '043942089X');
+  });
+
+  it('takes the LEADING identifier when two are space-separated, never a splice of both', () => {
+    // Without the slice this concatenates into a 26-digit non-answer and the
+    // guard silently stops firing — a refusal that quietly becomes a write.
+    assert.equal(namesAnIsbn('ISBN 9781938570308 9781938570315', null), '9781938570308');
+  });
+
+  it('🔴 needs the WORD and a NUMBER — neither half alone is a named identifier', () => {
+    // The word with no number: nothing has been stated.
+    assert.equal(namesAnIsbn('ISBN unknown', null), null);
+    assert.equal(namesAnIsbn('check the ISBN on the copyright page', null), null);
+    assert.equal(namesAnIsbn(null, 'ISBN not yet recorded'), null);
+    // A number with no word: a year, a print run, a tier, a price.
+    assert.equal(namesAnIsbn('First printing 2019, 1 of 500', null), null);
+    assert.equal(namesAnIsbn('Kickstarter tier 3', null), null);
+    assert.equal(namesAnIsbn(null, 'bought 2021-08-14 for 39.99'), null);
+  });
+
+  it('does not fire on a plain trade edition_name, which must stay fillable', () => {
+    // Same cost as isCrowdfundedPrinting's widening: every false refusal here is
+    // a silent-never-fill, so ordinary rows have to keep reaching the ladder.
+    assert.equal(namesAnIsbn('Hardcover', null), null);
+    assert.equal(namesAnIsbn('Trade paperback', null), null);
+    assert.equal(namesAnIsbn('First Edition', null), null);
+  });
+
+  it('is quiet on empty input — that is ed#507, The Book of Mormon', () => {
+    // edition_name NULL and note NULL: the row states nothing at all, so no
+    // guard may refuse it. #507 stays an open question for the owner rather
+    // than being quietly swept up by a third guard it does not fit.
+    assert.equal(namesAnIsbn(null, null), null);
+    assert.equal(namesAnIsbn(undefined, undefined), null);
+    assert.equal(namesAnIsbn('', ''), null);
+  });
+
+  it('overlaps declaresNoIsbn on the slipcase wording, and guard 1 still runs first', () => {
+    // Both fire on this row. The script checks declaresNoIsbn first, so the 17
+    // slipcase rows keep being reported under their existing reason and the
+    // counts in docs/info/isbn-ladder.md §7 do not move.
+    const slipcase =
+      'Volume of the slipcase set (set ISBN 9781368053099); no per-volume ISBN recorded';
+    assert.ok(declaresNoIsbn(slipcase, null));
+    assert.equal(namesAnIsbn(slipcase, null), '9781368053099');
+  });
+
+  it('does NOT verify the check digit, on purpose', () => {
+    // The claim is "this row has already stated its identifiers", which a
+    // mistyped ISBN states just as loudly as a valid one — and checking would
+    // mean importing packages/core/src/isbn.ts into a leaf .mjs that has to keep
+    // running under plain node.
+    assert.equal(namesAnIsbn('ISBN 9781938570300', null), '9781938570300');
   });
 });
 
