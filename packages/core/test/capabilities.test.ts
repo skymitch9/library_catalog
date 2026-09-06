@@ -176,3 +176,96 @@ describe('read stays universal short of pending', () => {
     for (const role of ROLE_LADDER) assert.equal(can(role, 'read'), true, `${role} should read`);
   });
 });
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * THE MATRIX, ROW BY ROW — added 2026-09-06.
+ *
+ * ⚠️ Everything above pins the SPLITS and the LADDER; nothing pinned the
+ * membership of a row that was not part of a split. The mutation run of
+ * 2026-09-05 (`catalog-platform/docs/info/mutation-run-2026-09-05.md` §5 S4)
+ * proved it: **LC-12 gave `trackReading` a `guest` — a guest may now write
+ * read-state and rate a book — and all 345 cases stayed green.** The sibling
+ * board-game repo pins the identical fact for its own `rate` row (*"rate:
+ * member and above, not guest"*), which is why its BD-04 died and this
+ * repo's LC-12 lived. Two matrices, one guarded and one not.
+ *
+ * So: one assertion per row against the table the owner approved verbatim on
+ * 2026-08-16, plus a key-set assertion so a NEW capability cannot be added
+ * without being named here. This turns the approved table from a comment into
+ * a mechanical guard.
+ *
+ * ⚠️ These are not restating the code — they are the OWNER'S table, written
+ * out independently. If a row here disagrees with `capabilities.ts`, the
+ * question is which one the owner approved; do NOT "fix" a red row by copying
+ * the source.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+describe('🔴 the owner-approved matrix, row by row — no row may widen silently', () => {
+  /** The approved floor for each capability: everyone at that rung and above. */
+  const APPROVED_FLOOR: Record<keyof typeof CAPABILITY_MATRIX, Role> = {
+    read: 'guest',
+    trackReading: 'member',
+    suggestWishlist: 'member',
+    editCatalog: 'contributor',
+    manageWishlist: 'contributor',
+    scanBarcode: 'contributor',
+    scanPhoto: 'moderator',
+    runResearch: 'moderator',
+    reviewFindings: 'moderator',
+    moderateContent: 'moderator',
+    manageUsers: 'admin',
+  };
+
+  it('every capability in the matrix is named here, and nothing else is', () => {
+    // A new capability lands in `capabilities.ts` and this goes red until
+    // somebody writes down which rung the owner put it at.
+    assert.deepEqual(Object.keys(CAPABILITY_MATRIX).sort(), Object.keys(APPROVED_FLOOR).sort());
+  });
+
+  for (const [capability, floor] of Object.entries(APPROVED_FLOOR) as Array<
+    [keyof typeof CAPABILITY_MATRIX, Role]
+  >) {
+    it(`${capability}: exactly ${floor} and above — no wider, no narrower`, () => {
+      const floorIndex = ROLE_LADDER.indexOf(floor as (typeof ROLE_LADDER)[number]);
+      const expected = ROLE_LADDER.filter((_, i) => i >= floorIndex);
+      const actual = [...(CAPABILITY_MATRIX[capability] as readonly Role[])].sort(
+        (a, b) =>
+          ROLE_LADDER.indexOf(a as (typeof ROLE_LADDER)[number]) -
+          ROLE_LADDER.indexOf(b as (typeof ROLE_LADDER)[number]),
+      );
+      assert.deepEqual(actual, [...expected], `${capability} is not exactly '${floor}' and above`);
+    });
+  }
+
+  it('🔴 trackReading is member-and-above — a GUEST may not write read-state or rate', () => {
+    // Stated separately as well as by the table above, because this is the
+    // exact widening that survived LC-12 and the test's NAME is the rule.
+    assert.equal(can('guest', 'trackReading'), false);
+    assert.equal(can('member', 'trackReading'), true);
+  });
+
+  it('🔴 the money rows stay at moderator — the two capabilities that carry a bill', () => {
+    for (const cap of ['scanPhoto', 'runResearch'] as const) {
+      assert.equal(can('contributor', cap), false, `${cap} is not free`);
+      assert.equal(can('moderator', cap), true);
+    }
+  });
+
+  it('no capability admits `pending` — it is a status, not a rung', () => {
+    for (const roles of Object.values(CAPABILITY_MATRIX)) {
+      assert.ok(!(roles as readonly string[]).includes('pending'));
+    }
+  });
+
+  it('every row is cumulative upward — a higher rung never loses what a lower one holds', () => {
+    for (const [capability, roles] of Object.entries(CAPABILITY_MATRIX)) {
+      const held = new Set(roles as readonly string[]);
+      let seen = false;
+      for (const role of ROLE_LADDER) {
+        if (held.has(role)) seen = true;
+        else if (seen) assert.fail(`${capability}: '${role}' is above a rung that holds it`);
+      }
+    }
+  });
+});
