@@ -60,8 +60,39 @@ bucket_name = "library-covers"
 # with `triggered_by` NULL — that is precisely how a sweep's run is
 # distinguishable from a person's. Until such a row exists, this trigger is
 # claimed, not verified.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# "23 */4 * * *" — the SECOND cron (added 2026-09-05): the audiobook
+# association sweep. `src/lib/audiobook-sweep-run.ts` and
+# `catalog-platform/docs/info/audiobook-association-route.md` carry the design;
+# `AUDIOBOOK_SWEEP_CRON` is the string `scheduled()` dispatches on, and
+# `audiobook-cron.test.ts` reads THIS FILE and asserts both blocks still carry
+# both strings.
+#
+# ⚠️ Four-hourly, not hourly. The sibling catalog's CSV changes about three
+# times a day, so an hourly tick would conditional-GET twenty-four times for
+# three real changes. Six ticks cover three writes comfortably, and every extra
+# tick is cost with no freshness.
+#
+# ⚠️ Minute 23 — and neither :00 nor :07. Not :00 for the same reason the sweep
+# above avoids it. **Not :07 because that is where the details sweep already
+# lives**: the games repo records that two cron invocations in the same minute
+# compete for the same 50-subrequest budget, and a details tick can spend 46 of
+# them on its own.
+#
+# ⚠️ An unrecognised cron does NOTHING, loudly — `scheduled()` logs and returns.
+# The sibling Worker fell through to its OLDEST job instead, which is right
+# there only because it had a schedule before it had a dispatcher; here a
+# fall-through would run the details sweep on the audiobook clock and hide the
+# very drift there is a test to catch.
+#
+# ⚠️ Same rule as above about what a trigger PROVES: this one is claimed until
+# an `audiobook_sweep_run` row exists with `trigger = 'cron'`. It ships in
+# SHADOW (`AUDIOBOOK_SWEEP_MODE`, in [vars] below), so the first rows will say
+# `shadow` and write nothing — which is the point, and is itself the evidence
+# the §8 phase-2 gate counts.
 [triggers]
-crons = ["7 * * * *"]
+crons = ["7 * * * *", "23 */4 * * *"]
 
 # The public hostname. Declared here rather than clicked in the dashboard so the
 # mapping lives in git and a redeploy reasserts it.
@@ -373,8 +404,26 @@ bucket_name = "library-2nd-covers"
 # hourly tick runs DONOR-THEN-AI — the main library answers what it can for
 # free, and whatever is left is asked of HER key and spends HER money. The
 # config of record must not keep claiming she cannot spend.
+#
+# ⚠️ **"23 */4 * * *" is the SAME STRING as the main instance, deliberately** —
+# exactly as `"7 * * * *"` above is. `scheduled()` dispatches on the string and
+# an unrecognised cron does nothing, so a different minute HERE would silently
+# disable HER audiobook sweep while this file still looked configured. That is
+# the identical trap the details sweep's own comment warns about, and it is
+# worth restating rather than referring to, because the two blocks are three
+# hundred lines apart and only one of them is ever open.
+#
+# ⚠️ Both strings, both blocks, one edit. `audiobook-cron.test.ts` asserts
+# exactly that and fails if either block loses either string.
+#
+# ⚠️ Her instance fetches the SAME published CSV and matches it against HER work
+# rows. The owner decided 2026-08-25 that he and padhard share one audio/ebook
+# pool, which is why the pipeline's STEP 11 already runs `--friend`. There is no
+# second source and there must not be one — and the two D1s are two failure
+# domains that never meet, because each instance's cron fires in its own
+# invocation against its own database.
 [env.friend.triggers]
-crons = ["7 * * * *"]
+crons = ["7 * * * *", "23 */4 * * *"]
 
 # Hostname settled 2026-08-16 (was `sam.heygabi.ai` for a few hours) — see the
 # naming note above. Changing it again is: edit this pattern, add the new host

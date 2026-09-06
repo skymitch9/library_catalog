@@ -14,6 +14,7 @@ import {
   billingSite,
   decideBilling,
 } from './lib/billing-gate.js';
+import { AUDIOBOOK_SWEEP_CRON, runAudiobookSweep } from './lib/audiobook-sweep-run.js';
 import { fetchSystemDenied } from './lib/billing-system.js';
 import { DETAILS_SWEEP_CRON, runDetailsSweep } from './lib/details-sweep.js';
 import { indexBackstopOnRequest, indexPushAfterMutation } from './lib/index-push.js';
@@ -300,8 +301,20 @@ export default {
   fetch: app.fetch,
 
   /**
-   * The clock. This Worker's first and only scheduled job (owner ask
-   * 2026-08-16), so there is nothing else here to dispatch between.
+   * The clock. ⚠️ **TWO jobs now, dispatched on `event.cron` and nothing else**
+   * — the hourly details sweep (owner ask 2026-08-16) and the four-hourly
+   * audiobook association sweep (2026-09-05). The shape is the games Worker's
+   * (`Board_Game_Catalog/apps/worker/src/index.ts:244`), which has dispatched
+   * three crons through one handler since before this one had two.
+   *
+   * ⚠️ **The `else` is an ERROR, not a default.** A cron string this code does
+   * not recognise means `wrangler.toml` and one of the two exported constants
+   * have drifted apart, and the only correct response is to do nothing and say
+   * so. The sibling Worker fell through to its OLDEST job instead — right there
+   * only because it had a schedule before it had a dispatcher — and here that
+   * would run the details sweep on the audiobook clock, hiding the exact
+   * mistake `details-sweep.test.ts` and `audiobook-cron.test.ts` exist to
+   * catch.
    *
    * ⚠️ **The promise is returned as well as registered, and that is not
    * belt-and-braces — `waitUntil` alone would be a bug.** A registered task is
@@ -314,30 +327,43 @@ export default {
    * the promise is a `scheduled()` handler's version of awaiting, because the
    * runtime keeps the invocation alive until it settles.
    *
-   * ⚠️ **An unrecognised cron does nothing, loudly.** The sibling Worker falls
-   * through to its oldest job instead, which is right *there* because it had a
-   * schedule before it had a dispatcher. Here, a cron this code does not know
-   * about means `wrangler.toml` and `DETAILS_SWEEP_CRON` have drifted apart —
-   * running the sweep anyway would hide exactly the mistake there is a test to
-   * catch.
-   *
-   * `runDetailsSweep` never throws, so the `.catch` should be unreachable. It
-   * is here because a scheduled invocation has no user, no response, and
-   * (measured in the sibling project 2026-08-13) logs that defeated three
-   * separate `wrangler tail` attempts — an unhandled rejection here would be
-   * invisible in a way a request's never is.
+   * Neither sweep throws, so both `.catch`es should be unreachable. They are
+   * here because a scheduled invocation has no user, no response, and (measured
+   * in the sibling project 2026-08-13) logs that defeated three separate
+   * `wrangler tail` attempts — an unhandled rejection here would be invisible in
+   * a way a request's never is.
    */
   scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext) {
-    if (event.cron !== DETAILS_SWEEP_CRON) {
-      console.error('cron fired that nothing handles', event.cron, 'expected', DETAILS_SWEEP_CRON);
-      return;
+    if (event.cron === DETAILS_SWEEP_CRON) {
+      const work = sweepIfPolicyAllows(env).then(
+        (run) => console.log('details sweep', JSON.stringify(run)),
+        (err) => console.error('details sweep failed', err),
+      );
+      ctx.waitUntil(work);
+      return work;
     }
 
-    const work = sweepIfPolicyAllows(env).then(
-      (run) => console.log('details sweep', JSON.stringify(run)),
-      (err) => console.error('details sweep failed', err),
+    if (event.cron === AUDIOBOOK_SWEEP_CRON) {
+      // ⚠️ `{ kind: 'all' }` — the cron IS the full sweep, so a row it did not
+      // reproduce is genuinely gone and it is the only trigger allowed to mark
+      // anything stale (§6.2 guard 3). It is also the BACKSTOP: the on-add hook
+      // answers "right away" and this catches whatever the hook missed, plus
+      // everything the sibling catalog gained since the last tick.
+      const work = runAudiobookSweep(env, { trigger: 'cron' }).then(
+        (run) => console.log('audiobook sweep', JSON.stringify(run)),
+        (err) => console.error('audiobook sweep failed', err),
+      );
+      ctx.waitUntil(work);
+      return work;
+    }
+
+    console.error(
+      'cron fired that nothing handles',
+      event.cron,
+      'expected one of',
+      DETAILS_SWEEP_CRON,
+      AUDIOBOOK_SWEEP_CRON,
     );
-    ctx.waitUntil(work);
-    return work;
+    return;
   },
 } satisfies ExportedHandler<Env>;
