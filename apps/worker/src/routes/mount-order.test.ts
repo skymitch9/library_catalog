@@ -213,6 +213,16 @@ describe('index.ts mount order', () => {
       'gabiDelegatedRoutes',
       'gabiMemoryRoutes',
       'adminRoutes',
+      // ⚠️ `audiobookSweepRoutes` joined the `/api/admin` prefix 2026-09-05
+      // (the audiobook sweep's operator verbs, design §7.1). Excluded here for
+      // the same reason `adminRoutes` is — `/api/admin` is not part of the
+      // bare-`/api` composition this file tests, and the leak point
+      // (`exportRoutes`' old blanket gate on the BARE prefix) structurally
+      // cannot reach a route mounted under a longer one. Its own gate is
+      // `manageUsers`, checked inside each handler and worded there;
+      // `audiobook-sweep.test.ts` pins the refusal for every role, including
+      // the separate wording a `pending` account gets.
+      'audiobookSweepRoutes',
     ];
     const behindAuth = found.filter(([, name]) => !inFront.includes(name));
 

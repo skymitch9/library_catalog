@@ -23,6 +23,7 @@ import { accessoryRoutes } from './routes/accessories.js';
 import { adminCors, adminRoutes } from './routes/admin.js';
 import { aliasRoutes } from './routes/aliases.js';
 import { audiobookMappingRoutes } from './routes/audiobook-mapping.js';
+import { audiobookSweepRoutes } from './routes/audiobook-sweep.js';
 import { catalogRoutes } from './routes/catalog.js';
 import { coverRoutes } from './routes/covers.js';
 import { crowdfundingRoutes, provenanceRoutes } from './routes/crowdfunding.js';
@@ -144,6 +145,14 @@ app.use('/api/*', requireAuth());
 // The federated-admin surface (cross-origin twin of the People page's user
 // routes — same gate, same write path, CORS-scoped mount).
 app.route('/api/admin', adminRoutes);
+// The audiobook sweep's operator verbs — run it now, and what did the last run
+// decide (design §7.1). Mounted on the SAME `/api/admin` prefix as the
+// federated user surface and therefore behind the same blanket `requireAuth`
+// and the same one-origin CORS allowance; the routes gate themselves on
+// `manageUsers` and word their own refusal. ⚠️ `/audiobooks/sweep` cannot
+// collide with `adminRoutes`' `/users` or `/users/:id/role` — different first
+// segment — so mount order carries no meaning here.
+app.route('/api/admin', audiobookSweepRoutes);
 app.route('/api', userRoutes);
 app.route('/api', catalogRoutes);
 // Mounted at /api too: `/works/:id/relations` and `/works/:id/aliases` each have
