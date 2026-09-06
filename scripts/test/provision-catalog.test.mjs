@@ -39,7 +39,9 @@ import {
   parseDatabaseId,
   parseEnvNames,
   parseEstateApps,
+  registryInsertSql,
   renderEnvBlock,
+  runbookSection,
   rootScriptTwins,
   sanitiseInstanceName,
   secretPlan,
@@ -552,6 +554,188 @@ describe('the manual runbook', () => {
 
   it('never a second Firebase project', () => {
     assert.match(text, /Do NOT create a second Firebase project/);
+  });
+
+  /* ────────────────────────────────────────────────────────────────────────
+   * ⚠️ THE COMPLETENESS TESTS — survey §7, added 2026-09-06.
+   *
+   * These are not "does the string appear" pedantry. §7 measured that a
+   * `library3` needs ~28 hand-edits and that this runbook named 3, and the
+   * cost of each MISSING line is a specific, known failure: a bare 500, a
+   * shelf enumerable by anybody, a page that reads as an outage. A test per
+   * item is what stops one being dropped in a later tidy-up — a checklist
+   * silently losing an entry looks exactly like a shorter checklist.
+   * ──────────────────────────────────────────────────────────────────────── */
+
+  it('🔴 the index entry.source MIGRATION is named, with the exact widened CHECK line', () => {
+    assert.match(text, /00NN_entry_source_library3\.sql/);
+    assert.match(
+      text,
+      /\+ {2}source TEXT NOT NULL CHECK \(source IN \('game','library','audiobook','library2','library3'\)\),/,
+    );
+    // ⚠️ The whole trap in one sentence: the tool that would normally tell you
+    // answers "nothing pending", truthfully. A runbook that omits this sends
+    // the operator to a command that confirms the wrong thing.
+    assert.match(text, /No migrations/);
+    assert.match(text, /is TRUE and it is not the question/);
+    // Widen, never drop — the constraint is the fence that made this loud.
+    assert.match(text, /never drop it/);
+  });
+
+  it('🔴 UNSCOPED_LOOKUP_EXCLUDED is named as failing OPEN, not merely as an edit', () => {
+    assert.match(text, /read\.ts:69 — UNSCOPED_LOOKUP_EXCLUDED/);
+    assert.match(text, /FAILS OPEN/);
+    assert.match(text, /can enumerate/);
+    assert.match(text, /this catalog by title/);
+    assert.match(text, /vis_library3 grant at all/);
+    // The owner already decided this one; the runbook must not re-open it.
+    assert.match(text, /2026-09-05 16:08/);
+  });
+
+  it('the rest of the index checklist: SOURCES, pushTokenFor, the search vocabulary, MACHINE_APPS', () => {
+    assert.match(text, /rows\.ts:33 — SOURCES \+ 'library3'/);
+    assert.match(text, /\+ {4}case 'library3':/);
+    assert.match(text, /\+ {6}return env\.INDEX_PUSH_TOKEN_LIBRARY3;/);
+    assert.match(text, /SOURCE_FOR_CATALOG and/);
+    assert.match(text, /MACHINE_APPS \+ readTokenFor\(\) \+/);
+    assert.match(text, /INDEX_READ_TOKEN_LIBRARY3/);
+    // ⚠️ Being an APP is not being a SHELF — MACHINE_VISIBILITY stays deny.
+    assert.match(text, /being an APP is not being a SHELF/);
+  });
+
+  it('⚠️ READ_ORIGINS is EMITTED for the owner and never applied — it is access-increasing', () => {
+    assert.match(text, /OWNER, ACCESS-INCREASING/);
+    assert.match(text, /wrangler\.toml:65 — READ_ORIGINS/);
+    // The pasteable line itself, ending in the new host.
+    assert.match(text, /READ_ORIGINS = "https:\/\/heygabi\.ai,.*,https:\/\/amber\.heygabi\.ai"/);
+    assert.match(text, /does NOT apply it and must not/);
+    // 🔴 And it must tell him to read the LIVE list first: pasting a template
+    // would REVOKE any origin added since this string was written.
+    assert.match(text, /silently REVOKE an/);
+  });
+
+  it('the auth Worker items the checklist was missing: visibility ×2 files, CORS, RESERVED_SUBDOMAINS', () => {
+    assert.match(text, /packages\/estate-auth\/src\/visibility\.ts/);
+    assert.match(text, /apps\/auth-worker\/src\/visibility\.ts/);
+    assert.match(text, /storedVisibility\(\) {2}\+ if \(row\.vis_library3 === 1\)/);
+    assert.match(text, /visibilityToFlags\(\) \+ vis_library3: visibility\.includes\('library3'\)/);
+    assert.match(text, /Do NOT hand-edit the GENERATED copies/);
+    // CORS: and the reason it is worth a line — the failure looks like an outage.
+    assert.match(text, /the CORS allowlist gains the new host/);
+    assert.match(text, /\+ {2}'https:\/\/amber\.heygabi\.ai',/);
+    assert.match(text, /NETWORK ERROR/);
+    // RESERVED_SUBDOMAINS: the books twin never printed it; the games one did.
+    assert.match(text, /catalog-names\.ts:109 — RESERVED_SUBDOMAINS/);
+    assert.match(text, /\+ {2}'amber',/);
+    assert.match(text, /told it is free/);
+  });
+
+  it('✅ it says which §7 rows the REGISTRY now handles, so nobody hand-edits a label', () => {
+    assert.match(text, /WHAT THE REGISTRY ROW \(step 12\) ALREADY DOES/);
+    assert.match(text, /api\/catalogs/);
+    assert.match(text, /10 minutes/);
+    // ⚠️ /admin is the exception and must stay one: a permission surface must
+    // not fail closed on a cache miss.
+    assert.match(text, /admin's CATALOGS array stays hand-kept/);
+  });
+
+  it('the theme and the /status cadence are named as deliberate NON-actions', () => {
+    assert.match(text, /data-default-theme-by-host/);
+    assert.match(text, /will not GRADE this catalog's index freshness/);
+    assert.match(text, /Guessing a cadence/);
+  });
+});
+
+/* --------------------------------------------------------------------------
+ * runbookSection — the pauses are found by HEADING, not by line offset
+ * ------------------------------------------------------------------------ */
+
+describe('runbookSection', () => {
+  const names = deriveNames(ROW, { envNames: EXISTING_ENVS, estateApps: EXISTING_APPS });
+  const first = runbookSection(names, '/repos/catalog-platform', 1);
+  const second = runbookSection(names, '/repos/catalog-platform', 2);
+
+  it('🔴 pause #1 stops at pause #2 — the old .slice(0, 12) was a line offset', () => {
+    // The bug this replaced had not fired yet: adding one line to PAUSE #1
+    // would have printed half of it plus the head of the next pause, to
+    // somebody standing at a checkpoint. The runbook grew ~90 lines the day
+    // this test was written, which is when it would have happened.
+    assert.match(first.join('\n'), /PAUSE #1 — Firebase authorised domain/);
+    assert.ok(!first.some((l) => l.includes('PAUSE #2')), 'pause #1 must not run into pause #2');
+    assert.match(first.join('\n'), /Add domain → amber\.heygabi\.ai/);
+  });
+
+  it("pause #2 carries everything after it — the other repo's work belongs together", () => {
+    assert.match(second[0], /PAUSE #2/);
+    assert.ok(!second.some((l) => l.includes('PAUSE #1')));
+    const text2 = second.join('\n');
+    assert.match(text2, /THE ESTATE INDEX/);
+    assert.match(text2, /READ_ORIGINS/);
+    assert.match(text2, /AFTERWARDS/);
+  });
+
+  it('the two halves reassemble into the whole runbook, losing nothing', () => {
+    assert.deepEqual(
+      [...first, ...second],
+      manualRunbook(names, { platformDir: '/repos/catalog-platform' }),
+    );
+  });
+});
+
+/* --------------------------------------------------------------------------
+ * registryInsertSql — how a new catalog gets a NAME and an OWNER
+ *
+ * ⚠️ WHAT IS TESTED IS THE SHAPE OF A CLAIM ABOUT OWNERSHIP. The canonical
+ * writer is the auth Worker's /live route (`insertCatalog`, migration 0020),
+ * which this script cannot call — it is `requireDevops()` and needs a Firebase
+ * ID token, and the provisioner runs on a wrangler login with no browser near
+ * it. The two are deliberate near-duplicates and are NOT interchangeable; if
+ * one changes the other must, which is what these assertions are for.
+ * ------------------------------------------------------------------------ */
+
+describe('registryInsertSql — the catalog registry row (0020)', () => {
+  const names = deriveNames(ROW, { envNames: EXISTING_ENVS, estateApps: EXISTING_APPS });
+  const sql = registryInsertSql(names, ROW, { now: new Date('2026-09-06T12:00:00.000Z') });
+
+  it('writes the id, the push source, the label and the host', () => {
+    assert.match(
+      sql,
+      /INSERT INTO estate_catalog \(id, push_source, kind, label, owner_name, holding, shared, host, sort_order, request_id, created_at\)/,
+    );
+    assert.match(sql, /'library3', 'library3', 'books'/);
+    assert.match(sql, /'Amber''s Library'/);
+    assert.match(sql, /'amber\.heygabi\.ai'/);
+    assert.match(sql, /, 4, /); // the request id, so the row traces back
+  });
+
+  it("the OWNER is the requester, and the holding model is the owner's settled one", () => {
+    assert.match(sql, /'Amber'/);
+    // physical, not shared — 2026-09-05: a provisioned library3… is "the
+    // requester's name, physical". Constants, not fields a caller can flip.
+    assert.match(sql, /'physical', 0,/);
+  });
+
+  it('🔴 ON CONFLICT DO NOTHING — a --resume must never rename a live catalog', () => {
+    assert.match(sql, /ON CONFLICT\(id\) DO NOTHING$/);
+  });
+
+  it('a NULL owner is written as NULL, never as an empty string or a guess', () => {
+    // requester_display_name is a nullable snapshot from the SSO profile. An
+    // unattributed physical shelf is honest; an invented name on the estate's
+    // front door is not.
+    const anon = registryInsertSql(names, { ...ROW, requester_display_name: null });
+    assert.match(anon, /'books', 'Amber''s Library', NULL, 'physical'/);
+  });
+
+  it('a label with a quote in it cannot break the statement', () => {
+    const odd = registryInsertSql(names, { ...ROW, display_name: "O'Brien's" });
+    assert.match(odd, /'O''Brien''s'/);
+  });
+
+  it('falls back to the derived display name when the row carries none', () => {
+    const bare = registryInsertSql(names, {});
+    assert.match(bare, /'library3', 'library3', 'books', 'Amber'/);
+    assert.match(bare, /NULL, 'physical'/);
   });
 });
 
