@@ -73,10 +73,24 @@ Wider number, for scale: **399 of 450 copies are unlinked** (43 linked), every
 one of them on a work that has at least one edition.
 
 - [x] name the defect with the row ids
-- [ ] ❓ owner: fix 1 as a mechanical sweep (yes/no) — see the decision list
-      sent 2026-09-07 02:5x Phoenix
-- [ ] ❓ owner: how many paperback HP1s are real; is #266 the 9780590353427
-- [ ] apply on BOTH instances (sweep pair, `--friend`), report both numbers
+- [x] ✅ **Fix 1 DONE 2026-09-07 03:25 Phoenix, owner-approved** ("1 yes but
+      don't create duplicates, our current counts are correct so the slipcase
+      edition should replace a generic one"). One `UPDATE copy SET edition_id`
+      (`scratchpad/slipcase-link.sql`, guarded: `slipcase=1`, `edition_id IS
+      NULL`, work has EXACTLY ONE slipcase edition). No rows created or
+      deleted. **main: 36/36 slipcase editions now linked** (was 0/36 — the
+      "34" above was `Volume of the slipcase%` only; `%slipcase%` is 36),
+      owned copies 433 before and after. **padhard: 0 slipcase editions, 0
+      rows** — the pair ran, nothing to link. Measured on /work/347 with
+      `find` after: 5 cards → 4 (slipcase copy #393 now OWNED on edition
+      #601; the "MAY BE YOURS · Slipcase" card is gone).
+      Residual, informational: 5 copies carry `slipcase=1` but their work has
+      NO slipcase edition (#242 ACOTAR, #322 Skyward, #330 Way of Kings, #368
+      Lost Hero, #369 Hidden Oracle) — the 2026-08-18 slipcase job did not
+      mint an edition for those. Left alone; not a card problem.
+- [ ] ❓ owner (asked 03:30 with the titles): is #363 real — and the batch
+      siblings on 227 / 334 / 445 / 446
+- [ ] ❓ owner: is #266 (or #363) the 9780590353427 printing (edition #502)
 - [ ] owner re-eyeballs https://library.heygabi.ai/work/347
 
 ## ☐ 🔴 OWNER RULE 2026-09-07 02:50 Phoenix — "We need less grey paragraphs"
