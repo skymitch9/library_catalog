@@ -1,11 +1,19 @@
 # Operating the audiobook association sweep
 
 > **Audience:** Claude sessions first, the owner second.
-> **Status:** ✅ TRACKED. **Last verified: 2026-09-06** — the §6 gate counters,
-> the shadow-fetch change and the `force` flag were measured live on both hosts
-> that day (see the ✅ block below and `docs/deploys.log`). ⚠️ **NOT re-measured
-> on 2026-09-06:** the §4/§4a script-vs-route figures, which are still the
-> 2026-09-05 readings.
+> **Status:** ✅ TRACKED. **Last verified: 2026-09-07** — §4's SCRIPT figures
+> were re-measured that day by a dry run and then a `--commit` on **both**
+> instances, cross-checked against `/api/health` on both hosts. ⚠️ **NOT
+> re-measured 2026-09-07:** §4a (series volumes — that script was not run at
+> all), §6's gate counters beyond the raw `/api/health` read (MAIN and padhard
+> both `planTicks` 8 / `cronPlanTicks` 8 / `seriesVolumeTicks` 7 / `divergences`
+> null), and the **route** half of §4 — no `force`d admin dry run was made,
+> because that needs an owner bearer token.
+>
+> Previously **2026-09-06** — the §6 gate counters, the shadow-fetch change and
+> the `force` flag were measured live on both hosts that day (see the ✅ block
+> below and `docs/deploys.log`). ⚠️ **NOT re-measured on 2026-09-06:** the
+> §4/§4a script-vs-route figures, which were then still the 2026-09-05 readings.
 >
 > The paragraph below is the 2026-09-05 record: measured that day, after
 > the series-volume half landed (deploy pair MAIN `6ed4a22b` / friend
@@ -276,8 +284,37 @@ or the `plan` object the admin `POST` returns):
 | works / audiobook rows | 411 / 1089 | 677 / 1089 |
 | matched | 122 | 119 |
 | edition upserts / stales | 127 / 0 | 123 / 0 |
-| rung upserts / stales | 190 / 0 | 140 / 0 |
-| statements | 317 | 263 |
+| ~~rung upserts / stales~~ | ~~190 / 0~~ | ~~140 / 0~~ |
+| ~~statements~~ | ~~317~~ | ~~263~~ |
+
+🔴 **RE-MEASURED 2026-09-07 (script only — the route side was NOT re-read).
+Only the RUNG rows moved; everything above them is unchanged:**
+
+| | MAIN | padhard |
+|---|---|---|
+| works / audiobook rows | 411 / 1089 | 677 / 1089 |
+| matched | 122 | 119 |
+| edition upserts / stales | 127 / 0 | 123 / 0 |
+| **rung upserts / stales** | **197 / 0** | **149 / 0** |
+| **statements** | **324** | **272** |
+
+⚠️ **+7 and +9 rungs is NOT a divergence — it is the catalogue, not the
+planner.** Every other figure is identical to the 2026-09-06 reading, every rung
+printed **`0 new`**, and `/api/health` already reported `rungsLive` **197** and
+**149** *before* the run — so the database and the plan moved together and the
+script is agreeing with a catalogue that grew. Rungs are per-**series**, so
+series names filled onto existing works between the two readings is the shape
+that fits; ⚠️ that last clause is inference, not measurement. Full record:
+[`../DONE.md`](../DONE.md), *"the audiobook link sweep RE-RUN on both instances
+after the bulk import"* (2026-09-07).
+
+🔴 **A `--commit` pair was run that day and it wrote nothing new**, which is the
+useful fact for anyone reading this table: the script's own readback afterwards
+was MAIN *"127 live edition(s) of 128 row(s) across 123 work(s) … 197 live audio
+rung(s) of 213"* and padhard *"123 live edition(s) of 123 row(s) across 119
+work(s) … 149 live audio rung(s) of 149"* — identical to `/api/health` taken
+before it. STEP 11 of the audiobook pipeline is keeping the links current while
+this sweep sits in `shadow`.
 
 ### 4a. The OTHER half — `series_volume`, the same comparison
 

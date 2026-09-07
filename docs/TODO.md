@@ -1806,83 +1806,58 @@ identify the book**, in its own words:
 Neither needs money and neither needs a deploy. Both need a signed-in human at
 <https://padhard.heygabi.ai/queue>.
 
-## ☐ Audiobook links after a bulk import, and TWO audio editions — the residue of the free-checks ask
+## ☐ The two live-route checks on the free ladder — ⚠️ BOTH need a SIGNED-IN HUMAN; an agent measured as far as it can and got 401
 
-> The rest of that ask — the free ladder in front of "look up", and the add path
-> filling series/volume/description — **shipped 2026-08-23** and moved WHOLE to
-> [`DONE.md`](DONE.md) (branch `feature/free-details-ladder`, ~~**not
-> deployed**~~ — see the correction below).
-> Design of record: [`info/free-details-ladder.md`](info/free-details-ladder.md).
-> ⚠️ Its NOT-verified list is real: rung 2 has never run, Google Books answered
-> **400** live, and nothing has been through the deployed route.
->
-> ⚠️ **Corrected 2026-09-05 (AUD-library): "not deployed" is FALSE and has
-> been for weeks.** Measured: `git branch --merged main` lists
-> `feature/free-details-ladder`, and **no branch in this repo is unmerged
-> today**; `docs/deploys.log` carries eleven deploy PAIRS since 2026-08-25, so
-> the ladder has been on both instances for a fortnight. What is still true is
-> the NOT-verified list above — shipped is not verified, and nothing here has
-> been exercised through the live route. The same correction applies to the
-> *"Verify, once the branch is deployed"* line at the foot of this section:
-> the branch IS deployed, so those two checks can be done now.
-
-Three things in that entry did NOT ship, and none of them is a coding oversight:
-
-**1. Re-run the link sweep after any bulk import.** `npm run backfill:audiobooks`
-is a *manual script* and always will be: its only source is
-`audiobook_catalog/site/catalog.csv`, a file on disk beside this repo that a
-Worker cannot read. 401 of 493 works had arrived since its last run, which is
-the whole reason work 514 looked broken.
-⚠️ The ladder now degrades instead of returning nothing when the sweep is stale
-— a missing or series-less holding falls through to Open Library — so this is no
-longer urgent. It is still the thing that makes rung 1 answer.
-
-**2. ✅ ~~🔴 The household owns TWO Elantris audiobooks and the schema holds
-ONE.~~ SHIPPED — corrected 2026-09-06 (W13-LIB).**
-~~`audiobook_holding.work_id` is a `PRIMARY KEY` (migration 0010). The row that
-landed is the full-cast edition, whose `series` is NULL; the Tenth Anniversary
-Special Edition, which the CSV gives `series=Elantris` volume 1, has nowhere to
-go.~~ 🔴 **That paragraph described the schema as it stood before 2026-08-23 and
-went on saying it for a fortnight.** The change it calls *"being done
-separately"* is **migration `0390_audiobook_edition_holding.sql`**, which shipped
-on `feature/audio-edition-holdings`: `audiobook_holding` **IS** now a VIEW
-(`migrations/0390_audiobook_edition_holding.sql:130-142`) over a new
-`audiobook_edition_holding` table keyed `(work_id, audio_key)`. Two places
-already recorded that — the part-B note *"### B. The schema change — two audio
-editions per work — ✅ MOVED"* (moved WHOLE to [`DONE.md`](DONE.md) 2026-09-06
-with the rest of that item) and the **retired KI-8** row in
-[`KNOWN_ISSUES.md`](KNOWN_ISSUES.md).
-
-**Measured 2026-09-06 against production `library-catalog`:** work **514** holds
-**two live rows** — `audio_key = 'Elantris'` (`matched_via` exact, `series`
-NULL) and `audio_key = 'Elantris - Tenth Anniversary Special Edition'` (exact,
-`series = 'Elantris'`, `index_display = '1'`, `via_alias` the same string),
-neither stale. The Tenth Anniversary edition has somewhere to go and is in it.
-
-⚠️ **What is still true is a DIFFERENT defect and must not be read as this one:**
-two recordings whose raw titles are **byte-identical** still collapse to one
-row, because `audio_key` is that verbatim string — **`KI-12`** in
-[`KNOWN_ISSUES.md`](KNOWN_ISSUES.md), one affected pair (*Isles of the
-Emberdark*) across both instances, migration **CANCELLED 2026-09-06** until that
-count moves. 0390 fixed *one work, two editions*; KI-12 is *two editions, one
-name*.
-
-~~**3. 🔴 OWNER DECISION — `INDEX_READ_TOKEN`.**~~ ✅ **TAKEN AND SHIPPED
-2026-08-25** — moved whole to [`DONE.md`](DONE.md) ("Rung 2 of the free ladder is
-LIVE"). The credential exists on both instances and the rung calls
-`/api/machine/lookup`. ⚠️ It turned out the rung was not merely dark: it was
-pointed at the HUMAN route with both env vars set, so it was **refused every run
-while looking configured**. Contract of record:
-[`info/free-details-ladder.md`](info/free-details-ladder.md) §4.
-
-**Verify, once the branch is deployed:** work 514 shows its audiobook and its
+~~**Verify, once the branch is deployed:** work 514 shows its audiobook and its
 series on <https://library.heygabi.ai/works/514>, and a "look up" on a book the
-audiobook catalog holds reports a free rung as the source rather than an LLM run.
+audiobook catalog holds reports a free rung as the source rather than an LLM run.~~
+
+🔴 **Attempted 2026-09-07 10:45 Phoenix and NEITHER can be closed by an agent.**
+Measured, with the instrument named each time:
+
+| What was read | Result |
+|---|---|
+| `GET https://library.heygabi.ai/api/works/514` | **401** `unauthenticated` — `requireCapability('read')` at `apps/worker/src/routes/catalog.ts:462`. The worded refusal is correct and names the fix |
+| `GET https://library.heygabi.ai/works/514` **and** `/work/514` | **200**, both **4,516 bytes**, **zero** occurrences of `Elantris`. It is the SPA shell; the HTML carries no work data, so page-fetching is not a way round the 401 |
+
+✅ **What IS measured, from production `library-catalog` (2026-09-07 10:45), is
+the DATA the route would serve — not the route:** work 514 `title` *Elantris*,
+`series` **NULL**, `series_index_sort` **NULL**, `series_index_display`
+**NULL**; two `audiobook_edition_holding` rows, **both `stale_at` NULL, both
+`matched_via` `exact`** —
+
+| `audio_key` | `series` | `index_display` |
+|---|---|---|
+| `Elantris` | NULL | NULL |
+| `Elantris - Tenth Anniversary Special Edition` | `Elantris` | `1` |
+
+⚠️ **So "shows its audiobook" is answered and "shows its series" is NOT, and the
+difference is a real one, not a rendering detail.** The audiobook link is
+present twice over. The *work* still has no series of its own — the only
+`Elantris`/`1` in the database sits on the audio edition, and
+`WorkPage.tsx:343-344` hands both `audiobookHolding` and `audioEditions` to
+`OnYourShelf`, so what the page draws from that row is a **code read, not a
+measurement**. Nobody has looked at the rendered page.
+
+**What would close each — one signed-in visit each:**
+
+1. Open <https://library.heygabi.ai/works/514> signed in and say whether the
+   series reads beside the audio edition. (If it does not, that is a finding
+   about the work row, not about the sweep.)
+2. Run a "look up" on a book the audiobook catalog holds and confirm the source
+   is a free rung, not an LLM run.
 
 > ✂️ **2026-08-31:** the three ✅ sections that sat here (GABI unification — all
 > phases deployed 2026-08-21; three feature branches — all merged 2026-08-21;
 > ISBN backfill — complete 2026-08-21) moved WHOLE to [`DONE.md`](DONE.md), per
 > the done-items-get-moved-not-badged rule.
+>
+> ✂️ **2026-09-07:** and so did *"Audiobook links after a bulk import, and TWO
+> audio editions"*, which sat immediately above — its item 1 (re-run the link
+> sweep) was run on both instances that day and changed nothing, and items 2 and
+> 3 had been carrying ✅ badges in this file for a fortnight. What remains above
+> is only the part that did **not** close: the two live-route checks that were
+> that section's footer.
 
 ## ⏸ DEFERRED BY OWNER 2026-08-17 — 🧰 Tech debt (7 items)
 

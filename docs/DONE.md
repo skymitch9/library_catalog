@@ -19,6 +19,201 @@
 
 
 
+## ✅ 2026-09-07 10:56 Phoenix — the audiobook link sweep RE-RUN on both instances after the bulk import: it changed NOTHING, and that is the finding (moved WHOLE from TODO.md)
+
+**The section below is moved verbatim** — heading, blockquote and all three
+numbered items. Item 1 was the last open one; items 2 and 3 had already been
+closed and were carrying ✅ badges inside `TODO.md`, which is the anti-pattern
+the docs standard exists to kill, so the whole thing moves together. The two
+live-route checks that sat at its foot did **not** close and stayed in
+[`TODO.md`](TODO.md) under their own heading — see the NOT-verified list below.
+
+### What was run, and on both instances
+
+```bash
+npm run backfill:audiobooks -- --remote            # dry, then --commit
+npm run backfill:audiobooks -- --remote --friend   # dry, then --commit
+```
+
+**Dry run first on BOTH, per the sweep rule. Neither showed a surprise, so both
+were committed.**
+
+| | MAIN `library-catalog` | padhard `library-catalog-2nd` |
+|---|---|---|
+| works in the REMOTE database | 411 | 677 |
+| audiobook rows read from `catalog.csv` | 1,089 | 1,089 |
+| matched an audiobook | **122** (30%) — 114 exact, 8 containment | **119** (18%) — 119 exact, 0 containment |
+| no audiobook found | 289 | 558 |
+| audio editions written | **127** | **123** |
+| works with >1 audio edition | 4 | 3 |
+| series with audio rungs | 32 (31 `work_match`, 1 `fold`) | 46 (36 `work_match`, 10 `fold`) |
+| rung upserts | **197** | **149** |
+| editions gone stale / rungs gone stale | **0 / 0** | **0 / 0** |
+| statements planned = run | **324** | **272** |
+
+🔴 **Every single rung printed `0 new`, on both instances.** `fresh` is computed
+at `packages/core/src/audiobook-sweep.ts:552-555` as *rungs with no row already
+in `audiobook_series_holding`* — so zero of them means the database already held
+every rung the sweep planned. With `editionsGoneStale` and `rungsGoneStale` both
+zero as well (the script prints those lines only when they are non-zero,
+`scripts/backfill-audiobook-holdings.mjs:371-374` and `:408-411`, and neither
+line appeared), **nothing this run wrote CHANGED an existing link; it re-wrote
+identical rows.**
+
+### The independent confirmation, taken BEFORE the commit
+
+`/api/health` was read on both hosts unauthenticated and agreed with the plan to
+the row — which is what makes "it changed nothing" a measurement rather than an
+inference from the script's own output:
+
+| `detail.audiobookSweep` | MAIN | padhard |
+|---|---|---|
+| `editionsLive` | **127** = the 127 planned | **123** = the 123 planned |
+| `rungsLive` | **197** = the 197 planned | **149** = the 149 planned |
+| `mode` | `shadow` | `shadow` |
+| `seriesCanonEntries` | 10 | 10 |
+
+The script's own post-commit readback said the same thing afterwards — MAIN
+*"127 live edition(s) of 128 row(s) across 123 work(s) … and 197 live audio
+rung(s) of 213"*, padhard *"123 live edition(s) of 123 row(s) across 119
+work(s) … and 149 live audio rung(s) of 149"*.
+
+⚠️ **So the premise of item 1 — *"401 of 493 works had arrived since its last
+run, which is the whole reason work 514 looked broken"* — is now HISTORY, not a
+backlog.** Something had already caught the links up between then and today, and
+the section itself names what: STEP 11 of the audiobook pipeline *"is still
+doing all the writing"* while the Worker's sweep sits in `shadow`
+([`access/audiobook-sweep.md`](access/audiobook-sweep.md) §1). This run is the
+evidence that arrangement is keeping up.
+
+### ⚠️ The one number that moved against the docs, and why it is not a divergence
+
+[`access/audiobook-sweep.md`](access/audiobook-sweep.md) §4 records a 2026-09-06
+reading of **190 rung upserts / 317 statements** on MAIN and **140 / 263** on
+padhard. Today's are **197 / 324** and **149 / 272** — **+7 and +9 rungs**. Not
+a script-vs-route divergence: work counts (411 / 677), audiobook rows (1,089),
+matches (122 / 119) and edition upserts (127 / 123) are all **identical** to
+that reading, and `/api/health` reports the new rung totals as already **live**,
+so both sides moved together. Rungs are per-*series*, so series names filled
+onto existing works between the two readings is the shape that fits — ⚠️ that
+last sentence is the inference, not the measurement. §4's table is stale by
+those two figures; nothing else in it is.
+
+### The ladder "now degrades" line, confirmed in code as the section asked
+
+Item 1's claim that a stale sweep is *"no longer urgent"* because the ladder
+degrades is **true, and here is where**:
+
+| Case | `apps/worker/src/lib/free-details.ts` |
+|---|---|
+| no audio edition linked at all | **`:474-478`** — pushes *"the audiobook catalogue: no audio edition is linked to this book"* onto `skipped` and `return []` |
+| linked, but its `series` is blank | **`:495-502`** — pushes *"… an audio edition is linked but its series is blank … so the next rung was asked"* and `return []` |
+| the recording was judged NOT this book | **`:487-491`** — migration 0450's `review === 'rejected'`, the same shape |
+
+An empty `answers` array leaves `open` untouched, and the driver loop at
+**`:1336-1349`** (`for (const rung of FREE_LADDER_RUNGS)`) simply carries on to
+the next rung — `index`, then `openlibrary` — per the order declared at
+**`:1130-1145`**. ⚠️ **It degrades LOUDLY, not silently**: every fall-through
+writes a sentence into `skipped`, so a run that reached Open Library because the
+sweep was stale says so rather than looking like a normal answer.
+
+### 🔴 What was NOT verified
+
+- **The two live-route checks at the foot of the old section could NOT be
+  closed** and stay in [`TODO.md`](TODO.md) as their own section: `GET
+  /api/works/514` answers **401** to an agent, and `/works/514` returns a
+  4,516-byte SPA shell with no `Elantris` in it. The production DATA behind work
+  514 was measured instead — two live `exact` audio editions, and the work's own
+  `series` still **NULL**. Whoever is signed in gets both checks in one visit:
+  <https://library.heygabi.ai/works/514>.
+- **No route-vs-script parity comparison** was attempted; that needs an owner
+  bearer token for the `force`d admin dry run, and `gate.divergences` is still
+  `null` on both hosts (`planTicks` 8 / `cronPlanTicks` 8 / `seriesVolumeTicks`
+  7 against a required 42, both instances — so the `enforce` flip is still far
+  off and untouched by this work).
+- **The series-volume half was not run** (`backfill:series-volumes`); this was
+  the holdings sweep only. MAIN's health still reports its planned
+  `volumeUpserts` 190 / `checkUpserts` 139 against `volumesLive` 159 /
+  `seriesChecked` 84.
+- **No deploy**, because no code changed. Docs only.
+- ⚠️ **`snapshotAgeHours` read 37.5 on MAIN** at the time of the health read
+  (`snapshotFetchedAt 2026-09-06 04:23:19`), above the *"expect it under ~8"*
+  line in `access/audiobook-sweep.md` §2. Not chased — the shadow tick's
+  `unchanged-replayed` state deliberately does not re-stamp the snapshot, which
+  is the documented reason for exactly this reading, but nobody confirmed the
+  sibling pipeline is publishing.
+
+---
+
+## ☐ Audiobook links after a bulk import, and TWO audio editions — the residue of the free-checks ask
+
+> The rest of that ask — the free ladder in front of "look up", and the add path
+> filling series/volume/description — **shipped 2026-08-23** and moved WHOLE to
+> [`DONE.md`](DONE.md) (branch `feature/free-details-ladder`, ~~**not
+> deployed**~~ — see the correction below).
+> Design of record: [`info/free-details-ladder.md`](info/free-details-ladder.md).
+> ⚠️ Its NOT-verified list is real: rung 2 has never run, Google Books answered
+> **400** live, and nothing has been through the deployed route.
+>
+> ⚠️ **Corrected 2026-09-05 (AUD-library): "not deployed" is FALSE and has
+> been for weeks.** Measured: `git branch --merged main` lists
+> `feature/free-details-ladder`, and **no branch in this repo is unmerged
+> today**; `docs/deploys.log` carries eleven deploy PAIRS since 2026-08-25, so
+> the ladder has been on both instances for a fortnight. What is still true is
+> the NOT-verified list above — shipped is not verified, and nothing here has
+> been exercised through the live route. The same correction applies to the
+> *"Verify, once the branch is deployed"* line at the foot of this section:
+> the branch IS deployed, so those two checks can be done now.
+
+Three things in that entry did NOT ship, and none of them is a coding oversight:
+
+**1. Re-run the link sweep after any bulk import.** `npm run backfill:audiobooks`
+is a *manual script* and always will be: its only source is
+`audiobook_catalog/site/catalog.csv`, a file on disk beside this repo that a
+Worker cannot read. 401 of 493 works had arrived since its last run, which is
+the whole reason work 514 looked broken.
+⚠️ The ladder now degrades instead of returning nothing when the sweep is stale
+— a missing or series-less holding falls through to Open Library — so this is no
+longer urgent. It is still the thing that makes rung 1 answer.
+
+**2. ✅ ~~🔴 The household owns TWO Elantris audiobooks and the schema holds
+ONE.~~ SHIPPED — corrected 2026-09-06 (W13-LIB).**
+~~`audiobook_holding.work_id` is a `PRIMARY KEY` (migration 0010). The row that
+landed is the full-cast edition, whose `series` is NULL; the Tenth Anniversary
+Special Edition, which the CSV gives `series=Elantris` volume 1, has nowhere to
+go.~~ 🔴 **That paragraph described the schema as it stood before 2026-08-23 and
+went on saying it for a fortnight.** The change it calls *"being done
+separately"* is **migration `0390_audiobook_edition_holding.sql`**, which shipped
+on `feature/audio-edition-holdings`: `audiobook_holding` **IS** now a VIEW
+(`migrations/0390_audiobook_edition_holding.sql:130-142`) over a new
+`audiobook_edition_holding` table keyed `(work_id, audio_key)`. Two places
+already recorded that — the part-B note *"### B. The schema change — two audio
+editions per work — ✅ MOVED"* (moved WHOLE to [`DONE.md`](DONE.md) 2026-09-06
+with the rest of that item) and the **retired KI-8** row in
+[`KNOWN_ISSUES.md`](KNOWN_ISSUES.md).
+
+**Measured 2026-09-06 against production `library-catalog`:** work **514** holds
+**two live rows** — `audio_key = 'Elantris'` (`matched_via` exact, `series`
+NULL) and `audio_key = 'Elantris - Tenth Anniversary Special Edition'` (exact,
+`series = 'Elantris'`, `index_display = '1'`, `via_alias` the same string),
+neither stale. The Tenth Anniversary edition has somewhere to go and is in it.
+
+⚠️ **What is still true is a DIFFERENT defect and must not be read as this one:**
+two recordings whose raw titles are **byte-identical** still collapse to one
+row, because `audio_key` is that verbatim string — **`KI-12`** in
+[`KNOWN_ISSUES.md`](KNOWN_ISSUES.md), one affected pair (*Isles of the
+Emberdark*) across both instances, migration **CANCELLED 2026-09-06** until that
+count moves. 0390 fixed *one work, two editions*; KI-12 is *two editions, one
+name*.
+
+~~**3. 🔴 OWNER DECISION — `INDEX_READ_TOKEN`.**~~ ✅ **TAKEN AND SHIPPED
+2026-08-25** — moved whole to [`DONE.md`](DONE.md) ("Rung 2 of the free ladder is
+LIVE"). The credential exists on both instances and the rung calls
+`/api/machine/lookup`. ⚠️ It turned out the rung was not merely dark: it was
+pointed at the HUMAN route with both env vars set, so it was **refused every run
+while looking configured**. Contract of record:
+[`info/free-details-ladder.md`](info/free-details-ladder.md) §4.
+
 ## ✅ 2026-09-07 10:20 Phoenix — the THREE 2026-08-13 INTAKE BUGS re-tested at last: 2 held, 4 properties reproduced, all fixed and deployed to both instances (moved WHOLE from TODO.md)
 
 **The section below is moved verbatim.** It had sat for a month with the
