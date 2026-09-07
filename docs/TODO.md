@@ -1575,39 +1575,12 @@ pause he set himself. Whole record in DONE.md.
 
 ---
 
-## ☐ UNBUILT — the EBOOK library's half of "say 2", and one question to ask first — belongs to `audiobook_catalog`, not this repo
-
-The physical library's half shipped on `feature/audio-edition-count` and is in
-[`DONE.md`](DONE.md) with the whole design; this is the piece that decision left
-open, filed here only because the ask was made here. ⚠️ **Move it to that repo's
-TODO when it is picked up, and do not reach into that repo from this one.**
-
-> Owner, 2026-08-23: *"have it say 2 on the physical and ebook libraries."*
-
-`ebooks.heygabi.ai` is `audiobook_catalog`'s `site/ebooks.html`, proxied by the
-`ebooks-door` Worker. Two files there, measured 2026-08-23:
-
-| File | What it does today | What it would need |
-|---|---|---|
-| `scripts/build_ebook_manifest.py` (record built ~line 1097; join at `sibling_catalog_match`, ~line 403) | writes `beside_audiobook` and `audiobook_title` per ebook, from ONE matched `catalog.csv` row | a new manifest field — a COUNT of the sibling rows this ebook matches |
-| `site/ebooks.html` (~line 930, `.eb-audio-link` styled at ~line 386) | renders a bare *"Also on audio →"* link when `beside_audiobook` is set | say the number when it is more than one |
-
-⚠️ **It cannot count today, and the reason is not a missing field.** The join is
-deliberately conservative: `_agreed_row` (~line 389) **refuses** two rows that
-name different covers as *"genuinely ambiguous"*, so a second edition there
-removes the mark rather than doubling it.
-
-⚠️ **`library_work_id` is not the shortcut it looks like.** The CSV carries it,
-stamped by `app/library_link.py` — but measured 2026-08-23 across all **1,081**
-rows, **no work id appears twice**: row 995 (*Elantris*, full cast) is stamped
-514 and row 996 (*Tenth Anniversary*) is stamped nothing, because that side's
-matcher refuses it for the same reason `KI-6` does. Counting by
-`library_work_id` would report 1 for every book in the catalogue.
-
-**Ask before building:** does the ebook site count rows in `catalog.csv`, or
-wait for `KI-6` to be settled so both sides agree on what a second edition is?
-
----
+> ✂️ **2026-09-06 (W13-LIB):** *"UNBUILT — the EBOOK library’s half of
+> “say 2”"* moved **WHOLE** to `bookbuddy/audiobook_catalog/docs/TODO.md`, the
+> repo that owns both files it names — on the section’s own instruction
+> (*"Move it to that repo’s TODO when it is picked up"*). ⚠️ **That tree is
+> GITIGNORED**, so the move is on disk there and has no commit; this line is
+> the only pointer, and the design notes are not duplicated here.
 
 > ✂️ **2026-09-06 (W13-LIB):** *"The audiobook link build — 1 of 2 parts
 > left: part A, the sweep becomes pipeline STEP 11"* moved **WHOLE** to
