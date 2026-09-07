@@ -1896,13 +1896,35 @@ the whole reason work 514 looked broken.
 — a missing or series-less holding falls through to Open Library — so this is no
 longer urgent. It is still the thing that makes rung 1 answer.
 
-**2. 🔴 The household owns TWO Elantris audiobooks and the schema holds ONE.**
-`audiobook_holding.work_id` is a `PRIMARY KEY` (migration 0010). The row that
+**2. ✅ ~~🔴 The household owns TWO Elantris audiobooks and the schema holds
+ONE.~~ SHIPPED — corrected 2026-09-06 (W13-LIB).**
+~~`audiobook_holding.work_id` is a `PRIMARY KEY` (migration 0010). The row that
 landed is the full-cast edition, whose `series` is NULL; the Tenth Anniversary
 Special Edition, which the CSV gives `series=Elantris` volume 1, has nowhere to
-go. **This is being done separately** — `audiobook_holding` becomes a VIEW over a
-new `audiobook_edition_holding` table. Until that lands, the work page names one
-of several audio editions without saying so.
+go.~~ 🔴 **That paragraph described the schema as it stood before 2026-08-23 and
+went on saying it for a fortnight.** The change it calls *"being done
+separately"* is **migration `0390_audiobook_edition_holding.sql`**, which shipped
+on `feature/audio-edition-holdings`: `audiobook_holding` **IS** now a VIEW
+(`migrations/0390_audiobook_edition_holding.sql:130-142`) over a new
+`audiobook_edition_holding` table keyed `(work_id, audio_key)`. Two places
+already recorded that — the part-B note *"### B. The schema change — two audio
+editions per work — ✅ MOVED"* (moved WHOLE to [`DONE.md`](DONE.md) 2026-09-06
+with the rest of that item) and the **retired KI-8** row in
+[`KNOWN_ISSUES.md`](KNOWN_ISSUES.md).
+
+**Measured 2026-09-06 against production `library-catalog`:** work **514** holds
+**two live rows** — `audio_key = 'Elantris'` (`matched_via` exact, `series`
+NULL) and `audio_key = 'Elantris - Tenth Anniversary Special Edition'` (exact,
+`series = 'Elantris'`, `index_display = '1'`, `via_alias` the same string),
+neither stale. The Tenth Anniversary edition has somewhere to go and is in it.
+
+⚠️ **What is still true is a DIFFERENT defect and must not be read as this one:**
+two recordings whose raw titles are **byte-identical** still collapse to one
+row, because `audio_key` is that verbatim string — **`KI-12`** in
+[`KNOWN_ISSUES.md`](KNOWN_ISSUES.md), one affected pair (*Isles of the
+Emberdark*) across both instances, migration **CANCELLED 2026-09-06** until that
+count moves. 0390 fixed *one work, two editions*; KI-12 is *two editions, one
+name*.
 
 ~~**3. 🔴 OWNER DECISION — `INDEX_READ_TOKEN`.**~~ ✅ **TAKEN AND SHIPPED
 2026-08-25** — moved whole to [`DONE.md`](DONE.md) ("Rung 2 of the free ladder is
