@@ -96,9 +96,7 @@ export function DeleteWork({
       {!open && (
         <>
           <p className="muted small">
-            Remove this book from the catalog entirely — for a record that should never have
-            existed, like a phantom from a bad scan. A duplicate of another book is a different
-            problem: deleting it loses whichever facts this row had and the other lacks.
+            For a record that should never have existed. A duplicate is a different problem.
           </p>
           <div className="row-tight">
             <button className="chip danger" disabled={busy} onClick={() => void preview()}>
@@ -183,16 +181,17 @@ export function DeleteWork({
             </>
           ) : (
             <>
-              <p className="muted small">
-                The full record — this work and every printing and copy above — is written to the
-                change log first, as the undo material. Nothing here is reversible from the UI
-                yet, but nothing is lost silently either.
-              </p>
+              {/* CUT 2026-09-07 (grey-paragraph audit item 65): four lines of
+                  implementation detail about the change-log undo material. The
+                  half that mattered — "not reversible" — moved ONTO the button,
+                  which is where the audit said it belongs. The behaviour is
+                  unchanged: the full record is still written to the change log
+                  before anything is destroyed. */}
               <div className="row-tight">
                 <button className="chip danger" disabled={busy} onClick={() => void destroy()}>
                   {busy
                     ? 'Deleting…'
-                    : `Delete this record${report.editions > 0 ? ` and its ${report.editions} printing${report.editions === 1 ? '' : 's'}` : ''}`}
+                    : `Delete this record${report.editions > 0 ? ` and its ${report.editions} printing${report.editions === 1 ? '' : 's'}` : ''} — cannot be undone`}
                 </button>
                 <button disabled={busy} onClick={() => setOpen(false)}>
                   Cancel

@@ -162,9 +162,8 @@ export function Related({
         </ul>
       ) : (
         <p className="muted small">
-          Nothing linked. This is for connections a series column cannot hold — the same
-          universe, an omnibus and its parts, a companion volume, or reading order across two
-          series.
+          Nothing linked. For links a series column cannot hold — omnibus, companion,
+          cross-series order.
         </p>
       )}
 
@@ -235,8 +234,6 @@ function AddRelation({
     }, 220);
     return () => clearTimeout(t);
   }, [q, workId]);
-
-  const alreadyLinked = picked ? existing.find((r) => r.workId === picked.id) : null;
 
   async function save() {
     if (!picked) return;
@@ -310,12 +307,8 @@ function AddRelation({
             placeholder="Why, in your words (optional)"
             aria-label="Note"
           />
-          {alreadyLinked && (
-            <p className="muted small">
-              These two are already linked — {label(alreadyLinked).toLowerCase()}. Saving adds a
-              second kind of link rather than replacing it.
-            </p>
-          )}
+          {/* CUT 2026-09-07 (grey-paragraph audit item 60 — the existing link
+              is visible in the list above). */}
           {error && <p className="notice notice--bad small">{error}</p>}
           <button className="primary" onClick={() => void save()} disabled={busy}>
             {busy ? 'Linking…' : 'Link them'}

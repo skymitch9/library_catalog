@@ -287,11 +287,11 @@ export function Copies({
     <section className="panel">
       <h3>Copies</h3>
 
+      {/* The empty state's explanation was CUT 2026-09-07 (grey-paragraph audit
+          item 47 — the panel is titled Copies). The two words stay: an empty
+          panel with no line at all reads as a panel that failed to load. */}
       {copies.length === 0 ? (
-        <p className="muted small">
-          Nothing recorded. An edition existing is not the same as a copy on the shelf — and
-          nor is it the same as wanting one.
-        </p>
+        <p className="muted small">Nothing recorded.</p>
       ) : (
         <ul className="plain">
           {copies.map((c) => (
@@ -614,26 +614,15 @@ function PersonField({
         </datalist>
       )}
 
-      {/* ⚠️ Every one of these is a SENTENCE, not a badge. What a person needs
-          to know here is whether the record will follow an account or sit as
-          text, and those have different consequences a year from now. */}
-      {willLink && (
-        <p className="muted small">
-          Linked to {willLink.displayName}’s account — the card will follow their
-          name if they change it.
-        </p>
-      )}
+      {/* ⚠️ Two of the four sentences here were CUT 2026-09-07 (grey-paragraph
+          audit items 49 and 50): the will-link one, because the saved card
+          renders a "· linked" chip that says it; and the saved-as-typed one,
+          because it was reassurance about a non-problem. The AMBIGUOUS case
+          stays — shortened — because it is the one branch where what you typed
+          does something other than what you would expect. */}
       {ambiguous && (
         <p className="notice notice--bad small">
-          More than one member here is called “{typed.trim()}”, so this cannot be
-          linked to an account without guessing which. The name will be saved as
-          typed — which is a complete record, just not a linked one.
-        </p>
-      )}
-      {!willLink && !ambiguous && typed.trim() !== '' && (
-        <p className="muted small">
-          Saved as typed. {named.length > 0 ? 'No member here goes by that name' : 'Not linked to an account'} — which is
-          the ordinary case for somebody outside the estate.
+          Two members share that name — saved as typed, not linked.
         </p>
       )}
       {membersUnavailable && (

@@ -88,10 +88,7 @@ export function Watches({
       </div>
 
       {open.length === 0 && done.length === 0 && (
-        <p className="muted small">
-          Nothing flagged. Add a note when something about this book looks wrong and you want to
-          come back to it.
-        </p>
+        <p className="muted small">Nothing flagged.</p>
       )}
 
       {adding && (

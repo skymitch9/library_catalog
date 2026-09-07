@@ -78,10 +78,7 @@ export function Changes({ workId }: { workId: number }) {
       {open && error && <p className="muted small">Could not load the history: {error}</p>}
       {open && !error && changes === null && <p className="muted small">Loading…</p>}
       {open && changes !== null && changes.length === 0 && (
-        <p className="muted small">
-          No changes recorded. The log starts when this feature shipped — silence before that
-          is absence of records, not absence of edits.
-        </p>
+        <p className="muted small">No changes recorded.</p>
       )}
 
       {open && changes !== null && changes.length > 0 && (

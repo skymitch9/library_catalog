@@ -448,9 +448,10 @@ function NewPrintingForm({
             checked={noBarcode}
             onChange={(e) => setNoBarcode(e.target.checked)}
           />
+          {/* ⚠️ Shortened 2026-09-07 (grey-paragraph audit item 54) to the same
+              words `Editions.tsx` now uses — one fact, one wording. */}
           <span>
-            No barcode printed on it — checked the object. Recorded so the blank ISBN reads as a
-            fact, not a gap.
+            No barcode printed — records the blank ISBN as a checked fact, not a gap.
           </span>
         </label>
       )}

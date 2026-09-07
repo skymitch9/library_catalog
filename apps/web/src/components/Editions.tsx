@@ -463,22 +463,10 @@ export function Editions({
 
       {error && <p className="notice notice--bad small">{error}</p>}
 
-      {/*
-        Said here rather than left to be discovered, because it is the specific
-        mistake this panel was built to undo: every barcode scan files its book
-        as a paperback.
-
-        ⚠️ Shown only while a paperback is actually on the row, which is both
-        narrower and self-clearing — it appears on exactly the rows that might be
-        wrong, and goes away the moment somebody corrects one. An earlier version
-        printed it under every edition, including EPUBs, where it is a non
-        sequitur: nothing scans a barcode into an ebook.
-      */}
-      {canEdit && editions.some((e) => e.format === 'paperback') && (
-        <p className="muted small">
-          A scanned book is recorded as a paperback until someone says otherwise.
-        </p>
-      )}
+      {/* The paperback-default note was CUT 2026-09-07 (grey-paragraph audit
+          item 52 — the format field shows Paperback selected, and the fix is
+          the field itself). The behaviour it described is unchanged: every
+          barcode scan still files its book as a paperback until corrected. */}
 
       {/* ⚠️ The by-hand door — for the printings that can never be scanned in.
           70 physical editions carry no ISBN (Kickstarter and campaign
@@ -817,22 +805,20 @@ function EditionForm({
                 )
               }
             />
+            {/* ⚠️ Shortened 2026-09-07 (grey-paragraph audit item 54), NOT
+                cut: this is a checkbox LABEL, and a checkbox whose label does
+                not say what ticking it does is worse than a grey paragraph. */}
             <span>
-              No barcode printed on this copy — checked the object. The blank ISBN becomes a
-              recorded fact instead of a gap.
+              No barcode printed — records the blank ISBN as a checked fact, not a gap.
             </span>
           </label>
         )}
 
-      {/* Shown, not editable. `EDITION_SOURCES` says `manual` outranks every
-          importer and is never overwritten — correcting an Open Library row by
-          hand does not make it a hand-typed row, and rewriting the provenance
-          would lose the only record of where the untouched columns came from. */}
-      {edition !== null && (
-        <p className="muted small">
-          Recorded from {edition.source}. Correcting it does not change that.
-        </p>
-      )}
+      {/* CUT 2026-09-07 (grey-paragraph audit item 53): the row above the form
+          already prints "from {source}" (line ~413), so this said it twice.
+          The RULE is unchanged and still lives in `EDITION_SOURCES`: `manual`
+          outranks every importer and is never overwritten, so correcting an
+          Open Library row by hand does not make it a hand-typed row. */}
 
       {error && <p className="notice notice--bad small">{error}</p>}
 

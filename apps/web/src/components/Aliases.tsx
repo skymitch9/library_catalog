@@ -139,9 +139,7 @@ export function Aliases({ workId, canEdit }: { workId: number; canEdit: boolean 
         </ul>
       ) : (
         <p className="muted small">
-          No other names recorded. This is for a book printed under a second title, or an author
-          filed elsewhere under a pen name — the two cases no similarity score can work out for
-          itself.
+          No other names recorded. For a second title or a pen name.
         </p>
       )}
 

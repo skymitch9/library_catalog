@@ -175,9 +175,7 @@ export function Accessories({
         </ul>
       ) : (
         <p className="muted small">
-          Nothing recorded. This is for what arrived beside the book — a plushie, an enamel pin,
-          an art print, a slipcase. It is kept on this page only and never counted on the
-          collection.
+          Nothing recorded. Extras that arrived with the book; never counted on the collection.
         </p>
       )}
 
