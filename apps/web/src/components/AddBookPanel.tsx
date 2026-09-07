@@ -591,7 +591,7 @@ export function AddBookPanel({
       </div>
       <span className="muted small">
         {scanFormat === DEFAULT_SCAN_FORMAT
-          ? 'Applies to books you add next. Any row can disagree, and each book’s page can fix it.'
+          ? 'Applies to books you add next.'
           : 'Applies to books you add next — remembered for next time too.'}
       </span>
     </div>
@@ -692,7 +692,7 @@ export function AddBookPanel({
         <>
           <p className="muted small">
             {mode === 'single'
-              ? 'Point at the front cover, straight on, filling the frame. A cover also gives the series and volume, which a spine rarely prints.'
+              ? 'Point at the front cover, straight on, filling the frame.'
               : 'Point at one shelf, straight on, with the spines filling the frame.'}{' '}
             Each photo costs about a penny to read, so it is one deliberate tap — never
             automatic.
@@ -795,9 +795,7 @@ export function AddBookPanel({
             target={target}
             onAdded={() => onAdded?.('row')}
             empty={
-              mode === 'scan'
-                ? 'Point the camera at the barcode on the back. The five-digit price code beside it is skipped automatically.'
-                : 'Nothing read from that photo yet.'
+              mode === 'scan' ? 'Nothing scanned yet.' : 'Nothing read from that photo yet.'
             }
           />
           <div className="row" style={{ marginTop: '0.8rem' }}>
@@ -807,13 +805,11 @@ export function AddBookPanel({
           </div>
         </>
       ) : (
-        <p className="muted small">
-          {mode === 'scan'
-            ? 'Point the camera at the barcode on the back. The five-digit price code beside it is skipped automatically.'
-            : mode === 'single'
-              ? 'Photograph one book’s cover, or pick a photo, and what it says is read into a row you can check.'
-              : 'Take a photo of a shelf, or pick one, and the books on it are read into a list you can check.'}
-        </p>
+        /* CUT 2026-09-07 (grey-paragraph audit items 69 and 70): the idle
+           mode blurbs, because the mode buttons in `lib/add-modes.ts` already
+           carry a one-line blurb each; and the barcode line, whose only real
+           content was the price-code clause — invisible machinery. */
+        null
       )}
     </>
   );

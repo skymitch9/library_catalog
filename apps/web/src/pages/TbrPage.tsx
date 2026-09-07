@@ -286,9 +286,8 @@ export function TbrPage({ me }: { me: Me }) {
           {foldedAway > 0 && (
             <p className="muted small">
               {foldedAway === 1
-                ? 'One book was on your list twice — in two formats.'
-                : `${foldedAway} entries were repeats — the same book in another format.`}{' '}
-              Each book is one card now, with a link to every format you have.
+                ? 'One repeat folded — one card per book.'
+                : `${foldedAway} repeats folded — one card per book.`}
             </p>
           )}
 
@@ -356,10 +355,10 @@ export function TbrPage({ me }: { me: Me }) {
                   how many reads as a sync that dropped books. See
                   `lib/tbr-elsewhere.ts` and `docs/info/tbr.md` §10. */}
               {notHere && <p className="muted small">{notHere}</p>}
-              <p className="muted small">
-                They may also be books the two sites spell differently — the link on each
-                card searches the sibling shelf by the title on your list.
-              </p>
+              {/* CUT 2026-09-07 (grey-paragraph audit item 86): a second
+                  explanation under an already-explained section. The link on
+                  each card still searches the sibling shelf by the title on
+                  your list — unchanged, just no longer narrated. */}
               <TbrList groups={elsewhere} busy={busy} onRemove={remove} />
             </>
           )}

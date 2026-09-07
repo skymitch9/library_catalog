@@ -140,12 +140,13 @@ export function readingListEmptyMessage(
   const label = status === 'tbr' ? 'to-read list' : 'read list';
 
   if (n.listed === 0) {
-    // ⚠️ Says where the list is written, because it is written in two places
-    // and neither is this screen. A bare "your list is empty" leaves a person
-    // with nowhere to go.
+    // ⚠️ The to-read branch was CUT back 2026-09-07 (grey-paragraph audit item
+    // 84 — the THIRD copy of "the same list as the audiobook site's"; the
+    // audit kept exactly one, `pages/TbrPage.tsx`'s header, item 82). The READ
+    // branch is untouched: it was not in the audit, and it is a statement about
+    // the read list rather than a third copy of the to-read one.
     return status === 'tbr'
-      ? 'Nothing on your to-read list yet. A book page has an “Add to my TBR” button, ' +
-          'and so does the audiobook site — it is the same list.'
+      ? 'Nothing on your to-read list yet.'
       : 'Nothing marked read on your list yet. Marking a book read on the audiobook ' +
           'site puts it here — it is the same list.';
   }

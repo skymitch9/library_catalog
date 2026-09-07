@@ -164,21 +164,12 @@ export function Tbr({
       >
         {on ? '✓ On my TBR' : 'Add to my TBR'}
       </button>
-      {/* ⚠️ Said out loud, for the reason the collection page says how many
-          books a sweep marked read: an entry that vanished without explanation
-          reads as the app losing it. */}
-      {cleared && (
-        <p className="muted small">
-          Taken off your TBR — you have read it. Add it again above if you mean to re-read
-          it.
-        </p>
-      )}
-      {on && !cleared && (
-        <p className="muted small">
-          This is the same list as the audiobook site&rsquo;s — one entry for the book,
-          whichever format you finish.
-        </p>
-      )}
+      {/* Two paragraphs CUT 2026-09-07 (grey-paragraph audit items 83 and 81):
+          the just-cleared note, because the row vanishing plus the button
+          flipping back to "Add to my TBR" says it; and the shared-list fact,
+          because the audit chose ONE home for it — `/tbr`'s own header
+          (`pages/TbrPage.tsx`, audit item 82) — and this was one of the three
+          copies. */}
       {error && <p className="muted small">Could not reach your reading list: {error}</p>}
     </div>
   );

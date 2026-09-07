@@ -72,16 +72,10 @@ export function splitTbrGroupsByShelf<T extends TbrFoldable>(
  */
 export function notInCatalogueSentence(count: number): string | null {
   if (!Number.isFinite(count) || count <= 0) return null;
-  if (count === 1) {
-    return (
-      'One book on your list is not in this catalogue — it will be an audiobook or an ' +
-      'ebook the household holds elsewhere. It is still on your list; there is just no ' +
-      'copy here to link to.'
-    );
-  }
-  return (
-    `${count} books on your list are not in this catalogue — they will be audiobooks or ` +
-    'ebooks the household holds elsewhere. They are still on your list; there is just no ' +
-    'copy here to link to.'
-  );
+  // ⚠️ Shortened 2026-09-07 (grey-paragraph audit item 87). The two properties
+  // the tests pin are unchanged and were the reason this function exists: the
+  // COUNT is still stated, and it still never says "missing", "failed" or
+  // "not synced" — "held elsewhere" is where they are, not a fault.
+  if (count === 1) return 'One book held elsewhere — audiobook or ebook, no copy here.';
+  return `${count} books held elsewhere — audiobook or ebook, no copy here.`;
 }

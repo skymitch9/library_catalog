@@ -69,11 +69,7 @@ export function ScanJobsPage({ canSpend }: { canSpend: boolean }) {
       {jobs === null ? (
         <p className="muted small">Loading…</p>
       ) : jobs.length === 0 ? (
-        <p className="muted">
-          Nothing half-finished. Scan a stack of barcodes
-          {canSpend ? ', or photograph a shelf,' : ''} and whatever you do not sort now
-          waits here.
-        </p>
+        <p className="muted">Nothing half-finished.</p>
       ) : (
         <ul className="works">
           {jobs.map((job) => (

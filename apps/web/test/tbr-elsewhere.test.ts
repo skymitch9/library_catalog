@@ -125,7 +125,11 @@ describe('notInCatalogueSentence', () => {
       // explanation rather than a shrug.
       assert.match(said, /audiobook/i);
       assert.match(said, /ebook/i);
-      assert.match(said, /still on your list/i);
+      // ⚠️ Was `/still on your list/i` until 2026-09-07, when the sentence was
+      // shortened under the owner's grey-paragraph rule (audit item 87). The
+      // BEHAVIOUR under test is unchanged — the absence is explained rather
+      // than blamed — and "no copy here" is now the clause that carries it.
+      assert.match(said, /no copy here/i);
     }
   });
 });

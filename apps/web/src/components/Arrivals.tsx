@@ -205,7 +205,7 @@ export function Arrivals({
           {rows.length === 1
             ? 'One book here is paid for and still on its way.'
             : `${rows.length} books here are paid for and still on their way.`}{' '}
-          When the parcel turns up, this puts the lot of them on the shelf at once.
+          Marks the lot as arrived.
         </p>
       )}
 
@@ -246,13 +246,20 @@ export function Arrivals({
                   list has no "all" to speak of. The verb is this app's word for
                   `owned`: `STATUS_LABEL` calls it "On the shelf", and "Mark as
                   owned" would be a second spelling of one status. */}
+              {/* ⚠️ The DISABLED state says why, 2026-09-07 (grey-paragraph
+                  audit item 77 — "disable the button instead"). The button was
+                  already disabled at zero; without this branch it read "Put 0
+                  on the shelf", which is a worse sentence than the paragraph
+                  that went. */}
               {busy
                 ? 'Saving…'
-                : chosen.length === 1
-                  ? 'Put it on the shelf'
-                  : chosen.length === rows.length
-                    ? `Put all ${rows.length} on the shelf`
-                    : `Put ${chosen.length} on the shelf`}
+                : chosen.length === 0
+                  ? 'Nothing ticked'
+                  : chosen.length === 1
+                    ? 'Put it on the shelf'
+                    : chosen.length === rows.length
+                      ? `Put all ${rows.length} on the shelf`
+                      : `Put ${chosen.length} on the shelf`}
             </button>
             {/* Only when it does something. "Tick everything" beside an already
                 full list reports success and changes nothing. */}
@@ -266,12 +273,6 @@ export function Arrivals({
             </button>
           </div>
 
-          {chosen.length === 0 && (
-            <p className="muted small">
-              Nothing is ticked, so there is nothing to mark. Close this and it is as though
-              you never opened it.
-            </p>
-          )}
         </>
       )}
     </section>

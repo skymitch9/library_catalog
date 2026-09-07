@@ -486,13 +486,10 @@ function LineRow({
               </span>
             </div>
             <strong>{overlapNote}</strong>
-            <div className="muted small">
-              {/* The one thing the person needs to know to decide, and the
-                  reason this is not a refusal: owning both is a real choice
-                  somebody makes on purpose. */}
-              Some books are worth having both ways. Add it if you want it separately, or
-              leave it.
-            </div>
+            {/* CUT 2026-09-07 (grey-paragraph audit item 71): the two buttons
+                beside this say it. This is still NOT a refusal — owning both is
+                a real choice somebody makes on purpose, and the row stays
+                addable. */}
             {overlaps.map((o) => (
               <div className="small" key={o.workId}>
                 <Link to={workPath(o.workId)}>Open {o.title}</Link>

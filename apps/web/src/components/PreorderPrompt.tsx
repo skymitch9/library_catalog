@@ -72,14 +72,9 @@ export function PreorderPrompt({
         </button>
       </div>
 
-      {many && (
-        <div className="muted small">
-          {/* Only when it can bite. One pre-order needs no warning about picking
-              the wrong one. */}
-          Pick the wrong one and nothing is lost — the copies panel on the book page
-          can put it back.
-        </div>
-      )}
+      {/* CUT 2026-09-07 (grey-paragraph audit item 78): reassurance about a
+          reversible choice. The choice is still reversible — the copies panel
+          on the book page puts it back. */}
     </div>
   );
 }

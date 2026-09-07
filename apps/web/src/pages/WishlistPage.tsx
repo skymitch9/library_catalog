@@ -186,16 +186,10 @@ export function WishlistPage({
 
       {rows.length === 0 ? (
         <>
-          {/* ⚠️ Says what puts a book HERE, not just that nothing is here. A
-              row on this page is a copy whose status is `wanted` — the fact the
-              page's header comment opens with — and an empty state that does
-              not say so leaves somebody guessing at what they are looking at.
-              Same sense as the sibling catalog's, in this repo's nouns. */}
-          <p className="muted">
-            Nothing on the list. A book lands here when one of its copies is{' '}
-            <em>wanted</em> — add one here, press <em>Want this</em> on a book&rsquo;s page, or
-            take one of the gaps a series offers against its missing volumes.
-          </p>
+          {/* Shortened 2026-09-07 (grey-paragraph audit item 79). The "+ Add
+              something" button below is the page's own door and carries the
+              rest. */}
+          <p className="muted">Nothing wanted yet.</p>
           {/* The page's own door, not a link to `/add`. Sending somebody to the
               scanner to record a book they do not have yet is the wrong
               direction — that screen is for books in your hands. */}
@@ -216,11 +210,13 @@ export function WishlistPage({
               the sibling Board Game Catalog at 204 pre-orders against 30
               wishes. They stay on one list because the list is short and both
               are "not here yet"; only the counting is separated. */}
+          {/* The trailing "marking one as owned keeps the row" clause was CUT
+              2026-09-07 (grey-paragraph audit item 80 — behaviour nobody will
+              doubt). The COUNTS stay: they are data, and the split between them
+              is the whole point of the comment above. */}
           <p className="muted small">
             {wishes} {wishes === 1 ? 'wish' : 'wishes'}
-            {onTheWay > 0 && ` · ${onTheWay} ${ON_THE_WAY}`}. Marking one as owned keeps
-            the row — when you wanted it, and what you were going to pay — rather than
-            starting a new one.
+            {onTheWay > 0 && ` · ${onTheWay} ${ON_THE_WAY}`}
           </p>
           <ul className="works">
             {rows.map((r) => (

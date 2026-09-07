@@ -104,11 +104,17 @@ describe('readingListNote — the two numbers, said out loud', () => {
 });
 
 describe('readingListEmptyMessage — which of the causes it was', () => {
-  it('an empty to-read list says where a book is added from', () => {
+  it('an empty to-read list is worded for the TO-READ list, and is not null', () => {
+    // ⚠️ This used to assert /audiobook site/ and /same list/. Those clauses
+    // were CUT 2026-09-07 under the owner's grey-paragraph rule (audit item 84
+    // — the third of three copies of the shared-list fact; `/tbr`'s own header
+    // is the one that survives). The BEHAVIOUR still under test is the one the
+    // function exists for: an empty LIST is distinguished from a list whose
+    // books are simply not in this catalogue, and it never returns null here.
     const msg = readingListEmptyMessage('tbr', { listed: 0, matched: 0 });
     assert.ok(msg);
-    assert.match(msg, /audiobook site/);
-    assert.match(msg, /same list/);
+    assert.match(msg, /to-read list/);
+    assert.doesNotMatch(msg, /this catalogue/);
   });
 
   it('an empty read list is worded for the read list, not the to-read one', () => {
