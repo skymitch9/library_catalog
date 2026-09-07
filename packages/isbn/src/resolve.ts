@@ -39,7 +39,7 @@
  * why no rung here writes to the catalog.
  */
 
-import { MIN_COVER_BYTES } from '@lc/core';
+import { MIN_COVER_BYTES, fullSizeCoverUrl } from '@lc/core';
 import type { EditionFormat } from '@lc/core';
 
 /** One answer, whichever rung produced it. */
@@ -581,6 +581,19 @@ export interface CoverCheck {
   contentType: string | null;
   /** Why it was rejected, for a log a person will actually read. */
   reason?: string;
+  /**
+   * ⚠️ **The URL these bytes actually came from — STORE THIS, not the input.**
+   *
+   * It is the input in every ordinary case. It differs when a Goodreads/Amazon
+   * thumbnail token was stripped and the full-size form answered (see
+   * `fullSizeCoverUrl`), and in that case storing the input would store the
+   * 50-pixel smudge whose bytes were never fetched.
+   *
+   * ⚠️ It does NOT carry the `?default=false` the Open Library guard appends.
+   * That parameter is a question asked at fetch time, not part of the cover's
+   * address, and this function re-appends it on every subsequent check.
+   */
+  url: string;
 }
 
 /**
@@ -605,10 +618,44 @@ export interface CoverCheck {
  * A URL that cannot be verified is treated as no cover at all. ⚠️ Never store an
  * unverified URL: nothing in this system ever revisits a cover column, so a dead
  * link is permanent in a way a blank is not.
+ *
+ * ## ⚠️ THIRD defence, added 2026-09-07: the thumbnail token
+ *
+ * A URL can pass both checks above and still be useless — `._SX50_` on a
+ * Goodreads URL is 1,980 bytes of a genuinely correct cover, fifty pixels wide,
+ * and every floor this catalog owns clears it. `fullSizeCoverUrl` is the whole
+ * rule and its header is the measurement. Here it only changes WHICH URL is
+ * fetched first: the stripped form, then the original if the stripped one does
+ * not answer.
+ *
+ * ⚠️ **Read `check.url`, never the input, when storing the result.** The two
+ * differ exactly when the upgrade landed, which is the case the feature exists
+ * for.
+ *
+ * ⚠️ The fallback costs a **second subrequest**, and only on the narrow
+ * host+token match. A Worker invocation has 50; the free-details ladder's budget
+ * (`FREE_LADDER_SUBREQUESTS`) is the thing to check before widening the host
+ * list, because exceeding the ceiling *terminates the invocation silently*.
  */
 export async function verifyCoverUrl(
   url: string,
   opts: { fetchImpl?: typeof fetch; userAgent?: string } = {},
+): Promise<CoverCheck> {
+  const fullSize = fullSizeCoverUrl(url);
+  if (fullSize) {
+    const upgraded = await fetchCover(fullSize, opts);
+    if (upgraded.ok) return upgraded;
+    // The tokenless form did not answer. Fall back to what we were given rather
+    // than reporting the book coverless — a small cover beats none, and this is
+    // the only path on which the 1,980-byte form is still the right answer.
+  }
+  return fetchCover(url, opts);
+}
+
+/** One fetch and the two byte-level checks. `verifyCoverUrl` decides what to fetch. */
+async function fetchCover(
+  url: string,
+  opts: { fetchImpl?: typeof fetch; userAgent?: string },
 ): Promise<CoverCheck> {
   const doFetch = opts.fetchImpl ?? fetch;
   const guarded = /covers\.openlibrary\.org/.test(url) && !/default=false/.test(url)
@@ -621,13 +668,13 @@ export async function verifyCoverUrl(
       redirect: 'follow',
     });
     if (!res.ok) {
-      return { ok: false, bytes: 0, status: res.status, contentType: null, reason: `HTTP ${res.status}` };
+      return { ok: false, bytes: 0, status: res.status, contentType: null, reason: `HTTP ${res.status}`, url };
     }
     const contentType = res.headers.get('content-type');
     const bytes = (await res.arrayBuffer()).byteLength;
 
     if (contentType && !/^image\//i.test(contentType)) {
-      return { ok: false, bytes, status: res.status, contentType, reason: `not an image (${contentType})` };
+      return { ok: false, bytes, status: res.status, contentType, reason: `not an image (${contentType})`, url };
     }
     if (bytes < MIN_COVER_BYTES) {
       return {
@@ -636,9 +683,10 @@ export async function verifyCoverUrl(
         status: res.status,
         contentType,
         reason: `${bytes} bytes — a placeholder, not a cover`,
+        url,
       };
     }
-    return { ok: true, bytes, status: res.status, contentType };
+    return { ok: true, bytes, status: res.status, contentType, url };
   } catch (err) {
     return {
       ok: false,
@@ -646,6 +694,7 @@ export async function verifyCoverUrl(
       status: 'ERR',
       contentType: null,
       reason: err instanceof Error ? err.message : String(err),
+      url,
     };
   }
 }

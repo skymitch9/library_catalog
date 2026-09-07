@@ -415,7 +415,10 @@ for (const [i, r] of targets.entries()) {
     const check = await verifyCoverUrl(url, { userAgent: UA });
     if (check.ok) {
       const rung = candidates.find((c) => c.coverUrl === url)?.source ?? 'unknown';
-      hit = { url, bytes: check.bytes, rung, isbn };
+      // ⚠️ `check.url`, not `url` — the address the bytes actually came from. A
+      // Goodreads/Amazon thumbnail token is stripped inside the verifier, and
+      // storing the input would store the 50-pixel form. See `fullSizeCoverUrl`.
+      hit = { url: check.url, bytes: check.bytes, rung, isbn };
       break;
     }
     console.log(`       rejected ${url.slice(0, 60)} — ${check.reason}`);
@@ -524,7 +527,8 @@ if (stillEmpty.length) {
       continue;
     }
     console.log(`  ✓ ${String(r.id).padStart(4)}  ${r.title.slice(0, 44)}  (${check.bytes}B)`);
-    titleFound.push({ ...r, url: hit.coverUrl, bytes: check.bytes, rung: 'ol-title' });
+    // `check.url` — the address fetched, per the rule at the free rung above.
+    titleFound.push({ ...r, url: check.url, bytes: check.bytes, rung: 'ol-title' });
   }
   console.log(`Rung 3 found ${titleFound.length} of ${stillEmpty.length}.`);
 }
@@ -708,7 +712,11 @@ if (useLlm) {
       if (proposal.confidence === 'low') {
         llmLowConfidence.push({
           ...r,
-          url: proposal.url,
+          // ⚠️ `check.url` — this is the rung that wrote `…222114404._SX50_.jpg`
+          // onto padhard #199 at HIGH confidence: the right book, 1,980 bytes,
+          // fifty pixels wide. The verifier now strips the token and fetches the
+          // full-size form; storing `proposal.url` would put the smudge back.
+          url: check.url,
           bytes: check.bytes,
           source: proposal.source ?? 'unknown',
           note: proposal.note,
@@ -717,7 +725,7 @@ if (useLlm) {
         continue;
       }
 
-      llmFound.push({ ...r, url: proposal.url, bytes: check.bytes, rung: 'llm' });
+      llmFound.push({ ...r, url: check.url, bytes: check.bytes, rung: 'llm' });
     }
 
     console.log('');

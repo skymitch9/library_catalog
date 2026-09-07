@@ -41,6 +41,95 @@ export const MIN_COVER_BYTES = 1000;
  */
 export const MAX_COVER_BYTES = 6 * 1024 * 1024;
 
+/**
+ * The hosts that encode a THUMBNAIL SIZE into the filename.
+ *
+ * Goodreads (`i.gr-assets.com`, which is Amazon's image service wearing a
+ * different hostname) and Amazon's own `m.media-amazon.com` both take a
+ * `<id>._SX50_.jpg` form, where the token names the pixel width or height the
+ * server should scale to. Deleting the token asks the same server for the same
+ * image at its stored size.
+ *
+ * ⚠️ **Deliberately a short, explicit list.** The rewrite below is only safe
+ * because these hosts are known to serve the tokenless form of every id they
+ * serve a tokenised form of; on any other host `._SX50_` is just part of a
+ * filename and removing it is a 404 waiting to happen.
+ */
+const SIZE_TOKEN_HOSTS = new Set([
+  'i.gr-assets.com',
+  's.gr-assets.com',
+  'images.gr-assets.com',
+  'm.media-amazon.com',
+  'images-na.ssl-images-amazon.com',
+]);
+
+/**
+ * A run of size directives: `._SX50_`, `._SY475_`, `._UY218_`, `._SR178,218_`,
+ * `._SL500_`, `._QL80_`. Two letters, digits, optionally a second number.
+ *
+ * ⚠️ **The `+` is load-bearing.** Amazon STACKS them without repeating the dot —
+ * `._SY445_SX342_.jpg` is one dot and two directives — so a pattern anchored on
+ * `\._` alone strips the first and leaves `SX342_` welded to the id, producing a
+ * URL that 404s. Measured while writing this: the naive form turned
+ * `51abcDEFgh._SY445_SX342_.jpg` into `51abcDEFghSX342_.jpg`.
+ *
+ * ⚠️ `._AC_` and friends carry no digits and are NOT matched — they are not
+ * size directives and removing them buys nothing.
+ */
+const SIZE_TOKEN = /\._(?:[A-Z]{2}\d+(?:,\d+)?_)+/g;
+
+/**
+ * The full-resolution form of a thumbnail URL, or `null` when there isn't one.
+ *
+ * ## 🔴 The failure this exists for: a cover can be the RIGHT book and useless
+ *
+ * Measured 2026-08-23 on padhard **199 *Foxy Tales***. The paid cover rung
+ * proposed, at high confidence, the correct jacket for the correct book:
+ *
+ * ```
+ * …/books/1738511384l/222114404._SX50_.jpg   →   1,980 bytes
+ * …/books/1738511384l/222114404._SY475_.jpg  →  34,579 bytes
+ * …/books/1738511384l/222114404.jpg          → 255,373 bytes
+ * ```
+ *
+ * `._SX50_` means **50 pixels wide**. The grid renders covers at 150px and the
+ * detail panel at 190px, so what got stored was a smudge.
+ *
+ * ⚠️ **Every guard this catalog owns passes it, and they pass it correctly.**
+ * `verifyCoverUrl`'s `MIN_COVER_BYTES` is a FLOOR and 1,980 clears it;
+ * `check-cover-health.mjs`'s 1,000-byte floor clears it too; the KI-6 hash audit
+ * clears it because the hash is genuinely distinct — it is a real, unique,
+ * correct, tiny image. There is no test of *"too small to be usable"* that a
+ * byte count can perform, which is why the fix is to stop asking for the small
+ * one rather than to add a fourth floor.
+ *
+ * ⚠️ **Do NOT replace this with a minimum-DIMENSION check.** The 43-byte Open
+ * Library pixel and the 4,013-byte Google card are already handled by the floor,
+ * and a dimension floor would begin rejecting legitimate small covers without
+ * saying why (`docs/TODO.md`, the section this was built from).
+ *
+ * Returns `null` — not the input — when there is nothing to do, so a caller
+ * cannot accidentally treat "unchanged" as "upgraded".
+ */
+export function fullSizeCoverUrl(url: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (!SIZE_TOKEN_HOSTS.has(parsed.hostname.toLowerCase())) return null;
+
+  const stripped = parsed.pathname.replace(SIZE_TOKEN, '');
+  if (stripped === parsed.pathname) return null;
+  // A path that is nothing but tokens is not a filename; refuse rather than
+  // hand back a URL ending in a bare slash.
+  if (!/[^/]/.test(stripped.slice(stripped.lastIndexOf('/') + 1))) return null;
+
+  parsed.pathname = stripped;
+  return parsed.toString();
+}
+
 /** The first bytes of a file, as a hex string, for magic-number comparison. */
 function hexHead(bytes: Uint8Array, length: number): string {
   let out = '';

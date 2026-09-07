@@ -198,17 +198,26 @@ export const coverRoutes = new Hono<AppBindings>()
     let verified = false;
     let bytes: number | undefined;
     let verifyReason: string | undefined;
+    let url = proposal.url;
     if (proposal.found && proposal.url) {
       const check = await verifyCoverUrl(proposal.url, {
         userAgent: 'library_catalog (private household catalog)',
       });
       verified = check.ok;
-      if (check.ok) bytes = check.bytes;
-      else verifyReason = check.reason;
+      if (check.ok) {
+        bytes = check.bytes;
+        /*
+         * ⚠️ The proposal is offered at the URL that was FETCHED, so the byte
+         * count beside it belongs to the image the person is being shown and
+         * "Use this cover" applies that same image. A thumbnail token stripped
+         * here is the difference between 1,980 bytes and 255,373.
+         */
+        url = check.url;
+      } else verifyReason = check.reason;
     }
 
     return c.json({
-      proposal,
+      proposal: { ...proposal, url },
       /** True only when the URL actually returned a usable image just now. */
       verified,
       ...(bytes !== undefined ? { bytes } : {}),
@@ -281,7 +290,15 @@ export const coverRoutes = new Hono<AppBindings>()
     }
 
     const updated = await updateWork(c.env.DB, id, {
-      coverUrl: parsed.data.url,
+      /*
+       * ⚠️ `check.url`, NOT `parsed.data.url` — the URL whose bytes were
+       * actually fetched. They differ when a Goodreads/Amazon thumbnail token
+       * was stripped and the full-size image answered, and storing the input
+       * there would store a 50-pixel smudge that nothing ever fetched. See
+       * `fullSizeCoverUrl` for the measurement (padhard #199, 1,980 bytes of a
+       * genuinely correct cover).
+       */
+      coverUrl: check.url,
       // `?? null` and not `?? undefined`: an omitted status means "unassessed",
       // which is the honest record for a link somebody has just pasted.
       coverStatus: parsed.data.status ?? null,
@@ -484,7 +501,9 @@ export const coverRoutes = new Hono<AppBindings>()
     const updated = await updateEdition(
       c.env.DB,
       id,
-      { coverUrl: parsed.data.url },
+      // ⚠️ `check.url` — the URL actually fetched. Same rule as the work-cover
+      // PUT above; see `fullSizeCoverUrl`.
+      { coverUrl: check.url },
       { userId: c.get('user').id, how: 'human' },
     );
     return c.json({ edition: updated, bytes: check.bytes });
