@@ -115,9 +115,56 @@ that cannot stand on its own gets FLAGGED as a decision, and the owner picks.
       107, 112, 161, 181) — cutting them reverses the 2026-08-17 trim.
 - [ ] ❓ OWNER: apply all 161 cut/shorten recommendations as-is, or name the
       numbers he disputes (one question, sent 04:10 Phoenix with notification)
-- [ ] cut the ones he cuts; ship the pair (main + padhard) — then boardgames,
-      audiobook `site/` (→ /dev/ lane; prod via his `promote.yml`), apex via CI
-      `target=heygabi-home`; one Opus agent per repo, `estate-search.js` last
+- [x] **2026-09-07 — the LIBRARY half is DONE and the pair is SHIPPED**
+      (agent W16-LIB-GREY, on the owner's verbatim *"Yes apply"*). Items
+      **1–112** plus the library half of **176**: **89 applied — 56 CUT, 33
+      SHORTENED**; **0 not found** (every string in the audit was located by its
+      text, and every spot-checked line number held); **23 skipped, all of them
+      KEEPs** the audit told us to leave — 4, 6, 19, 34, 42, 45, 51, 55, 57, 59,
+      63, 67, 72, 73, 76, 82, 88, 92, 93, 98, 103, 106, 107, 112 (that is 24
+      KEEP items, one of which — 82 — is also the audit's chosen single home for
+      "the same list as the audiobook site's", so 81 and 84 went). All four
+      `[prior-trim]` items in this repo's range (4, 106, 107, 112) survive
+      untouched. Deploys: main **`3a1c5474-e4c0-4507-b72b-5c0fbc11e814`**,
+      padhard **`582be6b0-047f-4ff0-ae24-c318a9fd2b05`**, both with a full note
+      in [`deploys.log`](deploys.log). No migration on either instance —
+      *"No migrations to apply"* measured separately on both first. Commits
+      `6a01b5a` `4bed0dc` `d873459` `05d2d88` `30c7197` (+ `768b43b` `98f7376`
+      for the log). **MEASURED LIVE:** both hosts 200, both serving
+      `assets/index-B2dQLIv_.js`, and the two live JS assets are **byte-identical**
+      (`cmp`, 1,010,786 bytes each); five removed strings absent from both, and
+      "the same list as the audiobook" survives **exactly once** — item 82.
+      ⚠️ **NOT verified: nobody has looked at any of these screens in a
+      browser**, on either instance.
+      - ⚠️ **Three deliberate departures from a literal CUT**, each carrying a
+        comment beside it in the code, because a bare cut would have left a
+        control that says nothing: **15** the content-warning button still
+        answers ("Noted — add them by hand above for now."); **18** and **23**
+        keep a STATE word ("Published sources: none." / "No series set.")
+        because "looked and found none" ≠ "nobody looked", and a panel that
+        vanishes ≠ one that failed to load. **65** moved *"cannot be undone"*
+        ONTO the delete button, which is where the audit said it belongs, and
+        **77** made the already-disabled Arrivals button say *"Nothing ticked"*
+        instead of *"Put 0 on the shelf"*.
+      - ⚠️ **101 needed a measurement, not a deletion.** `estate-search.js`
+        (`apps/web/public/estate/estate-search.js:692-694`) falls back to its
+        OWN default hint when the attribute is absent — longer than the sentence
+        being cut — and hides the element only when the attribute is `""`. The
+        hint is now empty, not removed.
+      - ⚠️ **Two unit tests updated, none deleted** — `tbr-elsewhere.test.ts`
+        and `reading-list-filter.test.ts` each asserted prose that items 87/84
+        shortened away. Both now assert the BEHAVIOUR they existed for (the
+        count is still stated; the absence is still never called a sync failure;
+        an empty list is still distinguished from a list whose books are not in
+        this catalogue). 3003 tests pass / 0 fail, unchanged.
+      - 🔎 **FINDING for the conductor:** `pages/TbrPage.tsx`'s groups-empty
+        state carries a **fourth** copy of the shared-list fact that the audit
+        never numbered (81/82/84 account for three). Left alone as outside
+        1–112; it is the obvious candidate if the owner wants the rule pushed
+        one step further.
+- [ ] still to ship: boardgames, audiobook `site/` (→ /dev/ lane; prod via his
+      `promote.yml`), apex via CI `target=heygabi-home`; one Opus agent per
+      repo, `estate-search.js` last
 - [ ] each repo's TODO gets its own line when its build starts (the audit
       lives here because the rule was given on this catalog)
 
