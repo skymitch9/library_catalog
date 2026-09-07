@@ -614,11 +614,8 @@ export function DetailsQueuePage({
         </p>
       )}
 
-      {shown.some((w) => runs[w.workId] != null) && (
-        <p className="muted small">
-          A book stays listed until you press Refresh, so you can read what its lookup filled in.
-        </p>
-      )}
+      {/* CUT 2026-09-07 (grey-paragraph audit item 108): the Refresh button is
+          right there. A book still stays listed until it is pressed. */}
 
       <AutoAppliedList
         rows={autoApplied}
@@ -681,8 +678,7 @@ function AutoAppliedList({
     <details className="panel" open>
       <summary>Recently filled in — {rows.length}</summary>
       <p className="muted small">
-        Written by a lookup without being read first. Undo puts the value back to empty and the
-        question back on the list; it never touches anything typed by hand.
+        Written by a lookup, unread. Undo never touches hand-typed values.
       </p>
 
       {canReview && (
@@ -926,12 +922,8 @@ function QueueRow({
             {proposals.map((f) => (
               <Proposal key={f.id} finding={f} canReview={canReview} onChanged={onChanged} />
             ))}
-            {proposals.length > 0 && (
-              <p className="muted small">
-                A lookup found these and could not write them — the value was not a usable
-                year, number or piece of text. They are the only thing left to decide by hand.
-              </p>
-            )}
+            {/* CUT 2026-09-07 (grey-paragraph audit item 110): the heading plus
+                the rows say it. */}
             {findings != null && proposals.length === 0 && (
               <p className="muted small">Nothing is stuck on this book.</p>
             )}
@@ -1162,9 +1154,9 @@ function VerdictForm({ work, onChanged }: { work: NeedsDetails; onChanged: () =>
 
   return (
     <div className="panel">
-      <p className="muted small">
-        Already know the answer? Write it down — free, and it stops this being asked again.
-      </p>
+      {/* CUT 2026-09-07 (grey-paragraph audit item 111): the form is visibly a
+          form. Writing an answer down is still free and still stops the
+          question being asked again. */}
       <div className="controls">
         <label className="field">
           <span className="field__label">Question</span>

@@ -77,10 +77,8 @@ export function PeoplePage({ me }: { me: Me }) {
   return (
     <main>
       <h2>People</h2>
-      <p className="muted">
-        Anyone with a Google account can sign in. Everyone listed here as anything other than
-        pending can see the collection.
-      </p>
+      {/* CUT 2026-09-07 (grey-paragraph audit item 105): the roles table below
+          states each role, and the Pending section demonstrates the gate. */}
 
       {/* The one write path left. Prominent on purpose: this used to be a
           page full of buttons, and it is now a page with none — the reason

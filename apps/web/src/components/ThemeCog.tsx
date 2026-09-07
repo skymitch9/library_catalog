@@ -133,7 +133,8 @@ export function ThemeCog() {
               ))}
             </div>
           </div>
-          <p className="cog__note muted small">Remembered on this site only.</p>
+          {/* CUT 2026-09-07 (grey-paragraph audit item 176, the library half of
+              ten copies estate-wide): a preference nobody expects to sync. */}
         </div>
       )}
     </div>

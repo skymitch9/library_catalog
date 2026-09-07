@@ -227,15 +227,9 @@ export function SeriesPage({
                     No source has been asked about this one yet.
                   </div>
                 )}
-                {/* Suppressed once a length has been recorded by hand: "only
-                    your own volume numbers say anything here" stops being true
-                    the moment somebody has said how long the series is. */}
-                {s.checkOutcome === 'not_found' && s.knownTotal == null && (
-                  <div className="muted small">
-                    The audiobook catalog has never heard of it, so only your own volume
-                    numbers say anything here.
-                  </div>
-                )}
+                {/* CUT 2026-09-07 (grey-paragraph audit item 89): the row's own
+                    "no source" mark carries it, and the same fact is stated on
+                    the series' own page. */}
               </div>
             </button>
           </li>

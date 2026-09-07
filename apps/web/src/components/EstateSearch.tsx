@@ -36,16 +36,17 @@ import {
 import { navigate } from '../router.js';
 
 /**
- * The helper line under the box.
+ * The helper line under the box — deliberately EMPTY since 2026-09-07.
  *
- * Overridden rather than left at the component's default because the default is
- * written for the apex's front door, where there is no other search on the
- * page. Here there is, a few pixels away, and the one thing a reader needs to
- * know is which box does which job.
+ * ⚠️ Set to `''` rather than deleted, and the attribute is still written. The
+ * owner's grey-paragraph rule (audit item 101) cut the sentence because the
+ * panel is already labelled "Search the whole estate" — but leaving the
+ * attribute UNSET would not remove the line, it would fall back to the
+ * component's own default, which is written for the apex's front door and is
+ * longer than the one being cut. An empty attribute is the only way to say "no
+ * hint" to `estate-search.js`.
  */
-const HINT =
-  'Every shelf at once — audiobooks, these books, and the board games. ' +
-  'The box on the collection page searches only the books catalogued here.';
+const HINT = '';
 
 /**
  * `estate-search:select` — the SPA hook the component exists to offer.

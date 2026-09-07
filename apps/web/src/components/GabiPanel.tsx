@@ -341,24 +341,16 @@ export function GabiPanel({ hidden, prefill }: { hidden: boolean; prefill?: stri
       <div className="gabi-log" ref={log} role="log" aria-live="polite">
         {messages.length === 0 && (
           <div className="gabi-intro">
-            <p className="muted small">
-              Ask about these books — what is missing, what a book says, what changed lately.
-            </p>
-            {/* ⚠️ Says what it CANNOT do, up front. Phase 0 is read-only, and a
-                panel that let somebody discover that by being refused would be
-                the worst version of this. */}
+            {/* CUT 2026-09-07 (grey-paragraph audit items 97 and 99): "ask
+                about these books", which the three example prompts below
+                demonstrate; and the half-hour memory note, which is duplicated
+                by the resume line further down at the moment it matters. */}
+            {/* ⚠️ KEPT (audit item 98). Says what it CANNOT do, up front.
+                Phase 0 is read-only, and a panel that let somebody discover
+                that by being refused would be the worst version of this. */}
             <p className="muted small">
               GABI can look things up. It cannot change anything yet — edits are still
               made on a book&rsquo;s own page.
-            </p>
-            {/* ⚠️ The limit is stated with the capability, not instead of it.
-                "She remembers" on its own is a promise this build does not keep:
-                the window is half an hour and then it is gone, deliberately, and
-                somebody who expects yesterday's chat to still be there has been
-                misled by the friendlier half of the sentence. */}
-            <p className="muted small">
-              She remembers the last half hour of a conversation, so you can come back to
-              it in a new tab. After that it is gone.
             </p>
             <ul className="gabi-suggestions">
               {[
@@ -383,10 +375,7 @@ export function GabiPanel({ hidden, prefill }: { hidden: boolean; prefill?: stri
             reassurance is noise, and a "starting fresh" banner on every first
             question would be the panel talking about itself. */}
         {resumed !== null && resumed > 0 && (
-          <p className="muted small gabi-resumed">
-            Picking up where you left off — GABI still has the last {resumed} thing
-            {resumed === 1 ? '' : 's'} said here, from within the past half hour.
-          </p>
+          <p className="muted small gabi-resumed">Picking up where you left off.</p>
         )}
 
         {messages.map((turn, i) => {

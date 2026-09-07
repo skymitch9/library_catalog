@@ -218,18 +218,18 @@ export function SeriesDetailPage({
         {c.knownTotal != null ? (
           <>Length recorded by hand: {c.knownTotal} books, per {c.knownTotalSource}.</>
         ) : c.checkOutcome === 'not_found' ? (
+          /* ⚠️ Trimmed 2026-09-07 (grey-paragraph audit item 89) to the
+             PROVENANCE only. What went is the clause the no-source mark already
+             carries ("so everything below comes from the volume numbers on the
+             books you own"); WHICH source was asked and what it answered is
+             data, and stays — the same shape as the three sibling branches. */
           c.checkSource === 'claude_research' ? (
             <>
-              A scan could not confidently identify this series, so everything below comes
-              from the volume numbers on the books you own — nothing beyond your highest one
-              can be claimed.{c.checkNote && ` ${c.checkNote}`}
+              A scan could not confidently identify this series.
+              {c.checkNote && ` ${c.checkNote}`}
             </>
           ) : (
-            <>
-              The audiobook catalog has never heard of this series, so everything below comes
-              from the volume numbers on the books you own — nothing beyond your highest one can
-              be claimed.
-            </>
+            <>The audiobook catalog has no record of this series.</>
           )
         ) : c.checked ? (
           <>
@@ -323,8 +323,7 @@ export function SeriesDetailPage({
                 Still not an error to be cleaned up. A Target edition and a Barnes
                 & Noble edition are two objects on the shelf, and the ladder above
                 counts each of these once because it is one volume of the series. */}
-            Two or more of these are on the shelf. An ebook and a hardcover of one book is
-            not this — that is one book held two ways, and the chips above say so.
+            Two or more physical copies — not one book in two formats.
           </p>
           <ul className="plain">
             {ownedTwice.map((a) => (
@@ -337,14 +336,11 @@ export function SeriesDetailPage({
       {unnumbered.length > 0 && (
         <section className="panel">
           <h3>In the series, off the number line</h3>
-          <p className="muted small">
-            {/* Real, and not an error: the six Blade Dance "Extra" side stories,
-                the Divine Dungeon omnibus, and both White Sand volumes, whose
-                three 160pp parts cannot be told apart from the file. They are
-                excluded from the gap arithmetic on purpose. */}
-            These are in the series but have no place on it, so they neither fill a gap nor
-            create one.
-          </p>
+          {/* CUT 2026-09-07 (grey-paragraph audit item 90): the heading says
+              it. These are still real and still not an error — the six Blade
+              Dance "Extra" side stories, the Divine Dungeon omnibus, both White
+              Sand volumes — and they are still excluded from the gap arithmetic
+              on purpose. */}
           <ul className="plain">
             {unnumbered.map((u) => (
               <li key={u.workId}>
@@ -1129,12 +1125,10 @@ function AddVolume({
         placeholder="or say how you know"
         aria-label="How you know"
       />
-      {/* The client's half of the same rule the server enforces on a series
-          total: a claim with nothing behind it is the thing this feature exists
-          to refuse, so the button does not light up until there is something. */}
-      {!valid && (
-        <p className="muted small">A volume needs a number and either a link or a note saying how you know.</p>
-      )}
+      {/* CUT 2026-09-07 (grey-paragraph audit item 94): the field labels and
+          the disabled button carry it. The RULE is untouched — `valid` is still
+          the client's half of what the server enforces on a series total, and
+          the button below still does not light up until there is evidence. */}
       {error && <p className="notice notice--bad small">{error}</p>}
       <button className="primary" onClick={() => void save()} disabled={busy || !valid}>
         Record it

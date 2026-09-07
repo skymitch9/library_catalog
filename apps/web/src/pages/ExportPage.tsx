@@ -90,16 +90,13 @@ export function ExportPage() {
         <>
           <section className="panel">
             <h3>Backup</h3>
-            {/* Trimmed 2026-08-17 on the owner's estate-wide order ("Only keep
-                what's mandatory and keep all the text short and useful"). The
-                dropped half enumerated the tables; that inventory's home of
-                record is migrations/0001_init.sql, whose comments carry the
-                reasoning too. The migration stamp stays, because it is the fact
-                that decides whether a restore is safe. */}
-            <p className="muted small">
-              Every row of every table, stamped with the applied migrations so a restore knows
-              which schema it is looking at. <strong>This is the one to keep.</strong>
-            </p>
+            {/* CUT 2026-09-07 (grey-paragraph audit item 102): the audit kept
+                exactly ONE of this page's two panel notes — the CSV one below,
+                which is the genuine trap. This panel is headed "Backup" and its
+                button says "Download JSON"; the sentence added nothing that was
+                not already on the screen. (It had already been trimmed once, on
+                2026-08-17; the table inventory's home of record is
+                migrations/0001_init.sql.) */}
             <button className="primary" disabled={busy != null} onClick={() => void download('json')}>
               {busy === 'json' ? 'Building…' : 'Download JSON'}
             </button>
@@ -122,13 +119,10 @@ export function ExportPage() {
             </button>
           </section>
 
-          {/* The privacy claim is a thing the reader cannot check for himself,
-              so it stays. Only the "current as of that moment" restatement went
-              in the 2026-08-17 trim — the heading above already says it. */}
-          <p className="muted small">
-            Generated when you press the button. Nothing is stored on the server and nothing is
-            sent anywhere — the file goes straight to this device.
-          </p>
+          {/* CUT 2026-09-07 (grey-paragraph audit item 104): privacy
+              reassurance nobody asked for. The BEHAVIOUR is unchanged — the
+              file is still built on the press and streamed straight to the
+              device, with nothing stored server-side. */}
         </>
       )}
     </main>
