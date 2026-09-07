@@ -1,7 +1,17 @@
 # library_catalog — Known Issues, Waivers & Exceptions
 
 > **Audience:** Claude/Kiro sessions and the owner. **Status:** TRACKED.
-> Last verified: **2026-09-07 ~03:2x UTC (W13-LIB)** — **KI-18 was ADDED** and
+> Last verified: **2026-09-07 18:03 UTC (W16-LIB-SNAP)** — **KI-19 was ADDED**
+> and measured live on BOTH hosts' `/api/health` in the same minute
+> (`snapshotAgeHours` **37.7** on each, `lastRunAt 2026-09-07 16:23:15` on each,
+> `cronPlanTicks` **8** on each) plus 52.3 days of `audiobook_catalog`'s git
+> history for `site/catalog.csv` (**38** byte-changing commits, **0.73/day**,
+> median gap **14.8 h**). It is the doc-vs-reality gap that sent an agent
+> investigating a healthy sweep; the runbook line it came from is corrected in
+> [`access/audiobook-sweep.md`](access/audiobook-sweep.md) §2.
+> ⚠️ **Nothing else was re-checked in that pass** — KI-5 through KI-18 all still
+> carry the ages stated below, and no D1 was queried and no `wrangler tail` run.
+> Previously **2026-09-07 ~03:2x UTC (W13-LIB)** — **KI-18 was ADDED** and
 > measured against BOTH production databases: `edition.source = 'librarything'`
 > matches **0 rows on `library-catalog` and 0 on `library-catalog-2nd`**, both
 > report *"No migrations to apply"* (so migration 0420 is applied on both), and
@@ -667,6 +677,68 @@ measurable today.
 `5d12618` (2026-08-21) and `092fd7a` (2026-08-24). ⚠️ **No row anywhere carries
 that mislabel** — the restamp query and the `change_log` batch list are in
 [`DONE.md`](DONE.md) under this entry's parent, 2026-09-06.
+
+---
+
+## KI-19 · `snapshotAgeHours` cannot tell "the sibling pipeline is quiet" from "the sweep has stopped" — `ACCEPTED`
+
+**Symptom.** `/api/health` → `detail.audiobookSweep.snapshotAgeHours` climbs
+without bound whenever the audiobook catalog does not publish, and it looks
+exactly like a dead sweep. Measured **2026-09-07 18:03 UTC**: **37.7 h on BOTH
+instances** (MAIN `snapshotFetchedAt 2026-09-06 04:23:19`, padhard
+`2026-09-06 04:23:13`) — against a runbook line that said *"expect it under ~8"*.
+An agent read that at ~10:55 Phoenix the same day and opened an investigation
+into a sweep that was working perfectly.
+
+**Why it reads that way — by design, at `audiobook-sweep-run.ts:656-658`.** The
+snapshot's `fetched_at` is written **only when the fetch was not a replay**: the
+etag or the row count differed, or there was no snapshot at all. A shadow tick
+fetches unconditionally (`c19fbbf`, 2026-09-06) and gets the same bytes back, so
+it deliberately does **not** re-stamp — re-stamping every four hours would peg
+the number near zero forever and destroy the one signal that says the sibling
+pipeline has died. So the field means *"how long since the sibling catalog last
+CHANGED"*, and it has never meant anything about this sweep's own health.
+
+**Why tolerated.** The ambiguity is one field wide and the other half of the
+answer is already published beside it, on the same unauthenticated route, in the
+same curl:
+
+| Question | The field that answers it |
+|---|---|
+| Has the sibling pipeline stopped publishing? | `snapshotAgeHours` |
+| **Has the sweep stopped running?** | **`lastRunAt` (≤ 4 h) and `gate.cronPlanTicks`** |
+
+Measured the same minute, both instances: `lastRunAt 2026-09-07 16:23:15`,
+`state: shadow`, `detail: "shadow — nothing written (unchanged-replayed)"`,
+`cronPlanTicks 8` / `seriesVolumeTicks 7` — **1 + 7 = every scheduled tick since
+the feature landed, zero missed.** The alternative — a second timestamp for
+"last tick that fetched a 200" — is a second freshness number on a surface that
+already has two, and the estate has paid for a duplicated number before. 🔴 **The
+real defect here was the DOC, and it is fixed**: `access/audiobook-sweep.md` §2
+now carries the measured cadence and says outright which field answers which
+question.
+
+**What would change it — as a number.** The old *"expect under ~8"* came from an
+unmeasured *"the sibling pipeline commits ≈3×/day"*. Measured 2026-09-07 over 52.3
+days of `audiobook_catalog`'s git history for `site/catalog.csv` (38 commits that
+changed the bytes): **0.73 publishes/day**, gap **median 14.8 h · p75 38.6 h ·
+p90 69.3 h · max 299 h**, with **22 of 37 gaps over 8 h** and **15 of 37 over
+24 h**. So:
+
+- **Revisit if `snapshotAgeHours` exceeds 336 h (14 days) on either instance** —
+  that is the observed max (299 h) plus headroom, and it is the first reading
+  that is genuinely news rather than a Tuesday.
+- **Revisit immediately, and as a different bug, if `lastRunAt` is ever more than
+  4 h old or `cronPlanTicks` falls behind the tick count** — that is the failure
+  this field is mistaken for, and it has its own instruments.
+- Also revisit if the sibling pipeline's cadence rises above ~2 publishes/day
+  sustained, at which point a sub-8-hour expectation would become true and a
+  tighter threshold would start earning its keep.
+
+⚠️ **Not verified 2026-09-07:** no `wrangler tail` was run, neither production D1
+was queried, and the etag equality is inferred from the `unchanged-replayed`
+detail string (which the code only emits when `etag === previous.etag &&
+rows === previous.rowCount`) rather than read out of `audiobook_snapshot`.
 
 ---
 

@@ -1,7 +1,20 @@
 # Operating the audiobook association sweep
 
 > **Audience:** Claude sessions first, the owner second.
-> **Status:** ✅ TRACKED. **Last verified: 2026-09-07** — §4's SCRIPT figures
+> **Status:** ✅ TRACKED. **Last verified: 2026-09-07 18:03 UTC
+> (W16-LIB-SNAP)** — §2's `snapshotAgeHours` paragraph was **WRONG and is
+> corrected**: it said *"expect it under ~8"* off a premise (*"the sibling
+> pipeline commits ≈3×/day"*) that was never measured and is false — the real
+> figure is **0.73 publishes/day, median gap 14.8 h, p90 69.3 h**. `/api/health`
+> was read on **both** hosts that minute and **the sweep has not stopped**:
+> `lastRunAt 2026-09-07 16:23:15` on both, `cronPlanTicks 8` on both, which is
+> **every scheduled tick since the feature landed, none missed**. ⚠️ **NOT
+> re-measured 2026-09-07 18:03:** everything else on this page — §4/§4a's
+> script-vs-route figures, the admin route, the on-add hook. No `wrangler tail`
+> was run and no D1 was queried; the whole finding is `/api/health`, the live
+> CSV's headers, and `audiobook_catalog`'s git log.
+>
+> Previously **2026-09-07** — §4's SCRIPT figures
 > were re-measured that day by a dry run and then a `--commit` on **both**
 > instances, cross-checked against `/api/health` on both hosts. ⚠️ **NOT
 > re-measured 2026-09-07:** §4a (series volumes — that script was not run at
@@ -185,18 +198,90 @@ that never fired all look identical from the holding table.
 | `state: "running"` with an old `lastRunAt` and `lastFinishedAt: null` | an invocation was cancelled | not seen yet. Would mean the work outlived its `waitUntil` |
 | `seriesCanonEntries` suddenly 0 or much lower | the DEPLOY shipped an empty series canon | rebuild and redeploy; until then every affected rung renders `AUDIO?` |
 
-**`snapshotAgeHours` is the freshness number.** Expect it under ~8: the sibling
-pipeline commits ≈3×/day and the cron reads every 4 hours. Twenty-four-plus means
-either the CSV has genuinely not changed or the sweep has stopped.
+### 🔴 `snapshotAgeHours` measures the SIBLING PIPELINE, not this sweep
 
-⚠️ **It still means that after the 2026-09-06 change, and that took deliberate
-work.** A shadow tick now fetches the body every four hours whether or not it
-changed — so re-stamping `fetched_at` on every one of them would have pegged this
-number near zero forever and destroyed the only signal that says the sibling
-pipeline has died. **A replay therefore does not write the snapshot at all**
-(`etag` and `row_count` are identical by definition; `fetched_at` is the whole
-point), which is why `unchanged-replayed` and a climbing age appear together and
-are not a contradiction.
+🔴 **CORRECTED 2026-09-07 (W16-LIB-SNAP). This paragraph used to say "Expect it
+under ~8 … Twenty-four-plus means either the CSV has genuinely not changed or the
+sweep has stopped." Both halves were wrong, and the second one is the one that
+wastes a session.** The `~8` was derived from *"the sibling pipeline commits
+≈3×/day and the cron reads every 4 hours"*, and **that premise has never been
+true**. Measured 2026-09-07 over `audiobook_catalog`'s own git history of
+`site/catalog.csv` (52.3 days, 2026-07-16 → 2026-09-04, 38 commits that changed
+the bytes):
+
+| | |
+|---|---|
+| publishes per day | **0.73** — not 3 |
+| gap between publishes, median | **14.8 h** |
+| p75 / p90 / max | **38.6 h / 69.3 h / 299 h** (12.5 days) |
+| gaps over 8 h | **22 of 37** — the old sentence was violated 59% of the time |
+| gaps over 24 h | **15 of 37** |
+
+**What the number actually is.** `fetched_at` is written at
+`audiobook-sweep-run.ts:656-658` **only when the fetch was NOT a replay** — i.e.
+only when the body's etag or row count differed from the stored snapshot (or
+there was no snapshot at all). So `snapshotAgeHours` is *"how long since the
+sibling catalog last **changed**"*, floored at the first tick this instance ever
+ran. **It is not, and has never been, a measurement of whether the sweep is
+running.** ⚠️ It did not change meaning on 2026-09-06 either: before that, a
+quiet CSV `304`'d and returned above the snapshot write; after it, a quiet CSV
+replays and skips the snapshot write. Same silence, different door.
+
+**So expect it to spend most of its life between 12 h and 48 h, and to reach ~70 h
+routinely.** The honest alarm threshold is the observed max plus headroom —
+**call it 14 days (336 h)**, not 8 hours and not 24.
+
+🔴 **To ask "has the sweep stopped?", read `lastRunAt` and `gate.cronPlanTicks`
+instead** — those are the only two fields on this route that answer it:
+
+```bash
+curl -sS -D /dev/null -A "Mozilla/5.0 estate-check" \
+  "https://library.heygabi.ai/api/health?cb=$RANDOM" \
+  | jq '.detail.audiobookSweep | {lastRunAt, state, detail, snapshotAgeHours, gate}'
+```
+
+`lastRunAt` within the last **4 h** means the cron fired on schedule.
+`cronPlanTicks` should equal the number of `:23`-on-a-multiple-of-4 UTC ticks
+since 2026-09-06 04:23, plus nothing — a shortfall is a missed tick and a real
+finding.
+
+**✅ Measured 2026-09-07 18:03 UTC — the sweep is HEALTHY on both instances and
+the 37.7 h is the sibling pipeline being quiet:**
+
+| | MAIN | padhard |
+|---|---|---|
+| `lastRunAt` (UTC) | `2026-09-07 16:23:15` | `2026-09-07 16:23:15` |
+| `state` / `detail` | `shadow` / `shadow — nothing written (unchanged-replayed)` | identical |
+| `snapshotFetchedAt` | `2026-09-06 04:23:19` | `2026-09-06 04:23:13` |
+| `snapshotAgeHours` | **37.7** | **37.7** |
+| `snapshotRows` | 1089 | 1089 |
+| `gate.cronPlanTicks` / `seriesVolumeTicks` | 8 / 7 | 8 / 7 |
+
+🔴 **`cronPlanTicks: 8` is the proof that NOTHING stopped, and the arithmetic is
+exact:** one plan-bearing tick on 2026-09-06 `04:23` (the first ever — no stored
+etag, so it fetched a 200), then `c19fbbf` deployed 2026-09-06 ~14:50 UTC, then
+**seven** ticks at `16:23`, `20:23`, `00:23`, `04:23`, `08:23`, `12:23`, `16:23`.
+1 + 7 = 8, with **zero missed**. `seriesVolumeTicks: 7` is the same seven, the
+2026-09-06 `04:23` row predating the series-volume bundle.
+
+**And the upstream really is quiet, measured the same hour:**
+`https://audiobooks.heygabi.ai/catalog.csv` answers `200` with
+`ETag: "4d4d09ade4b45fb1baa48ab7880b7a34"` and `Content-Length: 1414828`; the last
+commit that changed `audiobook_catalog/site/catalog.csv` is **`f78dede`,
+2026-09-04 23:26:45 UTC** — ⚠️ **three days before the snapshot was even taken**,
+which is why the age has climbed uninterrupted. (The live body is 1,090 bytes
+shorter than the file on disk: 1089 records + header, CRLF on disk and LF on the
+wire. That is the equality §8 relies on, not a difference.)
+
+⚠️ **Why a replay does not re-stamp the snapshot — unchanged, and still the right
+call.** A shadow tick fetches the body every four hours whether or not it changed,
+so re-stamping `fetched_at` on every one of them would peg this number near zero
+forever and destroy the only signal that says the sibling pipeline has died.
+**A replay therefore does not write the snapshot at all** (`etag` and `row_count`
+are identical by definition; `fetched_at` is the whole point), which is why
+`unchanged-replayed` and a climbing age appear together and are not a
+contradiction. The cost of that choice is the ambiguity this section exists to
+resolve — see [`../KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) **KI-19**.
 
 ---
 

@@ -440,6 +440,18 @@ count is 1 tick on the holdings half and 0 on the series-volume half.** The
    `04:23`, `08:23` and `12:23`. So *"42 ticks = a week at four-hourly"* is
    wrong as a schedule: at ~3 plan-bearing ticks a day it is **~14 days**, and
    `snapshotAgeHours` was already **10** at 14:21 UTC.
+   🔴 **CORRECTED 2026-09-07 (W16-LIB-SNAP): "≈3×/day" was never measured and is
+   false — it is 0.73 publishes/day**, median gap **14.8 h**, p90 **69.3 h**, max
+   **299 h**, over 52.3 days of `audiobook_catalog`'s git history for
+   `site/catalog.csv` (38 byte-changing commits). This makes the point ABOVE
+   worse, not better, and it is the same false premise that put *"expect
+   `snapshotAgeHours` under ~8"* into the runbook — see
+   [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) **KI-19**. ✅ It is inert for the
+   schedule, because shadow now fetches unconditionally and all six daily ticks
+   count. ⚠️ And that etag is STILL `"4d4d09ade4b45fb1baa48ab7880b7a34"` /
+   1089 rows, re-read live at **2026-09-07 18:03 UTC** — unchanged for 37.7 h,
+   which is a quiet sibling pipeline and not a stopped sweep (`lastRunAt
+   2026-09-07 16:23:15` and `cronPlanTicks 8` on **both** hosts, zero missed).
 
 **Where the numbers everyone is quoting actually come from — they are the
 SCRIPT's, not the route's.** *"padhard would gain 140 volumes / 313 checks"* is
