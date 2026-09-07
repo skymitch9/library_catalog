@@ -19,6 +19,172 @@
 
 
 
+## ✅ 2026-09-07 09:10 Phoenix — OWNER RULE 02:50 "We need less grey paragraphs" — applied on all FIVE hosts + the shared search component (moved WHOLE from TODO.md; only owner eyeballs and one flagged /universes line remain)
+
+Verbatim: *"We need less grey paragraphs. If a feature isn't self sufficient
+with just the way it works we should flag it for a paragraph instead of
+defaulting."* Said on /work/347 after W15-LIB-REJ added the `REJECTION_COST`
+paragraph above the Audio-tab buttons, on top of the page's existing muted
+prose. Rule, all four catalogs: **no helper paragraph by default**; a feature
+that cannot stand on its own gets FLAGGED as a decision, and the owner picks.
+
+- [x] 2026-09-07 04:05 Phoenix — inventory DONE for ALL FOUR sites at once
+      (owner: "Yes the audit all site"), read-only Opus agent, 230 numbered
+      items: **69 keep / 107 cut / 54 shorten** (measured from the list; the
+      agent's own headline said 76/102/52 and was wrong). Source of record:
+      [`docs/archive/2026-09-07-grey-paragraph-audit.md`](archive/2026-09-07-grey-paragraph-audit.md);
+      filterable page for the owner:
+      https://claude.ai/code/artifact/4bcb12ab-e163-47f8-95fd-d76e34cb3be3.
+      NOT covered: the shared `assets/estate-search.js` component (own pass —
+      lands on all four sites at once), `html_builder.py`, most of the 9.4 MB
+      generated `site/index.html`. Six items carry `[prior-trim]` (4, 106,
+      107, 112, 161, 181) — cutting them reverses the 2026-08-17 trim.
+- [x] ❓ OWNER: apply all 161 cut/shorten recommendations as-is, or name the
+      numbers he disputes (one question, sent 04:10 Phoenix with notification)
+      — **answered ~04:50 Phoenix: "Yes apply"**, all 161 as-is; four Opus
+      builders dispatched, one per repo.
+- [x] **2026-09-07 — the LIBRARY half is DONE and the pair is SHIPPED**
+      (agent W16-LIB-GREY, on the owner's verbatim *"Yes apply"*). Items
+      **1–112** plus the library half of **176**: **89 applied — 56 CUT, 33
+      SHORTENED**; **0 not found** (every string in the audit was located by its
+      text, and every spot-checked line number held); **23 skipped, all of them
+      KEEPs** the audit told us to leave — 4, 6, 19, 34, 42, 45, 51, 55, 57, 59,
+      63, 67, 72, 73, 76, 82, 88, 92, 93, 98, 103, 106, 107, 112 (that is 24
+      KEEP items, one of which — 82 — is also the audit's chosen single home for
+      "the same list as the audiobook site's", so 81 and 84 went). All four
+      `[prior-trim]` items in this repo's range (4, 106, 107, 112) survive
+      untouched. Deploys: main **`3a1c5474-e4c0-4507-b72b-5c0fbc11e814`**,
+      padhard **`582be6b0-047f-4ff0-ae24-c318a9fd2b05`**, both with a full note
+      in [`deploys.log`](deploys.log). No migration on either instance —
+      *"No migrations to apply"* measured separately on both first. Commits
+      `6a01b5a` `4bed0dc` `d873459` `05d2d88` `30c7197` (+ `768b43b` `98f7376`
+      for the log). **MEASURED LIVE:** both hosts 200, both serving
+      `assets/index-B2dQLIv_.js`, and the two live JS assets are **byte-identical**
+      (`cmp`, 1,010,786 bytes each); five removed strings absent from both, and
+      "the same list as the audiobook" survives **exactly once** — item 82.
+      ⚠️ **NOT verified: nobody has looked at any of these screens in a
+      browser**, on either instance.
+      - ⚠️ **Three deliberate departures from a literal CUT**, each carrying a
+        comment beside it in the code, because a bare cut would have left a
+        control that says nothing: **15** the content-warning button still
+        answers ("Noted — add them by hand above for now."); **18** and **23**
+        keep a STATE word ("Published sources: none." / "No series set.")
+        because "looked and found none" ≠ "nobody looked", and a panel that
+        vanishes ≠ one that failed to load. **65** moved *"cannot be undone"*
+        ONTO the delete button, which is where the audit said it belongs, and
+        **77** made the already-disabled Arrivals button say *"Nothing ticked"*
+        instead of *"Put 0 on the shelf"*.
+      - ⚠️ **101 needed a measurement, not a deletion.** `estate-search.js`
+        (`apps/web/public/estate/estate-search.js:692-694`) falls back to its
+        OWN default hint when the attribute is absent — longer than the sentence
+        being cut — and hides the element only when the attribute is `""`. The
+        hint is now empty, not removed.
+      - ⚠️ **Two unit tests updated, none deleted** — `tbr-elsewhere.test.ts`
+        and `reading-list-filter.test.ts` each asserted prose that items 87/84
+        shortened away. Both now assert the BEHAVIOUR they existed for (the
+        count is still stated; the absence is still never called a sync failure;
+        an empty list is still distinguished from a list whose books are not in
+        this catalogue). 3003 tests pass / 0 fail, unchanged.
+      - 🔎 **FINDING for the conductor:** `pages/TbrPage.tsx`'s groups-empty
+        state carries a **fourth** copy of the shared-list fact that the audit
+        never numbered (81/82/84 account for three). Left alone as outside
+        1–112; it is the obvious candidate if the owner wants the rule pushed
+        one step further.
+- [x] **2026-09-07 — the other three sites LANDED** (each repo's own TODO/DONE
+      carries the full report; this is the cross-site tally):
+      - **boardgames** (W15-GREY, 144k): items 113–175 range for that repo
+        applied, deploy `70dca408-e0ef-4d2b-9ac1-ff51d0c01f1d`, rollback
+        `393a9b4f…`, verified in the shipped bundle. Owner eyeballs pending:
+        /wishlist tooltip (152), one-cover picker (131).
+      - **audiobook** (161k): 12 of 13 applied on the **/dev/ lane only**
+        (run 34125260656; prod waits on the owner's `promote.yml`), commits
+        `dfae9eb` `8baf61d`, 2,296 pytest + 1,047 vitest green. **Item 155
+        BLOCKED on the owner** (see below). Item 175: only the how-to list was
+        cut; the rounding rules stayed because the audit's second line range
+        pointed at them by mistake.
+      - **apex** (240k): 33 of 33 applied, CI run 34125859670, deployment
+        `50e51bdf-25b7-4505-8768-210a9d330583`, rollback `c94f5fdf…`, 3,413
+        tests, 37 live pages; three deliberate departures (178 hint set to
+        `""` for the same estate-search fallback reason as 101; 225 label now
+        `Why (required)`; 179 Admin card tagline kept because the card is
+        script-revealed). Audit paths for 225/226 were wrong
+        (`universes/universes.js`, not `assets/`).
+      ⚠️ **NOT verified on any of the four: a rendered page.** Every check was
+      served bytes; whether a layout leaned on a removed `<p>` for spacing is
+      unmeasured everywhere.
+- [x] ❓ **OWNER — item 155 (audiobook):** signed-out reading-list slot shows
+      *"Sign in with Google to keep a to-read list."* There is no sign-in button
+      in that slot by design, so cutting it leaves the slot blank. (a) keep the
+      one line — recommended; (b) cut it anyway (edit to the generator template
+      `app/web/templates/index.html:2834`, conductor does it by hand). Asked
+      06:12 Phoenix with notification. **Answered 08:30 Phoenix: "Do them all
+      to your suggestion" → KEEP.** Nothing edited; audiobook final tally 10
+      kept / 10 cut / 2 shortened.
+- [x] **Audiobook PROD promoted, twice, on the owner's "Run the promote to
+      prod" (08:35 Phoenix):** `promote.yml` run 34139129599 → tag
+      `prod-20260907-153621` (the grey cuts, deploy run 34139165592 green;
+      prod `/ebooks` measured byte-identical to `/dev/ebooks`), then run
+      34141615813 (the estate-search re-vendor, 09:06 Phoenix — its deploy run
+      34141658330 is recorded in the audiobook repo's on-disk DONE.md).
+- [x] **2026-09-07 — the shared `assets/estate-search.js` pass is DONE and on
+      all four sites** (agent W17-ES-GREY). One canonical edit,
+      `catalog-platform` **`09d3d9a`**, because that repo owns the file; the
+      other three take it by sync. **5 CUT · 2 SHORTENED · 17 KEPT.**
+      **CUT:** `DEFAULT_HINT` is now empty (items 101/178's sentence, which
+      each consumer had to suppress with `hint=""` while the default went on
+      shipping to any site taking the defaults) · the hint element hides on
+      empty **TEXT** rather than on an explicit `hint=""`, which is what forced
+      those `hint=""` attributes · the three search-result group headings lose
+      their em-dashed how-it-was-built tails (`_renderUniverse` already used
+      the bare nouns, so the two renderers now agree) · the empty-result status
+      loses the clause naming which fields are searched · the universe sign-in
+      invitation loses its leading why-clause.
+      **SHORTENED:** `_caveatLine` keeps the load-bearing fact — a hit is
+      presence in a catalog, **not** ownership — and drops the how-to sentence;
+      it was a **fifth** copy of item 187, whose single home is the apex
+      `/series` footer · the registry-outage caveat becomes one sentence, both
+      facts intact including the phrase `predeploy.checks.json` pins live.
+      **KEPT:** every error and refusal, every state word, button label and
+      tooltip — nobody sees a bare status.
+      **Plus this repo's own cut**: `pages/TbrPage.tsx`'s groups-empty state
+      loses the un-numbered FOURTH copy of the shared-list fact (`16889b8`);
+      81/84 went for item 82, this page's header, which still says it in full.
+      No test asserted that string, so none was re-aimed.
+      **Deploys, all four:** apex `46f8cfb9-4cd6-4e40-ba4e-7a90b6127251`
+      (CI run [34139683578](https://github.com/skymitch9/catalog-platform/actions/runs/34139683578),
+      rollback `50e51bdf…`) · library main **`c7dc4b2c-5ae3-48a1-8916-d8652736996c`**
+      (rollback `3a1c5474…`) · padhard **`4a206195-ad64-4672-b14e-3484aeb23864`**
+      (rollback `582be6b0…`) · games `79360f3a-3057-42ea-ae3b-0f501b9af26d`
+      (rollback `70dca408…`) · audiobook **`/dev/` only**, run
+      [34140856168](https://github.com/skymitch9/audiobook_catalog/actions/runs/34140856168)
+      — **prod waits on the owner's `promote.yml`**, and prod was measured
+      still serving the old copy. Both library instances measured *"No
+      migrations to apply"* separately before the pair. Commits `09d3d9a`
+      (platform) · `16889b8` `38da7e5` `ddf16d5` (here) · `f32b5b8` (games) ·
+      `09a836c` (audiobook). Tests: platform **3413**, library **3003**, games
+      full predeploy chain, audiobook **2296 pytest + 1047 vitest** — 0 fail
+      anywhere.
+      **MEASURED LIVE on every host**, cache-busted: the cut hint sentence
+      **0** and the shortened caveat **1** on apex, library, padhard, games and
+      audiobook `/dev/`; apex, library and padhard byte-identical, games and
+      audiobook identical below their own generated banners; the two live
+      library bundles byte-identical (1,010,730 bytes) with the shared-list
+      fact surviving exactly once. ⚠️ **NOT verified: a rendered page on any of
+      the five** — no agent session has a browser.
+- ⚠️ **NOT verified, all five hosts: a rendered page.** Six agents, zero
+      pixels — every check in this section was served bytes. Owner eyeballs
+      (links in each repo's report: library `/`, `/work/347`, `/queue`, `/tbr`;
+      padhard `/`; boardgames `/wishlist` tooltip + one-cover picker; apex `/`,
+      `/status/`, `/series/`; audiobooks `/listen`, `/ebooks`, `/club`) are the
+      only verification outstanding.
+- ❓ **One un-audited line left for the owner, flagged by W17-ES-GREY, not
+      cut:** `sites/heygabi-home/public/universes/index.html:536` opts in with
+      `hint="Search across every catalog and format."` — the exact shape the
+      rule asks for (a deliberate flag, not a default), but it was never one of
+      the audit's 230 and nobody has decided whether `/universes` wants a line.
+      Tracked in catalog-platform's TODO; asked 09:10 Phoenix.
+
+
 ## ✅ 2026-09-07 — the `rejected` audio verdict reached its last two readers, and the edit box learned to say what a rejection costs
 
 > **Moved WHOLE from [`TODO.md`](TODO.md) by agent W15-LIB-REJ, 2026-09-07.**
