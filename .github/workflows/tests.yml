@@ -1,0 +1,108 @@
+name: Tests
+
+# ⚠️ THE ONLY WORKFLOW IN THIS REPO THAT RUNS WITHOUT DEPLOYING.
+#
+# Why this file exists (added 2026-09-07, estate testing audit §4.3): until it,
+# this repo's ONE workflow was `deploy.yml`, trigger `workflow_dispatch:` only —
+# so the 3,027-case suite gated nothing but a developer's own machine, and
+# `gh run list` showed the most recent CI run of any kind was **2026-08-17**.
+# Three weeks of green ticks, none of them from a runner. The sibling repos
+# `catalog-platform` and `audiobook_catalog` both already had this file; this is
+# the same shape.
+#
+# ⚠️ DO NOT give `deploy.yml` a push trigger to "fix" that. Manual dispatch there
+# is the owner's decision (deploy.yml's own header) — this Worker has no dev lane
+# and a deploy goes straight to the live custom domain. This workflow is the
+# non-deploying twin: same suite, no Cloudflare, nothing that can reach a live
+# host.
+#
+# ⚠️ NO SECRETS BELONG HERE, and none are needed. The suite is hermetic (it
+# stubs every fetch — 3,027 cases run in ~3.5s), and the sibling checkout below
+# needs no PAT because `skymitch9/catalog-platform` is PUBLIC (re-measured with
+# `gh repo view` 2026-09-07). `deploy.yml` uses `CATALOG_PLATFORM_TOKEN` only
+# because it predates that measurement; the default `GITHUB_TOKEN` reads a
+# public repo fine. If a test here ever needs a credential, that is the signal
+# it is not a unit test.
+#
+# ⚠️ THE SIBLING CHECKOUT IS NOT OPTIONAL. `pretest` runs five sync scripts
+# (universes, estate-auth, estate-theme, estate-search, gabi-conversation) that
+# materialise code owned by `catalog-platform` into gitignored `generated/`
+# dirs, and they FAIL LOUDLY rather than degrade (scripts/lib/platform-repo.mjs;
+# CLAUDE.md's universes row). Without it `npm test` never reaches a test.
+#
+# Expect a `Node.js 20 is deprecated … actions/setup-node@v4` annotation on
+# green runs — it is the action's own runtime, not ours.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  # Lets deploy.yml reuse this exact job as a gate if it ever wants one. It does
+  # NOT today, and that is deliberate: `npm run deploy` runs `predeploy`, which
+  # runs this same `npm run test` inside the deploy job, so a `needs:` here would
+  # buy a second full checkout of both repos to run the suite twice.
+  workflow_call:
+
+permissions:
+  contents: read
+
+# A second push supersedes the first; nothing here writes anywhere, so cancelling
+# is free. (deploy.yml deliberately does the opposite — it queues.)
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    env:
+      # Explicit rather than relying on platform-repo.mjs's sibling lookup, so a
+      # layout change fails with that file's loud message instead of silently
+      # resolving somewhere else.
+      CATALOG_PLATFORM_DIR: ${{ github.workspace }}/catalog-platform
+    defaults:
+      run:
+        working-directory: library_catalog
+
+    steps:
+      # Side-by-side checkouts, same layout as deploy.yml. Shallow is fine here:
+      # nothing in the test path walks history (that is deploy-guard's job, and
+      # it does not run in this workflow).
+      - name: Checkout library_catalog
+        uses: actions/checkout@v5
+        with:
+          path: library_catalog
+
+      - name: Checkout catalog-platform (test-time dependency)
+        uses: actions/checkout@v5
+        with:
+          repository: skymitch9/catalog-platform
+          path: catalog-platform
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          # Same version deploy.yml uses; engines says >=20, 22 is the LTS.
+          # ⚠️ Must stay >=22.13 — packages/db's tests open `node:sqlite`
+          # (DatabaseSync ':memory:'), which is flagged on older 22.x.
+          node-version: 22
+          cache: npm
+          cache-dependency-path: library_catalog/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # `pretypecheck` runs the same five sync scripts as `pretest`, so this step
+      # is also the early, loud proof that the sibling checkout resolved.
+      - name: Typecheck (all workspaces)
+        run: npm run typecheck
+
+      # ⚠️ The WHOLE suite, exactly the command `predeploy` runs — every package
+      # and app share `packages/` and `scripts/`, and a per-target subset is
+      # precisely how a shared change ships untested.
+      - name: Run the full suite (root npm test)
+        run: npm test
+
+      - name: Summary
+        run: echo "::notice::Suite green at ${GITHUB_SHA} — typecheck and all node:test cases passed on a runner."
