@@ -5,6 +5,12 @@ import { describeError } from '../lib/errors.js';
 import { PreorderPrompt } from './PreorderPrompt.js';
 import { preorderQuestionFor, type PreorderQuestion } from '../lib/preorders.js';
 import { arrivedPatch } from '../lib/statuses.js';
+import {
+  DEFAULT_TYPED_INTENT,
+  saveTypedWork,
+  typedAddOutcome,
+  type TypedIntent,
+} from '../lib/typed-add.js';
 
 /**
  * Add a book by hand, or by scanning an ISBN.
@@ -34,7 +40,7 @@ import { arrivedPatch } from '../lib/statuses.js';
 export function AddWork({
   onClose,
   onAdded,
-  defaultIntent = 'owned',
+  defaultIntent = DEFAULT_TYPED_INTENT,
 }: {
   onClose: () => void;
   onAdded: () => void;
@@ -84,7 +90,23 @@ export function AddWork({
    * twice is exactly the kind of silent wrong default the paragraph above was
    * written about.
    */
-  const [intent, setIntent] = useState<'' | 'owned' | 'wanted'>(defaultIntent);
+  const [intent, setIntent] = useState<TypedIntent>(defaultIntent);
+  /**
+   * ⚠️ **The book is in the catalog and something beside it is NOT** — bug 3 of
+   * 2026-08-13, made visible.
+   *
+   * Set only from `typedAddOutcome(...)` returning `partial`. While it holds
+   * sentences the form is replaced by them, because the two things a person
+   * needs at that moment are the words and a way out — and emphatically NOT the
+   * Save button, whose second press would create a second work
+   * (`POST /api/works` does not dedupe; migration 0001).
+   *
+   * It was previously a `setNote` on the line before `onAdded()`, which
+   * unmounts this panel: the sentence was written to state that was thrown away
+   * in the same tick, and a save that lost the ISBN looked exactly like a save
+   * that did not.
+   */
+  const [partial, setPartial] = useState<string[] | null>(null);
   /** Raised by Save, answered by the prompt, then handed back to `save`. */
   const [preorder, setPreorder] = useState<PreorderQuestion | null>(null);
   /**
@@ -174,60 +196,81 @@ export function AddWork({
         return;
       }
 
-      const { work } = await api.createWork({
-        title: title.trim(),
-        // ⚠️ Explicit null, never ''. The schema makes authorless a statement
-        // (required-but-nullable), and the row gets the provisional key +
-        // the Needs→Author flag — which is the null itself, stored nowhere
-        // else.
-        authors: withoutAuthor ? null : authors.trim(),
-        series: series.trim() || null,
-      });
-
       /*
-       * ⚠️ An edition IS created now, but ONLY to carry a typed ISBN — changed
-       * 2026-08-13. The comment here used to say no edition is created at all,
-       * on the grounds that "inventing a paperback edition to hang the copy off
-       * would put a printing in the catalog that nobody has seen." That
-       * reasoning is still right about the FORMAT and wrong about the ISBN.
+       * ⚠️ The whole write sequence — the work, the typed ISBN's edition, the
+       * copy — lives in `lib/typed-add.ts`, not here. It was inline until
+       * 2026-09-07, and being inline is why the three 2026-08-13 intake bugs
+       * went a month without a re-test: this repo has no jsdom and this file
+       * reaches `api.js` → `lib/firebase.ts`, which reads `import.meta.env` at
+       * module scope and cannot be loaded by the node test runner at all.
+       * `apps/web/test/typed-add.test.ts` now pins all three.
        *
-       * An ISBN typed off the back of a book in your hands is not invented — it
-       * is the single most reliable fact available, and it was being thrown
-       * away. Measured 2026-08-13: five books added by hand that evening all
-       * landed with `editions = 0`, so no ISBN at all. ⚠️ And they are exactly
-       * the books that need it most: the ones added by hand are the ones no
-       * service could resolve, so the barcode is the only thing that could ever
-       * re-match them later. A board book with no ISBN row is unfindable for
-       * good.
-       *
-       * `format` still falls to the schema's `'paperback'` default, which is the
-       * convention the work page already states out loud — "a scanned book is
-       * recorded as a paperback until someone says otherwise". So the invented
-       * part stays labelled as a guess and the known part gets recorded.
+       * ⚠️ **It does not throw once the work exists.** Every step that fails
+       * after that comes back in `problems`, because the alternative — what
+       * shipped — was a request error that never mentioned the book, followed
+       * by a person pressing Save again and getting a second work.
        */
-      const typed = isbn.replace(/[^0-9]/g, '');
-      if (/^97[89]\d{10}$/.test(typed)) {
-        try {
-          await api.createEdition({ workId: work.id, isbn13: typed });
-        } catch {
-          /*
-           * ⚠️ Swallowed on purpose, and the book still gets added. Losing the
-           * ISBN is a nuisance; losing the whole book because its ISBN was
-           * mistyped or already on another row would be the bulk-intake path
-           * failing at the one thing it exists to do.
-           */
-          setNote('Book added, but that ISBN could not be recorded — add it from the book page.');
-        }
-      }
+      const result = await saveTypedWork(
+        {
+          createWork: api.createWork as (b: unknown) => Promise<{ work: { id: number } }>,
+          createEdition: api.createEdition,
+          createCopy: api.createCopy,
+          describeError,
+        },
+        {
+          title,
+          // ⚠️ Explicit null, never ''. The schema makes authorless a statement
+          // (required-but-nullable), and the row gets the provisional key +
+          // the Needs→Author flag — which is the null itself, stored nowhere
+          // else.
+          authors: withoutAuthor ? null : authors,
+          series,
+          isbn,
+          intent,
+        },
+      );
 
-      // A copy with no `edition_id` is what migration 0001 made nullable for.
-      if (intent) await api.createCopy({ workId: work.id, status: intent });
+      const outcome = typedAddOutcome(result);
+      if (outcome.kind === 'partial') {
+        // ⚠️ `onAdded()` is deliberately NOT called: it unmounts this panel, and
+        // unmounting is exactly how the old code lost the sentence it had just
+        // written. The person leaves through the Done button below, having read
+        // what did not land.
+        setPartial(outcome.sentences);
+        return;
+      }
       onAdded();
     } catch (err) {
       setNote(describeError(err));
     } finally {
       setBusy(false);
     }
+  }
+
+  /*
+   * ⚠️ The book IS in the catalog; part of what was typed is not. The form is
+   * replaced rather than annotated, because the one control that must not be
+   * available here is Save.
+   *
+   * A worded refusal with its way out — the estate rule, and untouchable by the
+   * no-grey-paragraph rule: these are not helper prose, they are the only
+   * record that anything went wrong.
+   */
+  if (partial) {
+    return (
+      <div className="panel">
+        {partial.map((sentence) => (
+          <p className="notice notice--bad" key={sentence}>
+            {sentence}
+          </p>
+        ))}
+        <div className="row">
+          <button className="primary" onClick={onAdded}>
+            Done
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -276,7 +319,7 @@ export function AddWork({
         <select
           value={intent}
           onChange={(e) => {
-            setIntent(e.target.value as '' | 'owned' | 'wanted');
+            setIntent(e.target.value as TypedIntent);
             setPreorder(null);
           }}
         >
