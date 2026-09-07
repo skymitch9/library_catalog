@@ -267,9 +267,14 @@ export function TbrPage({ me }: { me: Me }) {
       {error && <p className="notice notice--bad">{error}</p>}
 
       {groups.length === 0 ? (
+        /* ⚠️ W17-ES-GREY 2026-09-07: this carried a FOURTH copy of the
+           shared-with-the-audiobook-site fact — a trailing clause naming the
+           other site's button and saying the two lists are one. The audit's
+           three numbered copies (81/84) were cut in favour of item 82, this
+           page's own header, which states it in full whenever the list has
+           anything on it. What is left is the state plus where to add a book. */
         <p className="muted">
-          Nothing on your list. A book page has an <em>Add to my TBR</em> button, and so
-          does the audiobook site — it is the same list.
+          Nothing on your list. A book page has an <em>Add to my TBR</em> button.
         </p>
       ) : (
         <>
