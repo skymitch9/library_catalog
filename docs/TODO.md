@@ -826,7 +826,7 @@ Also ☐ he may rename editions **#450** (*Dungeon Born*) and **#470**
 (*Unmapped*) from *"Standard edition"* — both still carry that name, measured
 2026-09-05.
 
-## ☐ Audio-verdict residue — 2 of 3 steps left: ~~measure the `rejected` filter~~ (MEASURED 2026-09-06, numbers below), owner presses "Yes this is it", find padhard's 27 fold rows (from part B, shipped 15:32 — the section is in [`DONE.md`](DONE.md))
+## ☐ Audio-verdict residue — 1 of 3 steps left, and it is the OWNER's: press "Yes this is it" once (~~measure the `rejected` filter~~ MEASURED 2026-09-06 · ~~find padhard's 27 fold rows~~ FOUND 2026-09-06 — both below) (from part B, shipped 15:32 — the section is in [`DONE.md`](DONE.md))
 
 - ☐ **OPEN — but now MEASURED, 2026-09-06 (W13-LIB). The decision is the
   owner's; the numbers below are what it rests on.**
@@ -886,13 +886,75 @@ Also ☐ he may rename editions **#450** (*Dungeon Born*) and **#470**
 - ☐ **Owner:** press *"Yes, this is it"* once on <https://library.heygabi.ai/work/347>
   (✎ Edit this book → Audio) — the route has never written a verdict against a
   real D1; the first press is the end-to-end proof.
-- ☐ **padhard's 27 `fold` rows render nowhere found (15:35):**
+- ✅ **padhard's `fold` rows render nowhere — FOUND 2026-09-06 (W13-LIB), and it
+  is the FIRST hypothesis, measured. It is not a rendering bug and there is
+  nothing to deploy.**
   <https://padhard.heygabi.ai/series/He%20Who%20Fights%20with%20Monsters> (12
-  fold rows) and the DCC page (8) both say *"Held: 1 in print. None of them are
-  in the audiobook catalog"* with no audio chip on any rung. Either the fold
-  rows attach to gap rungs that a one-book ladder with no known length never
-  draws, or the series page is not reading them. Find where the owner saw
-  "a lot" before assuming the 27 are visible anywhere.
+  fold rows) and <https://padhard.heygabi.ai/series/Dungeon%20Crawler%20Carl>
+  (8) both said *"Held: 1 in print. None of them are in the audiobook catalog"*
+  with no audio chip on any rung.
+
+  **The rows ARE read.** `packages/db/src/series.ts:499-507` selects every
+  `audiobook_series_holding` row for the series (`stale_at IS NULL`), and
+  `toAudioRungInput` (`:641`) hands them to `seriesCompleteness` as
+  `context.audio`. Nothing filters them out.
+
+  🔴 **They have no RUNG to annotate, because `highestKnown` is computed from
+  `volumes` ALONE — the audio rows are deliberately not a source of it.**
+  `packages/core/src/completeness.ts:416-417` builds `knownPositions` from owned
+  works plus `series_volume` rows only; the loop at `:431` runs
+  `floor..highestKnown`, and the ⚠️ note at `:438-442` says why that ceiling may
+  never be raised by any other rule (*"Raise that ceiling by any other rule and
+  the whole module starts inventing books"*). Migration 0090's own header says
+  the same thing in one line: **"This table adds no rungs to any ladder. It
+  annotates existing ones."**
+
+  🔴 **And padhard has NO `series_volume` rows at all — the thing that would
+  create the rungs.** Measured 2026-09-06 against both production D1s:
+
+  | | `library-catalog` | `library-catalog-2nd` |
+  |---|---|---|
+  | `series_volume` rows | **159** | **0** |
+  | live `audiobook_series_holding` rows | 197 | 149 |
+  | …with **no** matching `series_volume` row | 72 | **149 (all of them)** |
+  | live `fold` rows | 1 (of 6) | **34** (was 27 on 2026-09-03; the sweep has grown it) |
+
+  So on *He Who Fights with Monsters* she holds work **329** at
+  `series_index_sort = 1`, nothing attests a volume 2, `highestKnown = 1`, the
+  loop runs `p = 1..1`, that rung is owned — **zero gaps drawn, and the 12 fold
+  rows at indices 1–12 attach to nothing.** Same shape for DCC (work 25, index
+  1, 8 fold rows) and Skyward (work 347, index NULL, 7 fold rows).
+
+  ⚠️ **Migration 0090's invariant is FALSE in production and that is the real
+  finding.** Its header claims *"Every row written here has a matching
+  `series_volume` row, by construction"* — true only if BOTH backfills run, and
+  on padhard only the holdings one ever has.
+
+  ⚠️ **This is NOT a bug to fix here, and it must not be fixed by hand.** It is
+  the already-tracked `AUDIOBOOK_SWEEP_MODE` flip — both instances are
+  `"shadow"` (`apps/worker/wrangler.toml:394` and `:720`), and the sweep tick
+  plans `series_volume`/`series_check` under that same switch with deliberately
+  no second switch. **This section of `TODO.md` (line ~237) already records
+  "padhard's `series_volume` is EMPTY (0 rows, 0 checks) — nobody was running
+  that script on her instance, which is the size of what enforcing this half
+  would land."** That IS this item's answer, from the other end. The one-off
+  alternative, `npm run backfill:series-volumes -- --remote --friend --commit`,
+  would pre-empt a gated owner decision on Diva's live instance and add
+  "you are missing this book" claims to her series pages — so it was **not
+  run**.
+
+  **Where the owner saw "a lot":** migration 0450's header already answered
+  it — *"'A lot' was padhard's 27 SERIES-level `fold` rungs, which this table
+  does not touch."* They are visible in the DATA, not on any page, and they will
+  become visible on the day the sweep enforces.
+
+  Review, both instances — **main's one live fold row is *The Twilight Saga*
+  index 1** (*"Twilight Tenth Anniversary/Life and Death Dual Edition"*); its
+  other five are all `stale_at 2026-09-06 00:00:18` (four *Arcane Pathfinder*,
+  one *Legion*):
+  <https://padhard.heygabi.ai/series/He%20Who%20Fights%20with%20Monsters> ·
+  <https://padhard.heygabi.ai/series/Dungeon%20Crawler%20Carl> ·
+  <https://library.heygabi.ai/series/The%20Twilight%20Saga>
 
 
 ## ☐ "Signed" typed into the edition name — ✅ **SWEEP APPLIED TO BOTH INSTANCES 2026-09-03**, 2 of 2 steps left: **4 copies to link by hand** (re-measured 2026-09-05) and **one owner answer on edition parity** (owner ask 2026-09-03 ~13:00)
