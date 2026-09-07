@@ -18,6 +18,195 @@
 > were extracted from this same history.
 
 
+
+## ✅ 2026-09-07 — the `rejected` audio verdict reached its last two readers, and the edit box learned to say what a rejection costs
+
+> **Moved WHOLE from [`TODO.md`](TODO.md) by agent W15-LIB-REJ, 2026-09-07.**
+> Nothing below the rule is summarised — it is the bullet exactly as W13-LIB
+> left it on 2026-09-06, measurement, recommendation and caveats intact, because
+> the *why* is the only reason to keep it. The item's OTHER two bullets stay in
+> `TODO.md`: the owner's own *"press Yes this is it"* step, and the padhard
+> `fold`-row finding, which belongs to the separate `AUDIOBOOK_SWEEP_MODE`
+> decision and was not touched here.
+>
+> 🔴 **One claim in the archived bullet is CORRECTED by the banner below
+> rather than edited away:** it says the first *"Not this one"* *"retracts the
+> rating and read state that recording put there"*. **It does not.**
+> `applyObservedRatings` only ever writes — it never clears a read state — so
+> the filter stops a rating being RE-DERIVED and undoes nothing already
+> recorded. That is why the edit-box line says so in those words.
+
+**Owner, 2026-09-07 02:10 Phoenix, verbatim: *"take your recs"*** — the
+recommendation being *ship the `rejected` audio-verdict filter, plus the
+edit-box line*. Both halves shipped in one sitting.
+
+**Shipped 2026-09-07 09:36–09:37Z**, commit `66e9594` (code + docs), deploy PAIR
+from a clean tree, both hosts verified serving the same build
+`assets/index-vOks424m.js` at 09:39Z:
+
+| | Version id | Rollback to | `deploys.log` |
+|---|---|---|---|
+| **main** | `4fbfb329-e85f-48f3-85a5-db46404646bd` | `c1fd1d87-455f-4f7f-b1c3-9bf06b7538a6` | `c2cfda3` |
+| **friend** (padhard) | `dccce3f4-a723-469d-bf63-54ee6df9f12b` | `13043d2d-23ad-4b36-a7da-89d2fbf2e202` | `1251ea4` |
+
+**No migration.** `wrangler d1 migrations list` answered *"No migrations to
+apply"* on `library-catalog` and, separately, on `library-catalog-2nd` before
+either deploy. 0450 has been applied to both since 2026-09-03.
+
+### What changed
+
+| Reader | Was | Now |
+|---|---|---|
+| `apps/worker/src/routes/reviews.ts` `/bookid-index` | unfiltered | the statement is the exported **`BOOKID_INDEX_SELECT`** and carries `notRejectedSql`. Exported so a test runs the SHIPPED string, not a retyped copy |
+| `packages/db/src/tbr.ts` `BRIDGE_SELECT` | unfiltered | all **three** audio rungs filter rejected recordings. The `ebook_holding` rung does not — 0450 is about RECORDINGS and cannot key an ebook verdict |
+| `packages/db/src/tbr.ts` `formatsForWorks`'s audio query | unfiltered, **and not on the original survey at all** | filtered. It is the TBR page's audio CHIP, an ownership claim of the same class as `audioEditionCountSql` (filtered since 0450). Leaving it would have made one page contradict itself the first time anybody pressed the button: the entry stops bridging while the chip still offers the rejected recording's link |
+| the edit box's Audio tab | said what a rejection hid **after** the press | prints **`REJECTION_COST`** (`apps/web/src/lib/shelf-view.ts`) **above** the two buttons |
+
+### 🔴 The edit-box line promises NO retraction, because the filter performs none
+
+`applyObservedRatings` only ever writes: it never clears a read state and
+refuses any row a person stamped. So a rating already on the book **stays on the
+book** after a rejection — the filter stops it being re-derived, it does not
+undo it. *"This removes the rating"* would be the comfortable wording and a
+false one, and `apps/web/test/audio-match-review.test.ts` now fails on it.
+
+The string lives in `lib/shelf-view.ts` beside `matchProvenance`, not in
+`AudioMatchReview.tsx`, because that component imports `../api.js` — which loads
+Firebase at module scope and cannot be imported by the no-DOM harness
+([`info/gotchas.md`](info/gotchas.md), *"A web test dies at import with
+VITE_…"*). One string, one home, and it is the home a test can reach.
+
+### ⚠️ Qualify the work-id expression, or the filter silently never fires
+
+`notRejectedSql` interpolates its work-id expression into a correlated subquery
+whose own `FROM` is `audiobook_match_review amr` — **a table that has its own
+`work_id` column**. A bare `work_id` there binds to `amr.work_id`, compares the
+row to itself and holds for every row. Every branch of `BRIDGE_SELECT` therefore
+carries a table alias (`ah`, `aeh`, `eh`), and both new test files pin it with a
+*"rejection filed against ANOTHER work"* case.
+
+### ✅ MEASURED LIVE AFTER THE DEPLOY, 2026-09-07 ~09:40Z — both production D1s
+
+The predicate the route now runs, executed read-only against each database with
+and without its new clause:
+
+| | `library-catalog` (main) | `library-catalog-2nd` (padhard) |
+|---|---|---|
+| `audiobook_match_review` rows, any verdict | **0** | **0** |
+| …`verdict = 'rejected'` | **0** | **0** |
+| `/bookid-index` rows **without** the clause | **123** | **119** |
+| `/bookid-index` rows **with** it | **123** | **119** |
+| live `containment` holdings it governs | **8** | **0** |
+
+⚠️ **So it moved 0 rows on main and 0 rows on padhard — which is a RESULT, not a
+failure**, and it is exactly what the 2026-09-06 measurement predicted. The
+"silently moves existing reviews / TBR entries" risk the two readers were held
+back for is empty until somebody presses *"Not this one"*.
+
+Health, cache-busted, both 200: `https://library.heygabi.ai/api/health` reports
+`estate.app: library`; `https://padhard.heygabi.ai/api/health` reports
+`estate.app: library2`. `GET /api/reviews/bookid-index` unauthenticated answers
+the **worded 401** on both — the route is mounted and refuses in sentences, never
+a bare status.
+
+### Tests
+
+**2986 → 3003 pass, 0 fail, 0 todo** (`typecheck` and `build` clean). The
+baseline was measured in a throwaway `git worktree` of HEAD. 17 new cases:
+
+- `apps/worker/src/routes/bookid-index-rejected.test.ts` — **new file**, runs the
+  shipped `BOOKID_INDEX_SELECT` against real SQLite.
+- `packages/db/test/tbr-media-fold.test.ts` — rejected/confirmed/per-recording/
+  wrong-work, on the bridge and on the formats row.
+- `apps/web/test/audio-match-review.test.ts` — the wording, including the
+  no-retraction rule and that the line renders **above** the buttons.
+
+⚠️ **Fixture finding, fixed here:** `tbr-media-fold.test.ts` used opaque
+`audio_key` values (`'k1'`, `'k9'`). Migration 0390 makes 0340's `raw_title` the
+edition's identity precisely so the two cannot drift — and with the opaque keys a
+verdict filed on the REAL key missed the view's row, so the first version of
+these tests passed for the wrong reason.
+
+### ⚠️ NOT VERIFIED
+
+- **No verdict has ever been written against a real D1**, so the filter has
+  never been observed filtering anything. That is the owner's remaining step,
+  still in `TODO.md`.
+- **Nobody has opened the Audio tab or seen `REJECTION_COST` rendered.** Its
+  placement above the buttons is pinned by reading the source, not by rendering.
+- The Firestore side was not read: the review and TBR *documents* live there,
+  not in D1, so every number above is the D1-side exposure.
+
+**Durable reference for all of this is
+[`info/series-formats-and-audiobooks.md` §4.9.4](info/series-formats-and-audiobooks.md)** —
+that is its home, and it is not restated here.
+
+**Review links** — ✎ Edit this book → **Audio**, where the new line sits:
+<https://library.heygabi.ai/work/347> · <https://library.heygabi.ai/work/334> ·
+padhard has no containment match to review today, so its equivalent surface is
+the TBR page: <https://padhard.heygabi.ai/tbr>
+
+---
+
+### (as it stood in TODO.md, 2026-09-06 — W13-LIB's measurement and recommendation)
+
+- ☐ **OPEN — but now MEASURED, 2026-09-06 (W13-LIB). The decision is the
+  owner's; the numbers below are what it rests on.**
+  `routes/reviews.ts:345` `/bookid-index` and `packages/db/src/tbr.ts`'s
+  `BRIDGE_SELECT` (`:244`) do NOT filter `rejected` recordings. They are identity
+  bridges into another catalog's documents; filtering them would silently move
+  existing reviews / TBR entries and nobody had measured what that touches.
+
+  **What the filter would move TODAY: nothing, on either instance.**
+  `audiobook_match_review` holds **0 rows on `library-catalog` and 0 on
+  `library-catalog-2nd`** — no verdict has ever been recorded anywhere, which is
+  the same fact as the owner's un-pressed *"Yes, this is it"* below. A
+  `rejected` filter is therefore a **no-op the day it ships** and cannot move a
+  single review or TBR entry until somebody presses *"Not this one"*.
+
+  **What it would GOVERN, which is the number that matters:**
+
+  | | `library-catalog` (main) | `library-catalog-2nd` (padhard) |
+  |---|---|---|
+  | `audiobook_edition_holding` rows `matched_via = 'containment'` | **9** (8 live, 1 stale) | **0** |
+  | …of those, works carrying a review-derived read state | **8 of 8 live** | **0** |
+  | `audiobook_match_review` rows (any verdict) | **0** | **0** |
+
+  The 8 are works **249** (*Space Knight Book 1*) and **334 / 347 / 445 / 446 /
+  447 / 448 / 449** (the seven *Harry Potter … (Full-Cast Edition)* recordings).
+  Every one carries `user_book.read_state = 'read'`, `read_state_how =
+  'rating'` and a cached rating (3.5–5), all stamped `2026-09-05 23:30:37` —
+  i.e. **written by the observed-ratings sweep off a review document**, not by
+  hand. The 9th containment row (work **72**, *Tamer Book 11* → *"Tamer: King of
+  Dinosaurs"*, the genuine miss) is `stale_at` set and carries no `user_book`
+  row at all.
+
+  ⚠️ **Those 8 ratings can ONLY have arrived through the containment bridge, and
+  that is measured rather than assumed.** `workKeyForAudiobookRow` over the
+  audiobook row's own title gives
+  `harry potter and the goblet of fire full cast edition|j k rowling`, and work
+  334's `work_key` is `harry potter and the goblet of fire|j k rowling` — they
+  are **different strings**, so no review document could have reached the work
+  by key. `/bookid-index` (the containment row's slug) is the only path.
+
+  **Recommendation — ship the filter, do not fear it, and it is still the
+  owner's word:** it changes 0 rows on both instances today, so the "silently
+  moves existing reviews" risk it was held back for is currently empty. What it
+  buys is that the FIRST *"Not this one"* on any of those 8 recordings retracts
+  the rating and read state that recording put there, instead of leaving a
+  rejected match still speaking for a book. ⚠️ **The cost is the same 8 rows
+  seen from the other side:** a mis-press on a Harry Potter rung would silently
+  drop a real 4.5-star read state off the shelf, so if the filter ships it
+  should ship beside a line on the edit box saying what a rejection removes.
+
+  ⚠️ **NOT VERIFIED, and it cannot be from here:** the review and TBR
+  *documents* live in **Firestore**, not D1 — there is no reviews or TBR table
+  in `migrations/` — so the counts above are the D1-side exposure (holdings,
+  read states, cached ratings), not a count of Firestore documents. The TBR
+  bridge's own half is 8 live containment slugs on main / 0 on padhard; how many
+  TBR documents key on them was not read.
+
+
 ## ✅ 2026-09-06 — the audiobook link build: part A (pipeline STEP 11) was BUILT on 2026-08-23, in the other repo
 
 > **Moved WHOLE from [`TODO.md`](TODO.md) by agent W13-LIB, 2026-09-06.**
