@@ -7,7 +7,12 @@ import {
   upsertUserOnLogin,
   writeEstateCache,
 } from '@lc/db';
-import { estateGateCheck, parseEstateMode, type GateOutcome } from '@lc/estate-auth';
+import {
+  estateGateCheck,
+  estateSignInRefusal,
+  parseEstateMode,
+  type GateOutcome,
+} from '@lc/estate-auth';
 import { parseOwnerEmails, type AppBindings, type Env } from '../env.js';
 
 /**
@@ -154,7 +159,18 @@ export function requireAuth(): MiddlewareHandler<AppBindings> {
       return c.json({ error: 'misconfigured', detail: (err as Error).message }, 500);
     }
 
-    if (!identity) return c.json({ error: 'unauthenticated' }, 401);
+    // The line Board_Game_Catalog's KI-6 named as "the identical line" in this
+    // repo, worded 2026-09-06 in the same pass. It answered the bare 27-byte
+    // `{"error":"unauthenticated"}` — the bare status the estate's standing
+    // rule forbids. ⚠️ The `error` CODE is untouched, deliberately:
+    // `tools/estate-probes` asserts it across BOTH instances' unauthenticated
+    // edge (`library-worker.mjs` and `library2-worker.mjs`) and the apex's
+    // `assets/estate-search.js` branches on the same string — this is purely
+    // ADDITIVE. The WORDS come from the canonical module (materialised into
+    // `packages/estate-auth/generated/` by `scripts/sync-estate-auth.mjs`), so
+    // this instance, `[env.friend]` and the two sibling catalogs cannot drift
+    // into four sentences for one refusal.
+    if (!identity) return c.json(estateSignInRefusal('this library catalog'), 401);
 
     const user = await upsertUserOnLogin(c.env.DB, {
       email: identity.email,

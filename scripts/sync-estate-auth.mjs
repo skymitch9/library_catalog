@@ -56,7 +56,23 @@ if (!existsSync(SRC_DIR)) {
 
 // The module's public surface. Named explicitly rather than globbed blind, so a
 // file appearing or vanishing upstream is a loud diff here, not a silent one.
-const EXPECTED = ['combine.ts', 'config.ts', 'index.ts', 'probes.ts', 'seen.ts', 'verify.ts', 'visibility.ts'];
+// `refusals.ts` added 2026-09-06: the estate's ONE worded-401 composer
+// (`estateSignInRefusal`), which this repo's `middleware/auth.ts` now calls
+// instead of emitting the bare `{"error":"unauthenticated"}` that
+// Board_Game_Catalog's KI-6 named as "the identical line" here. ⚠️ The guard
+// below worked exactly as designed — the sync REFUSED the new file until it
+// had been read and listed, which is the whole reason it is a list and not a
+// glob.
+const EXPECTED = [
+  'combine.ts',
+  'config.ts',
+  'index.ts',
+  'probes.ts',
+  'refusals.ts',
+  'seen.ts',
+  'verify.ts',
+  'visibility.ts',
+];
 
 const present = readdirSync(SRC_DIR).filter((f) => f.endsWith('.ts'));
 const missing = EXPECTED.filter((f) => !present.includes(f));
