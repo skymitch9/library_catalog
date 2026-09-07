@@ -1,7 +1,18 @@
 # library_catalog — Known Issues, Waivers & Exceptions
 
 > **Audience:** Claude/Kiro sessions and the owner. **Status:** TRACKED.
-> Last verified: **2026-09-07 ~19:00 UTC (W18-LIB-EDIT)** — **KI-20 was ADDED**
+> Last verified: **2026-09-07 19:50 UTC (CI gate, testing audit §4.3)** —
+> **KI-21 was ADDED** and measured on the runner's own TAP output: run
+> `34156956144` reports `tests 3027 · pass 3026 · fail 0 · skipped 1`, and the
+> skip line names the file it wanted
+> (`…/audiobook_catalog/site/cross-catalog-overrides.json not present — set
+> LC_AUDIOBOOK_ROOT`). The same pass measured the suite **locally** at
+> **3,027 pass / 0 skipped**, which is the whole of the discrepancy. Context and
+> the workflow's design: [`DONE.md`](DONE.md), 2026-09-07 12:50 Phoenix.
+> ⚠️ **Nothing else was re-checked in that pass** — KI-5 through KI-20 all still
+> carry the ages stated below; no D1 was queried, no host was curled, nothing
+> was deployed.
+> Previously **2026-09-07 ~19:00 UTC (W18-LIB-EDIT)** — **KI-20 was ADDED**
 > and measured against production `library-catalog`: **59** `change_log` rows
 > carry `field = 'isbn13'`, `updateEditionSchema` is
 > `createEditionSchema.omit({workId}).partial().strict()`
@@ -798,6 +809,56 @@ would guard against.
 padhard was not broken down by field — and no attempt was made to check whether
 any of those 59 rows is wrong. The claim here is that the route is *audited*,
 not that every edit through it was right.
+
+---
+
+## KI-21 · The CI runner exercises 3,026 of 3,027 cases — the cross-catalog override test wants a THIRD checkout — `ACCEPTED`
+
+**Symptom.** `.github/workflows/tests.yml` (added 2026-09-07) checks out this
+repo and `catalog-platform`. One case wants a third:
+`scripts/test/cross-catalog-overrides.test.mjs` → *"reads the SHIPPED file when
+the sibling is next door"* reads
+`audiobook_catalog/site/cross-catalog-overrides.json`, and on the runner it
+skips. Measured on run `34156956144`:
+
+| | local (this machine) | runner |
+|---|---|---|
+| tests | 3027 | 3027 |
+| pass | **3027** | **3026** |
+| fail | 0 | 0 |
+| skipped | **0** | **1** |
+
+The skip is **named in the output**, not silent — the TAP line is
+`ok 1 - reads the SHIPPED file when the sibling is next door # SKIP
+/home/runner/…/audiobook_catalog/site/cross-catalog-overrides.json not present
+— set LC_AUDIOBOOK_ROOT`.
+
+**Why tolerated.** ⚠️ **The test was written to skip rather than pass**, and its
+own comment says why: *"A skip says 'not checked'; a pass would say 'checked and
+fine', which is the silent-staleness trap this project keeps writing rules
+about."* So the honest reading is available to anyone who looks, and the other
+**7 cases in that same file** — the six `checkCuratedLinks` verdict cases plus
+the one asserting the loader points at the sibling and not at a copy in this
+repo — do run on the runner; only the read of the sibling's shipped file does
+not.
+The fix is a third `actions/checkout` of `skymitch9/audiobook_catalog` (it is
+PUBLIC, so no secret is involved), and it was deliberately **not** taken here:
+that test asserts `rows.length === 4` against a file **another repo ships**, so
+wiring it in makes *this* repo's CI go red on a commit made in *that* repo. That
+is arguably the correct behaviour for a cross-catalog contract guard, but it is
+an **owner call about who gets paged**, not a coder's, and it should be made
+deliberately rather than as a side effect of adding a test workflow.
+
+**What would change it — as a number.** Add the third checkout if the curated
+override list ever changes without this repo noticing — i.e. if the count the
+test pins (**4**, set by the owner 2026-09-02) is ever found to be wrong in
+`audiobook_catalog`'s shipped file while this repo's CI was green. **0 such
+drifts are known.** Until then the guard runs on every developer machine that
+has the sibling next door, which is where the file is actually edited.
+
+⚠️ **Not verified:** nothing here says the pinned count is currently correct in
+the sibling repo — that file was not read this session. The claim is only that
+the runner does not check it and says so.
 
 ---
 

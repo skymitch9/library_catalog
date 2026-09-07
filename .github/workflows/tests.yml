@@ -30,8 +30,18 @@ name: Tests
 # dirs, and they FAIL LOUDLY rather than degrade (scripts/lib/platform-repo.mjs;
 # CLAUDE.md's universes row). Without it `npm test` never reaches a test.
 #
-# Expect a `Node.js 20 is deprecated … actions/setup-node@v4` annotation on
-# green runs — it is the action's own runtime, not ours.
+# ⚠️ MEASURED on the first green run (34156956144, 2026-09-07): this gate covers
+# **3,026 of 3,027** cases, not all of them. `scripts/test/cross-catalog-
+# overrides.test.mjs` → "reads the SHIPPED file when the sibling is next door"
+# wants a THIRD checkout (audiobook_catalog) and SKIPS here, by design, with a
+# named reason. Do not "fix" it by adding that checkout without reading
+# docs/KNOWN_ISSUES.md KI-21 — that test pins a count against a file another
+# repo ships, so wiring it in makes THIS repo go red on THAT repo's commits.
+#
+# Expect two harmless lines on green runs: `Node.js 20 is deprecated …
+# actions/setup-node@v4` (the action's own runtime, not ours) and one
+# `ExperimentalWarning: SQLite is an experimental feature` per node:sqlite test
+# process.
 
 on:
   push:

@@ -1,7 +1,28 @@
 # Deploy & Provisioning — Access Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED (contains no secret values).
-> Last verified: **2026-08-09** — deployed and curled on that date.
+> Last verified: **2026-09-07** for the **CI** section only — `tests.yml` was
+> added and its first run measured green. ⚠️ **Nothing else on this page was
+> re-checked**; everything below still carries its 2026-08-09 age (deployed and
+> curled on that date), and the Worker version / D1 row in the table is that old.
+
+## CI — there are now TWO workflows, and only one of them deploys
+
+| Workflow | Trigger | What it does |
+|---|---|---|
+| `.github/workflows/tests.yml` | **push to `main` + PR + `workflow_call`** | Typecheck + the whole `npm test` suite on a runner. **Deploys nothing, holds no secret, cannot reach a live host.** |
+| `.github/workflows/deploy.yml` | **`workflow_dispatch` only** | Migrate → build → `wrangler deploy` to the LIVE domain. ⚠️ **Do not add a push trigger** — this Worker has no dev lane. |
+
+Added 2026-09-07 (estate testing audit §4.3): before it, the most recent CI run
+of *any* kind here was **2026-08-17**, so the suite gated only `predeploy` on a
+developer's machine. First green run **`34156956144`**, 2m19s —
+[actions/workflows/tests.yml](https://github.com/skymitch9/library_catalog/actions/workflows/tests.yml).
+
+⚠️ **A push now runs the suite on Node 22 while this machine is on Node 24**, so
+the runner is where a version-specific break (e.g. `node:sqlite`) shows up
+first. And it covers **3,026 of 3,027** cases, not all of them — the missing one
+is [KI-21](../KNOWN_ISSUES.md). `deploy.yml` is **not** gated on it: `npm run
+deploy` runs the same suite via `predeploy` inside its own job.
 
 ## Live
 

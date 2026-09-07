@@ -19,6 +19,117 @@
 
 
 
+## ✅ 2026-09-07 12:50 Phoenix (19:50 UTC) — the 3,027-case suite now runs on a GitHub runner: `.github/workflows/tests.yml` added, first green run `34156956144` (estate testing audit §4.3 — **no TODO item existed**, so this entry is the record)
+
+> **Last verified: 2026-09-07.** Every number below was measured this session,
+> in this order: `gh run list` before the change, `npm test` locally, `npm test`
+> again under `TZ=UTC`, then the runner's own TAP output after the push.
+> ⚠️ **No TODO item existed to move.** `docs/TODO.md` was grepped for
+> `tests.yml`, `CI`, `on push`, `runner`, `workflow`, `github action` and
+> `deploy.yml`; the only hit was an *audiobook* lint-coverage note at line 1901,
+> which is a different repo's problem. `catalog-platform/docs/TODO.md` was
+> grepped for the same terms and the audit item is not there either. The source
+> of the work is `catalog-platform/docs/archive/2026-09-07-testing-audit.md`
+> §4.3.
+
+### What was wrong — measured before anything changed
+
+`gh run list --limit 5` returned **five runs, total, ever**, all of them
+`Deploy Worker (manual)` on `workflow_dispatch`, the most recent
+**`32071172440` on 2026-08-17T21:27Z**. This repo's ONE workflow was
+`deploy.yml`, whose trigger is `workflow_dispatch:` alone — so **3,027 test
+cases had not executed on a runner in three weeks**, and every green tick in
+that window came from a developer's own machine gating nothing but the local
+`predeploy` chain.
+
+The two sibling repos had already fixed this — `catalog-platform` added
+`tests.yml` on 2026-09-05, `audiobook_catalog` has had `tests.yml` /
+`js-tests.yml` / `lint.yml` on push+PR — which is what makes it a gap rather
+than a policy.
+
+### What was built
+
+**`.github/workflows/tests.yml`** (commit `ee880ee`) — the non-deploying twin,
+the same shape `catalog-platform` carries: `push` to main + `pull_request` +
+`workflow_call:`, `permissions: contents: read`, and a
+`tests-${{ github.ref }}` concurrency group that cancels a superseded run
+(free, because nothing in it writes anywhere — `deploy.yml` deliberately does
+the opposite and *queues*).
+
+| Step | Why it is that and not something else |
+|---|---|
+| Checkout **both** repos side by side | ⚠️ **Not optional.** `pretest` runs the five sync scripts (universes, estate-auth, estate-theme, estate-search, gabi-conversation) which materialise `catalog-platform`-owned code into gitignored `generated/` dirs, and `scripts/lib/platform-repo.mjs` **fails loudly rather than degrade**. Without the sibling, `npm test` never reaches a test. |
+| **No secret**, no `CATALOG_PLATFORM_TOKEN` | `skymitch9/catalog-platform` is **PUBLIC** — re-measured with `gh repo view` on 2026-09-07 — so the default `GITHUB_TOKEN` reads it. `deploy.yml` still passes a PAT because it was written 2026-08-14, before that was measured; it was left alone. |
+| `CATALOG_PLATFORM_DIR` set explicitly | Same reason `deploy.yml` does it: a layout change then fails with platform-repo.mjs's loud message instead of resolving somewhere unintended. The runner log confirms all five scripts resolved through the env var, not the sibling lookup. |
+| Node **22**, `cache: npm` | Matches `deploy.yml`. ⚠️ Pinned `>=22.13` by comment: `packages/db`'s tests open `node:sqlite` (`new DatabaseSync(':memory:')`), which is flagged on older 22.x. Local dev is on **v24.11.1**, so the runner is the *only* place the suite is exercised on 22. |
+| `npm run typecheck` **before** the suite | ⚠️ `predeploy` does **not** run typecheck (`check-clean` → `deploy-guard` → `npm run test`), so this is a gate the local chain never had. Clean across all seven workspaces. It is also the early, loud proof that the sibling checkout resolved. |
+| `npm test` — the **whole** root suite | Exactly the command `predeploy` runs. Never a per-target subset: every app and package share `packages/` and `scripts/`, and a subset gate is how a shared change ships untested. |
+
+### `deploy.yml` was NOT touched — and that is a decision, not an omission
+
+Its trigger, its secrets and its steps are byte-identical to before. It is
+**not** wired to `needs:` the new workflow, because that is not the one-line
+change it is elsewhere: `npm run deploy` already runs `predeploy` → `npm run
+test` **inside the deploy job**, so a `needs:` gate would buy a second full
+checkout of both repos in order to run the same 3,027 cases twice. The
+`workflow_call:` trigger is present so the wiring is available if that ever
+becomes wanted.
+
+⚠️ And the standing rule holds: **do not give `deploy.yml` a push trigger.**
+Manual dispatch there is the owner's decision (deploy.yml's own header) —
+this Worker has no dev lane, so a deploy goes straight to the live custom
+domain. The whole point of `tests.yml` is that it is the way to get runner
+feedback *without* shipping.
+
+### Measured
+
+| Measurement | Result |
+|---|---|
+| `npm test` locally, before commit | **3,027 pass / 0 fail / 0 skipped**, 515 suites, 3.48 s |
+| `npm test` locally under `TZ=UTC` | **3,027 pass / 0 fail**, 3.22 s — run because the runner is UTC and this machine is Phoenix; the suite is not timezone-dependent |
+| `npm run typecheck` locally | clean, seven workspaces |
+| **Run `34156956144`** (push, `main`, `ee880ee`) | ✅ **success**, **2m19s**, started 2026-09-07T19:48:00Z |
+| Runner TAP totals | tests **3027** · suites **515** · pass **3026** · fail **0** · **skipped 1** · 22.6 s |
+
+🔴 **The one difference between the two environments is real and is now
+recorded as [KI-21](KNOWN_ISSUES.md).** One case —
+`scripts/test/cross-catalog-overrides.test.mjs` → *"reads the SHIPPED file when
+the sibling is next door"* — **skips on the runner** with a named reason
+(`…/audiobook_catalog/site/cross-catalog-overrides.json not present — set
+LC_AUDIOBOOK_ROOT`), because the workflow checks out two repos and that test
+wants a **third**. It is an honest skip by construction, not a hollow pass, and
+the test's own comment says why it was written that way. **So the runner gate
+covers 3,026 of 3,027 cases, not all of them.**
+
+Expected and harmless on green runs: `Node.js 20 is deprecated … forced to run
+on Node.js 24: actions/setup-node@v4` (the action's runtime, not ours) and one
+`ExperimentalWarning: SQLite is an experimental feature` per `node:sqlite`
+test process.
+
+### ⚠️ NOT verified
+
+- **The `pull_request` trigger has never fired.** Only the `push` lane has run.
+  No PR was opened to prove it, and `workflow_call:` has no caller at all — it
+  is declared, not exercised.
+- **Nothing was deployed, migrated or run against a live host** this session.
+  No `wrangler` command was issued, `deploys.log` is untouched, and neither
+  instance was touched — this is a CI change only.
+- **The suite's hermeticity was inferred, not proven.** It is asserted from the
+  runtimes (3.5 s local, 22.6 s on the runner) and from every test stubbing its
+  own `fetch`; no network isolation was applied to the runner to force the
+  point.
+- **`deploy.yml` was not re-dispatched**, so it is not re-proved that the two
+  workflows coexist under a real deploy. They share no concurrency group by
+  design.
+
+**Review link:**
+[github.com/skymitch9/library_catalog/actions/workflows/tests.yml](https://github.com/skymitch9/library_catalog/actions/workflows/tests.yml)
+— the run to look at is **`34156956144`**; the thing to look at in it is the
+*"Run the full suite (root npm test)"* step's last ten lines, which is where
+the `skipped 1` above comes from.
+
+---
+
 ## ✅ 2026-09-07 19:10 Phoenix — "Edit any detail, an audit log, and adding a book with no author": the whole feature was BUILT on 2026-08-12/13 and has been live on both instances ever since — the TODO section was 26 days of stale residue (moved WHOLE from TODO.md)
 
 **A build session was dispatched to build this. It measured first and found it
