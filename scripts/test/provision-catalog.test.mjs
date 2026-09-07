@@ -25,6 +25,7 @@ import {
   INSTANCE_MAX,
   ROOT,
   RESERVED_INSTANCE_NAMES,
+  apexSurfaceEdits,
   assertProvisionable,
   checkAuthWorkerRegistration,
   deriveNames,
@@ -639,7 +640,16 @@ describe('the manual runbook', () => {
     assert.match(text, /10 minutes/);
     // ⚠️ /admin is the exception and must stay one: a permission surface must
     // not fail closed on a cache miss.
-    assert.match(text, /admin's CATALOGS array stays hand-kept/);
+    //
+    // ⚠️ UPDATED 2026-09-06. This asserted /admin's CATALOGS array "stays
+    // hand-kept", which stopped being true the hour it became GENERATED from
+    // packages/estate-auth/src/visibility.ts. The assertion going red is the
+    // guard working: a runbook telling somebody to hand-edit a generated file
+    // sends them to a change the next `npm test` rejects. What must NOT change
+    // is the POSTURE — it is still not a registry consumer, and that half is
+    // what is asserted now.
+    assert.match(text, /admin's CATALOGS is NOT a registry consumer/);
+    assert.match(text, /GENERATED from the same/);
   });
 
   it('the theme and the /status cadence are named as deliberate NON-actions', () => {
@@ -920,5 +930,107 @@ describe('the fixture row carries both key booleans', () => {
     const row = { ...ROW, reader_key_set: 1, owner_key_set: 1 };
     assert.doesNotThrow(() => assertProvisionable(row));
     assert.match(markLiveUpdate({ instance: 'amber', host: 'amber.heygabi.ai', requestId: row.id }, 'reader'), /SET status/);
+  });
+});
+
+/* --------------------------------------------------------------------------
+ * apexSurfaceEdits — the /admin and /status hand edits, printed LAST
+ *
+ * ⚠️ catalog-platform's docs/TODO.md carried this as an open item in as many
+ * words: "the provisioners do NOT print the /admin and /status host-row edits
+ * a new instance needs". These tests pin that they are printed, that the
+ * /admin half reflects the 2026-09-06 change (generated, not hand-kept), and
+ * — the part that actually matters — that the CSP list is READ rather than
+ * quoted from a template.
+ * ------------------------------------------------------------------------ */
+
+describe('apexSurfaceEdits — /admin and /status', () => {
+  const names = deriveNames(ROW, { envNames: EXISTING_ENVS, estateApps: EXISTING_APPS });
+  // A directory with no apex files in it: the "cannot read" path.
+  const blind = apexSurfaceEdits(names, '/nowhere/catalog-platform').join('\n');
+
+  it('is the LAST thing the runbook says', () => {
+    const book = manualRunbook(names, { platformDir: '/nowhere/catalog-platform' });
+    const at = book.findIndex((l) => l.includes('THE APEX OPERATOR SURFACES'));
+    assert.ok(at > 0, 'the apex section must be in the runbook');
+    // Everything from there to the end is this section, so it closes the book.
+    assert.deepEqual(book.slice(at), apexSurfaceEdits(names, '/nowhere/catalog-platform').slice(1));
+  });
+
+  it('names BOTH operator surfaces and the new host', () => {
+    assert.match(blind, /\/admin/);
+    assert.match(blind, /\/status/);
+    assert.match(blind, /https:\/\/amber\.heygabi\.ai/);
+  });
+
+  it('✅ the /admin half reflects 2026-09-06: GENERATED, not hand-kept', () => {
+    // The old advice ("add it to admin.js") went stale the hour the generator
+    // landed. If somebody reintroduces it, this fails.
+    assert.match(blind, /node scripts\/gen-admin-catalogs\.mjs/);
+    assert.match(blind, /NO LONGER A HAND EDIT/);
+    assert.ok(
+      !/admin\.js\s*—\s*CATALOGS\b/.test(blind),
+      'must not tell anyone to hand-edit admin.js CATALOGS again',
+    );
+  });
+
+  it('still asks for the FALLBACK label, and says it is only the fallback', () => {
+    assert.match(blind, /CATALOG_LABELS/);
+    // ⚠️ Keyed by the CATALOG ID (library3), never by the subdomain (amber) —
+    // the id is the persisted vocabulary CATALOG_LABELS is looked up by, and a
+    // label filed under the hostname would simply never be found.
+    assert.match(blind, /library3: 'Amber/);
+    assert.ok(!/^\s*\+\s+amber: /m.test(blind), 'must not key the label by subdomain');
+    assert.match(blind, /OVERWRITES these from GET \/api\/catalogs/);
+  });
+
+  it('🔴 says the Sites ROW is free but the PROBE is not, and why it can never be automatic', () => {
+    assert.match(blind, /SITES SECTION NEEDS NO EDIT/);
+    assert.match(blind, /Content-Security-Policy/);
+    assert.match(blind, /before a byte of the page runs/);
+    // The incident that makes it worth reading rather than skipping.
+    assert.match(blind, /FALSE RED ROW/);
+  });
+
+  it('marks the CSP change ACCESS-INCREASING and the owner’s, not the script’s', () => {
+    assert.match(blind, /ACCESS-INCREASING/);
+    assert.match(blind, /rather than this script's/);
+  });
+
+  it('⚠️ warns that /status and /status/ are TWO rules (the trailing-slash 308)', () => {
+    assert.match(blind, /trailing-slash\s+308/);
+  });
+
+  it('names PROBEABLE_ORIGINS and says a test pins it against _headers', () => {
+    assert.match(blind, /PROBEABLE_ORIGINS/);
+    assert.match(blind, /status-host-rows\.test\.mjs/);
+  });
+
+  it('🔴 an unreadable apex checkout SAYS SO and never invents a CSP list', () => {
+    // The whole reason this reads files instead of quoting a template: a
+    // remembered list pasted over the live one REVOKES whatever was added
+    // since. Guessing is worse than admitting it could not look.
+    assert.match(blind, /COULD NOT READ/);
+    assert.ok(!/\(\d+ origins\)/.test(blind), 'must not print an origin count it could not read');
+  });
+
+  it('🔴 with a REAL apex checkout it prints the LIVE /status origins, not a template', () => {
+    // Point it at this repo's own sibling platform checkout when present. Skipped
+    // rather than faked when it is absent, because the value of this test is
+    // that it read something real.
+    let platformDir = null;
+    try {
+      platformDir = resolvePlatformRepo().dir;
+    } catch {
+      /* no sibling checkout here */
+    }
+    if (!platformDir) return;
+    const text = apexSurfaceEdits(names, platformDir).join('\n');
+    assert.match(text, /\/status {2}\(\d+ origins\)/, 'the /status rule and its real origin count');
+    assert.match(text, /\/status\/ {2}\(\d+ origins\)/, 'and the /status/ rule separately');
+    // It must offer the new origin as an ADDITION to what is really there.
+    assert.match(text, /\+ https:\/\/amber\.heygabi\.ai/);
+    // And the real list must contain a host we know is in it today.
+    assert.match(text, /https:\/\/index\.heygabi\.ai/);
   });
 });
