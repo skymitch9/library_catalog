@@ -67,15 +67,15 @@ export function AudioSeriesLink({
 
   if (!canEdit) return null;
 
-  // Nothing to confirm against — say so plainly rather than rendering a dead box.
+  // Nothing to confirm against. The paragraph was CUT 2026-09-07
+  // (grey-paragraph audit item 23 — "a disabled control with a one-word reason
+  // would do"); the STATE stays, because a panel that silently vanishes is not
+  // distinguishable from one that failed to load.
   if (!series) {
     return (
       <section className="panel audio-link">
         <h3>On audio</h3>
-        <p className="muted small">
-          Set and save a series above first — then, if the audiobook catalog holds it, you can
-          confirm the match here.
-        </p>
+        <p className="muted small">No series set.</p>
       </section>
     );
   }
@@ -121,11 +121,10 @@ export function AudioSeriesLink({
           <p className="audio-link__linked">
             Linked to the audiobook catalog’s <b>“{data.linked.audiobookSeries}”</b>.
           </p>
-          <p className="muted small">
-            All <b>{data.works}</b> {data.works === 1 ? 'book' : 'books'} in “{series}” are treated
-            as owned on audio wherever the catalog has the recording. Confirmed{' '}
-            {data.linked.confirmedAt.slice(0, 10)}.
-          </p>
+          {/* The prose was CUT 2026-09-07 (grey-paragraph audit item 25 — it
+              restated item 24 after the fact). The DATE is data, not helper
+              prose, so it stays. */}
+          <p className="muted small">Confirmed {data.linked.confirmedAt.slice(0, 10)}.</p>
           <div className="controls">
             <button className="chip danger" disabled={busy} onClick={() => void unlink()}>
               {busy ? 'Working…' : 'Unlink'}
@@ -137,11 +136,7 @@ export function AudioSeriesLink({
       {data && !data.linked && data.candidates.length > 0 && (
         <div className="stack">
           <p className="muted small">
-            The audiobook catalog has this series. Confirming links{' '}
-            <b>
-              all {data.works} {data.works === 1 ? 'book' : 'books'} in “{series}”
-            </b>{' '}
-            to it — each reads as owned on audio wherever the catalog has the recording.
+            Confirming marks every volume the catalog holds as owned on audio.
           </p>
           {data.candidates.map((cand) => (
             <div key={cand.audiobookSeries} className="audio-link__cand">
@@ -167,8 +162,7 @@ export function AudioSeriesLink({
 
       {data && !data.linked && data.candidates.length === 0 && !loading && (
         <p className="muted small">
-          No audiobook series in the catalog matches “{series}”. Nothing to confirm — if you own
-          these on audio, the audiobook catalog may file them under a different name.
+          No audiobook series in the catalog matches “{series}”.
         </p>
       )}
 

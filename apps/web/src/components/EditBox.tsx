@@ -263,7 +263,6 @@ function RequestCovers({
   onChanged: () => void;
   onRequestCovers?: () => void;
 }) {
-  const [noted, setNoted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<CoverFindResult | null>(null);
   /** The proposed image failed to load HERE, whatever the Worker's fetch saw. */
@@ -314,14 +313,7 @@ function RequestCovers({
   return (
     <div className="stack request-scaffold">
       <div className="row-tight">
-        <button
-          onClick={() => {
-            setNoted(true);
-            onRequestCovers?.();
-          }}
-        >
-          Choose from known covers
-        </button>
+        <button onClick={() => onRequestCovers?.()}>Choose from known covers</button>
         {canFind && (
           <button className="primary" onClick={find} disabled={busy}>
             {busy ? 'Searching…' : 'Search the web for a cover'}
@@ -329,12 +321,9 @@ function RequestCovers({
         )}
       </div>
 
-      {noted && (
-        <p className="muted small">
-          Use <b>Choose from known covers</b> above to pick from covers the catalog already knows.
-        </p>
-      )}
-
+      {/* The "use the button above" note was CUT 2026-09-07 (grey-paragraph
+          audit item 43 — it pointed at a button two rows up), and the `noted`
+          state that existed only to show it went with it. */}
       {canFind && !busy && !result && !error && (
         <p className="muted small">
           The web search is the last resort for books the free cover sources cannot supply — it
@@ -346,8 +335,7 @@ function RequestCovers({
 
       {result && !result.proposal.found && (
         <p className="muted small">
-          The search did not find a cover for this book. That is a normal answer for the titles that
-          reach this step — a wrong cover would be worse than none.
+          No cover found — a normal answer here.
         </p>
       )}
 

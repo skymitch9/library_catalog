@@ -140,16 +140,10 @@ export function CoverPanel({
         )}
       </div>
 
-      {work.coverStatus === 'standin' && (
-        <p className="muted small">
-          Marked as a <b>stand-in</b> — the image above is not this book's own cover, and this
-          book stays on the "cover needed" list until a real one replaces it.
-        </p>
-      )}
+      {/* The stand-in paragraph was CUT 2026-09-07 (grey-paragraph audit item
+          35 — the "stand-in" badge above already says it). */}
       {!work.coverUrl && (
-        <p className="muted small">
-          No cover found. Every automatic source has already been asked; this one needs a person.
-        </p>
+        <p className="muted small">No cover found — every automatic source was asked.</p>
       )}
 
       <div className="row-tight">
@@ -212,10 +206,6 @@ export function CoverPanel({
               disabled={busy}
             />
           </label>
-          <p className="muted small">
-            The link to the image <b>file</b>, not the page it sits on. It is fetched and checked
-            before anything is saved, so a dead link is refused rather than stored.
-          </p>
           <div className="row-tight">
             <button className="primary" onClick={link} disabled={busy}>
               {busy ? 'Checking…' : 'Use this link'}
@@ -247,10 +237,6 @@ export function CoverPanel({
                   }}
                 />
               </div>
-              <p className="muted small">
-                JPEG, PNG, WebP, GIF or AVIF, up to {MAX_COVER_BYTES / (1024 * 1024)}MB. The file
-                is checked by its own contents, not by what it claims to be.
-              </p>
             </>
           ) : (
             storage && (

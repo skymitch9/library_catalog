@@ -185,12 +185,11 @@ export function WorkFields({
               onChange={(e) => setSubtitle(e.target.value)}
               placeholder="Ambulance Rescue"
             />
+            {/* ⚠️ Said here because the restriction looks arbitrary on screen,
+                and somebody will otherwise try to fix the title from this panel
+                and conclude the app is broken. */}
             <span className="muted small">
-              Which one this is, when the title is only the series line. Shown under the title.
-              {/* ⚠️ Said here because the restriction looks arbitrary on screen,
-                  and somebody will otherwise try to fix the title from this
-                  panel and conclude the app is broken. */}{' '}
-              The title itself is not editable — it is the join to your audiobook reviews.
+              The title is not editable — it joins your audiobook reviews.
             </span>
           </label>
 
@@ -205,10 +204,6 @@ export function WorkFields({
               onChange={(e) => setIllustrator(e.target.value)}
               placeholder="Shannon Hays"
             />
-            <span className="muted small">
-              Shown with the credits. Leave blank for a book without one — most novels — and
-              nothing is shown at all.
-            </span>
           </label>
 
           <label className="field">
@@ -226,8 +221,7 @@ export function WorkFields({
               <span className="field__label">Series</span>
               <SeriesAutocomplete value={series} onChange={setSeries} placeholder="Cradle" />
               <span className="muted small">
-                Start typing to pick an existing series — that is what groups this book with the
-                rest of it. An <em>audio</em> tag means the audiobook catalog knows that series too.
+                An <em>audio</em> tag means the audiobook catalog knows this series.
               </span>
             </label>
             <label className="field">
@@ -269,19 +263,7 @@ export function WorkFields({
             <span className="field__label">
               This book is the same spot in the series but has multiple volumes
             </span>
-            <span className="muted small">
-              For a printing split across more than one physical book — the two-volume
-              leatherbound of <em>Words of Radiance</em>, a &ldquo;part 1 of 2&rdquo; edition.
-              Nothing looks this up: only somebody holding the book can say.
-            </span>
           </label>
-
-          <p className="muted small">
-            {/* Said out loud, because clearing a field has a second effect that
-                is invisible and would otherwise be a surprise. */}
-            Emptying a field clears it, and puts that question back on the{' '}
-            <em>what is missing</em> list.
-          </p>
 
           <div className="controls">
             <button className="primary" disabled={busy} onClick={() => void save()}>

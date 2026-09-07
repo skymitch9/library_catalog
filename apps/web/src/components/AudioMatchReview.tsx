@@ -159,9 +159,7 @@ export function AudioMatchReview({
 
       {rows.length === 0 && (
         <p className="muted small">
-          The audiobook catalog has no recording matched to this book. Nothing to confirm — if you
-          own it on audio, that catalog may file it under a different title, and a series-wide match
-          can be confirmed on the series page instead.
+          No recording matched. A series match can be confirmed on the series page.
         </p>
       )}
 
@@ -211,21 +209,12 @@ export function AudioMatchReview({
                 </p>
               )}
 
-              {verdict === 'rejected' && (
-                <p className="muted small">
-                  <b>Marked as not this book.</b> It is hidden from the shelf, the series ladder,
-                  the audiobook filter, and from the review and to-be-read bridges. The record was
-                  kept, and anything already recorded on this book was left alone.
-                </p>
-              )}
-
-              {!reviewable && (
-                <p className="muted small">
-                  This one comes from the series match you confirmed, not from a title match, so
-                  there is no single recording to answer for here.
-                </p>
-              )}
-
+              {/* ⚠️ Two paragraphs were CUT here 2026-09-07 (grey-paragraph
+                  audit items 20 and 22): the post-rejection restatement of
+                  REJECTION_COST — which is still printed ABOVE the buttons,
+                  where it can inform the press rather than explain it
+                  afterwards — and the "comes from the series match" note, whose
+                  fact the row's own `matchProvenance` line already carries. */}
               {canEdit && reviewable && (
                 <div className="row-tight">
                   <button

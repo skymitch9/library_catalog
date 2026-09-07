@@ -104,22 +104,14 @@ export function CoverSwap({
   }
 
   if (visible.length === 0) {
-    return (
-      <p className="muted small">
-        No covers are known for this book — no printing carries one, it has worn no other, and
-        Open Library has nothing to guess from. Paste a link or upload a file instead.
-      </p>
-    );
+    return <p className="muted small">No covers known. Paste a link or upload a file.</p>;
   }
 
   return (
     <div className="stack">
-      {visible.length === 1 && (
-        <p className="muted small">
-          Only one cover is known for this book, so there is nothing to swap between yet.
-        </p>
-      )}
-
+      {/* The single-candidate paragraph was CUT 2026-09-07 (grey-paragraph
+          audit item 41). A grid of one cover with a disabled Apply is the
+          feature explaining itself; the sentence was saying it twice. */}
       <ul className="cover-swap">
         {visible.map((c) => {
           const dead = !c.derived && broken.has(c.url);
@@ -156,24 +148,20 @@ export function CoverSwap({
         })}
       </ul>
 
+      {/* The four lines of storage internals under this button were CUT
+          2026-09-07 (grey-paragraph audit item 39). The FACT is still true and
+          still documented — it is this file's header comment, which is where a
+          future session will look for it. */}
       {visible.length > 1 && (
-        <>
-          <div className="row-tight">
-            <button
-              className="primary"
-              disabled={busy || !pick || pick === current}
-              onClick={() => void apply()}
-            >
-              {busy ? 'Checking…' : 'Use this cover'}
-            </button>
-          </div>
-          <p className="muted small">
-            Nothing is lost by swapping: covers this app hosts are stored under a name derived
-            from the image itself and are never deleted, so every cover here stays available and
-            swapping back is just re-pointing. The picked image is fetched and checked before
-            anything is saved.
-          </p>
-        </>
+        <div className="row-tight">
+          <button
+            className="primary"
+            disabled={busy || !pick || pick === current}
+            onClick={() => void apply()}
+          >
+            {busy ? 'Checking…' : 'Use this cover'}
+          </button>
+        </div>
       )}
 
       {said && <p className="muted small">{said}</p>}

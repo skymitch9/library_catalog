@@ -240,10 +240,6 @@ function EditionCover({
           disabled={busy}
         />
       </label>
-      <p className="muted small">
-        The link to the image <b>file</b>, not the page it sits on. It is fetched and checked before
-        anything is saved, so a dead link is refused rather than stored.
-      </p>
       <div className="row-tight">
         <button className="primary" onClick={link} disabled={busy}>
           {busy ? 'Checking…' : 'Use this link'}
@@ -277,10 +273,6 @@ function EditionCover({
               if (file) void upload(file);
             }}
           />
-          <p className="muted small">
-            JPEG, PNG, WebP, GIF or AVIF, up to {MAX_COVER_BYTES / (1024 * 1024)}MB. The file is
-            checked by its own contents, not by what it claims to be.
-          </p>
         </>
       ) : (
         storage && (

@@ -177,14 +177,10 @@ export function EditTitleAuthor({
       </div>
 
       <div className="stack">
-          {provisional ? (
-            <p className="muted small">
-              This book has no author recorded, so nothing can be attached to it yet — filling
-              the author in is always safe.
-            </p>
-          ) : (
-            <p className="muted small">{checkLine}</p>
-          )}
+          {/* The provisional paragraph was CUT 2026-09-07 (grey-paragraph audit
+              item 32 — the field is visibly blank and required), along with its
+              nine-lines-later duplicate (item 33). */}
+          {!provisional && <p className="muted small">{checkLine}</p>}
 
           {/* Author first on a provisional book — it is the one ask. */}
           {provisional && (
@@ -196,7 +192,6 @@ export function EditTitleAuthor({
                 placeholder="As printed on the book"
                 autoFocus
               />
-              <span className="muted small">Add the author to unlock reviews.</span>
             </label>
           )}
 
