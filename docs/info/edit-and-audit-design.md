@@ -1,8 +1,36 @@
 # Edit any detail, the audit log, and the authorless book — Information Reference
 
 > **Audience:** Claude sessions, and the owner deciding whether to build this.
-> **Status:** TRACKED. **DESIGN ONLY — nothing here is applied, migrated or
-> deployed.** Written by Fable 5, 2026-08-12/13, per `docs/FABLE5.md` §4.2.
+> **Status:** TRACKED. 🔴 **BUILT AND LIVE ON BOTH INSTANCES — corrected
+> 2026-09-07.**
+>
+> ⚠️ **This header used to read "DESIGN ONLY — nothing here is applied,
+> migrated or deployed", and it had been false since 2026-08-13** — the day
+> after it was written. It is the sentence that sent a 2026-09-07 build session
+> to rebuild a shipped feature; it measured first and built nothing. A stale
+> status line on a design doc is the silent-staleness trap in its most
+> expensive costume, which is why the correction is loud rather than a quiet
+> edit.
+>
+> **What is applied.** `migrations/0120_change_log_and_authorless.sql` (`b617c80`,
+> 2026-08-12) is applied to **both** databases — `wrangler d1 migrations list
+> --remote` answered *"No migrations to apply"* on `library-catalog` and on
+> `library-catalog-2nd`, measured 2026-09-07 ~19:00 UTC. The core/db half is
+> `e00b242` and the web half is `eee2d8d`, both 2026-08-13. Live counts that
+> day: `change_log` **1,728** rows on main and **3,978** on padhard; **one**
+> work with `authors = '?unknown'` on each (main #376, padhard #134); **182**
+> and **648** works carrying a `reviews_seen_count` observation.
+> `GET /api/works/:id/changes` answers **401** unauthenticated on both hosts.
+> The move of the owner's ask out of `../TODO.md` is in
+> [`../DONE.md`](../DONE.md), dated 2026-09-07, and it carries the per-layer
+> file map.
+>
+> ⚠️ **What is still design and not built** is §9's open list — in particular
+> §9.1 (the title-edit doc-id drift) and §9.2 (what happens if Firestore's
+> rules are ever hardened). §5.3's Firestore-first carry has **shipped** but
+> has never been exercised by an agent session against live Firestore.
+>
+> Written by Fable 5, 2026-08-12/13, per `docs/FABLE5.md` §4.2.
 > Last verified: **2026-08-13** against this repo at commit `7301368` —
 > `0001_init.sql`, `0008_manager_role.sql`, `0040_cover_status_and_watch.sql`,
 > `packages/core/src/titles.ts`, `reviews.ts`, `schemas.ts`,
@@ -249,9 +277,9 @@ the "free move" claim in §5.1 stops being a proof.
 
 ### 4.1 The table, designed once for both catalogs
 
-One row per changed field, grouped into events by `batch_id`. Proposed as
-`migrations/0120_change_log_and_authorless.sql` — **NOT applied**; see §7 for
-the full file.
+One row per changed field, grouped into events by `batch_id`. Shipped as
+`migrations/0120_change_log_and_authorless.sql` — ~~**NOT applied**~~ **applied
+to both databases, 2026-08-13** (see the header); §7 has the full file.
 
 ```sql
 -- Who changed what, when, and what it said before.
@@ -507,7 +535,7 @@ See §9 — unsettled, with the mitigation sketched.
 
 ---
 
-## 7. The migration — `migrations/0120_change_log_and_authorless.sql` (NOT applied)
+## 7. The migration — `migrations/0120_change_log_and_authorless.sql` (~~NOT applied~~ APPLIED, both instances)
 
 Additive only: one new table, two paired columns, three indexes. **No table
 is rebuilt** — that is §3.2's argument and the reason the sentinel design
@@ -555,12 +583,11 @@ ALTER TABLE work ADD COLUMN reviews_seen_at    TEXT;
 CREATE INDEX idx_work_unknown_author ON work(id) WHERE authors = '?unknown';
 ```
 
-Application order, when the owner approves: migrate → deploy, as `CLAUDE.md`
-already requires, so new code never meets an old schema — and the sentinel
-writes only start after both. Per `docs/FABLE5.md` §5.1 this migration does
-not run unattended, and it should be exercised against the local D1
-(`npm run dev:worker` + local migrate) before production, like everything
-else in this repo that was ever verified.
+~~Application order, when the owner approves:~~ **Applied 2026-08-12/13, in
+that order** — migrate → deploy, as `CLAUDE.md` already requires, so new code
+never meets an old schema, and the sentinel writes only started after both. It
+was verified against the local D1 first (`b617c80`'s message: *"Add migration
+0120 (local-verified)"*), per `docs/FABLE5.md` §5.1.
 
 ### Code changes riding along (no schema)
 

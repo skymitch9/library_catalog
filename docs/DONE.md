@@ -19,6 +19,174 @@
 
 
 
+## ✅ 2026-09-07 19:10 Phoenix — "Edit any detail, an audit log, and adding a book with no author": the whole feature was BUILT on 2026-08-12/13 and has been live on both instances ever since — the TODO section was 26 days of stale residue (moved WHOLE from TODO.md)
+
+**A build session was dispatched to build this. It measured first and found it
+already built, deployed, and carrying production data on both instances — so it
+built nothing.** Writing a second implementation of `change_log`, a second edit
+surface and a second authorless-add path would have been the duplicate-canonical
+failure the docs standard names, and the honest deliverable was the measurement
+plus this move. **No code changed, no migration ran, no deploy was made** —
+which is why there is no `deploys.log` line under this entry.
+
+### What is actually live — MEASURED 2026-09-07 ~19:00 UTC, both instances
+
+| | `library-catalog` (main) | `library-catalog-2nd` (padhard) |
+|---|---|---|
+| `wrangler d1 migrations list --remote` | **No migrations to apply** | **No migrations to apply** |
+| `change_log` rows | **1,728** | **3,978** |
+| works with `authors = '?unknown'` | **1** — #376 *The Doctrine and Covenants. The Pearl of Great Price*, `work_key` = `doctrine and covenants the pearl of great price\|?unknown` | **1** — #134 *The Book of Bill* |
+| works with a `reviews_seen_count` observation | **182** of 411 | **648** of 677 |
+| `GET /api/works/:id/changes` unauthenticated | **401**, with the four-part worded refusal | **401**, same |
+
+The `change_log` field histogram on main is what a year of real editing looks
+like, not a smoke test: `__row__` 573, `cover_url` 322, `description` 169,
+`series` 104, `seriesIndexSort` 76, `isbn13` 59, `seriesIndexDisplay` 40,
+`coverUrl` 39.
+
+### The four points of "the shape this probably wants", each traced to shipped code
+
+| The TODO's point | Where it lives | Introduced |
+|---|---|---|
+| **1. Migration + an answer for `work_key` while the author is unknown** | `migrations/0120_change_log_and_authorless.sql` — `change_log` + its two indexes, `work.reviews_seen_count`/`reviews_seen_at`, `idx_work_unknown_author` | `b617c80`, 2026-08-12 |
+| **2. Add with no author, flagged for remediation in the same call** | `AddWork.tsx` **"Add without an author"** button + `ScanLines.tsx`'s carried state; the flag is the VALUE, so there is no second write to fail | `eee2d8d`, 2026-08-13 |
+| **3. An edit surface for everything else, title included, gated on the review join** | `EditTitleAuthor.tsx` (the ceremony panel, mounted once inside `EditBox.tsx`), `WorkFields.tsx` unchanged for the free tier; server gate at `apps/worker/src/routes/catalog.ts` — `409 key_move_requires_check`, `keyMoveEvidence`, `expectedOldKey` staleness, `restamped ≠ reviewsFound`, and the clear-to-provisional refusal | `eee2d8d` |
+| **4. Audit log** | `packages/db/src/changes.ts` writing in the SAME `db.batch()` as the mutation; `GET /api/works/:id/changes`; `Changes.tsx` on `WorkPage.tsx`, grouped by `batch_id` | `e00b242` + `eee2d8d`, 2026-08-13 |
+
+Also shipped beyond the four: `POST /api/works/:id/reviews-seen` (the browser's
+evidence floor), the **Needs → Author** facet (`NEEDS_AUTHOR` in
+`packages/db/src/works.ts:1855`, its third `SUM` at `:2315`), and
+`reviewDocFor` throwing on the sentinel so no review document can ever carry a
+provisional key.
+
+### ⚠️ Two places the shipped design deliberately DEPARTS from the sketch below — do not "fix" them back
+
+1. **`authors`/`primary_author` were NOT made nullable.** The sketch's point 1
+   reads as a nullable-column migration; what shipped is the sentinel
+   `UNKNOWN_AUTHOR = '?unknown'` (`packages/core/src/constants.ts`), stored in
+   NOT NULL columns and translated to `null` at the `@lc/db` row boundary so the
+   compiler finds every reader. The reason is measured and is in
+   [`info/edit-and-audit-design.md`](info/edit-and-audit-design.md) §3.2:
+   SQLite cannot drop a NOT NULL without rebuilding the table, `work` is the
+   most-referenced table in this schema, and **migration 0008's header records
+   that both D1 escape pragmas were measured to LOSE DATA** on a rebuild of a
+   referenced table. The collision proof is one character — `normaliseTitle`
+   emits only `[a-z0-9 ]`, so `'?'` cannot survive the fold and a provisional
+   key can never equal a real one, not even for a book genuinely credited to
+   "Unknown". `core.test.ts` asserts both halves.
+2. **"Flagged for remediation" is DERIVED, not a `work_watch` row.** The sketch's
+   point 2 asked for a watch row in the same call. The design refused it on
+   0040's own precedent (§3.3): a watch row can be resolved while the author is
+   still missing, which is a flag travelling apart from its value. `authors =
+   '?unknown'` *is* the flag, it cannot drift, and the Needs → Author facet
+   reads it on every request.
+
+### ⚠️ NOT verified in this pass
+
+- **No rendered page.** No agent session has a browser; the `/work/:id` curls
+  returned the 4,516-byte SPA shell on both hosts, which proves routing and
+  nothing about React. Nobody has clicked **Add without an author**, opened the
+  **Changes** panel, or run the ceremony against live Firestore in this session.
+- **The key-move ceremony's Firestore-first carry has never been exercised by a
+  session** — it is `edit-and-audit-design.md` §9.5's own open item and stays
+  open. Both live authorless works were created by a person, not by this check.
+- **`change_log` was read, not audited.** 1,728 and 3,978 rows exist; no claim is
+  made here that every write path logs one. Three that deliberately do not are
+  already recorded in this file (the cover backfills, `deleteGapVerdict` /
+  `deleteAutoVerdict`).
+- **The `?unknown` row counts are a single reading**, ~19:00 UTC 2026-09-07.
+
+### What did NOT close, and stayed in `TODO.md`
+
+The sibling half — the owner's *"Audiobook catalog will need this as well."*
+That is **a separate item in a separate repo** and nothing here touched it; the
+DDL and the key-move rules to copy are `migrations/0120…` and
+`info/edit-and-audit-design.md` §8, which is the design of record for both
+sides. Filed as a short item in [`TODO.md`](TODO.md), with the one measured
+departure from the owner's *"except core details like ISBN"* filed as
+**KI-20** in [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md).
+
+### 🔴 A correction to the record this move also makes
+
+[`info/edit-and-audit-design.md`](info/edit-and-audit-design.md) carried
+**"DESIGN ONLY — nothing here is applied, migrated or deployed"** in its header,
+and [`info/README.md`](info/README.md)'s row for it said **"⚠️ DESIGN ONLY,
+nothing built."** Both were written 2026-08-13 and both were false the next day.
+A stale header on a design doc is the silent-staleness trap in its most
+expensive costume — it is the exact sentence that sent a session to rebuild a
+shipped feature. Both are corrected in the same commit as this move.
+
+---
+
+**The section below is moved verbatim** from `TODO.md` — heading, both owner
+quotes, the four-row constraints table, the trap, and all four points of "the
+shape this probably wants". Nothing in it is edited; everything it asked for is
+in the table above.
+
+### ⏸️ Edit any detail, an audit log, and adding a book with no author — 2026-08-13
+
+**Three asks from one scanning session, and they are the same feature.** Recorded
+together because solving any one of them badly makes the others harder.
+
+**The owner, verbatim:**
+
+> *"add an edit title button on the ui. More than that we need a way to edit
+> basically any detail about a book except core details like ISBN. We'd also need
+> an audit log and stuff. Audiobook catalog will need this as well."*
+
+> *"Let us add books without an author and immediately flag them for
+> remediation. That way we're not hard blocked."*
+
+**Why it came up.** Four books in one evening could not be added without hand-
+typing an author — *There's a Mouse About the House!*, *Don't Tickle the
+Dinosaur!*, *Richard Scarry's Busy Busy Farm*, and every bare-titled board book
+on the pull list. `isAddable` (`packages/core/src/scanjobs.ts`) requires a title
+**and** an author; children's board books are the common case in this house and
+they resolve worst upstream, so the gate lands exactly where it hurts.
+
+#### ⚠️ The constraints, all measured — read before designing
+
+| Constraint | Where | Why it bites |
+|---|---|---|
+| `work.authors`, `primary_author`, `work_key` are all **NOT NULL** | `migrations/0001_init.sql:87,90,108` | "add with no author" is a **migration**, not a UI change |
+| **`work_key` contains the author on purpose** | `0001_init.sql:99` — *"Title-only keys collide across authors constantly"* | a title-only key for authorless rows is a known-bad idea in this schema, not a shortcut |
+| `work_key` is the join to **860 audiobook reviews** | `WorkFields.tsx` header | editing a title or author moves the key and orphans the reviews |
+| `WorkFields` **deliberately** cannot reach `title`/`authors` | same header | this is the guard, not an oversight — do not simply remove it |
+
+⚠️ **The trap:** "flag for remediation" means the author gets filled in *later*,
+which moves `work_key` — the exact thing the guard exists to prevent. It is
+harmless for a book that entered the catalog seconds ago with no reviews, and
+destructive for one that has them. **So the remediation path must know the
+difference**, and that is precisely what an audit log plus a "has this ever been
+review-joined" test would give.
+
+#### The shape this probably wants
+
+1. **Migration:** `authors`/`primary_author` nullable, plus a documented answer
+   for what `work_key` is while the author is unknown (a provisional key that is
+   *expected* to move, marked as such, is better than a colliding title-only one).
+2. **Add with no author** → row is created *and* a `work_watch` row is written in
+   the same call, so it lands in `Needs → To check` and cannot be silently
+   forgotten. Migration 0040's rule: the flag travels with the write.
+3. **An edit surface for everything else** — title included — gated on "this work
+   has no review join yet", or accompanied by an explicit "this will move the
+   review link" confirmation.
+4. **Audit log**: who changed what, when, and the old value. This is the thing
+   that makes 3 safe rather than brave, and it is also what lets a bad bulk edit
+   be undone.
+
+⚠️ **`audiobook_catalog` needs the same treatment** and shares the identity and
+review store, so the audit-log table and the `work_key`-move rules should be
+designed once, across both — see `catalog-platform` / `PLATFORM.md` §2.2 on what
+may and may not cross the boundary. Noted in that repo's work log too.
+
+**Meanwhile, the zero-code unblock** (used twice tonight, ~3 taps): on the scan
+row press **Edit**, type the author, **Save and look up**, then **Add**. The
+lookup re-runs with the author and usually returns a close match at 1.00. For
+publisher-branded board books the catalog's existing convention is the publisher
+as the author — *Scholastic* on #141, *Bendon* on #137 — so that is a legitimate
+answer, not a placeholder.
+
 ## ✅ 2026-09-07 10:56 Phoenix — the audiobook link sweep RE-RUN on both instances after the bulk import: it changed NOTHING, and that is the finding (moved WHOLE from TODO.md)
 
 **The section below is moved verbatim** — heading, blockquote and all three

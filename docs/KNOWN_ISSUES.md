@@ -1,7 +1,21 @@
 # library_catalog — Known Issues, Waivers & Exceptions
 
 > **Audience:** Claude/Kiro sessions and the owner. **Status:** TRACKED.
-> Last verified: **2026-09-07 18:03 UTC (W16-LIB-SNAP)** — **KI-19 was ADDED**
+> Last verified: **2026-09-07 ~19:00 UTC (W18-LIB-EDIT)** — **KI-20 was ADDED**
+> and measured against production `library-catalog`: **59** `change_log` rows
+> carry `field = 'isbn13'`, `updateEditionSchema` is
+> `createEditionSchema.omit({workId}).partial().strict()`
+> (`packages/core/src/schemas.ts:405`) and `Editions.tsx:728` renders the field.
+> The same pass measured both databases for the edit/audit feature — `change_log`
+> **1,728** rows on main and **3,978** on padhard, **one** work with
+> `authors = '?unknown'` on each, both *"No migrations to apply"* — which closed
+> the 2026-08-13 ask into [`DONE.md`](DONE.md).
+> ⚠️ **KI-18 was NOT touched in this pass** and was NOT the residue of the
+> no-author gate: it is about the **LibraryThing ISBN rung**. The no-author gate
+> left no known issue behind — the sentinel closes it by construction.
+> ⚠️ **Nothing else was re-checked** — KI-5 through KI-19 all still carry the
+> ages stated below.
+> Previously **2026-09-07 18:03 UTC (W16-LIB-SNAP)** — **KI-19 was ADDED**
 > and measured live on BOTH hosts' `/api/health` in the same minute
 > (`snapshotAgeHours` **37.7** on each, `lastRunAt 2026-09-07 16:23:15` on each,
 > `cronPlanTicks` **8** on each) plus 52.3 days of `audiobook_catalog`'s git
@@ -739,6 +753,51 @@ p90 69.3 h · max 299 h**, with **22 of 37 gaps over 8 h** and **15 of 37 over
 was queried, and the etag equality is inferred from the `unchanged-replayed`
 detail string (which the code only emits when `etag === previous.etag &&
 rows === previous.rowCount`) rather than read out of `audiobook_snapshot`.
+
+---
+
+## KI-20 · ISBN/ASIN are editable on an edition, against *"except core details like ISBN"* — `ACCEPTED`
+
+**Symptom.** The owner's ask for the edit surface was verbatim *"a way to edit
+basically any detail about a book **except core details like ISBN**"*, and
+[`info/edit-and-audit-design.md`](info/edit-and-audit-design.md) §2 put
+`edition.isbn13` / `isbn10` / `asin` in a **Frozen** tier — *"refused
+everywhere"*, a 400 rather than a silent strip. What shipped does the opposite:
+`updateEditionSchema` (`packages/core/src/schemas.ts:405`) is
+`createEditionSchema.omit({workId}).partial().strict()`, so all three keys are
+patchable, and `Editions.tsx:728` renders `isbn13` as an ordinary text input on
+the printing form. The schema's own comment says it is deliberate — *"every key
+it sends (including the deliberate unconditional `isbn13`/`isbn10`/`asin`) is
+modeled here"*.
+
+**Why tolerated.** ⚠️ **It is edited-and-audited, not edited-and-silent**, which
+is the distinction that matters: `updateEdition` diffs every changed column into
+`change_log` in the same `db.batch()` as the write, so a wrong ISBN is one query
+away from being found and reverted. Measured 2026-09-07 on production
+`library-catalog`: **59** `change_log` rows carry `field = 'isbn13'`, and the
+ISBN-repair work of 2026-08/09 (the foreign-ISBN post-mortem, the
+crowdfunded-printing tiers) ran **through this route** — see
+[`info/isbn-ladder.md`](info/isbn-ladder.md) §7 and [`DONE.md`](DONE.md). The
+design's Frozen tier prescribed **delete-and-recreate** for a wrong ISBN
+instead, which on this schema takes the printing's copies with it — a worse
+outcome than a logged edit. Three guards the design leaned on are all still in
+force: `UNIQUE idx_edition_isbn13` catalog-wide, the ISBN-13 check digit, and
+`declaresNoIsbn` / `isCrowdfundedPrinting` on the automated writers.
+
+**What would change it — as a number.** ⚠️ This is an **owner call, not a
+coder's**, because it is his own sentence being departed from. Revisit if any
+`change_log` row with `field = 'isbn13'` and `changed_how = 'human'` is ever
+found to have replaced a *correct* ISBN with a wrong one — **0 such rows are
+known today**, and every ISBN defect on record was written by the automated
+backfill, not by a person on this form. The concrete option, if it ever matters,
+is a **confirmation step** naming the physical object, not a refusal: the
+design's own delete-and-recreate remedy is more destructive than the thing it
+would guard against.
+
+⚠️ **Not verified:** the 59 figure is a single `change_log` read on main only —
+padhard was not broken down by field — and no attempt was made to check whether
+any of those 59 rows is wrong. The claim here is that the route is *audited*,
+not that every edit through it was right.
 
 ---
 
