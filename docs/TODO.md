@@ -826,14 +826,63 @@ Also ☐ he may rename editions **#450** (*Dungeon Born*) and **#470**
 (*Unmapped*) from *"Standard edition"* — both still carry that name, measured
 2026-09-05.
 
-## ☐ Audio-verdict residue — 3 of 3 steps left: measure the `rejected` filter, owner presses "Yes this is it", find padhard's 27 fold rows (from part B, shipped 15:32 — the section is in [`DONE.md`](DONE.md))
+## ☐ Audio-verdict residue — 2 of 3 steps left: ~~measure the `rejected` filter~~ (MEASURED 2026-09-06, numbers below), owner presses "Yes this is it", find padhard's 27 fold rows (from part B, shipped 15:32 — the section is in [`DONE.md`](DONE.md))
 
-- ☐ **OPEN** — `routes/reviews.ts` `/bookid-index` and `packages/db/src/tbr.ts`'s
-  audio bridge do NOT filter `rejected` recordings. They are identity bridges
-  into another catalog's documents; filtering them would silently move existing
-  reviews / TBR entries and nobody has measured what that touches. Measure
-  first (how many review/TBR rows key on a containment-matched recording on
-  each instance), then decide.
+- ☐ **OPEN — but now MEASURED, 2026-09-06 (W13-LIB). The decision is the
+  owner's; the numbers below are what it rests on.**
+  `routes/reviews.ts:345` `/bookid-index` and `packages/db/src/tbr.ts`'s
+  `BRIDGE_SELECT` (`:244`) do NOT filter `rejected` recordings. They are identity
+  bridges into another catalog's documents; filtering them would silently move
+  existing reviews / TBR entries and nobody had measured what that touches.
+
+  **What the filter would move TODAY: nothing, on either instance.**
+  `audiobook_match_review` holds **0 rows on `library-catalog` and 0 on
+  `library-catalog-2nd`** — no verdict has ever been recorded anywhere, which is
+  the same fact as the owner's un-pressed *"Yes, this is it"* below. A
+  `rejected` filter is therefore a **no-op the day it ships** and cannot move a
+  single review or TBR entry until somebody presses *"Not this one"*.
+
+  **What it would GOVERN, which is the number that matters:**
+
+  | | `library-catalog` (main) | `library-catalog-2nd` (padhard) |
+  |---|---|---|
+  | `audiobook_edition_holding` rows `matched_via = 'containment'` | **9** (8 live, 1 stale) | **0** |
+  | …of those, works carrying a review-derived read state | **8 of 8 live** | **0** |
+  | `audiobook_match_review` rows (any verdict) | **0** | **0** |
+
+  The 8 are works **249** (*Space Knight Book 1*) and **334 / 347 / 445 / 446 /
+  447 / 448 / 449** (the seven *Harry Potter … (Full-Cast Edition)* recordings).
+  Every one carries `user_book.read_state = 'read'`, `read_state_how =
+  'rating'` and a cached rating (3.5–5), all stamped `2026-09-05 23:30:37` —
+  i.e. **written by the observed-ratings sweep off a review document**, not by
+  hand. The 9th containment row (work **72**, *Tamer Book 11* → *"Tamer: King of
+  Dinosaurs"*, the genuine miss) is `stale_at` set and carries no `user_book`
+  row at all.
+
+  ⚠️ **Those 8 ratings can ONLY have arrived through the containment bridge, and
+  that is measured rather than assumed.** `workKeyForAudiobookRow` over the
+  audiobook row's own title gives
+  `harry potter and the goblet of fire full cast edition|j k rowling`, and work
+  334's `work_key` is `harry potter and the goblet of fire|j k rowling` — they
+  are **different strings**, so no review document could have reached the work
+  by key. `/bookid-index` (the containment row's slug) is the only path.
+
+  **Recommendation — ship the filter, do not fear it, and it is still the
+  owner's word:** it changes 0 rows on both instances today, so the "silently
+  moves existing reviews" risk it was held back for is currently empty. What it
+  buys is that the FIRST *"Not this one"* on any of those 8 recordings retracts
+  the rating and read state that recording put there, instead of leaving a
+  rejected match still speaking for a book. ⚠️ **The cost is the same 8 rows
+  seen from the other side:** a mis-press on a Harry Potter rung would silently
+  drop a real 4.5-star read state off the shelf, so if the filter ships it
+  should ship beside a line on the edit box saying what a rejection removes.
+
+  ⚠️ **NOT VERIFIED, and it cannot be from here:** the review and TBR
+  *documents* live in **Firestore**, not D1 — there is no reviews or TBR table
+  in `migrations/` — so the counts above are the D1-side exposure (holdings,
+  read states, cached ratings), not a count of Firestore documents. The TBR
+  bridge's own half is 8 live containment slugs on main / 0 on padhard; how many
+  TBR documents key on them was not read.
 - ☐ **Owner:** press *"Yes, this is it"* once on <https://library.heygabi.ai/work/347>
   (✎ Edit this book → Audio) — the route has never written a verdict against a
   real D1; the first press is the end-to-end proof.
