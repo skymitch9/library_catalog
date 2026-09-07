@@ -18,6 +18,67 @@
 > were extracted from this same history.
 
 
+## ✅ 2026-09-06 — the LibraryThing rung's PROVENANCE is honest; the two gates it cannot have are now `KI-18`
+
+> **Moved WHOLE from [`TODO.md`](TODO.md) by agent W13-LIB, 2026-09-06.** The
+> section below is the 2026-08 audit finding exactly as it stood. It is closed by
+> the **second branch of its own Fix line** — *"…or stop labeling its output
+> `source: 'openlibrary'`"* — which shipped in commit **`092fd7a`**
+> (*"backfill: honest LibraryThing rung, parsed against the real thingTitle
+> shape"*, 2026-08-24 09:17) together with migration
+> **`0420_edition_source_librarything.sql`** (`6a4f246`).
+>
+> **What is verified, 2026-09-06, against both production databases:**
+>
+> | Check | `library-catalog` | `library-catalog-2nd` |
+> |---|---|---|
+> | `wrangler d1 migrations list` | ✅ *No migrations to apply* (0420 applied) | ✅ *No migrations to apply* (0420 applied) |
+> | `edition.source = 'librarything'` | **0 rows** | **0 rows** |
+> | `edition.source` values in use | `openlibrary` 312 · `manual` 110 · `research` 14 · `googlebooks` 9 | `openlibrary` 567 · `manual` 99 |
+>
+> 🔴 **The data correction the finding implied is a NO-OP, and that is measured,
+> not assumed.** The mislabelling window was **2026-08-21 → 2026-08-24** — commit
+> `5d12618` carried `source: 'openlibrary', // CHECK constraint only allows known
+> sources; LT aggregates same data` and `092fd7a` replaced it three days later.
+> The script's signature when it commits is a `manual → <rung>` flip on a row that
+> already existed (`info/isbn-ladder.md` §7.3), and
+> `SELECT COUNT(*) FROM edition WHERE source='openlibrary' AND isbn13 IS NOT NULL
+> AND updated_at >= '2026-08-21' AND updated_at < '2026-08-25' AND created_at <
+> '2026-08-21'` returns **0 on main and 0 on padhard**. The only
+> `isbn-backfill%` batch in `change_log` anywhere is **`isbn-backfill-20260813`**
+> (7 rows, main, 2026-08-13 15:42:44) — which **predates the rung's existence**.
+> ⚠️ **Stated as a limit, not hidden:** per-write `change_log` logging only landed
+> with the 2026-09-05 build, so a `--commit` run inside the window would have left
+> no batch row; the restamp query above is what closes that gap, and the ladder
+> doc's 2026-09-05 `--remote` dry run is the other end (its one LibraryThing
+> proposal, `9784047336582` for *Sanctuary*, was **refused by the language gate**).
+>
+> **The Safety-section half of the claim is also fixed and was not separately
+> tracked:** `scripts/backfill-missing-isbns.mjs:46-56` no longer says a ≥0.80
+> gate protects every write — it says the gate holds *"on rungs 1 and 2 only"* and
+> names rung 2.5 as the exception, in the rung's own words.
+>
+> ⚠️ **What did NOT change, on purpose:** the `author` argument is still accepted
+> and unused, and `similarity` is still hardcoded `1.0`. **The ladder's other
+> rungs define no pattern to copy here** — rungs 1 and 2 score a candidate title
+> returned by the API, and `thingTitle` returns bare ISBNs with the title
+> *"omitted per vendor terms"* and no author at all, so there is nothing to score
+> against. Those two are now **`KI-18`** in
+> [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md), with the number that would change them.
+
+## 🚩 [HIGH] The LibraryThing rung applies NO author gate and NO title-similarity gate — the `author` argument is…
+
+**Where:** `scripts/backfill-missing-isbns.mjs:246` (library_catalog / scripts-backfills-a)
+
+**Status:** 🚩 FLAGGED — left for the owner (not a clear code fix). See report.
+
+**Claim:** The LibraryThing rung applies NO author gate and NO title-similarity gate — the `author` argument is accepted and never used, and `similarity` is hardcoded to 1.0 — yet the file's own Safety section claims a ≥0.80 title gate protects every write. It then files the result under `source: 'openlibrary'`, a provenance that is not true.
+
+**Fix:** Actually use the author argument as a gate and compute a real title-similarity score in the LibraryThing rung instead of hardcoding similarity to 1.0, or stop labeling its output source: 'openlibrary'.
+
+**Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
+
+
 ## ✅ 2026-09-06 — Closed by the conductor under the silence rule — reversible
 
 > **Who and why.** Three questions the owner was asked and never answered, closed

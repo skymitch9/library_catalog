@@ -1,7 +1,15 @@
 # library_catalog — Known Issues, Waivers & Exceptions
 
 > **Audience:** Claude/Kiro sessions and the owner. **Status:** TRACKED.
-> Last verified: **2026-09-06 ~14:25 UTC (W10-LIB-FLIP)** — **KI-17 was SETTLED
+> Last verified: **2026-09-07 ~03:2x UTC (W13-LIB)** — **KI-18 was ADDED** and
+> measured against BOTH production databases: `edition.source = 'librarything'`
+> matches **0 rows on `library-catalog` and 0 on `library-catalog-2nd`**, both
+> report *"No migrations to apply"* (so migration 0420 is applied on both), and
+> the 2026-08-21→24 mislabel window restamped **0 rows on either instance**. The
+> parent audit finding moved WHOLE to [`DONE.md`](DONE.md) the same day.
+> ⚠️ **Nothing else was re-checked in that pass** — KI-5 through KI-17 all still
+> carry the ages stated below.
+> Previously **2026-09-06 ~14:25 UTC (W10-LIB-FLIP)** — **KI-17 was SETTLED
 > by the owner** (*"No ISBN"*) and re-measured against BOTH production databases
 > before anything was written: editions **670–673** unchanged on
 > `library-catalog` (`Collector's Edition`, `note` NULL, every identifier NULL,
@@ -603,6 +611,62 @@ half**; both were found by looking.
 Review: <https://library.heygabi.ai/work/516> ·
 <https://library.heygabi.ai/work/517> · <https://library.heygabi.ai/work/518> ·
 <https://library.heygabi.ai/work/519>
+
+---
+
+## KI-18 · The LibraryThing rung has no title gate and no author gate, and it cannot have one — `ACCEPTED`
+
+**Symptom.** Rung 2.5 of the ISBN ladder
+(`scripts/backfill-missing-isbns.mjs`, `searchLibraryThingForIsbn`) takes an
+`author` argument it **never reads**, and returns `similarity: 1.0` — a
+constant, not a computed score. Rungs 1 and 2 both score the candidate title
+with `titleSimilarity(...) >= 0.80` and refuse a mismatched volume with
+`numberedTitleAgrees`; this rung does neither.
+
+**Why it cannot be fixed the way the other rungs are.** LibraryThing's
+`thingTitle` response carries **no per-item title, author or language** — the
+title element reads *"omitted per vendor terms"* — so there is nothing on the
+candidate side to compare a query against. Measured live 2026-08-24 and written
+into the parser (`scripts/lib/librarything.mjs`). Copying rung 1's or rung 2's
+pattern is therefore not available: their gate scores a string the API returns
+and this API returns none.
+
+**Why tolerated.** ⚠️ **The rung is not ungoverned, it is un-*title*-gated**, and
+the guards it does have are the ones that caught the only thing it has ever
+proposed:
+
+| Guard | Applies to rung 2.5 |
+|---|---|
+| ISBN-13 check digit | ✅ |
+| Open Library per-edition **language** gate (`/isbn/<isbn>.json`) | ✅ — added expressly because this is the rung with no gate of its own |
+| `declaresNoIsbn` / `isCrowdfundedPrinting` write guards | ✅ |
+| UNIQUE `edition.isbn13` | ✅ |
+| title similarity ≥ 0.80 · `numberedTitleAgrees` | ❌ — no candidate title exists |
+
+It is also the **last** free rung, tried only when rungs 1 and 2 have both
+missed, and its writes are stamped `source = 'librarything'` (migration 0420) so
+a wrong match is one query away from being found and reverted. In the
+2026-09-05 production dry run its single proposal —`9784047336582` (**978-4 =
+Japan**) for *Sanctuary: The Art Book of Yuumei* — was **refused by the language
+gate**, which is the designed outcome working.
+
+**What would change it — as a number.** ⚠️ **This rung has written ZERO rows.**
+Measured 2026-09-06: `edition.source = 'librarything'` matches **0 rows on
+`library-catalog` and 0 on `library-catalog-2nd`**. Revisit when that count is
+non-zero and any one of those rows is wrong — at zero writes there is nothing to
+weigh. The concrete option, if it ever matters, is **not** the audit's suggested
+"use the author argument": it is to gate on the same `/isbn/<isbn>.json` record
+the language probe already fetches, which carries `title` and `authors` — a new
+design, not a pattern copied from an existing rung, and one extra call per
+candidate. 🔴 **The alternative the script's own header names is the owner's,
+not a coder's:** *"Whether to keep an ungated rung at all is an owner call"*
+(`scripts/backfill-missing-isbns.mjs:54`). Deleting rung 2.5 costs nothing
+measurable today.
+
+**Provenance history.** The rung filed under `source: 'openlibrary'` between
+`5d12618` (2026-08-21) and `092fd7a` (2026-08-24). ⚠️ **No row anywhere carries
+that mislabel** — the restamp query and the `change_log` batch list are in
+[`DONE.md`](DONE.md) under this entry's parent, 2026-09-06.
 
 ---
 

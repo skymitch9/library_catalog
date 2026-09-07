@@ -1,7 +1,12 @@
 # 2026-08 audit — confirmed findings (library_catalog)
 
 > **Audience:** Claude/Kiro sessions and the owner. **Status:** TRACKED.
-> **Last verified: 2026-08-24.** Reconstructed from the review-agent /
+> **Last verified: 2026-09-06 (W13-LIB) — ONE ROW ONLY.** The **HIGH
+> LibraryThing rung** finding was re-checked against the repo and both
+> production databases and is now **CLOSED**; its two entries below (the
+> Fix-status bullet and the table row) were rewritten. ⚠️ **Nothing else in this
+> file was re-measured**; everything else carries its 2026-08-24 reading.
+> Previously **Last verified: 2026-08-24.** Reconstructed from the review-agent /
 > verify-agent journal for workflow `wf_69d2365f-d02` (14 units, 97 candidate
 > findings, dual-verified). The workflow's own synthesis step never completed
 > — it was **blocked by a safety classifier** because one finding's evidence
@@ -32,14 +37,24 @@ clean). Rows are marked `✅ FIXED` in the table below.
   token, 404 with a wrong one. The old leaked value is dead; it survives only
   in git history (purge with BFG/`git filter-repo` remains optional — nothing
   it unlocks exists any more). See the section below for the record.
-- **HIGH — LibraryThing rung** (`scripts/backfill-missing-isbns.mjs:246`) — the
-  correct fix depends on the live LibraryThing `thingTitle` XML shape (whether
-  it returns a per-item title/author to gate on — the code parses only
+- ✅ **HIGH — LibraryThing rung — CLOSED 2026-08-24, verified 2026-09-06.**
+  ~~the correct fix depends on the live LibraryThing `thingTitle` XML shape
+  (whether it returns a per-item title/author to gate on — the code parses only
   `<isbn>`), which cannot be verified here without the API key and a live call;
   and an honest source relabel is blocked by the `edition.source` CHECK
   constraint (no `librarything` value). A wrong parser or a mislabel would be
   worse than the current documented state, so this needs an owner call / API
-  verification rather than a blind fix.
+  verification rather than a blind fix.~~ **Both blockers were removed.** The
+  shape WAS verified live (2026-08-24: a bare `<isbn>` list, title *"omitted per
+  vendor terms"*, no author — so there is genuinely nothing to gate on), and the
+  CHECK was unblocked by migration **`0420_edition_source_librarything.sql`**.
+  Commit `092fd7a` stamps the rung's writes `source: 'librarything'` and rewrites
+  the file's Safety section to name rung 2.5 as the explicit exception rather
+  than claiming a ≥0.80 title gate covers every write. **Measured 2026-09-06: 0
+  rows carry the old mislabel on either instance**, so no data correction was
+  needed. The residue — no author gate, `similarity` hardcoded `1.0` — is
+  **`KI-18`** in [`../KNOWN_ISSUES.md`](../KNOWN_ISSUES.md), and the finding's
+  own `TODO.md` section moved WHOLE to [`../DONE.md`](../DONE.md).
 
 **Note on the friend-threading HIGH** (`backfill-work-covers.mjs:35`): the exact
 `{ commit, remote, limit }` destructure pattern was fixed in the three scripts
@@ -155,7 +170,7 @@ it). It is listed once in the table below, with all 3 units named.
 | CRITICAL | 3 units: worker-scanjobs-isbn-enrich, infra-deploy-migrations-ci, worker-research-donor-peer | `apps/worker/wrangler.toml:203` | secrets | The live cross-instance peer shared secret is committed in plaintext, twice, in a tracked file on a PUBLIC GitHub repo — and it authenticates a route that wipes and rewrites `peer_holding` on both instances. | Rotate PEER_TOKEN via `wrangler secret put`, remove the plaintext value from both PEERS entries in wrangler.toml, and read it from a Worker secret at runtime instead of a tracked [vars] literal. — 🟡 **FIXED-IN-CODE** on `feature/peer-token-secret` (plaintext removed from both PEERS entries; outbound token now reads the `PEER_TOKEN` secret). Owner still must rotate the secret to a fresh value on both workers + deploy both to close the leak. |
 | HIGH | library_catalog / scripts-backfills-a | `scripts/backfill-missing-isbns.mjs:431` | secrets | The paid `--llm` rung reads `ANTHROPIC_API_KEY` with no instance awareness, so a `--friend` sweep bills the OWNER's Anthropic account for padhard's books — the exact custody defect fixed in the sibling cover script on 2026-08-23 and left live here. | Read the instance-specific Anthropic key (ANTHROPIC_API_KEY_FRIEND_SAM-style) when flags.friend is set, matching the fix already applied to the sibling cover script. — ✅ **FIXED** on `feature/audit-fixes-library` |
 | HIGH | library_catalog / scripts-backfills-a | `scripts/backfill-missing-isbns.mjs:517` | correctness | The ISBN write also overwrites `edition.source`, so a hand-created (`manual`) edition that gains an ISBN from a free rung is silently demoted to `'openlibrary'` — destroying the "'manual' outranks everything and is never overwritten automatically" protection the column exists for. | Only overwrite edition.source when the incoming source outranks the existing one (respect the 'manual' precedence rule), not unconditionally alongside isbn13. — ✅ **FIXED** on `feature/audit-fixes-library` |
-| HIGH | library_catalog / scripts-backfills-a | `scripts/backfill-missing-isbns.mjs:246` | correctness | The LibraryThing rung applies NO author gate and NO title-similarity gate — the `author` argument is accepted and never used, and `similarity` is hardcoded to 1.0 — yet the file's own Safety section claims a ≥0.80 title gate protects every write. It then files the result under `source: 'openlibrary'`, a provenance that is not true. | Actually use the author argument as a gate and compute a real title-similarity score in the LibraryThing rung instead of hardcoding similarity to 1.0, or stop labeling its output source: 'openlibrary'. — 🚩 **FLAGGED** for the owner |
+| HIGH | library_catalog / scripts-backfills-a | `scripts/backfill-missing-isbns.mjs:246` | correctness | The LibraryThing rung applies NO author gate and NO title-similarity gate — the `author` argument is accepted and never used, and `similarity` is hardcoded to 1.0 — yet the file's own Safety section claims a ≥0.80 title gate protects every write. It then files the result under `source: 'openlibrary'`, a provenance that is not true. | Actually use the author argument as a gate and compute a real title-similarity score in the LibraryThing rung instead of hardcoding similarity to 1.0, or stop labeling its output source: 'openlibrary'. — ✅ **CLOSED 2026-08-24 by the SECOND branch** (`092fd7a` + migration 0420); verified 2026-09-06, 0 mislabelled rows on either instance. Residue = `KI-18`. See the Fix-status section above |
 | HIGH | library_catalog / scripts-backfills-a | `scripts/backfill-work-covers.mjs:35` | operational | Six writing backfills destructure only `{ commit, remote, limit }` from `parseFlags()` and drop `friend`, so `--friend --remote --commit` silently reads AND writes the MAIN production catalogue while reporting as if about padhard — defeating the guard `dbName()` was added to provide, and contradicting the docs' claim of "a `--friend` flag on every script". | Add friend to the destructured parseFlags() result in all six backfill scripts and thread it into dbName(). — ✅ **FIXED** on `feature/audit-fixes-library` |
 | HIGH | library_catalog / web-lib-and-app-shell | `apps/web/src/lib/gabi.ts:151` | correctness | `research_book` returns only `{workId}` — none of RESEARCH_RESULT_FIELDS exists on the endpoint's response, so a paid lookup that came back `error` is indistinguishable from one that filled every field. | Have research_book's response actually include the RESEARCH_RESULT_FIELDS the caller expects, or have the caller check for an explicit error field. — ✅ **FIXED** on `feature/audit-fixes-library` |
 | HIGH | library_catalog / worker-auth-core | `apps/worker/src/routes/users.ts:90` | auth | Neither role-write route inspects the TARGET's current role, and the last-owner guard only fires when the actor is editing themselves — so an `admin` can revoke or demote every `owner`, reaching countOwners()==0, after which no role in the app can ever mint an `owner` again. | Check the target's current role before a role-write, and fire the last-owner guard whenever a write would bring countOwners() to 0, not only on self-edit. — ✅ **FIXED** on `feature/audit-fixes-library` |

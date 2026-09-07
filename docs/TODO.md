@@ -3316,14 +3316,13 @@ section.
 
 **Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
 
-## 🚩 [HIGH] The LibraryThing rung applies NO author gate and NO title-similarity gate — the `author` argument is…
-
-**Where:** `scripts/backfill-missing-isbns.mjs:246` (library_catalog / scripts-backfills-a)
-
-**Status:** 🚩 FLAGGED — left for the owner (not a clear code fix). See report.
-
-**Claim:** The LibraryThing rung applies NO author gate and NO title-similarity gate — the `author` argument is accepted and never used, and `similarity` is hardcoded to 1.0 — yet the file's own Safety section claims a ≥0.80 title gate protects every write. It then files the result under `source: 'openlibrary'`, a provenance that is not true.
-
-**Fix:** Actually use the author argument as a gate and compute a real title-similarity score in the LibraryThing rung instead of hardcoding similarity to 1.0, or stop labeling its output source: 'openlibrary'.
-
-**Source:** 2026-08 audit, see `docs/info/audit-2026-08-findings.md`
+> ✂️ **2026-09-06 (W13-LIB):** the 🚩 HIGH audit finding *"The LibraryThing rung
+> applies NO author gate and NO title-similarity gate…"* moved **WHOLE** to
+> [`DONE.md`](DONE.md). Its own **Fix** line offered an OR and the second branch
+> was taken: the rung stamps `source: 'librarything'` (migration **0420**,
+> applied to BOTH databases) and the file's Safety section now names rung 2.5 as
+> the explicit exception rather than claiming a ≥0.80 gate protects every write.
+> **The data correction is a no-op — 0 rows to fix on either instance**, measured.
+> The residue (no author gate, `similarity` hardcoded `1.0`) is **`KI-18`** in
+> [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md), because it is tolerated by design, not
+> in flight.
