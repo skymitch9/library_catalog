@@ -1341,6 +1341,26 @@ export function runbookSection(names, platformDir, which) {
  * ⚠️ A REGISTRY ROW IS NOT A GRANT. It publishes a name and an owner; the
  * `vis_<id>` column is still its own migration and its own code change, which
  * is what PAUSE #2 (e) and (g) are for.
+ *
+ * ✅ **`api_host` AND `service` SINCE 2026-09-07** (estate migration 0022,
+ * `catalog-platform/apps/auth-worker/migrations/0022_estate_catalog_api.sql`).
+ * They are what lets `heygabi.ai/status` plan its **Workers** and **Deployed
+ * versions** rows from the directory — so a catalog provisioned by this script
+ * arrives with a health row and a version row instead of needing two more
+ * hand-written literals on the apex.
+ *
+ * 🔴 **`service` IS THE ONE FIELD ONLY THIS SCRIPT KNOWS.** The auth Worker
+ * cannot derive it (it is a line in THIS repo's `wrangler.toml`) and the
+ * deployed Worker cannot report it (measured 2026-09-07: `padhard.heygabi.ai`
+ * answers `service: "library-catalog"`, the CODE's name, while the deploy is
+ * `library-catalog-friend` — a Worker cannot tell you which deploy it is). So
+ * this script writing `names.workerName` is not a convenience; it is the only
+ * moment the estate can learn it without somebody typing it by hand.
+ *
+ * ⚠️ `api_host` EQUALS `host` HERE BY CONSTRUCTION and that is not a guess: the
+ * runbook this script drives creates a Worker and routes that very hostname at
+ * it. The registry's two NULLs are the shared digital pools, which predate the
+ * request queue and were never provisioned by anything.
  */
 export function registryInsertSql(names, row = {}, { now = new Date() } = {}) {
   // ⚠️ NULL is a real answer and not a bug: `requester_display_name` is a
@@ -1351,7 +1371,7 @@ export function registryInsertSql(names, row = {}, { now = new Date() } = {}) {
   const label = String(row.display_name ?? names.displayName ?? names.estateApp).trim();
   return (
     'INSERT INTO estate_catalog (id, push_source, kind, label, owner_name, holding, shared, host, ' +
-    'sort_order, request_id, created_at) VALUES (' +
+    'api_host, service, sort_order, request_id, created_at) VALUES (' +
     [
       sqlLit(names.estateApp),
       sqlLit(names.estateApp),
@@ -1361,6 +1381,10 @@ export function registryInsertSql(names, row = {}, { now = new Date() } = {}) {
       sqlLit('physical'),
       '0',
       sqlLit(names.host),
+      // api_host — the same hostname, because this run is what routes it.
+      sqlLit(names.host),
+      // service — the DEPLOYED Worker name, from this repo's own wrangler.toml.
+      sqlLit(names.workerName),
       '100',
       String(names.requestId),
       sqlLit(now.toISOString()),
@@ -2035,13 +2059,23 @@ async function main() {
     try {
       estateSql(registrySql, ctx);
       const named = estateSql(
-        `SELECT id, label, owner_name, host FROM estate_catalog WHERE id = ${sqlLit(names.estateApp)}`,
+        'SELECT id, label, owner_name, host, api_host, service FROM estate_catalog WHERE id = ' +
+          `${sqlLit(names.estateApp)}`,
         ctx,
       )[0];
       if (named) {
         console.log(
           `  registry row     id=${named.id} label=${JSON.stringify(named.label)} ` +
             `owner=${named.owner_name === null ? 'NULL (unattributed — honest, see the runbook)' : JSON.stringify(named.owner_name)}`,
+        );
+        // ⚠️ PRINTED BECAUSE heygabi.ai/status READS THEM. These two decide
+        // whether the new catalog gets a Workers row and a Deployed-versions
+        // row at all — a NULL api_host means no rows, silently. Reading them
+        // back rather than echoing what we sent is the point: this is the
+        // directory's answer, not ours.
+        console.log(
+          `  registry API     api_host=${named.api_host === null ? 'NULL (no estate API of its own — NO /status Workers row)' : named.api_host} ` +
+            `service=${named.service === null ? 'NULL (⚠️ the Deployed-versions row will say "name not recorded")' : named.service}`,
         );
       } else {
         console.log('  ⚠️ registry row  the INSERT reported no error and the row is not there — read the output above.');

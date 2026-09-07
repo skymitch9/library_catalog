@@ -706,19 +706,48 @@ describe('runbookSection', () => {
  * one changes the other must, which is what these assertions are for.
  * ------------------------------------------------------------------------ */
 
-describe('registryInsertSql — the catalog registry row (0020)', () => {
+describe('registryInsertSql — the catalog registry row (0020 + 0022)', () => {
   const names = deriveNames(ROW, { envNames: EXISTING_ENVS, estateApps: EXISTING_APPS });
   const sql = registryInsertSql(names, ROW, { now: new Date('2026-09-06T12:00:00.000Z') });
 
   it('writes the id, the push source, the label and the host', () => {
     assert.match(
       sql,
-      /INSERT INTO estate_catalog \(id, push_source, kind, label, owner_name, holding, shared, host, sort_order, request_id, created_at\)/,
+      /INSERT INTO estate_catalog \(id, push_source, kind, label, owner_name, holding, shared, host, api_host, service, sort_order, request_id, created_at\)/,
     );
     assert.match(sql, /'library3', 'library3', 'books'/);
     assert.match(sql, /'Amber''s Library'/);
     assert.match(sql, /'amber\.heygabi\.ai'/);
     assert.match(sql, /, 4, /); // the request id, so the row traces back
+  });
+
+  it('🔴 writes api_host AND the DEPLOYED Worker name — what heygabi.ai/status plans its rows from', () => {
+    // Estate migration 0022 (2026-09-07). Without these two a provisioned
+    // catalog gets a SITE row on /status and NO Workers row and NO
+    // Deployed-versions row at all — silently, because a NULL api_host means
+    // "this catalog runs no estate API of its own".
+    assert.ok(sql.includes(`'${names.host}', '${names.host}', '${names.workerName}'`), sql);
+  });
+
+  it('🔴 `service` is the DEPLOY — not the code’s name, not the id, and nothing else can supply it', () => {
+    // Measured 2026-09-07: padhard.heygabi.ai reports service "library-catalog"
+    // — the CODE's name, shared with the main instance — while the deploy is
+    // library-catalog-friend. A Worker cannot tell you which deploy it is, and
+    // the auth Worker cannot read this repo's wrangler.toml, so this script is
+    // the only place the estate can learn it without somebody typing it.
+    assert.ok(sql.includes(`'${names.workerName}'`), 'the deployed Worker name must be written');
+    assert.notEqual(names.workerName, names.estateApp);
+    assert.notEqual(names.workerName, 'library-catalog');
+  });
+
+  it('⚠️ api_host equals host BY CONSTRUCTION — this run is what routes the hostname', () => {
+    const other = deriveNames(
+      { ...ROW, desired_subdomain: 'quarry' },
+      { envNames: EXISTING_ENVS, estateApps: EXISTING_APPS },
+    );
+    // Both slots move together, so a different subdomain can never leave the
+    // API column pointing at some previous host.
+    assert.ok(registryInsertSql(other, ROW).includes(`'${other.host}', '${other.host}',`));
   });
 
   it("the OWNER is the requester, and the holding model is the owner's settled one", () => {
