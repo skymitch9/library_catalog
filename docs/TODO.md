@@ -2927,6 +2927,10 @@ design's answer (§8) is that it applies this DDL **when it gains a real editor*
 not before. So the item that actually needs an owner is *"does that catalog get
 a real editor?"*, and until it does there is nothing to build there.
 
+⏸️ **PARKED by the owner 2026-09-07** ("Park", item 118 of the open-items
+survey). Nothing is scheduled on either side; re-raised only at a
+deferred-items review or when the audiobook catalog gains a real editor.
+
 ---
 
 ---
