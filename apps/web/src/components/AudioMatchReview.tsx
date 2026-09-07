@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { api, type AudioMatchVerdict, type WorkAudioEdition, type WorkAudiobookHolding } from '../api.js';
 import { describeError } from '../lib/errors.js';
 import { audiobookDetailUrl, resolveAudiobookCover } from '../lib/audiobook-site.js';
-import { matchProvenance } from '../lib/shelf-view.js';
+import { REJECTION_COST, matchProvenance } from '../lib/shelf-view.js';
 import { Link, seriesPath } from '../router.js';
 
 /**
@@ -29,7 +29,15 @@ import { Link, seriesPath } from '../router.js';
  * | | effect |
  * |---|---|
  * | **Yes, this is it** | words only — the provenance sentence becomes "Confirmed by you as the right recording." Nothing is counted or uncounted. |
- * | **Not this one** | the recording leaves the shelf's Audio section, the series ladder's chip, the recording count, the audiobook filter and the machine export — the row itself is kept, and stays listed here so this is reversible. |
+ * | **Not this one** | the recording leaves the shelf's Audio section, the series ladder's chip, the recording count, the audiobook filter, the machine export, and — since 2026-09-07 — the review and to-be-read bridges. The row itself is kept, and stays listed here so this is reversible. |
+ *
+ * ## ⚠️ `REJECTION_COST` — the line that had to ship WITH the bridge filter
+ *
+ * Shipped 2026-09-07 beside the filter that reached `reviews.ts`'s
+ * `/bookid-index` and `@lc/db`'s TBR `BRIDGE_SELECT` the same day. The whole
+ * argument — what was measured, why the sentence promises no retraction, and
+ * why the string lives in `lib/shelf-view.ts` rather than here — is on
+ * `REJECTION_COST` itself. **One fact, one home; do not restate it here.**
  *
  * ## ⚠️ The two grains, and why this tab does NOT confirm a series
  *
@@ -121,7 +129,7 @@ export function AudioMatchReview({
       setMsg(
         verdict === 'confirmed'
           ? `Confirmed “${row.title}” as the right recording. It stops being described as a partial match.`
-          : `“${row.title}” is no longer shown as this book’s audiobook. Nothing was deleted — say “Yes, this is it” here to put it back.`,
+          : `“${row.title}” is no longer shown as this book’s audiobook, and no longer links a review or to-be-read entry to it. Anything already recorded on this book stays. Nothing was deleted — say “Yes, this is it” here to put it back.`,
       );
       onChanged();
     } catch (err) {
@@ -155,6 +163,17 @@ export function AudioMatchReview({
           own it on audio, that catalog may file it under a different title, and a series-wide match
           can be confirmed on the series page instead.
         </p>
+      )}
+
+      {/*
+        ⚠️ BEFORE the buttons, not after them. This is the one sentence that
+        makes the press an informed one — see `REJECTION_COST` and this file's
+        header. Shown only where the buttons are: a reader who cannot press
+        them already has the worded refusal above, and a book whose only
+        recording came from the series link has nothing here to reject.
+      */}
+      {canEdit && rows.some((r) => r.matchedVia !== 'series_link') && (
+        <p className="muted small">{REJECTION_COST}</p>
       )}
 
       {rows.map((row) => {
@@ -194,8 +213,9 @@ export function AudioMatchReview({
 
               {verdict === 'rejected' && (
                 <p className="muted small">
-                  <b>Marked as not this book.</b> It is hidden from the shelf, the series ladder and
-                  the audiobook filter. The record was kept.
+                  <b>Marked as not this book.</b> It is hidden from the shelf, the series ladder,
+                  the audiobook filter, and from the review and to-be-read bridges. The record was
+                  kept, and anything already recorded on this book was left alone.
                 </p>
               )}
 

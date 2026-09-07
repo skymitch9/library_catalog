@@ -1,7 +1,18 @@
 # Series pages — formats, alternate printings, audiobooks — Information Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
-> Last verified: **2026-09-05** for the **NEW §4.13** only — every number in it
+> Last verified: **2026-09-07** for the **NEW §4.9.4 and the §4.9.2 reader
+> table** only (W15-LIB-REJ). What WAS measured that day: the shipped SQL, run
+> against real SQLite in `apps/worker/src/routes/bookid-index-rejected.test.ts`
+> and `packages/db/test/tbr-media-fold.test.ts` (17 new cases; suite
+> **2986 → 3003 pass, 0 fail**; `typecheck` and `build` clean).
+> ⚠️ **The row counts §4.9.4 quotes were NOT re-measured today** — they are
+> W13-LIB's 2026-09-06 reading of both production D1s, carried forward and
+> labelled with that date.
+> ⚠️ **NOT verified: any rendered page.** Nobody has opened the Audio tab, and
+> no verdict has ever been written against a real D1, so the filter has never
+> been observed filtering anything. ⚠️ Nothing else here was re-checked.
+> Last verified before that: **2026-09-05** for the **NEW §4.13** only — every number in it
 > was measured that day: the parity table by running
 > `npm run backfill:series-volumes -- --remote` (and `--friend`) dry on BOTH
 > production instances before and after the conversion, and the planner over the
@@ -532,7 +543,10 @@ carries, and that refusal is a worded 404.
 | `routes/audiobook-mapping.ts` (machine export) | **yes** | its own header: *"better to answer nothing than to propagate a fact this catalog has already flagged as doubtful"* — applies harder to a match a person judged wrong than to a stale one |
 | `getAudiobookHolding` / `listAudioEditions` | **no** | they CARRY the verdict. The edit box is where it is taken back, so it must see the row |
 | `workDeletionReport`'s cache count | **no** | that dialog is about what CASCADE removes, and a rejected row is still removed |
-| `reviews.ts` `/bookid-index`, `packages/db/src/tbr.ts` bridge | **no — open** | identity bridges into another catalog's documents. Arguably they should be filtered too; not changed here because it would silently move existing reviews/TBR entries and nobody has measured what it touches. ⚠️ Left as a known follow-up rather than done half-checked |
+| `reviews.ts` `/bookid-index` | **yes — 2026-09-07** | see §4.9.4 |
+| `packages/db/src/tbr.ts` `BRIDGE_SELECT` (all three audio rungs) | **yes — 2026-09-07** | see §4.9.4 |
+| `packages/db/src/tbr.ts` `formatsForWorks`'s audio query (the TBR page's audio CHIP) | **yes — 2026-09-07** | ⚠️ **this reader was not on the original survey at all.** It is an ownership claim, the same class as `audioEditionCountSql`; leaving it would have made one page contradict itself the moment anybody pressed the button — the entry stops bridging while the chip still offers the rejected recording's link |
+| `ebook_holding`, the TBR bridge's 4th rung | **n/a** | 0450 is about RECORDINGS. There is no ebook verdict table and this table cannot key one |
 
 A `confirmed` verdict changes **words only**: the provenance sentence becomes
 *"Confirmed by you as the right recording."* and the tooltip drops its hedge. It
@@ -558,6 +572,81 @@ that file's own header warns that a rung the arithmetic has stopped calling
 missing beside a caption that still hedges is one screen contradicting itself —
 the inverse holds just as hard. Unhedging the words there is a change to the
 COUNT, not to the wording, and it was not asked for.
+
+#### 4.9.4 The last two readers were filtered — 2026-09-07, and the edit box grew a line the same day
+
+**Owner, 2026-09-07 02:10 Phoenix: *"take your recs"*** — the recommendation
+being *"ship the `rejected` audio-verdict filter, plus the edit-box line"*.
+
+The two `no — open` rows above were open for four days for one stated reason:
+filtering them *"would silently move existing reviews / TBR entries and nobody
+has measured what that touches"*. **That was measured on 2026-09-06 (W13-LIB)
+before anything was written**, and it is the whole basis of the decision:
+
+| | `library-catalog` (main) | `library-catalog-2nd` (padhard) |
+|---|---|---|
+| `audiobook_match_review` rows, any verdict | **0** | **0** |
+| live `audiobook_edition_holding` rows `matched_via = 'containment'` | **9** (8 live, 1 stale) | **0** |
+| …of those, works carrying a review-derived read state | **8 of 8 live** | **0** |
+
+⚠️ **So the filter is a NO-OP on the day it ships, on both instances**, and it
+was shipped anyway: nothing can move until somebody presses *"Not this one"*,
+and the risk it was held back for is currently empty. What it buys is that the
+FIRST rejection retracts the bridge that recording was speaking through,
+instead of leaving a match the owner has judged wrong still reaching into
+another catalog's documents.
+
+**What it GOVERNS** is the number that matters: works **249** (*Space Knight
+Book 1*) and **334 / 347 / 445 / 446 / 447 / 448 / 449** (the seven *Harry
+Potter … (Full-Cast Edition)* recordings). Every one carries `read_state =
+'read'`, `read_state_how = 'rating'` and a cached rating of 3.5–5, all stamped
+`2026-09-05 23:30:37` — written by the observed-ratings sweep off a review
+document. ⚠️ **Those eight can only have arrived through `/bookid-index`, and
+that is measured rather than assumed:** `workKeyForAudiobookRow` over the
+recording's own title gives `harry potter and the goblet of fire full cast
+edition|j k rowling`, while work 334's `work_key` is `harry potter and the
+goblet of fire|j k rowling`. **Different strings** — no review document could
+reach the work by key, so the index is the only path.
+
+##### ⚠️ The cost, and the line that had to ship beside the filter
+
+The same eight rows, seen from the other side, are what a mis-press costs: a
+stray rejection on a Harry Potter rung stops a genuine 4.5-star read state
+being re-derived. So the edit box's Audio tab now prints **`REJECTION_COST`**
+(`apps/web/src/lib/shelf-view.ts`, beside `matchProvenance`) **above the two
+buttons**, naming the review and to-be-read bridges among what a rejection
+hides.
+
+🔴 **It promises no retraction, because the filter performs none.**
+`applyObservedRatings` only ever writes — it never clears a read state and
+refuses any row a person stamped — so a rating already on the book **stays on
+the book** after a rejection. The filter stops it being re-derived; it does not
+undo it. Any wording that implied otherwise would describe a feature that does
+not exist, and `apps/web/test/audio-match-review.test.ts` fails on it.
+
+⚠️ **The string lives in `lib/shelf-view.ts`, not in the component**, because
+`AudioMatchReview.tsx` imports `../api.js`, which loads Firebase at module
+scope and cannot be imported by the no-DOM test harness. One string, one home,
+and it is the home a test can reach.
+
+##### ⚠️ Qualify the work-id expression, or the filter silently never fires
+
+`notRejectedSql` interpolates its work-id expression into a correlated subquery
+whose own `FROM` is `audiobook_match_review amr` — **a table that has its own
+`work_id` column**. A bare `work_id` there binds to `amr.work_id`, compares the
+row to itself, and holds for every row. Every branch of `BRIDGE_SELECT`
+therefore carries a table alias (`ah`, `aeh`, `eh`); that aliasing is
+load-bearing, not tidiness, and both new test files pin it with a
+"rejection filed against ANOTHER work" case.
+
+Two key expressions, deliberately: the `audiobook_holding` VIEW exposes no
+`audio_key`, so its recording key is `COALESCE(raw_title, title)` (0390's own
+derivation); the per-edition table carries `audio_key` itself.
+
+⚠️ **NOT verified:** nobody has pressed either button against a real D1 — the
+route has still never written a verdict, which is the owner's own remaining
+step. Everything above is measured SQL and measured row counts, not an
+end-to-end press.
 
 ---
 

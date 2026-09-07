@@ -1800,6 +1800,50 @@ export function matchProvenance(holding: {
 }
 
 /**
+ * **What *"Not this one"* costs**, said before the button is pressed — the edit
+ * box's Audio tab prints this above the two verdict buttons.
+ *
+ * ## Why it exists, and why it shipped on 2026-09-07 and not before
+ *
+ * The `rejected` filter reached the last two readers that had never had it that
+ * day — `reviews.ts`'s `/bookid-index` and `@lc/db`'s TBR `BRIDGE_SELECT`. Both
+ * are identity bridges into ANOTHER catalog's documents, and they were held
+ * back for exactly one stated reason: *"filtering them would silently move
+ * existing reviews / TBR entries and nobody had measured what that touches."*
+ *
+ * Measured 2026-09-06 against both production databases: `audiobook_match_review`
+ * holds **0 rows on `library-catalog` and 0 on `library-catalog-2nd`**, so the
+ * filter moved nothing the day it shipped. But it GOVERNS the 8 live
+ * `containment` recordings on the main instance, and every one of those works
+ * carries a `read_state` and a cached rating that could only have arrived
+ * **through** the review bridge — their `work_key`s do not match the recordings'
+ * titles, so no other path exists.
+ *
+ * 🔴 **That is the cost of a mis-press, and the reason for this sentence.** A
+ * stray rejection on a *Harry Potter … (Full-Cast Edition)* rung stops a real
+ * 4.5-star read state ever being re-derived, and the old wording — *"hidden from
+ * the shelf, the series ladder and the audiobook filter"* — gave the person
+ * pressing it no way to know.
+ *
+ * ⚠️ **It deliberately promises NO retraction.** `applyObservedRatings` only
+ * ever writes: it never clears a read state and refuses any row a person
+ * stamped. So a rating already on the book stays on the book after a rejection.
+ * "This removes the rating" would be the comfortable wording and a false one —
+ * `apps/web/test/audio-match-review.test.ts` fails on it.
+ *
+ * ⚠️ **It lives HERE, beside `matchProvenance`, and not in the component** — the
+ * component imports `../api.js`, which loads Firebase at module scope and cannot
+ * be imported by this no-DOM harness. One string, one home, and it is the home
+ * a test can reach.
+ */
+export const REJECTION_COST =
+  '“Not this one” hides the recording from this book everywhere it is claimed: the shelf, the ' +
+  'series ladder, the audiobook filter, and the bridges that turn a review or a to-be-read entry ' +
+  'on the audiobook site into this book. A rating or read state already recorded here stays — ' +
+  'rejecting stops it being re-derived, it does not undo it. Nothing is deleted, and you can say ' +
+  '“Yes, this is it” later to put the recording back.';
+
+/**
  * *"You own 2 audiobooks of this book."* — or nothing at all.
  *
  * Owner's decision, 2026-08-23: *"have it say 2 on the physical and ebook

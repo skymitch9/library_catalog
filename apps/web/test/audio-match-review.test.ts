@@ -33,9 +33,11 @@
  * house pattern.
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
-import { deriveShelfView, matchProvenance } from '../src/lib/shelf-view.ts';
+import { REJECTION_COST, deriveShelfView, matchProvenance } from '../src/lib/shelf-view.ts';
 
 const NONE = {
   copies: [],
@@ -219,6 +221,79 @@ describe('a REJECTED recording leaves the shelf — migration 0450', () => {
     // One survivor, so it renders from the holding and the ×N is silent at 1.
     assert.equal(rows.length, 1);
     assert.equal(rows[0]!.count, null, 'one recording wears no count badge');
+  });
+});
+
+/**
+ * ⚠️ **The edit-box line — shipped 2026-09-07 WITH the bridge filter, not after
+ * it.** The `rejected` filter reached `reviews.ts`'s `/bookid-index` and
+ * `@lc/db`'s TBR bridge on that date; the recommendation it shipped under said
+ * in the same breath that it *"should ship beside a line on the edit box saying
+ * what a rejection removes"*, because the 8 live containment matches on the
+ * main instance each carry a real read state and cached rating that arrived
+ * **through** those bridges.
+ *
+ * Asserted on the exported string rather than on rendered DOM: this harness has
+ * no jsdom, and the properties that matter are properties of the WORDS.
+ * ⚠️ **The one placement claim is checked by READING THE SOURCE**, the pattern
+ * `copy-special-toggles.test.ts` already uses — the component imports
+ * `../api.js`, which loads Firebase at module scope and cannot be imported
+ * here. ⚠️ **NOT covered: that the paragraph is legible, or that it renders at
+ * all.** Nobody has opened the tab.
+ */
+describe('⚠️ the edit box says what "Not this one" costs — BEFORE it is pressed', () => {
+  it('names the review and to-be-read bridges, which are what the filter closed', () => {
+    assert.ok(REJECTION_COST.includes('review'), REJECTION_COST);
+    assert.ok(REJECTION_COST.includes('to-be-read'), REJECTION_COST);
+  });
+
+  it('still names the three surfaces 0450 already hid it from', () => {
+    for (const surface of ['shelf', 'series ladder', 'audiobook filter']) {
+      assert.ok(REJECTION_COST.includes(surface), `${surface} missing from: ${REJECTION_COST}`);
+    }
+  });
+
+  /*
+   * 🔴 The half that is easiest to lose in a later edit, and the one that would
+   * be a lie. `applyObservedRatings` only ever WRITES — it never clears a read
+   * state and refuses any row a person stamped — so the filter stops a rating
+   * being re-derived and undoes nothing already recorded. A sentence promising
+   * a retraction would describe a feature that does not exist.
+   */
+  it('⚠️ promises no retraction — it says what already exists STAYS', () => {
+    assert.ok(/stays|does not undo/.test(REJECTION_COST), REJECTION_COST);
+    assert.ok(
+      !/remove[sd]? (the|your) (rating|read state)/i.test(REJECTION_COST),
+      'must not claim it takes back a rating it cannot take back',
+    );
+  });
+
+  it('says the record is kept and the press is reversible', () => {
+    assert.ok(REJECTION_COST.includes('Nothing is deleted'), REJECTION_COST);
+    assert.ok(REJECTION_COST.includes('Yes, this is it'), REJECTION_COST);
+  });
+
+  /* A bare status or a bare verb would be exactly the refusal-wording failure
+   * the estate rule names. It is a sentence, in words, to a person. */
+  it('is prose, not a label', () => {
+    assert.ok(REJECTION_COST.length > 200, 'too short to have said what it removes');
+  });
+
+  /*
+   * ⚠️ A warning UNDER the button it warns about is a warning nobody read. The
+   * only way to check placement without a DOM is to read the file, which is
+   * what `copy-special-toggles.test.ts` does for the same reason.
+   */
+  it('⚠️ the tab prints it ABOVE the buttons, not after the press', () => {
+    const src = readFileSync(
+      fileURLToPath(new URL('../src/components/AudioMatchReview.tsx', import.meta.url)),
+      'utf8',
+    );
+    const line = src.indexOf('{REJECTION_COST}');
+    const button = src.indexOf("'Yes, this is it'");
+    assert.ok(line > 0, 'the component no longer renders REJECTION_COST at all');
+    assert.ok(button > 0, 'the confirm button was renamed — re-check this test');
+    assert.ok(line < button, 'the cost of a rejection must be readable before it is pressed');
   });
 });
 

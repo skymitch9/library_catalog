@@ -1,7 +1,14 @@
 # Gotchas — library_catalog   (Information Reference)
 
 > **Audience:** Claude sessions. **Status:** TRACKED.
-> Last verified: **2026-09-05** — the *"a copy imported seconds after its
+> Last verified: **2026-09-07** — the *"I deleted a throwaway worktree and
+> tracked files in `packages/core` are GONE"* entry was **added** that day, from
+> an incident that happened during the session (W15-LIB-REJ): the deletion, the
+> `git status` output and the `git checkout` + `npm ci` recovery are all
+> measured, not reconstructed. It sharpens the 2026-08-21 scratch-directory
+> entry, which recommends the exact command that caused it.
+> ⚠️ **Nothing else here was re-checked then.**
+> Previously **2026-09-05** — the *"a copy imported seconds after its
 > edition comes out with `edition_id NULL`"* entry at the **foot** of this file
 > was added that day, and its 20/20 hit rate is a live experiment run against
 > production D1 on that date
@@ -567,6 +574,57 @@ rescue anything untracked BEFORE removing, every time.
   with a PowerShell `Remove-Item -Recurse -Force` after clearing attributes.
 - `du -sm` over one of these trees ate a two-minute command timeout on its own.
   Do not measure the size first; just delete, and check the count after.
+
+
+## 🔴 "I deleted a throwaway worktree and `git status` says tracked files in `packages/core` are GONE" — 2026-09-07
+
+**Symptom.** You take a `git worktree add <tmp> HEAD` checkout to measure a
+baseline, junction `node_modules` into it so the tools resolve, run the suite,
+then remove the worktree — and `git status` **in the main repo** now lists
+`packages/core/package.json` and every file under `packages/core/src/` as
+deleted. `npm test` then dies with `'tsx' is not recognized`.
+
+**What happened, and why it is not obvious.** Two mechanics compose:
+
+1. This is an **npm workspaces** repo, so `node_modules/@lc/core` is a
+   **symlink into `packages/core`**. Every `@lc/*` package is.
+2. **PowerShell 5.1's `Remove-Item -Recurse -Force` follows junctions and
+   symlinks and deletes their TARGETS.** (`rm -rf` in Git Bash does not; this
+   is a PowerShell-specific hazard — and it is the very command the
+   *"gitignored scratch directory"* entry above tells you to finish with.)
+
+So `Remove-Item -Recurse -Force <worktree>` walked `<worktree>/node_modules` →
+`@lc/core` → **the main repo's own `packages/core`** and deleted the real
+files. Only `core` was reached before something held a lock, which is why the
+damage looked arbitrary rather than systematic. `node_modules` itself was
+gutted at the same time — hence the missing `tsx`.
+
+**Recovery, and it is cheap when the tree was committed-clean:**
+
+```bash
+git checkout -- packages/core     # the files are tracked; HEAD has them
+npm ci                            # node_modules was gutted too — reinstall, don't repair
+```
+
+⚠️ **The reason it cost nothing here is that the deleted files were all
+COMMITTED.** Untracked or uncommitted work in a workspace package would have
+been unrecoverable — the same lesson the entry above draws from the opposite
+direction.
+
+**Do this instead, in order:**
+
+- **Remove the junction FIRST and prove it is gone** —
+  `cmd /c rmdir "<worktree>\node_modules"` (never `Remove-Item`; `rmdir` on a
+  junction removes the link, not the target), then `ls` to confirm.
+- **Prefer `git worktree remove <path>` without `--force`** and let it refuse;
+  a refusal is information.
+- **When PowerShell must do the delete, delete the CHILDREN, not the root**, and
+  never with a link still inside.
+- ⚠️ **Better still, do not junction `node_modules` into a worktree at all.** It
+  was done here to measure a "tests before" count without a fresh `npm install`
+  — and it did not even give a clean measurement, because `@lc/*` resolved back
+  through the symlink to the *modified* sources. A baseline taken that way is
+  contaminated by construction.
 
 
 ## "`op inject` says my template has an invalid secret reference I never wrote" — 2026-08-26

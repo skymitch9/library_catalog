@@ -7,6 +7,8 @@ import {
   type TbrMatched,
 } from '@lc/core';
 
+import { notRejectedSql } from './works.js';
+
 /**
  * Matching a person's cross-catalog TBR against these shelves.
  *
@@ -240,6 +242,26 @@ interface BridgeRow extends Row {
  * must not fold two live entries together — the same rule
  * `audioEditionCountSql` applies for the same reason, and the same reason its
  * test exists.
+ *
+ * ⚠️ **REJECTED rows are excluded too — migration 0450, added 2026-09-07.** A
+ * stale row is the sibling catalog withdrawing a claim; a rejected row is a
+ * PERSON saying the claim was wrong, which is the stronger of the two and must
+ * not be the weaker filter. Without this, *"Not this one"* on a recording still
+ * left that recording's title folding somebody's TBR entry into this book —
+ * a match the owner had personally judged wrong, silently deciding that two
+ * list entries were one.
+ *
+ * ⚠️ **The alias on every branch is load-bearing, not tidiness.**
+ * `notRejectedSql` interpolates its work-id expression into a subquery whose
+ * own FROM is `audiobook_match_review amr` — a table that HAS a `work_id`
+ * column — so a bare `work_id` there would resolve to `amr.work_id`, compare
+ * the row to itself and always hold. Qualify it or the filter silently does
+ * nothing.
+ *
+ * ⚠️ Two different key expressions, deliberately: the VIEW exposes no
+ * `audio_key`, so its recording key is `COALESCE(raw_title, title)` (migration
+ * 0390's own derivation); the per-edition table carries `audio_key` itself.
+ * `ebook_holding` has no verdict table at all — 0450 is about recordings.
  */
 const BRIDGE_SELECT = `SELECT w.id AS work_id, w.work_key AS work_key, w.title AS title,
                               w.authors AS authors, w.series AS series,
@@ -249,17 +271,23 @@ const BRIDGE_SELECT = `SELECT w.id AS work_id, w.work_key AS work_key, w.title A
                          FROM work w
                          LEFT JOIN user_book ub ON ub.work_id = w.id AND ub.user_id = ?
                          JOIN (
-                           SELECT work_id, title     AS bridge_title, 'audio' AS bridge_source, 1 AS rung
-                             FROM audiobook_holding          WHERE stale_at IS NULL
+                           SELECT ah.work_id, ah.title AS bridge_title, 'audio' AS bridge_source, 1 AS rung
+                             FROM audiobook_holding ah
+                            WHERE ah.stale_at IS NULL
+                              AND ${notRejectedSql('ah.work_id', 'COALESCE(ah.raw_title, ah.title)')}
                            UNION ALL
-                           SELECT work_id, title,                'audio',                      2
-                             FROM audiobook_edition_holding  WHERE stale_at IS NULL
+                           SELECT aeh.work_id, aeh.title,        'audio',                      2
+                             FROM audiobook_edition_holding aeh
+                            WHERE aeh.stale_at IS NULL
+                              AND ${notRejectedSql('aeh.work_id', 'aeh.audio_key')}
                            UNION ALL
-                           SELECT work_id, raw_title,            'audio',                      3
-                             FROM audiobook_edition_holding  WHERE stale_at IS NULL AND raw_title IS NOT NULL
+                           SELECT aeh.work_id, aeh.raw_title,    'audio',                      3
+                             FROM audiobook_edition_holding aeh
+                            WHERE aeh.stale_at IS NULL AND aeh.raw_title IS NOT NULL
+                              AND ${notRejectedSql('aeh.work_id', 'aeh.audio_key')}
                            UNION ALL
-                           SELECT work_id, title,                'ebook',                      4
-                             FROM ebook_holding
+                           SELECT eh.work_id, eh.title,          'ebook',                      4
+                             FROM ebook_holding eh
                          ) b ON b.work_id = w.id
                         ORDER BY b.rung, w.id`;
 
@@ -306,7 +334,20 @@ async function formatsForWorks(
           // is a title search on the sibling site — the stripped `title` loses
           // the volume, so a series-named book lands on the whole series. See
           // `audiobookDetailUrl`'s measurement. Null on rows predating 0340.
-          `SELECT work_id, title, raw_title FROM audiobook_holding WHERE stale_at IS NULL AND work_id IN (${marks})`,
+          //
+          // ⚠️ **Rejected recordings are withheld here too (0450, 2026-09-07),
+          // and this reader was NOT on the original survey's list.** It is the
+          // TBR page's audio CHIP — a claim that the book is reachable on
+          // audio, the same class as `audioEditionCountSql`, which has been
+          // filtered since 0450 shipped. Leaving it would have made one page
+          // contradict itself the first time anybody pressed "Not this one":
+          // the entry stops bridging (above) while the chip still offers the
+          // rejected recording's link.
+          `SELECT ah.work_id, ah.title, ah.raw_title
+             FROM audiobook_holding ah
+            WHERE ah.stale_at IS NULL
+              AND ah.work_id IN (${marks})
+              AND ${notRejectedSql('ah.work_id', 'COALESCE(ah.raw_title, ah.title)')}`,
         )
         .bind(...chunk)
         .all<{ work_id: number; title: string; raw_title: string | null }>(),

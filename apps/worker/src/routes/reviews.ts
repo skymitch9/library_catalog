@@ -8,7 +8,13 @@ import {
   submitReviewSchema,
   workKeyFor,
 } from '@lc/core';
-import { applyObservedRating, applyObservedRatings, cacheRating, getWork } from '@lc/db';
+import {
+  applyObservedRating,
+  applyObservedRatings,
+  cacheRating,
+  getWork,
+  notRejectedSql,
+} from '@lc/db';
 import type { AppBindings } from '../env.js';
 import { requireCapability } from '../middleware/auth.js';
 
@@ -23,6 +29,44 @@ import { requireCapability } from '../middleware/auth.js';
  */
 const reviewCollection = (env: { ENVIRONMENT?: string }) =>
   env.ENVIRONMENT === 'production' ? 'reviews' : 'reviews_dev';
+
+/**
+ * The `/bookid-index` statement, exported so a test can run the SHIPPED string
+ * rather than a retyped copy of it.
+ *
+ * ⚠️ **`notRejectedSql` — added 2026-09-07, and it is the whole point of this
+ * being a constant.** This index is what turns an audiobook review into a read
+ * state on a work: a slug the sibling catalog wrote, resolved to a `work_key`
+ * that `applyObservedRatings` then writes against. Leaving a recording the
+ * owner has answered *"Not this one"* in here means the next browser sweep
+ * marks the book read from a review of a **different** book — the one thing a
+ * rejection exists to stop, arriving through a side door.
+ *
+ * ⚠️ **It stops the bridge; it does NOT retract anything already written.**
+ * `applyObservedRatings` only ever writes, never clears (its own header says
+ * why `finished_on` and a `'human'` row are left alone), so a read state a
+ * rejected recording put on a work before the verdict stays there until a
+ * person changes it. The edit box's Audio tab says so in those words rather
+ * than promising a retraction this filter cannot perform.
+ *
+ * ⚠️ `audiobook_holding` is the VIEW, so the recording key is
+ * `COALESCE(raw_title, title)` — migration 0390's own derivation, and
+ * `notRejectedSql`'s documented requirement against this view.
+ *
+ * **Measured 2026-09-06, both production databases: `audiobook_match_review`
+ * holds 0 rows on `library-catalog` and 0 on `library-catalog-2nd`**, so this
+ * clause filtered nothing on the day it shipped. It governs the 8 live
+ * `containment` rows on main (7 *Harry Potter … (Full-Cast Edition)* plus
+ * *Space Knight Book 1*) and 0 on padhard.
+ */
+export const BOOKID_INDEX_SELECT = `
+      SELECT w.work_key, ah.raw_title, ah.title
+      FROM audiobook_holding ah
+      JOIN work w ON w.id = ah.work_id
+      WHERE w.work_key IS NOT NULL
+        AND w.authors IS NOT NULL
+        AND ${notRejectedSql('ah.work_id', 'COALESCE(ah.raw_title, ah.title)')}
+    `;
 
 /**
  * The review bridge, server side.
@@ -341,15 +385,17 @@ export const reviewRoutes = new Hono<AppBindings>()
    * The mapping is: `bookIdFromTitle(audiobook_holding.raw_title)` → the work's
    * own `work_key`. Where `raw_title` is null (pre-migration-0340 rows), the
    * cleaned `title` is used as a best-effort fallback.
+   *
+   * ⚠️ **A recording the owner rejected is not in the index** — migration 0450,
+   * shipped here 2026-09-07. See `BOOKID_INDEX_SELECT` above for what that
+   * does and, just as importantly, what it does not undo.
    */
   .get('/bookid-index', requireCapability('trackReading'), async (c) => {
-    const rows = await c.env.DB.prepare(`
-      SELECT w.work_key, ah.raw_title, ah.title
-      FROM audiobook_holding ah
-      JOIN work w ON w.id = ah.work_id
-      WHERE w.work_key IS NOT NULL
-        AND w.authors IS NOT NULL
-    `).all<{ work_key: string; raw_title: string | null; title: string }>();
+    const rows = await c.env.DB.prepare(BOOKID_INDEX_SELECT).all<{
+      work_key: string;
+      raw_title: string | null;
+      title: string;
+    }>();
 
     const index: Record<string, string> = {};
     for (const row of rows.results ?? []) {

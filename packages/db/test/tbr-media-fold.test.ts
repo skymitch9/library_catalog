@@ -92,14 +92,27 @@ function fixture(): DatabaseSync {
     CREATE TABLE ebook_holding (
       work_id INTEGER PRIMARY KEY, title TEXT NOT NULL, authors TEXT, formats TEXT
     );
+    -- Migration 0450. Empty in this fixture, which is the production shape:
+    -- measured 2026-09-06, both live databases hold ZERO rows here, so the
+    -- filter added 2026-09-07 changes nothing until somebody presses a button.
+    CREATE TABLE audiobook_match_review (
+      work_id INTEGER NOT NULL, audio_key TEXT NOT NULL, verdict TEXT NOT NULL,
+      decided_at TEXT, decided_by INTEGER, PRIMARY KEY (work_id, audio_key)
+    );
 
     -- The book at the centre of the report: held on paper AND on audio.
     INSERT INTO work (id, work_key, title, authors, cover_url)
       VALUES (12, 'firefight|brandon sanderson', 'Firefight', 'Brandon Sanderson',
               '/covers/firefight.jpg');
     INSERT INTO copy (id, work_id, status) VALUES (1, 12, 'owned');
+    -- ⚠️ audio_key IS the verbatim title, not an opaque id: migration 0390
+    -- makes 0340's raw_title the edition's identity precisely so the two
+    -- cannot drift. It read 'k1' here until 2026-09-07, which was harmless
+    -- until a verdict had to be keyed on it — and then it made a rejection
+    -- filed on the real key miss the view's row silently.
     INSERT INTO audiobook_edition_holding (work_id, audio_key, title, raw_title)
-      VALUES (12, 'k1', 'Firefight - The Reckoners, Book 2',
+      VALUES (12, 'Firefight - The Reckoners, Book 2',
+              'Firefight - The Reckoners, Book 2',
               'Firefight - The Reckoners, Book 2');
 
     -- A wishlist-only work, to prove 'wanted' is not 'owned'.
@@ -169,6 +182,70 @@ describe('resolveTbrEntries — the bridge rung', () => {
     assert.equal(out[0]?.workWorkKey, null);
   });
 
+  it('⚠️ a REJECTED recording bridges NOTHING — migration 0450, shipped 2026-09-07', async () => {
+    const db = fixture();
+    // The owner pressed "Not this one" on this recording. The row stays (0003:
+    // mark, never delete) and the sibling catalog still calls it live — only
+    // the human verdict withholds it.
+    db.exec(`
+      INSERT INTO audiobook_match_review (work_id, audio_key, verdict)
+        VALUES (12, 'Firefight - The Reckoners, Book 2', 'rejected');
+    `);
+    const out = await resolveTbrEntries(shim(db), 1, [audio]);
+    assert.equal(out[0]?.workId, null, 'a rejected recording must not place a TBR entry');
+    assert.equal(out[0]?.matchedVia, null);
+    assert.equal(out[0]?.workWorkKey, null, 'and so cannot fold two entries into one card');
+  });
+
+  it("⚠️ a CONFIRMED verdict bridges exactly as an un-reviewed one does — it is not a gate", async () => {
+    const db = fixture();
+    db.exec(`
+      INSERT INTO audiobook_match_review (work_id, audio_key, verdict)
+        VALUES (12, 'Firefight - The Reckoners, Book 2', 'confirmed');
+    `);
+    const out = await resolveTbrEntries(shim(db), 1, [audio]);
+    assert.equal(out[0]?.workId, 12);
+    assert.equal(out[0]?.matchedVia, 'audio_bridge');
+  });
+
+  it('⚠️ the verdict is keyed on the RECORDING, so rejecting one leaves the other bridging', async () => {
+    const db = fixture();
+    // Two recordings of one work — the shape migration 0390 exists for. The
+    // second is the one the person's TBR entry was written from.
+    db.exec(`
+      INSERT INTO audiobook_edition_holding (work_id, audio_key, title, raw_title)
+        VALUES (12, 'Firefight (Full Cast)', 'Firefight (Full Cast)',
+                'Firefight (Full Cast)');
+      INSERT INTO audiobook_match_review (work_id, audio_key, verdict)
+        VALUES (12, 'Firefight - The Reckoners, Book 2', 'rejected');
+    `);
+    const out = await resolveTbrEntries(shim(db), 1, [
+      { docId: 'uid_fc', bookId: 'firefight-full-cast', workKey: null },
+    ]);
+    assert.equal(out[0]?.workId, 12, 'the un-rejected recording still bridges');
+    assert.equal(out[0]?.matchedVia, 'audio_bridge');
+
+    // …and the rejected one still does not, from the same fixture.
+    const gone = await resolveTbrEntries(shim(db), 1, [audio]);
+    assert.equal(gone[0]?.workId, null);
+  });
+
+  it('⚠️ a verdict against ANOTHER work does not withhold this one', async () => {
+    const db = fixture();
+    // The guard the aliasing exists for: `notRejectedSql` interpolates a
+    // work-id expression into a subquery over a table that has its own
+    // `work_id` column, so an unqualified one would compare the row to itself
+    // and hold for everything. A rejection filed against work 13 must not
+    // reach work 12 — and, just as important, must not fail to reach 12's own.
+    db.exec(`
+      INSERT INTO audiobook_match_review (work_id, audio_key, verdict)
+        VALUES (13, 'Firefight - The Reckoners, Book 2', 'rejected');
+    `);
+    const out = await resolveTbrEntries(shim(db), 1, [audio]);
+    assert.equal(out[0]?.workId, 12);
+    assert.equal(out[0]?.matchedVia, 'audio_bridge');
+  });
+
   it('⚠️ an entry nothing can place stays UNMATCHED rather than being guessed at', async () => {
     const db = fixture();
     const out = await resolveTbrEntries(shim(db), 1, [
@@ -184,7 +261,7 @@ describe('resolveTbrEntries — the bridge rung', () => {
     // on its key, rung 1, and must be untouched by anything the cache says.
     db.exec(`
       INSERT INTO audiobook_edition_holding (work_id, audio_key, title)
-        VALUES (13, 'k9', 'Firefight');
+        VALUES (13, 'Firefight', 'Firefight');
     `);
     const out = await resolveTbrEntries(shim(db), 1, [paper]);
     assert.equal(out[0]?.workId, 12);
@@ -282,6 +359,22 @@ describe('resolveTbrEntries — the formats row', () => {
     db.exec(`UPDATE audiobook_edition_holding SET stale_at = '2026-08-01' WHERE work_id = 12;`);
     const out = await resolveTbrEntries(shim(db), 1, [paper]);
     assert.equal(out[0]?.formats?.audio, null);
+    assert.equal(out[0]?.formats?.physical?.state, 'owned');
+  });
+
+  it('⚠️ a REJECTED recording is not offered as a format link either — 2026-09-07', async () => {
+    const db = fixture();
+    db.exec(`
+      INSERT INTO audiobook_match_review (work_id, audio_key, verdict)
+        VALUES (12, 'Firefight - The Reckoners, Book 2', 'rejected');
+    `);
+    // The entry still matches on its own key (rung 1 — a rejection is about a
+    // RECORDING, never about the book), so the formats row is the surface that
+    // would otherwise keep offering a link to a recording the owner said is
+    // the wrong book.
+    const out = await resolveTbrEntries(shim(db), 1, [paper]);
+    assert.equal(out[0]?.workId, 12, 'the work itself is untouched');
+    assert.equal(out[0]?.formats?.audio, null, 'but it is not reachable on THAT recording');
     assert.equal(out[0]?.formats?.physical?.state, 'owned');
   });
 
