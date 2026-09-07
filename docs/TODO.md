@@ -102,11 +102,24 @@ paragraph above the Audio-tab buttons, on top of the page's existing muted
 prose. Rule, all four catalogs: **no helper paragraph by default**; a feature
 that cannot stand on its own gets FLAGGED as a decision, and the owner picks.
 
-- [ ] inventory every muted/grey explanatory paragraph on the work page and
-      the edit box (`apps/web/src/components/*`, `shelf-view.ts`), one line
-      each with a keep/cut recommendation — ONE numbered list to the owner
-- [ ] cut the ones he cuts; ship the pair (main + padhard)
-- [ ] same inventory on boardgames + audiobooks + the apex, same shape
+- [x] 2026-09-07 04:05 Phoenix — inventory DONE for ALL FOUR sites at once
+      (owner: "Yes the audit all site"), read-only Opus agent, 230 numbered
+      items: **69 keep / 107 cut / 54 shorten** (measured from the list; the
+      agent's own headline said 76/102/52 and was wrong). Source of record:
+      [`docs/archive/2026-09-07-grey-paragraph-audit.md`](archive/2026-09-07-grey-paragraph-audit.md);
+      filterable page for the owner:
+      https://claude.ai/code/artifact/4bcb12ab-e163-47f8-95fd-d76e34cb3be3.
+      NOT covered: the shared `assets/estate-search.js` component (own pass —
+      lands on all four sites at once), `html_builder.py`, most of the 9.4 MB
+      generated `site/index.html`. Six items carry `[prior-trim]` (4, 106,
+      107, 112, 161, 181) — cutting them reverses the 2026-08-17 trim.
+- [ ] ❓ OWNER: apply all 161 cut/shorten recommendations as-is, or name the
+      numbers he disputes (one question, sent 04:10 Phoenix with notification)
+- [ ] cut the ones he cuts; ship the pair (main + padhard) — then boardgames,
+      audiobook `site/` (→ /dev/ lane; prod via his `promote.yml`), apex via CI
+      `target=heygabi-home`; one Opus agent per repo, `estate-search.js` last
+- [ ] each repo's TODO gets its own line when its build starts (the audit
+      lives here because the rule was given on this catalog)
 
 
 ## ☑ BUILT + MIGRATED + DEPLOYED TO BOTH 2026-09-06 — the two STANDING AUDITS became routes + a daily cron — ☐ 3 things NOT yet verified (agent W6-CRON-LIBRARY)
