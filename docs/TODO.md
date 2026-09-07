@@ -35,7 +35,7 @@
 > still lives in one place, because one list beats two; the reason is now
 > simply that it is a CROSS-REPO queue. Do not duplicate it here.
 
-## ☐ 🔴 OWNER ASK 2026-09-07 02:48 Phoenix — "347 has issues with copies editions"
+## ☑ FIXED ON BOTH 2026-09-07 — OWNER ASK 02:48 Phoenix "347 has issues with copies editions" — ☐ owner eyeball of /work/347 and /work/445 outstanding
 
 Work #347 = *Harry Potter and the Sorcerer's Stone*, https://library.heygabi.ai/work/347.
 Owner's report, verbatim, sent while reviewing W15-LIB-REJ's Audio-tab change.
@@ -88,10 +88,37 @@ one of them on a work that has at least one edition.
       NO slipcase edition (#242 ACOTAR, #322 Skyward, #330 Way of Kings, #368
       Lost Hero, #369 Hidden Oracle) — the 2026-08-18 slipcase job did not
       mint an edition for those. Left alone; not a card problem.
-- [ ] ❓ owner (asked 03:30 with the titles): is #363 real — and the batch
-      siblings on 227 / 334 / 445 / 446
-- [ ] ❓ owner: is #266 (or #363) the 9780590353427 printing (edition #502)
-- [ ] owner re-eyeballs https://library.heygabi.ai/work/347
+- [x] ✅ **Fix 2 DONE 2026-09-07 06:10 Phoenix, owner-answered in titles**
+      (owner rule from this exchange, now global: *"always work with me in
+      titles if I need to verify"* — questions about shelf data name the book
+      and describe the copy, never row ids). Answers: **"Q2 yes"** — the
+      2026-08-18 05:13Z batch copies are REAL second/third copies, keep them
+      all (nothing deleted, counts unchanged). **"Yes it's scholastic"** — both
+      loose *Sorcerer's Stone* paperbacks are the Scholastic 9780590353427
+      printing → `scratchpad/hp1-scholastic.sql`, 2 copies linked to edition
+      #502. **"Same for remaining potters too"** — every loose (non-slipcase,
+      unlinked) owned copy of the other seven Potter works is that work's
+      Scholastic paperback → `scratchpad/hp-rest-scholastic.sql`, **12 copies**
+      linked (Goblet→#453, Cursed Child→#564, Deathly Hallows→#565,
+      Half-Blood Prince→#566, Order of the Phoenix→#567, Azkaban→#568,
+      Chamber→#569; the Spanish Goblet #650 and slipcase volumes #601–605 were
+      never targets). **"One is hardcover"** — of the two loose *Deathly
+      Hallows*, one is the 2007 Scholastic hardcover: edition #577
+      (9780545010221, which the scan had recorded as paperback) corrected to
+      `format='hardcover'` and copy #371 moved onto it →
+      `scratchpad/hp7-hardcover.sql`. *"Order of the Phoenix maybe a slip
+      case?"* — checked: it already has its slipcase copy linked to the boxed-set
+      printing, so nothing to change. All `UPDATE`s guarded by
+      `edition_id IS NULL AND slipcase=0 AND status='owned'`; no rows created
+      or deleted. **Result on main: every owned Harry Potter copy (all 8 works)
+      now has a printing; 0 loose.** **padhard: 0 Harry Potter copies at all**
+      (measured 06:22 Phoenix on `library-catalog-2nd`) — the pair ran, nothing
+      to link.
+      ⚠️ **NOT verified:** nobody has re-eyeballed the cards since the sweep.
+- [ ] owner re-eyeballs https://library.heygabi.ai/work/347 (should be 2
+      OWNED Scholastic paperbacks + 1 OWNED slipcase volume, no "MAY BE YOURS")
+      and https://library.heygabi.ai/work/445 (one paperback, one hardcover,
+      one slipcase)
 
 ## ☐ 🔴 OWNER RULE 2026-09-07 02:50 Phoenix — "We need less grey paragraphs"
 
@@ -113,8 +140,10 @@ that cannot stand on its own gets FLAGGED as a decision, and the owner picks.
       lands on all four sites at once), `html_builder.py`, most of the 9.4 MB
       generated `site/index.html`. Six items carry `[prior-trim]` (4, 106,
       107, 112, 161, 181) — cutting them reverses the 2026-08-17 trim.
-- [ ] ❓ OWNER: apply all 161 cut/shorten recommendations as-is, or name the
+- [x] ❓ OWNER: apply all 161 cut/shorten recommendations as-is, or name the
       numbers he disputes (one question, sent 04:10 Phoenix with notification)
+      — **answered ~04:50 Phoenix: "Yes apply"**, all 161 as-is; four Opus
+      builders dispatched, one per repo.
 - [x] **2026-09-07 — the LIBRARY half is DONE and the pair is SHIPPED**
       (agent W16-LIB-GREY, on the owner's verbatim *"Yes apply"*). Items
       **1–112** plus the library half of **176**: **89 applied — 56 CUT, 33
@@ -162,11 +191,42 @@ that cannot stand on its own gets FLAGGED as a decision, and the owner picks.
         never numbered (81/82/84 account for three). Left alone as outside
         1–112; it is the obvious candidate if the owner wants the rule pushed
         one step further.
-- [ ] still to ship: boardgames, audiobook `site/` (→ /dev/ lane; prod via his
-      `promote.yml`), apex via CI `target=heygabi-home`; one Opus agent per
-      repo, `estate-search.js` last
-- [ ] each repo's TODO gets its own line when its build starts (the audit
-      lives here because the rule was given on this catalog)
+- [x] **2026-09-07 — the other three sites LANDED** (each repo's own TODO/DONE
+      carries the full report; this is the cross-site tally):
+      - **boardgames** (W15-GREY, 144k): items 113–175 range for that repo
+        applied, deploy `70dca408-e0ef-4d2b-9ac1-ff51d0c01f1d`, rollback
+        `393a9b4f…`, verified in the shipped bundle. Owner eyeballs pending:
+        /wishlist tooltip (152), one-cover picker (131).
+      - **audiobook** (161k): 12 of 13 applied on the **/dev/ lane only**
+        (run 34125260656; prod waits on the owner's `promote.yml`), commits
+        `dfae9eb` `8baf61d`, 2,296 pytest + 1,047 vitest green. **Item 155
+        BLOCKED on the owner** (see below). Item 175: only the how-to list was
+        cut; the rounding rules stayed because the audit's second line range
+        pointed at them by mistake.
+      - **apex** (240k): 33 of 33 applied, CI run 34125859670, deployment
+        `50e51bdf-25b7-4505-8768-210a9d330583`, rollback `c94f5fdf…`, 3,413
+        tests, 37 live pages; three deliberate departures (178 hint set to
+        `""` for the same estate-search fallback reason as 101; 225 label now
+        `Why (required)`; 179 Admin card tagline kept because the card is
+        script-revealed). Audit paths for 225/226 were wrong
+        (`universes/universes.js`, not `assets/`).
+      ⚠️ **NOT verified on any of the four: a rendered page.** Every check was
+      served bytes; whether a layout leaned on a removed `<p>` for spacing is
+      unmeasured everywhere.
+- [ ] ❓ **OWNER — item 155 (audiobook):** signed-out reading-list slot shows
+      *"Sign in with Google to keep a to-read list."* There is no sign-in button
+      in that slot by design, so cutting it leaves the slot blank. (a) keep the
+      one line — recommended; (b) cut it anyway (edit to the generator template
+      `app/web/templates/index.html:2834`, conductor does it by hand). Asked
+      06:12 Phoenix with notification.
+- [ ] `assets/estate-search.js` shared-component pass (lands on all four at
+      once): `DEFAULT_HINT` is the same sentence as items 101/178, and its
+      caveat is a fifth copy of 187's — still shipped to whichever site takes
+      the defaults. Plus the un-numbered fourth copy of the shared-list fact
+      in `pages/TbrPage.tsx` (groups-empty state) if the owner wants the rule
+      pushed one step further.
+- [ ] owner eyeballs of the four sites (links in each repo's report); when
+      155 and the estate-search pass close, this whole section moves to DONE.
 
 
 ## ☑ BUILT + MIGRATED + DEPLOYED TO BOTH 2026-09-06 — the two STANDING AUDITS became routes + a daily cron — ☐ 3 things NOT yet verified (agent W6-CRON-LIBRARY)
