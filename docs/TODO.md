@@ -1609,73 +1609,13 @@ wait for `KI-6` to be settled so both sides agree on what a second edition is?
 
 ---
 
-## ☐ The audiobook link build — 1 of 2 parts left: part A, the sweep becomes pipeline STEP 11 (in `audiobook_catalog`, NOT this repo)
-
-⚠️ **Corrected 2026-09-05 (AUD-library): the heading read "🔜 START HERE NEXT
-SESSION" and had done since 2026-08-22 — fourteen days and roughly thirty
-sessions ago.** A permanent "start here" is an instruction nobody can act on
-and everybody scrolls past. What is actually left is part **A** only; part **B**
-shipped (migration 0390) and is in [`DONE.md`](DONE.md), as the section itself
-says. ⚠️ **Part A's files all live in `audiobook_catalog`** — this repo cannot
-build it, and per this section's own rule it should MOVE to that repo's TODO
-when picked up.
-
-> Owner, 2026-08-22 ~23:40 Phoenix: *"we need to add audiobook sweep to the
-> pipeline, we also need the schema change"* — then, on seeing the weekly budget:
-> *"youre right, i shouldnt have started this build … we come back fresh."*
-
-⚠️ **NOTHING WAS WRITTEN toward either item. No half-finished files, no partial
-migration, no dirty tree.** The design below is the expensive part and is done;
-what remains is typing. Weekly usage was **96%** with the reset at **16:00
-Phoenix Sunday 2026-08-23** — start after it.
-
-### A. The sweep becomes a pipeline step — `audiobook_catalog`
-
-`scripts/backfill-audiobook-holdings.mjs` is hand-run, and that is the whole
-defect: 401 of 493 works had arrived since its last run. It is **STEP 11**,
-modelled line-for-line on STEP 8 (`_run_drive_parity`).
-
-⚠️ **It must run on the IDLE path as well as the busy one**, and its reason is
-stronger than parity's: the drift arrives when the **library** gains books,
-which is completely uncorrelated with whether this machine gained an audiobook.
-Wiring it only to the busy path reproduces exactly the failure being fixed.
-
-Files, all of them — the step list is mirrored in four places and they must agree:
-
-| File | Change |
-|---|---|
-| `scripts/sync_to_drive.py` | `_run_sibling_link()` after `_mirror_estate_backups()` in **both** paths (busy ~line 1489, idle ~line 1180); `_step_link()`; `STEP_INFO["link"]`; `_STEP_HANDLERS["link"]` |
-| `app/pipeline_status.py` | append `("link", "Link sibling catalogues")` to `STEPS` |
-| `catalog-platform` `ops.ts` / `admin.js` / `status.js` | ⚠️ `STEP_INFO`'s comment (sync_to_drive.py:1752) says this mirror is **manual — there is no shared module.** Miss it and the step renders unlabelled |
-| `tests/test_pipeline_steps.py` | pins the list; update in the same commit |
-
-- **kind: `publishing`.** It writes another app's PRODUCTION D1, which deserves
-  the top confirmation tier, not `mutating`.
-- Shell out the way parity does: `subprocess.run`, `PYTHONIOENCODING=utf-8`,
-  a timeout, **never raises**, exactly one named line on every path
-  (applied / in sync / skipped / failed). `npx tsx scripts/backfill-audiobook-holdings.mjs --remote --commit`, cwd = the library repo.
-- ⚠️ It needs the **path to `library_catalog`**, which `app/config.py` does not
-  have (`ROOT_DIR` is the audio library, not the sibling repo). Add one env-var
-  constant with a named skip when it is unset — a machine that cannot reach the
-  sibling must be distinguishable from one that reached it and found nothing.
-
-### B. The schema change — two audio editions per work — ✅ MOVED
-
-Migration 0390 shipped 2026-08-23 on `feature/audio-edition-holdings`; the whole
-item is in [`DONE.md`](DONE.md), and what it did NOT close is `KI-8`/`KI-9` in
-[`KNOWN_ISSUES.md`](KNOWN_ISSUES.md).
-
-> ✂️ **2026-09-02:** part **C** (*"mark this copy signed"*) moved WHOLE to
-> [`DONE.md`](DONE.md). It was already built — `ede7ff3` (2026-08-22) put the
-> control on the copy row and `eeb08ab` (2026-08-24) generalised it to all four
-> special-edition attributes — and it is live on both instances. What was
-> missing was a test: nothing failed if the chips stopped rendering, and this is
-> a control whose absence has been reported once already. `2026-09-02` added
-> `apps/web/test/copy-special-toggles.test.ts`.
-
-**Verify the two that remain:** work 514 shows both audio editions and its series
-(<https://library.heygabi.ai/works/514>); `/status/processing` lists the new
-pipeline step by name.
+> ✂️ **2026-09-06 (W13-LIB):** *"The audiobook link build — 1 of 2 parts
+> left: part A, the sweep becomes pipeline STEP 11"* moved **WHOLE** to
+> [`DONE.md`](DONE.md). 🔴 **Part A was already BUILT — on 2026-08-23, in the
+> repo that owns it** — `bookbuddy/audiobook_catalog/docs/TODO.md:395-424`,
+> which records STEP 11 *"Link sibling catalogues"* on **both cycle paths** and,
+> since 2026-08-25, sweeping **both library instances**. This section had been
+> describing it as unbuilt for a fortnight.
 
 ## ❓ Covers for the SECOND instance — 1 of 3 pieces left and it is an OWNER COST DECISION: put `cover` in the details queue? (owner ask 2026-08-22)
 
