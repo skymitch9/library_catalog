@@ -35,6 +35,65 @@
 > still lives in one place, because one list beats two; the reason is now
 > simply that it is a CROSS-REPO queue. Do not duplicate it here.
 
+## ☐ 🔴 OWNER ASK 2026-09-07 02:48 Phoenix — "347 has issues with copies editions"
+
+Work #347 = *Harry Potter and the Sorcerer's Stone*, https://library.heygabi.ai/work/347.
+Owner's report, verbatim, sent while reviewing W15-LIB-REJ's Audio-tab change.
+Read of the page at 02:49 Phoenix (`get_page_text`): the **Paperback** tab
+lists **five** cards — three `OWNED` Paperbacks, one `MAY BE YOURS · Slipcase`,
+and one `MAY BE YOURS` carrying "Volume of the slipcase set (set ISBN
+9780439682589); no per-volume ISBN recorded".
+
+**Diagnosis (D1 `library-catalog`, read-only, 02:50 Phoenix).** Work 347 has
+**3 owned copies and 2 editions, and NO copy is linked to an edition**, so the
+shelf draws every copy AND every edition as its own card:
+
+| row | created | what it is |
+|---|---|---|
+| copy #266 | 2026-08-13 05:39 | bare owned paperback, no notes |
+| copy #363 | 2026-08-18 05:13 | bare owned paperback — one of a **19-copy batch 05:10–05:17Z** (HP 1–7, Cursed Child, Riordan…) that added a 2nd/3rd copy to works that already had one: 347, 334 (now **4** owned), 446 (**3**), 445, 227 |
+| copy #393 | 2026-08-18 14:45:58 | the slipcase volume — `notes` names the 5-book set 9780439682589 |
+| edition #502 | 2026-08-14 | paperback ISBN `9780590353427`, `source manual`, no copy |
+| edition #601 | 2026-08-18 14:45:58 | "Volume of the slipcase set…", **same second as copy #393**, no copy |
+
+Two distinct defects, one of them systemic:
+
+1. 🔴 **The 2026-08-18 slipcase job created the copy and the edition together
+   and never set `copy.edition_id`.** Catalog-wide: **34 slipcase-volume
+   editions, 0 linked.** This is NOT the "a person's call, one work at a time"
+   case in the item below — the copy's own `notes` names the set, so linking
+   the slipcase copy to the slipcase edition of the same work is evidence, not
+   a guess. Mechanical sweep candidate (both instances; padhard probably 0).
+2. ❓ **Duplicate-looking copies.** Whether #266 and #363 are two real
+   paperbacks (plus the slipcase one = 3) or the 05:13Z batch double-counted
+   is a fact about the shelf only the owner has. Same question on 334, 446,
+   445, 227. And whether #266 IS the `9780590353427` printing (#502).
+
+Wider number, for scale: **399 of 450 copies are unlinked** (43 linked), every
+one of them on a work that has at least one edition.
+
+- [x] name the defect with the row ids
+- [ ] ❓ owner: fix 1 as a mechanical sweep (yes/no) — see the decision list
+      sent 2026-09-07 02:5x Phoenix
+- [ ] ❓ owner: how many paperback HP1s are real; is #266 the 9780590353427
+- [ ] apply on BOTH instances (sweep pair, `--friend`), report both numbers
+- [ ] owner re-eyeballs https://library.heygabi.ai/work/347
+
+## ☐ 🔴 OWNER RULE 2026-09-07 02:50 Phoenix — "We need less grey paragraphs"
+
+Verbatim: *"We need less grey paragraphs. If a feature isn't self sufficient
+with just the way it works we should flag it for a paragraph instead of
+defaulting."* Said on /work/347 after W15-LIB-REJ added the `REJECTION_COST`
+paragraph above the Audio-tab buttons, on top of the page's existing muted
+prose. Rule, all four catalogs: **no helper paragraph by default**; a feature
+that cannot stand on its own gets FLAGGED as a decision, and the owner picks.
+
+- [ ] inventory every muted/grey explanatory paragraph on the work page and
+      the edit box (`apps/web/src/components/*`, `shelf-view.ts`), one line
+      each with a keep/cut recommendation — ONE numbered list to the owner
+- [ ] cut the ones he cuts; ship the pair (main + padhard)
+- [ ] same inventory on boardgames + audiobooks + the apex, same shape
+
 
 ## ☑ BUILT + MIGRATED + DEPLOYED TO BOTH 2026-09-06 — the two STANDING AUDITS became routes + a daily cron — ☐ 3 things NOT yet verified (agent W6-CRON-LIBRARY)
 
