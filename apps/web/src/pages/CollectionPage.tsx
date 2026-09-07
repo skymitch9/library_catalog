@@ -735,7 +735,7 @@ export function CollectionPage({
           Marked {readSync.marked.length}{' '}
           {readSync.marked.length === 1 ? 'book' : 'books'} read, from{' '}
           {readSync.considered.toLocaleString()} ratings you have written on the audiobook
-          site. Change any of them on the book&rsquo;s own page and it stays changed.
+          site. Change any on the book&rsquo;s own page.
         </p>
       )}
 
@@ -1179,9 +1179,7 @@ export function CollectionPage({
           )}
 
           <p className="controls__note muted">
-            A <b>universe</b> is the tier above a series — one world shared across several
-            of them, like Elantris and Mistborn both being the Cosmere. Most books belong to
-            none, which is the ordinary answer and not a gap.
+            A <b>universe</b> is one world across several series — most books belong to none.
           </p>
 
           {/* ⚠️ The one sentence that says which way Format and Type cut. It is
@@ -1206,10 +1204,8 @@ export function CollectionPage({
               says. */}
           {uid && (
             <p className="controls__note muted">
-              <b>My list</b> is your cross-catalogue reading list — the same one the
-              audiobook site writes, and the same one the <b>My TBR</b> screen shows.{' '}
-              <b>Read</b> beside it is this catalogue&rsquo;s own record of what you have
-              read. They are different questions and can disagree.
+              <b>My list</b> is shared with the audiobook site; <b>Read</b> is this
+              catalogue&rsquo;s own.
             </p>
           )}
 
@@ -1229,28 +1225,13 @@ export function CollectionPage({
               return note ? <p className="controls__note muted">{note}</p> : null;
             })()
           )}
-          {/* ⚠️ Written down for the same reason the sentence above it is: the
-              answer is not guessable and the wrong guess is silent. Somebody
-              reading "Cover needed" will assume it means an empty cover, and
-              the books it is most important to reach are the ones that have an
-              image already. */}
+          {/* ⚠️ Same reason as the note above: the wrong guess is silent.
+              "Collector's edition" is one bucket every exclusive, deluxe,
+              premium, signed and leatherbound printing was normalised into —
+              and the shop's own wording is still printed on the book page,
+              unchanged. */}
           <p className="controls__note muted">
-            <b>Cover needed</b> includes books wearing a stand-in — an image we know is not
-            that book's own cover. <b>To check</b> is anything somebody left a note about.
-          </p>
-          {/* ⚠️ Same reason as the two notes above: the wrong guess is silent.
-              "Collector's edition" and "Named, not sorted" are the two printing
-              boxes now living inside the Type dropdown. Somebody will read
-              "Collector's edition" and expect only the books whose printing was
-              literally sold under that name, when it is the one bucket every
-              exclusive, deluxe, premium, signed and leatherbound printing was
-              normalised into — and the shop's own wording is still printed on the
-              book page, unchanged. */}
-          <p className="controls__note muted">
-            In <b>Type</b>, <b>Collector's edition</b> is one bucket for every special
-            printing — exclusive, deluxe, premium, signed, leatherbound. Each book page still
-            shows the name the shop gave it. <b>Named, not sorted</b> is the short list to look
-            at by hand.
+            In <b>Type</b>, <b>Collector's edition</b> covers every special printing.
           </p>
         </div>
       )}
@@ -1268,12 +1249,7 @@ export function CollectionPage({
              — ebooks.heygabi.ai is permission-gated and this app cannot see who
              holds that grant, so a link here would offer half the household a
              door that refuses them. */
-          note={
-            <>
-              Physical books only. The household's ebooks have their own shelf now — they
-              are on the ebooks site, not in this catalog's recent additions.
-            </>
-          }
+          note={<>Physical books only — ebooks are on the ebooks site.</>}
           action={
             <button
               className="link"
@@ -1292,22 +1268,15 @@ export function CollectionPage({
         />
       )}
 
-      {/* ⚠️ The narrowing "See all" applied, said out loud, with its own way
-          out. It is the one filter with no control in the panel, so without
-          this line a shorter list has no visible cause — and a count that
-          quietly disagrees with the catalog is the silent-wrong-guess this page
-          writes notes to prevent everywhere else. The button is the escape
-          hatch a person will actually find; Clear is the other one.
-
-          Only when the user EXPLICITLY set it (via "See all") — in the default
-          case the strip's own note already says "Physical books only", and
-          doubling it would be noise. */}
+      {/* ⚠️ The prose was CUT 2026-09-07 under the owner's grey-paragraph rule
+          (audit item 11 — it duplicated the strip's own note two elements
+          away). The BUTTON stays: it is the one filter with no control in the
+          panel, so it is the only escape hatch a person will actually find
+          besides Clear. */}
       {ebookOnly === 'hide' && (
         <p className="controls__note muted">
-          Physical books only — books held <b>only</b> as an ebook file are on the ebooks
-          site.{' '}
           <button className="link" onClick={() => setEbookOnly('show')}>
-            Show them here too
+            Show ebooks here too
           </button>
         </p>
       )}

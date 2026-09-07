@@ -272,10 +272,6 @@ export function Reviews({
             maxLength={1000}
             rows={3}
           />
-          <p className="muted small">
-            This is written to the same place as your audiobook reviews — it will show
-            up on both sites.
-          </p>
           <button className="primary" onClick={() => void submit()} disabled={busy || !rating}>
             {busy ? 'Saving…' : 'Save review'}
           </button>

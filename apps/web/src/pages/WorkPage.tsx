@@ -409,9 +409,8 @@ export function WorkPage({
           )}
           {reading?.read_state_how === 'rating' && (
             <p className="muted small">
-              Marked read from your{' '}
-              {reading.read_format === 'audio' ? 'audiobook rating' : 'rating'} — change it
-              above and it stays changed.
+              From your {reading.read_format === 'audio' ? 'audiobook rating' : 'rating'} —
+              change it above.
             </p>
           )}
           <Tbr workId={workId} readState={reading?.read_state ?? null} />
@@ -528,12 +527,8 @@ function WantThis({
           {open ? 'Cancel' : 'Want this'}
         </button>
       </div>
-      {!open && (
-        <p className="muted small">
-          {wanted
-            ? 'Already on your wishlist. Ask again if you want it in another form — a hardcover of a paperback you have asked for is a different thing.'
-            : 'Put it on the wishlist — a want, not a copy you own.'}
-        </p>
+      {!open && wanted && (
+        <p className="muted small">Already wanted. Ask again for another format.</p>
       )}
       {open && (
         <AddCopy
@@ -564,13 +559,11 @@ function RequestContentWarnings({ canEdit }: { canEdit: boolean }) {
       <div className="row-tight">
         <button onClick={() => setAsked(true)}>Request content warnings</button>
       </div>
-      {asked && (
-        <p className="muted small">
-          Noted. Automatically gathering content warnings and propagating them to matching titles is
-          designed but not yet built — for now, add them by hand above. See
-          <code> docs/info/content-warnings.md</code>.
-        </p>
-      )}
+      {/* ⚠️ The roadmap paragraph was CUT 2026-09-07 (grey-paragraph audit item
+          15 — it belongs in `docs/info/content-warnings.md`, not the UI). The
+          one-word acknowledgement STAYS: a button that does nothing visible is
+          a dead control, which is the one thing the rule does not licence. */}
+      {asked && <p className="muted small">Noted — add them by hand above for now.</p>}
     </div>
   );
 }

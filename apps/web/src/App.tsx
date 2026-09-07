@@ -196,14 +196,10 @@ export function App() {
     return (
       <main className="centre">
         <h1>Library</h1>
-        <p className="muted">Our books, on the shelf and on the Kindle.</p>
         <button className="primary" onClick={() => void signIn()}>
           Sign in with Google
         </button>
-        <p className="muted small">
-          The same Google account as the audiobook catalog. Signing in here does not
-          create a second one.
-        </p>
+        <p className="muted small">Same Google account as the audiobook catalog.</p>
       </main>
     );
   }

@@ -216,11 +216,11 @@ export function ContentNotes({ workId, me }: { workId: number; me: Me }) {
               </ul>
             </>
           ) : published?.checked ? (
-            // ⚠️ "Looked and found none" is a different fact from "nobody
-            // looked", and it is the more useful one. Never collapsed.
-            <p className="muted small">
-              Published sources have been checked for this book and listed none.
-            </p>
+            // ⚠️ Reduced to a STATE WORD 2026-09-07 (grey-paragraph audit item
+            // 18). "Looked and found none" is still a different fact from
+            // "nobody looked" — that distinction is never collapsed, only the
+            // sentence around it went.
+            <p className="muted small">Published sources: none.</p>
           ) : null}
 
           {rows.length > 0 && (
@@ -281,10 +281,8 @@ export function ContentNotes({ workId, me }: { workId: number; me: Me }) {
             {/* Said out loud for the same reason the review panel says it: this
                 writes to the audiobook catalog's own record for this book, and
                 a person should know where their words are going. */}
-            {MAX_WARNING_LABEL} characters or fewer. This is written to the same place as the
-            audiobook site&rsquo;s content warnings — it will show up on both sites
-            {keys?.audiobookTitle ? `, under “${keys.audiobookTitle}”` : ''}. One note per topic;
-            adding the same one again replaces it.
+            Shown on the audiobook site too
+            {keys?.audiobookTitle ? `, under “${keys.audiobookTitle}”` : ''}. One note per topic.
           </p>
         </>
       )}
