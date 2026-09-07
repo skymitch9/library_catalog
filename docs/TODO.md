@@ -219,12 +219,51 @@ that cannot stand on its own gets FLAGGED as a decision, and the owner picks.
       one line — recommended; (b) cut it anyway (edit to the generator template
       `app/web/templates/index.html:2834`, conductor does it by hand). Asked
       06:12 Phoenix with notification.
-- [ ] `assets/estate-search.js` shared-component pass (lands on all four at
-      once): `DEFAULT_HINT` is the same sentence as items 101/178, and its
-      caveat is a fifth copy of 187's — still shipped to whichever site takes
-      the defaults. Plus the un-numbered fourth copy of the shared-list fact
-      in `pages/TbrPage.tsx` (groups-empty state) if the owner wants the rule
-      pushed one step further.
+- [x] **2026-09-07 — the shared `assets/estate-search.js` pass is DONE and on
+      all four sites** (agent W17-ES-GREY). One canonical edit,
+      `catalog-platform` **`09d3d9a`**, because that repo owns the file; the
+      other three take it by sync. **5 CUT · 2 SHORTENED · 17 KEPT.**
+      **CUT:** `DEFAULT_HINT` is now empty (items 101/178's sentence, which
+      each consumer had to suppress with `hint=""` while the default went on
+      shipping to any site taking the defaults) · the hint element hides on
+      empty **TEXT** rather than on an explicit `hint=""`, which is what forced
+      those `hint=""` attributes · the three search-result group headings lose
+      their em-dashed how-it-was-built tails (`_renderUniverse` already used
+      the bare nouns, so the two renderers now agree) · the empty-result status
+      loses the clause naming which fields are searched · the universe sign-in
+      invitation loses its leading why-clause.
+      **SHORTENED:** `_caveatLine` keeps the load-bearing fact — a hit is
+      presence in a catalog, **not** ownership — and drops the how-to sentence;
+      it was a **fifth** copy of item 187, whose single home is the apex
+      `/series` footer · the registry-outage caveat becomes one sentence, both
+      facts intact including the phrase `predeploy.checks.json` pins live.
+      **KEPT:** every error and refusal, every state word, button label and
+      tooltip — nobody sees a bare status.
+      **Plus this repo's own cut**: `pages/TbrPage.tsx`'s groups-empty state
+      loses the un-numbered FOURTH copy of the shared-list fact (`16889b8`);
+      81/84 went for item 82, this page's header, which still says it in full.
+      No test asserted that string, so none was re-aimed.
+      **Deploys, all four:** apex `46f8cfb9-4cd6-4e40-ba4e-7a90b6127251`
+      (CI run [34139683578](https://github.com/skymitch9/catalog-platform/actions/runs/34139683578),
+      rollback `50e51bdf…`) · library main **`c7dc4b2c-5ae3-48a1-8916-d8652736996c`**
+      (rollback `3a1c5474…`) · padhard **`4a206195-ad64-4672-b14e-3484aeb23864`**
+      (rollback `582be6b0…`) · games `79360f3a-3057-42ea-ae3b-0f501b9af26d`
+      (rollback `70dca408…`) · audiobook **`/dev/` only**, run
+      [34140856168](https://github.com/skymitch9/audiobook_catalog/actions/runs/34140856168)
+      — **prod waits on the owner's `promote.yml`**, and prod was measured
+      still serving the old copy. Both library instances measured *"No
+      migrations to apply"* separately before the pair. Commits `09d3d9a`
+      (platform) · `16889b8` `38da7e5` `ddf16d5` (here) · `f32b5b8` (games) ·
+      `09a836c` (audiobook). Tests: platform **3413**, library **3003**, games
+      full predeploy chain, audiobook **2296 pytest + 1047 vitest** — 0 fail
+      anywhere.
+      **MEASURED LIVE on every host**, cache-busted: the cut hint sentence
+      **0** and the shortened caveat **1** on apex, library, padhard, games and
+      audiobook `/dev/`; apex, library and padhard byte-identical, games and
+      audiobook identical below their own generated banners; the two live
+      library bundles byte-identical (1,010,730 bytes) with the shared-list
+      fact surviving exactly once. ⚠️ **NOT verified: a rendered page on any of
+      the five** — no agent session has a browser.
 - [ ] owner eyeballs of the four sites (links in each repo's report); when
       155 and the estate-search pass close, this whole section moves to DONE.
 
