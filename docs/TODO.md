@@ -1747,67 +1747,6 @@ not the question the app asks. Then `check-cover-health.mjs --friend --remote`.
 | padhard | ~~199 *Foxy Tales*~~ | ✅ **CLOSED — re-measured 2026-09-05:** the stored URL is now `._SY475_`, fetching **200 / 34,579 bytes**. Not 50 pixels any more | — |
 | padhard | 356 *Evocation* | stored Open Library cover redirects to an archive.org object answering **503** on 3 probes. ✅ **Re-probed 2026-09-05: still 503** — two 302s then `503 Service Unavailable`, so this row is unchanged and correct | Wait and re-run `check-cover-health.mjs --friend --remote`. Not cleared: a dead URL may be an outage, and blanking it loses where the cover came from |
 
-### 🔴 A cover can be the RIGHT book and still be useless — 50 pixels wide
-
-**Found 2026-08-23 21:40 Phoenix** in the run that closed the 15 (see
-[`DONE.md`](DONE.md)). The paid rung wrote this onto padhard **199 *Foxy Tales***
-at **high confidence**, and it is the right book:
-
-```
-https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1738511384l/222114404._SX50_.jpg
-```
-
-⚠️ **`._SX50_` is a Goodreads size token and it means 50 pixels wide.** The grid
-renders covers at 150px and the detail panel at 190px (§2), so this is a smudge.
-Measured, same URL with the token deleted:
-
-| URL | Bytes |
-|---|---|
-| `…222114404._SX50_.jpg` (stored) | **1,980** |
-| `…222114404._SY475_.jpg` | 34,579 |
-| `…222114404.jpg` (no token) | **255,373** |
-
-~~**Settles it:** `UPDATE work SET cover_url = '…222114404.jpg' WHERE id = 199` on
-`library-catalog-2nd`, or the cover control on
-<https://padhard.heygabi.ai/works/199>. **Not applied** — it is a production
-write nobody asked for, and one word is cheap to review first.~~
-
-✅ **Corrected 2026-09-05 (AUD-library) — THIS WAS APPLIED, and the entry did
-not know.** Re-measured on production `library-catalog-2nd`
-(`SELECT cover_url FROM work WHERE id = 199`), the stored URL today is
-
-```
-https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1738511384l/222114404._SY475_.jpg
-```
-
-— the `._SX50_` token is **gone**, replaced by `._SY475_`. Fetched the same
-minute: **HTTP 200, `image/jpeg`, `Content-Length: 34579`**, which is exactly
-the middle row of this section's own byte table. So the 50-pixel smudge is
-fixed and the work has a usable cover.
-
-⚠️ **It is the 34 KB form, not the 255 KB tokenless one this section
-recommended.** At a 150px grid and a 190px detail panel that is comfortably
-enough, so nothing is owed — but if anyone wants the full-resolution jacket the
-one-word change is still `…222114404.jpg`. ⚠️ **Who applied it is unknown**;
-this audit measured the column, it did not find a change_log entry for it.
-⚠️ The GUARD half of this section is UNCHANGED and still true: nothing we own
-would have caught the 50px write, and the *"worth ~30 min if it recurs"*
-suggestion below stands.
-
-⚠️ **This is KI-6's family with the size test inverted, and every guard we own
-misses it.** `verifyCoverUrl` has a `MIN_COVER_BYTES` **floor** and no notion of
-*too small to be usable*; `check-cover-health.mjs`'s 1,000-byte floor passes 1,980
-comfortably; the KI-6 hash audit passes it because the hash is genuinely
-**distinct** — it is a real, unique, correct, tiny image. Only looking at it
-works, again.
-
-**Worth ~30 min if it recurs:** strip `._SX\d+_` / `._SY\d+_` / `._UY\d+_` from
-`i.gr-assets.com` and `m.media-amazon.com` URLs in `verifyCoverUrl`, re-verify
-the stripped form, and keep it when it answers. ⚠️ Do **not** add a blanket
-minimum-dimension check instead — the 43-byte Open Library pixel and the
-4,013-byte Google card are already handled, and a dimension floor would start
-rejecting legitimate small covers without saying why.
-
 ## ☑ NOTHING TO BUILD — padhard's details queue is 2, and BOTH are named residue no lookup will close — ☐ needs a signed-in human at <https://padhard.heygabi.ai/queue>
 
 > Owner, 2026-08-23: *"padhard shows 4 missing details"*.
@@ -2377,14 +2316,59 @@ functions against the same remote D1, but **not** the same colo, load or D1 buil
 as the August runs, and a rare race need not appear in twenty tries. Do not
 write *"D1 is read-after-write consistent"* anywhere on the strength of this.
 
-☐ **What is still on the table**, in the order worth checking — written up in
+☑ ~~**What is still on the table**, in the order worth checking — written up in
 [`info/gotchas.md`](info/gotchas.md) under the symptom heading:
 (1) a `--file` write that returned before it was durable — `execute()` decides
 success by whether the output *parsed*, never by exit code, so a partially
 applied batch looks identical to a clean one; (2) the lookup predicate genuinely
 matching nothing at the time — the `change_log` evidence covers `publisher` but
 **not** `edition_name` or `format`, which the Illumicrate lookup also used;
-(3) a silent throw inside the read swallowed by a degrade-never-break `try`.
+(3) a silent throw inside the read swallowed by a degrade-never-break `try`.~~
+
+### 🔴 ALL THREE CHECKED 2026-09-07 — all three come back NEGATIVE. Root cause still open, but the field is now one item wide
+
+Full workings, with the commands and the production reads:
+[`info/gotchas.md`](info/gotchas.md), same symptom heading. In brief:
+
+| | Candidate | Verdict 2026-09-07 |
+|---|---|---|
+| 2 | the lookup predicate matched nothing | 🔴 **REFUTED** — and this entry described it wrongly |
+| 3 | a silent throw swallowed by a `try` | 🔴 **REFUTED** — there is no `try`, and the copies were written |
+| 1 | a `--file` write not yet durable | ⚠️ **A REAL, SEPARATE DEFECT — but not this bug** |
+
+⚠️ **Correction to the line above: the Illumicrate lookup did NOT use
+`edition_name` and `format`.** `git show 7c6dfb8` has it on **`edition_name`
+alone** — and `EDITION_NAME` is byte-identical then and now, the same JS constant
+that built the `INSERT` nine seconds earlier **in the same process**. So the
+value cannot have been wrong. Re-read against production: editions 307–311 hold
+that exact name and `format = 'hardcover'`. **The read returned nothing for a
+predicate five rows satisfied.**
+
+⚠️ **Candidate 1 is a live defect in `scripts/lib/d1.mjs` that nobody has
+filed.** Measured: a two-statement `--file --remote --json` batch returns **ONE
+summary object with ONE `success` flag**, so `execute()`'s per-statement guard
+(`results.filter(r => r?.success === false)`) is **dead code on the remote
+path** — it cannot see a partially applied batch. What does protect the scripts
+is that a failing statement returns `{"error":{…}}` and exit 1, which makes
+`runWrangler` throw. ☐ Worth its own fix; ☐ whether a remote `--file` batch is
+**atomic** is still unknown and needs a write to answer.
+
+**What is left is one mechanism, and it is measured:** D1's write response
+carries a `finalBookmark` — the token that makes a following read wait for that
+write — and ⚠️ **`wrangler d1 execute` has no flag that accepts one**, while
+`d1.mjs` spawns a fresh `npx wrangler` per call and drops it. So nothing here
+can make a read wait for the write before it.
+
+⚠️ **NOT a conclusion, and must not be written up as one.** Whether this database
+has read replication enabled at all is **unmeasured**; both probe reads reported
+`served_by_primary: true`, which settles nothing either way — and the 20/20
+experiment would look identical if it only ever hit the primary.
+
+☐ **The one check that would settle it** (needs the owner): capture
+`meta.served_by_primary` on the READ side of the write→read experiment until a
+`false` appears, **or** read the replication setting off the Cloudflare
+dashboard. ⚠️ Nothing was linked, repaired or written by this pass — inferring
+which printing is owned stays the forbidden guess.
 
 **What the UI shows today** (`effectiveFormat` in `apps/web/src/lib/shelf-view.ts`):
 an unlinked copy on a work with ONE printing already renders correctly
@@ -2814,66 +2798,6 @@ while a one-off data correction pays off once.** Prefer, in this order:
 complete series, or an empty queue will be wrong by tomorrow afternoon. The
 `/queue` residue in particular will grow again — an empty queue tonight is not a
 finished job.
-
----
-
-### ⚠️⚠️ THREE BUGS found while adding books by hand — 2026-08-13, two now FIXED
-
-Discovered by adding five books and then reading the rows back. **Read this before
-typing in a scanning backlog**, because two of the three lose data silently.
-
-**1. ⚠️ The typed ISBN is NOT stored. `/add?mode=type` has an ISBN box, and
-nothing persists it.** Measured: works **265, 266, 267, 269, 274** all have
-`editions = 0`, so no ISBN, no publisher, no year — for books whose ISBN was typed
-in or scanned. Compare the owner's own adds (#268, #270–273, #275, #276), which
-all resolved through a lookup and all have `editions = 1`.
-
-The ISBN box appears to feed the **Look up** button only. So for exactly the books
-that need hand-entry — the ones no service knows — **the one hard identifier the
-book carries is thrown away.** That is the worst possible place to drop it: a
-board book with no ISBN row can never be re-matched later, and the barcode is the
-only thing that would have made it findable.
-
-**2. ⚠️ "AND WE…" defaults to "just catalogue it — record no copy".** For a
-scanning session — where every book is physically in your hands — the default is
-the one answer that is always wrong. It produced **#269 *Who Goes Roar?* with
-`copies = 0`**, i.e. catalogued but not owned. The other options are "have it" and
-"want it — put it on the wishlist". Default should almost certainly be "have it"
-when reached from a scan.
-
-**3. ⚠️ A save can fail silently, and the cleared form looks like success.**
-*My First Farm Animals* (9781839035920) was typed, saved, and the form went blank
-— and **no row exists**. Cause is almost certainly hydration: the fields were
-filled before React had attached, so its state stayed empty, `Save` stayed
-disabled, and the click did nothing. The blank form after was the *un-filled* form,
-not a reset one. Nothing distinguishes that from a successful save.
-
-**Rows needing repair** (all created 2026-08-13) — ✅ **ALL FIVE REPAIRED.
-Re-measured 2026-09-05 (AUD-library) against production `library-catalog`;
-every one now carries an edition with the exact ISBN this table asked for, and
-#269 has its copy:**
-
-| work | title | what was missing | edition id | `isbn13` today | copies |
-|---|---|---|---|---|---|
-| 265 | There's a Mouse About the House! | ISBN 9781601304193 | 472 | ✅ `9781601304193` | — |
-| 266 | Don't Tickle the Dinosaur! | ISBN 9780794549503 | 473 | ✅ `9780794549503` | — |
-| 267 | Richard Scarry's Busy Busy Farm | ISBN 9781984894236 | 474 | ✅ `9781984894236` | — |
-| 269 | Who Goes Roar? | ISBN 9781836422808 **and a copy — it is owned** | 475 | ✅ `9781836422808` | ✅ **1** |
-| 274 | My First Toys | ISBN 9781839035944 | 476 | ✅ `9781839035944` | — |
-
-⚠️ **The three BUGS above this table are a separate question from the five rows,
-and this measurement says nothing about them** — it proves the data was
-repaired by hand, not that `/add?mode=type` now persists a typed ISBN. Bug 1
-(typed ISBN not stored), bug 2 (the "record no copy" default) and bug 3 (the
-silent save failure) were NOT re-tested by this audit; the heading's *"two now
-FIXED"* is its own claim and is untouched.
-
-⚠️ Also still open and NOT measured: the author-spelling clash below
-(*"Make Believe Ideas"* vs *"Make Believe Ideas  Ltd."*, with a double space).
-
-⚠️ Also: #269 was entered as author **"Make Believe Ideas"** while the catalog
-already holds #144 *Never Touch a Dinosaur!* as **"Make Believe Ideas  Ltd."**
-(with a double space). Two author spellings for one publisher — pick one.
 
 ---
 

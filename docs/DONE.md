@@ -19,6 +19,240 @@
 
 
 
+## ✅ 2026-09-07 10:20 Phoenix — the THREE 2026-08-13 INTAKE BUGS re-tested at last: 2 held, 4 properties reproduced, all fixed and deployed to both instances (moved WHOLE from TODO.md)
+
+**The section below is moved verbatim.** It had sat for a month with the
+heading claiming *"two now FIXED"* and its own footnote saying the 2026-09-05
+audit *"was NOT re-tested by this audit"*. This is that re-test.
+
+**Reproduced first, then fixed.** The save sequence was transcribed verbatim out
+of `AddWork.tsx` at `ed827f1` and run against the shapes the section names —
+**3 properties held, 4 reproduced**:
+
+| | Property | Before |
+|---|---|---|
+| 1a | typed **ISBN-13** is stored | ✅ held — the 2026-08-13 fix works |
+| 1b | typed **ISBN-10** is stored | 🔴 reproduced — `1-83642-280-6`, the number printed on #269 itself, dropped with no word |
+| 1c | a mistyped 13-digit code is refused **and said** | 🔴 reproduced — stored, silently |
+| 2 | "And we…" defaults to *have it* | ✅ held — the 2026-08-13 fix works |
+| 3a | a failed ISBN step leaves a readable message | 🔴 reproduced — `setNote` then `onAdded()` unmounts the panel |
+| 3b | a failed copy step says the book IS in already | 🔴 reproduced — it threw; pressing Save again makes a SECOND work |
+
+⚠️ **Bug 2 did not reproduce and nothing was "fixed" for it.** The default has
+been `owned` since 2026-08-13 and still is. What is new is that the value has
+ONE home (`DEFAULT_TYPED_INTENT`) and a test, so it cannot drift back through a
+JSX default somebody edits in passing.
+
+**Bug 1's residue was the predicate.** `/^97[89]\d{10}$/` against the digits
+accepts no ISBN-10 and never checks the check digit — so the 10-digit form this
+very section prints for *Who Goes Roar?* was thrown away, and one wrong
+keystroke stored a well-formed ISBN belonging to nothing. `classifyScannedCode`
+is now the one answer to *"what is this code"*, shared with the scan loop and
+the ebook importer, and anything it refuses is **said** rather than dropped.
+
+**Bug 3 needed a shape, not a patch.** The write sequence moved to
+`apps/web/src/lib/typed-add.ts` behind injected deps — this repo has no jsdom
+and `AddWork.tsx` reaches `api.js` → `lib/firebase.ts`, which reads
+`import.meta.env` at module scope, so the sequence **could not be tested where
+it was**, which is why a month passed. It now never swallows and never throws
+once the work exists: every step that misses comes back as a `TypedAddProblem`,
+`typedAddOutcome()` is what the component branches on, and a partial save
+replaces the form with the worded sentences plus a **Done** button. Save is
+deliberately gone at that point — its second press would create a second work
+(`POST /api/works` does not dedupe, on purpose; migration 0001).
+
+**Tests** `apps/web/test/typed-add.test.ts` (+13). Suite **3003 → 3027**, 0 failures, typecheck clean.
+**Deployed** main `fb5fbe50` / friend `140744dc`, 2026-09-07.
+**Verified live**: both hosts serve the identical bundle `assets/index-DgBMhy1V.js`
+(1,012,827 bytes) and it carries all four new sentences — *"Do not press Save
+again"*, *"is not an ISBN"*, *"check digit does not match"*, *"catalogued and not
+owned"* — 1 occurrence each on both.
+⚠️ **NOT verified:** nobody has typed a book into the deployed form. The JSX is
+untested by construction (no jsdom), so *that the sentences render* is inferred
+from the bundle containing them, not measured. Owner review:
+<https://library.heygabi.ai/add?mode=type> and
+<https://padhard.heygabi.ai/add?mode=type> — type a title, an author, and the
+ISBN-10 off the back of a board book, and check the printing appears on the
+book page.
+
+---
+
+### ⚠️⚠️ THREE BUGS found while adding books by hand — 2026-08-13, two now FIXED
+
+Discovered by adding five books and then reading the rows back. **Read this before
+typing in a scanning backlog**, because two of the three lose data silently.
+
+**1. ⚠️ The typed ISBN is NOT stored. `/add?mode=type` has an ISBN box, and
+nothing persists it.** Measured: works **265, 266, 267, 269, 274** all have
+`editions = 0`, so no ISBN, no publisher, no year — for books whose ISBN was typed
+in or scanned. Compare the owner's own adds (#268, #270–273, #275, #276), which
+all resolved through a lookup and all have `editions = 1`.
+
+The ISBN box appears to feed the **Look up** button only. So for exactly the books
+that need hand-entry — the ones no service knows — **the one hard identifier the
+book carries is thrown away.** That is the worst possible place to drop it: a
+board book with no ISBN row can never be re-matched later, and the barcode is the
+only thing that would have made it findable.
+
+**2. ⚠️ "AND WE…" defaults to "just catalogue it — record no copy".** For a
+scanning session — where every book is physically in your hands — the default is
+the one answer that is always wrong. It produced **#269 *Who Goes Roar?* with
+`copies = 0`**, i.e. catalogued but not owned. The other options are "have it" and
+"want it — put it on the wishlist". Default should almost certainly be "have it"
+when reached from a scan.
+
+**3. ⚠️ A save can fail silently, and the cleared form looks like success.**
+*My First Farm Animals* (9781839035920) was typed, saved, and the form went blank
+— and **no row exists**. Cause is almost certainly hydration: the fields were
+filled before React had attached, so its state stayed empty, `Save` stayed
+disabled, and the click did nothing. The blank form after was the *un-filled* form,
+not a reset one. Nothing distinguishes that from a successful save.
+
+**Rows needing repair** (all created 2026-08-13) — ✅ **ALL FIVE REPAIRED.
+Re-measured 2026-09-05 (AUD-library) against production `library-catalog`;
+every one now carries an edition with the exact ISBN this table asked for, and
+#269 has its copy:**
+
+| work | title | what was missing | edition id | `isbn13` today | copies |
+|---|---|---|---|---|---|
+| 265 | There's a Mouse About the House! | ISBN 9781601304193 | 472 | ✅ `9781601304193` | — |
+| 266 | Don't Tickle the Dinosaur! | ISBN 9780794549503 | 473 | ✅ `9780794549503` | — |
+| 267 | Richard Scarry's Busy Busy Farm | ISBN 9781984894236 | 474 | ✅ `9781984894236` | — |
+| 269 | Who Goes Roar? | ISBN 9781836422808 **and a copy — it is owned** | 475 | ✅ `9781836422808` | ✅ **1** |
+| 274 | My First Toys | ISBN 9781839035944 | 476 | ✅ `9781839035944` | — |
+
+⚠️ **The three BUGS above this table are a separate question from the five rows,
+and this measurement says nothing about them** — it proves the data was
+repaired by hand, not that `/add?mode=type` now persists a typed ISBN. Bug 1
+(typed ISBN not stored), bug 2 (the "record no copy" default) and bug 3 (the
+silent save failure) were NOT re-tested by this audit; the heading's *"two now
+FIXED"* is its own claim and is untouched.
+
+⚠️ Also still open and NOT measured: the author-spelling clash below
+(*"Make Believe Ideas"* vs *"Make Believe Ideas  Ltd."*, with a double space).
+
+⚠️ Also: #269 was entered as author **"Make Believe Ideas"** while the catalog
+already holds #144 *Never Touch a Dinosaur!* as **"Make Believe Ideas  Ltd."**
+(with a double space). Two author spellings for one publisher — pick one.
+
+---
+
+---
+
+## ✅ 2026-09-07 10:20 Phoenix — the COVER GUARD is built: the thumbnail size token is stripped before verifying, and the URL that was FETCHED is the one stored (moved WHOLE from TODO.md)
+
+**The section below is moved verbatim.** Its data half closed 2026-09-05 (#199
+carries `._SY475_` and fetches 200 / 34,579 bytes); its **guard** half — the
+*"worth ~30 min if it recurs"* paragraph — is what this entry closes.
+
+**Re-measured today, 2026-09-07, before building anything.** The section's own
+byte table is byte-identical two weeks on, so this is a live condition and not
+history:
+
+| URL | 2026-08-23 | 2026-09-07 |
+|---|---|---|
+| `…222114404._SX50_.jpg` | 1,980 | **1,980** |
+| `…222114404._SY475_.jpg` | 34,579 | **34,579** |
+| `…222114404.jpg` | 255,373 | **255,373** |
+
+`fullSizeCoverUrl` (`@lc/core/covers.ts`, pure, no I/O) strips a run of size
+directives from five Amazon/Goodreads image hosts and returns **null — not the
+input** — when there is nothing to do, so *"unchanged"* cannot be mistaken for
+*"upgraded"*. `verifyCoverUrl` fetches the stripped form FIRST and falls back to
+the original if it does not answer, so a small cover still beats none; the
+fallback costs a second subrequest and only on that narrow host+token match.
+
+`CoverCheck` gained **`url`** — the address the bytes actually came from — and
+the write paths now store that instead of their input: `PUT /works/:id/cover`,
+`PUT /editions/:id/cover`, the find route's proposal, and the three push sites
+in `scripts/backfill-missing-covers.mjs`, **which is the script that wrote the
+`_SX50_` URL in the first place**.
+
+⚠️ **Deliberately NOT done, exactly as the section asks:** no
+minimum-DIMENSION check. The 43-byte Open Library pixel and the 4,013-byte
+Google card are already handled by the floor, and a dimension floor would begin
+refusing legitimate small covers without saying why.
+
+⚠️ **One bug found while writing the test, and kept in a comment.** Amazon
+STACKS directives without repeating the dot — `._SY445_SX342_.jpg` is one dot
+and two directives — so the naive single-token pattern produced
+`51abcDEFghSX342_.jpg`, a URL that 404s. The `+` in `SIZE_TOKEN` is
+load-bearing.
+
+**Tests** `packages/isbn/test/cover-size-token.test.ts` (+11), carrying the real
+URL shapes and the real byte counts. Suite **3003 → 3027**, 0 failures.
+**Deployed** main `fb5fbe50` / friend `140744dc`, 2026-09-07.
+⚠️ **NOT verified:** no cover route was exercised on the live Workers — they all
+need an `editCatalog` bearer and no owner token was used. The live evidence is
+the deployed version ids plus `/api/health` 200 on both. ⚠️ Also NOT
+re-measured: that Goodreads serves the tokenless form of **every** id it serves
+a tokenised form of. That assumption is what the five-host allowlist rests on;
+it was checked on one id.
+
+---
+
+### 🔴 A cover can be the RIGHT book and still be useless — 50 pixels wide
+
+**Found 2026-08-23 21:40 Phoenix** in the run that closed the 15 (see
+[`DONE.md`](DONE.md)). The paid rung wrote this onto padhard **199 *Foxy Tales***
+at **high confidence**, and it is the right book:
+
+```
+https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1738511384l/222114404._SX50_.jpg
+```
+
+⚠️ **`._SX50_` is a Goodreads size token and it means 50 pixels wide.** The grid
+renders covers at 150px and the detail panel at 190px (§2), so this is a smudge.
+Measured, same URL with the token deleted:
+
+| URL | Bytes |
+|---|---|
+| `…222114404._SX50_.jpg` (stored) | **1,980** |
+| `…222114404._SY475_.jpg` | 34,579 |
+| `…222114404.jpg` (no token) | **255,373** |
+
+~~**Settles it:** `UPDATE work SET cover_url = '…222114404.jpg' WHERE id = 199` on
+`library-catalog-2nd`, or the cover control on
+<https://padhard.heygabi.ai/works/199>. **Not applied** — it is a production
+write nobody asked for, and one word is cheap to review first.~~
+
+✅ **Corrected 2026-09-05 (AUD-library) — THIS WAS APPLIED, and the entry did
+not know.** Re-measured on production `library-catalog-2nd`
+(`SELECT cover_url FROM work WHERE id = 199`), the stored URL today is
+
+```
+https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1738511384l/222114404._SY475_.jpg
+```
+
+— the `._SX50_` token is **gone**, replaced by `._SY475_`. Fetched the same
+minute: **HTTP 200, `image/jpeg`, `Content-Length: 34579`**, which is exactly
+the middle row of this section's own byte table. So the 50-pixel smudge is
+fixed and the work has a usable cover.
+
+⚠️ **It is the 34 KB form, not the 255 KB tokenless one this section
+recommended.** At a 150px grid and a 190px detail panel that is comfortably
+enough, so nothing is owed — but if anyone wants the full-resolution jacket the
+one-word change is still `…222114404.jpg`. ⚠️ **Who applied it is unknown**;
+this audit measured the column, it did not find a change_log entry for it.
+⚠️ The GUARD half of this section is UNCHANGED and still true: nothing we own
+would have caught the 50px write, and the *"worth ~30 min if it recurs"*
+suggestion below stands.
+
+⚠️ **This is KI-6's family with the size test inverted, and every guard we own
+misses it.** `verifyCoverUrl` has a `MIN_COVER_BYTES` **floor** and no notion of
+*too small to be usable*; `check-cover-health.mjs`'s 1,000-byte floor passes 1,980
+comfortably; the KI-6 hash audit passes it because the hash is genuinely
+**distinct** — it is a real, unique, correct, tiny image. Only looking at it
+works, again.
+
+**Worth ~30 min if it recurs:** strip `._SX\d+_` / `._SY\d+_` / `._UY\d+_` from
+`i.gr-assets.com` and `m.media-amazon.com` URLs in `verifyCoverUrl`, re-verify
+the stripped form, and keep it when it answers. ⚠️ Do **not** add a blanket
+minimum-dimension check instead — the 43-byte Open Library pixel and the
+4,013-byte Google card are already handled, and a dimension floor would start
+rejecting legitimate small covers without saying why.
+
+
 ## ✅ 2026-09-07 09:10 Phoenix — OWNER RULE 02:50 "We need less grey paragraphs" — applied on all FIVE hosts + the shared search component (moved WHOLE from TODO.md; only owner eyeballs and one flagged /universes line remain)
 
 Verbatim: *"We need less grey paragraphs. If a feature isn't self sufficient

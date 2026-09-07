@@ -760,3 +760,71 @@ when a copy is about to go in unlinked — the part that was silent for a month.
 
 **Re-run the experiment rather than trusting this entry:**
 `node scripts/experiments/d1-read-after-write-2026-09-05.mjs --remote`
+
+### 🔴 Candidates 1–3 CHECKED 2026-09-07 — all three come back NEGATIVE
+
+Measured, not reasoned. Each check and what it actually showed.
+
+**Candidate 2 — "the predicate matched nothing" — is REFUTED, and the list
+above describes the Illumicrate predicate wrongly.** It did not use
+`edition_name` *and* `format`; `git show 7c6dfb8` has it matching on
+**`edition_name` alone**:
+
+```sql
+SELECT id, work_id FROM edition WHERE edition_name = 'Illumicrate Exclusive'
+```
+
+`EDITION_NAME` is byte-identical in that commit and today, and it is the SAME JS
+constant that built the `INSERT` nine seconds earlier in the SAME process — so
+the predicate's value cannot have been wrong. Confirmed against production
+2026-09-07: editions **307–311** each read `edition_name = 'Illumicrate
+Exclusive'`, `format = 'hardcover'`, `created_at 2026-08-11 05:33:31`; copies
+**104–108** `created_at 2026-08-11 05:33:40`. So the read returned an **empty
+result set for a predicate that five rows satisfied**.
+
+**Candidate 3 — "a silent throw swallowed by a `try`" — is REFUTED for
+Illumicrate.** There is no `try` around that lookup, and the copies *were*
+written; a throw would have killed the script before `execute(copySql)` ran.
+
+**Candidate 1 — the `--file` durability worry — is REAL but is not this bug, and
+it is a separate defect worth its own line.** Probed 2026-09-07 against
+production `library-catalog`:
+
+* a **two-statement** `--file --remote --json` batch comes back as **ONE
+  object** — `{"results":[{"Total queries executed":2,…}],"success":true,…}`. So
+  `execute()`'s per-statement guard, `results.filter(r => r?.success === false)`,
+  has **exactly one flag to look at on the remote path and it is the batch's**.
+  ⚠️ It cannot see a partially applied batch. That guard only ever bites locally,
+  where miniflare returns one object per statement.
+* a batch containing a failing statement returns
+  `{"error":{"text":"no such table: …: SQLITE_ERROR"}}` and **exit 1** — an
+  object, not an array — so `runWrangler`'s `out.includes('[')` test fails and it
+  throws. **That** is what actually protects these scripts, not the
+  per-statement filter.
+
+⚠️ Also NOT established by this probe: whether a remote `--file` batch is
+**atomic**. Testing that needs a write, which is the owner's call.
+
+**What is left is a mechanism rather than a suspicion.** The write response
+carries D1's own session token — `"finalBookmark": "000006ec-00000004-…"` —
+which is the thing that makes a following read wait for that write. ⚠️
+**`wrangler d1 execute` has no flag that accepts one** (`--help`, 2026-09-07:
+`--command`, `--file`, `--local`, `--remote`, `--persist-to`, `--json`,
+`--preview`, `--yes`, and nothing else), and `scripts/lib/d1.mjs` spawns a
+**fresh `npx wrangler` process per call** and discards it. So **nothing in this
+toolchain can make a read wait for the write before it** — a write and the read
+after it are two unrelated, unpinned sessions.
+
+⚠️ **This is a NAMED LEAD, not a conclusion.** Measured: the bookmark exists,
+wrangler cannot carry it, d1.mjs drops it. **NOT** measured: whether this
+database has read replication enabled at all, and therefore whether an unpinned
+read can be served by a replica that is behind. Both probe reads today reported
+`"served_by_primary": true`, which is consistent with either answer and settles
+nothing — and the 20/20 experiment above would look exactly the same if it, too,
+only ever hit the primary. ⚠️ Do **not** write *"D1 served a stale replica"*
+anywhere on the strength of this.
+
+☐ **The check that would settle it, not yet run:** capture
+`meta.served_by_primary` on the READ side of the write→read experiment across
+enough trials to see a `false`, or read the database's replication setting out
+of the Cloudflare dashboard — the account console, which is the owner's.
