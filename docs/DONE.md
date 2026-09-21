@@ -13,6 +13,109 @@
 >
 > Active work lives in [`TODO.md`](TODO.md). Durable reference lives in
 > [`info/`](info/README.md) and [`access/`](access/README.md) — in particular
+> *(the entry below was inserted 2026-09-18 above the original run; everything
+> under it is as it was)*
+
+## ✅ 2026-09-18 — the donor reciprocity flip had been ON since 2026-08-19 (68ef43c); the TODO line and a wrangler.toml comment said otherwise for a month
+
+> **The item, moved whole from [`TODO.md`](TODO.md)** (section *"Second wave
+> (rapid-fire, logged as they arrived)"*), verbatim:
+>
+> > - **Donor reciprocity flip** (open thread from the shipped donor sweep,
+> >   archived in [`DONE.md`](DONE.md)): when her catalog is worth asking, one
+> >   line in the main `[vars]` — `DONOR_URL = "https://padhard.heygabi.ai"` —
+> >   makes the donating mutual. Owner's call on timing; zero code.
+>
+> **It was already done, and had been for a month.** Measured 2026-09-18 off
+> the repo:
+>
+> | Evidence | Reading |
+> |---|---|
+> | `apps/worker/wrangler.toml` ~line 273, MAIN `[vars]` | `DONOR_URL = "https://padhard.heygabi.ai"`, under the comment *"Donor reciprocity (owner decision 2026-08-20)"* |
+> | `git log -S DONOR_URL` | the line landed in **68ef43c**, 2026-08-19 23:22, *"fix: truncate authors beyond 2 with '...' + enable bidirectional donor sweep"* |
+> | `docs/deploys.log` | main has been deployed many times since, so the **live** main Worker carries it |
+>
+> ⚠️ **The cost of the stale pair.** Two places said the opposite of the repo:
+> this bullet, and the comment block at `apps/worker/wrangler.toml` ~596–602
+> (in the `[env.friend.vars]` region) reading *"The MAIN instance's [vars]
+> deliberately has NO DONOR_URL yet — reciprocity … is exactly one line there
+> when it comes"*. On 2026-09-18 a session read that comment and told the
+> owner the switch had never been flipped. That is the
+> `KNOWN_ISSUES`/verification-culture failure in its plainest form: a comment
+> is a measurement with an age, and this one was a month old and wrong.
+>
+> **The correction made the same day** (documentation only — no `key = value`
+> line was touched, `git diff` = 16 insertions / 6 deletions, all comment
+> lines): the `[env.friend.vars]` paragraph now says reciprocity has been ON
+> since 2026-08-19 via 68ef43c, names where the MAIN line lives (~273), keeps
+> the wrangler-nag reasoning that still explains the tool's output, and
+> carries the line *"⚠️ Corrected 2026-09-18: this paragraph said the opposite
+> for a month and misled a session."*
+>
+> **NOT verified:** that the live main Worker's deployed bundle actually
+> resolves `DONOR_URL` at runtime (inferred from the deploy log, not read back
+> off the deployment), and whether wrangler still emits the
+> "exists on env.friend but not at top level" nag now that both levels set it.
+
+## ✅ 2026-09-18 17:2x Phoenix — the six ASUNDA hardcovers added to MAIN (works 535–540) from the owner's photo of the reading-order insert
+
+> **Owner, 2026-09-18:** *"I received these 6 books as hardcovers. Can you add
+> them in"*, with a photo of Stranger Comics' *"Asunda Reading Order —
+> Hardcovers and Trades"* sheet (six covers, two rows, arrows). The set is
+> exactly the store's **Asunda Hardcover Bundle**
+> (strangercomics.com/products/asunda-hardcover-bundle, read that day). ⚠️ The
+> "residue" items — the six ISBNs, the eyeball, the Asunda universe question —
+> stay on [`TODO.md`](TODO.md); this entry is the build.
+>
+> **Measured first, before any write:** `work` held **0** rows matching
+> Untamed / Niobe / Dusu / Erathune / Asunda on MAIN; `crowdfunding_campaign`
+> holds no Stranger Comics campaign (so no pledge to attach to); Asunda is not
+> in `catalog-platform/data/universes.json`. Every title, page count and credit
+> was read off the six hardcover product pages on strangercomics.com; Open
+> Library knows these titles only as trade paperbacks (Killing Floor TP
+> 9781939834294, Dusu TP 9781939834287, Erathune TP 9781939834324, Niobe TP
+> 9781939834270, Sinner's Prayer 9781939834126 / 9781939834317 with no
+> format), and the unkeyed Google Books API answered 429 — so **no ISBN was
+> written**: a TP number on a HC row is the wrong-medium defect
+> [`info/isbn-ladder.md`](info/isbn-ladder.md) §7 exists for, and the barcode
+> on the book is the only honest source.
+>
+> **What was written**, by `scripts/add-asunda-hardcovers-2026-09-18.mjs`
+> (dry run → `--commit` → re-run skipped all six by `work_key`; MAIN only,
+> `--friend` refused in code — the owner's shelf is not padhard's):
+>
+> | work | title | series · vol | authors (writers) | illustrator | edition | copy |
+> |---|---|---|---|---|---|---|
+> | **535** | The Untamed: A Sinner's Prayer | The Untamed · 1 | Sebastian A. Jones | Peter Bergting | 684 · hardcover · 304 pp | 474 owned |
+> | **536** | The Untamed: Killing Floor | The Untamed · 2 | Sebastian A. Jones | Peter Bergting | 685 · hardcover · 224 pp | 475 owned |
+> | **537** | Dusu: Path of the Ancient | Dusu · 1 | Sebastian A. Jones, Christopher Garner | James C. Webster | 686 · hardcover · 224 pp | 476 owned |
+> | **538** | Niobe: She is Life | Niobe · 1 | Sebastian A. Jones, Amandla Stenberg | Ashley A. Woods | 687 · hardcover · 224 pp | 477 owned |
+> | **539** | Niobe: She is Death | Niobe · 2 | Sebastian A. Jones | Sheldon Mitchell | 688 · hardcover · 224 pp | 478 owned |
+> | **540** | Erathune | Erathune · 1 | Sebastian A. Jones, Darrell May | Sheldon Mitchell | 689 · hardcover · 224 pp | 479 owned |
+>
+> Every edition: `publisher 'Stranger Comics'`, `language 'en'`, `source
+> 'manual'`, `source_url` = its product page, `isbn13 NULL`, and a `note`
+> saying the ISBN is *not recorded* (deliberately NOT the *"no ISBN printed"*
+> phrase `declaresNoIsbn` matches — these books surely carry one). Every copy:
+> `owned`, linked to its edition, `acquired_on 2026-09-18`, `notes` naming the
+> bundle and the insert. `work.illustrator` carries the interior artist;
+> `authors` the credited writer(s) only; `universe` NULL. No `change_log` rows —
+> the same shape as every `add-*.mjs` precedent (`add-dcc-v1-hardcovers.mjs`).
+>
+> Review: <https://library.heygabi.ai/work/535> · [536](https://library.heygabi.ai/work/536)
+> · [537](https://library.heygabi.ai/work/537) · [538](https://library.heygabi.ai/work/538)
+> · [539](https://library.heygabi.ai/work/539) · [540](https://library.heygabi.ai/work/540).
+>
+> ⚠️ **NOT verified:** the rendered pages (no signed-in browser; the SPA shell
+> answers 200 and `/api/works/:id` 401 to a session); that the estate index
+> carries the six — `index.heygabi.ai/api/health` read `library` **419** rows
+> pushed **2026-09-19T00:21:45Z** (17:21 Phoenix, minutes after the write; it
+> was 411 on 2026-09-07), which is consistent with the request-traffic
+> backstop having pushed them but was not read row by row; and the hourly
+> details sweep will offer these six to the paid lookup like any other new
+> book, which is the standing behaviour and not a decision made here.
+> ⚠️ This repo's tree is dirty with this script and the two doc edits —
+> nothing committed by the session.
 > [`info/gotchas.md`](info/gotchas.md) for the traps and
 > [`info/decisions.md`](info/decisions.md) for the rationale, both of which
 > were extracted from this same history.

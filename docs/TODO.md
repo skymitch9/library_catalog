@@ -1,5 +1,15 @@
 ﻿# TODO — library_catalog (ACTIVE work log)
 
+> **Audience:** Claude sessions and the owner. **Status:** TRACKED.
+> **Last verified: 2026-09-18** — this file had **no** `Last verified` line
+> before today; that is a finding, not a tidy-up. What was touched on
+> 2026-09-18: (a) the *Donor reciprocity flip* bullet in **Second wave** was
+> cut WHOLE to [`DONE.md`](DONE.md) (it had been done since 68ef43c,
+> 2026-08-19) and left as a one-line ✂️ pointer; (b) a new section for the six
+> Jay Boyce works **529–534** was added above the ASUNDA section, measured off
+> MAIN and padhard that evening. ⚠️ **Nothing else in this file was re-checked**
+> — every other section carries whatever age it already had.
+
 > **Split 2026-08-16** per the global "Access & information docs" rule. This
 > file had reached **2,804 lines**, of which 23 of 28 top-level sections were
 > finished work — larger than the 1,688-line file that caused the rule to be
@@ -34,6 +44,101 @@
 > ignored, tree clean), so this file survives a clone perfectly well. The queue
 > still lives in one place, because one list beats two; the reason is now
 > simply that it is a CROSS-REPO queue. Do not duplicate it here.
+
+## ☑ ADDED 2026-09-18 — six Jay Boyce works (529–534) — ☐ owner: four printings, two format disagreements; ☐ verify the donor sweep pulled Samantha's series
+
+The owner added six Jay Boyce works to **MAIN** at 17:19–17:21 Phoenix on
+2026-09-18. Measured off MAIN and padhard (D1 `library-catalog-2nd`) the same
+evening:
+
+| work | title | edition on MAIN | on padhard (`library-catalog-2nd`) |
+|---|---|---|---|
+| **529** | Insight | hardcover, ISBN **9781637660768** | work **48** — same ISBN as **paperback** |
+| **530** | Siphon | hardcover, ISBN **9781723879791** | work **45** — same ISBN as **paperback** |
+| **531** | Adapt | **no edition row** (no format, no ISBN) | present, series *A Touch of Power* |
+| **532** | Sense | **no edition row** | present, series *A Touch of Power* |
+| **533** | Clover City | **no edition row** | **not on padhard** |
+| **534** | Lotus Lake | **no edition row** | present, series *Rise of the Mystic Mage* |
+
+padhard files Siphon / Adapt / Sense / Insight under **A Touch of Power** and
+Lotus Lake under **Rise of the Mystic Mage**.
+
+- [ ] 🧑 **Scan the four barcodes** — 531 Adapt, 532 Sense, 533 Clover City,
+      534 Lotus Lake have no printing at all. ✎ Edit this book → **Editions &
+      copies** → add the format and the ISBN off the barcode.
+- [ ] 🧑 **Decide hardcover vs paperback for 529 and 530.** ⚠️ One instance is
+      wrong for each ISBN: MAIN calls 9781637660768 (Insight) and
+      9781723879791 (Siphon) **hardcover**, padhard works **48** and **45**
+      call the same two numbers **paperback**. An ISBN belongs to exactly one
+      printing, so only the owner can say which copy he actually holds — and
+      whichever way it goes, the *other* instance's row is the one to correct.
+
+**☐ Verify the donor sweep pulled Samantha's series/description.** The hourly
+details sweep (`DETAILS_SWEEP_CRON = '7 * * * *'`, `SWEEP_LIMIT = 2`,
+`apps/worker/src/lib/details-sweep.ts`) asks the **padhard donor first**, so
+series and description for these should arrive over the 18:07 / 19:07 / 20:07
+ticks. Read-only check (safe to re-run):
+
+```bash
+npx wrangler d1 execute library-catalog --remote --config apps/worker/wrangler.toml --json --command "SELECT entity_id, field, new_json, changed_how, created_at FROM change_log WHERE entity='work' AND entity_id BETWEEN 529 AND 534 ORDER BY created_at"
+```
+
+- **2026-09-18 18:07:01** — measured: **no `change_log` and no `research_run`
+  row existed for works 529–534.** The 18:07 tick had not yet reached them
+  (`SWEEP_LIMIT = 2` means two books a tick).
+- **2026-09-18 ~18:2x, re-read** — ✅ **the sweep IS working, and it answered
+  from the donor.** `research_run` **652** (`work_id 529`, tier `details`,
+  status `done`, `triggered_by NULL` = cron, `unfilled
+  ",series,seriesIndex,description,"`, `created_at 2026-09-19 01:07:29` UTC =
+  **18:07:29 Phoenix**) — the 18:07 tick fired ~28 s after the earlier read,
+  which is why that read saw nothing. It filled work **529 Insight** with
+  `series "A Touch of Power"`, `seriesIndexSort 4` and a description, all
+  `changed_how auto` at 01:07:30–32 UTC. Work **530 Siphon** already had
+  `series "A Touch of Power"` + `seriesIndexSort 1` from 00:20:13 UTC
+  (17:20 Phoenix, seconds after the owner created it). ⚠️ **531–534 still have
+  nothing** beyond their `human __row__` creation rows — expect them over the
+  19:07 / 20:07 ticks at two books a tick. ⚠️ **NOT verified:** that the values
+  came from the *padhard donor* rather than the AI fallback — `research_run`
+  records the tier and what was unfilled, not which source answered.
+
+Review: [/work/529](https://library.heygabi.ai/work/529) ·
+[530](https://library.heygabi.ai/work/530) ·
+[531](https://library.heygabi.ai/work/531) ·
+[532](https://library.heygabi.ai/work/532) ·
+[533](https://library.heygabi.ai/work/533) ·
+[534](https://library.heygabi.ai/work/534)
+
+## ☑ ADDED 2026-09-18 — the six ASUNDA hardcovers (owner ask, with a photo of the reading-order insert) — ☐ owner: read the six ISBNs off the barcodes, ☐ eyeball, ❓ "Asunda" as a universe
+
+Owner, 2026-09-18, with a photo of Stranger Comics' *"Asunda Reading Order —
+Hardcovers and Trades"* insert: *"I received these 6 books as hardcovers. Can
+you add them in."* The set is exactly the store's **Asunda Hardcover Bundle**.
+Added to MAIN only (the owner's shelf) by
+`scripts/add-asunda-hardcovers-2026-09-18.mjs` — dry run, then `--commit`, then
+a re-run that skipped all six (idempotent by `work_key`). The build record,
+the measurements and the row ids are in [`DONE.md`](DONE.md).
+
+- [ ] 🧑 **Read the ISBN off each book's barcode** and enter it: ✎ Edit this
+      book → Editions & copies → ISBN. Every one of the six editions carries
+      `isbn13 NULL` **on purpose** — the product pages show none, and the only
+      ISBNs online are the TRADE PAPERBACKS' (a wrong-medium write, the
+      `info/isbn-ladder.md` §7 defect). Each edition's `note` says so. ⚠️ Until
+      the barcodes are entered, do NOT point `backfill-missing-isbns.mjs` at
+      these works without reading its plan — its title gate cannot tell a TP
+      from a HC.
+- [ ] 🧑 **Eyeball** any one of the six work pages (links in `DONE.md`): title,
+      series and volume from the insert, writer(s) in *authors*, interior artist
+      in *illustrator*, one hardcover printing, one owned copy linked to it.
+      No cover yet — the book page's *Search the web for a cover* button (~6¢)
+      or a photo upload is the path; nothing automatic runs for a coverless
+      manual row.
+- [ ] ❓ **"Asunda" is the UNIVERSE these six share** (every product page says
+      *"set in the Asunda universe"*), and it is not in
+      `catalog-platform/data/universes.json`. A universe cannot be created from
+      a script; it is the *"+ Add a verse"* request on
+      <https://heygabi.ai/universes/> → `/admin` approve → the CLI create. If
+      you want it, file the request there; the six works' `universe` stays NULL
+      until then.
 
 ## ☑ FIXED ON BOTH 2026-09-07 — OWNER ASK 02:48 Phoenix "347 has issues with copies editions" — ☐ owner eyeball of /work/347 and /work/445 outstanding
 
@@ -2064,10 +2169,9 @@ that repo is outstanding, and it belongs to the conductor, not to this file.
 - **Sequencing (owner):** deliver current batch → **Discord portal** (owner is
   nearly home for the owner-present steps) → **EPUB/PDF viewer** after.
 
-- **Donor reciprocity flip** (open thread from the shipped donor sweep,
-  archived in [`DONE.md`](DONE.md)): when her catalog is worth asking, one
-  line in the main `[vars]` — `DONOR_URL = "https://padhard.heygabi.ai"` —
-  makes the donating mutual. Owner's call on timing; zero code.
+- ✂️ **Donor reciprocity flip** — moved WHOLE to [`DONE.md`](DONE.md) on
+  2026-09-18: it had been ON since 2026-08-19 (68ef43c), so this bullet, and a
+  `wrangler.toml` comment, were a month stale.
 
 - **EPUB/PDF in-browser reader** (owner ask 2026-08-16: *"how hard would it be
   to have a reader for EPUBs and PDFs so users could either preview or a read a

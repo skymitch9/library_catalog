@@ -298,6 +298,17 @@ for a day after it was done):
 artifact** — a build output you may delete and regenerate at will. The master is
 1Password vault **`Estate`**.
 
+> ✅ **2026-09-17 18:21 Phoenix — the vault was SPLIT and this repo's side was
+> re-verified.** The owner created a NEW vault named `Estate` and renamed the old
+> shared one to `Sundance`; the 22 estate items (all 13 this template names, the
+> two `library2.*` items, the platform keys and console keys) were MOVED into the
+> new one, so the name every `op://Estate/…` line here points at is unchanged
+> and nothing in this repo needed editing. Measured: `npm run
+> secrets:push:both:op -- --dry-run` resolved the whole `.dev.vars.tpl` through
+> `op inject` from the new vault — 13 of 13 references — and printed the same
+> push / skip / refuse plan as before. Nothing was sent. ⚠️ Item ids changed
+> with the move; nothing here references an id, only titles.
+
 ```
 apps/worker/.dev.vars.tpl     TRACKED. Names + pointers. No values.
         |

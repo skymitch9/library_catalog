@@ -596,12 +596,22 @@ OWNER_EMAILS = "nbaslamking@gmail.com"
 # whole point of the owner's ask — *"if I have Stormlight Archive don't have
 # her look it up"*), her key only for what the donor could not answer.
 #
-# ⚠️ The MAIN instance's [vars] deliberately has NO DONOR_URL yet — reciprocity
-# (our sweep asking HER catalog) is a later owner decision, and it is exactly
-# one line there when it comes: DONOR_URL = "https://padhard.heygabi.ai".
-# Wrangler will nag that DONOR_URL "exists on env.friend but not at top level";
-# that nag is the same INDEX_URL one documented in docs/access/
-# second-instance.md, and it is correct to ignore.
+# ⚠️ RECIPROCITY IS ON, AND HAS BEEN SINCE 2026-08-19. The flip was always
+# exactly one line in the MAIN [vars] block — DONOR_URL =
+# "https://padhard.heygabi.ai" — and that line has been there since commit
+# 68ef43c ("fix: truncate authors beyond 2 with '...' + enable bidirectional
+# donor sweep", 2026-08-19 23:22; `git log -S DONOR_URL`). See it at ~line 273
+# above, under "Donor reciprocity (owner decision 2026-08-20)". Main has been
+# deployed many times since (docs/deploys.log), so the LIVE main Worker has it:
+# our sweep asks HER catalog before paying for AI, exactly as hers asks ours.
+# ⚠️ Corrected 2026-09-18: this paragraph said the opposite for a month and
+# misled a session.
+# The reasoning this paragraph used to carry, kept because it still explains
+# the wrangler output: while the top level had no DONOR_URL, wrangler nagged
+# that DONOR_URL "exists on env.friend but not at top level". That nag is the
+# same INDEX_URL one documented in docs/access/second-instance.md, and it is
+# correct to ignore. (Whether it still fires now that BOTH levels set
+# DONOR_URL was not re-checked 2026-09-18.)
 DONOR_URL = "https://library.heygabi.ai"
 
 # ── Cross-library peer push (migration 0370) ─────────────────────────────────
