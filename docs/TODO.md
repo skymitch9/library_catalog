@@ -45,6 +45,23 @@
 > still lives in one place, because one list beats two; the reason is now
 > simply that it is a CROSS-REPO queue. Do not duplicate it here.
 
+## ☐ OWNER: run the deploy PAIR for 78745ec (2026-09-21 15:31 Phoenix) — commit-only so far, prod unchanged
+
+Owner order 2026-09-21: *"commit and push everything then run test then promote
+to prod, make sure all actions pass."* This repo's part: `78745ec` (docs, the
+Asunda insert script, and the comment-only `wrangler.toml` correction) is
+**committed, pushed, and `tests.yml` is green on it** (run `35663339107`). The
+deploy pair was **NOT run**: `npm run deploy` was refused twice by the session's
+command classifier (not by check-clean or deploy-guard — neither got to run), and
+the CI `deploy.yml` covers MAIN only, which would half-ship under the
+both-instances rule. Nothing in `78745ec` changes Worker behaviour (the only
+non-doc file is a comment block), so both live instances already behave as
+`main` does; the gap is version parity in `deploys.log`, not a feature.
+
+- ☐ owner, both in one sitting: `npm run deploy` then `npm run deploy:friend`
+  (migrations measured current on both, 2026-09-21: "No migrations to apply").
+- Move this section WHOLE to `DONE.md` once both `deploys.log` lines exist.
+
 ## ☑ ADDED 2026-09-18 — six Jay Boyce works (529–534) — ☐ owner: four printings, two format disagreements; ☐ verify the donor sweep pulled Samantha's series
 
 The owner added six Jay Boyce works to **MAIN** at 17:19–17:21 Phoenix on
