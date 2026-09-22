@@ -1,7 +1,16 @@
 ﻿# TODO — library_catalog (ACTIVE work log)
 
 > **Audience:** Claude sessions and the owner. **Status:** TRACKED.
-> **Last verified: 2026-09-18** — this file had **no** `Last verified` line
+> **Last verified: 2026-09-22** — ONE thing: the deploy pair for `78745ec` is
+> **no longer outstanding**. It ran that morning (main `a273b877` 15:38:03Z,
+> friend `3c684023` 15:39:19Z, both at 100%), and the section that tracked it
+> was moved WHOLE to [`DONE.md`](DONE.md) in `882cf57`, where it is the top
+> entry. So **nothing in this file asks for that deploy any more** — if a later
+> reader finds a line that does, it is stale and the log is the authority.
+> ⚠️ Measured by the conducting session; this pass ran nothing, and **no
+> rendered page on either instance was looked at** (`/api/health` only).
+> ⚠️ **Nothing else in this file was re-checked on 2026-09-22.**
+> Previously verified: **2026-09-18** — this file had **no** `Last verified` line
 > before today; that is a finding, not a tidy-up. What was touched on
 > 2026-09-18: (a) the *Donor reciprocity flip* bullet in **Second wave** was
 > cut WHOLE to [`DONE.md`](DONE.md) (it had been done since 68ef43c,

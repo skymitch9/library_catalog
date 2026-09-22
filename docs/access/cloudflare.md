@@ -1,8 +1,16 @@
 # Cloudflare — Access Reference
 
 > **Audience:** Claude sessions and the owner. **Status:** TRACKED (no secret values).
-> Last verified: **2026-08-09** — every resource below was created and curled on
-> that date.
+> **Last verified: 2026-09-22** — the **Worker version cell of §1 ONLY**, updated
+> to `a273b877` from that morning's deploy pair (`docs/deploys.log` +
+> `npx wrangler deployments list`, measured by the conducting session; this pass
+> ran nothing). ⚠️ **NOT re-checked:** the account id, the D1 id, the applied-
+> migrations row, the static-asset count, the R2 row, the cron row, §5's Firebase
+> claim, and the TL;DR's "one remaining blocker" — all of those still carry their
+> 2026-08-09 age, and the TL;DR in particular describes a first-deploy state
+> (see `access/README.md`, which corrected the same claim on 2026-09-05).
+> Last verified before that: **2026-08-09** — every resource below was created and
+> curled on that date.
 
 ## TL;DR — there is nothing you *must* do on Cloudflare
 
@@ -22,7 +30,7 @@ Everything else in this file is optional, or is a runbook for later.
 | | |
 |---|---|
 | Account | `nbaslamking@gmail.com` · `113be82b840c956b8378a187047ab3ea` |
-| Worker | `library-catalog` · version `6915f005-a660-4553-8312-8d1d20174fd3` |
+| Worker | `library-catalog` · version `a273b877-05b7-4dd1-8c09-db2327fc9b7d` — **2026-09-22T15:38:03Z**, on commit `1577628`; `npx wrangler deployments list` showed it at 100%. ~~`6915f005-a660-4553-8312-8d1d20174fd3`~~ was the 2026-08-09 first deploy and stood in this row through eleven deploy pairs. ⚠️ **A version written on this page is stale the next time anyone deploys** — `docs/deploys.log` is the running record and `npx wrangler deployments list` is the measurement; prefer either to this cell |
 | URL | `https://library-catalog.bgc-worker.workers.dev` |
 | D1 database | `library-catalog` · `6022ea5e-2510-450e-81ce-7d847fa31379` · region **WNAM** |
 | Migrations applied | `0001_init.sql` (39 statements), `0002_cwa_ebook_formats.sql` (12) |

@@ -1,10 +1,21 @@
 # Deploy & Provisioning — Access Reference
 
 > **Audience:** Claude sessions. **Status:** TRACKED (contains no secret values).
-> Last verified: **2026-09-07** for the **CI** section only — `tests.yml` was
-> added and its first run measured green. ⚠️ **Nothing else on this page was
-> re-checked**; everything below still carries its 2026-08-09 age (deployed and
-> curled on that date), and the Worker version / D1 row in the table is that old.
+> **Last verified: 2026-09-22** — TWO things only: (a) the **Worker version row**
+> in the *Live* table, now `a273b877` from the deploy pair that ran that morning
+> (`docs/deploys.log`, `npx wrangler deployments list` = 100%), and (b) the new
+> section *"`npm run deploy` is refused before check-clean runs"*, written from
+> the three refusals of 2026-09-21 and the first-try success after the owner
+> added two allow rules on 2026-09-22. ⚠️ **Measured by the conducting session,
+> not by this one — this pass ran nothing.** ⚠️ **NOT re-checked on 2026-09-22:**
+> every other row of the *Live* table (the D1 id, "both migrations applied", the
+> Firebase rows, the Google Books row), the CI section, and every numbered
+> section below. **No rendered page on either instance was looked at** — the
+> 2026-09-22 evidence is `/api/health` and the deployments list, nothing more.
+> Last verified before that: **2026-09-07** for the **CI** section only —
+> `tests.yml` was added and its first run measured green. ⚠️ Nothing else on this
+> page was re-checked then; everything below still carries its 2026-08-09 age
+> (deployed and curled on that date), and the D1 row in the table is that old.
 
 ## CI — there are now TWO workflows, and only one of them deploys
 
@@ -35,7 +46,7 @@ file is the shorter "what order do I do things in" version.
 | | State |
 |---|---|
 | Remote D1 | ✅ `library-catalog`, WNAM, `6022ea5e-2510-450e-81ce-7d847fa31379`, both migrations applied |
-| Worker | ✅ deployed, version `6915f005-a660-4553-8312-8d1d20174fd3` |
+| Worker | ✅ deployed, version `a273b877-05b7-4dd1-8c09-db2327fc9b7d` — **2026-09-22T15:38:03Z**, on commit `1577628`, crons `7 * * * *` / `23 */4 * * *` / `47 9 * * *`, custom domain `library.heygabi.ai`. Friend's half of the same pair: `3c684023-7307-4f8f-ba5e-8ed4f7e78d03` at 15:39:19Z — [`second-instance.md`](second-instance.md), and `docs/deploys.log` is the full record. (Was `6915f005-a660-4553-8312-8d1d20174fd3` from 2026-08-09; the row had gone un-updated through eleven deploy pairs.) |
 | Firebase project | ✅ `audiobook-catalog` — **shared. Do not create a second one.** |
 | Firebase authorised domain | ✅ added 2026-08-09 |
 | Ownership | ✅ claimed by `nbaslamking@gmail.com` |
@@ -65,6 +76,62 @@ tree. **Migrate before deploying**, so new code never meets an old schema.
 > reparse points, and `git worktree remove` it. Both W8-SERIES-VOL and
 > W8-GUARD shipped this way that day (`deploys.log` pairs at
 > 2026-09-06T05:06Z, holder logged as `unknown`, and 05:30Z).
+
+## ⚠️ `npm run deploy` is refused before check-clean runs — the Claude session's command classifier
+
+**Symptom.** A Claude Code session in auto mode types `npm run deploy` and the
+command never starts. No `predeploy` output, no check-clean message, no
+deploy-guard message, no `.deploy.lock` — **nothing in this repo ran at all.**
+The refusal text names the classifier, e.g. *"denied by the Claude Code auto
+mode classifier"*.
+
+**Cause.** Auto mode classifies a command that ships to a live domain as one
+needing explicit permission. This is the HARNESS refusing, upstream of every
+guard this repo owns.
+
+**Tell it apart from the repo's own guards** — they are three different failures
+with three different fixes:
+
+| Refusal | Who said it | What it means |
+|---|---|---|
+| *"denied by the Claude Code auto mode classifier"* | the Claude session's harness | the command never started; add an allow rule (below) |
+| `check-clean` printing a dirty-tree list | `scripts/check-clean.mjs` | commit or use a throwaway worktree (see the note above) |
+| `deploy-guard` printing an ancestry complaint | `scripts/deploy-guard.mjs` | the live commit is not in the tree you are shipping |
+
+⚠️ **The guards print their own reasons. The classifier prints the harness's.**
+If you see no repo output whatsoever, it is the classifier — do not go looking
+for a dirty file.
+
+**The fix**, applied by the owner 2026-09-22 ~08:35 Phoenix: two entries in the
+`permissions.allow` list of `~/.claude/settings.json` —
+
+```
+Bash(npm run deploy:*)
+Bash(npm run deploy)
+```
+
+Both are needed: the glob does not cover the bare form. With them, the deploy
+ran **first try**, and `predeploy` then did its job normally (check-clean,
+deploy-guard and the full suite, all inside the deploy).
+
+🔴 **That file lives in the operator's home directory and is NOT in git — a
+rebuilt machine loses it**, and the symptom on the new machine is this section's
+symptom with nobody left who remembers the cause. The rule belongs to machine
+state: see the machine-state section of
+`catalog-platform/docs/access/RECOVERY.md`, which owns it.
+
+⚠️ **CI is not a way around this.** `.github/workflows/deploy.yml` deploys
+**MAIN only**, so dispatching it would half-ship under the estate's
+both-instances rule — a build on one instance is not a deploy. The pair
+(`npm run deploy` then `npm run deploy:friend`, or `npm run deploy:both`) has to
+run from a machine.
+
+**Measured 2026-09-21/22 by the conducting session** (this page's author ran
+nothing): three refusals on 2026-09-21 — twice through the Bash tool, once
+through PowerShell — all before any repo guard executed; then first-try success
+on 2026-09-22 once the two rules existed. Both halves of that pair are in
+`docs/deploys.log`. The episode's record is the top entry of
+[`../DONE.md`](../DONE.md).
 
 ## 3. Firebase authorised domain — done 2026-08-09
 
