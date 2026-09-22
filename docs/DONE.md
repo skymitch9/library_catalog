@@ -1,5 +1,27 @@
 ﻿# DONE — library_catalog (dated archive)
 
+
+## ✅ 2026-09-22 08:39 Phoenix — the deploy PAIR for 78745ec ran (moved whole from TODO)
+
+> **Last verified: 2026-09-22 08:41 Phoenix.** The owner added `Bash(npm run deploy:*)` / `Bash(npm run deploy)` to the global allow list, and the session ran the pair itself: **main** `a273b877` at 15:38:03Z on `1577628`, **friend** `3c684023` at 15:39:19Z on `4e31079` (each a deploys.log commit apart, as the pair always is). `npx wrangler deployments list` shows both at 100%. `/api/health` on `library.heygabi.ai` and `padhard.heygabi.ai`: 200, `ok:true`, `database:up`, estate `enforce` as `library` / `library2`, `configured:true`. Predeploy's check-clean, deploy-guard and full suite ran inside each deploy. NOT verified: no rendered page on either instance. The original section follows unedited.
+
+### (as written 2026-09-21) ☐ OWNER: run the deploy PAIR for 78745ec — commit-only so far, prod unchanged
+
+Owner order 2026-09-21: *"commit and push everything then run test then promote
+to prod, make sure all actions pass."* This repo's part: `78745ec` (docs, the
+Asunda insert script, and the comment-only `wrangler.toml` correction) is
+**committed, pushed, and `tests.yml` is green on it** (run `35663339107`). The
+deploy pair was **NOT run**: `npm run deploy` was refused twice by the session's
+command classifier (not by check-clean or deploy-guard — neither got to run), and
+the CI `deploy.yml` covers MAIN only, which would half-ship under the
+both-instances rule. Nothing in `78745ec` changes Worker behaviour (the only
+non-doc file is a comment block), so both live instances already behave as
+`main` does; the gap is version parity in `deploys.log`, not a feature.
+
+- ☐ owner, both in one sitting: `npm run deploy` then `npm run deploy:friend`
+  (migrations measured current on both, 2026-09-21: "No migrations to apply").
+- Move this section WHOLE to `DONE.md` once both `deploys.log` lines exist.
+
 > **Audience:** Claude sessions. **Status:** TRACKED. Created **2026-08-16**
 > by splitting a 2,804-line `docs/TODO.md`, per the global docs rule.
 >
