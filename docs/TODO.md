@@ -54,7 +54,7 @@
 > still lives in one place, because one list beats two; the reason is now
 > simply that it is a CROSS-REPO queue. Do not duplicate it here.
 
-## ☐ CHECKED 2026-10-19 — cover + missing-details audit of both libraries (!Sky = main, Samantha = padhard) — ☐ owner: apply 4 free covers? ☐ 60 coverless works
+## ☑ COVERS FILLED 2026-10-19 — !Sky 100% (425/425), Samantha 745 real + 2 stand-ins + 2 blank of 749 — ☐ owner: photos for 609 + 695, ☐ 602/676 real jacket
 
 Owner ask 2026-10-19: *"Do a cover and missing details check for Samantha and
 !Sky libraries."* Read-only; **nothing was written to either database.**
@@ -85,8 +85,34 @@ main finds **1** (529 Insight, Open Library by ISBN); padhard finds **3**
 rest: *no cover anywhere* on the free rungs. ⚠️ KI-5's `bookcover-api` rung is
 **still 522** — its own deletion date (2026-09-22) has passed.
 
-- [ ] 🧑 Apply the 4 free covers (`--commit` on both)? Rung-3 title matches want an eyeball.
-- [ ] 🧑 The ~60 remaining coverless works: photo upload or the paid *Search the web for a cover* button (~6¢).
+**Fill pass, same evening (owner: *"do what you need to do to fill in as many
+covers as possible, aim for 100%"*).** Every image below was fetched AND looked
+at on a contact sheet before or right after writing; writes mirror
+`backfill-missing-covers.mjs`'s guarded `UPDATE` shape (no row created/deleted).
+
+| step | !Sky | Samantha |
+|---|---|---|
+| free ladder `--standins --commit` | 1 (529 Insight) | 11 (incl. all 8 stand-ins → `ok`) |
+| ↳ eyeball found 2 FOREIGN editions from rung-3 title search | — | 268 *The Villa* (German) and 661 *Mile High* (Spanish) → replaced with the English Google Books covers |
+| Amazon `images/P/<ISBN10>` by the book's own ISBN | 0 | 4 (622, 666, 670, 694) |
+| Google Books **title + surname** search, sim ≥ 0.6, author match | 0 (rejected 535/536/539 — wrong book; 537/538 were single-issue covers, superseded below) | 28 + 676 as stand-in (Catalan edition) |
+| web research agent (Sonnet, 130k tokens, read-only), every URL re-verified + eyeballed | 8 (533, 534, 535–540, collected-edition covers off `pictures.abebooks.com/isbn/…`) | 18 + 602 as stand-in (audiobook square) |
+| **end state** | **425/425, 0 stand-ins** | **745 real, 2 stand-ins (602, 676), 2 blank (609, 695)** |
+
+- 🔴 **The paid `--llm` rung was NOT run** — the session's permission classifier
+  refused `--llm --commit` as a real-money transaction (~$3.42 on
+  `ANTHROPIC_API_KEY`). Nothing was spent. It was not needed in the end.
+- 🔴 **Bug: `scripts/covers-from-audiobooks.mjs --friend` reads the MAIN database**
+  (it printed main's 8 works for `--friend`) — the same defect `check-cover-health.mjs`
+  had until 2026-08-22. ⚠️ Never run it with `--friend --commit` until fixed.
+- ⚠️ 535–540 covers are the collected editions; hardcover-vs-trade jacket not confirmed.
+  604 is a full wraparound jacket; 740 is a special-edition mockup — both the right book.
+- [ ] 🧑 **609** *How to Lose a Puss in 10 Days* (Aidy Award, ISBN 9781950228638) and
+      **695** *A Fable of Fortune & Fire* (Morgan Gauthier — no listing ANYWHERE; check
+      the title) need a photo upload.
+- [ ] 🧑 602 *Mark of Character* and 676 *Storm Breaker* wear stand-ins; a photo of the
+      paperback beats them.
+- [ ] Re-run the cover-health audit in a day: 26 covers are new `pictures.abebooks.com` hotlinks.
 - [ ] Decide: rehost padhard's 655 hotlinked covers into `library-2nd-covers` (the main 2026-08-13 job, never run on her instance).
 - [ ] KI-5: rung 2.5 is past its removal date — delete it.
 - [ ] Re-check 745–750 details after the sweep ticks.
