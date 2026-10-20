@@ -1,6 +1,14 @@
 ﻿# DONE — library_catalog (dated archive)
 
 
+## ✅ 2026-10-19 20:49 Phoenix — `covers-from-audiobooks.mjs --friend` now reads padhard (moved whole from TODO)
+
+> **Last verified: 2026-10-19 20:48 Phoenix.** Commit `8785653`. Cause: `flags.friend` was parsed but `q` and `execute` were handed `{ remote }` only, so the run hit `library-catalog`. Fix: one `target = { remote, friend }` object for every read and write, and the report line names the database. Measured by dry run: `--remote` → `library-catalog`, 0 works; `--remote --friend` → `library-catalog-2nd (padhard)`, 4 works (602, 609, 676, 695, the known open set), 0 reachable; `--friend` without `--remote` → refused by `dbName()`. NOT verified: no `--commit` was run (nothing to write on either instance). The original entry follows unedited.
+
+- 🔴 **Bug: `scripts/covers-from-audiobooks.mjs --friend` reads the MAIN database**
+  (it printed main's 8 works for `--friend`) — the same defect `check-cover-health.mjs`
+  had until 2026-08-22. ⚠️ Never run it with `--friend --commit` until fixed.
+
 ## ✅ 2026-09-22 08:39 Phoenix — the deploy PAIR for 78745ec ran (moved whole from TODO)
 
 > **Last verified: 2026-09-22 08:41 Phoenix.** The owner added `Bash(npm run deploy:*)` / `Bash(npm run deploy)` to the global allow list, and the session ran the pair itself: **main** `a273b877` at 15:38:03Z on `1577628`, **friend** `3c684023` at 15:39:19Z on `4e31079` (each a deploys.log commit apart, as the pair always is). `npx wrangler deployments list` shows both at 100%. `/api/health` on `library.heygabi.ai` and `padhard.heygabi.ai`: 200, `ok:true`, `database:up`, estate `enforce` as `library` / `library2`, `configured:true`. Predeploy's check-clean, deploy-guard and full suite ran inside each deploy. NOT verified: no rendered page on either instance. The original section follows unedited.
