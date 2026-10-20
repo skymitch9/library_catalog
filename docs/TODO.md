@@ -1,4 +1,4 @@
-﻿# TODO — library_catalog (ACTIVE work log)
+# TODO — library_catalog (ACTIVE work log)
 
 > **Audience:** Claude sessions and the owner. **Status:** TRACKED.
 > **Last verified: 2026-09-22** — ONE thing: the deploy pair for `78745ec` is
@@ -53,6 +53,43 @@
 > ignored, tree clean), so this file survives a clone perfectly well. The queue
 > still lives in one place, because one list beats two; the reason is now
 > simply that it is a CROSS-REPO queue. Do not duplicate it here.
+
+## ☐ CHECKED 2026-10-19 — cover + missing-details audit of both libraries (!Sky = main, Samantha = padhard) — ☐ owner: apply 4 free covers? ☐ 60 coverless works
+
+Owner ask 2026-10-19: *"Do a cover and missing details check for Samantha and
+!Sky libraries."* Read-only; **nothing was written to either database.**
+Measured 18:2x–19:0x Phoenix against `library-catalog` and `library-catalog-2nd`.
+
+| | !Sky (main) | Samantha (padhard) |
+|---|---|---|
+| works | 425 | 749 |
+| no cover | **9** (529 Insight, 533 Clover City, 534 Lotus Lake, the six ASUNDA 535–540) | **56** |
+| `cover_status='standin'` | 0 | **8** (268, 542, 552, 561, 675, 707, 709, 710) |
+| stored cover URL broken (full `check:cover-health`, uncapped) | **0 / 416** | **0 / 693** after re-probe — the first pass got **35 × HTTP 502** (works 97–160, all `covers.openlibrary.org`); every one answered 200 + real JPEG minutes later, so it was a transient Open Library outage |
+| Google Books "COVER COMING SOON" card (KI-6 sha1) | 0 / 31 | 0 / 292 — and no repeated hash |
+| author `?unknown` | 1 (376 *Doctrine and Covenants…*) | 1 (134 *The Book of Bill*) |
+| detail gaps (description / first published / series, verdicts excluded) | **0** | 7 / 6 / 7 — works **695** (researched 2026-09-09, filled nothing) and **745–750** (added today 17:08–17:18 Phoenix; the hourly donor-first sweep reached 743/744 at 17:07/18:07 and will reach these over the next ticks) |
+| series set, no volume sort | 0 | 0 |
+| work with no edition row | 4 (531–534, already tracked below) | **16** (71, 72, 99, 164, 205, 251, 301, 303, 384, 446, 503, 514, 541, 599, 600, 739) |
+| editions with no ISBN-13 | 104 of 455 | 140 of 737 |
+
+🔴 **Structural finding — Samantha's covers are 95% third-party hotlinks**
+(Open Library 361, Google Books 294, R2 only 31 of 693), against main's mostly
+rehosted set (`bookcovers`/`covers.heygabi.ai` 241 of 416). Today's 35 × 502 is
+what that looks like: an outage upstream blanks her shelf and not his. The
+2026-08-13 R2 rehost (`docs/cover-rehost-report.md`) was main-only.
+
+**Free cover ladder, DRY RUN** (`backfill:missing-covers -- --remote [--friend]`):
+main finds **1** (529 Insight, Open Library by ISBN); padhard finds **3**
+(651 Holly by ISBN; 661 Mile High, 668 Surrogate Mother by title search). The
+rest: *no cover anywhere* on the free rungs. ⚠️ KI-5's `bookcover-api` rung is
+**still 522** — its own deletion date (2026-09-22) has passed.
+
+- [ ] 🧑 Apply the 4 free covers (`--commit` on both)? Rung-3 title matches want an eyeball.
+- [ ] 🧑 The ~60 remaining coverless works: photo upload or the paid *Search the web for a cover* button (~6¢).
+- [ ] Decide: rehost padhard's 655 hotlinked covers into `library-2nd-covers` (the main 2026-08-13 job, never run on her instance).
+- [ ] KI-5: rung 2.5 is past its removal date — delete it.
+- [ ] Re-check 745–750 details after the sweep ticks.
 
 ## ☑ ADDED 2026-09-18 — six Jay Boyce works (529–534) — ☐ owner: four printings, two format disagreements; ☐ verify the donor sweep pulled Samantha's series
 
