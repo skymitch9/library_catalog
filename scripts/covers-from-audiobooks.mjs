@@ -53,6 +53,14 @@
  *
  *   node scripts/covers-from-audiobooks.mjs                 # dry run
  *   node scripts/covers-from-audiobooks.mjs --remote --commit
+ *   node scripts/covers-from-audiobooks.mjs --remote --friend [--commit]   # padhard
+ *
+ * ⚠️ Until 2026-10-19 `--friend` was parsed and then DROPPED: `q` and `execute`
+ * were handed `{ remote }` only, so a `--friend` run read (and would have
+ * written) the MAIN catalog while looking like a padhard run — it printed
+ * main's 8 works. The same defect `check-cover-health.mjs` had until
+ * 2026-08-22. Every read and write now takes `target`, and the report names
+ * the database it actually used.
  */
 
 import { readFileSync } from 'node:fs';
@@ -61,7 +69,10 @@ import { execute, lit, parseFlags, query } from './lib/d1.mjs';
 import { ROOT } from './lib/d1.mjs';
 
 const flags = parseFlags();
-const q = (sql) => query(sql, { remote: flags.remote });
+// ⚠️ ONE target object for every read and write, so they cannot disagree.
+const target = { remote: flags.remote, friend: flags.friend };
+const q = (sql) => query(sql, target);
+const instance = flags.friend ? 'library-catalog-2nd (padhard)' : 'library-catalog';
 
 const CSV = process.env.CATALOG_CSV ?? path.resolve(ROOT, '../audiobook_catalog/site/catalog.csv');
 // The sibling's own bucket. ⚠️ NOT bookcovers.heygabi.ai — that one is this
@@ -136,7 +147,7 @@ for (const w of works) {
   plan.push({ id: Number(w.id), title: w.title, how, audioTitle: a.title, url, wasStandin: w.cover_status === 'standin' });
 }
 
-console.log(`\n${flags.remote ? 'REMOTE' : 'local'} — ${works.length} works needing a cover (blank or stand-in)`);
+console.log(`\n${flags.remote ? 'REMOTE' : 'local'} ${instance} — ${works.length} works needing a cover (blank or stand-in)`);
 console.log(`  reachable from the audiobook catalog : ${plan.length}`);
 console.log(`  already wearing that exact cover      : ${unchanged.length}`);
 console.log(`  not reachable                        : ${unreachable.length}\n`);
@@ -162,7 +173,7 @@ execute(
       `UPDATE work SET cover_url = ${lit(p.url)}, cover_status = 'standin', updated_at = datetime('now')
         WHERE id = ${p.id} AND (cover_url IS NULL OR cover_status = 'standin');`,
   ),
-  { remote: flags.remote },
+  target,
 );
 
 const after = q(

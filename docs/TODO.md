@@ -102,9 +102,6 @@ at on a contact sheet before or right after writing; writes mirror
 - 🔴 **The paid `--llm` rung was NOT run** — the session's permission classifier
   refused `--llm --commit` as a real-money transaction (~$3.42 on
   `ANTHROPIC_API_KEY`). Nothing was spent. It was not needed in the end.
-- 🔴 **Bug: `scripts/covers-from-audiobooks.mjs --friend` reads the MAIN database**
-  (it printed main's 8 works for `--friend`) — the same defect `check-cover-health.mjs`
-  had until 2026-08-22. ⚠️ Never run it with `--friend --commit` until fixed.
 - ⚠️ 535–540 covers are the collected editions; hardcover-vs-trade jacket not confirmed.
   604 is a full wraparound jacket; 740 is a special-edition mockup — both the right book.
 - [ ] 🧑 **609** *How to Lose a Puss in 10 Days* (Aidy Award, ISBN 9781950228638) and
