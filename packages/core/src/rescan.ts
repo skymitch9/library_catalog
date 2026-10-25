@@ -11,7 +11,7 @@
  * wrong for the commonest reason the barcode is not on file — **the printing is
  * already in the catalog, recorded before anyone had the barcode**. Production
  * carries 60+ such rows on purpose (crowdfunded printings, slipcase volumes,
- * everything in `docs/isbn-barcode-worklist.md`), and the documented promise on
+ * everything in `docs/archive/isbn-barcode-worklist.md`), and the documented promise on
  * every one of them is "a barcode scan will fill it in later". The silent path
  * turned that promise into a duplicate: rescanning the nine slipcase volumes
  * would have produced nine phantom editions and nine phantom copies. Residue of

@@ -91,8 +91,8 @@ they live in `docs/` rather than beside the reference material:
 
 | Doc | What it is |
 |---|---|
-| [`../isbn-barcode-worklist.md`](../isbn-barcode-worklist.md) | The **64 editions whose ISBN only the physical book can settle**, grouped by author/series for shelf work. ⚠️ Contains the **Realmkeeper warning**: 16 edition rows describe **8 physical omnibus volumes**, and `idx_edition_isbn13` is UNIQUE catalog-wide, so a volume's barcode can only ever land on one of its two rows. |
-| [`../cover-rehost-report.md`](../cover-rehost-report.md) | The 2026-08-13 rehost of **every third-party cover hotlink into R2** (171 URLs, 295 rows) plus the 21 covers found for coverless works, with each dead end itemised. ⚠️ Records that Open Library's **"no cover" sentinel** (`/b/id/-1-L.jpg`) had been stored as a real cover. |
+| [`../archive/isbn-barcode-worklist.md`](../archive/isbn-barcode-worklist.md) | The **64 editions whose ISBN only the physical book can settle**, grouped by author/series for shelf work. ⚠️ Contains the **Realmkeeper warning**: 16 edition rows describe **8 physical omnibus volumes**, and `idx_edition_isbn13` is UNIQUE catalog-wide, so a volume's barcode can only ever land on one of its two rows. |
+| [`../archive/cover-rehost-report.md`](../archive/cover-rehost-report.md) | The 2026-08-13 rehost of **every third-party cover hotlink into R2** (171 URLs, 295 rows) plus the 21 covers found for coverless works, with each dead end itemised. ⚠️ Records that Open Library's **"no cover" sentinel** (`/b/id/-1-L.jpg`) had been stored as a real cover. |
 
 ⚠️ **The `cover_status` distinction both docs rely on:** `'ok'` means **a person
 assessed the image**. Automated work leaves it **NULL** — "nobody has looked" —

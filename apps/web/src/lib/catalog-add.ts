@@ -306,7 +306,7 @@ export async function addLineToCatalog(
    * backwards for the commonest reason the ISBN is missing — the printing is
    * already on file, recorded before anyone had the barcode (60+ crowdfunded
    * and slipcase rows carry exactly that promise in
-   * `docs/isbn-barcode-worklist.md`). So the add stops and asks the four-way
+   * `docs/archive/isbn-barcode-worklist.md`). So the add stops and asks the four-way
    * question in `@lc/core/rescan.ts`, and `rescanQuestionFor` returning null —
    * a work with no physical presence, the paperback-of-an-ebook case — is what
    * keeps the ordinary attach free of a pointless tap.

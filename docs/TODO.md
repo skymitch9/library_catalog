@@ -77,7 +77,7 @@ Measured 18:2x–19:0x Phoenix against `library-catalog` and `library-catalog-2n
 (Open Library 361, Google Books 294, R2 only 31 of 693), against main's mostly
 rehosted set (`bookcovers`/`covers.heygabi.ai` 241 of 416). Today's 35 × 502 is
 what that looks like: an outage upstream blanks her shelf and not his. The
-2026-08-13 R2 rehost (`docs/cover-rehost-report.md`) was main-only.
+2026-08-13 R2 rehost (`docs/archive/cover-rehost-report.md`) was main-only.
 
 **Free cover ladder, DRY RUN** (`backfill:missing-covers -- --remote [--friend]`):
 main finds **1** (529 Insight, Open Library by ISBN); padhard finds **3**
