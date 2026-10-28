@@ -1,5 +1,27 @@
 ﻿# DONE — library_catalog (dated archive)
 
+## ✅ 2026-10-28 10:1x Phoenix — universe sweep on BOTH instances + Hoid's Storybook Collection added to The Cosmere in the shared list (moved whole from TODO)
+
+> Owner 10:0x: *"we need to do a universe sweep since most of these books fall in the cosmere or cal verse"* and *"even the non canoical cosmere book should be in universe, The Chasm Friends get a pet"*. **Last verified 2026-10-28 10:1x Phoenix** by the sweep's own re-run (dry run after the list change: nothing left to set on main).
+
+| instance | works | already correct | set by this sweep | left alone (human) |
+|---|---|---|---|---|
+| main | 432 | 408 | **19** — 452/474/475/476/500 → Riordanverse (Kane Chronicles, Magnus Chase, Chalice of the Gods); 485–498 → DotHack (the fourteen .hack volumes) | 5 (7 Dungeon Born, 542–545 the storybooks) |
+| padhard (--friend) | 765 | 765 | **0** | 0 |
+
+Stored after: main `human 5 / list 95`, padhard `list 27`. The 19 were rows the shared list had decided earlier (Riordanverse, DotHack) that nobody had swept in — exactly the staleness the script's header describes. The CAL Verse rows (528, 546, 547) and Fires of December were already right; Z & C (541) resolves to no universe, correctly.
+
+**Shared list edit** (`catalog-platform/data/universes.json`, via `node tools/universes.mjs add-series "The Cosmere" --series "Hoid's Storybook Collection" --decided-how human --why …`, validate clean, committed + pushed in catalog-platform): before it, `who --title "The Chasm Friends Get a Pet" --series "Hoid's Storybook Collection"` answered *no universe*; after it, *The Cosmere*. 542–545 already carried The Cosmere by hand (universe_how = human, from the 09:4x write), so the sweep changed nothing on them — the list entry is what makes a FUTURE storybook add resolve on its own, in both catalogs. ⚠️ That only reaches the add path once the Worker is rebuilt with the new list → deploy pair (recorded in deploys.log when it ran).
+
+### (as written in TODO)
+
+## ☐ OWNER ASK 2026-10-28 10:0x Phoenix — "we need to do a universe sweep since most of these books fall in the cosmere or cal verse"
+
+Context: the 7-book write set `universe` by hand on 542–545 (The Cosmere); 546/547/528 already carried CAL Verse; 541 none. The sweep is `npm run backfill:universes` (`scripts/backfill-universes.mjs`, keyed on series + author against `catalog-platform/data/universes.json`), and per the both-catalogs rule it runs on main AND `--friend`, both numbers reported. ☐ Check the shared list knows the new series first (Hoid's Storybook Collection, Chance Encounter, Full Murderhobo) — a sweep cannot assign what the list does not name. ☐ dry run both → ☐ commit both → ☐ record counts here.
+
+
+---
+
 ## ✅ 2026-10-28 09:5x Phoenix — *World's Only Hero* (546): two copies, hardcover + barcode-less paperback (moved whole from TODO)
 
 > Owner 09:5x: *"i owen 2, 1 hard cover and 1 paperback"*, then *"none"* to the paperback-barcode question. Paperback edition **699** (Mountaindale Press, isbn13 null, note *No barcode printed on this copy (owner-verified)*), copy 485 linked to it; copy 486 stays on hardcover 690 (9781637663691). Verified 09:5x via `/api/works/546`: 2 copies, each on its edition. Research's paperback ISBN 9781638936893 (future-dated 2027 Amazon listing) was deliberately NOT assigned.
