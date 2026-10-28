@@ -54,6 +54,26 @@
 > still lives in one place, because one list beats two; the reason is now
 > simply that it is a CROSS-REPO queue. Do not duplicate it here.
 
+## ☐ OWNER ASK 2026-10-27 23:2x Phoenix — "I just added some books, can you fill in the missing details and isbns" (!Sky)
+
+Measured off `/api/export.json` (owner's browser session; wrangler is logged out since 2026-10-25, so `scripts/lib/d1.mjs` is unusable until `npx wrangler login`). Seven works added since 2026-10-24, all with covers:
+
+| id | title | author | has | missing |
+|---|---|---|---|---|
+| 541 | Z & C | Michele Haney | desc, 2024 | **edition row**, ISBN, illustrator |
+| 542 | The Dog and the Dragon | Brandon Sanderson | desc, series *Hoid's Storybook Collection* | **edition row**, ISBN, year, index, universe |
+| 543 | The Chasm Friends Get a Pet | Dan Wells | — | **edition row**, ISBN, desc, year, series, universe |
+| 544 | Wandersail | Brandon Sanderson | — | **edition row**, ISBN, desc, year, series, universe |
+| 545 | The Girl Who Looked Up | Brandon Sanderson | — | **edition row**, ISBN, desc, year, series, universe |
+| 546 | World's Only Hero | Dakota Krout | hardcover ed 690 (signed copy) | ISBN, desc, year, series, universe |
+| 547 | Everything | Dakota Krout | hardcover ed 691 (signed copy), 2023 | ISBN, desc, series (Full Murderhobo 3?), universe |
+
+⚠️ 542–545 are the rest of campaign 1 (*Hoid's Storybook Collection*, BackerKit, tier Master Worldsinger) whose only pledge items so far are 3× *Fires of December* (219). Those four are Dragonsteel printings — the title-search ISBN is the TOR retail one (the trap `archive/isbn-barcode-worklist.md` records for Fires of December), so the ISBNs come from research, not `backfill:missing-isbns`. Research runs 663/664 (541, 542) already ran paid and found nothing. Plan: Opus research agent (dispatched 23:3x) → owner reviews the proposals → writes via `POST /api/editions` / `PATCH /api/editions/:id` / `PATCH /api/works/:id` from the owner's session. ✅ Owner 23:4x: Z & C is a **paperback**. ✅ Owner 23:4x (option a): the four Dragonsteel rows are `collectors`, name "Hoid's Storybook Collection — Master Worldsinger tier", format hardcover.
+
+## ☐ OWNER ASK 2026-10-27 23:5x Phoenix — "adding a book should automatically add an edition row, why does it not"
+
+Context: works 541–545 (added 10-24/10-28 through the add panel) have a copy each with `edition_id = NULL` and no edition row; 546/547 got theirs only because the owner added editions by hand ~2 min later. ✅ Found 23:5x: `apps/web/src/lib/catalog-add.ts:446` creates an edition only when the line has an ISBN-13 — a spine/photo/typed add writes work + copy and no edition, by a comment that calls the format "a guess". That is stale: the add panel's format toggle (`AddBookPanel.tsx:570`) makes it the owner's choice, and the file's own 2026-08-13 note says a NEW book "still earns its edition". ✅ Owner 23:5x: **"Build now."** Design: a new book with no ISBN still gets ONE edition in the toggle's format (typed path: same toggle, default paperback), copy linked to it; a want attaching to a held book keeps writing no edition. ☐ Opus build agent dispatched 23:5x (branch, tests, commit, push). 🔴 Deploy pair BLOCKED until the owner runs `npx wrangler login` (expired 2026-10-25).
+
 ## ☑ COVERS FILLED 2026-10-19 — !Sky 100% (425/425), Samantha 745 real + 2 stand-ins + 2 blank of 749 — ☐ owner: photos for 609 + 695, ☐ 602/676 real jacket
 
 Owner ask 2026-10-19: *"Do a cover and missing details check for Samantha and
