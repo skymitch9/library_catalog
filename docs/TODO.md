@@ -54,7 +54,7 @@
 > still lives in one place, because one list beats two; the reason is now
 > simply that it is a CROSS-REPO queue. Do not duplicate it here.
 
-## ☐ 2026-10-28 10:0x — leftovers from the 7-book write (results in `DONE.md`, top entry)
+## ☐ 2026-10-28 09:4x — leftovers from the 7-book write (results in `DONE.md`, top entry)
 
 - [ ] 🧑 **546 *World's Only Hero* has TWO owned copies — 485 (no edition, from the add panel) and 486 (edition 690, from the owner's manual edition add ~2 min later).** 547 had the same pair, but there it was real (hardcover + barcode-less paperback). If the owner holds one World's Only Hero, copy 485 is a duplicate to delete (destructive → owner's call); if two, link 485 to 690.
 - [ ] The typed add form still has no format control (always paperback) — see the next section.

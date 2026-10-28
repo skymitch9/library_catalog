@@ -1,8 +1,8 @@
 ﻿# DONE — library_catalog (dated archive)
 
-## ✅ 2026-10-28 10:0x Phoenix — the 7 new works + *Anything* + *Fires of December* filled from the owner's back-cover photos (moved whole from TODO)
+## ✅ 2026-10-28 09:4x Phoenix — the 7 new works + *Anything* + *Fires of December* filled from the owner's back-cover photos (moved whole from TODO)
 
-> **Last verified: 2026-10-28 10:0x Phoenix**, by re-reading every row through `/api/works/:id` after the writes (main instance only — these are the owner's own copies, padhard has none of these works). All writes went through the owner's signed-in browser session (`fetch` with the Firebase Bearer token), 24 calls, every one 200/201. Barcodes read off the owner's photos 09:3x–10:0x, ISBN-13 checksums verified.
+> **Last verified: 2026-10-28 09:4x Phoenix**, by re-reading every row through `/api/works/:id` after the writes (main instance only — these are the owner's own copies, padhard has none of these works). All writes went through the owner's signed-in browser session (`fetch` with the Firebase Bearer token), 24 calls, every one 200/201. Barcodes read off the owner's photos 09:3x–09:4x, ISBN-13 checksums verified.
 
 | work | edition | ISBN | format / kind | publisher, year, pages | copy |
 |---|---|---|---|---|---|
