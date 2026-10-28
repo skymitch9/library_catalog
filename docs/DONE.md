@@ -1,5 +1,13 @@
 ﻿# DONE — library_catalog (dated archive)
 
+## ✅ 2026-10-28 10:20 Phoenix — deploy pair for the storybook universe entry: main `21abded` → `363e9006`, friend `36764dd` → `ad26eeeb`
+
+> Supersedes the "deploy pair (recorded in deploys.log when it ran)" line in the 10:1x universe-sweep entry below. Both lines are in `deploys.log`; no migrations. Two things cost time on the way, both worth knowing:
+> 1. **The shared list has a pinned shape test** — `packages/core/test/universes.test.ts` asserts `[series, titles, exclusions]` per universe, so adding a series in catalog-platform FAILS this repo's `npm test` (and therefore `predeploy`) until the pin is bumped with a dated comment (`21abded`: The Cosmere 4 → 5). That is the test working; bump it in the same sitting as the list edit.
+> 2. **A predeploy test failure leaves `.deploy.lock` behind** (postdeploy never runs), so the next `npm run deploy` is refused by deploy-guard for up to 20 min. After confirming no wrangler process and no new deploys.log line, `ALLOW_OVERLAP=1 npm run deploy` is the sanctioned way through. Also: never pipe `npm run deploy` into `grep` in a `&&` chain — the test output matches almost anything and the chain's exit status stops meaning what you think.
+
+---
+
 ## ✅ 2026-10-28 10:1x Phoenix — universe sweep on BOTH instances + Hoid's Storybook Collection added to The Cosmere in the shared list (moved whole from TODO)
 
 > Owner 10:0x: *"we need to do a universe sweep since most of these books fall in the cosmere or cal verse"* and *"even the non canoical cosmere book should be in universe, The Chasm Friends get a pet"*. **Last verified 2026-10-28 10:1x Phoenix** by the sweep's own re-run (dry run after the list change: nothing left to set on main).
