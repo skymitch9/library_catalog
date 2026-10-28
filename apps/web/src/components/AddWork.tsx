@@ -197,7 +197,7 @@ export function AddWork({
       }
 
       /*
-       * ⚠️ The whole write sequence — the work, the typed ISBN's edition, the
+       * ⚠️ The whole write sequence — the work, its one edition (ISBN or not), the
        * copy — lives in `lib/typed-add.ts`, not here. It was inline until
        * 2026-09-07, and being inline is why the three 2026-08-13 intake bugs
        * went a month without a re-test: this repo has no jsdom and this file

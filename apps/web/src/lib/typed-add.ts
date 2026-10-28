@@ -26,7 +26,8 @@
  *     `typedAddOutcome` is what the component branches on so a partial save
  *     cannot be reported as a clean one.
  */
-import { classifyScannedCode } from '@lc/core';
+import { classifyScannedCode, type EditionFormat } from '@lc/core';
+import { DEFAULT_SCAN_FORMAT } from './scan-format.js';
 
 /**
  * What the "And we…" dropdown opens on.
@@ -100,12 +101,20 @@ export function readTypedIsbn(raw: string): TypedIsbn {
 export type TypedAddProblem =
   | { kind: 'isbn-not-an-isbn'; typed: string; reason: UnusableReason }
   | { kind: 'isbn-not-recorded'; detail: string }
+  /**
+   * Not even the ISBN-less edition landed — the book is in with no printing
+   * row, the 2026-08-13 `editions = 0` state. Rare (the ISBN-less write cannot
+   * collide with anything), so this is a network/server failure when it fires.
+   */
+  | { kind: 'edition-not-recorded'; detail: string }
   | { kind: 'copy-not-recorded'; detail: string; intent: 'owned' | 'wanted' };
 
 export interface TypedAddResult {
   workId: number;
   /** The ISBN that reached an `edition` row, when one did. */
   isbn13: string | null;
+  /** The edition this save minted — always one on a clean save. */
+  editionId: number | null;
   /** Empty on a clean save. Anything in here must be shown to a person. */
   problems: TypedAddProblem[];
 }
@@ -116,7 +125,7 @@ export interface TypedAddResult {
  */
 export interface TypedAddDeps {
   createWork: (body: unknown) => Promise<{ work: { id: number } }>;
-  createEdition: (body: unknown) => Promise<unknown>;
+  createEdition: (body: unknown) => Promise<{ edition: { id: number } }>;
   createCopy: (body: unknown) => Promise<unknown>;
   /** `lib/errors.ts`'s `describeError`, passed in because it reaches `api.js`. */
   describeError: (err: unknown) => string;
@@ -129,6 +138,14 @@ export interface TypedAddInput {
   series: string | null;
   isbn: string;
   intent: TypedIntent;
+  /**
+   * The binding to write on the edition. The typed form has no format control
+   * today, so this is normally absent and the edition gets `paperback` —
+   * ⚠️ **a guess**, the same documented default the scan toggle opens on
+   * (`DEFAULT_SCAN_FORMAT`), defensible only because the Editions panel on the
+   * book page corrects it in one tap.
+   */
+  format?: EditionFormat;
 }
 
 /**
@@ -160,13 +177,31 @@ export async function saveTypedWork(
 
   const problems: TypedAddProblem[] = [];
   let isbn13: string | null = null;
+  let editionId: number | null = null;
+  const format = input.format ?? DEFAULT_SCAN_FORMAT;
 
+  /*
+   * ⚠️ **A new book always gets exactly one edition** (owner rule 2026-10-27;
+   * the same rule `lib/new-book-edition.ts` states for the scan/photo path).
+   * This used to write an edition only when an ISBN was typed — so every
+   * ISBN-less typed add was the 2026-08-13 failure all over again: five
+   * hand-added books with `editions = 0`, unmatchable for good. `saveTypedWork`
+   * always creates a NEW work, so there is no existing printing to duplicate
+   * and the wishlist-attach rule (#139) does not arise here.
+   */
   const typed = readTypedIsbn(input.isbn);
   if (typed.kind === 'unusable') {
     problems.push({ kind: 'isbn-not-an-isbn', typed: typed.typed, reason: typed.reason });
   } else if (typed.kind === 'isbn13') {
     try {
-      await deps.createEdition({ workId: work.id, isbn13: typed.isbn13 });
+      editionId = (
+        await deps.createEdition({
+          workId: work.id,
+          isbn13: typed.isbn13,
+          format,
+          source: 'manual',
+        })
+      ).edition.id;
       isbn13 = typed.isbn13;
     } catch (err) {
       /*
@@ -174,16 +209,35 @@ export async function saveTypedWork(
        * book because its ISBN was already on another row would be the bulk
        * intake path failing at the one thing it exists to do. What changed is
        * that it is now REPORTED: the old `setNote` here was overwritten by the
-       * panel closing on the very next line.
+       * panel closing on the very next line. The ISBN-less edition below
+       * still gives the book its one printing row.
        */
       problems.push({ kind: 'isbn-not-recorded', detail: deps.describeError(err) });
     }
   }
 
-  // A copy with no `edition_id` is what migration 0001 made nullable for.
+  // No ISBN (or the ISBN write refused): the printing is still real, it is just
+  // unidentified. An ISBN-less edition on a brand-new work cannot collide with
+  // anything — the ISBN index ignores NULLs and there is no sibling to match.
+  if (editionId === null) {
+    try {
+      editionId = (
+        await deps.createEdition({ workId: work.id, isbn13: null, format, source: 'manual' })
+      ).edition.id;
+    } catch (err) {
+      problems.push({ kind: 'edition-not-recorded', detail: deps.describeError(err) });
+    }
+  }
+
+  // Linked to the edition just minted; null only if that write failed, which
+  // is reported above (migration 0001 keeps `copy.edition_id` nullable).
   if (input.intent !== '') {
     try {
-      await deps.createCopy({ workId: work.id, status: input.intent });
+      await deps.createCopy({
+        workId: work.id,
+        status: input.intent,
+        editionId: editionId ?? undefined,
+      });
     } catch (err) {
       problems.push({
         kind: 'copy-not-recorded',
@@ -193,7 +247,7 @@ export async function saveTypedWork(
     }
   }
 
-  return { workId: work.id, isbn13, problems };
+  return { workId: work.id, isbn13, editionId, problems };
 }
 
 /**
@@ -218,6 +272,8 @@ export function typedAddProblemSentence(problem: TypedAddProblem): string {
       );
     case 'isbn-not-recorded':
       return `The book was added, but its ISBN was not recorded — ${problem.detail} Add it from the book page.`;
+    case 'edition-not-recorded':
+      return `The book was added, but no edition (its format and printing) was recorded — ${problem.detail} Add one from the Editions panel on the book page.`;
     case 'copy-not-recorded':
       return (
         `The book was added, but ${problem.intent === 'owned' ? 'your copy was not recorded, so it is catalogued and not owned' : 'it was not put on the wishlist'} — ` +

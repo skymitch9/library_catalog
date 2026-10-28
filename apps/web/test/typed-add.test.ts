@@ -57,7 +57,7 @@ function stubDeps(failing: string[] = []) {
   const deps: TypedAddDeps & { calls: typeof calls } = {
     calls,
     createWork: mk('createWork', { work: { id: 999 } }) as TypedAddDeps['createWork'],
-    createEdition: mk('createEdition', { edition: { id: 1 } }),
+    createEdition: mk('createEdition', { edition: { id: 1 } }) as TypedAddDeps['createEdition'],
     createCopy: mk('createCopy', {}),
     describeError: () => 'Something went wrong on our side.',
   };
@@ -77,7 +77,13 @@ function input(overrides: Partial<TypedAddInput> = {}): TypedAddInput {
 }
 
 const editionOf = (deps: ReturnType<typeof stubDeps>) =>
-  deps.calls.find((c) => c.name === 'createEdition')?.body as { isbn13?: string } | undefined;
+  deps.calls.find((c) => c.name === 'createEdition')?.body as { isbn13?: string | null } | undefined;
+
+/** Every createEdition body, in call order. */
+const editionsOf = (deps: ReturnType<typeof stubDeps>) =>
+  deps.calls
+    .filter((c) => c.name === 'createEdition')
+    .map((c) => c.body as { workId: number; isbn13: string | null; format: string; source: string });
 
 describe('BUG 1 — the typed ISBN is not stored', () => {
   it('stores the 13-digit form printed on the book (held before the fix)', async () => {
@@ -103,7 +109,9 @@ describe('BUG 1 — the typed ISBN is not stored', () => {
     // nothing — on a row that will now never re-match.
     const deps = stubDeps();
     const result = await saveTypedWork(deps, input({ isbn: '9781836422807' }));
-    assert.equal(editionOf(deps), undefined, 'nothing may be stored');
+    // The book still gets its one printing row — but with NO ISBN on it.
+    assert.equal(editionsOf(deps).length, 1);
+    assert.equal(editionOf(deps)?.isbn13, null, 'the mistyped code may not be stored');
     assert.equal(result.problems.length, 1);
     assert.equal(result.problems[0]?.kind, 'isbn-not-an-isbn');
     const outcome = typedAddOutcome(result);
@@ -113,7 +121,7 @@ describe('BUG 1 — the typed ISBN is not stored', () => {
   it('an empty box is not a problem — nothing was claimed', async () => {
     const deps = stubDeps();
     const result = await saveTypedWork(deps, input({ isbn: '   ' }));
-    assert.equal(editionOf(deps), undefined);
+    assert.equal(editionOf(deps)?.isbn13, null);
     assert.deepEqual(result.problems, []);
     assert.equal(typedAddOutcome(result).kind, 'clean');
   });
@@ -159,6 +167,34 @@ describe('BUG 3 — a save can fail silently', () => {
     assert.equal(result.problems[0]?.kind, 'isbn-not-recorded');
   });
 
+  it('a failed ISBN edition falls back to an ISBN-less one, so the book still has its printing', async () => {
+    const deps = stubDeps();
+    let n = 0;
+    deps.createEdition = async (body: unknown) => {
+      deps.calls.push({ name: 'createEdition', body });
+      if (n++ === 0) throw new Error('stub: isbn_taken');
+      return { edition: { id: 7 } };
+    };
+    const result = await saveTypedWork(deps, input({ isbn: '9781836422808' }));
+    assert.deepEqual(
+      editionsOf(deps).map((e) => e.isbn13),
+      ['9781836422808', null],
+    );
+    assert.equal(result.isbn13, null);
+    assert.equal(result.editionId, 7);
+    assert.deepEqual(result.problems.map((p) => p.kind), ['isbn-not-recorded']);
+    const copy = deps.calls.find((c) => c.name === 'createCopy')?.body as { editionId?: number };
+    assert.equal(copy?.editionId, 7);
+  });
+
+  it('a failed ISBN-less edition is reported, never swallowed', async () => {
+    const deps = stubDeps(['createEdition']);
+    const result = await saveTypedWork(deps, input());
+    assert.equal(result.editionId, null);
+    assert.deepEqual(result.problems.map((p) => p.kind), ['edition-not-recorded']);
+    assert.equal(typedAddOutcome(result).kind, 'partial');
+  });
+
   it('a failed copy step does NOT throw, and warns against pressing Save again', async () => {
     // 🔴 REPRODUCED before the fix: it threw out of the handler, the person saw
     // a bare request error with no mention of the book, and pressing Save again
@@ -190,6 +226,7 @@ describe('BUG 3 — a save can fail silently', () => {
     const sentences = [
       typedAddProblemSentence({ kind: 'isbn-not-an-isbn', typed: '50499', reason: 'price_addon' }),
       typedAddProblemSentence({ kind: 'isbn-not-recorded', detail: 'x.' }),
+      typedAddProblemSentence({ kind: 'edition-not-recorded', detail: 'x.' }),
       typedAddProblemSentence({ kind: 'copy-not-recorded', detail: 'x.', intent: 'owned' }),
     ];
     for (const s of sentences) {
@@ -198,5 +235,47 @@ describe('BUG 3 — a save can fail silently', () => {
       // The estate rule: nobody sees a bare HTTP status.
       assert.ok(!/\bHTTP \d\d\d\b/.test(s), `bare status in: ${s}`);
     }
+  });
+});
+
+describe('A NEW typed book always gets exactly one edition (owner rule 2026-10-27)', () => {
+  it('no ISBN → one edition, isbn13 null, paperback default, source manual, copy linked to it', async () => {
+    // 🔴 Before: no ISBN meant no createEdition at all and an unlinked copy —
+    // the `editions = 0` state of works 541–545.
+    const deps = stubDeps();
+    const result = await saveTypedWork(deps, input());
+    assert.deepEqual(editionsOf(deps), [
+      { workId: 999, isbn13: null, format: 'paperback', source: 'manual' },
+    ]);
+    const copy = deps.calls.find((c) => c.name === 'createCopy')?.body as {
+      editionId?: number;
+      status?: string;
+    };
+    assert.equal(copy?.editionId, 1);
+    assert.equal(result.editionId, 1);
+    assert.deepEqual(result.problems, []);
+  });
+
+  it('honours a format when the caller passes one', async () => {
+    const deps = stubDeps();
+    await saveTypedWork(deps, input({ format: 'hardcover' }));
+    assert.equal(editionsOf(deps)[0]?.format, 'hardcover');
+  });
+
+  it('with an ISBN → exactly one edition carrying it, and the copy links to it', async () => {
+    const deps = stubDeps();
+    const result = await saveTypedWork(deps, input({ isbn: '9781836422808' }));
+    assert.equal(editionsOf(deps).length, 1);
+    assert.equal(editionsOf(deps)[0]?.isbn13, '9781836422808');
+    const copy = deps.calls.find((c) => c.name === 'createCopy')?.body as { editionId?: number };
+    assert.equal(copy?.editionId, 1);
+    assert.equal(result.isbn13, '9781836422808');
+  });
+
+  it('"just catalogue it" still mints the edition — the book exists, so does a printing', async () => {
+    const deps = stubDeps();
+    await saveTypedWork(deps, input({ intent: '' }));
+    assert.equal(editionsOf(deps).length, 1);
+    assert.equal(deps.calls.some((c) => c.name === 'createCopy'), false);
   });
 });
