@@ -406,7 +406,12 @@ describe('the approved content, so an edit in catalog-platform cannot land unnot
       // is a GLOBAL stop and would have blocked the new Reckoners/Cytoverse
       // overrides on those exact titles. The Cosmere still refuses all three
       // via notSeries and the new entries' own `why` text.
-      'The Cosmere': [4, 36, 5],
+      // series 4 -> 5 on 2026-10-28: +Hoid's Storybook Collection, the four
+      // Dragonsteel picture books (library works 542–545, incl. the
+      // non-canonical ChasmFriends — owner: "even the non canonical cosmere
+      // book should be in universe"). Title-keyed matching cannot find them:
+      // 543 is by Dan Wells and the others' titles name nothing Cosmere.
+      'The Cosmere': [5, 36, 5],
       // 12 since 2026-08-12: Turncoat's Truth was restored from _refused once the
       // owner verified the co-authored book does sit inside the continuity.
       Runnerverse: [12, 3, 0],
