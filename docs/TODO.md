@@ -54,23 +54,11 @@
 > still lives in one place, because one list beats two; the reason is now
 > simply that it is a CROSS-REPO queue. Do not duplicate it here.
 
-## ☐ OWNER ASK 2026-10-27 23:2x Phoenix — "I just added some books, can you fill in the missing details and isbns" (!Sky)
+## ☐ 2026-10-28 10:0x — leftovers from the 7-book write (results in `DONE.md`, top entry)
 
-Measured off `/api/export.json` (owner's browser session; wrangler is logged out since 2026-10-25, so `scripts/lib/d1.mjs` is unusable until `npx wrangler login`). Seven works added since 2026-10-24, all with covers:
-
-| id | title | author | has | missing |
-|---|---|---|---|---|
-| 541 | Z & C | Michele Haney | desc, 2024 | **edition row**, ISBN, illustrator |
-| 542 | The Dog and the Dragon | Brandon Sanderson | desc, series *Hoid's Storybook Collection* | **edition row**, ISBN, year, index, universe |
-| 543 | The Chasm Friends Get a Pet | Dan Wells | — | **edition row**, ISBN, desc, year, series, universe |
-| 544 | Wandersail | Brandon Sanderson | — | **edition row**, ISBN, desc, year, series, universe |
-| 545 | The Girl Who Looked Up | Brandon Sanderson | — | **edition row**, ISBN, desc, year, series, universe |
-| 546 | World's Only Hero | Dakota Krout | hardcover ed 690 (signed copy) | ISBN, desc, year, series, universe |
-| 547 | Everything | Dakota Krout | hardcover ed 691 (signed copy), 2023 | ISBN, desc, series (Full Murderhobo 3?), universe |
-
-⚠️ 542–545 are the rest of campaign 1 (*Hoid's Storybook Collection*, BackerKit, tier Master Worldsinger) whose only pledge items so far are 3× *Fires of December* (219). Those four are Dragonsteel printings — the title-search ISBN is the TOR retail one (the trap `archive/isbn-barcode-worklist.md` records for Fires of December), so the ISBNs come from research, not `backfill:missing-isbns`. Research runs 663/664 (541, 542) already ran paid and found nothing. Plan: Opus research agent (dispatched 23:3x) → owner reviews the proposals → writes via `POST /api/editions` / `PATCH /api/editions/:id` / `PATCH /api/works/:id` from the owner's session. ✅ Owner 23:4x: Z & C is a **paperback**. 🔴 Research (Opus agent, 23:4x, file `scratchpad/new-books-research.json`): **no ISBN exists anywhere for the four Dragonsteel storybooks** — Open Library (978-1-938570 block probed), BackerKit, Dragonsteel's store (re-checked by the conductor 23:5x via Shopify search: only merch matches), Amazon; no Tor edition either. Only the back-cover barcode can settle them. ⏰ Owner 23:5x: *"remind me tomorrow"* → session cron Wed 2026-10-28 08:57 (dies with the session; a later session should raise it). ✅ Owner 23:4x (option a): the four Dragonsteel rows are `collectors`, name "Hoid's Storybook Collection — Master Worldsinger tier", format hardcover.
-
-## ☐ 2026-10-27 23:4x — *Anything* (528) edition 681 is labelled hardcover but carries the PAPERBACK ISBN 9781637660744 (research agent, Amazon); hardcover is 9781637662298. Owner 23:4x: *"We have both hard cover and paper for anything."* ☐ Proposed: relabel 681 → paperback, add a hardcover edition 9781637662298, one copy per printing. Awaiting the owner's go with the 7-book write.
+- [ ] 🧑 **546 *World's Only Hero* has TWO owned copies — 485 (no edition, from the add panel) and 486 (edition 690, from the owner's manual edition add ~2 min later).** 547 had the same pair, but there it was real (hardcover + barcode-less paperback). If the owner holds one World's Only Hero, copy 485 is a duplicate to delete (destructive → owner's call); if two, link 485 to 690.
+- [ ] The typed add form still has no format control (always paperback) — see the next section.
+- [ ] 542–545 carry `series` without `series_index_sort` (the collection has no canonical order; 542–544 were already that way from the add). Gabi may flag them; leave unless the owner wants an order.
 
 ## ☐ OWNER ASK 2026-10-27 23:5x Phoenix — "adding a book should automatically add an edition row, why does it not"
 

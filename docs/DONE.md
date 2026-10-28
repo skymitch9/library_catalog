@@ -1,5 +1,53 @@
 ﻿# DONE — library_catalog (dated archive)
 
+## ✅ 2026-10-28 10:0x Phoenix — the 7 new works + *Anything* + *Fires of December* filled from the owner's back-cover photos (moved whole from TODO)
+
+> **Last verified: 2026-10-28 10:0x Phoenix**, by re-reading every row through `/api/works/:id` after the writes (main instance only — these are the owner's own copies, padhard has none of these works). All writes went through the owner's signed-in browser session (`fetch` with the Firebase Bearer token), 24 calls, every one 200/201. Barcodes read off the owner's photos 09:3x–10:0x, ISBN-13 checksums verified.
+
+| work | edition | ISBN | format / kind | publisher, year, pages | copy |
+|---|---|---|---|---|---|
+| 541 Z & C | 692 (new) | 9798343601718 | paperback | Independently published, 2024, 29 | 480 linked |
+| 542 The Dog and the Dragon | 693 (new) | 9781938570681 | hardcover, collectors, "Hoid's Storybook Collection — Master Worldsinger tier" | Dragonsteel Entertainment, 2026 | 481 linked |
+| 543 The Chasm Friends Get a Pet | 694 (new) | 9781938570698 | same | same | 482 linked |
+| 544 Wandersail | 695 (new) | 9781938570674 | same | same | 483 linked |
+| 545 The Girl Who Looked Up | 696 (new) | 9781938570667 | same | same | 484 linked |
+| 546 World's Only Hero | 690 (patched) | 9781637663691 | hardcover | Mountaindale Press, 2026, 414 | 486 (already); 485 still unlinked → TODO |
+| 547 Everything | 691 (patched) | 9781637662441 | hardcover | Mountaindale Press, 2024, 438 | 488 (already) |
+| 547 Everything | 697 (new) | none — note *No barcode printed on this copy (owner-verified)* | paperback | Mountaindale Press, 2023, 438 | 487 linked |
+| 528 Anything | 681 (patched) | 9781637662298 (was the Amazon paperback number 9781637660744) | hardcover | Mountaindale Press, 2022 | 467 (already) |
+| 528 Anything | 698 (new) | none — same note | paperback | Mountaindale Press | 489 (new) |
+| 219 Fires of December | 317 (patched) | 9781938570629 | hardcover, collectors, "Book with sticker and bookmark tier" | Dragonsteel, LLC, 2026 | 170 linked |
+
+Work patches: illustrator on 542 (Howard Lyon), 543 (Anna Earley), 544 (Steve Argyle), 545 (Alexis and Justin Hernandez), 219 (Tran Nguyen); universe *The Cosmere* on 542–545; `firstPublished` 2026 on 542/544 (545 already 2026, 543 keeps 2024 = the story-deck release); series *Hoid's Storybook Collection* added to 545. Descriptions were NOT touched — every work already had one, so the research agent's drafts were not needed.
+
+**How Fires of December was settled** (the research agent had three candidate ISBNs, none right): the copyright page the owner photographed lists `978-1-938570-62-9 (printed edges)`, `63-6 (stained edges)`, `70-4 (variant cover)` — Coppermind's 72-8 is not on it. The owner's fore-edge photo shows printed artwork (the owner called it "sprayed"); the BackerKit FAQ (read through the real browser, it sits behind a Cloudflare challenge) says every campaign copy has the printed page-end treatment and that the RED art is "Cover 2", sold on the store afterwards; Coppermind's cover gallery shows the owner's gold-foil face as the main US Dragonsteel cover. So: Cover 1 + printed edges = 62-9. ⚠️ The one inference: that "variant cover" (70-4) means Cover 2; nothing read says so in words. The catalog has ONE copy (the "3× Fires of December" in the campaign note were pledge items, not copies) — the owner confirmed one.
+
+**Owner facts recorded on the way:** both *Anything* and *Everything* paperbacks have no barcode ("the paperbacks dont have a barcode visible"); the owner's first photo was the *Everything* hardcover, mistaken for *Anything* until the blurb settled it; Dragonsteel DID assign ISBNs to the four storybooks (66-7 … 69-8, in sequence) — last night's "no ISBN exists anywhere" was a search limit, not a fact.
+
+### (as written in TODO)
+
+## ☐ OWNER ASK 2026-10-27 23:2x Phoenix — "I just added some books, can you fill in the missing details and isbns" (!Sky)
+
+Measured off `/api/export.json` (owner's browser session; wrangler is logged out since 2026-10-25, so `scripts/lib/d1.mjs` is unusable until `npx wrangler login`). Seven works added since 2026-10-24, all with covers:
+
+| id | title | author | has | missing |
+|---|---|---|---|---|
+| 541 | Z & C | Michele Haney | desc, 2024 | **edition row**, ISBN, illustrator |
+| 542 | The Dog and the Dragon | Brandon Sanderson | desc, series *Hoid's Storybook Collection* | **edition row**, ISBN, year, index, universe |
+| 543 | The Chasm Friends Get a Pet | Dan Wells | — | **edition row**, ISBN, desc, year, series, universe |
+| 544 | Wandersail | Brandon Sanderson | — | **edition row**, ISBN, desc, year, series, universe |
+| 545 | The Girl Who Looked Up | Brandon Sanderson | — | **edition row**, ISBN, desc, year, series, universe |
+| 546 | World's Only Hero | Dakota Krout | hardcover ed 690 (signed copy) | ISBN, desc, year, series, universe |
+| 547 | Everything | Dakota Krout | hardcover ed 691 (signed copy), 2023 | ISBN, desc, series (Full Murderhobo 3?), universe |
+
+⚠️ 542–545 are the rest of campaign 1 (*Hoid's Storybook Collection*, BackerKit, tier Master Worldsinger) whose only pledge items so far are 3× *Fires of December* (219). Those four are Dragonsteel printings — the title-search ISBN is the TOR retail one (the trap `archive/isbn-barcode-worklist.md` records for Fires of December), so the ISBNs come from research, not `backfill:missing-isbns`. Research runs 663/664 (541, 542) already ran paid and found nothing. Plan: Opus research agent (dispatched 23:3x) → owner reviews the proposals → writes via `POST /api/editions` / `PATCH /api/editions/:id` / `PATCH /api/works/:id` from the owner's session. ✅ Owner 23:4x: Z & C is a **paperback**. 🔴 Research (Opus agent, 23:4x, file `scratchpad/new-books-research.json`): **no ISBN exists anywhere for the four Dragonsteel storybooks** — Open Library (978-1-938570 block probed), BackerKit, Dragonsteel's store (re-checked by the conductor 23:5x via Shopify search: only merch matches), Amazon; no Tor edition either. Only the back-cover barcode can settle them. ⏰ Owner 23:5x: *"remind me tomorrow"* → session cron Wed 2026-10-28 08:57 (dies with the session; a later session should raise it). ✅ Owner 23:4x (option a): the four Dragonsteel rows are `collectors`, name "Hoid's Storybook Collection — Master Worldsinger tier", format hardcover.
+📷 **Barcodes from the owner's photos, 2026-10-28 09:3x–09:4x (checksums verified):** 547 *Everything* hardcover **9781637662441** (matches research; owner first said no ISBN on "hardcover or paper", then "I lied about hardcover" — ❓ whether a barcode-less PAPERBACK copy of Everything also exists is unresolved); 546 *World's Only Hero* **9781637663691** (matches research); 542 *The Dog and the Dragon* **9781938570681** — so Dragonsteel DID assign ISBNs to the storybooks, research's "not found" was a search limit; 219 *Fires of December*: the copyright page lists THREE — **9781938570629 (printed edges)**, 9781938570636 (stained edges), 9781938570704 (variant cover); the photographed copy has art printed on the fore-edge → 62-9; ❓ the catalog holds 3 copies — asked whether all three are printed-edges or one of each. Coppermind's 72-8 is NOT on the copyright page. Still awaited: Wandersail, The Girl Who Looked Up, ChasmFriends, Anything hardcover (expected 9781637662298). Coppermind + BackerKit now sit behind a Cloudflare JS challenge (403 to WebFetch and Invoke-WebRequest) — not worth fighting, the copyright page beats them.
+
+## ☐ 2026-10-27 23:4x — *Anything* (528) edition 681 is labelled hardcover but carries the PAPERBACK ISBN 9781637660744 (research agent, Amazon); hardcover is 9781637662298. Owner 23:4x: *"We have both hard cover and paper for anything."* ☐ Proposed: relabel 681 → paperback, add a hardcover edition 9781637662298, one copy per printing. Awaiting the owner's go with the 7-book write.
+
+
+---
+
 
 ## ✅ 2026-10-19 20:49 Phoenix — `covers-from-audiobooks.mjs --friend` now reads padhard (moved whole from TODO)
 
