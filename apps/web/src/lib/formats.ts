@@ -100,11 +100,14 @@ export function isPhysicalFormat(format: string): boolean {
  * to find.
  *
  * ⚠️ **A work with no editions at all is treated as "nothing to find", not as
- * "unknown".** That is the one judgement call in this function. It is right for
- * the case that produces such works today: a spine read from a shelf photograph
- * deliberately creates no edition row — `addLineToCatalog` explains why, the
- * format would be an invention — and that book is, by construction, a physical
- * book somebody photographed on a shelf. Showing it three Drive links is exactly
+ * "unknown".** That is the one judgement call in this function. It was written
+ * for spine reads from a shelf photograph, which until 2026-10-27 created no
+ * edition row; since then every NEW book added through `addLineToCatalog` gets
+ * one physical edition in the format chosen on the scan-time toggle
+ * (`lib/new-book-edition.ts`), so those books now take the physical branch
+ * above and the answer is the same. Edition-less works remain — older adds, and
+ * copies attached to a known work with no ISBN — and they are still, almost
+ * always, physical books. Showing them three Drive links is exactly
  * the noise being complained about. The cost when this is wrong is that a
  * hand-typed work with no edition recorded loses a generic Drive search until
  * someone records what form they have, which is a fact worth recording anyway.

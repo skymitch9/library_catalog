@@ -11,6 +11,7 @@ import {
 import { api } from '../api.js';
 import { formatLabel } from './formats.js';
 import { DEFAULT_SCAN_FORMAT } from './scan-format.js';
+import { mintEditionForAdd } from './new-book-edition.js';
 import { DEFAULT_SCAN_TARGET, copyStatusFor, type ScanTarget } from './scan-target.js';
 import { arrivedPatch } from './statuses.js';
 import { preorderQuestionFor, type PreorderQuestion } from './preorders.js';
@@ -405,29 +406,33 @@ export async function addLineToCatalog(
   }
 
   /*
-   * An edition, but only when there is something to say about one.
+   * ⚠️ **A NEW book always earns exactly one edition** — rule owned by
+   * `lib/new-book-edition.ts` (`editionForAdd`), which carries the full table
+   * and is where the tests pin it.
    *
-   * A barcode gives an ISBN and a printing, so it earns a paperback edition. A
-   * spine read gives neither: the format is a guess from the shape of the book
-   * and the ISBN is unknown. Writing `format: 'paperback'` anyway would put an
-   * invented fact in the column that `PHYSICAL_FORMATS` filters on — so a spine
-   * with no resolved ISBN adds the work and the copy, and leaves the edition to
-   * whoever later scans its barcode.
+   * This used to write an edition only when the line carried an ISBN-13, on the
+   * argument that a spine or photo add only *guessed* its format, so writing one
+   * would put an invented fact in the column `PHYSICAL_FORMATS` filters on.
+   * That reasoning went stale when the scan-time toggle arrived
+   * (`AddBookPanel.tsx`, `lib/scan-format.ts`): `format` here is now the
+   * person's explicit choice for the sweep, not an inference. And leaving a new
+   * book edition-less is the 2026-08-13 failure — five hand-added books landed
+   * with `editions = 0` and became unmatchable for good — which happened again
+   * to works 541–545 (2026-10-24/28, added through this panel without an ISBN,
+   * each with a copy at `edition_id = NULL`). So a new book with no ISBN gets
+   * `{ isbn13: null, format, source: 'manual' }`; with one, the same
+   * `openlibrary` row as before. An ISBN-less edition on a brand-new work
+   * cannot collide with anything, so no new 409 handling is needed.
    *
-   * ⚠️ **`paperback` here is a guess, and it is wrong often enough to be
-   * reported from the shelf.** A barcode proves a printing exists and does not
-   * say which one; a hardcover scanned off its own barcode lands here as a
-   * paperback. That is still the right default — it is the commoner printing and
-   * the alternative is interrupting every scan with a question — but it is only
-   * defensible because it is now correctable. The fix is the Editions panel on
-   * the book page (`components/Editions.tsx` → `PATCH /api/editions/:id`), which
-   * did not exist when this line was written and is why the guess was, in
-   * practice, permanent. If this ever stops being a one-tap correction, ask at
-   * scan time instead.
-   */
-  /*
+   * ⚠️ **`format` can still be wrong for one book in a run.** A barcode proves
+   * a printing exists and does not say which one; the toggle sets one binding
+   * per sweep and a hardcover in a box of paperbacks inherits `paperback`. That
+   * is defensible only because it is a one-tap correction — the Editions panel
+   * on the book page (`components/Editions.tsx` → `PATCH /api/editions/:id`).
+   * If this ever stops being a one-tap correction, ask per book instead.
+   *
    * ⚠️ **A WANT attaching to a book we already hold writes NO edition**, and
-   * that is the load-bearing half of the wishlist path.
+   * that is the load-bearing half of the wishlist path — unchanged.
    *
    * `Copies.tsx`'s AddCopy has always said a wish mints no printing, and the
    * barcode path needs the rule for a second reason: it is what makes the
@@ -436,18 +441,15 @@ export async function addLineToCatalog(
    * scan that creates a printing beside one of them is #139 happening again.
    * Nothing is created here, so nothing can collide.
    *
-   * ⚠️ A **new** book still earns its edition, wishlist or not. There is
-   * nothing on file to duplicate, and the ISBN off the back of a book in
-   * somebody's hands is the single most reliable fact available — the argument
-   * `AddWork.tsx` records from 2026-08-13, when five hand-added books all
-   * landed with `editions = 0` and became unmatchable for good.
+   * An ordinary (shelf) attach to a book we hold still writes an edition only
+   * when the scan carries an ISBN; without one the printing is unknown and the
+   * copy goes on the work unlinked, as migration 0001 allows.
    */
-  let editionId: number | null = null;
-  if (line.isbn13 && !(wishlist && attachWork)) {
-    editionId = (
-      await api.createEdition(editionFromLine(work.id, line, line.isbn13, format))
-    ).edition.id;
-  }
+  const editionId = await mintEditionForAdd(api.createEdition, work.id, line, {
+    attached: Boolean(attachWork),
+    wishlist,
+    format,
+  });
 
   // A copy, because a person scanning a barcode or photographing a shelf is
   // looking at the book. This is the one place that inference is safe — unlike
