@@ -56,6 +56,7 @@
 
 ## ☐ 2026-10-28 09:4x — leftovers from the 7-book write (results in `DONE.md`, top entry)
 
+- [x] ✅ 10:3x **Universe membership VERIFIED against sources, not the owner's word** (owner 10:2x: *"dont blindly trust me, verify them too"*). Coppermind: *Wandersail* and *The Girl Who Looked Up* carry the categories Stormlight Archive + Cosmere; *The ChasmFriends Get a Pet!* is "a non-canonical story … on the Crackity Plains of Roshar" (in-universe, non-canon — the owner's point); *The Dog and the Dragon* has no page of its own but the Bibliography lists it under Hoid's Storybook Collection as the illustrated adaptation of a Stormlight tale. ⚠️ **CAL Verse for Full Murderhobo (528, 547) and Chance Encounter (546) is NOT independently verified**: two web searches found no source tying either series to the Divine Dungeon world; the shared list carries them on the owner's 2026-08-11 instruction ("everything Krout has written … that is a litrpg has been tied to the CAL Verse, group them all … over-inclusion is accepted and reversible"), and the entry's `notes` field is STALE — it still says those series are "NOT included". Standing owner decision, so left as is; the stale note is a catalog-platform doc fix for whoever next edits that entry.
 - [ ] The typed add form still has no format control (always paperback) — see the next section.
 - [ ] 542–545 carry `series` without `series_index_sort` (the collection has no canonical order; 542–544 were already that way from the add). Gabi may flag them; leave unless the owner wants an order.
 
