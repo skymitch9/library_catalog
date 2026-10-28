@@ -56,7 +56,7 @@
 
 ## ☐ 2026-10-28 09:4x — leftovers from the 7-book write (results in `DONE.md`, top entry)
 
-- [ ] 🧑 **546 *World's Only Hero*: owner 09:5x "i owen 2, 1 hard cover and 1 paperback"** → paperback edition **699** minted (Mountaindale Press, isbn13 null, no note yet) and copy 485 linked to it, verified. ☐ Owner: does that paperback have a barcode? (research's paperback ISBN 9781638936893 is a future-dated 2027 Amazon listing, NOT this copy — do not assign it). Barcode → ; none → note *No barcode printed on this copy (owner-verified)*.
+- [ ] 🧑 **546 *World's Only Hero*: owner 09:5x "i owen 2, 1 hard cover and 1 paperback"** → paperback edition **699** minted (Mountaindale Press, isbn13 null, no note yet) and copy 485 linked to it, verified. ☐ Owner: does that paperback have a barcode? (research's paperback ISBN 9781638936893 is a future-dated 2027 Amazon listing, NOT this copy — do not assign it). Barcode → `PATCH /api/editions/699 {isbn13}`; none → note *No barcode printed on this copy (owner-verified)*.
 - [ ] The typed add form still has no format control (always paperback) — see the next section.
 - [ ] 542–545 carry `series` without `series_index_sort` (the collection has no canonical order; 542–544 were already that way from the add). Gabi may flag them; leave unless the owner wants an order.
 
