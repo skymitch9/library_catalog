@@ -862,6 +862,41 @@ the runner does not check it and says so.
 
 ---
 
+## KI-22 · Most copies on a work with exactly ONE edition carry `edition_id NULL` — `ACCEPTED`
+
+**Symptom.** Measured 2026-10-28 17:4x via `wrangler d1 execute --remote`, after
+`backfill-missing-editions` had given every work an edition row: **357 of 474**
+copies on main and **544 of 766** on padhard have `edition_id IS NULL`, and in
+all but **29** (main) / **3** (padhard) of those the work holds exactly one
+edition. The copy table carries no format and no ISBN, so nothing on the copy
+says which printing it is; the link is the only place that fact could live.
+
+**Why tolerated.** Owner 2026-10-28 17:5x: *"Sure leave it"*, on the
+recommendation in [`DONE.md`](DONE.md) (17:5x entry). Three reasons, in order:
+(1) **no visible gain** — the shelf already resolves a sole-edition work without
+the link (`resolved-sole` in `fix-copy-edition-links-2026-09-05.mjs`);
+(2) **a real false-claim risk** — the 2026-09-05 fix already linked every copy
+whose sole edition was created in the same run (same-run provenance); what is
+left is the weaker cases, where the only edition on record may have been
+backfilled later and need not be the book on the shelf, and a wrong link is the
+same mistake as assigning an ISBN not printed on the copy;
+(3) **the pool only shrinks** — since `cf2020f`/`edf561a` (2026-10-27) every new
+add mints and links its own edition.
+
+**What would change it — as a number.** A feature that needs
+`copy.edition_id` to be NON-NULL for every copy (today: none). The remedy is
+already built and owner-gated — `npx tsx
+scripts/fix-copy-edition-links-2026-09-05.mjs --remote --all-unambiguous
+[--friend] [--commit]` — and its output must be labelled *inferred*, not
+*verified*. The 29 + 3 many-edition copies are never linked by it; they need an
+answer per copy in *Editions & copies* → "Which printing do I own?".
+
+⚠️ **Not verified:** how many of the 357 / 544 sole editions came from a scan of
+the very copy (where the link would be safe) versus a later backfill — the
+breakdown was not measured, which is part of why the answer is "leave it".
+
+---
+
 ## Resolved and removed — 2026-09-05 (ebook phase 5)
 
 ⚠️ Same rule as the blocks below: closed by a real change, removed rather than

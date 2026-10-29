@@ -1,5 +1,13 @@
 ﻿# DONE — library_catalog (dated archive)
 
+## ✅ 2026-10-28 17:5x Phoenix — DECIDED: copies on a sole-edition work stay UNLINKED (owner: "Sure leave it") — now `KNOWN_ISSUES.md` KI-22 (moved whole from TODO)
+
+> Owner 17:4x: *"what do you suggest"* → recommendation NO (below) → owner 17:5x: *"Sure leave it"*. Accepted state, so it lives in `KNOWN_ISSUES.md` as **KI-22** with the numbers that would reopen it; nothing was run.
+
+- [x] ❓ **owner (settled: leave it):** the unlinked copies whose work has exactly ONE edition — 357 on main, 544 on padhard after today's mint (the 29 + 3 many-edition cases need an answer per copy). The 2026-09-05 fix left these alone on purpose: the shelf already resolves a sole-edition work without the link, and linking can claim a printing the owner does not hold (a paperback linked to the work's only hardcover). The flag exists: `npx tsx scripts/fix-copy-edition-links-2026-09-05.mjs --remote --all-unambiguous [--friend] [--commit]`. Run it only on an explicit yes. **Claude's recommendation 17:5x (owner asked "what do you suggest"): NO — no visible gain (the shelf already resolves sole-edition works), a real false-claim risk on the weaker-provenance leftovers, and new adds now link themselves so the pool only shrinks. Run the flag only if a future feature needs every copy to carry an edition, and label the result as inferred.**
+
+---
+
 ## ✅ 2026-10-28 17:4x Phoenix — every work on BOTH instances now has an edition row: 4 minted on main (531–534), 16 on padhard (moved whole from TODO)
 
 > Owner 14:2x: *"Can we make sure all works have editions in both libraries?"*
