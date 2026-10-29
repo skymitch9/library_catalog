@@ -54,6 +54,11 @@
 > still lives in one place, because one list beats two; the reason is now
 > simply that it is a CROSS-REPO queue. Do not duplicate it here.
 
+## ☐ 2026-10-28 17:4x — leftover from "make sure all works have editions" (done; results in `DONE.md`, top entry)
+
+- [ ] ❓ **owner:** the unlinked copies whose work has exactly ONE edition — 357 on main, 544 on padhard after today's mint (the 29 + 3 many-edition cases need an answer per copy). The 2026-09-05 fix left these alone on purpose: the shelf already resolves a sole-edition work without the link, and linking can claim a printing the owner does not hold (a paperback linked to the work's only hardcover). The flag exists: `npx tsx scripts/fix-copy-edition-links-2026-09-05.mjs --remote --all-unambiguous [--friend] [--commit]`. Run it only on an explicit yes.
+- [ ] 🧑 The 20 minted editions say **paperback by default, unverified** in their note — correct format + ISBN from each barcode when the book is in hand (531–534 are the four Jay Boyce items already tracked below; the 16 on padhard are Samantha's).
+
 ## ☐ 2026-10-28 09:4x — leftovers from the 7-book write (results in `DONE.md`, top entry)
 
 - [x] ✅ 10:3x **Universe membership VERIFIED against sources, not the owner's word** (owner 10:2x: *"dont blindly trust me, verify them too"*). Coppermind: *Wandersail* and *The Girl Who Looked Up* carry the categories Stormlight Archive + Cosmere; *The ChasmFriends Get a Pet!* is "a non-canonical story … on the Crackity Plains of Roshar" (in-universe, non-canon — the owner's point); *The Dog and the Dragon* has no page of its own but the Bibliography lists it under Hoid's Storybook Collection as the illustrated adaptation of a Stormlight tale. ⚠️ **CAL Verse for Full Murderhobo (528, 547) and Chance Encounter (546) is NOT independently verified**: two web searches found no source tying either series to the Divine Dungeon world; the shared list carries them on the owner's 2026-08-11 instruction ("everything Krout has written … that is a litrpg has been tied to the CAL Verse, group them all … over-inclusion is accepted and reversible"), and the entry's `notes` field is STALE — it still says those series are "NOT included". Standing owner decision, so left as is; the stale note is a catalog-platform doc fix for whoever next edits that entry. **Owner 10:4x: "Chance Encounter I'm not sure about but for now it's fine"** — stays in CAL Verse, flagged as the one he doubts. Owner also asked "is Chance Encounter a litrpg?": YES — Penguin Random House's series page calls it a "fast-paced LitRPG post-apocalyptic fantasy series", so it is inside the 2026-08-11 rule's scope (Krout + LitRPG), even though no source ties it to the Divine Dungeon world.
@@ -134,16 +139,16 @@ evening:
 |---|---|---|---|
 | **529** | Insight | hardcover, ISBN **9781637660768** | work **48** — same ISBN as **paperback** |
 | **530** | Siphon | hardcover, ISBN **9781723879791** | work **45** — same ISBN as **paperback** |
-| **531** | Adapt | **no edition row** (no format, no ISBN) | present, series *A Touch of Power* |
-| **532** | Sense | **no edition row** | present, series *A Touch of Power* |
-| **533** | Clover City | **no edition row** | **not on padhard** |
-| **534** | Lotus Lake | **no edition row** | present, series *Rise of the Mystic Mage* |
+| **531** | Adapt | default-paperback edition minted 2026-10-28 (format unverified, no ISBN) | present, series *A Touch of Power* |
+| **532** | Sense | default-paperback edition minted 2026-10-28 (format unverified, no ISBN) | present, series *A Touch of Power* |
+| **533** | Clover City | default-paperback edition minted 2026-10-28 (format unverified, no ISBN) | **not on padhard** |
+| **534** | Lotus Lake | default-paperback edition minted 2026-10-28 (format unverified, no ISBN) | present, series *Rise of the Mystic Mage* |
 
 padhard files Siphon / Adapt / Sense / Insight under **A Touch of Power** and
 Lotus Lake under **Rise of the Mystic Mage**.
 
 - [ ] 🧑 **Scan the four barcodes** — 531 Adapt, 532 Sense, 533 Clover City,
-      534 Lotus Lake have no printing at all. ✎ Edit this book → **Editions &
+      534 Lotus Lake carry only the default-paperback edition minted 2026-10-28 (unverified, no ISBN). ✎ Edit this book → **Editions &
       copies** → add the format and the ISBN off the barcode.
 - [ ] 🧑 **Decide hardcover vs paperback for 529 and 530.** ⚠️ One instance is
       wrong for each ISBN: MAIN calls 9781637660768 (Insight) and

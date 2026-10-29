@@ -63,6 +63,7 @@
     "backfill:missing-covers": "tsx scripts/backfill-missing-covers.mjs",
     "backfill:missing-isbns": "tsx scripts/backfill-missing-isbns.mjs",
     "backfill:edition-kinds": "tsx scripts/backfill-edition-kinds.mjs",
+    "backfill:missing-editions": "node scripts/backfill-missing-editions.mjs",
     "backfill:universes": "tsx scripts/backfill-universes.mjs",
     "backfill:omnibus": "node scripts/backfill-omnibus-collects.mjs",
     "seed:audiobook-aliases": "tsx scripts/seed-audiobook-aliases.mjs",

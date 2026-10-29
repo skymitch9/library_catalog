@@ -1,5 +1,42 @@
 ﻿# DONE — library_catalog (dated archive)
 
+## ✅ 2026-10-28 17:4x Phoenix — every work on BOTH instances now has an edition row: 4 minted on main (531–534), 16 on padhard (moved whole from TODO)
+
+> Owner 14:2x: *"Can we make sure all works have editions in both libraries?"*
+
+**Done by `scripts/backfill-missing-editions.mjs`** (new, `npm run backfill:missing-editions -- --remote [--friend] [--commit]`, dry run by default). For each edition-less work it mints ONE edition the way the fixed add path (`cf2020f`/`edf561a`, 2026-10-27) would have: format **paperback** (`DEFAULT_SCAN_FORMAT`), `isbn13 NULL`, `source 'manual'`, and a `note` saying the format is the catalog default and unverified; then links the work's unlinked copy to it. Every edition writes a `__row__` change_log row and every link an `edition_id` row, batch `backfill-missing-editions-2026-10-28`, `changed_how 'auto'`. Idempotent (re-run dry runs: 0 and 0).
+
+| measured 17:4x after the commit | main | padhard |
+|---|---|---|
+| works with no edition row | 4 → **0** | 16 → **0** |
+| editions minted / copies linked / change_log rows (edition + copy) | 4 / 4 / 4 + 4 | 16 / 16 / 16 + 16 |
+| copies still `edition_id NULL` (work HAS editions) | 357 | 544 |
+
+Verified live: [/work/531](https://library.heygabi.ai/work/531) renders a Paperback edition with its copy on the shelf (owner's own tab, 17:4x). ⚠️ NOT verified: the padhard pages (D1 counts only); the format of any of the 20 (it is a labelled default, see the edition note).
+
+**Deliberately NOT done:** linking copies to their work's sole edition (357 + 544). `fix-copy-edition-links-2026-09-05.mjs` gated that behind `--all-unambiguous` because the shelf already resolves a sole-edition work without the link and a link can claim a printing the owner does not hold. Open as an owner question in TODO.
+
+Gotcha: the in-page `window.__api` helper's Firebase token had expired (401 after ~3 h) — the page itself refreshes its token, so the live check used the rendered work page, not the helper.
+
+### The ask as logged at 14:2x (moved whole) — "Can we make sure all works have editions in both libraries?"
+
+Measured 14:2x via `wrangler d1 execute --remote` (both instances):
+
+| | main | padhard |
+|---|---|---|
+| works | 432 | 765 |
+| works with NO edition row | **4** (531–534, the Jay Boyce typed adds of 2026-09-18) | **16** (71, 72, 99, 164, 205, 251, 301, 303, 384, 446, 503, 514, 541, 599, 600, 739 — scan adds 08-19…10-12) |
+| copies with `edition_id NULL` | 361 of 474 | 560 of 766 |
+| …of which the work has exactly ONE edition | 328 | 541 |
+| …of which the work has MANY editions | 29 | 3 |
+
+Each edition-less work has exactly one copy, with no format or ISBN anywhere (the copy table carries neither; format lives on the edition). Same root cause as the section below (the add path minted no edition for an ISBN-less book until `cf2020f`/`edf561a` last night).
+
+- [x] Mint ONE edition per edition-less work on both instances, the way the fixed add path would have: format paperback (the panel's default, `DEFAULT_SCAN_FORMAT`), `isbn13 NULL`, `source 'manual'`, a note saying the format is the default and unverified; link the copy to it.
+- [ ] (still open, in TODO) Then: the 328 + 541 unlinked copies whose work has exactly one edition — link them? (unambiguous; the 29 + 3 many-edition cases need the owner per copy). ❓ owner.
+
+---
+
 ## ✅ 2026-10-28 10:20 Phoenix — deploy pair for the storybook universe entry: main `21abded` → `363e9006`, friend `36764dd` → `ad26eeeb`
 
 > Supersedes the "deploy pair (recorded in deploys.log when it ran)" line in the 10:1x universe-sweep entry below. Both lines are in `deploys.log`; no migrations. Two things cost time on the way, both worth knowing:
