@@ -36,9 +36,21 @@ export function realD1(): RealD1 {
 type Bound = Array<string | number | null>;
 
 function wrap(sqlite: DatabaseSync): D1Database {
+  // node:sqlite hands back null-prototype rows; D1 hands back plain objects.
+  const plain = <T>(row: unknown): T => ({ ...(row as object) }) as T;
+  /** Run one statement the way D1 reports it: rows (for RETURNING/SELECT) + meta. */
   const exec = (sql: string, bound: Bound) => {
-    const r = sqlite.prepare(sql).run(...bound);
-    return { success: true, results: [], meta: { changes: Number(r.changes), last_row_id: Number(r.lastInsertRowid) } };
+    const rows = sqlite.prepare(sql).all(...bound).map((r) => plain<Record<string, unknown>>(r));
+    const meta = sqlite.prepare('SELECT changes() AS changes, last_insert_rowid() AS last_row_id').get() as {
+      changes: number;
+      last_row_id: number;
+    };
+    const isWrite = /^\s*(INSERT|UPDATE|DELETE|REPLACE)/i.test(sql);
+    return {
+      success: true,
+      results: rows,
+      meta: { changes: isWrite ? Number(meta.changes) : 0, last_row_id: Number(meta.last_row_id) },
+    };
   };
   const make = (sql: string) => {
     let bound: Bound = [];
@@ -52,10 +64,11 @@ function wrap(sqlite: DatabaseSync): D1Database {
         return stmt;
       },
       async first<T>(): Promise<T | null> {
-        return (sqlite.prepare(sql).get(...bound) as T | undefined) ?? null;
+        const out = exec(sql, bound).results;
+        return out.length > 0 ? (out[0] as T) : null;
       },
       async all<T>() {
-        return { success: true, results: sqlite.prepare(sql).all(...bound) as T[], meta: {} };
+        return { success: true, results: exec(sql, bound).results as T[], meta: {} };
       },
       async run() {
         return exec(sql, bound);

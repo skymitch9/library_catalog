@@ -65,6 +65,7 @@ import { universeFor, universeIndex } from '@lc/universes';
 import type { AppBindings } from '../env.js';
 import { associateWorkAfterAdd } from '../lib/audiobook-sweep-run.js';
 import { withCopyPeople } from '../lib/copy-person.js';
+import { resolveEstateLink } from '../lib/estate-lend.js';
 import { describeError } from '../lib/describe-error.js';
 import { buildWorkDetailResponse } from '../lib/work-detail-response.js';
 import { shadowStrictCreate } from '../lib/strict-shadow.js';
@@ -1084,12 +1085,19 @@ export const catalogRoutes = new Hono<AppBindings>()
     const required = isWishlistStatus(parsed.data.status) ? 'suggestWishlist' : 'editCatalog';
     if (!can(user.role, required)) return capabilityDenied(c, required, user.role);
 
+    // An estate member picked by `estateId` becomes `personUserId` +
+    // `personName` here, or the save is refused in words having changed
+    // nothing — see `lib/estate-lend.ts` (manageUsers only; KI-10: never a
+    // silent fall-back to plain text).
+    const linked = await resolveEstateLink(c.env.DB, c.env, user, parsed.data, parsed.data.status);
+    if (!linked.ok) return c.json(linked.body, linked.status);
+
     const actor: Actor = { userId: user.id, how: 'human' };
     // `CopyLinkError`: an `editionId` naming another book's printing is a false
     // statement refused in `@lc/db`, not stored — the accessories rule, one
     // table over. Mapped here exactly as `AccessoryError` is in its routes.
     try {
-      const created = await createCopy(c.env.DB, parsed.data, actor);
+      const created = await createCopy(c.env.DB, linked.data, actor);
       // Through the same rule as every other read, even though this caller just
       // wrote the row: one door, one redaction. `CopyLinkError` also covers the
       // two person refusals (a name on an `owned` copy, an id naming nobody) —
@@ -1138,10 +1146,14 @@ export const catalogRoutes = new Hono<AppBindings>()
     const required = touchesWishlist ? 'manageWishlist' : 'editCatalog';
     if (!can(user.role, required)) return capabilityDenied(c, required, user.role);
 
+    // See POST /copies: an estate pick is resolved (or refused) first.
+    const linked = await resolveEstateLink(c.env.DB, c.env, user, parsed.data, nextStatus);
+    if (!linked.ok) return c.json(linked.body, linked.status);
+
     // See POST /copies: a cross-work `editionId` is refused, never stored.
     let copy;
     try {
-      copy = await updateCopy(c.env.DB, id, parsed.data, { userId: user.id, how: 'human' });
+      copy = await updateCopy(c.env.DB, id, linked.data, { userId: user.id, how: 'human' });
     } catch (err) {
       if (err instanceof CopyLinkError) {
         return c.json({ error: 'bad_request', detail: err.message }, err.status);
