@@ -8,9 +8,17 @@ import { requireCapability } from '../middleware/auth.js';
  * `packages/db/src/export.ts`, including why the backup is JSON and the
  * spreadsheet is CSV.
  *
- * ⚠️ Gated on `editCatalog` rather than `read`. A reader may browse the shelf;
- * taking a copy of the whole database, email addresses and all, is an owner's
- * act. The sibling Board Game Catalog draws the line in the same place.
+ * ⚠️ TWO GATES, and they differ on purpose (owner decision 2026-11-22:
+ * "Yes restrict to owners and admins"):
+ *
+ *   - `export.json` is the BACKUP — every table, `app_user` and its email
+ *     addresses included — so it needs `manageUsers` (owner/admin). It was
+ *     `editCatalog` until then, which handed every contributor every account's
+ *     email; lend placeholders (migration 0490) would have added estate members
+ *     who never signed in here. That was KI-23.
+ *   - `export.csv` is the flattened spreadsheet and carries no account data, so
+ *     it stays on `editCatalog`. A reader may browse the shelf; taking the
+ *     catalogue away as a file is an editor's act.
  */
 
 /**
@@ -75,7 +83,7 @@ function filename(ext: string): string {
  * returns here.
  */
 export const exportRoutes = new Hono<AppBindings>()
-  .get('/export.json', requireCapability('editCatalog'), (c) =>
+  .get('/export.json', requireCapability('manageUsers'), (c) =>
     new Response(textStream(exportJsonChunks(c.env.DB)), {
       headers: {
         'Content-Type': 'application/json; charset=utf-8',

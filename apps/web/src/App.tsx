@@ -581,7 +581,7 @@ function Screens({
     // these two genuinely are not pages.
     case 'export':
       if (!me.capabilities.includes('editCatalog')) return <NotFound />;
-      return <ExportPage />;
+      return <ExportPage canBackup={me.capabilities.includes('manageUsers')} />;
 
     case 'people':
       if (!me.capabilities.includes('manageUsers')) return <NotFound />;

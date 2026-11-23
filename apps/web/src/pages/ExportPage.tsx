@@ -40,7 +40,7 @@ function saveBlob(blob: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function ExportPage() {
+export function ExportPage({ canBackup }: { canBackup: boolean }) {
   const [stats, setStats] = useState<Stats | null>(null);
   const [busy, setBusy] = useState<'json' | 'csv' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -88,6 +88,10 @@ export function ExportPage() {
 
       {!empty && (
         <>
+          {/* The JSON backup carries every account's email, so the Worker gates
+              it on `manageUsers` (owner decision 2026-11-22). Not rendered for
+              anyone else — a button that can only refuse is worse than none. */}
+          {canBackup && (
           <section className="panel">
             <h3>Backup</h3>
             {/* CUT 2026-09-07 (grey-paragraph audit item 102): the audit kept
@@ -101,6 +105,7 @@ export function ExportPage() {
               {busy === 'json' ? 'Building…' : 'Download JSON'}
             </button>
           </section>
+          )}
 
           <section className="panel">
             <h3>Spreadsheet</h3>
