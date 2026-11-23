@@ -622,6 +622,14 @@ function PersonField({
       onSave({ personUserId: null, personName: name, personEstateId: willLink.estateId });
       return;
     }
+    // ⚠️ An UNCHANGED save keeps the existing link. A copy linked to someone
+    // this list does not offer (a borrower placeholder for a contributor, or
+    // while the estate list is unavailable) would otherwise match nothing and
+    // be quietly unlinked into plain text by a Save that changed nothing.
+    if (!willLink && personUserId !== null && fold(name) === fold(personName ?? '')) {
+      onSave({ personUserId, personName: name });
+      return;
+    }
     onSave({ personUserId: willLink?.id ?? null, personName: name });
   }
 

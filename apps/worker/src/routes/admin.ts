@@ -80,6 +80,10 @@ export const adminRoutes = new Hono<AppBindings>()
         email: u.email,
         displayName: u.displayName,
         role: u.role,
+        // Additive (migration 0490): a lend placeholder is `pending` but has
+        // never signed in — the estate admin page should not list it as
+        // somebody waiting for approval.
+        placeholder: u.placeholder,
       })),
     });
   })
