@@ -54,136 +54,15 @@
 > still lives in one place, because one list beats two; the reason is now
 > simply that it is a CROSS-REPO queue. Do not duplicate it here.
 
-## ☐ 2026-11-22 17:0x Phoenix — lend a book to ANY estate member, even one who cannot see this library (owner ask)
+## ☐ 2026-11-22 17:54 Phoenix — follow-up to the lend feature (shipped; record in `DONE.md`, top entry)
 
-Owner, verbatim: *"I want you to write code to allow me to lend books to estate
-members even if they can't view it. Pulling accounts from estate is fine for
-assignment"*. Came out of the *Dungeon Crawler Carl* / Ronnie item below.
-
-**Design (conductor, 17:05; nothing built yet):**
-
-- **auth Worker (`catalog-platform`)** — new `GET /api/estate/members`, per-app
-  bearer (`ESTATE_APP_TOKEN_LIBRARY` / `_LIBRARY2` only), approved members
-  only, explicit field list `{id, email, display_name}`. Mirrors
-  `GET /api/estate/billing/policy`.
-- **library Worker** — `GET /api/members` merges the local roster with the
-  estate roster (deduped by email, server-side); the browser still gets a
-  name and an opaque key, never an email. Estate-only names are offered to
-  `manageUsers` callers only (he said "allow **me**"; widening to every
-  editor needs his yes).
-- **Saving a lend to an estate-only member** creates a PLACEHOLDER `app_user`
-  row (lower-cased email, `role = 'pending'`, `approved_at` NULL, no uid, a new
-  `placeholder` marker — migration **0490**, a PAIR) and links the copy to it
-  through the existing `person_user_id`. Measured in `middleware/auth.ts` +
-  `packages/db/src/users.ts`: an existing `pending`, never-decided row is
-  treated at sign-in exactly like a new one, so the placeholder grants nothing.
-- Estate unreachable / token unset → the picker falls back to local names +
-  free text and SAYS the estate list is unavailable.
-
-**Status 17:28: BUILT on branch `feature/lend-to-estate-members`** (`8ab7d76`
-core+db · `076516b` worker · `af70cf9` web · `03134b1` docs · `09f7b2e` fix;
-pushed; worktree `C:/Users/nbasl/.wt/lc-lend-estate`) — **NOT merged, NOT
-migrated, NOT deployed.** The auth-Worker half is on `catalog-platform` branch
-`feature/estate-members-roster` (`0d00eef`), same state. Agent-reported, not
-re-run by the conductor: typecheck clean; `npm test` 3082 / 3081 pass / 1 skip
-(KI-21; baseline 3042); exercised end to end on a LOCAL worker + local D1 with
-a stubbed estate list (pick → placeholder row → simulated first sign-in claims
-it, still pending). Conductor read `apps/worker/src/lib/estate-lend.ts` only.
-
-- As built: `GET /api/members` → `{members:[{id,estateId,displayName}],
-  estate:'ok'|'unavailable'|'not_requested'}`; copy writes take
-  `personEstateId` (needs `manageUsers`; unknown id → 400 in words; estate
-  unreachable → 503 `estate_roster_unavailable`, nothing saved).
-- 🔴 **Deploy order is load-bearing:** the new code reads `app_user.placeholder`
-  on every sign-in, so BOTH `db:migrate` and `db:migrate:friend` (0490) must
-  land before either deploy, or sign-in breaks on that instance.
-- ☐ 🧑 **KI-23 (new, on the branch) needs the owner:** `GET /api/export.json`
-  is open to every `editCatalog` holder and dumps `app_user` with emails
-  (pre-existing); a lend placeholder would add never-signed-in estate members'
-  emails to it. Fix options: gate the export on `manageUsers`, or project
-  `app_user` to a fixed field list. Asked 17:3x.
-  ✅ **Owner 17:4x: "Yes restrict to owners and admins". Done on the branch,
-  `43e24f3` (17:44):** `GET /api/export.json` is `manageUsers`-only;
-  `export.csv` (no account data — grep of `packages/db/src/export.ts`) stays
-  `editCatalog`; the Backup panel is not rendered without `manageUsers`; KI-23
-  removed from the branch's `KNOWN_ISSUES.md`. Conductor ran typecheck (0) and
-  `npm test` in the worktree: 3082 / 3081 pass / 0 fail / 1 skip. NOT deployed;
-  the page was not rendered in a browser. ⚠️ Behaviour change for a
-  contributor/moderator: they lose the JSON download (today nobody holds such
-  a role on main — People page 17:0x: 2 owners + 1 admin; padhard not read).
-- ☐ Follow-up, NOT built: `/api/admin/users` now carries `placeholder`, but
-  the estate admin page (`catalog-platform` `sites/heygabi-home/public/admin`)
-  does not read it yet and would show a borrower as an ordinary pending person.
-- NOT verified: anything live; the real auth-Worker route against this client;
-  the web UI rendered in a browser; enforce-mode default-grant on a claimed
-  placeholder end to end (unit-tested only). A save refused AFTER the account
-  step (cross-book `editionId` in the same PATCH) leaves an inert placeholder
-  behind; the UI never sends that.
-
-**MEASURED 2026-11-22 17:50 Phoenix, after the owner ran `wrangler login`
-(read-only):** `d1 migrations list` answers *"No migrations to apply"* on BOTH
-`library-catalog` and `library-catalog-2nd`, and `copy` has `lent_to`,
-`person_user_id`, `person_name` on both — so **padhard DOES have 0400**; the
-data-model header saying it never reached production is stale. Both
-`ESTATE_APP_TOKEN_LIBRARY` and `ESTATE_APP_TOKEN_LIBRARY2` are present by name
-on the live `estate-auth` Worker (`wrangler secret list`). So the wrangler
-blocker below is CLEARED; what remains is the owner's go to merge + deploy and
-the three uncommitted `catalog-platform` doc files.
-
-**Blocked for SHIPPING, not building (17:05 state, superseded above):**
-wrangler on this box is *Not logged
-in* (owner: `wrangler login`); deploy order is auth Worker first, then the
-library PAIR (migrate pair before deploy pair). ⚠️ NOT verified: that padhard
-has migration 0400 at all (`info/data-model.md` says it never reached
-production; main evidently has it).
-
-**After deploy:** re-save work 263's lent copy picking *Ronnie* — the card will
-then read *"Lent to Ronnie"* (live display name), not *Ranika*.
-
-## ☐ 🧑 2026-11-22 16:2x Phoenix — *Dungeon Crawler Carl* loan: Jason → Ranika; "She should have a estate profile"
-
-Owner, verbatim (three lines, one message): *"Jason returned dungeon crawler
-Carl / Now Ranika has it / She should have a estate profile"*.
-
-- ✅ **Recorded on MAIN, 16:28, through the web UI as Skylar** (wrangler on
-  this box is **Not logged in**, so no D1 read or write was possible): work
-  **263**, the **Standard edition hardcover** (Penguin, 2024), the one copy
-  whose status was already *Lent out*. Its *Who has it?* field was EMPTY —
-  Jason had never been recorded by name — so nothing was overwritten. Saved
-  `Ranika` as typed text; the row now reads *"Lent to Ranika"*. Status
-  unchanged (`lent`). Jason's return is therefore not a separate write.
-- ☐ **Ranika is NOT a member of this library.** The member autofill offered
-  three names only: *Amber Mitchell*, *Skylar*, *Skylar Mitchell (Skymitch9)*.
-  So the copy carries a name, not a link (`person_user_id` NULL). Asked the
-  owner 16:3x what "should have" means: (a) she already has an estate account
-  under another name / email → link it; (b) he wants one created or an invite
-  sent → access-increasing, his explicit yes first. Nothing was created,
-  invited or granted.
-- **Owner 16:3x: "Polvoronnie maybe"** (a possible account name for her).
-  MEASURED 16:4x on https://heygabi.ai/admin/ (estate members, as Skylar,
-  read-only): the name/email search returns **0 of 12** for `polvo` and for
-  `rani`; no member email begins with either. No repo file mentions the name.
-  So she has NO estate account under either name — pending and revoked lists
-  were also 0 under those filters. Next needs the owner: her sign-in email and
-  his yes to add her (*Add member by email* on that page). Not added.
-- 🔁 **SUPERSEDES the bullet above — owner 2026-11-22 16:59: "Yes", Ranika IS
-  the estate member shown as *Ronnie*.** The `polvo` / `rani` searches missed
-  her because neither string is in that display name or address. MEASURED
-  16:58–16:59 (read-only): estate admin lists Ronnie APPROVED, origin
-  `seed:audiobook`, permissions *"sees Shared audiobooks · member on
-  Audiobooks/Ebooks"* — **no Library shelf**. The library's own People page
-  has 3 rows only (the owner's two accounts + Amber), so she has no `app_user`
-  row here (one is created at first sign-in, `packages/db/src/users.ts`), which
-  is why the picker (`listMembers`) cannot offer her. To LINK the loan:
-  (1) owner's yes to give her the Library shelf — access-increasing, asked
-  16:59, not granted; (2) she signs in once at library.heygabi.ai; (3) re-save
-  *Who has it?* on work 263's lent copy, picking her from the list. Until then
-  the row stays the typed name `Ranika`. Not decided: whether the typed name
-  should read *Ronnie* to match her profile.
-- NOT checked: padhard (the loan is the owner's book, so no pair write was
-  made — say so if Diva's shelf lent a copy too); the estate SSO user list
-  (staff page, not opened); whether this copy is the one Jason actually had
-  (assumed: it is the only lent copy of any DCC book 1).
+- ☐ `/api/admin/users` now carries `placeholder`, but the estate admin page
+  (`catalog-platform` `sites/heygabi-home/public/admin/admin.js`) does not read
+  it — NOT checked whether Ronnie's borrower row shows there as an ordinary
+  pending library person. Main has 1 placeholder (id 4), padhard 0.
+- ☐ `docs/info/data-model.md` header still says migration 0400 never reached
+  production — measured false 2026-11-22 17:50 on both instances; correct it.
+- ☐ Padhard: open the *Who has it?* picker once as an owner there.
 
 ## ☐ 2026-10-28 17:4x — leftover from "make sure all works have editions" (done; results in `DONE.md`; the sole-edition linking question was SETTLED 17:5x — owner: "Sure leave it" — see `KNOWN_ISSUES.md` KI-22)
 
