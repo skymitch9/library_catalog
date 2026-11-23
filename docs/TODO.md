@@ -58,8 +58,17 @@
 
 - ☐ `/api/admin/users` now carries `placeholder`, but the estate admin page
   (`catalog-platform` `sites/heygabi-home/public/admin/admin.js`) does not read
-  it — NOT checked whether Ronnie's borrower row shows there as an ordinary
-  pending library person. Main has 1 placeholder (id 4), padhard 0.
+  it. **MEASURED 17:58 on https://heygabi.ai/admin/:** Ronnie's card now reads
+  *"sees Shared audiobooks · member on Audiobooks/Ebooks · pending on !Sky"* —
+  i.e. the borrower stand-in shows as an ordinary pending person on the main
+  library's ladder. ⚠️ Giving her a role on that ladder is what would turn the
+  stand-in into real library access. The estate-level PENDING list is still 0.
+  Main has 1 placeholder (id 4), padhard 0.
+- Measured 17:58, closing two "not verified" lines of the DONE entry: padhard
+  loads signed in as Skylar (the sign-in path reads the new column); padhard
+  roles are 1 owner, 2 admins, 1 member — so nobody on either instance loses
+  the JSON backup. No other caller of `export.json` exists in `bookbuddy` or
+  `catalog-platform` source (grep; `boardbuddy` not searched).
 - ☐ `docs/info/data-model.md` header still says migration 0400 never reached
   production — measured false 2026-11-22 17:50 on both instances; correct it.
 - ☐ Padhard: open the *Who has it?* picker once as an owner there.
