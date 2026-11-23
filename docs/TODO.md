@@ -120,7 +120,18 @@ it, still pending). Conductor read `apps/worker/src/lib/estate-lend.ts` only.
   step (cross-book `editionId` in the same PATCH) leaves an inert placeholder
   behind; the UI never sends that.
 
-**Blocked for SHIPPING, not building:** wrangler on this box is *Not logged
+**MEASURED 2026-11-22 17:50 Phoenix, after the owner ran `wrangler login`
+(read-only):** `d1 migrations list` answers *"No migrations to apply"* on BOTH
+`library-catalog` and `library-catalog-2nd`, and `copy` has `lent_to`,
+`person_user_id`, `person_name` on both — so **padhard DOES have 0400**; the
+data-model header saying it never reached production is stale. Both
+`ESTATE_APP_TOKEN_LIBRARY` and `ESTATE_APP_TOKEN_LIBRARY2` are present by name
+on the live `estate-auth` Worker (`wrangler secret list`). So the wrangler
+blocker below is CLEARED; what remains is the owner's go to merge + deploy and
+the three uncommitted `catalog-platform` doc files.
+
+**Blocked for SHIPPING, not building (17:05 state, superseded above):**
+wrangler on this box is *Not logged
 in* (owner: `wrangler login`); deploy order is auth Worker first, then the
 library PAIR (migrate pair before deploy pair). ⚠️ NOT verified: that padhard
 has migration 0400 at all (`info/data-model.md` says it never reached
