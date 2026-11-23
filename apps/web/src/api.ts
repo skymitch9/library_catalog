@@ -924,6 +924,12 @@ export interface Person {
   role: Role;
   firstSeenAt: string;
   approvedAt: string | null;
+  /**
+   * A borrower who has never signed in (migration 0490) — the row exists only
+   * so a lent copy can link to them. Optional on the wire: an older Worker
+   * omits it, and absent must read as an ordinary row.
+   */
+  placeholder?: boolean;
 }
 
 /**
@@ -934,9 +940,22 @@ export interface Person {
  * carry the email/photo/role that `Person` (the `manageUsers` People page) does.
  */
 export interface Member {
-  id: number;
+  /** A local account here. `null` on an estate-only entry. */
+  id: number | null;
+  /**
+   * An approved ESTATE member with no usable account here (owner/admin
+   * callers only). Opaque — sent back as `personEstateId` on save, and the
+   * server resolves it. Optional because an older Worker omits it.
+   */
+  estateId?: string | null;
   displayName: string;
 }
+
+/**
+ * Whether the estate half of the roster is in the answer. `unavailable` is an
+ * OUTAGE, never a permission — word it as one. Optional: older Worker.
+ */
+export type EstateRosterState = 'ok' | 'unavailable' | 'not_requested';
 
 /**
  * One row of "Books with you" — a copy of this house's that is linked to the
@@ -2010,7 +2029,7 @@ export const api = {
    * NOT `users()`: that one is `manageUsers`-only and hands out email, photo and
    * role. Any editor who may record who has a book may list this.
    */
-  members: () => request<{ members: Member[] }>('/api/members'),
+  members: () => request<{ members: Member[]; estate?: EstateRosterState }>('/api/members'),
 
   /**
    * ⚠️ The server refuses the last owner demoting themselves, and refuses anyone

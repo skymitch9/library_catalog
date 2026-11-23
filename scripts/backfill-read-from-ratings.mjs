@@ -174,7 +174,10 @@ const where = remote ? 'REMOTE' : 'LOCAL';
 
 const works = query('SELECT id, title, work_key FROM work ORDER BY id', { remote });
 const users = query(
-  'SELECT id, email, display_name, review_name FROM app_user ORDER BY id',
+  // `placeholder` (migration 0490): a lend placeholder has never signed in, so
+  // it is left out of the "set review_name" advice below — setting one by hand
+  // would pre-empt the name their first sign-in chooses.
+  'SELECT id, email, display_name, review_name, placeholder FROM app_user ORDER BY id',
   { remote },
 );
 const existing = query(
@@ -391,7 +394,7 @@ if (orphanNames.size) {
   for (const [name, n] of [...orphanNames].sort((a, b) => b[1] - a[1]).slice(0, 15)) {
     console.log(`  ${String(n).padStart(4)}  ${name}`);
   }
-  const noReviewName = users.filter((u) => !u.review_name);
+  const noReviewName = users.filter((u) => !u.review_name && Number(u.placeholder) !== 1);
   if (noReviewName.length) {
     console.log(
       `\n  ⚠️ ${noReviewName.length} signed-in ${noReviewName.length === 1 ? 'person has' : 'people have'} ` +
