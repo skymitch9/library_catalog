@@ -102,6 +102,15 @@ it, still pending). Conductor read `apps/worker/src/lib/estate-lend.ts` only.
   (pre-existing); a lend placeholder would add never-signed-in estate members'
   emails to it. Fix options: gate the export on `manageUsers`, or project
   `app_user` to a fixed field list. Asked 17:3x.
+  ✅ **Owner 17:4x: "Yes restrict to owners and admins". Done on the branch,
+  `43e24f3` (17:44):** `GET /api/export.json` is `manageUsers`-only;
+  `export.csv` (no account data — grep of `packages/db/src/export.ts`) stays
+  `editCatalog`; the Backup panel is not rendered without `manageUsers`; KI-23
+  removed from the branch's `KNOWN_ISSUES.md`. Conductor ran typecheck (0) and
+  `npm test` in the worktree: 3082 / 3081 pass / 0 fail / 1 skip. NOT deployed;
+  the page was not rendered in a browser. ⚠️ Behaviour change for a
+  contributor/moderator: they lose the JSON download (today nobody holds such
+  a role on main — People page 17:0x: 2 owners + 1 admin; padhard not read).
 - ☐ Follow-up, NOT built: `/api/admin/users` now carries `placeholder`, but
   the estate admin page (`catalog-platform` `sites/heygabi-home/public/admin`)
   does not read it yet and would show a borrower as an ordinary pending person.
