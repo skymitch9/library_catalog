@@ -80,6 +80,37 @@ assignment"*. Came out of the *Dungeon Crawler Carl* / Ronnie item below.
 - Estate unreachable / token unset → the picker falls back to local names +
   free text and SAYS the estate list is unavailable.
 
+**Status 17:28: BUILT on branch `feature/lend-to-estate-members`** (`8ab7d76`
+core+db · `076516b` worker · `af70cf9` web · `03134b1` docs · `09f7b2e` fix;
+pushed; worktree `C:/Users/nbasl/.wt/lc-lend-estate`) — **NOT merged, NOT
+migrated, NOT deployed.** The auth-Worker half is on `catalog-platform` branch
+`feature/estate-members-roster` (`0d00eef`), same state. Agent-reported, not
+re-run by the conductor: typecheck clean; `npm test` 3082 / 3081 pass / 1 skip
+(KI-21; baseline 3042); exercised end to end on a LOCAL worker + local D1 with
+a stubbed estate list (pick → placeholder row → simulated first sign-in claims
+it, still pending). Conductor read `apps/worker/src/lib/estate-lend.ts` only.
+
+- As built: `GET /api/members` → `{members:[{id,estateId,displayName}],
+  estate:'ok'|'unavailable'|'not_requested'}`; copy writes take
+  `personEstateId` (needs `manageUsers`; unknown id → 400 in words; estate
+  unreachable → 503 `estate_roster_unavailable`, nothing saved).
+- 🔴 **Deploy order is load-bearing:** the new code reads `app_user.placeholder`
+  on every sign-in, so BOTH `db:migrate` and `db:migrate:friend` (0490) must
+  land before either deploy, or sign-in breaks on that instance.
+- ☐ 🧑 **KI-23 (new, on the branch) needs the owner:** `GET /api/export.json`
+  is open to every `editCatalog` holder and dumps `app_user` with emails
+  (pre-existing); a lend placeholder would add never-signed-in estate members'
+  emails to it. Fix options: gate the export on `manageUsers`, or project
+  `app_user` to a fixed field list. Asked 17:3x.
+- ☐ Follow-up, NOT built: `/api/admin/users` now carries `placeholder`, but
+  the estate admin page (`catalog-platform` `sites/heygabi-home/public/admin`)
+  does not read it yet and would show a borrower as an ordinary pending person.
+- NOT verified: anything live; the real auth-Worker route against this client;
+  the web UI rendered in a browser; enforce-mode default-grant on a claimed
+  placeholder end to end (unit-tested only). A save refused AFTER the account
+  step (cross-book `editionId` in the same PATCH) leaves an inert placeholder
+  behind; the UI never sends that.
+
 **Blocked for SHIPPING, not building:** wrangler on this box is *Not logged
 in* (owner: `wrangler login`); deploy order is auth Worker first, then the
 library PAIR (migrate pair before deploy pair). ⚠️ NOT verified: that padhard
