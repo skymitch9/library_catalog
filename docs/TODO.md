@@ -54,6 +54,86 @@
 > still lives in one place, because one list beats two; the reason is now
 > simply that it is a CROSS-REPO queue. Do not duplicate it here.
 
+## ☐ 2026-11-22 17:0x Phoenix — lend a book to ANY estate member, even one who cannot see this library (owner ask)
+
+Owner, verbatim: *"I want you to write code to allow me to lend books to estate
+members even if they can't view it. Pulling accounts from estate is fine for
+assignment"*. Came out of the *Dungeon Crawler Carl* / Ronnie item below.
+
+**Design (conductor, 17:05; nothing built yet):**
+
+- **auth Worker (`catalog-platform`)** — new `GET /api/estate/members`, per-app
+  bearer (`ESTATE_APP_TOKEN_LIBRARY` / `_LIBRARY2` only), approved members
+  only, explicit field list `{id, email, display_name}`. Mirrors
+  `GET /api/estate/billing/policy`.
+- **library Worker** — `GET /api/members` merges the local roster with the
+  estate roster (deduped by email, server-side); the browser still gets a
+  name and an opaque key, never an email. Estate-only names are offered to
+  `manageUsers` callers only (he said "allow **me**"; widening to every
+  editor needs his yes).
+- **Saving a lend to an estate-only member** creates a PLACEHOLDER `app_user`
+  row (lower-cased email, `role = 'pending'`, `approved_at` NULL, no uid, a new
+  `placeholder` marker — migration **0490**, a PAIR) and links the copy to it
+  through the existing `person_user_id`. Measured in `middleware/auth.ts` +
+  `packages/db/src/users.ts`: an existing `pending`, never-decided row is
+  treated at sign-in exactly like a new one, so the placeholder grants nothing.
+- Estate unreachable / token unset → the picker falls back to local names +
+  free text and SAYS the estate list is unavailable.
+
+**Blocked for SHIPPING, not building:** wrangler on this box is *Not logged
+in* (owner: `wrangler login`); deploy order is auth Worker first, then the
+library PAIR (migrate pair before deploy pair). ⚠️ NOT verified: that padhard
+has migration 0400 at all (`info/data-model.md` says it never reached
+production; main evidently has it).
+
+**After deploy:** re-save work 263's lent copy picking *Ronnie* — the card will
+then read *"Lent to Ronnie"* (live display name), not *Ranika*.
+
+## ☐ 🧑 2026-11-22 16:2x Phoenix — *Dungeon Crawler Carl* loan: Jason → Ranika; "She should have a estate profile"
+
+Owner, verbatim (three lines, one message): *"Jason returned dungeon crawler
+Carl / Now Ranika has it / She should have a estate profile"*.
+
+- ✅ **Recorded on MAIN, 16:28, through the web UI as Skylar** (wrangler on
+  this box is **Not logged in**, so no D1 read or write was possible): work
+  **263**, the **Standard edition hardcover** (Penguin, 2024), the one copy
+  whose status was already *Lent out*. Its *Who has it?* field was EMPTY —
+  Jason had never been recorded by name — so nothing was overwritten. Saved
+  `Ranika` as typed text; the row now reads *"Lent to Ranika"*. Status
+  unchanged (`lent`). Jason's return is therefore not a separate write.
+- ☐ **Ranika is NOT a member of this library.** The member autofill offered
+  three names only: *Amber Mitchell*, *Skylar*, *Skylar Mitchell (Skymitch9)*.
+  So the copy carries a name, not a link (`person_user_id` NULL). Asked the
+  owner 16:3x what "should have" means: (a) she already has an estate account
+  under another name / email → link it; (b) he wants one created or an invite
+  sent → access-increasing, his explicit yes first. Nothing was created,
+  invited or granted.
+- **Owner 16:3x: "Polvoronnie maybe"** (a possible account name for her).
+  MEASURED 16:4x on https://heygabi.ai/admin/ (estate members, as Skylar,
+  read-only): the name/email search returns **0 of 12** for `polvo` and for
+  `rani`; no member email begins with either. No repo file mentions the name.
+  So she has NO estate account under either name — pending and revoked lists
+  were also 0 under those filters. Next needs the owner: her sign-in email and
+  his yes to add her (*Add member by email* on that page). Not added.
+- 🔁 **SUPERSEDES the bullet above — owner 2026-11-22 16:59: "Yes", Ranika IS
+  the estate member shown as *Ronnie*.** The `polvo` / `rani` searches missed
+  her because neither string is in that display name or address. MEASURED
+  16:58–16:59 (read-only): estate admin lists Ronnie APPROVED, origin
+  `seed:audiobook`, permissions *"sees Shared audiobooks · member on
+  Audiobooks/Ebooks"* — **no Library shelf**. The library's own People page
+  has 3 rows only (the owner's two accounts + Amber), so she has no `app_user`
+  row here (one is created at first sign-in, `packages/db/src/users.ts`), which
+  is why the picker (`listMembers`) cannot offer her. To LINK the loan:
+  (1) owner's yes to give her the Library shelf — access-increasing, asked
+  16:59, not granted; (2) she signs in once at library.heygabi.ai; (3) re-save
+  *Who has it?* on work 263's lent copy, picking her from the list. Until then
+  the row stays the typed name `Ranika`. Not decided: whether the typed name
+  should read *Ronnie* to match her profile.
+- NOT checked: padhard (the loan is the owner's book, so no pair write was
+  made — say so if Diva's shelf lent a copy too); the estate SSO user list
+  (staff page, not opened); whether this copy is the one Jason actually had
+  (assumed: it is the only lent copy of any DCC book 1).
+
 ## ☐ 2026-10-28 17:4x — leftover from "make sure all works have editions" (done; results in `DONE.md`; the sole-edition linking question was SETTLED 17:5x — owner: "Sure leave it" — see `KNOWN_ISSUES.md` KI-22)
 
 - [ ] 🧑 The 20 minted editions say **paperback by default, unverified** in their note — correct format + ISBN from each barcode when the book is in hand (531–534 are the four Jay Boyce items already tracked below; the 16 on padhard are Samantha's).
