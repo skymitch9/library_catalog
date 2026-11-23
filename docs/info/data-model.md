@@ -16,6 +16,13 @@
 > 0400, applied to a local D1 and exercised through the API — writes, both
 > refusals, and the live display-name join). ⚠️ Nothing on either live instance
 > was measured that day; the migration has NOT been applied to production.
+>
+> `app_user.placeholder` added **2026-11-22** (migration 0490, branch
+> `feature/lend-to-estate-members`) — applied to a LOCAL D1 and exercised
+> through a local `wrangler dev` with a stubbed estate roster: pick, save,
+> read-back, then the person's first sign-in. ⚠️ **Nothing on either live
+> instance was measured**; 0490 is not applied to production or padhard, and
+> the auth Worker's `GET /api/estate/members` was not reachable from here.
 
 ```
 work        title · authors · series · series_index · work_key
@@ -190,6 +197,45 @@ redacted** — hiding it would make a lent book read as missing from the shelf.
 hides a work whose copies are *all* sold, and the Copies filter's **Sold**
 option is the way back. Nothing is deleted — see `NOT_ONLY_SOLD` in
 `packages/db/src/works.ts` for what it does and does not hide.
+
+#### Borrowers who have never signed in — `app_user.placeholder` (migration 0490)
+
+Owner, 2026-11-22: *"allow me to lend books to estate members even if they
+can't view it. Pulling accounts from estate is fine for assignment."* For an
+owner/admin (`manageUsers`) the person picker also offers APPROVED ESTATE
+members with no usable row here (`GET /api/members` → `{ id: null, estateId,
+displayName }`; emails never reach the browser). Picking one sends
+`personEstateId`; the Worker re-fetches the roster from the auth Worker
+(`GET /api/estate/members`, `lib/estate-members.ts`), refuses in words if it is
+unreachable or the id is absent, then links the existing row for that email or
+creates a **placeholder** (`ensureLendPlaceholder` in `packages/db/src/users.ts`).
+
+| Column | Note |
+|---|---|
+| `placeholder` | `INTEGER NOT NULL DEFAULT 0`. `1` = a row made only so a copy could link to that person; they have never signed in here |
+
+**A placeholder is INERT — that is the safety property, and it is tested
+against real SQLite** (`packages/db/test/lend-placeholder.test.ts`):
+
+- it is written in exactly the state a brand-new sign-in is judged from —
+  `role='pending'`, `approved_at`/`approved_by`/`firebase_uid`/`photo_url`/
+  `review_name` all NULL — so it holds no capability, and with no uid the
+  delegated GABI door can never match it;
+- it is **never created into a table with no owner**, so the "first row
+  becomes owner" bootstrap can neither be triggered nor used up by one;
+- the person's first real sign-in (`upsertUserOnLogin` → `claimPlaceholder`)
+  ends in the same role / approval / `display_name` / uid / `review_name` as a
+  fresh first sign-in: Google facts with no fallback to the estate's name, and
+  `review_name = displayName ?? email` — the estate's spelling must never
+  pre-empt the name their reviews are filed under. `placeholder` goes to 0,
+  audited (`change_log`, field `placeholder`, `auto`). OWNER_EMAILS still forces
+  owner; an approval an owner gave the placeholder beforehand stands.
+
+Readers that treat it specially: the People page shows *"Never signed in —
+recorded as a borrower"* and does not count it as waiting; `listMembers`
+excludes it (it is pending), so the merged picker offers that person through
+their estate entry, which resolves back to the SAME row by email.
+`memberDisplayNames` resolves its name like any row, so the card shows it.
 
 ### `user_book` — read-state, and a mirror
 

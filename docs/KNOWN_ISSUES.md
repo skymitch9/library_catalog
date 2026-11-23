@@ -1,7 +1,10 @@
 # library_catalog — Known Issues, Waivers & Exceptions
 
 > **Audience:** Claude/Kiro sessions and the owner. **Status:** TRACKED.
-> Last verified: **2026-09-07 19:50 UTC (CI gate, testing audit §4.3)** —
+> Last verified: **2026-11-22 — KI-23 ADDED** by reading `packages/db/src/export.ts`
+> and `apps/worker/src/routes/export.ts` on branch `feature/lend-to-estate-members`
+> (code only; no live instance read). ⚠️ Nothing else was re-checked then.
+> Previously **2026-09-07 19:50 UTC (CI gate, testing audit §4.3)** —
 > **KI-21 was ADDED** and measured on the runner's own TAP output: run
 > `34156956144` reports `tests 3027 · pass 3026 · fail 0 · skipped 1`, and the
 > skip line names the file it wanted
@@ -917,6 +920,31 @@ badged, recorded here so nobody re-opens it from memory.
 | Was | Claimed | Closed 2026-09-02 |
 |---|---|---|
 | **KI-13** | This repo receives `billing_denied` and throws it away — no money path here is switchable | ⚠️ **Closed by billing phase 3 landing** (`e7b3f6b`, deployed to both instances). Its own "what would change it" listed four steps and all four happened: `GateOutcome.refresh` is four keys; migration `0440` adds `app_user.estate_billing_denied` and `GateSubject` takes it; `middleware/auth.ts` persists it beside `visibility` in the same UPDATE; and eight money paths now AND the resolved deny-set in front of their existing gates (L1–L8 — see [`DONE.md`](DONE.md)). 🔴 **The load-bearing pin held on the way through**: `null` is unknown and `[]` is "the directory denied nothing", and they stay apart on the wire, in the column, in the parser and in the tail line. ⚠️ **Shipped INERT** — `BILLING_POLICY = "off"` on both instances, so the switch is wired but not yet acting; the soak that flips it is on [`TODO.md`](TODO.md). ⚠️ **Not verified:** no rule has ever been written for `library`/`library2`, so no `billing_denied` has been seen non-empty on a real `/seen` answer here, and the gate has never fired |
+
+## KI-23 · The JSON export hands every `editCatalog` holder every `app_user` email — and lend placeholders add estate members to it — `WATCHING`
+
+**Symptom.** `GET /api/export.json` is gated on `editCatalog` (contributor+) and
+dumps `app_user` as `SELECT *` (`packages/db/src/export.ts`, `TABLES[0]`), so a
+contributor can download every account's email and estate cache columns — a
+default-allow projection, the shape the estate's export rule forbids. Measured
+by reading the code 2026-11-22; pre-existing, NOT introduced by the lend
+feature. ⚠️ **The lend feature widens it:** a lend placeholder (migration 0490)
+is an estate member who has never signed in here, so their email now appears in
+that dump too, although `GET /api/members` never sends an email to the browser.
+
+**Status.** `WATCHING`.
+
+**Why tolerated.** The export is the catalog's only backup and a restore needs
+`app_user` to satisfy `user_book.user_id` / `copy.person_user_id`; projecting or
+re-gating it is an owner decision about who may take a backup, not a side
+effect of a lending feature. Placeholders only exist where an owner/admin lent
+a book to an estate member.
+
+**What would change it.** An owner decision to either gate `export.json` on
+`manageUsers`, or project `app_user` to an explicit allowlist (id, display_name,
+review_name, role, placeholder) for non-`manageUsers` callers. The count that
+matters: rows with `placeholder = 1` on either instance — **0 today** (the
+column does not exist live yet).
 
 ---
 
