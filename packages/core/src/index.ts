@@ -65,6 +65,12 @@ export interface AppUser {
   role: Role;
   firstSeenAt: string;
   approvedAt: string | null;
+  /**
+   * A borrower who has NEVER signed in (migration 0490): the row exists only
+   * so a lent copy can link to an estate member. Always `pending`, never
+   * approved, no uid — and cleared to `false` by their first real sign-in.
+   */
+  placeholder: boolean;
 }
 
 export type Capability = keyof typeof CAPABILITY_MATRIX;

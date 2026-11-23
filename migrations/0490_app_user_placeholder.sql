@@ -1,0 +1,42 @@
+-- A borrower who has never signed in — an `app_user` row that exists only so a
+-- lent copy can be LINKED to them.
+--
+-- Owner request, verbatim (2026-11-22): *"I want you to write code to allow me
+-- to lend books to estate members even if they can't view it. Pulling accounts
+-- from estate is fine for assignment."*
+--
+-- Migration 0400 gave a copy `person_user_id`, which references `app_user(id)`.
+-- Until now the only way to get a row there was to sign in, so an approved
+-- estate member who has never opened THIS library (audiobook-only access, say)
+-- could be recorded only as free text. The picker now offers the estate roster
+-- to `manageUsers` callers, and picking one of those names creates a row for
+-- them here if there is none yet. This column says which rows were made that
+-- way.
+--
+-- ## ⚠️ A placeholder is INERT, and that is the whole safety argument
+--
+-- It is written as `role = 'pending'`, `approved_at = NULL`, `approved_by =
+-- NULL`, `firebase_uid = NULL`, `review_name = NULL` — exactly the state a
+-- brand-new sign-in is judged from. So:
+--
+--   * it grants nothing: `pending` holds no capability, and with no uid the
+--     delegated GABI door (`findUserByFirebaseUid`) can never match it;
+--   * the estate gate treats the person's real first sign-in as a first
+--     sign-in (pending + never decided → §5.4 default-grant, same as ever);
+--   * `upsertUserOnLogin` clears `placeholder` back to 0 on that sign-in and
+--     sets `review_name` to what its INSERT branch would have chosen, so the
+--     estate's display name can never pre-empt the name their reviews are
+--     filed under (review document ids are `{bookId}_{reviewNameLower}`);
+--   * a placeholder is never created into an EMPTY table — the "first row
+--     becomes owner" bootstrap can neither be triggered nor used up by one.
+--
+-- `NOT NULL DEFAULT 0`: every row that exists before this migration is a real
+-- sign-in and reads 0, never NULL — the 0430 posture.
+--
+-- ⚠️ `IF NOT EXISTS` is not available for ADD COLUMN in SQLite, so this
+-- migration is not re-runnable by itself. `d1 migrations apply` records it in
+-- `d1_migrations`, and it must not be applied out of band (the 0380 repair
+-- note). ⚠️ Migrate BEFORE deploying the code that reads it, on BOTH instances:
+-- sign-in itself reads this column once the new Worker is live.
+
+ALTER TABLE app_user ADD COLUMN placeholder INTEGER NOT NULL DEFAULT 0;

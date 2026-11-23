@@ -1,5 +1,5 @@
 import type { AppUser, Role } from '@lc/core';
-import { changeLogInsert } from './changes.js';
+import { ROW_FIELD, changeLogInsert } from './changes.js';
 
 interface UserRow {
   id: number;
@@ -11,10 +11,12 @@ interface UserRow {
   role: string;
   first_seen_at: string;
   approved_at: string | null;
+  /** Migration 0490. Absent on a fake that predates it, which reads as 0. */
+  placeholder?: number | null;
 }
 
 const COLS =
-  'id, email, firebase_uid, display_name, review_name, photo_url, role, first_seen_at, approved_at';
+  'id, email, firebase_uid, display_name, review_name, photo_url, role, first_seen_at, approved_at, placeholder';
 
 function toUser(row: UserRow): AppUser {
   return {
@@ -27,6 +29,7 @@ function toUser(row: UserRow): AppUser {
     role: row.role as Role,
     firstSeenAt: row.first_seen_at,
     approvedAt: row.approved_at,
+    placeholder: row.placeholder === 1,
   };
 }
 
@@ -121,6 +124,12 @@ export async function upsertUserOnLogin(
   const isRecoveryOwner = (params.ownerEmails ?? []).some(
     (e) => e.trim().toLowerCase() === email,
   );
+
+  // A lend placeholder (migration 0490) is claimed as if this were a fresh
+  // first sign-in — see claimPlaceholder. Every other existing row below.
+  if (existing?.placeholder) {
+    return claimPlaceholder(db, existing, params, email, isRecoveryOwner);
+  }
 
   if (existing) {
     // Refresh the mutable Google-side facts, but never review_name once it is
@@ -217,6 +226,212 @@ export async function upsertUserOnLogin(
   const created = await findUserByEmail(db, email);
   if (!created) throw new Error(`failed to create user record for ${email}`);
   return created;
+}
+
+/**
+ * The real person's FIRST sign-in onto a lend placeholder (migration 0490).
+ *
+ * ⚠️ **The row must come out exactly as a fresh first sign-in would have made
+ * it**, because a placeholder was written by somebody else, from the estate's
+ * roster, and nothing on it is the person's own:
+ *
+ *   * `display_name`, `photo_url`, `firebase_uid` are the Google facts of THIS
+ *     sign-in, with no fallback to the placeholder's estate display name — the
+ *     INSERT branch writes `params.displayName ?? null`, so this does too;
+ *   * `review_name` is what the INSERT branch would choose
+ *     (`displayName ?? email`) when it is still NULL. Review document ids are
+ *     `{bookId}_{reviewNameLower}`, so letting the estate's spelling of their
+ *     name land here would file their reviews under a name they never chose;
+ *   * `role` / `approved_at` are LEFT ALONE (a placeholder is `pending` and
+ *     never approved — the state a new row is judged from, so the estate gate
+ *     default-grants it the ordinary way), with ONE exception: OWNER_EMAILS
+ *     forces `owner` exactly as it does for a new row. If an owner approved
+ *     the placeholder on the People page before they ever signed in, that is a
+ *     local decision and it stands, as it would on any row;
+ *   * `first_seen_at` restarts: the placeholder's stamp is when the book was
+ *     lent, not when this person was first seen.
+ *
+ * The UPDATE re-asserts `placeholder = 1`, so two simultaneous first sign-ins
+ * cannot both claim it; the loser re-reads the winner's row. Audit rows guard
+ * on `changes()` (the `grantEstateDefaultRole` pattern) so a lost race writes
+ * no record of a claim that did not happen.
+ */
+async function claimPlaceholder(
+  db: D1Database,
+  existing: AppUser,
+  params: {
+    firebaseUid?: string | null;
+    displayName?: string | null;
+    photoUrl?: string | null;
+  },
+  email: string,
+  isRecoveryOwner: boolean,
+): Promise<AppUser> {
+  const now = new Date().toISOString();
+  const reviewName = existing.reviewName ?? params.displayName ?? email;
+  const forceOwner = isRecoveryOwner && existing.role !== 'owner';
+  const nextRole = forceOwner ? 'owner' : existing.role;
+  const nextApprovedAt = forceOwner ? now : existing.approvedAt;
+  const batchId = crypto.randomUUID();
+
+  const stmts = [
+    db
+      .prepare(
+        `UPDATE app_user
+            SET display_name = ?, photo_url = ?, firebase_uid = ?, review_name = ?,
+                role = ?, approved_at = ?, first_seen_at = datetime('now'), placeholder = 0
+          WHERE id = ? AND placeholder = 1`,
+      )
+      .bind(
+        params.displayName ?? null,
+        params.photoUrl ?? null,
+        params.firebaseUid ?? null,
+        reviewName,
+        nextRole,
+        nextApprovedAt,
+        existing.id,
+      ),
+    db
+      .prepare(
+        `INSERT INTO change_log (batch_id, entity, entity_id, field, old_json, new_json,
+                                 changed_by, changed_how, note)
+         SELECT ?, 'app_user', ?, 'placeholder', ?, ?, NULL, 'auto', ?
+          WHERE (SELECT changes()) > 0`,
+      )
+      .bind(
+        batchId,
+        existing.id,
+        JSON.stringify(1),
+        JSON.stringify(0),
+        'first sign-in: the lend placeholder is now a real account',
+      ),
+  ];
+  if (forceOwner) {
+    // This `changes()` reads the change_log INSERT just above, which wrote a
+    // row only if the claim landed — so the role row lands only with the claim.
+    stmts.push(
+      db
+        .prepare(
+          `INSERT INTO change_log (batch_id, entity, entity_id, field, old_json, new_json,
+                                   changed_by, changed_how, note)
+           SELECT ?, 'app_user', ?, 'role', ?, ?, NULL, 'auto', ?
+            WHERE (SELECT changes()) > 0`,
+        )
+        .bind(
+          batchId,
+          existing.id,
+          JSON.stringify(existing.role),
+          JSON.stringify('owner'),
+          'OWNER_EMAILS recovery hatch: forced owner on first sign-in (was a lend placeholder)',
+        ),
+    );
+  }
+  await db.batch(stmts);
+
+  const claimed = await findUserByEmail(db, email);
+  if (!claimed) throw new Error(`failed to claim user record for ${email}`);
+  return claimed;
+}
+
+/** Why a lend placeholder was not created — the caller relays it in words. */
+export class PlaceholderRefusedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PlaceholderRefusedError';
+  }
+}
+
+/**
+ * The local account a lend to an estate member links to — the existing row
+ * for that email, or a new INERT placeholder (migration 0490).
+ *
+ * The caller has already proved the email belongs to an APPROVED estate member
+ * (the worker re-fetches the roster on every save); this decides only "which
+ * row".
+ *
+ * ## The placeholder, and why it is inert
+ *
+ * `role='pending'`, `approved_at`/`approved_by`/`firebase_uid`/`photo_url`/
+ * `review_name` all NULL, `placeholder=1` — the exact state a brand-new
+ * sign-in is judged from, so it grants nothing and pre-decides nothing.
+ * `upsertUserOnLogin` turns it into a real account on their first sign-in
+ * (`claimPlaceholder`).
+ *
+ * ⚠️ **Never into an EMPTY table, nor one without an owner.** The bootstrap
+ * rule makes the first row `owner`; a placeholder must neither trigger it nor
+ * use it up. The condition is inside the INSERT, so there is no window between
+ * the check and the write. (There is nobody to be lending yet, either.)
+ *
+ * The email is normalised exactly as `findUserByEmail` does, and the INSERT is
+ * `WHERE NOT EXISTS` like `upsertUserOnLogin`'s, so the same person twice — or
+ * a concurrent sign-in by them — yields ONE row. The audit row rides in the
+ * same batch, guarded on `changes()`, so a lost race records nothing.
+ */
+export async function ensureLendPlaceholder(
+  db: D1Database,
+  params: { email: string; displayName: string; actorId: number },
+): Promise<{ user: AppUser; created: boolean }> {
+  const email = params.email.trim().toLowerCase();
+  const displayName = params.displayName.trim();
+  if (!email || !displayName) {
+    throw new PlaceholderRefusedError('That estate member has no usable name to record.');
+  }
+  const existing = await findUserByEmail(db, email);
+  if (existing) return { user: existing, created: false };
+
+  const results = await db.batch([
+    db
+      .prepare(
+        `INSERT INTO app_user (email, firebase_uid, display_name, review_name, photo_url,
+                               role, approved_at, approved_by, placeholder)
+         SELECT ?, NULL, ?, NULL, NULL, 'pending', NULL, NULL, 1
+          WHERE NOT EXISTS (SELECT 1 FROM app_user WHERE email = ?)
+            AND EXISTS (SELECT 1 FROM app_user WHERE role = 'owner')`,
+      )
+      .bind(email, displayName, email),
+    db
+      .prepare(
+        `INSERT INTO change_log (batch_id, entity, entity_id, field, old_json, new_json,
+                                 changed_by, changed_how, note)
+         SELECT ?, 'app_user', last_insert_rowid(), ?, 'null', ?, ?, 'human', ?
+          WHERE (SELECT changes()) > 0`,
+      )
+      .bind(
+        crypto.randomUUID(),
+        ROW_FIELD,
+        JSON.stringify({ displayName, role: 'pending', placeholder: true }),
+        params.actorId,
+        `lend placeholder created by user ${params.actorId}: an estate member who has never signed in here`,
+      ),
+  ]);
+  const inserted = ((results[0]?.meta as { changes?: number } | undefined)?.changes ?? 0) > 0;
+
+  const row = await findUserByEmail(db, email);
+  if (!row) {
+    throw new PlaceholderRefusedError(
+      'This catalog has no owner yet, so nobody can be recorded as a borrower.',
+    );
+  }
+  return { user: row, created: inserted };
+}
+
+/**
+ * The lower-cased emails of every local row the name picker already offers —
+ * the dedupe half of the merged `GET /api/members` roster.
+ *
+ * ⚠️ Server-side only. Emails never reach the browser; this exists so the
+ * worker can drop an estate member who is already listed locally. The
+ * predicate is `listMembers`'s own (`LISTED_MEMBER_WHERE`), so "already
+ * offered" means exactly "in that list". A pending or placeholder row is NOT
+ * in it, so that person is offered through their estate entry — which resolves
+ * back to the SAME row by email on save (`ensureLendPlaceholder`), never a
+ * second one.
+ */
+export async function listedMemberEmails(db: D1Database): Promise<Set<string>> {
+  const { results } = await db
+    .prepare(`SELECT email FROM app_user WHERE ${LISTED_MEMBER_WHERE}`)
+    .all<{ email: string }>();
+  return new Set(results.map((r) => r.email.toLowerCase()));
 }
 
 /**
@@ -389,6 +604,15 @@ export async function listUsers(db: D1Database): Promise<AppUser[]> {
   return results.map(toUser);
 }
 
+/**
+ * Who the local half of the name picker offers — shared by `listMembers` and
+ * `listedMemberEmails` so "offered" and "deduped against" cannot drift apart.
+ * A placeholder is `pending`, so it is never offered here.
+ */
+const LISTED_MEMBER_WHERE = `role != 'pending'
+          AND display_name IS NOT NULL
+          AND trim(display_name) != ''`;
+
 /** The autocomplete roster — a member's id and the name to show, nothing else. */
 export interface MemberSummary {
   id: number;
@@ -418,9 +642,7 @@ export async function listMembers(db: D1Database): Promise<MemberSummary[]> {
   const { results } = await db
     .prepare(
       `SELECT id, display_name FROM app_user
-        WHERE role != 'pending'
-          AND display_name IS NOT NULL
-          AND trim(display_name) != ''
+        WHERE ${LISTED_MEMBER_WHERE}
         ORDER BY display_name COLLATE NOCASE`,
     )
     .all<{ id: number; display_name: string }>();

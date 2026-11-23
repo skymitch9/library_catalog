@@ -462,6 +462,28 @@ export const createCopySchema = z.object({
    */
   personUserId: z.number().int().positive().nullable().optional(),
   personName: optionalText,
+  /**
+   * An APPROVED ESTATE MEMBER who may have no account here yet — the opaque id
+   * `GET /api/members` handed out as `estateId` (owner request 2026-11-22:
+   * lend to estate members "even if they can't view it").
+   *
+   * ⚠️ **Declared HERE, on the create schema, so both write paths model it** —
+   * `updateCopySchema` is this `.partial().strict()`. KI-10: the create schema
+   * strips unknown keys silently, and a stripped link would save the typed name
+   * as plain text and report success. The worker resolves it (re-fetches the
+   * roster, finds or creates the local row, then writes `personUserId` +
+   * `personName` through the ordinary path); `@lc/db` refuses one that arrives
+   * unresolved. It needs `manageUsers` on top of the route's own capability,
+   * and may not be sent beside a non-null `personUserId`.
+   */
+  personEstateId: z
+    .string({
+      invalid_type_error: 'the estate member link was not recognised — pick the name again',
+    })
+    .trim()
+    .min(1, 'the estate member link was empty — pick the name again')
+    .max(200, 'the estate member link was not recognised — pick the name again')
+    .optional(),
   notes: optionalText,
 });
 export type CreateCopy = z.infer<typeof createCopySchema>;
