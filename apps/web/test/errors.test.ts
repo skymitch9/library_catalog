@@ -162,3 +162,16 @@ describe('the cover search ran and failed (F13)', () => {
     assert.ok(!SERVER_PROBLEM.includes('502'), 'nobody may be shown a bare HTTP status');
   });
 });
+
+// A lend to an estate member whose roster could not be reached (2026-11-22).
+// It is a 503, and every unrecognised 503 falls back to the ACCESS sentence —
+// which would send the owner asking for access he already has.
+describe('estate_roster_unavailable — an outage, said as one', () => {
+  it('renders the route’s own sentence, never the access fallback', () => {
+    const detail =
+      'The estate member list could not be reached, so that name was not linked and nothing was saved.';
+    const said = describeUnavailable(body({ error: 'estate_roster_unavailable', detail }));
+    assert.equal(said, detail);
+    assert.notEqual(said, ACCESS_UNAVAILABLE);
+  });
+});

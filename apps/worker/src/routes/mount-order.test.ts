@@ -152,6 +152,7 @@ function userWith(role: Role): AppUser {
     role,
     firstSeenAt: '2026-01-01T00:00:00.000Z',
     approvedAt: '2026-01-01T00:00:00.000Z',
+    placeholder: false,
   };
 }
 
@@ -271,8 +272,8 @@ describe('index.ts mount order', () => {
     );
     assert.match(
       source,
-      /\.get\('\/export\.json',\s*requireCapability\('editCatalog'\)/,
-      'export.json lost its own guard — the export must stay editCatalog-only',
+      /\.get\('\/export\.json',\s*requireCapability\('manageUsers'\)/,
+      'export.json lost its own guard — the backup carries app_user emails and must stay manageUsers-only',
     );
     assert.match(
       source,

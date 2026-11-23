@@ -434,6 +434,30 @@ const COPY_COLS = `id, work_id, edition_id, status, location, acquired_on, price
 const PERSON_STATUSES: readonly string[] = ['lent', 'borrowed', 'sold'];
 
 /**
+ * May a copy in this status record who has it? The ONE rule, exported so the
+ * worker can refuse a lend to an estate member BEFORE it creates a placeholder
+ * account for them (a refusal must change nothing) — not a second copy of it.
+ */
+export function statusCanCarryPerson(status: string): boolean {
+  return PERSON_STATUSES.includes(status);
+}
+
+/**
+ * ⚠️ `personEstateId` is resolved by the WORKER (re-fetch the estate roster,
+ * find or create the local row) and must never reach a write here unresolved —
+ * a stripped or ignored link field is exactly KI-10's silent "saved as plain
+ * text and looked like success". So an unresolved one is refused, loudly.
+ */
+function assertEstateLinkResolved(input: { personEstateId?: string | null | undefined }): void {
+  if (input.personEstateId !== undefined && input.personEstateId !== null) {
+    throw new CopyLinkError(
+      'An estate member link has to be resolved before it is saved — nothing was changed.',
+      400,
+    );
+  }
+}
+
+/**
  * A copy write that states a falsehood, refused with a status the route can
  * relay. The `AccessoryError` shape from `accessories.ts`, for the same
  * reason it exists there.
@@ -501,7 +525,7 @@ async function assertPersonAllowed(
     (patch.personUserId != null && patch.personUserId !== undefined) ||
     (patch.personName != null && patch.personName !== '');
 
-  if (namesSomebody && !PERSON_STATUSES.includes(nextStatus)) {
+  if (namesSomebody && !statusCanCarryPerson(nextStatus)) {
     throw new CopyLinkError(
       `a copy can only record who has it when it is lent out, borrowed or sold — ` +
         `this one is "${nextStatus}". Change the status first, then say who has it.`,
@@ -525,6 +549,7 @@ export async function createCopy(
   input: CreateCopy,
   actor?: Actor,
 ): Promise<CopyRow> {
+  assertEstateLinkResolved(input);
   await assertEditionBelongs(db, input.workId, input.editionId);
   await assertPersonAllowed(db, input, input.status);
   const insert = db
@@ -700,6 +725,7 @@ export async function updateCopy(
   patch: UpdateCopy,
   actor?: Actor,
 ): Promise<CopyRow | null> {
+  assertEstateLinkResolved(patch);
   const current = await getCopy(db, id);
   if (!current) return null;
 

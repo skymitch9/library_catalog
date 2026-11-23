@@ -52,6 +52,9 @@ const CARRIES_ITS_OWN_SENTENCE = new Set([
   // upstream. The sentence says whether the attempt is believed to have been
   // billed, which is the question a person actually has before retrying.
   'search_failed',
+  // A lend to an estate member could not confirm them against the estate list
+  // (auth Worker unreachable) — an outage, worded as one, never as access.
+  'estate_roster_unavailable',
 ]);
 
 /** Did the route write its own person-facing sentence for this body? */

@@ -1,7 +1,13 @@
 # library_catalog — Known Issues, Waivers & Exceptions
 
 > **Audience:** Claude/Kiro sessions and the owner. **Status:** TRACKED.
-> Last verified: **2026-09-07 19:50 UTC (CI gate, testing audit §4.3)** —
+> Last verified: **2026-11-22 — KI-23 was ADDED and CLOSED the same day, on branch
+> `feature/lend-to-estate-members`:** the JSON backup handed every `editCatalog`
+> holder every `app_user` email; the owner said *"Yes restrict to owners and
+> admins"* and `GET /api/export.json` is now `manageUsers`-only (code + tests;
+> no live instance read). It is not listed below because it is no longer
+> tolerated. ⚠️ Nothing else was re-checked then.
+> Previously **2026-09-07 19:50 UTC (CI gate, testing audit §4.3)** —
 > **KI-21 was ADDED** and measured on the runner's own TAP output: run
 > `34156956144` reports `tests 3027 · pass 3026 · fail 0 · skipped 1`, and the
 > skip line names the file it wanted
@@ -917,8 +923,6 @@ badged, recorded here so nobody re-opens it from memory.
 | Was | Claimed | Closed 2026-09-02 |
 |---|---|---|
 | **KI-13** | This repo receives `billing_denied` and throws it away — no money path here is switchable | ⚠️ **Closed by billing phase 3 landing** (`e7b3f6b`, deployed to both instances). Its own "what would change it" listed four steps and all four happened: `GateOutcome.refresh` is four keys; migration `0440` adds `app_user.estate_billing_denied` and `GateSubject` takes it; `middleware/auth.ts` persists it beside `visibility` in the same UPDATE; and eight money paths now AND the resolved deny-set in front of their existing gates (L1–L8 — see [`DONE.md`](DONE.md)). 🔴 **The load-bearing pin held on the way through**: `null` is unknown and `[]` is "the directory denied nothing", and they stay apart on the wire, in the column, in the parser and in the tail line. ⚠️ **Shipped INERT** — `BILLING_POLICY = "off"` on both instances, so the switch is wired but not yet acting; the soak that flips it is on [`TODO.md`](TODO.md). ⚠️ **Not verified:** no rule has ever been written for `library`/`library2`, so no `billing_denied` has been seen non-empty on a real `/seen` answer here, and the gate has never fired |
-
----
 
 ## Resolved and removed — 2026-08-26
 

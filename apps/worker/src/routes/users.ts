@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import { canGrantRole, capabilitiesFor, gabiPanelEnabled, updateRoleSchema } from '@lc/core';
-import { gapSummary, listMembers, listUsers, setUserRole } from '@lc/db';
+import { gapSummary, listUsers, setUserRole } from '@lc/db';
 import type { AppBindings } from '../env.js';
+import { buildMemberRoster } from '../lib/estate-lend.js';
 import { requireCapability } from '../middleware/auth.js';
 
 export const userRoutes = new Hono<AppBindings>()
@@ -73,9 +74,24 @@ export const userRoutes = new Hono<AppBindings>()
    * answers only what a datalist needs, so widening its audience to every editor
    * cannot leak a member's contact detail. `listMembers` in `@lc/db` owns the
    * field list; see its comment for who counts as a member.
+   *
+   * ⚠️ **Estate-only names (2026-11-22) go to `manageUsers` callers ONLY.** The
+   * owner asked to lend "to estate members even if they can't view it" — "allow
+   * ME" — and the estate roster is the whole household's membership, which this
+   * door was built to keep from ordinary editors. So an owner/admin also gets
+   * approved estate members with no usable row here (merged and deduped by
+   * email SERVER-SIDE; no email reaches the browser), each as
+   * `{ id: null, estateId, displayName }`. Everyone else gets exactly the old
+   * list, and the auth Worker is not asked on their behalf.
+   *
+   *     → { members: [{ id: number|null, estateId: string|null, displayName }],
+   *         estate: 'ok' | 'unavailable' | 'not_requested' }
+   *
+   * `estate: 'unavailable'` is an outage (auth Worker down, not yet deployed,
+   * token unset) — the UI words it as one, never as a permission.
    */
   .get('/members', requireCapability('editCatalog'), async (c) =>
-    c.json({ members: await listMembers(c.env.DB) }),
+    c.json(await buildMemberRoster(c.env.DB, c.env, c.get('user').role)),
   )
 
   .patch('/users/:id/role', requireCapability('manageUsers'), async (c) => {

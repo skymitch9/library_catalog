@@ -72,7 +72,10 @@ export function PeoplePage({ me }: { me: Me }) {
   if (error && !people) return <main className="centre">Could not load the people: {error}</main>;
   if (!people) return <main className="muted">Loading…</main>;
 
-  const pending = people.filter((p) => p.role === 'pending');
+  // ⚠️ A lend placeholder (migration 0490) is `pending` too, but nobody is
+  // waiting: they have never signed in. Counting them would announce a queue
+  // that does not exist.
+  const pending = people.filter((p) => p.role === 'pending' && !p.placeholder);
 
   return (
     <main>
@@ -116,10 +119,14 @@ export function PeoplePage({ me }: { me: Me }) {
                 <div className="person__id">
                   <strong>{p.displayName || p.email}</strong>
                   {p.displayName && <span className="muted small">{p.email}</span>}
-                  <span className="muted small">
-                    first seen {p.firstSeenAt.replace('T', ' ').slice(0, 16)}
-                    {p.reviewName ? ` · reviews as ${p.reviewName}` : ''}
-                  </span>
+                  {p.placeholder ? (
+                    <span className="muted small">Never signed in — recorded as a borrower</span>
+                  ) : (
+                    <span className="muted small">
+                      first seen {p.firstSeenAt.replace('T', ' ').slice(0, 16)}
+                      {p.reviewName ? ` · reviews as ${p.reviewName}` : ''}
+                    </span>
+                  )}
                   <a
                     className="muted small"
                     href={`https://heygabi.ai/admin#member=${encodeURIComponent(p.email)}`}
@@ -130,9 +137,13 @@ export function PeoplePage({ me }: { me: Me }) {
                   </a>
                 </div>
 
-                <span className={`mark mark--role mark--role-${p.role}`} title={ROLE_BLURB[p.role]}>
-                  {p.role}
-                </span>
+                {p.placeholder ? (
+                  <span className="mark">borrower</span>
+                ) : (
+                  <span className={`mark mark--role mark--role-${p.role}`} title={ROLE_BLURB[p.role]}>
+                    {p.role}
+                  </span>
+                )}
 
                 {isMe && <span className="muted small">that&apos;s you</span>}
               </div>

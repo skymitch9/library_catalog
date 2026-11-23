@@ -110,6 +110,7 @@ function userWith(role: Role): AppUser {
     role,
     firstSeenAt: '2026-01-01T00:00:00.000Z',
     approvedAt: '2026-01-01T00:00:00.000Z',
+    placeholder: false,
   };
 }
 
@@ -296,7 +297,7 @@ const WIRED: Wired[] = [
   // ── export.ts (/api) — blanket `.use('*')`, the whole catalog in one file ──
   // The stream is built lazily, so the admitted half would hand back a 200
   // whose body throws on read. Nothing is proved by consuming it.
-  { routes: exportRoutes, method: 'GET', path: '/export.json', capability: 'editCatalog', skipAdmitted: 'lazy stream — a 200 here proves nothing the 403 half does not' },
+  { routes: exportRoutes, method: 'GET', path: '/export.json', capability: 'manageUsers', skipAdmitted: 'lazy stream — a 200 here proves nothing the 403 half does not' },
   { routes: exportRoutes, method: 'GET', path: '/export.csv', capability: 'editCatalog', skipAdmitted: 'lazy stream — see /export.json' },
 
   // ── isbn.ts (/api/isbn) ──

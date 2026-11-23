@@ -6,7 +6,7 @@ import {
   PHYSICAL_FORMATS,
   printingCandidates,
 } from '@lc/core';
-import { api, type Member } from '../api.js';
+import { api, type EstateRosterState, type Member } from '../api.js';
 import { describeError } from '../lib/errors.js';
 import { formatLabel } from '../lib/formats.js';
 import { printingLabel } from '../lib/rescans.js';
@@ -194,6 +194,8 @@ export function Copies({
    */
   const [members, setMembers] = useState<Member[] | null>(null);
   const [membersFailed, setMembersFailed] = useState(false);
+  /** Whether the estate half came back — only an owner/admin ever asks for it. */
+  const [estateState, setEstateState] = useState<EstateRosterState | undefined>(undefined);
 
   useEffect(() => {
     if (naming === null || !canListMembers || members !== null || membersFailed) return;
@@ -201,7 +203,10 @@ export function Copies({
     void api
       .members()
       .then((r) => {
-        if (live) setMembers(r.members);
+        if (live) {
+          setMembers(r.members);
+          setEstateState(r.estate);
+        }
       })
       .catch(() => {
         // ⚠️ Not surfaced as an error banner: the box still works, it just
@@ -224,9 +229,16 @@ export function Copies({
     setBusy(copyId);
     setError(null);
     try {
-      await api.updateCopy(copyId, body);
+      const { copy } = await api.updateCopy(copyId, body);
       setLinking(null);
       onChanged();
+      // An estate pick is confirmed from the ANSWER, not assumed: the server
+      // either links it or refuses in words, and a 200 without the link would
+      // be a plain-text save wearing a link's clothes (KI-10's failure).
+      if (body.personEstateId !== undefined && copy.person_user_id == null) {
+        setError('Saved as typed, but not linked to that estate member. Try picking the name again.');
+        return false;
+      }
       return true;
     } catch (err) {
       setError(describeError(err));
@@ -444,7 +456,9 @@ export function Copies({
                   personName={c.person_name}
                   personUserId={c.person_user_id}
                   members={canListMembers ? members : null}
-                  membersUnavailable={!canListMembers || membersFailed}
+                  membersUnavailable={!canListMembers}
+                  membersFailed={canListMembers && membersFailed}
+                  estateUnavailable={estateState === 'unavailable'}
                   busy={busy === c.id}
                   onSave={(patch) => {
                     void change(c.id, patch).then((ok) => {
@@ -545,6 +559,14 @@ export function Copies({
  * The pair is always sent TOGETHER (`personUserId` + `personName`), so a
  * correction cannot half-land: editing "Sam" to "Samantha Ellis" clears the old
  * link in the same request that writes the new name.
+ *
+ * ## Estate members who have never signed in here (2026-11-22)
+ *
+ * For an owner/admin the list also carries approved ESTATE members with no
+ * account here (`id: null`, an opaque `estateId`). Picking one sends
+ * `personEstateId` instead of an id; the server re-checks them against the
+ * estate list, finds or creates their (inert) account, and links it — or
+ * refuses in words. Same matching rule: exactly one name match links.
  */
 function PersonField({
   copyId,
@@ -553,6 +575,8 @@ function PersonField({
   personUserId,
   members,
   membersUnavailable,
+  membersFailed,
+  estateUnavailable,
   busy,
   onSave,
   onCancel,
@@ -563,8 +587,12 @@ function PersonField({
   personUserId: number | null;
   /** Null when they have not loaded, or when this person may not list them. */
   members: Member[] | null;
-  /** True when no autocomplete is coming — say so, do not show an empty list. */
+  /** True when this person may not list members — say so, do not show an empty list. */
   membersUnavailable: boolean;
+  /** The roster request FAILED — an outage, worded as one, never as a permission. */
+  membersFailed: boolean;
+  /** The estate half could not be fetched; local names and typing still work. */
+  estateUnavailable: boolean;
   busy: boolean;
   onSave: (patch: Record<string, unknown>) => void;
   onCancel: () => void;
@@ -590,6 +618,18 @@ function PersonField({
       onSave({ personUserId: null, personName: null });
       return;
     }
+    if (willLink && willLink.id === null && willLink.estateId) {
+      onSave({ personUserId: null, personName: name, personEstateId: willLink.estateId });
+      return;
+    }
+    // ⚠️ An UNCHANGED save keeps the existing link. A copy linked to someone
+    // this list does not offer (a borrower placeholder for a contributor, or
+    // while the estate list is unavailable) would otherwise match nothing and
+    // be quietly unlinked into plain text by a Save that changed nothing.
+    if (!willLink && personUserId !== null && fold(name) === fold(personName ?? '')) {
+      onSave({ personUserId, personName: name });
+      return;
+    }
     onSave({ personUserId: willLink?.id ?? null, personName: name });
   }
 
@@ -609,7 +649,7 @@ function PersonField({
       {named.length > 0 && (
         <datalist id={listId}>
           {named.map((m) => (
-            <option key={m.id} value={m.displayName} />
+            <option key={m.id ?? `estate-${m.estateId}`} value={m.displayName} />
           ))}
         </datalist>
       )}
@@ -634,6 +674,10 @@ function PersonField({
           permission. Typing the name still records it in full.
         </p>
       )}
+      {membersFailed && (
+        <p className="muted small">Member list unavailable — typing the name still records it.</p>
+      )}
+      {estateUnavailable && <p className="muted small">Estate list unavailable.</p>}
 
       <div className="row-tight">
         <button className="primary" onClick={save} disabled={busy}>
